@@ -58,11 +58,11 @@ struct SearchScreen: View {
                     NavigationLink {
                         CorpusReferenceView(session: session, reference: reference)
                     } label: {
-                        HitCell(hit: hit, accent: session.accent)
+                        HitCell(hit: hit, source: source(of: hit), accent: session.accent)
                     }
                     .listRowBackground(Color.clear)
                 } else {
-                    HitCell(hit: hit, accent: session.accent)
+                    HitCell(hit: hit, source: source(of: hit), accent: session.accent)
                         .listRowBackground(Color.clear)
                 }
             }
@@ -77,6 +77,7 @@ struct SearchScreen: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .listStyle(.plain)
         .nodusScrollToTop(accent: session.accent)
         .navigationTitle("Search")
@@ -89,9 +90,21 @@ struct SearchScreen: View {
             NodusSearchField(text: $query, prompt: prompt, accent: session.accent, isBusy: isSearching)
         }
         .onChange(of: query) { _, _ in schedule() }
+        // A passage names its work by id and by nothing else, so without this every quotation
+        // in the list is a paragraph from nowhere. One round of requests covers the page.
+        .task(id: hits.map(\.id)) {
+            let works = hits.compactMap(\.workId)
+            guard !works.isEmpty else { return }
+            await session.names.resolve(workIds: works)
+        }
         .overlay {
             if query.isEmpty { idleState }
         }
+    }
+
+    /// The work a hit was cut from, once its title is known.
+    private func source(of hit: CorpusSearch.Hit) -> String? {
+        hit.workId.flatMap { session.names.work($0) }
     }
 
     /// Why the search was lexical, in the phone's language.
@@ -223,6 +236,8 @@ struct SearchScreen: View {
 
 private struct HitCell: View {
     let hit: CorpusSearch.Hit
+    /// The work a passage was cut from, when its title has been resolved.
+    var source: String?
     let accent: Color
 
     var body: some View {
@@ -230,6 +245,9 @@ private struct HitCell: View {
             HStack(spacing: 6) {
                 Image(systemName: icon).font(.caption2).foregroundStyle(accent)
                 Text(LocalizedStringKey(typeLabel)).font(.caption2.weight(.medium)).foregroundStyle(accent)
+                if let page = hit.page {
+                    Text("· \(page)").font(.caption2).foregroundStyle(.tertiary)
+                }
                 Spacer()
                 // Shown only for a semantic hit, because only a semantic hit has a distance.
                 // A lexical match either contains the string or does not.
@@ -239,38 +257,82 @@ private struct HitCell: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            Text(hit.title ?? String(localized: "Untitled")).font(.subheadline.weight(.medium)).lineLimit(2)
-            if let excerpt = hit.excerpt {
-                Text(excerpt).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+
+            if let headline {
+                Text(headline).font(.subheadline.weight(.medium)).lineLimit(2)
+            }
+            if let supporting {
+                Text(supporting)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    // A quotation is the result, not a caption under one, so it gets the room
+                    // a sentence needs to be recognised.
+                    .lineLimit(hit.type == "passage" ? 5 : 3)
+            }
+            if headline == nil, supporting == nil {
+                Text("This row published no text.")
+                    .font(.caption).foregroundStyle(.tertiary)
             }
         }
         .padding(.vertical, 5)
     }
 
+    /// The bold line.
+    ///
+    /// For a passage that is the work it comes from: the passage's own text is the body, and
+    /// repeating its first line above itself in bold says nothing twice. When the work has not
+    /// resolved — or the space did not publish it — the passage still has a body, so this is
+    /// allowed to be nothing at all rather than the word "Untitled".
+    private var headline: String? {
+        if hit.type == "passage" { return source ?? hit.title }
+        if let title = hit.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        // A row with no title but with text is not "Untitled"; its text is its title.
+        return hit.excerpt == nil ? String(localized: "Untitled") : nil
+    }
+
+    /// The line under the headline: a passage's own words, or a row's supporting text.
+    private var supporting: String? {
+        guard let excerpt = hit.excerpt?.trimmingCharacters(in: .whitespacesAndNewlines), !excerpt.isEmpty else {
+            return nil
+        }
+        // The excerpt often opens with the title — the lexical endpoint builds one out of the
+        // other. Printing both puts the same sentence on the screen twice.
+        if let headline, excerpt.hasPrefix(headline) { return excerpt.count > headline.count ? excerpt : nil }
+        return excerpt
+    }
+
+    /// Both spellings on purpose. The record kind is what reaches here now, but a server that
+    /// answers with its table name — which is what the lexical endpoint does
+    /// (`server/lib/core/search.mjs:41`) — must not fall through to a capitalised table name
+    /// that no catalogue can translate.
     private var typeLabel: String {
         switch hit.type {
-        case "work": return "Work"
-        case "idea": return "Idea"
-        case "theme": return "Theme"
-        case "gap": return "Gap"
-        case "note": return "Note"
-        case "passage": return "Passage"
-        case "person": return "Person"
-        case "place": return "Place"
+        case "work", "works": return "Work"
+        case "idea", "ideas": return "Idea"
+        case "theme", "themes": return "Theme"
+        case "gap", "gaps": return "Gap"
+        case "note", "notes": return "Note"
+        case "passage", "passages": return "Passage"
+        case "person", "persons": return "Person"
+        case "place", "places": return "Place"
+        case "event", "events": return "Event"
         default: return hit.type.capitalized
         }
     }
 
     private var icon: String {
         switch hit.type {
-        case "work": return "book.closed"
-        case "idea": return "lightbulb"
-        case "theme": return "number"
-        case "gap": return "questionmark.diamond"
-        case "note": return "note.text"
-        case "passage": return "text.quote"
-        case "person": return "person"
-        case "place": return "mappin.and.ellipse"
+        case "work", "works": return "book.closed"
+        case "idea", "ideas": return "lightbulb"
+        case "theme", "themes": return "number"
+        case "gap", "gaps": return "questionmark.diamond"
+        case "note", "notes": return "note.text"
+        case "passage", "passages": return "text.quote"
+        case "person", "persons": return "person"
+        case "place", "places": return "mappin.and.ellipse"
+        case "event", "events": return "calendar"
         default: return "doc"
         }
     }

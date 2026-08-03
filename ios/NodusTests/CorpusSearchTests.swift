@@ -17,6 +17,14 @@ private nonisolated func lexicalHit(_ id: String, _ title: String) -> LexicalSea
     return try! JSONDecoder().decode(LexicalSearchResults.Hit.self, from: Data(json.utf8))
 }
 
+/// A lexical hit as the server really sends one: `type` is the *table* it matched in.
+private nonisolated func tableHit(type: String, id: String, title: String) -> LexicalSearchResults.Hit {
+    let json = """
+    {"type":"\(type)","id":"\(id)","title":"\(title)","excerpt":"Un extracto"}
+    """
+    return try! JSONDecoder().decode(LexicalSearchResults.Hit.self, from: Data(json.utf8))
+}
+
 private nonisolated func semanticHit(ideaId: String, label: String, score: Double) -> SemanticHit {
     let json = """
     {"id":"\(ideaId)","score":\(score),"row":{"global_id":"\(ideaId)","label":"\(label)","statement":"Un enunciado"}}
@@ -163,8 +171,11 @@ struct CorpusSearchTests {
         #expect(outcome.warning == "This vault was indexed with openai/text-embedding-3-small.")
     }
 
-    @Test("ideas and passages come back as one ranking, not two lists")
-    func rankingIsMerged() async throws {
+    // Every idea before any passage, and the score deciding only within a kind. A merged
+    // ranking put a raw chunk of somebody's PDF above the idea the corpus derived from it,
+    // which is the opposite of what this app is for.
+    @Test("ideas rank above passages, and the score orders each kind")
+    func ideasComeFirst() async throws {
         let subject = search(
             identity: identity,
             semantic: { _, _, _, kind, _ in
@@ -181,7 +192,42 @@ struct CorpusSearchTests {
         )
 
         let outcome = try await subject.run("hambre")
-        #expect(outcome.hits.map(\.id) == ["idea/i-high", "passage/p-1", "idea/i-low"])
+        #expect(outcome.hits.map(\.id) == ["idea/i-high", "idea/i-low", "passage/p-1"])
+    }
+
+    @Test("a lexical hit arrives named after its table, and is filed under the record it is")
+    func lexicalTableNamesAreCanonicalised() async throws {
+        let subject = search(
+            identity: nil,
+            semantic: { _, _, _, _, _ in .notIndexed(fallback: [], warning: "") },
+            lexical: { _, _ in [
+                tableHit(type: "passages", id: "w-9", title: "Una cita larga"),
+                tableHit(type: "ideas", id: "i-2", title: "Una idea"),
+            ] }
+        )
+
+        let outcome = try await subject.run("hambre")
+        // Singular, and the idea ahead of the passage even though the server sent it second.
+        #expect(outcome.hits.map(\.type) == ["idea", "passage"])
+        #expect(outcome.hits.map(\.id) == ["idea/i-2", "passage/w-9"])
+    }
+
+    /// A passage whose row carries no text — the shape a space publishes when its owner keeps
+    /// the extracted full text out of the publication, which is the default.
+    @Test("a passage with no published text never renders as an empty line")
+    func textlessPassageHasNoEmptyTitle() {
+        let json = """
+        {"id":"p-2","score":0.5,"row":{"passage_id":"p-2","nodus_id":"w-1","chunk_index":4,"page_label":"231"}}
+        """
+        let hit = try! JSONDecoder.nodus.decode(SemanticHit.self, from: Data(json.utf8))
+        let mapped = try! #require(CorpusSearch.hit(from: hit))
+
+        // The old title was `String((nil ?? "").prefix(80))` — the empty string, which draws a
+        // blank line and reads as a hit with nothing in it.
+        #expect(mapped.title != "")
+        #expect(mapped.excerpt == nil)
+        #expect(mapped.workId == "w-1")
+        #expect(mapped.page == "p. 231")
     }
 
     @Test("a semantic search that returns nothing falls back rather than claiming silence")

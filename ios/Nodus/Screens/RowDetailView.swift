@@ -78,7 +78,16 @@ struct RowDetailView: View {
                 case .plan(let detail): planBody(detail)
                 // Handled above: an exam replaces the dossier rather than sitting inside it.
                 case .exam: EmptyView()
-                case nil: fields(of: row)
+                case nil:
+                    // A passage has no enriched handler on the server and never will: it is one
+                    // row. But the generic renderer showed it as a field list — chunk index,
+                    // page, ids — with the quotation itself just another row in the table, and
+                    // a quotation is the only reason to open one.
+                    if collection?.path == "passages" {
+                        passageBody(row)
+                    } else {
+                        fields(of: row)
+                    }
                 }
             }
             .padding(16)
@@ -95,7 +104,28 @@ struct RowDetailView: View {
         .task { await enrich() }
     }
 
+    @ViewBuilder
     private var heading: some View {
+        // A passage's presented title *is* its text, which is right in a list and absurd as a
+        // heading: several hundred characters set in a semibold title, with the same text
+        // repeated underneath. Its heading is where it comes from.
+        if collection?.path == "passages" {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Passage")
+                    .font(.title3.weight(.semibold))
+                if let page = CorpusSearch.pageLabel(row) {
+                    Text(page).font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .nodusGlass(NodusGlass(.regular, tint: session.accent))
+        } else {
+            genericHeading
+        }
+    }
+
+    private var genericHeading: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(presenter.title(row))
                 .font(.title3.weight(.semibold))
@@ -179,6 +209,64 @@ struct RowDetailView: View {
         }
     }
 
+    /// A passage: the quotation, where it came from, and the rest of the row underneath.
+    ///
+    /// The text is not always there. Passages are the one table the desktop leaves out of a
+    /// publication by default — extracted full text can be licensed — so a space can carry the
+    /// passage *vectors*, and therefore the search hits, while the rows themselves arrive as
+    /// coordinates with nothing to read. That is a fact about the publication, not a bug in the
+    /// screen, and saying it is the only useful thing this view can do in that case.
+    @ViewBuilder
+    private func passageBody(_ row: Row) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let text = row.text("text") ?? row.text("content") {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(text)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 12)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(session.accent.opacity(0.45)).frame(width: 3)
+                        }
+                }
+                .padding(16)
+                .nodusGlass(NodusGlass(.thin, tint: session.accent))
+            } else {
+                NodusNotice(
+                    tone: .caution,
+                    title: "The text of this passage was not published",
+                    message: "Extracted full text can be licensed, so a space carries it only when its owner turns that on. The passage is here, and what it says is not.",
+                    systemImage: "text.quote"
+                )
+            }
+
+            if let workId = row.string("nodus_id") {
+                NavigationLink {
+                    WorkByIdView(session: session, nodusId: workId)
+                } label: {
+                    HStack {
+                        Label(
+                            session.names.work(workId).map { LocalizedStringKey($0) } ?? "Open the work",
+                            systemImage: "book.closed"
+                        )
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                    .padding(15)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .nodusGlass(NodusGlass(.regular, tint: session.accent, interactive: true))
+                }
+                .buttonStyle(.plain)
+                .task { await session.names.resolve(workIds: [workId]) }
+            }
+
+            // The coordinates stay, below the quotation rather than instead of it — minus the
+            // text itself, which is now the screen.
+            fields(of: row, hiding: ["text", "content"])
+        }
+    }
+
     private func personBody(_ detail: PersonDetail) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             if let personId = detail.person.string("person_id") {
@@ -213,11 +301,14 @@ struct RowDetailView: View {
     private func authorBody(_ detail: AuthorDetail) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             fields(of: detail.author)
-            group("Works", detail.works, table: "works", linksTo: Collections["works"])
-            authorRelationsSection(detail)
+            // The synthesis is what the dossier is *for*: it says what this author argues
+            // across everything the corpus holds of theirs. Below a list of works — which for
+            // a well-read author is forty rows — it was the one thing nobody scrolled to.
             if let synthesis = detail.synthesis {
                 section("Synthesis") { fields(of: synthesis) }
             }
+            group("Works", detail.works, table: "works", linksTo: Collections["works"])
+            authorRelationsSection(detail)
         }
     }
 
@@ -437,9 +528,10 @@ struct RowDetailView: View {
 
     // MARK: Generic rendering
 
-    private func fields(of row: Row) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(displayableKeys(of: row), id: \.self) { key in
+    private func fields(of row: Row, hiding extra: Set<String> = []) -> some View {
+        let keys = displayableKeys(of: row, hiding: extra)
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(keys, id: \.self) { key in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(humanise(key))
                         .font(.caption2.weight(.medium))
@@ -451,7 +543,7 @@ struct RowDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 9)
-                if key != displayableKeys(of: row).last { Divider().opacity(0.4) }
+                if key != keys.last { Divider().opacity(0.4) }
             }
         }
         .padding(.horizontal, 16)
@@ -553,7 +645,7 @@ struct RowDetailView: View {
     /// The `*_json` columns are the raw form of what the heading already renders properly —
     /// showing both means a screen that opens with a readable author line and then repeats it
     /// as `[{"lastName":"Arco Blanco","firstName":…}]`.
-    private func displayableKeys(of row: Row) -> [String] {
+    private func displayableKeys(of row: Row, hiding extra: Set<String> = []) -> [String] {
         // Pipeline bookkeeping: when the desktop last scanned this work and how it went. Real
         // columns, and nothing a reader of the corpus has any use for.
         let hidden: Set<String> = [
@@ -565,7 +657,7 @@ struct RowDetailView: View {
         ]
         return row.columns.keys
             .filter { key in
-                guard !hidden.contains(key), !key.hasSuffix("_json") else { return false }
+                guard !hidden.contains(key), !extra.contains(key), !key.hasSuffix("_json") else { return false }
                 guard let value = row[key], !value.isNull else { return false }
                 if let string = value.stringValue, string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
                 return true

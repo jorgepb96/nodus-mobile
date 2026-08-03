@@ -33,11 +33,36 @@ struct CorpusSearch: Sendable {
 
     struct Hit: Sendable, Identifiable, Equatable {
         let id: String
+        /// Always singular — `idea`, `passage`, `work`. The two endpoints disagree about this:
+        /// the semantic one names the record and the lexical one names the *table*, so a
+        /// lexical hit arrived as `passages` and fell through every `case "passage"` in the UI.
         let type: String
         let title: String?
         let excerpt: String?
+        /// A passage's own coordinates. Neither is in its text, and both are what make a
+        /// quotation worth reading: which work it was cut from, and where in it.
+        let workId: String?
+        let page: String?
         /// Only a semantic hit has one. A lexical hit is a substring match, not a distance.
         let score: Double?
+
+        init(
+            id: String,
+            type: String,
+            title: String?,
+            excerpt: String?,
+            workId: String? = nil,
+            page: String? = nil,
+            score: Double?
+        ) {
+            self.id = id
+            self.type = type
+            self.title = title
+            self.excerpt = excerpt
+            self.workId = workId
+            self.page = page
+            self.score = score
+        }
     }
 
     struct Outcome: Sendable, Equatable {
@@ -98,15 +123,57 @@ struct CorpusSearch: Sendable {
         guard !hits.isEmpty else {
             return Outcome(hits: try await lexicalHits(query, limit), mode: .lexical, warning: warning)
         }
-        // One ranking across both kinds. Showing every idea before every passage would sort by
-        // which matrix answered rather than by what the query means.
-        hits.sort { ($0.score ?? 0) > ($1.score ?? 0) }
-        return Outcome(hits: Array(hits.prefix(limit)), mode: .semantic, warning: warning)
+        return Outcome(hits: Array(Self.ordered(hits).prefix(limit)), mode: .semantic, warning: warning)
     }
 
     private func lexicalHits(_ query: String, _ limit: Int) async throws -> [Hit] {
-        try await lexical(query, limit).map {
-            Hit(id: "\($0.type)/\($0.id)", type: $0.type, title: $0.title, excerpt: $0.excerpt, score: nil)
+        Self.ordered(try await lexical(query, limit).map { hit in
+            // The lexical endpoint names the table it matched in — `passages`, `ideas` — while
+            // the semantic one and every citation name the record: `passage`, `idea`.
+            // `CorpusReference` already owns that mapping, so using it here means one
+            // vocabulary reaches the screen instead of two that nearly agree.
+            let reference = CorpusReference(kind: hit.type, recordId: hit.id)
+            return Hit(
+                id: reference.id,
+                type: reference.kind,
+                title: hit.title,
+                excerpt: hit.excerpt,
+                score: nil
+            )
+        })
+    }
+
+    /// Ideas first, passages last, and the score deciding only within a kind.
+    ///
+    /// It used to be one ranking across both matrices, on the argument that a merged order
+    /// sorts by meaning rather than by which matrix answered. In use that reads badly: a
+    /// passage is a raw chunk of somebody's PDF, several hundred characters of it, and three
+    /// of them above the first idea buries what the corpus actually derived. Ideas carry the
+    /// argument, works name where it lives, and passages are the evidence underneath — which
+    /// is the order a reader wants them in, and the order the assistant already builds its
+    /// context in.
+    static func ordered(_ hits: [Hit]) -> [Hit] {
+        hits.enumerated().sorted { lhs, rhs in
+            let left = rank(lhs.element.type), right = rank(rhs.element.type)
+            if left != right { return left < right }
+            let leftScore = lhs.element.score ?? 0, rightScore = rhs.element.score ?? 0
+            if leftScore != rightScore { return leftScore > rightScore }
+            // A lexical hit has no score at all, so without this the order would be whatever
+            // the sort happened to do. This keeps the server's.
+            return lhs.offset < rhs.offset
+        }
+        .map(\.element)
+    }
+
+    static func rank(_ type: String) -> Int {
+        switch type {
+        case "idea": return 0
+        case "work": return 1
+        case "theme": return 2
+        case "gap": return 3
+        case "note": return 4
+        case "passage": return 9
+        default: return 5
         }
     }
 
@@ -124,11 +191,18 @@ struct CorpusSearch: Sendable {
             )
         }
         if let id = row.string("passage_id") {
+            // `String((row.text("text") ?? "").prefix(80))` was the old title, and when the row
+            // carried no text that is the empty string — not nil. `Text("")` draws a blank
+            // line, which is how a passage hit came to show its type chip and nothing else.
+            // A passage's headline is its source anyway, not the first eighty characters of
+            // itself, and the source is these two columns.
             return Hit(
                 id: "passage/\(id)",
                 type: "passage",
-                title: row.text("section") ?? String((row.text("text") ?? "").prefix(80)),
-                excerpt: row.text("text"),
+                title: row.text("section") ?? row.text("heading"),
+                excerpt: row.text("text") ?? row.text("content"),
+                workId: row.string("nodus_id"),
+                page: pageLabel(row),
                 score: hit.score
             )
         }
@@ -141,6 +215,21 @@ struct CorpusSearch: Sendable {
                 score: hit.score
             )
         }
+        return nil
+    }
+
+    /// Where in the work a passage sits, in whichever column this vault names it.
+    ///
+    /// `page_label` is the published one (`migrations.ts:474`); the rest are what other
+    /// vintages of the pipeline wrote, and reading only the first meant a passage with a page
+    /// showed none.
+    static func pageLabel(_ row: Row) -> String? {
+        if let label = row.text("page_label") ?? row.text("page") ?? row.text("location") {
+            // "231" alone is a number in a row of numbers. "p. 231" is a page.
+            return Int(label) != nil ? "p. \(label)" : label
+        }
+        if let page = row.int("page") { return "p. \(page)" }
+        if let chunk = row.int("chunk_index") { return "#\(chunk)" }
         return nil
     }
 }
