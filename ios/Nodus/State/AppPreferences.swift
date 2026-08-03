@@ -78,11 +78,14 @@ final class AppPreferences {
     /// twenty-page report read on a phone is the one place somebody wants a different size from
     /// the one their lists are in. So this multiplies whatever Dynamic Type already decided,
     /// and it is remembered — a reader who needs larger text needs it in every report.
+    /// Clamped by `adjustReading(by:)` and never inside this observer.
+    ///
+    /// `didSet` on an `@Observable` property is not the observer on a stored property it looks
+    /// like: the macro rewrites the property as a computed one, so assigning to it from inside
+    /// its own `didSet` calls the setter again, and again — the app died on the stack the first
+    /// time somebody pressed A⁺. An observer here may persist the value. It may not change it.
     var readingScale: Double {
-        didSet {
-            readingScale = min(Self.maxReadingScale, max(Self.minReadingScale, readingScale))
-            defaults.set(readingScale, forKey: Key.readingScale)
-        }
+        didSet { defaults.set(readingScale, forKey: Key.readingScale) }
     }
 
     static let minReadingScale = 0.85
@@ -91,6 +94,12 @@ final class AppPreferences {
 
     var canEnlargeReading: Bool { readingScale < Self.maxReadingScale - 0.001 }
     var canShrinkReading: Bool { readingScale > Self.minReadingScale + 0.001 }
+
+    /// One step larger or smaller, kept inside the range.
+    func adjustReading(by delta: Double) {
+        let wanted = readingScale + delta
+        readingScale = min(Self.maxReadingScale, max(Self.minReadingScale, wanted))
+    }
 
     private let defaults: UserDefaults
 

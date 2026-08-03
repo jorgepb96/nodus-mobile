@@ -85,7 +85,7 @@ struct ReadingSizeButtons: View {
     ) -> some View {
         Button {
             withAnimation(.easeOut(duration: 0.15)) {
-                preferences.readingScale += delta
+                preferences.adjustReading(by: delta)
             }
         } label: {
             Image(systemName: systemImage)
