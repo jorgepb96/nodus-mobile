@@ -242,7 +242,9 @@ struct HomeView: View {
     ///
     /// `session.sections` sorts the whole published menu on every access, and the grid asked
     /// for it in the `if`, in the `ForEach` and again on every diff.
-    private var sections: [CollectionDescriptor] { session.sections }
+    private var sections: [CollectionDescriptor] {
+        session.sections.filter { !toolCoveredPaths.contains($0.path) }
+    }
 
     struct VaultTool {
         let title: String
@@ -264,9 +266,19 @@ struct HomeView: View {
 
     /// What each vault type gets beyond its tables, gated on the publication actually having
     /// the rows — a timetable tile over an empty timetable is worse than no tile.
-    /// Whether the section grid above already offers this collection.
-    private func lists(_ path: String) -> Bool {
-        sections.contains { $0.path == path }
+    /// Collections that have a screen of their own under the vault's tools.
+    ///
+    /// A study or teaching vault publishes `study_flashcards` and `study_questions` as tables
+    /// *and* has a purpose-built screen for each — a deck you tap to turn over, a question bank
+    /// you work through. Offered twice they were two tiles with the same name, and the first
+    /// attempt at fixing it dropped the wrong one: the tool went and the generic row list
+    /// stayed, so the deck became unreachable. The tool wins; the table tile is what goes.
+    private var toolCoveredPaths: Set<String> {
+        let counts = session.overview?.counts ?? [:]
+        var covered: Set<String> = []
+        if (counts["study_flashcards"] ?? 0) > 0 { covered.insert("study-flashcards") }
+        if (counts["study_questions"] ?? 0) > 0 { covered.insert("study-questions") }
+        return covered
     }
 
     private var vaultTools: [VaultTool] {
@@ -300,12 +312,12 @@ struct HomeView: View {
         // tiles with the same name — one opening the study screen, one opening a generic list —
         // and no way to tell which was which. The purpose-built screen wins; the collection tile
         // above it is what would be redundant.
-        if (counts["study_flashcards"] ?? 0) > 0, !lists("study-flashcards") {
+        if (counts["study_flashcards"] ?? 0) > 0 {
             tools.append(VaultTool(title: "Flashcards", icon: "rectangle.on.rectangle") {
                 AnyView(FlashcardsView(session: session))
             })
         }
-        if (counts["study_questions"] ?? 0) > 0, !lists("study-questions") {
+        if (counts["study_questions"] ?? 0) > 0 {
             tools.append(VaultTool(title: "Question bank", icon: "checklist") {
                 AnyView(QuestionBankView(session: session))
             })

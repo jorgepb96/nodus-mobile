@@ -105,6 +105,15 @@ struct SpaceShell: View {
                 .safeAreaInset(edge: .top) { header }
                 .toolbar(.hidden, for: .navigationBar)
                 .nodusPageBackdrop(accent: session.accent)
+                // The tab bar's own background, stated rather than left to the system.
+                //
+                // Left alone it has two: a translucent one while content is passing under it,
+                // and an opaque `systemBackground` — flat white in light mode — the moment the
+                // content ends above it. So the same bar was a tinted band on one screen and a
+                // white slab with a hard edge on the next, on a page whose backdrop is neither.
+                // One material in both states, with the accent wash showing through it.
+                .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
         }
     }
 

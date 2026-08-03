@@ -177,7 +177,10 @@ struct ExamView: View {
 
             body(of: row, type: type)
 
-            if showingSolutions, let solution = row.text("solution") {
+            // A section is a shared statement, not a question — it carries no points and the
+            // desktop does not mark it (`examTotalPoints`, shared/teachingExams.ts:290). Giving
+            // it an answer key put "See the marking rubric" under a heading that asks nothing.
+            if showingSolutions, type != "section", let solution = row.text("solution") {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Answer key").font(.caption2.weight(.semibold)).foregroundStyle(session.accent)
                     Text(verbatim: solution).font(.caption).textSelection(.enabled)

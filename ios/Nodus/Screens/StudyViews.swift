@@ -142,8 +142,13 @@ struct ScheduleView: View {
         periods = ((try? await mirror.page(table: "study_schedule_periods", limit: 60))?.items) ?? []
         cells = ((try? await mirror.page(table: "study_schedule_cells", limit: 500))?.items) ?? []
         let subjectRows = ((try? await mirror.page(table: "study_subjects", limit: 200))?.items) ?? []
+        // `id`, not `subject_id`. Every study and teaching table names its primary key `id`
+        // (migrations.ts:1573 onwards) — the same mistake that once made nine collections
+        // unopenable, still alive here: the dictionary was always empty, so every cell in
+        // every timetable said "Unassigned" over a subject the publication carried.
+        // `subject_id` is kept as a fallback for a row that really does name itself that way.
         subjects = Dictionary(subjectRows.compactMap { row in
-            row.string("subject_id").map { ($0, row) }
+            (row.string("id") ?? row.string("subject_id")).map { ($0, row) }
         }, uniquingKeysWith: { first, _ in first })
     }
 }
