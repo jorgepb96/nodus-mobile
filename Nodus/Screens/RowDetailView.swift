@@ -24,6 +24,8 @@ struct RowDetailView: View {
         case person(PersonDetail)
         case author(AuthorDetail)
         case database(DatabaseDetail)
+        case exam(ExamDetail)
+        case plan(StudyPlanDetail)
     }
 
     private var presenter: RowPresenter {
@@ -33,6 +35,16 @@ struct RowDetailView: View {
     private var theme: String? { row.string("theme_id") }
 
     var body: some View {
+        // An exam is a document, not a dossier: it gets the whole screen rather than a
+        // "Questions" section under a field list nobody reads.
+        if case .exam(let detail) = enriched {
+            ExamView(session: session, detail: detail)
+        } else {
+            dossier
+        }
+    }
+
+    private var dossier: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 heading
@@ -63,6 +75,9 @@ struct RowDetailView: View {
                 case .person(let detail): personBody(detail)
                 case .author(let detail): authorBody(detail)
                 case .database(let detail): databaseBody(detail)
+                case .plan(let detail): planBody(detail)
+                // Handled above: an exam replaces the dossier rather than sitting inside it.
+                case .exam: EmptyView()
                 case nil: fields(of: row)
                 }
             }
@@ -199,9 +214,98 @@ struct RowDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             fields(of: detail.author)
             group("Works", detail.works, table: "works", linksTo: Collections["works"])
-            group("Relationships", detail.relations, table: "author_relations")
+            authorRelationsSection(detail)
             if let synthesis = detail.synthesis {
                 section("Synthesis") { fields(of: synthesis) }
+            }
+        }
+    }
+
+    /// An author's relations shown as the *other author*.
+    ///
+    /// `author_relations` is `{from_author, to_author, type, weight}` and carries no name at
+    /// all, so the generic presenter had nothing to title a row with: a dossier with a hundred
+    /// and eleven relations rendered as a hundred and eleven rows reading "Untitled" over the
+    /// word "contradicts". The names come from one page of the authors table, not one request
+    /// per row.
+    private func authorRelationsSection(_ detail: AuthorDetail) -> some View {
+        let selfId = detail.author.string("author_id") ?? ""
+        return Group {
+            if !detail.relations.isEmpty {
+                section("Relationships", count: detail.relations.count) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(detail.relations.enumerated()), id: \.offset) { index, edge in
+                            authorRelationRow(edge, selfId: selfId)
+                            if index < detail.relations.count - 1 { Divider().opacity(0.35) }
+                        }
+                    }
+                }
+            }
+        }
+        .task { await session.names.preloadAuthors() }
+    }
+
+    private func authorRelationRow(_ edge: Row, selfId: String) -> some View {
+        let otherId = (edge.string("from_author") == selfId ? edge.string("to_author") : edge.string("from_author")) ?? ""
+        return NavigationLink {
+            AuthorByIdView(session: session, authorId: otherId)
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Image(systemName: "person")
+                        .font(.caption2).foregroundStyle(session.accent)
+                    Text(LocalizedStringKey(Self.relationLabel(edge.text("type") ?? "")))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(session.accent)
+                }
+                Text(session.names.author(otherId) ?? String(localized: "Loading…"))
+                    .font(.subheadline).lineLimit(2).foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+    }
+
+    /// A study plan is its blocks, on the days they fall.
+    ///
+    /// Grouped by day rather than listed flat, because a plan is read as "what am I doing on
+    /// Thursday" and a flat list of forty blocks answers that question only by scrolling.
+    private func planBody(_ detail: StudyPlanDetail) -> some View {
+        let calendar = Calendar.current
+        let days = Dictionary(grouping: detail.blocks.filter { $0.date("starts_at") != nil }) {
+            calendar.startOfDay(for: $0.date("starts_at")!)
+        }
+        return VStack(alignment: .leading, spacing: 14) {
+            fields(of: detail.plan)
+            if !days.isEmpty {
+                section("Blocks", count: detail.blocks.count) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(days.keys.sorted(), id: \.self) { day in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(verbatim: day.formatted(.dateTime.weekday(.wide).day().month()))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(session.accent)
+                                ForEach(Array((days[day] ?? []).enumerated()), id: \.offset) { _, block in
+                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                        Text(verbatim: (block.date("starts_at") ?? day).formatted(date: .omitted, time: .shortened))
+                                            .font(.caption2.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 48, alignment: .leading)
+                                        Text(verbatim: block.text("title") ?? "—")
+                                            .font(.subheadline)
+                                            .strikethrough(block.text("status") == "completed", color: .secondary)
+                                        Spacer(minLength: 6)
+                                        if let minutes = block.int("duration_minutes"), minutes > 0 {
+                                            Text("\(minutes) min").font(.caption2).foregroundStyle(.tertiary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -236,7 +340,13 @@ struct RowDetailView: View {
                 }
             }
         }
-        .task { await session.names.resolve(ideaIds: others, workIds: []) }
+        .task {
+            // One request for the whole neighbourhood, then a per-id round for anything the
+            // graph did not carry back. The other order — a request per relation, capped —
+            // is what left half of a long list saying "Loading…" permanently.
+            await session.names.resolveNeighbours(ofIdea: selfId)
+            await session.names.resolve(ideaIds: others)
+        }
     }
 
     private func relationRow(_ edge: Row, selfId: String) -> some View {
@@ -281,7 +391,7 @@ struct RowDetailView: View {
                 }
             }
         }
-        .task { await session.names.resolve(ideaIds: [], workIds: workIds) }
+        .task { await session.names.resolve(workIds: workIds) }
     }
 
     private func occurrenceRow(_ occurrence: Row) -> some View {
@@ -506,6 +616,8 @@ struct RowDetailView: View {
             case "persons": enriched = .person(try await session.client.person(id, in: session.connection.spaceId))
             case "authors": enriched = .author(try await session.client.author(id, in: session.connection.spaceId))
             case "databases": enriched = .database(try await session.client.database(id, in: session.connection.spaceId, limit: 50))
+            case "teaching-exams": enriched = .exam(try await session.client.exam(id, in: session.connection.spaceId))
+            case "study-plans": enriched = .plan(try await session.client.studyPlan(id, in: session.connection.spaceId))
             default: break
             }
         } catch {
@@ -606,6 +718,32 @@ struct IdeaByIdView: View {
         .task {
             guard row == nil, !failed else { return }
             do { row = try await session.client.idea(globalId, in: session.connection.spaceId).idea }
+            catch { failed = true }
+        }
+    }
+}
+
+/// Opens an author from their id alone, which is all an `author_relations` row carries.
+struct AuthorByIdView: View {
+    let session: SpaceSession
+    let authorId: String
+
+    @State private var row: Row?
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let row {
+                RowDetailView(session: session, collection: Collections["authors"], row: row)
+            } else if failed {
+                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else {
+                ProgressView().tint(session.accent)
+            }
+        }
+        .task {
+            guard row == nil, !failed else { return }
+            do { row = try await session.client.author(authorId, in: session.connection.spaceId).author }
             catch { failed = true }
         }
     }

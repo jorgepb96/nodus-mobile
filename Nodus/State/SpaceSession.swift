@@ -203,7 +203,12 @@ final class SpaceSession {
     /// Passages are read from the idea that cites them — that is where they mean something,
     /// and it is how the desktop shows them. A flat list of 5 803 quotations in snapshot order
     /// is not something anyone browses.
-    private static let notBrowsedDirectly: Set<String> = ["passages"]
+    ///
+    /// The calendar and the goals are excluded for the same reason and a sharper one: the API
+    /// has no sort, so a calendar listed as a collection arrives in snapshot order, which for
+    /// dates is no order at all. Both have a screen that reads them properly — the agenda and
+    /// the goals — and offering the raw list beside it would be offering the worse of the two.
+    private static let notBrowsedDirectly: Set<String> = ["passages", "study-calendar", "study-goals"]
 
     /// The collections this space actually has rows for, in the order the menu shows them.
     var sections: [CollectionDescriptor] {

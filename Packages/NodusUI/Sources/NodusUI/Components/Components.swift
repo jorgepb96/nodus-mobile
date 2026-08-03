@@ -33,11 +33,17 @@ public struct NodusBackdrop: View {
             bloom(accent.shaded(by: 0.15), centre: UnitPoint(x: 0.16, y: 0.14), scale: 0.72)
             bloom(accent.shaded(by: -0.35), centre: UnitPoint(x: 0.9, y: 0.78), scale: 0.62)
         }
-        .ignoresSafeArea()
         // The wash never changes and never reacts to a touch. Flattening it means the
         // compositor can treat it as one static layer, and hit-testing skips it entirely.
         .drawingGroup(opaque: false)
         .allowsHitTesting(false)
+        // Last, and that is the whole of it. `drawingGroup` rasterises the view into an
+        // offscreen image the size of its bounds, so an `ignoresSafeArea` *above* it is
+        // flattened away and the wash stops at the safe area: black bands under the status bar
+        // and over the home indicator. Every screen that reached for the backdrop through
+        // `nodusPageBackdrop` was fine only because that helper applies its own; the one screen
+        // that used this view directly — the space picker — showed the bands.
+        .ignoresSafeArea()
     }
 
     private var base: Color {

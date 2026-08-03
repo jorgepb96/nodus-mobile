@@ -147,6 +147,53 @@ struct RowPresenter {
                 row.text("back")
             } detail: { _ in nil }
 
+        case "study_plans":
+            return RowPresenter(collection: table, icon: "list.bullet.rectangle") { row in
+                row.text("title") ?? "Plan"
+            } subtitle: { row in
+                row.text("description")
+            } detail: { row in
+                row.int("available_minutes").map { "\($0) min" }
+            }
+
+        case "study_plan_blocks":
+            return RowPresenter(collection: table, icon: "timer") { row in
+                row.text("title") ?? "Block"
+            } subtitle: { row in
+                row.text("notes")
+            } detail: { row in
+                row.text("status") ?? row.text("block_type")
+            }
+
+        case "study_goals":
+            return RowPresenter(collection: table, icon: "target") { row in
+                row.text("title") ?? "Goal"
+            } subtitle: { row in
+                // Two numbers and their unit — the goal *is* the ratio, and a subtitle that
+                // repeats the title tells a reader nothing.
+                guard let target = row.double("target_value") else { return nil }
+                let current = row.double("current_value") ?? 0
+                return "\(current.formatted()) / \(target.formatted()) \(row.text("unit") ?? "")"
+            } detail: { row in
+                row.text("period")
+            }
+
+        case "study_calendar_events":
+            return RowPresenter(collection: table, icon: "calendar") { row in
+                row.text("title") ?? "Event"
+            } subtitle: { row in
+                row.date("starts_at")?.formatted(date: .abbreviated, time: .shortened)
+            } detail: { row in
+                row.text("event_type")
+            }
+
+        case "teaching_exam_questions":
+            return RowPresenter(collection: table, icon: "questionmark.square") { row in
+                row.text("prompt") ?? "Question"
+            } subtitle: { _ in nil } detail: { row in
+                row.text("type")
+            }
+
         case "study_questions", "teaching_exams", "teaching_rubrics":
             return RowPresenter(collection: table, icon: "checklist") { row in
                 row.text("prompt") ?? row.text("title") ?? row.text("name") ?? "Item"
@@ -249,6 +296,9 @@ extension CollectionDescriptor {
         case "study-materials": return "Materials"
         case "study-flashcards": return "Flashcards"
         case "study-questions": return "Question bank"
+        case "study-plans": return "Study plans"
+        case "study-goals": return "Goals"
+        case "study-calendar": return "Calendar"
         case "teaching-exams": return "Exams"
         case "teaching-rubrics": return "Rubrics"
         case "databases": return "Databases"

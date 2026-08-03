@@ -23,6 +23,17 @@
         }
       }
     },
+    "%@ points": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ puntos"
+          }
+        }
+      }
+    },
     "%@ records": {
       "extractionState": "manual",
       "localizations": {
@@ -177,6 +188,17 @@
         }
       }
     },
+    "%lld linked records": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld registros enlazados"
+          }
+        }
+      }
+    },
     "%lld min": {
       "extractionState": "manual",
       "localizations": {
@@ -223,6 +245,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld pasajes extraídos"
+          }
+        }
+      }
+    },
+    "%lld questions": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld preguntas"
           }
         }
       }
@@ -420,6 +453,17 @@
         }
       }
     },
+    "Academic": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Académico"
+          }
+        }
+      }
+    },
     "Access": {
       "extractionState": "manual",
       "localizations": {
@@ -497,6 +541,17 @@
         }
       }
     },
+    "Add the server again": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir el servidor otra vez"
+          }
+        }
+      }
+    },
     "Address": {
       "extractionState": "manual",
       "localizations": {
@@ -508,6 +563,17 @@
         }
       }
     },
+    "Agenda": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agenda"
+          }
+        }
+      }
+    },
     "All": {
       "extractionState": "manual",
       "localizations": {
@@ -515,6 +581,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Todos"
+          }
+        }
+      }
+    },
+    "All day": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo el día"
           }
         }
       }
@@ -581,6 +658,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Otra semilla"
+          }
+        }
+      }
+    },
+    "Answer key": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solucionario"
           }
         }
       }
@@ -761,6 +849,17 @@
         }
       }
     },
+    "Assignment": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrega"
+          }
+        }
+      }
+    },
     "Audience: \\($0)": {
       "extractionState": "manual",
       "localizations": {
@@ -845,6 +944,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ritmos"
+          }
+        }
+      }
+    },
+    "Blocks": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloques"
           }
         }
       }
@@ -1043,6 +1153,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Elige uno en Proveedores antes de empezar."
+          }
+        }
+      }
+    },
+    "Class": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clase"
           }
         }
       }
@@ -1333,6 +1454,17 @@
         }
       }
     },
+    "Could not load the agenda": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cargar la agenda"
+          }
+        }
+      }
+    },
     "Could not load the ideas": {
       "extractionState": "manual",
       "localizations": {
@@ -1439,6 +1571,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Culturas"
+          }
+        }
+      }
+    },
+    "Daily": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diario"
           }
         }
       }
@@ -1598,6 +1741,17 @@
       }
     },
     "Discard": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartar"
+          }
+        }
+      }
+    },
+    "Dismiss": {
       "extractionState": "manual",
       "localizations": {
         "es": {
@@ -1861,6 +2015,17 @@
         }
       }
     },
+    "Every kind": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De cualquier tipo"
+          }
+        }
+      }
+    },
     "Evidence": {
       "extractionState": "manual",
       "localizations": {
@@ -1868,6 +2033,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Evidencia"
+          }
+        }
+      }
+    },
+    "Exam": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Examen"
           }
         }
       }
@@ -1938,6 +2114,17 @@
         }
       }
     },
+    "False": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falso"
+          }
+        }
+      }
+    },
     "Families": {
       "extractionState": "manual",
       "localizations": {
@@ -1956,6 +2143,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Árbol genealógico"
+          }
+        }
+      }
+    },
+    "File": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivo"
           }
         }
       }
@@ -2191,6 +2389,17 @@
         }
       }
     },
+    "Genealogy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genealogía"
+          }
+        }
+      }
+    },
     "Generate a report": {
       "extractionState": "manual",
       "localizations": {
@@ -2301,6 +2510,17 @@
         }
       }
     },
+    "Hide the answer key": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar el solucionario"
+          }
+        }
+      }
+    },
     "Hide the key": {
       "extractionState": "manual",
       "localizations": {
@@ -2407,6 +2627,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Importando"
+          }
+        }
+      }
+    },
+    "In progress": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En marcha"
           }
         }
       }
@@ -2763,6 +2994,17 @@
         }
       }
     },
+    "Met": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cumplidos"
+          }
+        }
+      }
+    },
     "Mode": {
       "extractionState": "manual",
       "localizations": {
@@ -2825,6 +3067,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lunes"
+          }
+        }
+      }
+    },
+    "Monthly": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mensual"
           }
         }
       }
@@ -2928,6 +3181,17 @@
         }
       }
     },
+    "No": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No"
+          }
+        }
+      }
+    },
     "No answer": {
       "extractionState": "manual",
       "localizations": {
@@ -2950,6 +3214,28 @@
         }
       }
     },
+    "No event or planned block in the last three months.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún evento ni bloque planificado en los últimos tres meses."
+          }
+        }
+      }
+    },
+    "No event or planned block in the next two months.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún evento ni bloque planificado en los próximos dos meses."
+          }
+        }
+      }
+    },
     "No flashcards": {
       "extractionState": "manual",
       "localizations": {
@@ -2957,6 +3243,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sin fichas"
+          }
+        }
+      }
+    },
+    "No goals": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin objetivos"
           }
         }
       }
@@ -3225,6 +3522,17 @@
         }
       }
     },
+    "No spaces match": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún espacio coincide"
+          }
+        }
+      }
+    },
     "No spaces yet": {
       "extractionState": "manual",
       "localizations": {
@@ -3298,6 +3606,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "El calendario de repaso lo lleva Nodus de escritorio; aquí puedes repasar, no reprogramar."
+          }
+        }
+      }
+    },
+    "Nodus desktop, Nodus Server and this app ship as one release and carry one number.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nodus de escritorio, Nodus Server y esta app se publican juntos y llevan el mismo número."
           }
         }
       }
@@ -3434,6 +3753,17 @@
         }
       }
     },
+    "Nothing ahead": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada por delante"
+          }
+        }
+      }
+    },
     "Nothing archived": {
       "extractionState": "manual",
       "localizations": {
@@ -3441,6 +3771,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No hay nada archivado"
+          }
+        }
+      }
+    },
+    "Nothing behind": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada por detrás"
           }
         }
       }
@@ -3463,6 +3804,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nada aquí"
+          }
+        }
+      }
+    },
+    "Nothing here answers to that name or that vault type.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada de aquí responde a ese nombre ni a ese tipo de vault."
           }
         }
       }
@@ -3665,6 +4017,28 @@
         }
       }
     },
+    "Only images travel to the server. This file stays on the desktop.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo viajan las imágenes. Este archivo se queda en el escritorio."
+          }
+        }
+      }
+    },
+    "Only the first entries of this window are shown.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo se muestran las primeras entradas de esta ventana."
+          }
+        }
+      }
+    },
     "Open frontiers": {
       "extractionState": "manual",
       "localizations": {
@@ -3705,6 +4079,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ver la ficha completa"
+          }
+        }
+      }
+    },
+    "Oral history": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historia oral"
+          }
+        }
+      }
+    },
+    "Order": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orden"
           }
         }
       }
@@ -3973,6 +4369,17 @@
         }
       }
     },
+    "Primary sources": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fuentes primarias"
+          }
+        }
+      }
+    },
     "Principal": {
       "extractionState": "manual",
       "localizations": {
@@ -3991,6 +4398,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Proyectos"
+          }
+        }
+      }
+    },
+    "Prosopography": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prosopografía"
           }
         }
       }
@@ -4166,7 +4584,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Solo read: el servidor no acepta cambios en celdas, así que se editan desde Nodus de escritorio."
+            "value": "Solo lectura: el servidor no acepta cambios en celdas, así que se editan desde Nodus de escritorio."
           }
         }
       }
@@ -4200,6 +4618,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lista"
+          }
+        }
+      }
+    },
+    "Recently added": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadidos hace poco"
+          }
+        }
+      }
+    },
+    "Recently opened": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abiertos hace poco"
           }
         }
       }
@@ -4633,6 +5073,17 @@
         }
       }
     },
+    "Search spaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar espacios"
+          }
+        }
+      }
+    },
     "Search the corpus": {
       "extractionState": "manual",
       "localizations": {
@@ -4963,6 +5414,17 @@
         }
       }
     },
+    "Show the answer key": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver el solucionario"
+          }
+        }
+      }
+    },
     "Show the key": {
       "extractionState": "manual",
       "localizations": {
@@ -5003,6 +5465,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Entrar"
+          }
+        }
+      }
+    },
+    "Sign in again": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a entrar"
           }
         }
       }
@@ -5124,6 +5597,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Planes de estudio"
+          }
+        }
+      }
+    },
+    "Study session": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión de estudio"
           }
         }
       }
@@ -5289,6 +5773,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Falta la clave de \\(provider.label), que es el proveedor con el que se indexó este vault."
+          }
+        }
+      }
+    },
+    "The app and the server are on different releases. Anything that behaves oddly should be suspected here first.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La app y el servidor están en versiones distintas. Si algo se comporta de forma rara, sospecha primero de aquí."
           }
         }
       }
@@ -5535,6 +6030,17 @@
         }
       }
     },
+    "The server no longer accepts this device's credential for “%@”. Adding the server again restores it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor ya no acepta la credencial de este dispositivo para «%@». Volver a añadir el servidor la restablece."
+          }
+        }
+      }
+    },
     "The server rejected it.": {
       "extractionState": "manual",
       "localizations": {
@@ -5689,6 +6195,17 @@
         }
       }
     },
+    "This app": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta app"
+          }
+        }
+      }
+    },
     "This citation points outside the corpus": {
       "extractionState": "manual",
       "localizations": {
@@ -5766,6 +6283,17 @@
         }
       }
     },
+    "This exam was published without any question in it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este examen se publicó sin ninguna pregunta dentro."
+          }
+        }
+      }
+    },
     "This idea is not in the published graph.": {
       "extractionState": "manual",
       "localizations": {
@@ -5810,6 +6338,17 @@
         }
       }
     },
+    "This publication carries no goal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta publicación no trae ningún objetivo."
+          }
+        }
+      }
+    },
     "This publication carries no people or relationships.": {
       "extractionState": "manual",
       "localizations": {
@@ -5850,6 +6389,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Esta publicación no trae nada en \\(collection.label.lowercased())."
+          }
+        }
+      }
+    },
+    "This server": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este servidor"
           }
         }
       }
@@ -6130,6 +6680,17 @@
         }
       }
     },
+    "Today": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hoy"
+          }
+        }
+      }
+    },
     "Too many attempts. Try again in \\(seconds) s.": {
       "extractionState": "manual",
       "localizations": {
@@ -6192,6 +6753,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Árbol"
+          }
+        }
+      }
+    },
+    "True": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verdadero"
           }
         }
       }
@@ -6372,6 +6944,17 @@
         }
       }
     },
+    "Untitled row": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fila sin título"
+          }
+        }
+      }
+    },
     "Untitled work": {
       "extractionState": "manual",
       "localizations": {
@@ -6423,6 +7006,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Verificando citas"
+          }
+        }
+      }
+    },
+    "Version": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versión"
           }
         }
       }
@@ -6482,6 +7076,39 @@
         }
       }
     },
+    "Weekly": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semanal"
+          }
+        }
+      }
+    },
+    "What has been": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo que fue"
+          }
+        }
+      }
+    },
+    "What is coming": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo que viene"
+          }
+        }
+      }
+    },
     "What should it research in this corpus": {
       "extractionState": "manual",
       "localizations": {
@@ -6537,6 +7164,17 @@
         }
       }
     },
+    "Window": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ventana"
+          }
+        }
+      }
+    },
     "Work": {
       "extractionState": "manual",
       "localizations": {
@@ -6577,6 +7215,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reglas del mundo"
+          }
+        }
+      }
+    },
+    "Worldbuilding": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worldbuilding"
           }
         }
       }
@@ -6632,6 +7281,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "XXXX-XXXX"
+          }
+        }
+      }
+    },
+    "Yes": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sí"
           }
         }
       }

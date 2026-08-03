@@ -10,9 +10,25 @@ import Testing
 struct CollectionDescriptorTests {
     @Test("every collection the server declares is present, and no more")
     func coversTheServerTable() {
-        #expect(Collections.all.count == 20)
+        #expect(Collections.all.count == 23)
         #expect(Collections.byPath.count == Collections.all.count, "two descriptors share a path")
         #expect(Collections.byTable.count == Collections.all.count, "two descriptors share a table")
+    }
+
+    /// Every study and teaching table names its primary key `id`
+    /// (`electron/db/migrations.ts:1573` onwards). This table used to say `subject_id`,
+    /// `card_id` and `exam_id` — columns none of those tables has. The server's own lookup
+    /// falls through to `candidate.id` and hid it; here `idField` is what decides whether a
+    /// detail can be enriched and whether a listed row is a link, and both said no.
+    @Test("a collection is keyed on a column its table really has")
+    func idFieldsMatchTheSchema() {
+        for collection in Collections.all where collection.table.hasPrefix("study_") || collection.table.hasPrefix("teaching_") {
+            #expect(collection.idField == "id", "\(collection.path) is keyed on \(collection.idField)")
+        }
+        // The academic and genealogy tables really do have their own named keys.
+        #expect(Collections["works"]?.idField == "nodus_id")
+        #expect(Collections["ideas"]?.idField == "global_id")
+        #expect(Collections["persons"]?.idField == "person_id")
     }
 
     @Test("the array key differs from the path exactly where the server says it does")
@@ -31,6 +47,9 @@ struct CollectionDescriptorTests {
         #expect(Collections["study-questions"]?.listKey == "questions")
         #expect(Collections["teaching-exams"]?.listKey == "exams")
         #expect(Collections["teaching-rubrics"]?.listKey == "rubrics")
+        #expect(Collections["study-plans"]?.listKey == "plans")
+        #expect(Collections["study-goals"]?.listKey == "goals")
+        #expect(Collections["study-calendar"]?.listKey == "events")
     }
 
     @Test("the generic detail key keeps its hyphen")
@@ -40,7 +59,10 @@ struct CollectionDescriptorTests {
         #expect(Collections["relationships"]?.detailKey == "relationship")
         // `corpus.mjs:292` is a bare `head.replace(/s$/,'')`, so the hyphen survives.
         #expect(Collections["study-subjects"]?.detailKey == "study-subject")
-        #expect(Collections["teaching-exams"]?.detailKey == "teaching-exam")
+        #expect(Collections["study-goals"]?.detailKey == "study-goal")
+        // Except where an enriched handler answers under its own name.
+        #expect(Collections["teaching-exams"]?.detailKey == "exam")
+        #expect(Collections["study-plans"]?.detailKey == "plan")
     }
 
     @Test("special resources answer under their own keys")

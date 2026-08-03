@@ -21,6 +21,12 @@ final class AppModel {
         var vaultType: VaultType?
         var vaultName: String?
         var lastOpenedAt: Date?
+        /// When this device first took a credential for the space.
+        ///
+        /// Optional because it is younger than the stored format: a connection made before it
+        /// existed decodes with nil, and the picker falls back to its place in the stored list,
+        /// which is the order they were added in.
+        var addedAt: Date?
 
         var id: String { "\(origin)|\(spaceId)" }
         var accent: Color { Color(hex: vaultType?.accentHex ?? VaultType.academic.accentHex) }
@@ -103,7 +109,10 @@ final class AppModel {
             role: credential.role,
             vaultType: credential.vault?.type ?? space.vault?.type,
             vaultName: credential.vault?.name ?? space.vault?.name,
-            lastOpenedAt: Date()
+            lastOpenedAt: Date(),
+            // Re-authenticating an existing connection is not adding it again: the date the
+            // list sorts by is the first time this device held a credential for the space.
+            addedAt: connections.first { $0.id == "\(address.origin)|\(space.id)" }?.addedAt ?? Date()
         )
         connections.removeAll { $0.id == connection.id }
         connections.append(connection)
@@ -134,7 +143,8 @@ final class AppModel {
             role: summary?.role ?? .reader,
             vaultType: summary?.vault?.type,
             vaultName: summary?.vault?.name,
-            lastOpenedAt: Date()
+            lastOpenedAt: Date(),
+            addedAt: connections.first { $0.id == "\(address.origin)|\(result.space.id)" }?.addedAt ?? Date()
         )
         connections.removeAll { $0.id == connection.id }
         connections.append(connection)
@@ -144,16 +154,33 @@ final class AppModel {
 
     // MARK: - Opening
 
-    func open(_ connection: Connection) {
+    /// Whether this device still holds a credential for a connection.
+    ///
+    /// The picker asks before it draws, because a connection with no token is not a space you
+    /// can open — and a card that looks identical to the ones that work, and does nothing when
+    /// tapped, is indistinguishable from a broken app.
+    func hasCredential(for connection: Connection) -> Bool {
+        keychain.contains(KeychainStore.deviceTokenKey(origin: connection.origin, spaceId: connection.spaceId))
+    }
+
+    /// Opens a space, or reports that it cannot be opened.
+    ///
+    /// The return value is the whole point. This used to return silently when the token was
+    /// gone — revoked, expired, or wiped with the app's data — leaving a card on the picker
+    /// that did nothing at all when tapped, forever, with nothing on screen to say why. The
+    /// comment that stood here said the connection was kept "so the user can sign in again";
+    /// there was no way to sign in again, and nothing ever suggested there was one.
+    @discardableResult
+    func open(_ connection: Connection) -> Bool {
         guard let token = keychain.value(for: KeychainStore.deviceTokenKey(
             origin: connection.origin,
             spaceId: connection.spaceId
         )) else {
-            // The token is gone — revoked, or wiped with the app's data. The connection stays
-            // listed so the user can sign in again rather than losing the server address.
             session = nil
-            return
+            needsSignIn = connection
+            return false
         }
+        needsSignIn = nil
         let updated = { var copy = connection; copy.lastOpenedAt = Date(); return copy }()
         if let index = connections.firstIndex(where: { $0.id == connection.id }) {
             connections[index] = updated
@@ -165,15 +192,26 @@ final class AppModel {
             cacheDirectory: cacheDirectory,
             onUnauthorized: { [weak self, updated] in await self?.handleRevocation(of: updated) }
         )
+        return true
     }
 
     func closeSession() { session = nil }
+
+    /// The connection whose credential is gone, set the moment that is discovered.
+    ///
+    /// It reaches the picker as a sentence and a way out. A revocation used to close the
+    /// session and drop the user back on the list with no explanation at all, which reads as
+    /// the app having lost its place rather than the server having said no.
+    private(set) var needsSignIn: Connection?
+
+    func clearSignInNotice() { needsSignIn = nil }
 
     /// A 401 means this token no longer opens this space. Drop the secret but keep the
     /// connection: the user's next move is to sign in again, not to retype a server address.
     private func handleRevocation(of connection: Connection) async {
         try? keychain.remove(KeychainStore.deviceTokenKey(origin: connection.origin, spaceId: connection.spaceId))
         session = nil
+        needsSignIn = connection
     }
 
     func forget(_ connection: Connection) {

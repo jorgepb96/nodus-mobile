@@ -129,6 +129,51 @@ public extension NodusClient {
         return try decode(DatabaseDetail.self, from: response)
     }
 
+    /// `GET .../teaching-exams/:id` — the exam and the questions that are the exam.
+    ///
+    /// Without them the detail is a title, a language and a target count: an exam paper with
+    /// no paper. `subject` and `course` ride along because the header prints their names and
+    /// the exam row carries only their ids.
+    func exam(_ id: String, in spaceId: String) async throws -> ExamDetail {
+        let response = try await perform(.init(
+            path: address.spacePath(spaceId, "/teaching-exams/\(escape(id))"),
+            cacheable: true
+        ))
+        return try decode(ExamDetail.self, from: response)
+    }
+
+    /// `GET .../study-plans/:id` — the plan and its blocks, in the order they happen.
+    func studyPlan(_ id: String, in spaceId: String) async throws -> StudyPlanDetail {
+        let response = try await perform(.init(
+            path: address.spacePath(spaceId, "/study-plans/\(escape(id))"),
+            cacheable: true
+        ))
+        return try decode(StudyPlanDetail.self, from: response)
+    }
+
+    /// `GET .../study-agenda?from=&to=` — the calendar and the planned blocks in one window.
+    ///
+    /// Two tables, one answer, both sorted by when they happen. `from` and `to` are ISO-8601
+    /// instants; the columns are stored as text precisely so the comparison is a string one.
+    func studyAgenda(
+        in spaceId: String,
+        from: Date? = nil,
+        to: Date? = nil,
+        limit: Int? = nil
+    ) async throws -> StudyAgenda {
+        var items = [URLQueryItem(name: "limit", value: String(PageBounds.clampedLimit(limit)))]
+        let formatter = ISO8601DateFormatter()
+        if let from { items.append(URLQueryItem(name: "from", value: formatter.string(from: from))) }
+        if let to { items.append(URLQueryItem(name: "to", value: formatter.string(from: to))) }
+
+        let response = try await perform(.init(
+            path: address.spacePath(spaceId, "/study-agenda"),
+            query: items,
+            cacheable: true
+        ))
+        return try decode(StudyAgenda.self, from: response)
+    }
+
     // MARK: - Special resources
 
     /// `GET .../debates` — derived from edges at read time, never stored.
@@ -380,18 +425,75 @@ public struct AuthorDetail: Sendable, Decodable {
 
 public struct DatabaseDetail: Sendable, Decodable {
     public let database: Row
+    /// In the user's own order (`position`), which is also the order the page was cut in.
     public let columns: [Row]
     public let views: [Row]
     public let options: [Row]
     public let rows: [Row]
     /// Only the cells belonging to the requested page.
     public let cells: [Row]
+    /// The relation cells of the page — `db_relations` rows, one per link.
+    public let relations: [Row]
+    /// The files attached to the page's rows, each carrying `hash` and `thumbHash` when its
+    /// bytes travelled. A PDF or a video is here too, with both hashes nil: the row still
+    /// says it has a file, and says there is no image of it to show.
+    public let attachments: [Row]
     public let total: Int
     public let limit: Int
     public let offset: Int
     public let hasMore: Bool
-    public let attachments: Int
     public let revision: String?
+
+    /// The attachments of one row, in position order.
+    public func attachments(ofRow rowId: String) -> [Row] {
+        attachments.filter { $0.string("row_id") == rowId }
+    }
+}
+
+public struct ExamDetail: Sendable, Decodable {
+    public let exam: Row
+    /// Already in `position` order, which is the order the paper is printed in.
+    public let questions: [Row]
+    public let subject: Row?
+    public let course: Row?
+    /// The sum of the questions' points, added by the server so two clients cannot disagree
+    /// about what an exam is worth.
+    public let points: Double
+    public let revision: String?
+}
+
+public struct StudyPlanDetail: Sendable, Decodable {
+    public let plan: Row
+    /// Sorted by `starts_at`, not by snapshot order.
+    public let blocks: [Row]
+    public let revision: String?
+}
+
+/// What a study or teaching vault has on, in one window.
+public struct StudyAgenda: Sendable, Decodable {
+    /// The subjects every event and block names by id, so the screen can print a name and a
+    /// colour without a request per row.
+    public struct Subject: Sendable, Decodable, Identifiable, Hashable {
+        public let id: String
+        public let name: String?
+        public let color: String?
+    }
+
+    public let events: [Row]
+    public let blocks: [Row]
+    public let subjects: [Subject]
+    public let total: Int
+    /// The window holds more than the limit asked for. Narrowing the dates is the answer,
+    /// not a second page: this is a calendar, and a calendar's second page is next month.
+    public let hasMore: Bool
+    public let revision: String?
+
+    public var isEmpty: Bool { events.isEmpty && blocks.isEmpty }
+
+    public func subject(_ id: String?) -> Subject? {
+        guard let id else { return nil }
+        return subjects.first { $0.id == id }
+    }
 }
 
 public struct DeepResearchReportDetail: Sendable, Decodable {

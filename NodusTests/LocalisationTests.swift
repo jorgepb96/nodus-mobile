@@ -46,6 +46,27 @@ struct LocalisationTests {
         _ = try translated("This device has no passcode set, so there is nothing to lock with.")
     }
 
+    /// The teaching and study screens are the ones a Spanish-speaking teacher opens on a
+    /// Spanish phone, so an English word here is not a rough edge — it is the whole screen.
+    @Test("the exam, the agenda and the goals speak Spanish")
+    func teachingStrings() throws {
+        // "Agenda" is deliberately not asked for here: it is the same word in both languages,
+        // and `translated` reads Spanish-that-equals-English as a missing translation. That
+        // rule catches far more than it costs, so the cognate goes untested rather than the
+        // rule going soft.
+        #expect(try translated("Answer key") == "Solucionario")
+        #expect(try translated("What is coming") == "Lo que viene")
+        #expect(try translated("Today") == "Hoy")
+        #expect(try translated("All day") == "Todo el día")
+        #expect(try translated("Goals") == "Objetivos")
+        #expect(try translated("Study plans") == "Planes de estudio")
+        _ = try translated("Show the answer key")
+        _ = try translated("This exam was published without any question in it.")
+        _ = try translated("No event or planned block in the next two months.")
+        _ = try translated("In progress")
+        _ = try translated("Blocks")
+    }
+
     @Test("everything the new search and writing paths say has Spanish")
     func searchAndWritingStrings() throws {
         _ = try translated("Ranked by meaning")

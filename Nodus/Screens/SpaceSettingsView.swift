@@ -53,6 +53,22 @@ struct SpaceSettingsView: View {
                 }
 
                 Section {
+                    labelled("This app", NodusVersion.current)
+                    labelled("This server", serverVersion ?? "—")
+                } header: {
+                    Text("Version")
+                } footer: {
+                    // The whole reason the three parts share one number: a mismatch is a
+                    // sentence a person can read out, instead of a bug they have to reproduce.
+                    if let serverVersion, serverVersion != NodusVersion.current {
+                        Text("The app and the server are on different releases. Anything that behaves oddly should be suspected here first.")
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("Nodus desktop, Nodus Server and this app ship as one release and carry one number.")
+                    }
+                }
+
+                Section {
                     switch session.embedding {
                     case .published(let identity):
                         labelled("Provider", identity.provider)
@@ -227,6 +243,12 @@ struct SpaceSettingsView: View {
             }
             .task { await diagnose() }
         }
+    }
+
+    /// What the server says it is running. `capabilities` is the authority — `/healthz` is a
+    /// liveness probe and an older server answers it without a version at all.
+    private var serverVersion: String? {
+        capabilities?.server.version ?? capabilities?.version ?? health?.version
     }
 
     private var requiredEmbedding: EmbeddingIdentity? {

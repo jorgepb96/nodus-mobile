@@ -247,6 +247,19 @@ struct HomeView: View {
                 AnyView(FamilyTreeView(session: session))
             })
         }
+        // The two tables that carry a moment in time. One tile for both, because "what have I
+        // got on" is one question and the vault answers it from wherever it happens to have
+        // written it down.
+        if (counts["study_calendar_events"] ?? 0) > 0 || (counts["study_plan_blocks"] ?? 0) > 0 {
+            tools.append(VaultTool(title: "Agenda", icon: "calendar.badge.clock") {
+                AnyView(AgendaView(session: session))
+            })
+        }
+        if (counts["study_goals"] ?? 0) > 0 {
+            tools.append(VaultTool(title: "Goals", icon: "target") {
+                AnyView(GoalsView(session: session))
+            })
+        }
         if (counts["study_schedule_cells"] ?? 0) > 0 {
             tools.append(VaultTool(title: "Timetables", icon: "calendar") {
                 AnyView(ScheduleView(session: session))

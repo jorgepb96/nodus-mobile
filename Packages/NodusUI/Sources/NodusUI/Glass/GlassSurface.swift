@@ -21,6 +21,10 @@ import SwiftUI
 ///
 /// Both paths respond to Reduce Transparency by becoming opaque, and to Reduce Motion by
 /// holding the highlight still.
+///
+/// The fallback is not only for old phones. `glassEffect` has a height ceiling it never
+/// reports — see `SystemGlass` — so on iOS 26 too, a surface taller than the render target
+/// allows is drawn by these four layers instead of by the system.
 public struct NodusGlass: Sendable, Equatable {
     public enum Weight: Sendable, Equatable {
         /// Panels, cards, sheets.
@@ -95,7 +99,7 @@ private struct NodusGlassModifier<S: InsettableShape>: ViewModifier {
         } else {
             #if os(iOS)
             if #available(iOS 26.0, *) {
-                content.glassEffect(systemGlass, in: shape).contentShape(shape)
+                content.modifier(SystemGlass(glass: glass, shape: shape))
             } else {
                 content.modifier(GlassFallback(glass: glass, shape: shape))
             }
@@ -105,8 +109,65 @@ private struct NodusGlassModifier<S: InsettableShape>: ViewModifier {
         }
     }
 
-    #if os(iOS)
-    @available(iOS 26.0, *)
+    private var opaqueFill: Color {
+        let base = colorScheme == .dark ? Color(hex: "#16141f") : Color(hex: "#f4f3f8")
+        guard let tint = glass.tint else { return base }
+        return base.blended(with: tint, amount: 0.12)
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.16)
+    }
+}
+
+// MARK: - The system surface, and the height it cannot draw
+
+#if os(iOS)
+/// `glassEffect`, with the one case where it draws nothing handed to the fallback instead.
+///
+/// iOS 26 composes a glass surface through a single render target, and past roughly eight
+/// thousand pixels of height that target is never produced: the panel does not appear at all —
+/// no material, no tint, no bevel — while its content keeps drawing on the bare page. Measured
+/// on an iPhone at @3x it survives a 2 628-point surface and vanishes at 2 728, which is the
+/// whole of the reported "the purple boxes come and go as I scroll": a relations list of fifty
+/// eight rows is far taller than that, and the surface behind it was simply never drawn.
+///
+/// The `.thinMaterial` fallback has no such ceiling — verified at 3 200 points — so above the
+/// limit the pre-26 surface takes over. It is the same geometry, the same tint and the same lit
+/// edge, which is why the swap reads as one design rather than two.
+///
+/// The substitute goes in a `background`, and `glassEffect` stays on unconditionally. That is
+/// deliberate: wrapping the *content* in an `if/else` would give it a new identity the first
+/// time a measurement crossed the limit, and every piece of state inside a card would be
+/// thrown away with it. Leaving the effect applied costs nothing, because past the limit it
+/// draws nothing at all — that is the bug. Should a later iOS raise the ceiling, the worst
+/// case is a surface that draws both, which is heavier than intended and still visible.
+@available(iOS 26.0, *)
+struct SystemGlass<S: InsettableShape>: ViewModifier {
+    let glass: NodusGlass
+    let shape: S
+
+    /// Pixels, not points: the ceiling belongs to the render target, so a 2x phone gets more
+    /// points out of it than a 3x one. Set below the measured cliff rather than at it.
+    private static var maximumHeightInPixels: CGFloat { 7680 }
+
+    @Environment(\.displayScale) private var displayScale
+    @State private var height: CGFloat = 0
+
+    private var fitsInGlass: Bool {
+        height * max(displayScale, 1) <= Self.maximumHeightInPixels
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if !fitsInGlass { GlassSurfaceFill(glass: glass, shape: shape, expansive: true) }
+            }
+            .glassEffect(systemGlass, in: shape)
+            .contentShape(shape)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+    }
+
     private var systemGlass: Glass {
         var value = Glass.regular
         if let tint = glass.tint {
@@ -127,18 +188,8 @@ private struct NodusGlassModifier<S: InsettableShape>: ViewModifier {
         case .prominent: return 0.30
         }
     }
-    #endif
-
-    private var opaqueFill: Color {
-        let base = colorScheme == .dark ? Color(hex: "#16141f") : Color(hex: "#f4f3f8")
-        guard let tint = glass.tint else { return base }
-        return base.blended(with: tint, amount: 0.12)
-    }
-
-    private var borderColor: Color {
-        colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.16)
-    }
 }
+#endif
 
 // MARK: - The pre-26 surface
 
@@ -146,25 +197,41 @@ struct GlassFallback<S: InsettableShape>: ViewModifier {
     let glass: NodusGlass
     let shape: S
 
+    func body(content: Content) -> some View {
+        content
+            .background { GlassSurfaceFill(glass: glass, shape: shape) }
+            .contentShape(shape)
+    }
+}
+
+/// The four layers described at the top of the file, as a view of its own so both the pre-26
+/// path and the too-tall-for-glass path draw exactly the same surface.
+struct GlassSurfaceFill<S: InsettableShape>: View {
+    let glass: NodusGlass
+    let shape: S
+    /// A panel several screens tall rather than a card.
+    ///
+    /// The specular sweep runs corner to corner, which is a highlight on something the size of
+    /// a card and a wash over the whole page on something eight screens long — the top third of
+    /// a 3 200-point panel sits in the bright end of the gradient and reads as a lilac slab.
+    /// A surface that big has no lit edge to suggest, so it does without one.
+    var expansive = false
+
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nodusTilt) private var tilt
 
-    func body(content: Content) -> some View {
-        content
-            .background {
-                shape
-                    .fill(material)
-                    // A blur desaturates what it blurs; glass does not. Pushing saturation
-                    // back up is most of the difference between "frosted" and "glass".
-                    .saturation(1.55)
-                    .overlay { shape.fill(tintWash) }
-                    .overlay { specular }
-                    .overlay { shape.strokeBorder(bevel, lineWidth: 0.66) }
-                    .compositingGroup()
-                    .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowRadius * 0.4)
-            }
-            .contentShape(shape)
+    var body: some View {
+        shape
+            .fill(material)
+            // A blur desaturates what it blurs; glass does not. Pushing saturation
+            // back up is most of the difference between "frosted" and "glass".
+            .saturation(1.55)
+            .overlay { shape.fill(tintWash) }
+            .overlay { if !expansive { specular } }
+            .overlay { shape.strokeBorder(bevel, lineWidth: 0.66) }
+            .compositingGroup()
+            .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowRadius * 0.4)
     }
 
     private var material: Material {

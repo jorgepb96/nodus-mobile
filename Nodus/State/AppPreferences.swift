@@ -42,11 +42,42 @@ final class AppPreferences {
         var toggled: HomeLayout { self == .grid ? .list : .grid }
     }
 
+    /// How the space picker orders its list. Remembered, because re-picking an order on every
+    /// launch is the surest way to make somebody stop using it.
+    var spaceOrder: SpaceOrder {
+        didSet { defaults.set(spaceOrder.rawValue, forKey: Key.spaceOrder) }
+    }
+
+    enum SpaceOrder: String, CaseIterable, Sendable, Identifiable {
+        case recentlyUsed
+        case recentlyAdded
+        case name
+
+        public var id: String { rawValue }
+
+        var label: LocalizedStringKey {
+            switch self {
+            case .recentlyUsed: return "Recently opened"
+            case .recentlyAdded: return "Recently added"
+            case .name: return "Name"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .recentlyUsed: return "clock"
+            case .recentlyAdded: return "plus.circle"
+            case .name: return "textformat.abc"
+            }
+        }
+    }
+
     private let defaults: UserDefaults
 
     private enum Key {
         static let scrollToTop = "nodus.prefs.scrollToTop"
         static let homeLayout = "nodus.prefs.homeLayout"
+        static let spaceOrder = "nodus.prefs.spaceOrder"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -55,5 +86,6 @@ final class AppPreferences {
         // would ship the feature switched off for everyone who never touched the switch.
         showsScrollToTop = defaults.object(forKey: Key.scrollToTop) as? Bool ?? true
         homeLayout = HomeLayout(rawValue: defaults.string(forKey: Key.homeLayout) ?? "") ?? .grid
+        spaceOrder = SpaceOrder(rawValue: defaults.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
     }
 }

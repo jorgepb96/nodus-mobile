@@ -175,12 +175,27 @@ public struct ServerInfo: Sendable, Hashable, Codable {
     public let name: String
     public let publicUrl: String?
     public let language: String?
+    /// The release the server is running. Optional because a server older than the shared
+    /// version scheme does not send it — and "unknown" is the honest thing to show for one.
+    public let version: String?
 
-    public init(name: String, publicUrl: String?, language: String?) {
+    public init(name: String, publicUrl: String?, language: String?, version: String? = nil) {
         self.name = name
         self.publicUrl = publicUrl
         self.language = language
+        self.version = version
     }
+}
+
+/// This build of the app, as Info.plist declares it.
+///
+/// The desktop, the server and this app ship as one release and carry one number; a screen
+/// that shows this beside the server's is what turns a compatibility problem into something a
+/// person can read out loud instead of something they have to reproduce.
+public enum NodusVersion {
+    public static let current: String = {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    }()
 }
 
 /// `GET /api/v1/capabilities` — public, unauthenticated, and the first call the app makes.
@@ -189,6 +204,9 @@ public struct ServerInfo: Sendable, Hashable, Codable {
 /// `NODUS_MAX_ASSET_BYTES` is a supported deployment, not a bug to work around.
 public struct ServerCapabilities: Sendable, Hashable, Codable {
     public let api: String
+    /// The release the server is running, beside `server.version` so either shape answers.
+    /// Optional: a server older than the shared version scheme sends neither.
+    public let version: String?
     public let server: ServerInfo
     public let snapshotVersions: [Int]
     public let assets: Bool
