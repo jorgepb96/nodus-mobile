@@ -112,6 +112,24 @@ public enum RequestShaping {
         let markers = ["embed", "nomic", "mxbai", "bge", "minilm", "e5", "gte", "snowflake", "arctic"]
         return markers.contains { lowered.contains($0) }
     }
+
+    /// The image-generation filter, for the picker that chooses one.
+    ///
+    /// OpenRouter is never asked this: it publishes output modalities per model, so
+    /// `ModelCatalogue.imageModels` filters on what the provider says rather than on how a
+    /// model is spelled. This is for the two whose lists carry no modality at all, and whose
+    /// image models are named for what they do — `gpt-image-*` and `dall-e-*` at OpenAI,
+    /// `*-image*` and `imagen-*` at Google.
+    public static func isImageModel(_ id: String) -> Bool {
+        let lowered = id.lowercased()
+        // Reading a picture is not drawing one. These name models that take an image in and
+        // answer in words, which is the opposite of what this picker is for.
+        let inputOnly = ["vision", "ocr", "moderation", "embedding", "caption"]
+        guard !inputOnly.contains(where: { lowered.contains($0) }) else { return false }
+
+        let markers = ["gpt-image", "dall-e", "imagen", "-image", "_image", "image-"]
+        return markers.contains { lowered.contains($0) }
+    }
 }
 
 /// A minimal JSON value for building request bodies.

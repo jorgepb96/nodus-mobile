@@ -30,13 +30,10 @@ struct ModelPickerView: View {
     @State private var query = ""
 
     private var matches: [ModelOption] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return options }
-        // Match on the provider too, so "gemini" finds every Google model even when the model
-        // id does not repeat the word.
-        return options.filter {
-            $0.model.lowercased().contains(needle) || $0.provider.label.lowercased().contains(needle)
-        }
+        // The provider's name is searchable alongside the id, so "gemini" finds every Google
+        // model even where the id does not repeat the word — and `ModelSearch` is what makes
+        // "gemini flash" find `gemini-2.5-flash`, which a plain `contains` never could.
+        options.filter { ModelSearch.matches(query: query, candidate: "\($0.model) \($0.provider.label)") }
     }
 
     private var pinned: [ModelOption] {
@@ -51,13 +48,26 @@ struct ModelPickerView: View {
         List {
             if settings.availableProviders(for: task).isEmpty {
                 Section {
-                    NodusNotice(
-                        tone: .caution,
-                        title: "No keys configured",
-                        message: "Add a provider's key and its models will appear here.",
-                        systemImage: "key"
-                    )
-                    .listRowBackground(Color.clear)
+                    // A key that cannot serve *this* task is not a missing key, and telling
+                    // somebody with a Groq key to add a key would send them to a screen where
+                    // everything already looks configured.
+                    if task == .image, !settings.configuredProviders.isEmpty {
+                        NodusNotice(
+                            tone: .caution,
+                            title: "No key here can draw",
+                            message: "Images need an OpenAI, Google Gemini or OpenRouter key. The ones on this device only answer in words.",
+                            systemImage: "photo"
+                        )
+                        .listRowBackground(Color.clear)
+                    } else {
+                        NodusNotice(
+                            tone: .caution,
+                            title: "No keys configured",
+                            message: "Add a provider's key and its models will appear here.",
+                            systemImage: "key"
+                        )
+                        .listRowBackground(Color.clear)
+                    }
                 }
             }
 
@@ -102,10 +112,26 @@ struct ModelPickerView: View {
                 )
                 .listRowBackground(Color.clear)
             }
+
+            // A provider answered, and had nothing to offer for this task. Without this the
+            // screen is simply blank, which reads as "still loading" forever.
+            if options.isEmpty, loading.isEmpty, errors.isEmpty, !settings.availableProviders(for: task).isEmpty {
+                ContentUnavailableView(
+                    "Nothing to choose from",
+                    systemImage: "square.dashed",
+                    description: Text(LocalizedStringKey(
+                        task == .image
+                            ? "None of the configured providers published an image model."
+                            : "None of the configured providers published a model for this task."
+                    ))
+                )
+                .listRowBackground(Color.clear)
+            }
         }
         .navigationTitle(Text(LocalizedStringKey(task.label)))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search model or provider")
+        .nodusDismissesKeyboard()
         .task { await loadAll() }
         .refreshable { await loadAll(force: true) }
     }
@@ -169,14 +195,26 @@ struct ModelPickerView: View {
             for provider in providers {
                 loading.insert(provider)
                 group.addTask {
-                    do { return (provider, .success(try await catalogue.models(for: provider))) }
-                    catch { return (provider, .failure(error)) }
+                    do {
+                        // Two different questions, not one question and a filter: what a
+                        // provider will draw with is published somewhere other than what it
+                        // will talk with, at both OpenRouter and Google.
+                        let ids = task == .image
+                            ? try await catalogue.imageModels(for: provider)
+                            : try await catalogue.models(for: provider)
+                        return (provider, .success(ids))
+                    } catch {
+                        return (provider, .failure(error))
+                    }
                 }
             }
             for await (provider, result) in group {
                 loading.remove(provider)
                 switch result {
                 case .success(let ids):
+                    // The image list arrives already narrowed to what can draw. A chat list
+                    // still has to drop the embedding, audio and image models a provider
+                    // publishes in the same response as its chat ones.
                     let filtered = task == .image ? ids : ids.filter(RequestShaping.isChatModel)
                     collected.append(contentsOf: filtered.map { ModelOption(provider: provider, model: $0) })
                 case .failure(let error):

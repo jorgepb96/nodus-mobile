@@ -118,8 +118,15 @@ final class AISettings {
     }
 
     /// Providers that can serve a task at all, given the keys this device holds.
+    ///
+    /// The task is not decoration: every provider with a key can hold a conversation, but only
+    /// three of them can draw. Listing the other five under Images offers a choice that
+    /// produces nothing, and the error arrives much later than the choice did.
     func availableProviders(for task: Task) -> [AIProvider] {
-        AIProvider.allCases.filter { configuredProviders.contains($0) }
+        AIProvider.allCases.filter { provider in
+            guard configuredProviders.contains(provider) else { return false }
+            return task != .image || provider.supportsImageGeneration
+        }
     }
 
     // MARK: - Pinned

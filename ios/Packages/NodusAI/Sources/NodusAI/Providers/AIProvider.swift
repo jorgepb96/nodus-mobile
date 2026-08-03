@@ -74,6 +74,16 @@ public enum AIProvider: String, Sendable, Hashable, Codable, CaseIterable {
 
     public var supportsEmbeddings: Bool { Self.embeddingCapable.contains(self) }
 
+    /// Providers that can turn a prompt into an image.
+    ///
+    /// The desktop's own list is these three plus two a phone cannot reach
+    /// (`electron/ai/imageModels.ts:193-201`): its local diffusion model, and Codex's built-in
+    /// tool behind a ChatGPT subscription. Naming the capable three explicitly is what keeps
+    /// the image picker from offering a Groq or DeepSeek key that will never draw anything.
+    public static let imageCapable: [AIProvider] = [.openai, .gemini, .openrouter]
+
+    public var supportsImageGeneration: Bool { Self.imageCapable.contains(self) }
+
     /// Providers whose keys buy a subscription rather than metered tokens, or which shape
     /// requests to a free tier. Used to decide whether to show sampling controls at all.
     public var supportsSamplingControls: Bool { true }
