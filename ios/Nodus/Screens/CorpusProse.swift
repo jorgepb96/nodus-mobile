@@ -303,7 +303,12 @@ struct CorpusProse: View {
     /// two sizes up and with room above it, a reader can find where a section starts by
     /// scrolling past rather than by reading.
     private func heading(_ block: Block) -> some View {
-        let isPart = block.level == 1 && reading.justified
+        // `##`, not just `#`. A Deep Research document opens at level two — the title is the
+        // report's own, so its sections are `##` — and keying the part style to level one meant
+        // every heading in every published report was set as a minor one. Seen against the
+        // demo corpus: "Introduction" and "What the registers omit" arrived at body weight,
+        // indistinguishable from the paragraph under them.
+        let isPart = block.level <= 2 && reading.justified
         return Text(isPart ? block.text.uppercased() : block.text)
             .font(reading.font(isPart ? .title3 : .headline, weight: .bold))
             .tracking(isPart ? 0.7 : 0)
@@ -433,7 +438,22 @@ private struct JustifiedProse: UIViewRepresentable {
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.onOpen = onOpen
         context.coordinator.linksLive = linksLive
+
+        // Parsing the Markdown and building the runs is the expensive part, and SwiftUI calls
+        // this for any change anywhere in the tree — a scroll, a sheet, the size control being
+        // pressed on a *different* section. Only the four inputs below can change what the
+        // paragraph looks like, so anything else costs one comparison instead of a reparse.
+        let identity = Identity(source: source, size: font.pointSize, accent: accent, linksLive: linksLive)
+        guard context.coordinator.identity != identity else { return }
+        context.coordinator.identity = identity
         view.attributedText = attributed()
+    }
+
+    struct Identity: Equatable {
+        let source: String
+        let size: CGFloat
+        let accent: Color
+        let linksLive: Bool
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
@@ -496,6 +516,8 @@ private struct JustifiedProse: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var onOpen: (URL) -> Bool
         var linksLive: Bool
+        /// What the text view was last built from, so an unrelated update costs nothing.
+        var identity: Identity?
 
         init(onOpen: @escaping (URL) -> Bool, linksLive: Bool) {
             self.onOpen = onOpen

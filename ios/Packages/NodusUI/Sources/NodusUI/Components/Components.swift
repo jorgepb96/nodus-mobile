@@ -107,7 +107,15 @@ private struct NodusFieldSurface: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background(shape.fill(accent.opacity(colorScheme == .dark ? 0.18 : 0.10)))
-            .overlay(shape.strokeBorder(accent.opacity(colorScheme == .dark ? 0.26 : 0.22), lineWidth: 0.8))
+            // `allowsHitTesting(false)`, and it is not decoration. An overlay sits *over* the
+            // content, and a `Shape` there takes the touch: the border made every text field
+            // it was put on impossible to focus — tap it and nothing happened, no keyboard, no
+            // caret. A background cannot do this, which is why the grey fill never could.
+            .overlay(
+                shape
+                    .strokeBorder(accent.opacity(colorScheme == .dark ? 0.26 : 0.22), lineWidth: 0.8)
+                    .allowsHitTesting(false)
+            )
     }
 }
 

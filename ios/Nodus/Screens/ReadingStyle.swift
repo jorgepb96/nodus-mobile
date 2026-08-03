@@ -84,9 +84,12 @@ struct ReadingSizeButtons: View {
         delta: Double
     ) -> some View {
         Button {
-            withAnimation(.easeOut(duration: 0.15)) {
-                preferences.adjustReading(by: delta)
-            }
+            // No `withAnimation`. A report is a stack of `UITextView`s several thousand words
+            // long, and animating a text-size change asks SwiftUI to interpolate every one of
+            // their heights over 150 ms — re-laying out the whole document on every frame of
+            // it. The tap felt stuck because it was: the work was real and the animation
+            // multiplied it. Changing the size is instant, which is also what it should be.
+            preferences.adjustReading(by: delta)
         } label: {
             Image(systemName: systemImage)
                 .font(.callout)

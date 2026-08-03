@@ -89,6 +89,9 @@ struct ResearchView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        // Without this the rows keep the system's own opaque background — white in light mode,
+        // near-black in dark — and the screen reads as half Nodus and half stock iOS.
+        .listRowBackground(Color.clear)
         .nodusPageBackdrop(accent: session.accent)
         .navigationTitle("Research")
         .navigationBarTitleDisplayMode(.inline)
