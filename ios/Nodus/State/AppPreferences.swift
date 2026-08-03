@@ -72,12 +72,33 @@ final class AppPreferences {
         }
     }
 
+    /// How large a report reads, as a multiple of the system's own body size.
+    ///
+    /// Dynamic Type is the floor, not the ceiling: it sets the size of the whole app, and a
+    /// twenty-page report read on a phone is the one place somebody wants a different size from
+    /// the one their lists are in. So this multiplies whatever Dynamic Type already decided,
+    /// and it is remembered — a reader who needs larger text needs it in every report.
+    var readingScale: Double {
+        didSet {
+            readingScale = min(Self.maxReadingScale, max(Self.minReadingScale, readingScale))
+            defaults.set(readingScale, forKey: Key.readingScale)
+        }
+    }
+
+    static let minReadingScale = 0.85
+    static let maxReadingScale = 1.8
+    static let readingScaleStep = 0.15
+
+    var canEnlargeReading: Bool { readingScale < Self.maxReadingScale - 0.001 }
+    var canShrinkReading: Bool { readingScale > Self.minReadingScale + 0.001 }
+
     private let defaults: UserDefaults
 
     private enum Key {
         static let scrollToTop = "nodus.prefs.scrollToTop"
         static let homeLayout = "nodus.prefs.homeLayout"
         static let spaceOrder = "nodus.prefs.spaceOrder"
+        static let readingScale = "nodus.prefs.readingScale"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -87,5 +108,6 @@ final class AppPreferences {
         showsScrollToTop = defaults.object(forKey: Key.scrollToTop) as? Bool ?? true
         homeLayout = HomeLayout(rawValue: defaults.string(forKey: Key.homeLayout) ?? "") ?? .grid
         spaceOrder = SpaceOrder(rawValue: defaults.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
+        readingScale = defaults.object(forKey: Key.readingScale) as? Double ?? 1
     }
 }

@@ -84,6 +84,7 @@ struct ResearchLibraryView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .navigationTitle("Reports")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
@@ -157,6 +158,8 @@ struct LocalReportReader: View {
     let session: SpaceSession
     let saved: LocalReportStore.Saved
 
+    @Environment(AppPreferences.self) private var preferences
+
     /// Token → label for the works this report really cited.
     private var referenceLabels: [String: String] {
         Dictionary(saved.report.references.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first })
@@ -183,15 +186,19 @@ struct LocalReportReader: View {
                         )
                     }
 
-                    ReportCopyButtons(markdown: saved.report.markdown, title: nil, accent: session.accent)
+                    HStack(spacing: 0) {
+                        ReportCopyButtons(markdown: saved.report.markdown, title: nil, accent: session.accent)
+                        ReadingSizeButtons(accent: session.accent)
+                        Spacer(minLength: 0)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
                 ForEach(Array(saved.report.sections.enumerated()), id: \.offset) { _, section in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(section.title).font(.headline)
+                    VStack(alignment: .leading, spacing: 12) {
+                        ReportSectionTitle(section.title, accent: session.accent)
                         CorpusProse(
                             section.prose,
                             accent: session.accent,
@@ -200,13 +207,13 @@ struct LocalReportReader: View {
                         )
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                    .padding(18)
                     .nodusGlass(NodusGlass(.thin, tint: session.accent))
                 }
 
                 if !saved.report.references.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("References").font(.headline)
+                        ReportSectionTitle("References", accent: session.accent)
                         ForEach(saved.report.references, id: \.token) { entry in
                             Text("· \(entry.label)").font(.caption)
                         }
@@ -225,6 +232,7 @@ struct LocalReportReader: View {
             .padding(16)
             .nodusTopAnchor()
         }
+        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, justified: true))
         .nodusScrollToTop(accent: session.accent)
         .navigationTitle(saved.mode.label)
         .navigationBarTitleDisplayMode(.inline)
@@ -237,6 +245,7 @@ struct PublishedReportReader: View {
     let session: SpaceSession
     let row: Row
 
+    @Environment(AppPreferences.self) private var preferences
     @State private var detail: DeepResearchReportDetail?
     @State private var error: String?
 
@@ -272,6 +281,7 @@ struct PublishedReportReader: View {
                                     accent: session.accent
                                 )
                             }
+                            ReadingSizeButtons(accent: session.accent)
                             Spacer(minLength: 0)
                         }
                         .padding(.top, 4)
@@ -287,9 +297,9 @@ struct PublishedReportReader: View {
 
                 if let sections = prose {
                     ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 12) {
                             if let heading = section.heading {
-                                Text(heading).font(.headline)
+                                ReportSectionTitle(heading, accent: session.accent)
                             }
                             // The desktop writes one Markdown document with its own headings
                             // and `nodus://` citations in it. Rendered as plain text, both
@@ -297,7 +307,7 @@ struct PublishedReportReader: View {
                             CorpusProse(section.body, accent: session.accent, session: session)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+                        .padding(18)
                         .nodusGlass(NodusGlass(.thin, tint: session.accent))
                     }
                 } else if detail == nil, error == nil {
@@ -307,6 +317,7 @@ struct PublishedReportReader: View {
             .padding(16)
             .nodusTopAnchor()
         }
+        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, justified: true))
         .nodusScrollToTop(accent: session.accent)
         .navigationTitle("Report")
         .navigationBarTitleDisplayMode(.inline)
@@ -373,5 +384,39 @@ struct PublishedReportReader: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// A section title in a report.
+///
+/// Uppercase, bold, two sizes above the prose and with a rule under it. A report on a phone is
+/// one column of grey paragraphs in stacked cards, and a `.headline` title — one step above the
+/// body — disappeared into it: there was nothing to scroll *to*. This is deliberately more than
+/// the surrounding text needs, because finding where a section begins is the one thing a reader
+/// does without reading.
+struct ReportSectionTitle: View {
+    private let title: String
+    private let accent: Color
+
+    @Environment(\.nodusReadingStyle) private var reading
+
+    init(_ title: String, accent: Color) {
+        self.title = title
+        self.accent = accent
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title.uppercased())
+                .font(reading.font(.title3, weight: .bold))
+                .tracking(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+            Rectangle()
+                .fill(accent.opacity(0.35))
+                .frame(height: 1.5)
+                .frame(maxWidth: 56)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 2)
     }
 }

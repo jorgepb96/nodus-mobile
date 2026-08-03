@@ -160,6 +160,7 @@ struct SpacePickerView: View {
                 .frame(maxWidth: 560)
                 .frame(maxWidth: .infinity)
             }
+            .nodusDismissesKeyboard()
         }
     }
 
@@ -308,7 +309,15 @@ private struct ConnectionCard: View {
             NodusMark(style: .accent(connection.accent)).frame(width: 38, height: 38)
                 .opacity(needsSignIn ? 0.45 : 1)
             VStack(alignment: .leading, spacing: 3) {
-                Text(connection.spaceName).font(.subheadline.weight(.semibold))
+                HStack(spacing: 6) {
+                    Text(connection.spaceName).font(.subheadline.weight(.semibold))
+                    // Said here as well as on Home, because this is where a space is chosen.
+                    // Not tappable inside a card that is itself a button: the explanation is
+                    // one tap further in, on the space's own screen.
+                    if connection.vaultType?.isAlpha == true, !needsSignIn {
+                        VaultPhaseTag(explains: false)
+                    }
+                }
                 if needsSignIn {
                     Label("Sign in again", systemImage: "key.slash")
                         .font(.caption).foregroundStyle(.orange)

@@ -71,8 +71,11 @@ private struct ScrollToTopModifier: ViewModifier {
                         .tint(accent)
                         .nodusGlass(NodusGlass(.prominent, tint: accent), in: Circle())
                         .padding(.trailing, 16)
-                        // Clear of the floating tab bar, which sits over the content on iOS 26.
-                        .padding(.bottom, 92)
+                        // Just clear of the tab bar rather than a thumb's length above it. The
+                        // overlay is laid out inside the safe area, which already accounts for
+                        // the bar, so the 92 points that used to be added on top left the
+                        // button floating in the middle of the page with nothing under it.
+                        .padding(.bottom, 20)
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
                         .accessibilityLabel("Back to top")
                     }

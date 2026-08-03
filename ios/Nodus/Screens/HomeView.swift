@@ -10,7 +10,12 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                HStack {
+                HStack(spacing: 8) {
+                    // Every vault type but academic is still being proved, and a reader should
+                    // know that before they trust a screen with their work rather than after.
+                    if session.vaultType?.isAlpha == true {
+                        VaultPhaseTag()
+                    }
                     Spacer()
                     layoutToggle
                 }
@@ -105,22 +110,6 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                 }
 
-                if !session.mirrorOnlyTables.isEmpty {
-                    tileSection("More from this space") {
-                        NavigationLink {
-                            MirrorOnlySectionsView(session: session)
-                        } label: {
-                            SectionTile(
-                                title: "Offline only",
-                                icon: "internaldrive",
-                                count: session.mirrorOnlyTables.reduce(0) { $0 + $1.count },
-                                accent: session.accent
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
                 if session.hasDebates || session.hasNotes || session.hasDeepResearch || session.hasImmersion {
                     tileSection("Analyse") {
                         if session.hasDebates {
@@ -135,7 +124,21 @@ struct HomeView: View {
                             .buttonStyle(.plain)
                         }
                         if session.hasDeepResearch {
-                            specialTile(.deepResearch, "Deep Research", "doc.text.magnifyingglass")
+                            // The Research tab itself, not the bare list of published reports:
+                            // the tile and the tab bar now lead to the same screen, which is
+                            // the one that has the runner, the local reports and the published
+                            // ones together.
+                            NavigationLink {
+                                ResearchView(session: session)
+                            } label: {
+                                SectionTile(
+                                    title: "Deep Research",
+                                    icon: "doc.text.magnifyingglass",
+                                    count: nil,
+                                    accent: session.accent
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                         if session.hasImmersion {
                             specialTile(.immersion, "Immersion", "waveform")
@@ -143,6 +146,24 @@ struct HomeView: View {
                         if session.hasNotes {
                             specialTile(.notes, "Notes", "note.text")
                         }
+                    }
+                }
+
+                // Last on the screen on purpose: what this space published is the subject, and
+                // what only exists in this device's offline copy is a footnote to it.
+                if !session.mirrorOnlyTables.isEmpty {
+                    tileSection("More from this space") {
+                        NavigationLink {
+                            MirrorOnlySectionsView(session: session)
+                        } label: {
+                            SectionTile(
+                                title: "Offline only",
+                                icon: "internaldrive",
+                                count: session.mirrorOnlyTables.reduce(0) { $0 + $1.count },
+                                accent: session.accent
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 

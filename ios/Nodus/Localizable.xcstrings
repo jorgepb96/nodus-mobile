@@ -133,17 +133,6 @@
         }
       }
     },
-    "%lld archived conversations are removed from this device. This cannot be undone.": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Se eliminan %lld conversaciones archivadas de este dispositivo. No se puede deshacer."
-          }
-        }
-      }
-    },
     "%lld characters": {
       "extractionState": "manual",
       "localizations": {
@@ -162,6 +151,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld citas, todas del corpus"
+          }
+        }
+      }
+    },
+    "%lld conversations are removed from this device. This cannot be undone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se eliminan %lld conversaciones de este dispositivo. No se puede deshacer."
           }
         }
       }
@@ -1366,6 +1366,28 @@
         }
       }
     },
+    "Copy the answer": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar la respuesta"
+          }
+        }
+      }
+    },
+    "Copy with citation links": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar con los enlaces de cita"
+          }
+        }
+      }
+    },
     "Copy with references": {
       "extractionState": "manual",
       "localizations": {
@@ -1384,6 +1406,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copiar sin referencias"
+          }
+        }
+      }
+    },
+    "Corpus layers": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capas del corpus"
           }
         }
       }
@@ -1652,13 +1685,35 @@
         }
       }
     },
-    "Delete everything archived?": {
+    "Delete all conversations": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "¿Borrar todo lo archivado?"
+            "value": "Eliminar todas las conversaciones"
+          }
+        }
+      }
+    },
+    "Delete every conversation, archived included": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar todas, incluidas las archivadas"
+          }
+        }
+      }
+    },
+    "Delete everything archived": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar todo lo archivado"
           }
         }
       }
@@ -1681,6 +1736,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Borrar la clave"
+          }
+        }
+      }
+    },
+    "Delete these conversations?": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar estas conversaciones?"
           }
         }
       }
@@ -2099,6 +2165,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Extiende"
+          }
+        }
+      }
+    },
+    "Extracted full text can be licensed, so a space carries it only when its owner turns that on. The passage is here, and what it says is not.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El texto extraído puede tener licencia, así que un espacio solo lo lleva si su propietario lo activa. El pasaje está aquí; lo que dice, no."
           }
         }
       }
@@ -2609,6 +2686,17 @@
         }
       }
     },
+    "Images need an OpenAI, Google Gemini or OpenRouter key. The ones on this device only answer in words.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las imágenes necesitan una clave de OpenAI, Google Gemini u OpenRouter. Las de este dispositivo solo responden con palabras."
+          }
+        }
+      }
+    },
     "Immersion": {
       "extractionState": "manual",
       "localizations": {
@@ -2818,6 +2906,17 @@
         }
       }
     },
+    "Its main features are still being tested; recommended only for testers.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sus funciones principales aún están en prueba; solo recomendable para testers."
+          }
+        }
+      }
+    },
     "Keeps the whole publication on the device: works with no network, sorts instantly, and reaches the tables the API does not expose.": {
       "extractionState": "manual",
       "localizations": {
@@ -2858,6 +2957,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Parentesco"
+          }
+        }
+      }
+    },
+    "Larger text": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texto más grande"
           }
         }
       }
@@ -3291,6 +3401,17 @@
         }
       }
     },
+    "No key here can draw": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguna clave de aquí sabe dibujar"
+          }
+        }
+      }
+    },
     "No keys configured": {
       "extractionState": "manual",
       "localizations": {
@@ -3643,6 +3764,28 @@
         }
       }
     },
+    "None of the configured providers published a model for this task.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguno de los proveedores configurados publica un modelo para esta tarea."
+          }
+        }
+      }
+    },
+    "None of the configured providers published an image model.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguno de los proveedores configurados publica un modelo de imagen."
+          }
+        }
+      }
+    },
     "Not available on iOS": {
       "extractionState": "manual",
       "localizations": {
@@ -3874,6 +4017,17 @@
         }
       }
     },
+    "Nothing to choose from": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada que elegir"
+          }
+        }
+      }
+    },
     "OK": {
       "extractionState": "manual",
       "localizations": {
@@ -4079,6 +4233,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ver la ficha completa"
+          }
+        }
+      }
+    },
+    "Open the work": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir la obra"
           }
         }
       }
@@ -5480,6 +5645,17 @@
         }
       }
     },
+    "Smaller text": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texto más pequeño"
+          }
+        }
+      }
+    },
     "Sort": {
       "extractionState": "manual",
       "localizations": {
@@ -6096,6 +6272,17 @@
         }
       }
     },
+    "The text of this passage was not published": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El texto de este pasaje no se ha publicado"
+          }
+        }
+      }
+    },
     "The timetable travels in the publication but has no API route. Download it and it appears instantly.": {
       "extractionState": "manual",
       "localizations": {
@@ -6389,6 +6576,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Esta publicación no trae nada en \\(collection.label.lowercased())."
+          }
+        }
+      }
+    },
+    "This row published no text.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta fila no publica ningún texto."
           }
         }
       }
@@ -7083,6 +7281,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Semanal"
+          }
+        }
+      }
+    },
+    "What ALPHA means": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qué significa ALPHA"
           }
         }
       }

@@ -98,6 +98,8 @@ struct CorpusReferenceView: View {
                 WorkByIdView(session: session, nodusId: reference.recordId)
             case "note":
                 NoteByIdView(session: session, noteId: reference.recordId)
+            case "passage":
+                PassageByIdView(session: session, id: reference.recordId)
             default:
                 if let collection = reference.collection {
                     RowByIdView(session: session, collection: collection, id: reference.recordId)
@@ -169,6 +171,51 @@ struct RowByIdView: View {
     }
 }
 
+/// Opens a passage, knowing that the id it was handed might not be one.
+///
+/// The lexical endpoint identifies every hit with `row.id ?? row.nodus_id ?? row.global_id ??
+/// row.passage_id` (`server/lib/core/search.mjs:42`). A passage row has no `id` and does have a
+/// `nodus_id`, so a passage found by spelling arrives carrying the id of the *work* it was cut
+/// from — and asking the corpus for a passage by that id is a 404 that reads like a broken link
+/// rather than like a mismatched vocabulary.
+///
+/// So: ask for the passage; when the corpus says there is no such passage, ask for the work.
+/// One of the two is always the right record, and the day the server sends passage ids here
+/// this keeps working without being touched.
+struct PassageByIdView: View {
+    let session: SpaceSession
+    let id: String
+
+    @State private var row: Row?
+    @State private var asWork: String?
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let row {
+                RowDetailView(session: session, collection: Collections["passages"], row: row)
+            } else if let asWork {
+                WorkByIdView(session: session, nodusId: asWork)
+            } else if failed {
+                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else {
+                ProgressView().tint(session.accent)
+            }
+        }
+        .task {
+            guard row == nil, asWork == nil, !failed else { return }
+            guard let passages = Collections["passages"] else { failed = true; return }
+            do {
+                row = try await session.client.item(passages, id: id, in: session.connection.spaceId)
+            } catch let error as APIError where error.isNotFound {
+                asWork = id
+            } catch {
+                failed = true
+            }
+        }
+    }
+}
+
 // MARK: - Prose with corpus citations
 
 /// Prose the way the desktop writes it: Markdown with `nodus://` citations in it.
@@ -186,6 +233,7 @@ struct CorpusProse: View {
     private let labels: [String: String]
 
     @State private var opened: CorpusReference?
+    @Environment(\.nodusReadingStyle) private var reading
 
     init(_ text: String, accent: Color, session: SpaceSession? = nil, labels: [String: String] = [:]) {
         self.text = text
@@ -201,15 +249,27 @@ struct CorpusProse: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        // A document breathes; a chat bubble does not. The wider spacing is part of the same
+        // decision as the justification, and both arrive with the reading style.
+        VStack(alignment: .leading, spacing: reading.justified ? 13 : 9) {
             ForEach(blocks) { block in
                 if block.level > 0 {
-                    Text(block.text)
-                        .font(block.level == 1 ? .headline : .subheadline.weight(.semibold))
-                        .padding(.top, 3)
+                    heading(block)
+                } else if reading.justified {
+                    JustifiedProse(
+                        source: Self.linkify(block.text, labels: labels),
+                        font: reading.uiFont(.callout),
+                        accent: accent,
+                        linksLive: session != nil,
+                        onOpen: { url in
+                            guard let reference = CorpusReference(url) else { return false }
+                            opened = reference
+                            return true
+                        }
+                    )
                 } else {
                     Text(attributed(block.text))
-                        .font(.callout)
+                        .font(reading.font(.callout))
                         .textSelection(.enabled)
                 }
             }
@@ -234,6 +294,21 @@ struct CorpusProse: View {
                 }
             }
         }
+    }
+
+    /// A heading, set as the document it belongs to would set one.
+    ///
+    /// In a report a first-level heading is a part title, and it was `.headline` — one step
+    /// above the body and indistinguishable from it three paragraphs later. Uppercase, bold,
+    /// two sizes up and with room above it, a reader can find where a section starts by
+    /// scrolling past rather than by reading.
+    private func heading(_ block: Block) -> some View {
+        let isPart = block.level == 1 && reading.justified
+        return Text(isPart ? block.text.uppercased() : block.text)
+            .font(reading.font(isPart ? .title3 : .headline, weight: .bold))
+            .tracking(isPart ? 0.7 : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, reading.justified ? (isPart ? 12 : 6) : 3)
     }
 
     /// Split into headings and paragraphs before parsing.
@@ -282,7 +357,7 @@ struct CorpusProse: View {
             // than one that never claimed to.
             if session == nil { parsed[run.range].link = nil }
             parsed[run.range].foregroundColor = accent
-            parsed[run.range].font = .callout.weight(.medium)
+            parsed[run.range].font = reading.font(.callout, weight: .medium)
             parsed[run.range].underlineStyle = session == nil ? nil : .single
         }
         return parsed
@@ -315,5 +390,126 @@ struct CorpusProse: View {
             output.replaceSubrange(replaceRange, with: "[\(safe)](\(trimmed))")
         }
         return output
+    }
+}
+
+/// One paragraph, justified.
+///
+/// SwiftUI's `Text` aligns leading, centre or trailing and has no fourth option: justification
+/// is a paragraph-style attribute and `Text` drops paragraph styles on the way in. So a
+/// justified paragraph is a `UITextView` — non-editable, non-scrolling, sized by SwiftUI — and
+/// everything `Text` was doing is done here explicitly instead of hoped for:
+///
+/// - The Markdown is parsed once and each run is given a real `UIFont`, because the inline
+///   presentation intents an `AttributedString` carries mean nothing to UIKit: converting one
+///   directly loses every bold and italic in the report.
+/// - A `nodus://` link is coloured, underlined and handed back to the caller on tap. The system
+///   has no handler for that scheme, so letting the default action run opens nothing.
+/// - Hyphenation is on. Justified prose without it opens rivers of white space down a phone's
+///   narrow column, which is worse than the ragged edge it replaced.
+private struct JustifiedProse: UIViewRepresentable {
+    /// Markdown, already linkified.
+    let source: String
+    let font: UIFont
+    let accent: Color
+    let linksLive: Bool
+    let onOpen: (URL) -> Bool
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isScrollEnabled = false
+        view.isSelectable = true
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.dataDetectorTypes = []
+        view.adjustsFontForContentSizeCategory = false
+        view.setContentCompressionResistancePriority(.required, for: .vertical)
+        view.delegate = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.onOpen = onOpen
+        context.coordinator.linksLive = linksLive
+        view.attributedText = attributed()
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        // A `UITextView` has no useful intrinsic width, so the proposal decides it and the
+        // height is measured against it. Without this the paragraph collapses to one line.
+        guard let width = proposal.width, width > 0, width < .infinity else { return nil }
+        let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: ceil(fitted.height))
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onOpen: onOpen, linksLive: linksLive) }
+
+    private func attributed() -> NSAttributedString {
+        let parsed = (try? AttributedString(
+            markdown: source,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(source)
+
+        let output = NSMutableAttributedString()
+        for run in parsed.runs {
+            var runFont = font
+            if let intent = run.inlinePresentationIntent {
+                if intent.contains(.code) {
+                    runFont = .monospacedSystemFont(ofSize: font.pointSize * 0.92, weight: .regular)
+                } else {
+                    var traits: UIFontDescriptor.SymbolicTraits = []
+                    if intent.contains(.stronglyEmphasized) { traits.insert(.traitBold) }
+                    if intent.contains(.emphasized) { traits.insert(.traitItalic) }
+                    if !traits.isEmpty, let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
+                        runFont = UIFont(descriptor: descriptor, size: font.pointSize)
+                    }
+                }
+            }
+
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: runFont,
+                .foregroundColor: UIColor.label,
+            ]
+            if let link = run.link {
+                attributes[.foregroundColor] = UIColor(accent)
+                // A link that looks live and goes nowhere is worse than one that never
+                // claimed to, which is the same rule the SwiftUI path follows.
+                if linksLive {
+                    attributes[.link] = link
+                    attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                }
+            }
+            output.append(NSAttributedString(string: String(parsed[run.range].characters), attributes: attributes))
+        }
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .justified
+        paragraph.lineBreakMode = .byWordWrapping
+        paragraph.hyphenationFactor = 1
+        paragraph.lineHeightMultiple = 1.1
+        output.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: output.length))
+        return output
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var onOpen: (URL) -> Bool
+        var linksLive: Bool
+
+        init(onOpen: @escaping (URL) -> Bool, linksLive: Bool) {
+            self.onOpen = onOpen
+            self.linksLive = linksLive
+        }
+
+        func textView(
+            _ textView: UITextView,
+            primaryActionFor textItem: UITextItem,
+            defaultAction: UIAction
+        ) -> UIAction? {
+            guard case .link(let url) = textItem.content else { return defaultAction }
+            // nil means "do nothing further": the citation has already been opened here.
+            return onOpen(url) ? nil : defaultAction
+        }
     }
 }
