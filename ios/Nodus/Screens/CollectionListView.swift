@@ -65,6 +65,7 @@ struct CollectionListView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .listStyle(.plain)
         .nodusScrollToTop(accent: session.accent)
         .navigationTitle(Text(LocalizedStringKey(collection.label)))
@@ -263,6 +264,7 @@ struct SpecialListView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .listStyle(.plain)
         .nodusScrollToTop(accent: session.accent)
         .safeAreaInset(edge: .top) {

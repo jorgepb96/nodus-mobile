@@ -49,6 +49,7 @@ struct MirrorTableView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .listStyle(.plain)
         .navigationTitle(Text(LocalizedStringKey(title)))
         .navigationBarTitleDisplayMode(.inline)
@@ -154,6 +155,7 @@ struct MirrorOnlySectionsView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .navigationTitle("More from this space")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)

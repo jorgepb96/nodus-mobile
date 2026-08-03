@@ -331,5 +331,6 @@ struct PublishedTablesView: View {
         .navigationTitle("Published tables")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: Text("Filter tables"))
+        .nodusDismissesKeyboard()
     }
 }

@@ -30,6 +30,7 @@ struct NoteEditor: View {
             }
             .navigationTitle(note == nil ? "New note" : "Edit note")
             .navigationBarTitleDisplayMode(.inline)
+            .nodusDismissesKeyboard()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

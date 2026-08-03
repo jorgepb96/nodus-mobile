@@ -83,6 +83,7 @@ struct NodiNotesView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .listStyle(.plain)
         .nodusScrollToTop(accent: session.accent)
         .navigationTitle("Nodi’s notes")
@@ -247,6 +248,7 @@ private struct NodiNoteEditor: View {
             }
             .navigationTitle(note == nil ? "New note" : "Edit note")
             .navigationBarTitleDisplayMode(.inline)
+            .nodusDismissesKeyboard()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

@@ -43,6 +43,7 @@ struct DeepResearchScreen: View {
             .nodusTopAnchor()
         }
         .nodusScrollToTop(accent: session.accent)
+        .nodusDismissesKeyboard()
         .navigationTitle("Deep Research")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)

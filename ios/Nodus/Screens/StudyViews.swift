@@ -319,6 +319,7 @@ struct QuestionBankView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .listStyle(.plain)
         .navigationTitle("Question bank")
         .navigationBarTitleDisplayMode(.inline)

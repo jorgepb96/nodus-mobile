@@ -74,6 +74,7 @@ struct ConnectView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .nodusDismissesKeyboard()
         }
     }
 

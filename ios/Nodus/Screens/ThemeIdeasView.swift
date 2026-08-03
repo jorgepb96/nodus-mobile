@@ -68,6 +68,7 @@ struct ThemeIdeasView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .listStyle(.plain)
         .navigationTitle(label)
         .navigationBarTitleDisplayMode(.inline)

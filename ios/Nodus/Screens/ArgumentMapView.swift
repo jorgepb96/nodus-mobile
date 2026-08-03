@@ -261,6 +261,7 @@ private struct ArgumentSeedPicker: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusDismissesKeyboard()
         .listStyle(.plain)
         .safeAreaInset(edge: .top) {
             NodusSearchField(
