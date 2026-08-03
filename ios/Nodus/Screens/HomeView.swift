@@ -264,6 +264,11 @@ struct HomeView: View {
 
     /// What each vault type gets beyond its tables, gated on the publication actually having
     /// the rows — a timetable tile over an empty timetable is worse than no tile.
+    /// Whether the section grid above already offers this collection.
+    private func lists(_ path: String) -> Bool {
+        sections.contains { $0.path == path }
+    }
+
     private var vaultTools: [VaultTool] {
         var tools: [VaultTool] = []
         let counts = session.overview?.counts ?? [:]
@@ -291,12 +296,16 @@ struct HomeView: View {
                 AnyView(ScheduleView(session: session))
             })
         }
-        if (counts["study_flashcards"] ?? 0) > 0 {
+        // Both of these are also published *tables*, so a vault that has them was offering two
+        // tiles with the same name — one opening the study screen, one opening a generic list —
+        // and no way to tell which was which. The purpose-built screen wins; the collection tile
+        // above it is what would be redundant.
+        if (counts["study_flashcards"] ?? 0) > 0, !lists("study-flashcards") {
             tools.append(VaultTool(title: "Flashcards", icon: "rectangle.on.rectangle") {
                 AnyView(FlashcardsView(session: session))
             })
         }
-        if (counts["study_questions"] ?? 0) > 0 {
+        if (counts["study_questions"] ?? 0) > 0, !lists("study-questions") {
             tools.append(VaultTool(title: "Question bank", icon: "checklist") {
                 AnyView(QuestionBankView(session: session))
             })

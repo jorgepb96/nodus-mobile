@@ -54,6 +54,14 @@ struct ScheduleView: View {
         .navigationTitle("Timetables")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
+        // The offline copy is the only source this screen has, and once one exists the screen
+        // had no way to ask for a newer one: a republished timetable stayed invisible, or —
+        // worse — a copy taken before the timetable was published kept saying the publication
+        // carries no time slots. Pulling down fetches the copy again.
+        .refreshable {
+            await session.downloadMirror()
+            await load()
+        }
         .task { await load() }
     }
 
@@ -115,9 +123,12 @@ struct ScheduleView: View {
 
     private func subjectName(_ cell: Row) -> String {
         if let id = cell.string("subject_id"), let subject = subjects[id] {
-            return subject.text("name") ?? subject.text("title") ?? "Asignatura"
+            // `String(localized:)`, not a literal: this is a computed value handed to `Text`,
+            // and a literal here ships in one language whatever the phone is set to. These two
+            // were Spanish, on a screen the rest of which translates.
+            return subject.text("name") ?? subject.text("title") ?? String(localized: "Subject")
         }
-        return cell.text("label") ?? cell.text("title") ?? "Sin asignar"
+        return cell.text("label") ?? cell.text("title") ?? String(localized: "Unassigned")
     }
 
     private func load() async {
