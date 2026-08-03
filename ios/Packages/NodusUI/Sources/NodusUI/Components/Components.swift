@@ -201,9 +201,9 @@ public struct NodusNotice: View {
 
     private var colour: Color {
         switch tone {
-        case .info: return .blue
-        case .caution: return .orange
-        case .blocked: return .red
+        case .info: return .nodusInfo
+        case .caution: return .nodusCaution
+        case .blocked: return .nodusDanger
         }
     }
 

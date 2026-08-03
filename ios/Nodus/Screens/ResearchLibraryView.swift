@@ -107,7 +107,7 @@ struct ResearchLibraryView: View {
                     .font(.caption2).foregroundStyle(.secondary)
                 if saved.report.citationsRejected > 0 {
                     Text("\(saved.report.citationsRejected) invented citations removed")
-                        .font(.caption2).foregroundStyle(.orange)
+                        .font(.caption2).foregroundStyle(Color.nodusCaution)
                 }
             }
         }

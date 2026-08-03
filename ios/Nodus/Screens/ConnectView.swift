@@ -59,10 +59,10 @@ struct ConnectView: View {
                         if let error {
                             Label(error, systemImage: "exclamationmark.triangle")
                                 .font(.footnote)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(Color.nodusDanger)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(14)
-                                .nodusGlass(NodusGlass(.thin, tint: .red), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .nodusGlass(NodusGlass(.thin, tint: Color.nodusDanger), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                     }
                     .padding(20)
@@ -146,7 +146,7 @@ struct ConnectView: View {
                     // Saying so is the point. A padlock this connection has not earned would be
                     // worse than no padlock at all.
                     Label("Not encrypted", systemImage: "lock.open")
-                        .font(.caption2).foregroundStyle(.orange)
+                        .font(.caption2).foregroundStyle(Color.nodusCaution)
                 }
             }
 
@@ -326,7 +326,7 @@ private struct SpaceRow: View {
                 HStack(spacing: 6) {
                     Text(LocalizedStringKey(roleLabel(space.role))).font(.caption2)
                     if !space.hasSnapshot {
-                        Text("· not published").font(.caption2).foregroundStyle(.orange)
+                        Text("· not published").font(.caption2).foregroundStyle(Color.nodusCaution)
                     }
                 }
                 .foregroundStyle(.secondary)

@@ -188,7 +188,7 @@ struct DeepResearchScreen: View {
                 Text(objective).font(.subheadline.weight(.medium)).lineLimit(2)
                 Spacer()
                 Button("Cancel") { running?.cancel() }
-                    .font(.caption).tint(.red)
+                    .font(.caption).tint(Color.nodusDanger)
             }
 
             if let fraction = progress.fraction {
@@ -238,7 +238,7 @@ struct DeepResearchScreen: View {
                     )
                 } else if report.citationsChecked > 0 {
                     Label("\(report.citationsChecked) citations, all from the corpus", systemImage: "checkmark.seal")
-                        .font(.caption).foregroundStyle(.green)
+                        .font(.caption).foregroundStyle(Color.nodusSuccess)
                 }
 
                 if let stopped = report.stoppedReason {

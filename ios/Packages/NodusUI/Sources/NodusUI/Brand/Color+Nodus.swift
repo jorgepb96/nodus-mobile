@@ -72,6 +72,34 @@ public extension Color {
         #endif
     }
 
+    /// A colour that is two colours: one for each interface style.
+    ///
+    /// Resolved by the system per trait collection rather than read from `@Environment`, so it
+    /// works in a `UIKit` view, inside a `Shape`'s fill, and in a static constant — none of
+    /// which can look at the environment.
+    static func nodusDynamic(light: String, dark: String) -> Color {
+        #if canImport(UIKit)
+        return Color(uiColor: UIColor { traits in
+            UIColor(traits.userInterfaceStyle == .dark ? Color(hex: dark) : Color(hex: light))
+        })
+        #else
+        return Color(hex: dark)
+        #endif
+    }
+
+    /// What a screen says about state, in one place.
+    ///
+    /// SwiftUI's own `.orange`, `.red` and `.green` are tuned for filled controls, not for text
+    /// and hairlines over a pale surface: on white, system orange reads as decoration rather
+    /// than as a warning, and system yellow barely reads at all. Every notice, badge and status
+    /// line in the app used one of those raw — so the same meaning arrived in a different
+    /// colour depending on which screen you were on, and half of them were illegible in light
+    /// mode. These are the same hues, darkened for light and lightened for dark.
+    static let nodusInfo = nodusDynamic(light: "#1d4ed8", dark: "#7ea6ff")
+    static let nodusCaution = nodusDynamic(light: "#b45309", dark: "#fbbf24")
+    static let nodusDanger = nodusDynamic(light: "#b91c1c", dark: "#fb7185")
+    static let nodusSuccess = nodusDynamic(light: "#15803d", dark: "#4ade80")
+
     /// Relative luminance (WCAG), used to decide whether a tinted glass surface needs light
     /// or dark text on top of it.
     var relativeLuminance: Double {

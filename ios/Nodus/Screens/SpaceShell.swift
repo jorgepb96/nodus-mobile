@@ -9,6 +9,7 @@ import SwiftUI
 /// underneath, because the difference is navigation, not content.
 struct SpaceShell: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(AppModel.self) private var model
 
     let session: SpaceSession
@@ -31,9 +32,20 @@ struct SpaceShell: View {
         case chat
     }
 
+    /// The sidebar is for an iPad-shaped canvas, not for any wide one.
+    ///
+    /// `horizontalSizeClass == .regular` alone is true of a large iPhone held sideways, and
+    /// that phone got the iPad layout: a sidebar over 390 points of height, a detail column
+    /// beside it, and the floating header sitting on top of the split view's own toggle. A
+    /// phone in landscape is a phone. Both classes regular is what actually means "there is
+    /// room for two columns".
+    private var wantsSidebar: Bool {
+        horizontalSizeClass == .regular && verticalSizeClass == .regular
+    }
+
     var body: some View {
         Group {
-            if horizontalSizeClass == .regular {
+            if wantsSidebar {
                 splitView
             } else {
                 tabView
@@ -55,7 +67,7 @@ struct SpaceShell: View {
         // Four tabs, not five. "Browse" showed the same sections as Home in a list instead
         // of a grid, so it cost a tab to say nothing new.
         TabView(selection: $tab) {
-            page { HomeView(session: session) }
+            page { HomeView(session: session, openResearch: { tab = .research }) }
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(Tab.home)
 
@@ -95,7 +107,23 @@ struct SpaceShell: View {
 
     // MARK: iPad
 
+    /// The header above the split view, not floating over it.
+    ///
+    /// It used to be an `.overlay(alignment: .top)` with 96 points of clear inset pushed into
+    /// both columns to make room. That works until something else wants the top of a column —
+    /// and something does: the split view's own show/hide-sidebar button lives in the detail
+    /// column's navigation bar, exactly under the overlay. It was there the whole time, behind
+    /// the glass, and could not be tapped. A `VStack` gives the header the top of the window
+    /// and leaves the columns their own.
     private var splitView: some View {
+        VStack(spacing: 0) {
+            header
+            splitColumns
+        }
+        .background { NodusBackdrop(accent: session.accent) }
+    }
+
+    private var splitColumns: some View {
         NavigationSplitView {
             List(selection: $sidebarSelection) {
                 Section {
@@ -139,21 +167,17 @@ struct SpaceShell: View {
             }
             .navigationTitle(session.connection.spaceName)
             .tint(session.accent)
-            .safeAreaInset(edge: .top) { Color.clear.frame(height: 96) }
         } detail: {
             NavigationStack {
                 detailContent
-                    .safeAreaInset(edge: .top) { Color.clear.frame(height: 96) }
             }
         }
-        .background { NodusBackdrop(accent: session.accent) }
-        .overlay(alignment: .top) { header }
     }
 
     @ViewBuilder
     private var detailContent: some View {
         switch sidebarSelection {
-        case .home, .none: HomeView(session: session)
+        case .home, .none: HomeView(session: session, openResearch: { sidebarSelection = .research })
         case .search: SearchScreen(session: session)
         case .research: ResearchView(session: session)
         case .chat: ChatTab(session: session)
@@ -183,7 +207,6 @@ struct SpaceShell: View {
                 model.closeSession()
             } label: {
                 Image(systemName: "rectangle.stack")
-                    .font(.callout)
             }
             .tint(session.accent)
             .accessibilityLabel("Switch space")
@@ -192,7 +215,6 @@ struct SpaceShell: View {
                 showingSettings = true
             } label: {
                 Image(systemName: "gearshape")
-                    .font(.callout)
             }
             .tint(session.accent)
             .accessibilityLabel("Settings")

@@ -1,13 +1,4 @@
 import SwiftUI
-import UIKit
-
-/// Ask whatever is focused to let go.
-///
-/// Up the responder chain rather than through a binding: the question is "whoever has the
-/// keyboard, give it back", and it needs to know nothing about which field that was.
-func nodusResignFirstResponder() {
-    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-}
 
 /// Putting the keyboard away, on every screen that can raise one.
 ///
@@ -20,13 +11,22 @@ func nodusResignFirstResponder() {
 /// fifteen focus bindings threaded to fifteen fields, and every screen written after this one
 /// would have started out without one.
 extension View {
-    /// Drag to dismiss, and tap anywhere in the content to dismiss.
+    /// Scrolling the results puts the keyboard away.
     ///
-    /// Applied to the scrollable, not to the field: what the reader wants to touch is the thing
-    /// the keyboard is covering. `simultaneousGesture` so a tap that lands on a row still opens
-    /// it — putting the keyboard away is never the *only* thing a tap should do.
+    /// Scroll and nothing else. The first version of this added
+    /// `simultaneousGesture(TapGesture())` so a tap anywhere would dismiss too, on the
+    /// reasoning that a simultaneous gesture recognises *alongside* the row's own and takes
+    /// nothing from it. That is not what happens on a `List`: the container's recogniser wins
+    /// the tap and the rows below it stop opening — the library, the reports and every other
+    /// list went dead to the touch.
+    ///
+    /// So a list keeps the one gesture that cannot collide with a row, and `.immediately`
+    /// rather than `.interactively` because the point is filtering: you type, you look, you
+    /// scroll, and the keyboard should already be gone by then rather than follow the drag.
+    ///
+    /// Tap-to-dismiss lives where there is nothing to tap *through* — the chat, which handles
+    /// it itself over prose rather than over rows.
     func nodusDismissesKeyboard() -> some View {
-        scrollDismissesKeyboard(.interactively)
-            .simultaneousGesture(TapGesture().onEnded { nodusResignFirstResponder() })
+        scrollDismissesKeyboard(.immediately)
     }
 }

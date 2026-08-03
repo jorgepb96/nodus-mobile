@@ -320,7 +320,7 @@ private struct ConnectionCard: View {
                 }
                 if needsSignIn {
                     Label("Sign in again", systemImage: "key.slash")
-                        .font(.caption).foregroundStyle(.orange)
+                        .font(.caption).foregroundStyle(Color.nodusCaution)
                         .lineLimit(1)
                 } else {
                     // Server · kind · role. The kind is what tells two spaces on the same
@@ -342,7 +342,7 @@ private struct ConnectionCard: View {
         }
         .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nodusGlass(NodusGlass(.regular, tint: needsSignIn ? .orange : connection.accent, interactive: true))
+        .nodusGlass(NodusGlass(.regular, tint: needsSignIn ? Color.nodusCaution : connection.accent, interactive: true))
     }
 
     /// `String(localized:)`: interpolated into a line of data, so it reaches `Text` as a value

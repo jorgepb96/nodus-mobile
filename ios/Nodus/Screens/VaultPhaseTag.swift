@@ -46,20 +46,17 @@ struct VaultPhaseTag: View {
     static let explanation: LocalizedStringKey =
         "Its main features are still being tested; recommended only for testers."
 
+    /// Amber, and the app's one amber — `nodusCaution`, the same colour a caution notice wears.
+    /// Not the space's accent: the tag says something about the software rather than about the
+    /// vault, and in the vault's colour it would read as part of it.
     private var label: some View {
         Text(verbatim: "ALPHA")
             .font(.caption2.weight(.bold))
             .tracking(0.6)
-            .foregroundStyle(Color.nodusAlpha)
+            .foregroundStyle(Color.nodusCaution)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(Color.nodusAlpha.opacity(0.16), in: Capsule())
-            .overlay(Capsule().stroke(Color.nodusAlpha.opacity(0.45), lineWidth: 0.5))
+            .background(Color.nodusCaution.opacity(0.16), in: Capsule())
+            .overlay(Capsule().stroke(Color.nodusCaution.opacity(0.45), lineWidth: 0.5))
     }
-}
-
-extension Color {
-    /// Amber. Not the space's accent: the tag says something about the software rather than
-    /// about the vault, and wearing the vault's colour would read as part of it.
-    static let nodusAlpha = Color(red: 0.98, green: 0.75, blue: 0.14)
 }

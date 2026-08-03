@@ -119,7 +119,7 @@ struct WritingView: View {
             }
             Text(caption(for: item))
                 .font(.caption2)
-                .foregroundStyle(item.state == .rejected ? .red : .secondary)
+                .foregroundStyle(item.state == .rejected ? AnyShapeStyle(Color.nodusDanger) : AnyShapeStyle(.secondary))
         }
         .padding(.vertical, 3)
         .swipeActions {
@@ -135,9 +135,9 @@ struct WritingView: View {
         // `LocalizedStringKey`: a computed `String` here reached `Text` as data and shipped the
         // three most-read words on this screen in English on every phone.
         let (label, colour): (LocalizedStringKey, Color) = switch state {
-        case .pending: ("Not sent", .orange)
+        case .pending: ("Not sent", Color.nodusCaution)
         case .accepted: ("On the server", session.accent)
-        case .rejected: ("Rejected", .red)
+        case .rejected: ("Rejected", Color.nodusDanger)
         }
         return Text(label)
             .font(.caption2.weight(.medium))

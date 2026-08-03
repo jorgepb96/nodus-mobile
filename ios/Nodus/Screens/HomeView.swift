@@ -4,6 +4,12 @@ import SwiftUI
 
 struct HomeView: View {
     let session: SpaceSession
+    /// Switches the shell to the Research section rather than pushing a copy of it here.
+    ///
+    /// A tile that pushes the same screen the tab bar leads to gives you two of it, on two
+    /// different navigation stacks, with a back button to a Home you are already looking at.
+    /// The shell owns which section is open, so the shell is what this asks.
+    var openResearch: (() -> Void)?
 
     @Environment(AppPreferences.self) private var preferences
 
@@ -124,12 +130,10 @@ struct HomeView: View {
                             .buttonStyle(.plain)
                         }
                         if session.hasDeepResearch {
-                            // The Research tab itself, not the bare list of published reports:
-                            // the tile and the tab bar now lead to the same screen, which is
-                            // the one that has the runner, the local reports and the published
-                            // ones together.
-                            NavigationLink {
-                                ResearchView(session: session)
+                            // Goes *to* the Research section rather than opening a second copy
+                            // of it inside Home.
+                            Button {
+                                openResearch?()
                             } label: {
                                 SectionTile(
                                     title: "Deep Research",
@@ -139,6 +143,7 @@ struct HomeView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .disabled(openResearch == nil)
                         }
                         if session.hasImmersion {
                             specialTile(.immersion, "Immersion", "waveform")

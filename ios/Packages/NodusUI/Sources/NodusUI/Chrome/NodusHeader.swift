@@ -74,19 +74,22 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
     /// already rests and the system's own edge gestures start. Both of them read as broken —
     /// most taps landed beside the glyph and did nothing at all.
     ///
-    /// 44 × 44 is Apple's minimum, `contentShape` is what makes the whole box tappable rather
-    /// than the glyph's own outline, and the horizontal padding around it moves the icon
-    /// further in from the bezel than the old layout put its entire target.
+    /// 44 × 44 is Apple's minimum and these two are the app's most-used controls — switching
+    /// space and opening settings — so they get 52, which is what the header's own height can
+    /// carry without the glyphs crowding the mark. `contentShape` is what makes the whole box
+    /// tappable rather than the glyph's own outline, and the horizontal padding around it moves
+    /// the icon further in from the bezel than the old layout put its entire target.
     ///
-    /// A header with no accessory on a side gets nothing there — a 44-point `contentShape` over
+    /// A header with no accessory on a side gets nothing there — a 52-point `contentShape` over
     /// an `EmptyView` is an invisible button that eats every tap in that corner.
     @ViewBuilder
     private func accessory<V: View>(_ type: V.Type, @ViewBuilder _ content: () -> V) -> some View {
         if type != EmptyView.self {
             content()
-                .frame(width: 44, height: 44)
+                .font(.title3)
+                .frame(width: 52, height: 52)
                 .contentShape(Rectangle())
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 4)
         }
     }
 
