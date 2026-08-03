@@ -75,6 +75,7 @@ struct ConnectView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .nodusDismissesKeyboard()
+            .tint(accent)
         }
     }
 
@@ -102,7 +103,7 @@ struct ConnectView: View {
                 .keyboardType(.URL)
                 .textFieldStyle(.plain)
                 .padding(14)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .nodusFieldSurface(accent: accent)
 
             Text("HTTPS is assumed. The server refuses any public address that is not.")
                 .font(.caption)
@@ -166,7 +167,7 @@ struct ConnectView: View {
                     .autocorrectionDisabled()
                     .textFieldStyle(.plain)
                     .padding(14)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .nodusFieldSurface(accent: accent)
                 Text("A pairing code expires after fifteen minutes and works once.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
@@ -176,11 +177,11 @@ struct ConnectView: View {
                     .keyboardType(.emailAddress)
                     .textFieldStyle(.plain)
                     .padding(14)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .nodusFieldSurface(accent: accent)
                 SecureField("Password", text: $password)
                     .textFieldStyle(.plain)
                     .padding(14)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .nodusFieldSurface(accent: accent)
             }
 
             Button {
@@ -336,7 +337,7 @@ private struct SpaceRow: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .nodusFieldSurface(accent: accent)
     }
 
     private func roleLabel(_ role: SpaceRole) -> String {

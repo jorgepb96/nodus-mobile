@@ -97,6 +97,21 @@ extension APIError: LocalizedError {
 }
 
 /// Failures that never reached a Nodus Server, or that came back malformed.
+public extension Error {
+    /// A read that was superseded is not a read that failed.
+    ///
+    /// Pull-to-refresh is where this matters: SwiftUI cancels the task behind `.refreshable`
+    /// when the gesture is released early or the view goes away, `URLSession` reports that as
+    /// `URLError.cancelled`, and a screen that files every error under one banner then tells
+    /// the reader their space could not be read — over a space it is showing them.
+    var isCancellation: Bool {
+        if self is CancellationError { return true }
+        if let transport = self as? TransportError, transport == .cancelled { return true }
+        if let url = self as? URLError, url.code == .cancelled { return true }
+        return false
+    }
+}
+
 public enum TransportError: Error, Sendable, Equatable {
     case offline
     case cancelled

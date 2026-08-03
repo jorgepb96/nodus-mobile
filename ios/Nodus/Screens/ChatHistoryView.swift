@@ -110,6 +110,7 @@ struct ChatHistoryView: View {
             }
             .navigationTitle("History")
             .navigationBarTitleDisplayMode(.inline)
+            .nodusPageBackdrop(accent: accent)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 if !listedSource.isEmpty {

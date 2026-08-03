@@ -260,8 +260,13 @@ struct GlassSurfaceFill<S: InsettableShape>: View {
             .fill(
                 LinearGradient(
                     stops: [
-                        .init(color: .white.opacity(colorScheme == .dark ? 0.38 : 0.62), location: 0),
-                        .init(color: .white.opacity(colorScheme == .dark ? 0.06 : 0.14), location: 0.34),
+                        // White under `plusLighter` has nowhere to go on a pale surface: it
+                        // clips, and the lit corner stops being a highlight and becomes a
+                        // white blob with the rest of the card fading out of it. Dark mode has
+                        // the room for it and light mode does not, so light mode keeps barely
+                        // enough to round the corner and leaves the edge to the bevel.
+                        .init(color: .white.opacity(colorScheme == .dark ? 0.38 : 0.16), location: 0),
+                        .init(color: .white.opacity(colorScheme == .dark ? 0.06 : 0.04), location: 0.34),
                         .init(color: .clear, location: 0.62),
                     ],
                     startPoint: angle,
@@ -275,8 +280,10 @@ struct GlassSurfaceFill<S: InsettableShape>: View {
     /// Bright where the light lands, nearly absent on the far corner. A uniform hairline
     /// border is the single thing that most makes a fake glass panel look printed on.
     private var bevel: LinearGradient {
-        let lit = colorScheme == .dark ? 0.44 : 0.85
-        let unlit = colorScheme == .dark ? 0.05 : 0.18
+        // Same reasoning as the specular: a white hairline at 0.85 over a pale surface is a
+        // white outline, and every card wore one.
+        let lit = colorScheme == .dark ? 0.44 : 0.55
+        let unlit = colorScheme == .dark ? 0.05 : 0.12
         let origin = reduceMotion ? UnitPoint(x: 0.16, y: 0) : tilt.highlightOrigin
         return LinearGradient(
             colors: [.white.opacity(lit), .white.opacity(unlit)],

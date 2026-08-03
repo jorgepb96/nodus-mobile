@@ -231,6 +231,8 @@ struct FamilyTreeView: View {
             let start = rootPersonId ?? mostConnectedPerson()
             if let start { refocus(on: start, remember: false) }
             error = nil
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }

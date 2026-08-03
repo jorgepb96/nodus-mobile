@@ -15,6 +15,24 @@ enum NodusScrollAnchor: Hashable {
     case top
 }
 
+private struct TabBarClearanceKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True for the four screens that are the root of a tab.
+    ///
+    /// On iOS 26 the tab bar floats *over* the content, so anything an overlay puts in the
+    /// bottom-right corner of a tab root lands on the bar and the bar takes the touch — which
+    /// on the tab you are already looking at does nothing at all, and reads exactly like a
+    /// dead button. A pushed screen has no bar there and wants the button low, where a thumb
+    /// is. The two cases need different numbers, so the shell says which one this is.
+    var nodusHasTabBar: Bool {
+        get { self[TabBarClearanceKey.self] }
+        set { self[TabBarClearanceKey.self] = newValue }
+    }
+}
+
 extension View {
     /// Marks the first element of a scrollable as the place "back to top" goes.
     func nodusTopAnchor() -> some View {
@@ -47,6 +65,7 @@ private struct ScrollToTopModifier: ViewModifier {
 
     @Environment(AppPreferences.self) private var preferences
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nodusHasTabBar) private var hasTabBar
     @State private var isScrolled = false
 
     func body(content: Content) -> some View {
@@ -55,13 +74,7 @@ private struct ScrollToTopModifier: ViewModifier {
                 .overlay(alignment: .bottomTrailing) {
                     if preferences.showsScrollToTop, isScrolled {
                         Button {
-                            if reduceMotion {
-                                proxy.scrollTo(NodusScrollAnchor.top, anchor: .top)
-                            } else {
-                                withAnimation(.easeOut(duration: 0.32)) {
-                                    proxy.scrollTo(NodusScrollAnchor.top, anchor: .top)
-                                }
-                            }
+                            goToTop(proxy)
                         } label: {
                             Image(systemName: "chevron.up")
                                 .font(.footnote.weight(.semibold))
@@ -71,16 +84,38 @@ private struct ScrollToTopModifier: ViewModifier {
                         .tint(accent)
                         .nodusGlass(NodusGlass(.prominent, tint: accent), in: Circle())
                         .padding(.trailing, 16)
-                        // Just clear of the tab bar rather than a thumb's length above it. The
-                        // overlay is laid out inside the safe area, which already accounts for
-                        // the bar, so the 92 points that used to be added on top left the
-                        // button floating in the middle of the page with nothing under it.
-                        .padding(.bottom, 20)
+                        // Clear of the floating tab bar where there is one, and low where
+                        // there is not. 20 points everywhere put the button *on* the bar, which
+                        // took the touch and did nothing with it; 92 everywhere left it hanging
+                        // mid-page on every pushed screen in the app.
+                        .padding(.bottom, hasTabBar ? 76 : 22)
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
                         .accessibilityLabel("Back to top")
                     }
                 }
                 .animation(.easeOut(duration: 0.2), value: isScrolled)
+        }
+    }
+
+    /// Back to the top, and a second attempt a beat later.
+    ///
+    /// A scroll view that is still decelerating overrides a programmatic scroll with its own
+    /// momentum: the tap registers, the animation starts, the flick wins, and the button looks
+    /// broken precisely when it is most wanted — while the list is still moving. The touch
+    /// never reaches the scroll view to stop it, because the button is an overlay *beside* the
+    /// scroll view rather than inside it. So the request is made again once the momentum has
+    /// had time to be overridden; if the first one landed, the second is a no-op.
+    private func goToTop(_ proxy: ScrollViewProxy) {
+        if reduceMotion {
+            proxy.scrollTo(NodusScrollAnchor.top, anchor: .top)
+        } else {
+            withAnimation(.easeOut(duration: 0.32)) {
+                proxy.scrollTo(NodusScrollAnchor.top, anchor: .top)
+            }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(90))
+            proxy.scrollTo(NodusScrollAnchor.top, anchor: .top)
         }
     }
 

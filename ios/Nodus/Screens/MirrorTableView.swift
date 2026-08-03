@@ -103,6 +103,8 @@ struct MirrorTableView: View {
             rows = page.items
             total = page.total
             error = nil
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }
@@ -119,6 +121,8 @@ struct MirrorTableView: View {
                 offset: rows.count
             )
             rows.append(contentsOf: page.items)
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }

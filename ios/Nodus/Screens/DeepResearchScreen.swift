@@ -112,7 +112,7 @@ struct DeepResearchScreen: View {
                 .lineLimit(2...5)
                 .textFieldStyle(.plain)
                 .padding(13)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .nodusFieldSurface(accent: session.accent)
 
             // Teaching vaults default to the unit pack, the way the desktop does
             // (`electron/ai/deepResearch.ts:39`), but it stays a choice: a teacher may well

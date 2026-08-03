@@ -119,6 +119,8 @@ struct CollectionListView: View {
             rows = []; total = 0; hasMore = false; error = nil
         } catch is CancellationError {
             // Superseded by a newer keystroke.
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }
@@ -421,6 +423,8 @@ struct SpecialListView: View {
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             rows = []; error = nil
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }

@@ -29,6 +29,9 @@ struct ProviderSettingsView: View {
             if embedded { content } else { NavigationStack { content } }
         }
         .sheet(item: $editing) { provider in keySheet(provider) }
+        .scrollContentBackground(.hidden)
+        .nodusPageBackdrop(accent: accent)
+        .tint(accent)
     }
 
     private var content: some View {
@@ -75,7 +78,7 @@ struct ProviderSettingsView: View {
                 }
 
                 if let error {
-                    Section { Text(error).font(.caption).foregroundStyle(.red) }
+                    Section { Text(error).font(.caption).foregroundStyle(Color.nodusDanger) }
                 }
             }
         .navigationTitle("AI providers")
@@ -96,7 +99,7 @@ struct ProviderSettingsView: View {
                     Spacer()
                     if settings.hasKey(for: provider) {
                         Label("Ready", systemImage: "checkmark.circle.fill")
-                            .font(.caption).foregroundStyle(.green)
+                            .font(.caption).foregroundStyle(Color.nodusSuccess)
                     } else {
                         Button("Add key") { editing = provider }
                             .font(.caption)
@@ -108,13 +111,13 @@ struct ProviderSettingsView: View {
         } else if let unreachable = UnreachableProvider(rawValue: identity.provider) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(unreachable.label) — not reachable from iOS")
-                    .font(.callout.weight(.medium)).foregroundStyle(.orange)
+                    .font(.callout.weight(.medium)).foregroundStyle(Color.nodusCaution)
                 Text("This vault was indexed with an engine that runs on the Nodus computer. Search will still work, but it will be lexical.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else {
             Text("Indexed with “\(identity.provider)”, which this version does not know.")
-                .font(.caption).foregroundStyle(.orange)
+                .font(.caption).foregroundStyle(Color.nodusCaution)
         }
     }
 
@@ -134,7 +137,7 @@ struct ProviderSettingsView: View {
                 Spacer()
                 if settings.rejectedProviders.contains(provider) {
                     Label("Rejected", systemImage: "exclamationmark.triangle.fill")
-                        .labelStyle(.iconOnly).foregroundStyle(.orange)
+                        .labelStyle(.iconOnly).foregroundStyle(Color.nodusCaution)
                 } else if settings.hasKey(for: provider) {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(accent)
                 }

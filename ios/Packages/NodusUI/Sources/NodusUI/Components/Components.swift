@@ -83,6 +83,34 @@ public extension View {
     }
 }
 
+public extension View {
+    /// The fill under a text field or an inset control.
+    ///
+    /// `.quaternary` is the system's answer to this and it is a grey. Over the app's own tinted
+    /// glass it reads as a dead rectangle somebody forgot to style — and in light mode it was
+    /// the one grey on screens that have none, next to a card the specular had turned nearly
+    /// white. This is the accent at low strength: the field reads as cut into the surface it
+    /// sits on rather than pasted onto it, and it is the same colour in both schemes rather
+    /// than two different greys.
+    func nodusFieldSurface(accent: Color, cornerRadius: CGFloat = 14) -> some View {
+        modifier(NodusFieldSurface(accent: accent, cornerRadius: cornerRadius))
+    }
+}
+
+private struct NodusFieldSurface: ViewModifier {
+    let accent: Color
+    let cornerRadius: CGFloat
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background(shape.fill(accent.opacity(colorScheme == .dark ? 0.18 : 0.10)))
+            .overlay(shape.strokeBorder(accent.opacity(colorScheme == .dark ? 0.26 : 0.22), lineWidth: 0.8))
+    }
+}
+
 /// The one filled button in the app.
 public struct NodusPrimaryButtonStyle: ButtonStyle {
     public var accent: Color

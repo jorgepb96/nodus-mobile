@@ -147,6 +147,8 @@ struct ResearchLibraryView: View {
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             published = []
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }
@@ -381,6 +383,8 @@ struct PublishedReportReader: View {
         guard let id = row.string("id") else { return }
         do {
             detail = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }

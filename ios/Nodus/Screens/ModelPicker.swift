@@ -130,6 +130,9 @@ struct ModelPickerView: View {
         }
         .navigationTitle(Text(LocalizedStringKey(task.label)))
         .navigationBarTitleDisplayMode(.inline)
+        .scrollContentBackground(.hidden)
+        .nodusPageBackdrop(accent: accent)
+        .tint(accent)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search model or provider")
         .nodusDismissesKeyboard()
         .task { await loadAll() }

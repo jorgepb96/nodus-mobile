@@ -30,6 +30,9 @@ struct NoteEditor: View {
             }
             .navigationTitle(note == nil ? "New note" : "Edit note")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden)
+            .nodusPageBackdrop(accent: accent)
+            .tint(accent)
             .nodusDismissesKeyboard()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

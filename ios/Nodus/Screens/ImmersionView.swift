@@ -201,6 +201,8 @@ struct ImmersionView: View {
         do {
             let detail = try await session.client.immersionSession(sessionId, in: session.connection.spaceId)
             plan = ImmersionPlan(detail)
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }

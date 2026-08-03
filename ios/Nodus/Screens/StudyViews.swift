@@ -254,6 +254,8 @@ struct FlashcardsView: View {
             cards = try await session.client.list(collection, in: session.connection.spaceId, limit: 200).items
         } catch let apiError as APIError where apiError.isNotPublished {
             cards = []
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }

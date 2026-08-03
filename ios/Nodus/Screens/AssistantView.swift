@@ -245,7 +245,7 @@ struct ChatScreen: View {
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .nodusFieldSurface(accent: session.accent, cornerRadius: 18)
 
             Button {
                 if isThinking { running?.cancel() } else { ask() }

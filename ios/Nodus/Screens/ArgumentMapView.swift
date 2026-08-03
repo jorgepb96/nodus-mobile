@@ -94,7 +94,7 @@ struct ArgumentMapView: View {
                 Label("\(map.seedDegree)", systemImage: "link")
                 if map.seedDebates > 0 {
                     Label("\(map.seedDebates)", systemImage: "bolt.horizontal")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.nodusCaution)
                 }
             }
             .font(.caption)
@@ -168,6 +168,8 @@ struct ArgumentMapView: View {
             // Open the seed, and only the seed. A map that arrives fully unfolded is a wall.
             expanded = Set(levels.first ?? [])
             revealedLevels = 1
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }
@@ -296,6 +298,8 @@ private struct ArgumentSeedPicker: View {
             error = nil
         } catch is CancellationError {
             // Superseded.
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }
@@ -406,7 +410,7 @@ private struct ArgumentBlockTree: View {
             }
         }
         .padding(10)
-        .background(.quaternary.opacity(0.22), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .nodusFieldSurface(accent: session.accent, cornerRadius: 11)
         .overlay(alignment: .bottomTrailing) {
             if block.descendantCount > 0, !isExpanded {
                 Text("\(block.descendantCount)")

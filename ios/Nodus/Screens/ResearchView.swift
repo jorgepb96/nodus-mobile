@@ -89,6 +89,7 @@ struct ResearchView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .nodusPageBackdrop(accent: session.accent)
         .navigationTitle("Research")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

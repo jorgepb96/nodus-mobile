@@ -712,6 +712,8 @@ struct RowDetailView: View {
             case "study-plans": enriched = .plan(try await session.client.studyPlan(id, in: session.connection.spaceId))
             default: break
             }
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }

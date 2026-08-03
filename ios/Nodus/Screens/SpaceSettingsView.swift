@@ -41,14 +41,14 @@ struct SpaceSettingsView: View {
                         labelled("Change batch", "\(capabilities.maxMutationBatch)")
                     }
                     if let diagnosticError {
-                        Text(diagnosticError).font(.caption).foregroundStyle(.red)
+                        Text(diagnosticError).font(.caption).foregroundStyle(Color.nodusDanger)
                     }
                 } header: {
                     Text("Server")
                 } footer: {
                     if ServerAddress(trusted: session.connection.origin).isInsecure {
                         Text("This connection is not encrypted. That should only ever be a local test.")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.nodusCaution)
                     }
                 }
 
@@ -62,7 +62,7 @@ struct SpaceSettingsView: View {
                     // sentence a person can read out, instead of a bug they have to reproduce.
                     if let serverVersion, serverVersion != NodusVersion.current {
                         Text("The app and the server are on different releases. Anything that behaves oddly should be suspected here first.")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.nodusCaution)
                     } else {
                         Text("Nodus desktop, Nodus Server and this app ship as one release and carry one number.")
                     }
@@ -82,7 +82,7 @@ struct SpaceSettingsView: View {
                         Text("This space has no published vectors.")
                             .font(.caption).foregroundStyle(.secondary)
                     case .unavailable(let message):
-                        Text(message).font(.caption).foregroundStyle(.orange)
+                        Text(message).font(.caption).foregroundStyle(Color.nodusCaution)
                     case .unknown:
                         ProgressView()
                     }
@@ -139,7 +139,7 @@ struct SpaceSettingsView: View {
                     .tint(session.accent)
 
                     if let failure = lock.failure {
-                        Text(failure).font(.caption).foregroundStyle(.red)
+                        Text(failure).font(.caption).foregroundStyle(Color.nodusDanger)
                     }
 
                     Toggle(isOn: Binding(
@@ -187,14 +187,14 @@ struct SpaceSettingsView: View {
                         }
                     case .stale(let rows):
                         Label("The copy is out of date", systemImage: "exclamationmark.arrow.circlepath")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.nodusCaution)
                         Text("It holds \(rows.formatted()) rows from an earlier publication.")
                             .font(.caption).foregroundStyle(.secondary)
                         Button { Task { await session.downloadMirror() } } label: {
                             Label("Update", systemImage: "arrow.clockwise")
                         }
                     case .failed(let message):
-                        Text(message).font(.caption).foregroundStyle(.red)
+                        Text(message).font(.caption).foregroundStyle(Color.nodusDanger)
                         Button { Task { await session.downloadMirror() } } label: {
                             Label("Try again", systemImage: "arrow.clockwise")
                         }
@@ -238,6 +238,9 @@ struct SpaceSettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden)
+            .nodusPageBackdrop(accent: session.accent)
+            .tint(session.accent)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
@@ -329,6 +332,8 @@ struct PublishedTablesView: View {
             }
         }
         .navigationTitle("Published tables")
+        .scrollContentBackground(.hidden)
+        .nodusPageBackdrop(accent: accent)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: Text("Filter tables"))
         .nodusDismissesKeyboard()

@@ -178,6 +178,9 @@ final class SpaceSession {
             // that says so, rather than an error that suggests something is broken.
             isPublished = false
             loadError = nil
+        } catch where error.isCancellation {
+            // A pull-to-refresh that was let go of, or a screen that went away mid-request.
+            // Nothing failed and nothing changed, so the last good read stands.
         } catch {
             loadError = error.localizedDescription
         }

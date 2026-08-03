@@ -84,6 +84,9 @@ struct SpaceShell: View {
                 .tag(Tab.chat)
         }
         .tint(session.accent)
+        // Everything inside a tab, pushed screens included: nothing here hides the tab bar on
+        // a push, so it floats over the bottom-right corner of every one of these screens.
+        .environment(\.nodusHasTabBar, true)
     }
 
     /// Each tab is its own navigation stack.

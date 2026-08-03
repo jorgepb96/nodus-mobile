@@ -218,6 +218,8 @@ struct AgendaView: View {
                 limit: PageBounds.maxLimit
             )
             error = nil
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }
@@ -335,6 +337,8 @@ struct GoalsView: View {
         do {
             goals = try await session.client.list(collection, in: session.connection.spaceId, limit: PageBounds.maxLimit).items
             error = nil
+        } catch where error.isCancellation {
+            // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
         }
