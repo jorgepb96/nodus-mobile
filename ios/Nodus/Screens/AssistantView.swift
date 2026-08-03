@@ -2,6 +2,7 @@ import NodusAI
 import NodusKit
 import NodusUI
 import SwiftUI
+import UIKit
 
 // MARK: - Chat
 
@@ -35,9 +36,12 @@ struct ChatScreen: View {
     @State private var conversationTitle = ""
     @State private var conversationCreatedAt = Date()
     @State private var showingHistory = false
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
+            chatBar
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
@@ -59,6 +63,12 @@ struct ChatScreen: View {
                     }
                     .padding(16)
                 }
+                // Two ways out of the keyboard, because a long answer is read by dragging and
+                // a short one by looking: the drag closes it on the way, and a tap anywhere in
+                // the conversation closes it outright. `simultaneousGesture` rather than
+                // `onTapGesture` so a tap that lands on a citation still opens it.
+                .scrollDismissesKeyboard(.interactively)
+                .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
                 .onChange(of: turns.count) { _, _ in
                     withAnimation { proxy.scrollTo(turns.last?.id, anchor: .bottom) }
                 }
@@ -68,44 +78,6 @@ struct ChatScreen: View {
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { showingHistory = true } label: {
-                    Image(systemName: "clock.arrow.circlepath")
-                }
-                .tint(session.accent)
-                .accessibilityLabel("History")
-            }
-            if !turns.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { startNewConversation() } label: {
-                        Image(systemName: "square.and.pencil")
-                    }
-                    .tint(session.accent)
-                    .accessibilityLabel("New conversation")
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    // Which layers of the corpus enter the payload, the same choice the
-                    // desktop's assistant offers: a question about a gap in the literature
-                    // wants different material from one about what a work argues.
-                    ForEach(ContextSectionKind.allCases, id: \.self) { kind in
-                        Button {
-                            if include.contains(kind) { include.remove(kind) } else { include.insert(kind) }
-                        } label: {
-                            Label(
-                                CorpusRetrieval.MaterialSection(kind: kind, rows: []).label,
-                                systemImage: include.contains(kind) ? "checkmark" : ""
-                            )
-                        }
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                }
-                .tint(session.accent)
-            }
-        }
         .sheet(isPresented: $showingHistory) {
             if let history {
                 ChatHistoryView(
@@ -117,6 +89,85 @@ struct ChatScreen: View {
             }
         }
         .task { if history == nil { history = ChatHistoryStore(spaceId: session.connection.spaceId) } }
+    }
+
+    // MARK: - Controls
+
+    /// The chat's own controls, in the view rather than in the navigation bar.
+    ///
+    /// They were `.toolbar` items, and a tab root has no toolbar: `SpaceShell.page` hides the
+    /// navigation bar so the space header can sit there instead (`SpaceShell.swift:87-94`). So
+    /// on iPhone the history button did not exist — conversations were being written to disk
+    /// with nothing on screen that could open them.
+    private var chatBar: some View {
+        HStack(spacing: 2) {
+            Button {
+                // Belt and braces: the store is built in `.task`, and a sheet with no store
+                // behind it would open empty rather than say anything.
+                if history == nil { history = ChatHistoryStore(spaceId: session.connection.spaceId) }
+                composerFocused = false
+                showingHistory = true
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.callout)
+                    .frame(width: 40, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("History")
+
+            if conversationTitle.isEmpty {
+                Text("New conversation")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(conversationTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: 4)
+
+            Menu {
+                // Which layers of the corpus enter the payload, the same choice the desktop's
+                // assistant offers: a question about a gap in the literature wants different
+                // material from one about what a work argues.
+                ForEach(ContextSectionKind.allCases, id: \.self) { kind in
+                    Button {
+                        if include.contains(kind) { include.remove(kind) } else { include.insert(kind) }
+                    } label: {
+                        Label(
+                            CorpusRetrieval.MaterialSection(kind: kind, rows: []).label,
+                            systemImage: include.contains(kind) ? "checkmark" : ""
+                        )
+                    }
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .font(.callout)
+                    .frame(width: 40, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Corpus layers")
+
+            if !turns.isEmpty {
+                Button {
+                    composerFocused = false
+                    startNewConversation()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.callout)
+                        .frame(width: 40, height: 38)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("New conversation")
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(session.accent)
+        .padding(.horizontal, 8)
+        .background(.ultraThinMaterial)
     }
 
     // MARK: - Conversations
@@ -192,6 +243,7 @@ struct ChatScreen: View {
             TextField("Ask a question", text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
+                .focused($composerFocused)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
@@ -345,9 +397,15 @@ private struct TurnBubble: View {
                     MaterialBrowser(sections: turn.sections, accent: accent, session: session)
                 }
 
-                if let mode = turn.mode {
-                    Text(mode == .semantic ? "Semantic retrieval" : "Lexical retrieval")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                if !turn.text.isEmpty {
+                    HStack(spacing: 8) {
+                        if let mode = turn.mode {
+                            Text(mode == .semantic ? "Semantic retrieval" : "Lexical retrieval")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        Spacer(minLength: 0)
+                        AnswerCopyButton(markdown: turn.text, accent: accent)
+                    }
                 }
             }
         }
@@ -359,6 +417,58 @@ private struct TurnBubble: View {
         case "passage": return "text.quote"
         case "work": return "book.closed"
         default: return "doc"
+        }
+    }
+}
+
+/// Take the answer with you.
+///
+/// A tap copies the prose, and the citations do not come with it. That is the deliberate
+/// choice: a chat answer cites by writing the token itself — `(nodus://idea/g-8969)` — which
+/// is a door on this screen and line noise in a message, an email or a paper. `ReadingCopy`
+/// is the same rule the reports' second copy button runs, parity-tested against the desktop.
+///
+/// The links are one long press away for the case that wants them: pasting an answer back
+/// into Nodus, where they resolve.
+private struct AnswerCopyButton: View {
+    let markdown: String
+    let accent: Color
+
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            copy(ReadingCopy.text(from: markdown))
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.caption)
+                .frame(width: 34, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(accent)
+        .accessibilityLabel("Copy the answer")
+        .contextMenu {
+            Button {
+                copy(ReadingCopy.text(from: markdown))
+            } label: {
+                Label("Copy the answer", systemImage: "doc.on.doc")
+            }
+            Button {
+                copy(markdown)
+            } label: {
+                Label("Copy with citation links", systemImage: "link")
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: copied)
+    }
+
+    private func copy(_ text: String) {
+        UIPasteboard.general.string = text
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
         }
     }
 }

@@ -102,8 +102,29 @@ final class ChatHistoryStore {
         reload()
     }
 
-    func deleteAll(archivedOnly: Bool) {
-        for conversation in conversations where !archivedOnly || conversation.isArchived {
+    /// Which conversations a bulk delete is about.
+    ///
+    /// Named rather than a `Bool`, because the two lists are shown on separate tabs and the
+    /// question "delete all" means the tab you are looking at. A flag read the other way round
+    /// would empty the archive from the screen that never mentions it.
+    enum Scope: Sendable {
+        case active, archived, everything
+
+        func includes(_ conversation: Conversation) -> Bool {
+            switch self {
+            case .active: return !conversation.isArchived
+            case .archived: return conversation.isArchived
+            case .everything: return true
+            }
+        }
+    }
+
+    func count(_ scope: Scope) -> Int {
+        conversations.filter(scope.includes).count
+    }
+
+    func deleteAll(_ scope: Scope) {
+        for conversation in conversations where scope.includes(conversation) {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(conversation.id).json"))
         }
         reload()
