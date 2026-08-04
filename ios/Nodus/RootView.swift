@@ -36,6 +36,9 @@ struct RootView: View {
         .environment(preferences)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
+        // Once, here, for every field in the app — including the ones inside sheets, which are
+        // presented into this same window.
+        .nodusDismissesKeyboardOnTap()
         .nodusSheet(isPresented: $showingConnect) { ConnectView().environment(model) }
         .task {
             // Reopen where the user left off, but only if the credential is still there — a

@@ -111,6 +111,11 @@ struct SpaceShell: View {
             visited.insert(opened)
             // A new page starts at the top, so the header does not arrive already collapsed.
             chrome.setScrolled(false)
+            // The page you just left is still in the hierarchy — that is how it keeps its
+            // scroll position — so a field focused on it stays first responder and its keyboard
+            // stays up over the tab you switched to, belonging to a screen you can no longer
+            // touch. Leaving a tab is leaving the field on it.
+            Keyboard.dismiss()
         }
     }
 
@@ -182,6 +187,9 @@ struct SpaceShell: View {
             splitColumns
         }
         .background { NodusBackdrop(accent: session.accent) }
+        // The same statement the tab bar makes: choosing another screen is finishing with the
+        // field on this one.
+        .onChange(of: sidebarSelection) { _, _ in Keyboard.dismiss() }
     }
 
     private var splitColumns: some View {
