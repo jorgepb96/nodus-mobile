@@ -330,10 +330,10 @@ struct DeepResearchScreen: View {
         Dictionary(report.references.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first })
     }
 
-    /// Put the finished report in the queue, with the citations it really used.
+    /// Send the finished report, with the citations it really used.
     private func send(_ report: DeepResearchReport) async {
         guard let controller = await OutboxController.open(session: session), let model = ai.model(for: .deepResearch) else { return }
-        await controller.queueReport(
+        await controller.sendReport(
             report,
             mode: mode ?? defaultMode,
             model: model,
