@@ -142,12 +142,26 @@ private struct NodusGlassModifier<S: InsettableShape>: ViewModifier {
 /// limit the pre-26 surface takes over. It is the same geometry, the same tint and the same lit
 /// edge, which is why the swap reads as one design rather than two.
 ///
-/// The substitute goes in a `background`, and `glassEffect` stays on unconditionally. That is
-/// deliberate: wrapping the *content* in an `if/else` would give it a new identity the first
-/// time a measurement crossed the limit, and every piece of state inside a card would be
-/// thrown away with it. Leaving the effect applied costs nothing, because past the limit it
-/// draws nothing at all — that is the bug. Should a later iOS raise the ceiling, the worst
-/// case is a surface that draws both, which is heavier than intended and still visible.
+/// The substitute goes in a `background`, and the effect is switched off by handing it
+/// `Glass.identity` rather than by wrapping the content in an `if/else`: the branch would give
+/// the content a new identity the first time a measurement crossed the limit, and every piece of
+/// state inside a card would be thrown away with it. A different argument to the same modifier
+/// changes nothing.
+///
+/// ## Nothing opaque underneath
+///
+/// Below the ceiling there is no fill at all, and that is the whole of this file's fix. This
+/// modifier used to paint `NodusSurface.base` — a slate at 52–74% opacity — under the effect, on
+/// the reasoning that the glass needed "something of its own to refract". What it actually does
+/// is leave the material nothing to refract *through*: Liquid Glass samples what is behind it,
+/// and what was behind it was an opaque plate. Every card, bar and header in the app therefore
+/// rendered on iOS 26 as a flat tinted slab — the material was applied and had no effect, which
+/// is exactly what Apple's guidance warns against ("avoid placing solid fills behind a glass
+/// view", "avoid adding `.background` on a `glassEffect`").
+///
+/// `Glass.regular` is adaptive: it dims and brightens against what it is over, which is the job
+/// the plate was hired for and does better. What legibility still needs is a page worth
+/// refracting, and `NodusBackdrop` is one.
 @available(iOS 26.0, *)
 struct SystemGlass<S: InsettableShape>: ViewModifier {
     let glass: NodusGlass
@@ -167,26 +181,18 @@ struct SystemGlass<S: InsettableShape>: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background {
-                if fitsInGlass {
-                    // The floor under the system material.
-                    //
-                    // `glassEffect` is very nearly clear: it refracts the page rather than
-                    // covering it, which is beautiful on a photo and a problem on a violet
-                    // bloom — a card of body text sat on whatever the wash happened to be doing
-                    // behind it, and two cards a screen apart were two different colours. This
-                    // is a neutral slate at just under half opacity, so the glass has something
-                    // of its own to refract and every panel starts from the same place.
-                    shape.fill(NodusSurface.base(colourScheme, tint: glass.tint, weight: glass.weight))
-                } else {
+                // Only above the ceiling, where the system draws nothing and something has to.
+                // Below it the material is left alone with the page — see the note above.
+                if !fitsInGlass {
                     GlassSurfaceFill(glass: glass, shape: shape, expansive: true)
                 }
             }
-            .glassEffect(systemGlass, in: shape)
+            // `Glass.identity` rather than a branch: it is the SDK's own "no effect", so the
+            // modifier stays applied and the content keeps its identity across the swap.
+            .glassEffect(fitsInGlass ? systemGlass : .identity, in: shape)
             .contentShape(shape)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
     }
-
-    @Environment(\.colorScheme) private var colourScheme
 
     private var systemGlass: Glass {
         var value = Glass.regular
@@ -206,11 +212,16 @@ struct SystemGlass<S: InsettableShape>: ViewModifier {
     /// Half the "everything is violet" of this app was here: an 18% accent tint on every card,
     /// on top of an accent-tinted page, under an accent-coloured heading. A card that is only
     /// holding text needs enough tint to belong to the vault and no more.
+    ///
+    /// Raised by about a third when the slate plate under the material went away: the tint used
+    /// to be read against an opaque surface and is now read against whatever the page is doing,
+    /// which is a fainter thing to tint. These are the numbers at which a card still says which
+    /// vault it belongs to without the page turning violet again.
     private var tintStrength: Double {
         switch glass.weight {
-        case .thin: return glass.interactive ? 0.10 : 0.06
-        case .regular: return glass.interactive ? 0.15 : 0.09
-        case .prominent: return 0.24
+        case .thin: return glass.interactive ? 0.14 : 0.09
+        case .regular: return glass.interactive ? 0.20 : 0.13
+        case .prominent: return 0.28
         }
     }
 }
@@ -418,6 +429,39 @@ public struct NodusGlassContainer<Content: View>: View {
         }
         #else
         content
+        #endif
+    }
+}
+
+// MARK: - The travelling lozenge
+
+public extension View {
+    /// One bead of glass that says *which one*, and is meant to be moved rather than replaced.
+    ///
+    /// This is the piece of Liquid Glass a person actually recognises: the selected thing wears
+    /// a lozenge of glass, and choosing another one does not cross-fade two lozenges — the one
+    /// lozenge travels. Which is why this modifier takes no notion of "selected": there is a
+    /// single lozenge in the bar and its *position* is the state. The alternative, a capsule per
+    /// cell switched on and off with `glassEffectID`, morphs between two ends and cannot follow
+    /// a finger, because a finger is not at either end.
+    ///
+    /// Put it inside a `NodusGlassContainer`. That is what lets the system treat it and the
+    /// surface it is riding on as one body of glass rather than as two sheets stacked.
+    ///
+    /// Before iOS 26 it is a flat tinted capsule: it still travels, it simply does not refract
+    /// anything on the way.
+    @ViewBuilder
+    func nodusGlassLozenge(tint: Color) -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            // `interactive()` is what makes it feel picked up: the glass gives under the touch
+            // that is dragging it and springs back when the finger lifts.
+            glassEffect(Glass.regular.tint(tint.opacity(0.42)).interactive(), in: .capsule)
+        } else {
+            background { Capsule().fill(tint.opacity(0.18)) }
+        }
+        #else
+        background { Capsule().fill(tint.opacity(0.18)) }
         #endif
     }
 }
