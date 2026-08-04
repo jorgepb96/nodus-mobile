@@ -29,8 +29,29 @@ public enum NodusTabBarMetrics {
     public static let cell: CGFloat = 44
     static let topPadding: CGFloat = 5
     static let bottomPadding: CGFloat = 3
+
+    /// The same bar with a phone on its side.
+    ///
+    /// A landscape phone has around 390 points of height to give, and fifty-two of them plus the
+    /// home indicator is an eighth of the screen spent on four words. The vertical padding goes
+    /// first, because in landscape the system's own bottom inset already separates the bar from
+    /// the edge and the bar was adding its own on top of it — which is the air under each button
+    /// that reads as slack. The cell then comes down to thirty-eight, which still clears a
+    /// fingertip and is six points above what the system's own landscape bar uses.
+    ///
+    /// Portrait is untouched: there the height is not scarce and forty-four is the right cell.
+    static let compactCell: CGFloat = 38
+    static let compactTopPadding: CGFloat = 2
+    static let compactBottomPadding: CGFloat = 0
+
+    static func cell(compactHeight: Bool) -> CGFloat { compactHeight ? compactCell : cell }
+
     /// What the bar occupies above the home indicator.
-    public static let height: CGFloat = cell + topPadding + bottomPadding
+    public static func height(compactHeight: Bool) -> CGFloat {
+        compactHeight
+            ? compactCell + compactTopPadding + compactBottomPadding
+            : cell + topPadding + bottomPadding
+    }
 
     /// What the selection lozenge leaves clear inside the cell it is on.
     ///
@@ -116,6 +137,9 @@ struct NodusBottomBarClearance: ViewModifier {
     let enabled: Bool
 
     @Environment(\.nodusHasTabBar) private var hasTabBar
+    /// Compact height is a phone on its side. The bar is shorter there, and what a page reserves
+    /// for it has to be the same number or the page comes to rest in the wrong place.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     func body(content: Content) -> some View {
         content.safeAreaInset(edge: .bottom, spacing: 0) {
@@ -123,7 +147,7 @@ struct NodusBottomBarClearance: ViewModifier {
                 // Always applied, at zero when there is nothing to clear: an inset that comes and
                 // goes with an `if` is a different view each time, and the screen inside it would
                 // lose its scroll position every time a document sent the bar away.
-                .frame(height: enabled && hasTabBar ? NodusTabBarMetrics.height : 0)
+                .frame(height: enabled && hasTabBar ? NodusTabBarMetrics.height(compactHeight: verticalSizeClass == .compact) : 0)
                 .allowsHitTesting(false)
         }
     }
@@ -149,6 +173,11 @@ public struct NodusTabBar<Tab: Hashable>: View {
     private let accent: Color
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    /// A phone on its side, where height is the scarce dimension.
+    private var isCompactHeight: Bool { verticalSizeClass == .compact }
+    private var cellHeight: CGFloat { NodusTabBarMetrics.cell(compactHeight: isCompactHeight) }
 
     /// How wide the row of cells came out. Needed because the whole of the sliding behaviour is
     /// arithmetic on a horizontal position, and there is no fixed number to do it with: the bar
@@ -181,8 +210,8 @@ public struct NodusTabBar<Tab: Hashable>: View {
         row
             .background(alignment: .topLeading) { lozenge }
             .padding(.horizontal, 8)
-            .padding(.top, NodusTabBarMetrics.topPadding)
-            .padding(.bottom, NodusTabBarMetrics.bottomPadding)
+            .padding(.top, isCompactHeight ? NodusTabBarMetrics.compactTopPadding : NodusTabBarMetrics.topPadding)
+            .padding(.bottom, isCompactHeight ? NodusTabBarMetrics.compactBottomPadding : NodusTabBarMetrics.bottomPadding)
             .background(alignment: .top) { surface }
     }
 
@@ -246,7 +275,7 @@ public struct NodusTabBar<Tab: Hashable>: View {
         let width = max(cellWidth - NodusTabBarMetrics.lozengeInset * 2, 0)
         return Capsule()
             .fill(.clear)
-            .frame(width: width, height: NodusTabBarMetrics.cell)
+            .frame(width: width, height: cellHeight)
             .nodusGlassLozenge(tint: accent)
             .offset(x: centre - width / 2)
             .animation(reduceMotion ? nil : NodusMotion.morph, value: centre)
@@ -272,7 +301,7 @@ public struct NodusTabBar<Tab: Hashable>: View {
 
     private func cell(_ item: Item) -> some View {
         let selected = selection == item.tab
-        return VStack(spacing: NodusTabBarMetrics.labelSpacing) {
+        return VStack(spacing: isCompactHeight ? 1 : NodusTabBarMetrics.labelSpacing) {
             Image(systemName: item.systemImage)
                 // One size, one weight, stated in points. Left to a text style the four glyphs
                 // were four different optical weights — `bubble.left.and.text.bubble.right` is a
@@ -287,7 +316,7 @@ public struct NodusTabBar<Tab: Hashable>: View {
         }
         .foregroundStyle(selected ? accent.nodusReadable : Color.nodusSecondaryText)
         .frame(maxWidth: .infinity)
-        .frame(height: NodusTabBarMetrics.cell)
+        .frame(height: cellHeight)
         .contentShape(Rectangle())
     }
 
