@@ -295,12 +295,31 @@ struct MutationOutboxTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         try await outbox.enqueue(note("n1"), title: "Nota 1")
-        try await outbox.markRejected([(id: "n1", reason: "unknown_column:colour")])
+        try await outbox.markRejected([(id: "n1", reason: "unknown_column:colour", detail: nil)])
 
         let item = try #require(try await outbox.items().first)
         #expect(item.state == .rejected)
         #expect(item.detail?.contains("colour") == true)
         #expect(item.detail?.contains("unknown_column") == false, "the code itself is not an explanation")
+    }
+
+    @Test("the server's own sentence wins, because only it can carry numbers")
+    func serverExplanationIsPreferred() async throws {
+        let (outbox, directory) = try makeOutbox()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // "too large" alone is where the user's investigation ends. The sizes are the whole
+        // difference between a dead end and something they can act on.
+        try await outbox.enqueue(note("n1"), title: "Informe")
+        try await outbox.markRejected([(id: "n1", reason: "too_large", detail: "This row is 187 KB and this server accepts up to 256 KB per row.")])
+        #expect(try await outbox.items().first?.detail?.contains("187 KB") == true)
+
+        // A server that sends only the code still gets a sentence, and an empty one is not a
+        // sentence: it would leave the row rejected with nothing written next to it.
+        try await outbox.enqueue(note("n2"), title: "Otro informe")
+        try await outbox.markRejected([(id: "n2", reason: "too_large", detail: "   ")])
+        let fallback = try #require(try await outbox.items().first { $0.id == "n2" })
+        #expect(fallback.detail == MutationOutbox.explain("too_large"))
     }
 
     @Test("every rejection reason the server can send has a sentence")
@@ -309,7 +328,7 @@ struct MutationOutboxTests {
         let reasons = [
             "malformed", "missing_id", "unknown_kind", "table_not_mutable", "bad_key",
             "constraint", "delete_has_row", "missing_row", "non_scalar_value",
-            "bad_asset", "missing_asset", "too_large",
+            "bad_asset", "missing_asset", "too_large", "ledger_full",
         ]
         for reason in reasons {
             let explanation = MutationOutbox.explain(reason)

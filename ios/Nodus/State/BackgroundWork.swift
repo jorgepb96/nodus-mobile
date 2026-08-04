@@ -151,14 +151,26 @@ enum BackgroundJobs {
             if Task.isCancelled { return false }
             guard MutationOutbox.exists(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
             guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
-            guard let batch = try? await outbox.authorisedPending(limit: 200), !batch.isEmpty else { continue }
+            guard let queued = try? await outbox.authorisedPending(limit: 200), !queued.isEmpty else { continue }
+            // Cut by bytes, with the conservative budget rather than the server's: a background
+            // window is not the place to spend a round trip on capabilities. Whatever does not
+            // fit stays authorised and goes out in the next window or the next flush.
+            var batch: [Mutation] = []
+            var bytes = 0
+            for mutation in queued {
+                let size = mutation.encodedSize
+                if !batch.isEmpty, bytes + size > MutationLimits.unstated.maxBatchBytes { break }
+                bytes += size
+                batch.append(mutation)
+            }
+            if batch.count < queued.count { everythingLanded = false }
             // A locked phone cannot read the token. That is a reason to try again later, not a
             // failure of the change.
             guard let client = ConnectionClient.make(for: connection) else { everythingLanded = false; continue }
             do {
                 let receipt = try await client.send(mutations: batch, in: connection.spaceId)
                 try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
-                try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason) })
+                try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
             } catch {
                 everythingLanded = false
             }

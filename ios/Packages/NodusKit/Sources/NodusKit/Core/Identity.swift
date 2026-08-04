@@ -218,6 +218,14 @@ public struct ServerCapabilities: Sendable, Hashable, Codable {
     public let maxSnapshotBytes: Int
     public let maxSnapshotJsonBytes: Int
     public let maxMutationBatch: Int
+    /// One change, one request full of them, and the queue a space may hold undelivered.
+    ///
+    /// Optional because servers before 3.2.1 publish none of them, and that silence is exactly
+    /// why a Deep Research report could only discover the ceiling by being refused by it. A nil
+    /// means "this server will not say", and every caller has to keep working without it.
+    public let maxMutationBytes: Int?
+    public let maxMutationBatchBytes: Int?
+    public let maxLedgerBytes: Int?
 
     /// The OAuth protected-resource identifier for `/api/v1`.
     ///

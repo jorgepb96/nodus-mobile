@@ -39,6 +39,12 @@ struct SpaceSettingsView: View {
                     if let capabilities {
                         labelled("Largest image", ByteCountFormatter.string(fromByteCount: Int64(capabilities.maxAssetBytes), countStyle: .file))
                         labelled("Change batch", "\(capabilities.maxMutationBatch)")
+                        // A report is one change carrying its whole text, so this is the number
+                        // that decides whether a long one can be sent at all. Shown rather than
+                        // left to be discovered by a rejection.
+                        if let maxMutationBytes = capabilities.maxMutationBytes {
+                            labelled("Largest change", ByteCountFormatter.string(fromByteCount: Int64(maxMutationBytes), countStyle: .file))
+                        }
                     }
                     if let diagnosticError {
                         Text(diagnosticError).font(.caption).foregroundStyle(Color.nodusDanger)

@@ -210,13 +210,24 @@ public actor MutationOutbox {
         }
     }
 
-    public func markRejected(_ rejections: [(id: String, reason: String)]) throws {
+    /// Record why the server would not take these changes.
+    ///
+    /// `detail` is the server's own sentence when it wrote one. It is preferred over the local
+    /// translation because it is the only one that can carry numbers: "this row is 187 KB and
+    /// the server accepts 256 KB" is actionable, and "the change exceeds the maximum row size"
+    /// is where the user's investigation ends.
+    public func markRejected(_ rejections: [(id: String, reason: String, detail: String?)]) throws {
         guard !rejections.isEmpty else { return }
         try dbQueue.write { db in
             for rejection in rejections {
+                let sentence = rejection.detail?.trimmingCharacters(in: .whitespacesAndNewlines)
                 try db.execute(
                     sql: "UPDATE outbox SET state = ?, detail = ? WHERE id = ?",
-                    arguments: [State.rejected.rawValue, Self.explain(rejection.reason), rejection.id]
+                    arguments: [
+                        State.rejected.rawValue,
+                        sentence?.isEmpty == false ? sentence : Self.explain(rejection.reason),
+                        rejection.id,
+                    ]
                 )
             }
         }
@@ -277,7 +288,11 @@ public actor MutationOutbox {
         case "table_not_mutable": return "That table does not accept changes from a client."
         case "constraint": return "The server rejected the row on a database constraint."
         case "missing_asset", "bad_asset": return "An image the row refers to has not been uploaded."
-        case "too_large": return "The change exceeds the maximum row size."
+        // Only reached against a server too old to send its own sentence, which is also a
+        // server whose ceiling predates long reports. Saying which server would have to change
+        // is the difference between a dead end and something the user can act on.
+        case "too_large": return "This change is larger than the server accepts. A server on 3.2.1 or later takes reports this long."
+        case "ledger_full": return "The space is holding changes its owner has not collected yet. Nothing was lost. Try again once they have opened Nodus."
         case "malformed", "missing_id", "unknown_kind", "bad_key": return "The change was malformed."
         case "delete_has_row": return "A delete cannot carry content."
         case "missing_row": return "An insert needs content."
