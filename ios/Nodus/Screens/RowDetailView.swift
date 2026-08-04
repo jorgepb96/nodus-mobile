@@ -796,7 +796,10 @@ struct AssetImage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.quaternary.opacity(0.3))
+        // What is behind an image that has not arrived. `.quaternary` is the system's grey, and
+        // on a page whose every other surface is tinted glass it read as a hole rather than as a
+        // photograph on its way — the same reasoning `nodusFieldSurface` is written from.
+        .background(session.accent.opacity(0.12))
         .clipped()
         .task {
             guard data == nil, !failed else { return }

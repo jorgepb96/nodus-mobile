@@ -12,6 +12,27 @@ import SwiftUI
 ///
 /// So: forty-six points of content, a selected state that is a small pill and a colour rather
 /// than a slab, and a caller that can simply not show it.
+/// What the bar takes, stated once so the pages under it can clear it.
+///
+/// The bar floats: it is added with `safeAreaInset` outside the four `NavigationStack`s, and a
+/// `NavigationStack` does not pass an outer inset on to what it is showing. Measured on an
+/// iPhone, a page inside a tab reports a bottom safe area of 34 points — the home indicator, and
+/// nothing for the bar — so the last fifty points of every one of those pages was drawn behind
+/// it. That is the chat's composer, which was simply not on screen, and the last card of Home,
+/// which you could scroll to and not see.
+///
+/// The pages therefore have to reserve this themselves, and this is the number to reserve. It is
+/// a constant rather than a measurement because the bar is one: a 44-point cell, whose glyph and
+/// label are stated in points and do not grow with Dynamic Type, and the padding around it.
+public enum NodusTabBarMetrics {
+    /// The tappable cell. Apple's minimum, and what the bar is built from.
+    public static let cell: CGFloat = 44
+    static let topPadding: CGFloat = 5
+    static let bottomPadding: CGFloat = 3
+    /// What the bar occupies above the home indicator.
+    public static let height: CGFloat = cell + topPadding + bottomPadding
+}
+
 public struct NodusTabBar<Tab: Hashable>: View {
     public struct Item: Identifiable {
         public let tab: Tab
@@ -58,8 +79,8 @@ public struct NodusTabBar<Tab: Hashable>: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.top, 5)
-        .padding(.bottom, 3)
+        .padding(.top, NodusTabBarMetrics.topPadding)
+        .padding(.bottom, NodusTabBarMetrics.bottomPadding)
         .background(alignment: .top) { surface }
     }
 
@@ -88,7 +109,7 @@ public struct NodusTabBar<Tab: Hashable>: View {
         }
         .foregroundStyle(selected ? accent.nodusReadable : Color.nodusSecondaryText)
         .frame(maxWidth: .infinity)
-        .frame(height: 44)
+        .frame(height: NodusTabBarMetrics.cell)
         .contentShape(Rectangle())
     }
 
