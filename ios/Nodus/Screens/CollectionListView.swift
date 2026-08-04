@@ -294,13 +294,13 @@ struct SpecialListView: View {
                 }
             }
         }
-        .sheet(isPresented: $composing) {
+        .nodusSheet(isPresented: $composing) {
             NoteEditor(accent: session.accent, note: nil) { title, body in
                 await outbox?.queueNote(title: title, body: body, folderId: nil)
                 queued = true
             }
         }
-        .sheet(item: $editing) { note in
+        .nodusSheet(item: $editing) { note in
             NoteEditor(accent: session.accent, note: note) { title, body in
                 await outbox?.queueNote(
                     id: note.id,

@@ -105,7 +105,11 @@ struct ResearchView: View {
             .padding(NodusSpace.page)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .nodusPageBackdrop(accent: session.accent)
+        // The only screen in the app that paints its own wash *and* is the root of a tab, so it
+        // is the only one that has to say it does not need the bar reserved twice: the shell's
+        // own backdrop, one container out, has already done it. This one is here for the iPad,
+        // where there is no shell wrapper around a detail column — and no bar either.
+        .nodusPageBackdrop(accent: session.accent, reservesBottomBar: false)
         .navigationTitle("Research")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -114,7 +118,7 @@ struct ResearchView: View {
                     .tint(session.accent)
             }
         }
-        .sheet(isPresented: $showingProviders) {
+        .nodusSheet(isPresented: $showingProviders) {
             ProviderSettingsView(accent: session.accent, requiredEmbedding: requiredEmbedding)
                 .environment(ai)
         }
@@ -191,7 +195,7 @@ struct ChatTab: View {
                     .tint(session.accent)
             }
         }
-        .sheet(isPresented: $showingProviders) {
+        .nodusSheet(isPresented: $showingProviders) {
             ProviderSettingsView(accent: session.accent, requiredEmbedding: requiredEmbedding)
                 .environment(ai)
         }

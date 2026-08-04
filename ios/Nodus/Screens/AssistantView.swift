@@ -99,7 +99,7 @@ struct ChatScreen: View {
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingHistory) {
+        .nodusSheet(isPresented: $showingHistory) {
             ChatHistoryView(
                 store: history,
                 accent: session.accent,

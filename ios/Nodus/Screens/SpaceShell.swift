@@ -65,7 +65,7 @@ struct SpaceShell: View {
             await session.loadMirror()
             await session.probeEmbedding()
         }
-        .sheet(isPresented: $showingSettings) {
+        .nodusSheet(isPresented: $showingSettings) {
             SpaceSettingsView(session: session)
         }
     }
@@ -144,33 +144,26 @@ struct SpaceShell: View {
     /// draws its own opaque page background over anything behind it, so a single shared
     /// backdrop showed up as plain black the moment a tab was selected.
     ///
-    /// The bar at the bottom is reserved for here rather than inherited from there, and that is
-    /// not belt and braces — it is the whole reason the bar could be tapped through. The bar is
-    /// added with `safeAreaInset` on the stack of pages, *outside* these navigation stacks, and a
-    /// `NavigationStack` does not pass an outer inset on to what it shows: measured, a page in a
-    /// tab reports 34 points of bottom safe area, which is the home indicator and nothing else.
-    /// So the last fifty points of every tab were drawn behind the bar — the chat's composer,
-    /// which was therefore not on screen at all, and the last card of Home, which you could
-    /// scroll to and still not see.
+    /// Room for the bar comes from the backdrop, and it is the same backdrop every screen in the
+    /// app asks for. The bar is added with `safeAreaInset` on the stack of pages, *outside* these
+    /// navigation stacks, and a `NavigationStack` does not pass an outer inset on to what it
+    /// shows: measured, a page in a tab reports 34 points of bottom safe area, which is the home
+    /// indicator and nothing else. So the last fifty points of every tab were drawn behind the
+    /// bar — the chat's composer, which was therefore not on screen at all, and the last card of
+    /// Home, which you could scroll to and still not see.
+    ///
+    /// This wrapper used to reserve those points itself, which fixed the four roots and left
+    /// every screen *pushed* from one still drawing its last row under the bar. The reservation
+    /// belongs to whatever is inside the stack rather than to the stack, so it went to
+    /// `nodusPageBackdrop` — where the root gets it from the call below, and a pushed screen gets
+    /// it from its own.
     private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         NavigationStack {
             content()
                 .safeAreaInset(edge: .top) { header }
-                .safeAreaInset(edge: .bottom, spacing: 0) { barClearance }
                 .toolbar(.hidden, for: .navigationBar)
                 .nodusPageBackdrop(accent: session.accent)
         }
-    }
-
-    /// Room for the bar, and nothing drawn in it.
-    ///
-    /// Clear rather than the bar itself: the bar is drawn once, over all four pages, so that
-    /// content scrolls *under* its glass — which is what the material is for. This only stops
-    /// the page from coming to rest there.
-    private var barClearance: some View {
-        Color.clear
-            .frame(height: chrome.hidesBottomBar ? 0 : NodusTabBarMetrics.height)
-            .allowsHitTesting(false)
     }
 
     // MARK: iPad

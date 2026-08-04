@@ -28,7 +28,7 @@ struct ProviderSettingsView: View {
         Group {
             if embedded { content } else { NavigationStack { content } }
         }
-        .sheet(item: $editing) { provider in keySheet(provider) }
+        .nodusSheet(item: $editing) { provider in keySheet(provider) }
         .scrollContentBackground(.hidden)
         .nodusPageBackdrop(accent: accent)
         .tint(accent)

@@ -36,7 +36,7 @@ struct RootView: View {
         .environment(preferences)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
-        .sheet(isPresented: $showingConnect) { ConnectView().environment(model) }
+        .nodusSheet(isPresented: $showingConnect) { ConnectView().environment(model) }
         .task {
             // Reopen where the user left off, but only if the credential is still there — a
             // revoked token should land on the picker, not on a broken shell.

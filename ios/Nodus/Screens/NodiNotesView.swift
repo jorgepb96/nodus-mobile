@@ -99,7 +99,7 @@ struct NodiNotesView: View {
                     .tint(session.accent)
             }
         }
-        .sheet(isPresented: $composing) {
+        .nodusSheet(isPresented: $composing) {
             NodiNoteEditor(accent: session.accent, note: nil) { title, content in
                 let typed = title.trimmingCharacters(in: .whitespaces)
                 let now = Date().timeIntervalSince1970 * 1000
@@ -114,7 +114,7 @@ struct NodiNotesView: View {
                 ))
             }
         }
-        .sheet(item: $editing) { note in
+        .nodusSheet(item: $editing) { note in
             NodiNoteEditor(accent: session.accent, note: note) { title, content in
                 let typed = title.trimmingCharacters(in: .whitespaces)
                 var updated = note
