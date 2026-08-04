@@ -103,6 +103,41 @@ struct LocalisationTests {
         _ = try translated("Send the report again")
     }
 
+    // The queue's counts, which are the only strings in the app that have to agree with a
+    // number. The button used to read `"Send \(n) change\(n == 1 ? "" : "s")"` — an English
+    // plural built by hand, inside an interpolated key, and an interpolated key matches nothing
+    // in the catalogue. So the busiest control on the screen was English on every phone and
+    // wrong in Spanish twice over. Asserted through `String(localized:)` rather than a bare
+    // lookup because the plural rule lives in the compiled variations, not in the strings table.
+    @Test("the queue counts agree with their number, in Spanish")
+    func queueCountsInflect() throws {
+        let bundle = try spanish
+        #expect(String(localized: "^[Send \(1) change](inflect: true)", bundle: bundle) == "Enviar 1 cambio")
+        #expect(String(localized: "^[Send \(5) change](inflect: true)", bundle: bundle) == "Enviar 5 cambios")
+        #expect(String(localized: "^[\(1) change](inflect: true) to send", bundle: bundle) == "1 cambio por enviar")
+        #expect(String(localized: "^[\(3) change](inflect: true) to send", bundle: bundle) == "3 cambios por enviar")
+        #expect(String(localized: "^[\(1) change](inflect: true) waiting for its vault", bundle: bundle)
+                == "1 cambio esperando a su vault")
+        #expect(String(localized: "^[\(2) change](inflect: true) waiting for its vault", bundle: bundle)
+                == "2 cambios esperando a su vault")
+    }
+
+    @Test("everything the send queue says has Spanish")
+    func sendQueueStrings() throws {
+        _ = try translated("Send queue")
+        _ = try translated("How this reaches the vault")
+        _ = try translated("The server keeps your changes in a ledger. They join the vault when its owner opens Nodus desktop and republishes. Until then nobody sees them, you included.")
+        _ = try translated("Nothing queued")
+        _ = try translated("Notes you write and reports you send appear here before they travel.")
+        _ = try translated("Not sent")
+        _ = try translated("On the server")
+        _ = try translated("Rejected")
+        _ = try translated("Saved on this device.")
+        _ = try translated("Waiting for the owner to republish.")
+        _ = try translated("The server rejected it.")
+        _ = try translated("Remove")
+    }
+
     // These are read by iOS, not by the app, and a plist string on its own is shown verbatim in
     // every language — which is how both of them were Spanish-only for everybody.
     @Test("the permission prompts iOS shows are localised too")
