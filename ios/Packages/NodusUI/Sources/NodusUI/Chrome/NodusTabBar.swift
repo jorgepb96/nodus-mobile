@@ -31,6 +31,20 @@ public enum NodusTabBarMetrics {
     static let bottomPadding: CGFloat = 3
     /// What the bar occupies above the home indicator.
     public static let height: CGFloat = cell + topPadding + bottomPadding
+
+    /// What the selection lozenge leaves clear inside the cell it is on.
+    ///
+    /// The lozenge takes the whole cell — the glyph and the label under it — rather than a
+    /// capsule around the glyph alone. A section is its name as much as its symbol, and a
+    /// highlight that stops above the word leaves the word looking like a caption on the
+    /// highlight rather than part of what is selected.
+    ///
+    /// Its width is therefore the cell's, less this, and not a constant: every cell is the same
+    /// width, so the lozenge is still one size for a given screen — which is what matters for
+    /// something that has to read as a single object travelling rather than as one being redrawn
+    /// at each stop.
+    static let lozengeInset: CGFloat = 5
+    static let labelSpacing: CGFloat = 2
 }
 
 private struct HasTabBarKey: EnvironmentKey {
@@ -135,7 +149,21 @@ public struct NodusTabBar<Tab: Hashable>: View {
     private let accent: Color
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var indicator
+
+    /// How wide the row of cells came out. Needed because the whole of the sliding behaviour is
+    /// arithmetic on a horizontal position, and there is no fixed number to do it with: the bar
+    /// is as wide as the phone, minus its margins.
+    @State private var rowWidth: CGFloat = 0
+
+    /// Where the finger is, while there is one. `@GestureState` rather than `@State` so it
+    /// cannot survive the gesture that set it — a lozenge stranded under a finger that has been
+    /// lifted is the one failure this control cannot recover from on its own.
+    @GestureState private var touchX: CGFloat?
+
+    /// The coordinate space the drag is measured in. Named, because the gesture has to report
+    /// positions in the row's own space and not in the window's — the bar is inset from both
+    /// edges and sits above the home indicator.
+    private static var space: String { "nodus.tabbar.row" }
 
     public init(selection: Binding<Tab>, accent: Color, items: [Item]) {
         _selection = selection
@@ -144,46 +172,114 @@ public struct NodusTabBar<Tab: Hashable>: View {
     }
 
     public var body: some View {
+        // No `GlassEffectContainer` around these two, and that is a finding rather than an
+        // omission. A container merges the glass inside it into one body — which is what it is
+        // for, and exactly wrong here: the lozenge sits *on* the bar's own surface, zero points
+        // away, so any spacing at all merges the two into a single shape that is then composited
+        // over the row. The glyphs and the labels came out refracted through the bar they belong
+        // to, blurred into a smear. Stacked glass is arranged by layering it, not by grouping it.
+        row
+            .background(alignment: .topLeading) { lozenge }
+            .padding(.horizontal, 8)
+            .padding(.top, NodusTabBarMetrics.topPadding)
+            .padding(.bottom, NodusTabBarMetrics.bottomPadding)
+            .background(alignment: .top) { surface }
+    }
+
+    private var row: some View {
         HStack(spacing: 0) {
             ForEach(items) { item in
-                Button {
-                    guard selection != item.tab else { return }
-                    if reduceMotion {
-                        selection = item.tab
-                    } else {
-                        withAnimation(NodusMotion.standard) { selection = item.tab }
-                    }
-                } label: {
-                    cell(item)
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selection == item.tab ? [.isSelected, .isButton] : .isButton)
+                cell(item)
+                    .accessibilityAddTraits(selection == item.tab ? [.isSelected, .isButton] : .isButton)
+                    .accessibilityAction { select(item.tab) }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.top, NodusTabBarMetrics.topPadding)
-        .padding(.bottom, NodusTabBarMetrics.bottomPadding)
-        .background(alignment: .top) { surface }
+        .coordinateSpace(.named(Self.space))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
+        .contentShape(Rectangle())
+        .gesture(slide)
+        // The small knock as the lozenge passes from one section to the next. Without it the
+        // slide is silent to the hand, and a control you can drag with no feedback reads as one
+        // you are dragging *at* rather than *with*.
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    /// Press and slide, and the sections change under your finger.
+    ///
+    /// `minimumDistance: 0`, which makes this the bar's tap handler as well: a tap is a slide
+    /// that went nowhere, and writing it as one gesture is what stops a `Button` and a drag
+    /// arguing over the same touch. The lozenge follows the finger continuously rather than
+    /// jumping cell to cell, because the position it is drawn at is the finger's, not the
+    /// selection's — the selection only decides where it comes to rest.
+    private var slide: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+            .updating($touchX) { value, state, _ in state = value.location.x }
+            .onChanged { value in select(tab(at: value.location.x)) }
+            .onEnded { value in select(tab(at: value.location.x)) }
+    }
+
+    private func select(_ tab: Tab?) {
+        guard let tab, tab != selection else { return }
+        if reduceMotion {
+            selection = tab
+        } else {
+            withAnimation(NodusMotion.morph) { selection = tab }
+        }
+    }
+
+    /// Which section a point along the bar belongs to. Clamped at both ends, so a finger that
+    /// runs off the side keeps the section it last passed over rather than losing it.
+    private func tab(at x: CGFloat) -> Tab? {
+        guard rowWidth > 0, !items.isEmpty else { return nil }
+        let width = rowWidth / CGFloat(items.count)
+        let index = min(items.count - 1, max(0, Int(x / width)))
+        return items[index].tab
+    }
+
+    /// The one piece of glass in the bar, and where it currently is.
+    ///
+    /// Under the finger while there is one, on the selected cell otherwise — and the spring
+    /// between the two is what makes it read as liquid: it trails a little behind the finger on
+    /// the way across and settles onto the cell when the finger lifts, rather than being
+    /// wherever the touch is at each frame.
+    private var lozenge: some View {
+        let width = max(cellWidth - NodusTabBarMetrics.lozengeInset * 2, 0)
+        return Capsule()
+            .fill(.clear)
+            .frame(width: width, height: NodusTabBarMetrics.cell)
+            .nodusGlassLozenge(tint: accent)
+            .offset(x: centre - width / 2)
+            .animation(reduceMotion ? nil : NodusMotion.morph, value: centre)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private var cellWidth: CGFloat {
+        guard rowWidth > 0, !items.isEmpty else { return 0 }
+        return rowWidth / CGFloat(items.count)
+    }
+
+    private var centre: CGFloat {
+        guard cellWidth > 0 else { return 0 }
+        if let touchX {
+            // Never past the first or last cell's own centre: the lozenge may be dragged, not
+            // taken off the end of the bar.
+            return min(max(touchX, cellWidth / 2), rowWidth - cellWidth / 2)
+        }
+        let index = items.firstIndex { $0.tab == selection } ?? 0
+        return (CGFloat(index) + 0.5) * cellWidth
     }
 
     private func cell(_ item: Item) -> some View {
         let selected = selection == item.tab
-        return VStack(spacing: 2) {
+        return VStack(spacing: NodusTabBarMetrics.labelSpacing) {
             Image(systemName: item.systemImage)
                 // One size, one weight, stated in points. Left to a text style the four glyphs
                 // were four different optical weights — `bubble.left.and.text.bubble.right` is a
                 // far heavier drawing than `house` at the same nominal size — and every one of
                 // them grew with Dynamic Type until the labels underneath had nowhere to go.
                 .font(.system(size: 17, weight: selected ? .semibold : .regular))
-                .frame(height: 20)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 3)
-                .background {
-                    if selected {
-                        Capsule().fill(accent.opacity(0.18))
-                            .matchedGeometryEffect(id: "selection", in: indicator)
-                    }
-                }
+                .frame(height: 21)
             Text(item.title)
                 .font(.system(size: 10, weight: selected ? .semibold : .medium))
                 .lineLimit(1)
