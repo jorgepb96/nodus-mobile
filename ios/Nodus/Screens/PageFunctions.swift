@@ -161,8 +161,16 @@ private struct PageFunctionsModifier: ViewModifier {
                 .animation(NodusMotion.morph, value: isWheelOpen)
                 // Walking the matches is the only thing that scrolls the page for the reader,
                 // and it happens here because this is where the proxy is.
+                //
+                // Except where the block can do better. An anchor is one point per block, which
+                // is the right unit for a heading or a line of a list and the wrong one for a
+                // paragraph of a report: two matches in the same paragraph are the same anchor,
+                // so walking onto the second moved nothing, and a paragraph taller than the
+                // screen centres with the word anywhere at all — including off it. A paragraph
+                // of prose therefore says so at registration and puts the word on the screen
+                // itself; the page stays out of its way rather than scrolling twice.
                 .onChange(of: search.scrollTarget) { _, target in
-                    guard let target else { return }
+                    guard let target, !search.placesItsOwnMatches(target.path) else { return }
                     scroll(proxy, to: PageSearchAnchor(path: target.path), anchor: .center)
                 }
                 .nodusSheet(isPresented: $isChatOpen) {

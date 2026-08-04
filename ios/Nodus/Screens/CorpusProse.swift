@@ -304,8 +304,12 @@ struct CorpusProse: View {
                 }
                 .nodusRevealed(search?.revealed == path)
                 .id(PageSearchAnchor(path: path))
-                .onAppear { search?.register(path, text: displayed(block)) }
-                .onChange(of: block.text) { _, _ in search?.register(path, text: displayed(block)) }
+                // A paragraph of a document is a text view, and only it knows where inside
+                // itself a word sits. A heading is one line and the page can place it.
+                .onAppear { search?.register(path, text: displayed(block), placesItsOwnMatches: placesItsOwnMatches(block)) }
+                .onChange(of: block.text) { _, _ in
+                    search?.register(path, text: displayed(block), placesItsOwnMatches: placesItsOwnMatches(block))
+                }
                 .onDisappear { search?.unregister(path) }
             }
         }
@@ -333,6 +337,12 @@ struct CorpusProse: View {
                 }
             }
         }
+    }
+
+    /// Whether this block is one of the `DocumentProse` paragraphs, which position their own
+    /// matches. The same condition the body branches on, so the two cannot drift.
+    private func placesItsOwnMatches(_ block: Block) -> Bool {
+        block.level == 0 && reading.document
     }
 
     /// A heading, set as the document it belongs to would set one.
@@ -485,6 +495,23 @@ struct CorpusProse: View {
     }
 }
 
+extension UIView {
+    /// The scroll view this view is inside, when it is inside one.
+    ///
+    /// Only ever asked once the view is on the screen. Asking from `updateUIView` answers nothing:
+    /// SwiftUI updates a representable before it puts it in the hierarchy, so the walk runs out of
+    /// superviews — which is what makes anything hung off the scroll view from there silently do
+    /// nothing at all.
+    var enclosingScrollView: UIScrollView? {
+        var candidate = superview
+        while let current = candidate {
+            if let scrollView = current as? UIScrollView { return scrollView }
+            candidate = current.superview
+        }
+        return nil
+    }
+}
+
 /// One paragraph of a document.
 ///
 /// A `UITextView` rather than a `Text` — non-editable, non-scrolling, sized by SwiftUI — because
@@ -562,6 +589,48 @@ private struct DocumentProse: UIViewRepresentable {
         guard rebuilt || context.coordinator.painted != highlights else { return }
         context.coordinator.painted = highlights
         view.attributedText = painted(context.coordinator.base)
+
+        // The word, not the paragraph. Deferred by a turn of the run loop because the frame this
+        // measurement is against is the one SwiftUI is still deciding: `updateUIView` runs before
+        // the layout that gives the paragraph its height, and a rect converted through a stale
+        // frame lands somewhere else on the page.
+        if let highlights, let active = highlights.active, highlights.aim != context.coordinator.aimed {
+            context.coordinator.aimed = highlights.aim
+            DispatchQueue.main.async { Self.bringIntoView(active, of: view) }
+        }
+    }
+
+    /// Puts one match in the middle of the screen.
+    ///
+    /// A paragraph of a report is a single text view, and the page around it can only scroll to
+    /// the paragraph as a whole — which for a paragraph taller than the screen says nothing about
+    /// where the word is, and for two matches in the same paragraph says the same thing twice.
+    /// The text view is the one object that knows where a character sits, so it is the one that
+    /// answers.
+    private static func bringIntoView(_ range: NSRange, of view: UITextView) {
+        guard
+            let scrollView = view.enclosingScrollView,
+            let start = view.position(from: view.beginningOfDocument, offset: range.location),
+            let end = view.position(from: start, offset: range.length),
+            let textRange = view.textRange(from: start, to: end)
+        else { return }
+        let rect = view.firstRect(for: textRange)
+        guard !rect.isNull, !rect.isInfinite else { return }
+
+        // A scroll view lays its subviews out in content coordinates, so this is already the
+        // position on the page rather than on the screen.
+        let onPage = view.convert(rect, to: scrollView).midY
+        let inset = scrollView.adjustedContentInset
+        let visible = scrollView.bounds.height - inset.top - inset.bottom
+        let wanted = onPage - inset.top - visible / 2
+
+        // The ends of a document cannot be centred, and asking for it would leave the page
+        // hanging in its rubber band.
+        let lowest = -inset.top
+        let highest = max(lowest, scrollView.contentSize.height + inset.bottom - scrollView.bounds.height)
+        let offset = CGPoint(x: scrollView.contentOffset.x, y: min(max(wanted, lowest), highest))
+        guard abs(offset.y - scrollView.contentOffset.y) > 0.5 else { return }
+        scrollView.setContentOffset(offset, animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     struct Identity: Equatable {
@@ -662,6 +731,8 @@ private struct DocumentProse: UIViewRepresentable {
         /// The marks currently on screen, so a keystroke that changes nothing here changes
         /// nothing here.
         var painted: PageSearch.Highlights?
+        /// The last request this paragraph brought a match into view for.
+        var aimed = 0
 
         init(onOpen: @escaping (URL) -> Bool, linksLive: Bool) {
             self.onOpen = onOpen

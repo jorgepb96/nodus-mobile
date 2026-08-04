@@ -60,6 +60,9 @@ final class PageSearch {
     /// times while a report appears, and nothing in a view's body reads it.
     @ObservationIgnored private var entries: [Path: String] = [:]
 
+    /// The blocks that bring their own matches into view. Not observed, for the same reason.
+    @ObservationIgnored private var positioning: Set<Path> = []
+
     /// Where a piece of text sits in the page's reading order.
     ///
     /// A path rather than a number so a section can be numbered without knowing how many
@@ -84,6 +87,11 @@ final class PageSearch {
     struct Highlights: Equatable {
         let ranges: [NSRange]
         let active: NSRange?
+        /// The nonce of the request that made this block the active one, and nought when it is
+        /// not. Carried so a block that positions its own matches is told to aim again when the
+        /// reader presses "next" onto a match it is already showing — otherwise the second press
+        /// changes nothing here and the page does not move.
+        let aim: Int
     }
 
     // MARK: The bar
@@ -100,7 +108,11 @@ final class PageSearch {
     // MARK: Registration
 
     /// What this block is showing, in the words the reader can see.
-    func register(_ path: Path, text: String) {
+    ///
+    /// `placesItsOwnMatches` is declared by prose that can put a *word* on the screen rather than
+    /// a block — one paragraph of a document, which is a text view and knows its own layout.
+    func register(_ path: Path, text: String, placesItsOwnMatches: Bool = false) {
+        if placesItsOwnMatches { positioning.insert(path) }
         guard entries[path] != text else { return }
         entries[path] = text
         hasContent = true
@@ -108,6 +120,7 @@ final class PageSearch {
     }
 
     func unregister(_ path: Path) {
+        positioning.remove(path)
         guard entries.removeValue(forKey: path) != nil else { return }
         hasContent = !entries.isEmpty
         if !query.isEmpty { recompute(keepingActive: true) }
@@ -168,10 +181,28 @@ final class PageSearch {
     func highlights(for path: Path) -> Highlights? {
         guard let ranges = grouped[path], !ranges.isEmpty else { return nil }
         let active = activeMatch
+        let holdsActive = active?.path == path
         return Highlights(
             ranges: ranges,
-            active: active?.path == path ? active?.range : nil
+            active: holdsActive ? active?.range : nil,
+            // Only the block being aimed at carries the nonce, so pressing "next" repaints one
+            // paragraph rather than every paragraph that happens to contain the word.
+            aim: holdsActive ? scrollTarget?.nonce ?? 0 : 0
         )
+    }
+
+    /// Whether the block at `path` brings its own match into view.
+    ///
+    /// A paragraph of a document is one `UITextView`, and it is the only thing on the page that
+    /// knows where inside itself a word sits. Where it says so, the page must not also scroll to
+    /// the paragraph as a whole: a paragraph taller than the screen has no single right position,
+    /// and two matches inside one paragraph are the same position, which is why walking onto the
+    /// second one used to move nothing at all.
+    ///
+    /// Only while there is something found in it. Being pointed at by an answer — `reveal` — is a
+    /// request to show the paragraph, not a word inside it, and that one the page still serves.
+    func placesItsOwnMatches(_ path: Path) -> Bool {
+        positioning.contains(path) && grouped[path] != nil
     }
 
     // MARK: Finding
