@@ -32,11 +32,29 @@ struct ResearchLibraryView: View {
         return published.filter { $0.searchableText.lowercased().contains(needle) }
     }
 
+    /// The run in flight, which belongs to the space and not to the screen that started it.
+    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
+
     var body: some View {
         List {
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load", message: LocalizedStringKey(error))
                     .listRowBackground(Color.clear)
+            }
+
+            if let progress = runner.progress {
+                Section {
+                    RunningReportRow(
+                        objective: runner.request?.objective ?? "",
+                        progress: progress,
+                        isIllustrating: runner.isIllustrating,
+                        accent: session.accent,
+                        onCancel: { runner.cancel() }
+                    )
+                    .listRowBackground(Color.clear)
+                } header: {
+                    NodusSectionLabel("Being written")
+                }
             }
 
             if !matchingLocal.isEmpty {
@@ -78,7 +96,7 @@ struct ResearchLibraryView: View {
                 }
             }
 
-            if matchingLocal.isEmpty, matchingPublished.isEmpty, !isLoading {
+            if matchingLocal.isEmpty, matchingPublished.isEmpty, !isLoading, !runner.isRunning {
                 ContentUnavailableView(
                     query.isEmpty ? "No reports" : "No matches",
                     systemImage: "doc.text.magnifyingglass",
@@ -124,7 +142,13 @@ struct ResearchLibraryView: View {
 
     private func localRow(_ saved: LocalReportStore.Saved) -> some View {
         HStack(spacing: 13) {
-            glyphThumbnail(saved.mode == .teachingUnit ? "graduationcap" : "doc.text")
+            if let url = local.imageURL(for: saved) {
+                LocalReportImage(url: url)
+                    .frame(width: Self.thumbnail, height: Self.thumbnail)
+                    .clipShape(NodusRadius.controlShape)
+            } else {
+                glyphThumbnail(saved.mode == .teachingUnit ? "graduationcap" : "doc.text")
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(saved.title).font(.subheadline.weight(.medium)).lineLimit(2)
                 Text("\(saved.report.words.formatted()) words · \(saved.createdAt.formatted(date: .abbreviated, time: .shortened))")
@@ -193,6 +217,121 @@ struct ResearchLibraryView: View {
     }
 }
 
+/// A run in flight, listed among the reports it is about to join.
+///
+/// The progress belongs here rather than only on the screen that started it: a report takes
+/// minutes, the user goes and reads something else, and "where is it" should be answered by the
+/// list of reports rather than by remembering which screen it was launched from.
+struct RunningReportRow: View {
+    let objective: String
+    let progress: DeepResearchProgress
+    var isIllustrating = false
+    let accent: Color
+    let onCancel: () -> Void
+
+    @State private var confirming = false
+
+    var body: some View {
+        HStack(spacing: 13) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(objective).font(.subheadline.weight(.medium)).lineLimit(2)
+                if let fraction = progress.fraction {
+                    ProgressView(value: fraction).tint(accent)
+                } else {
+                    ProgressView().tint(accent).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+
+            Button {
+                confirming = true
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.nodusDanger)
+            }
+            // A row inside a `List` swallows a button's tap for the row's own selection unless
+            // the button says it is one control rather than the whole cell.
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Stop this report")
+        }
+        .padding(.vertical, 8)
+        .nodusConfirmsCancelling($confirming, onCancel: onCancel)
+    }
+
+    private var detail: String {
+        if isIllustrating { return String(localized: "Drawing the illustration") }
+        guard let index = progress.sectionIndex, let total = progress.sectionTotal else {
+            return progress.message
+        }
+        return "\(progress.message) · \(index + 1)/\(total)"
+    }
+}
+
+/// An illustration drawn on this device, read from the file it was saved to.
+struct LocalReportImage: View {
+    let url: URL
+
+    var body: some View {
+        if let image = UIImage(contentsOfFile: url.path) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .clipped()
+        }
+    }
+}
+
+/// The prose of a report and the sources under it, set the same way wherever it is read.
+struct ReportBody: View {
+    let report: DeepResearchReport
+    let session: SpaceSession
+
+    /// Token → label, for prose written before assembly turned its citations into links. A
+    /// report written since carries the labels in the page itself and needs nothing here.
+    private var referenceLabels: [String: String] {
+        Dictionary(report.references.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(Array(report.sections.enumerated()), id: \.offset) { _, section in
+                VStack(alignment: .leading, spacing: 14) {
+                    ReportSectionTitle(section.title, accent: session.accent)
+                    // The prose carries the citations the validator kept. Rendered as plain
+                    // text they were bare `nodus://` URLs in the middle of a sentence;
+                    // rendered here they are the source's own name, and they open it.
+                    CorpusProse(
+                        section.prose,
+                        accent: session.accent,
+                        session: session,
+                        labels: referenceLabels
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(ReportLayout.sectionPadding)
+                // The same surface the header above it wears. A report that reads as one
+                // document should not be a card followed by a column of darker panels.
+                .nodusGlass(NodusGlass(.regular, tint: session.accent))
+            }
+
+            if !report.references.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ReportSectionTitle("References", accent: session.accent)
+                    Text("Built from the works actually cited.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    ForEach(report.references, id: \.token) { entry in
+                        Text(verbatim: "· \(entry.label)").font(.caption)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(ReportLayout.sectionPadding)
+                .nodusGlass(NodusGlass(.regular, tint: session.accent))
+            }
+        }
+    }
+}
+
 /// A report generated here.
 struct LocalReportReader: View {
     let session: SpaceSession
@@ -202,11 +341,11 @@ struct LocalReportReader: View {
     let saved: LocalReportStore.Saved
 
     @Environment(AppPreferences.self) private var preferences
+    /// The report with its citations named, when the one on disk still had raw ids in it.
+    @State private var repaired: DeepResearchReport?
 
-    /// Token → label for the works this report really cited.
-    private var referenceLabels: [String: String] {
-        Dictionary(saved.report.references.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first })
-    }
+    private var report: DeepResearchReport { repaired ?? saved.report }
+    private var store: LocalReportStore { LocalReportStore.shared(for: session.connection.spaceId) }
 
     /// What the send control needs, or nothing at all when this access cannot send.
     private var sendContext: ReportSendContext? {
@@ -220,21 +359,28 @@ struct LocalReportReader: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let url = store.imageURL(for: saved) {
+                    LocalReportImage(url: url)
+                        .frame(height: 200)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text(saved.title).font(.title3.weight(.semibold))
                     HStack(spacing: 12) {
-                        Label("\(saved.report.words.formatted()) words", systemImage: "text.alignleft")
-                        Label(String(format: "%.1f pp.", saved.report.pages), systemImage: "doc")
+                        Label("\(report.words.formatted()) words", systemImage: "text.alignleft")
+                        Label(String(format: "%.1f pp.", report.pages), systemImage: "doc")
                     }
                     .font(.caption).foregroundStyle(.secondary)
                     Text("\(saved.mode.label) · \(saved.modelLabel)")
                         .font(.caption2).foregroundStyle(.tertiary)
 
-                    if saved.report.citationsRejected > 0 {
+                    if report.citationsRejected > 0 {
                         NodusNotice(
                             tone: .caution,
-                            title: "\(saved.report.citationsRejected) invented citations, removed",
-                            message: "Of \(saved.report.citationsChecked) checked."
+                            title: "\(report.citationsRejected) invented citations, removed",
+                            message: "Of \(report.citationsChecked) checked."
                         )
                     }
 
@@ -242,7 +388,7 @@ struct LocalReportReader: View {
                     // whole gap: the control lived on the screen that generated the report and
                     // nowhere else, so a report from yesterday could only be shared as Markdown.
                     ReportActions(
-                        markdown: saved.report.markdown,
+                        markdown: report.markdown,
                         title: nil,
                         send: sendContext,
                         accent: session.accent
@@ -253,38 +399,9 @@ struct LocalReportReader: View {
                 .padding(NodusSpace.cardPadding)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
-                ForEach(Array(saved.report.sections.enumerated()), id: \.offset) { _, section in
-                    VStack(alignment: .leading, spacing: 14) {
-                        ReportSectionTitle(section.title, accent: session.accent)
-                        CorpusProse(
-                            section.prose,
-                            accent: session.accent,
-                            session: session,
-                            labels: referenceLabels
-                        )
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(ReportLayout.sectionPadding)
-                    // `.regular`, the same weight as the header above it. The sections were
-                    // `.thin` — a different, darker material — so a report was one solid card
-                    // followed by a column of near-black panels, which is the break item 8 is
-                    // about.
-                    .nodusGlass(NodusGlass(.regular, tint: session.accent))
-                }
+                ReportBody(report: report, session: session)
 
-                if !saved.report.references.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ReportSectionTitle("References", accent: session.accent)
-                        ForEach(saved.report.references, id: \.token) { entry in
-                            Text(verbatim: "· \(entry.label)").font(.caption)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(ReportLayout.sectionPadding)
-                    .nodusGlass(NodusGlass(.regular, tint: session.accent))
-                }
-
-                ShareLink(item: saved.report.markdown) {
+                ShareLink(item: report.markdown) {
                     Label("Share as Markdown", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
@@ -301,6 +418,20 @@ struct LocalReportReader: View {
         .navigationTitle(saved.mode.label)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
+        .task { await nameTheSources() }
+    }
+
+    /// Ask the corpus what this report's citations point at, and keep the answer.
+    ///
+    /// Only for reports written before assembly did this — everything since arrives with its
+    /// sources already named, `repairing` says so by returning nil, and opening one costs a
+    /// single regex over the prose.
+    private func nameTheSources() async {
+        guard repaired == nil else { return }
+        let citations = CorpusCitations(client: session.client, spaceId: session.connection.spaceId)
+        guard let named = await citations.repairing(saved.report) else { return }
+        repaired = named
+        store.replace(saved.id, with: named)
     }
 }
 

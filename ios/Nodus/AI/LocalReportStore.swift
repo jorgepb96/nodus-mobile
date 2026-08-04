@@ -17,10 +17,15 @@ import Observation
 final class LocalReportStore {
     struct Saved: Codable, Identifiable, Hashable {
         let id: String
-        let report: DeepResearchReport
+        /// `var` so `replace` can repair the prose without rebuilding the record around it —
+        /// see the comment there for what a rebuild costs.
+        var report: DeepResearchReport
         let mode: DeepResearchMode
         let createdAt: Date
         let modelLabel: String
+        /// The illustration's filename, once one has been drawn. Optional so a report saved
+        /// before illustrations existed still decodes.
+        var imageFile: String?
 
         // Everything below is optional because it is younger than the stored format, and
         // `reload()` decodes inside a `compactMap`: a required field this app added later
@@ -50,8 +55,24 @@ final class LocalReportStore {
     private(set) var reports: [Saved] = []
     private let directory: URL
 
+    /// One store per space, shared by everything that reads or writes reports.
+    ///
+    /// Two instances over the same folder are two lists that disagree until both are reloaded,
+    /// and the run that saves a report is no longer the screen that shows it — so "the report
+    /// finished" has to reach the library without anybody asking the filesystem again.
+    private static var stores: [String: LocalReportStore] = [:]
+
+    static func shared(for spaceId: String) -> LocalReportStore {
+        if let existing = stores[spaceId] { return existing }
+        let store = LocalReportStore(spaceId: spaceId)
+        stores[spaceId] = store
+        return store
+    }
+
     /// - Parameter root: where the `spaces` folder lives. Application Support everywhere except
     ///   in tests, which need a directory they can throw away rather than the test host's own.
+    ///   Deliberately not routed through `shared(for:)`, which is a cache keyed on space alone
+    ///   and would hand a second test the first one's directory.
     init(spaceId: String, root: URL = .applicationSupportDirectory) {
         directory = root
             .appendingPathComponent("spaces", isDirectory: true)
@@ -103,8 +124,57 @@ final class LocalReportStore {
         return saved
     }
 
+    /// Put the illustration beside the report and remember its name.
+    ///
+    /// The bytes are a file rather than a field in the JSON: a base64 picture inside a document
+    /// that is decoded every time the library opens would make a list of twenty reports cost
+    /// twenty megabytes of parsing to draw.
+    @discardableResult
+    func attach(_ image: GeneratedImage, to id: String) -> Saved? {
+        guard var saved = reports.first(where: { $0.id == id }) else { return nil }
+        let name = "\(id).\(image.fileExtension)"
+        do {
+            try image.data.write(
+                to: directory.appendingPathComponent(name),
+                options: [.atomic, .completeFileProtectionUnlessOpen]
+            )
+        } catch {
+            return nil
+        }
+        saved.imageFile = name
+        write(saved)
+        reload()
+        return saved
+    }
+
+    func imageURL(for saved: Saved) -> URL? {
+        guard let name = saved.imageFile else { return nil }
+        let url = directory.appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
     func delete(_ id: String) {
+        if let saved = reports.first(where: { $0.id == id }), let name = saved.imageFile {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
         try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(id).json"))
+        reload()
+    }
+
+    /// Replace a report in place, keeping everything the record knows that the report does not.
+    ///
+    /// Used when a report written before the citations were resolved is opened and its sources
+    /// are named from the corpus: the repair belongs on disk, not in one screen's memory.
+    ///
+    /// Mutated rather than rebuilt from a handful of fields. A fresh `Saved` has to be given
+    /// every property by name, so each one added later is one that repairing a report silently
+    /// drops — and two of them, `sentAt` and `vaultRowId`, are how this device knows the report
+    /// has already gone to the vault and under which id. Losing them turns the next send into a
+    /// second copy of the report in somebody's corpus.
+    func replace(_ id: String, with report: DeepResearchReport) {
+        guard var saved = reports.first(where: { $0.id == id }), saved.report != report else { return }
+        saved.report = report
+        write(saved)
         reload()
     }
 

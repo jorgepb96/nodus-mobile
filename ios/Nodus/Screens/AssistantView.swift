@@ -8,7 +8,20 @@ import UIKit
 
 struct ChatScreen: View {
     @Environment(AISettings.self) private var ai
+    /// Optional for the same reason `ScrollToTopModifier`'s is: a non-optional `@Environment`
+    /// for an `@Observable` is a crash where it is missing, and this screen is previewable
+    /// outside the shell that provides one.
+    @Environment(NodusChrome.self) private var chrome: NodusChrome?
     let session: SpaceSession
+    /// Opens the key and model screen. The chat cannot present it itself — `ChatTab` owns that
+    /// sheet — and the model menu needs somewhere to send a reader with nothing to choose from.
+    var openProviders: (() -> Void)?
+
+    init(session: SpaceSession, openProviders: (() -> Void)? = nil) {
+        self.session = session
+        self.openProviders = openProviders
+        _history = State(initialValue: ChatHistoryStore(spaceId: session.connection.spaceId))
+    }
 
     struct Turn: Identifiable {
         let id = UUID()
@@ -27,9 +40,17 @@ struct ChatScreen: View {
     @State private var isThinking = false
     @State private var error: String?
     @State private var running: Task<Void, Never>?
-    @State private var include: Set<ContextSectionKind> = Set(ContextSectionKind.allCases)
-    @State private var showingLayers = false
-    @State private var history: ChatHistoryStore?
+    /// The two controls the header draws — which corpus layers a question carries, and the way
+    /// into the conversation list. Held as an object rather than as `@State` values so the
+    /// header can read and write the same ones the screen does.
+    @State private var controls = ChatControls()
+    /// The conversations on this device, built with the screen rather than after it.
+    ///
+    /// It used to be an optional filled in from `.task`, and the sheet that shows it read
+    /// `if let history` — so opening the list before that task had run presented a sheet with
+    /// nothing in it at all. Nothing about a store that reads one small file justifies the
+    /// window in which it does not exist.
+    @State private var history: ChatHistoryStore
     /// The conversation these turns belong to. Nil until the first question is asked, so an
     /// opened-and-abandoned tab leaves nothing behind.
     @State private var conversationId: String?
@@ -40,7 +61,7 @@ struct ChatScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            chatBar
+            modelBar
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -78,96 +99,87 @@ struct ChatScreen: View {
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingHistory) {
-            if let history {
-                ChatHistoryView(
-                    store: history,
-                    accent: session.accent,
-                    currentId: conversationId,
-                    onOpen: open
-                )
-            }
+        .nodusSheet(isPresented: $showingHistory) {
+            ChatHistoryView(
+                store: history,
+                accent: session.accent,
+                currentId: conversationId,
+                onOpen: open
+            )
         }
-        .task { if history == nil { history = ChatHistoryStore(spaceId: session.connection.spaceId) } }
+        .task {
+            // Lent to the chrome, not copied into it: the header ticks layers on and off in the
+            // very object the next question is built from.
+            controls.openHistory = openHistory
+            chrome?.chat = controls
+        }
+        .onDisappear {
+            // Only if they are still ours. On iPad the detail column really does swap screens,
+            // and a chat that has been replaced should not leave its controls on the header.
+            if chrome?.chat === controls { chrome?.chat = nil }
+        }
     }
 
     // MARK: - Controls
 
-    /// The chat's own controls, in the view rather than in the navigation bar.
+    /// The strip under the header, and the one thing on it.
     ///
-    /// They were `.toolbar` items, and a tab root has no toolbar: `SpaceShell.page` hides the
-    /// navigation bar so the space header can sit there instead (`SpaceShell.swift:87-94`). So
-    /// on iPhone the history button did not exist — conversations were being written to disk
-    /// with nothing on screen that could open them.
-    private var chatBar: some View {
-        HStack(spacing: 2) {
-            Button {
-                // Belt and braces: the store is built in `.task`, and a sheet with no store
-                // behind it would open empty rather than say anything.
-                if history == nil { history = ChatHistoryStore(spaceId: session.connection.spaceId) }
-                composerFocused = false
-                showingHistory = true
-            } label: {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.callout)
-                    .frame(width: 40, height: 38)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("History")
+    /// It used to carry a history button, the conversation's name and a corpus-layer filter on a
+    /// band of grey system material — two controls that never change while you read, drawn in a
+    /// material that belongs to no part of this app, immediately under a header made of glass.
+    /// Both controls are in the header now (`SpaceShell.header`), and what is left is the page's
+    /// own colour with the one control on it you genuinely reach for mid-conversation: which
+    /// model is answering.
+    ///
+    /// The menu is centred by being *laid out* centred and the compose button overlaid on top of
+    /// it, the same trick the header uses for the mark: in an `HStack` the pill would sit
+    /// wherever the button beside it left room, and would move every time a model with a longer
+    /// name was chosen.
+    private var modelBar: some View {
+        VStack(spacing: 2) {
+            ChatModelMenu(accent: session.accent, openProviders: openProviders)
+                // Room at both ends for the compose button overlaid at the trailing edge, taken
+                // symmetrically so a long model name is truncated rather than drawn under it —
+                // and so the pill stays on the centre line whatever it is naming.
+                .padding(.horizontal, 48)
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .trailing) {
+                    if !turns.isEmpty {
+                        Button {
+                            composerFocused = false
+                            startNewConversation()
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                                .font(.callout)
+                                .frame(width: 40, height: 36)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(session.accent)
+                        .accessibilityLabel("New conversation")
+                    }
+                }
 
-            if conversationTitle.isEmpty {
-                Text("New conversation")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
+            // Which conversation this is, when it is one that has a name. A new conversation
+            // says nothing here rather than saying "New conversation", because an empty screen
+            // with a composer under it has already said that.
+            if !conversationTitle.isEmpty {
                 Text(conversationTitle)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-            }
-
-            Spacer(minLength: 4)
-
-            Menu {
-                // Which layers of the corpus enter the payload, the same choice the desktop's
-                // assistant offers: a question about a gap in the literature wants different
-                // material from one about what a work argues.
-                ForEach(ContextSectionKind.allCases, id: \.self) { kind in
-                    Button {
-                        if include.contains(kind) { include.remove(kind) } else { include.insert(kind) }
-                    } label: {
-                        Label(
-                            CorpusRetrieval.MaterialSection(kind: kind, rows: []).label,
-                            systemImage: include.contains(kind) ? "checkmark" : ""
-                        )
-                    }
-                }
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.callout)
-                    .frame(width: 40, height: 38)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Corpus layers")
-
-            if !turns.isEmpty {
-                Button {
-                    composerFocused = false
-                    startNewConversation()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.callout)
-                        .frame(width: 40, height: 38)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("New conversation")
+                    .padding(.horizontal, 52)
             }
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(session.accent)
         .padding(.horizontal, 8)
-        .background(.ultraThinMaterial)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+    }
+
+    private func openHistory() {
+        composerFocused = false
+        showingHistory = true
     }
 
     // MARK: - Conversations
@@ -202,7 +214,7 @@ struct ChatScreen: View {
 
     /// Write the exchange down. Called when a turn finishes, not while it streams.
     private func persist() {
-        guard let history, !turns.isEmpty else { return }
+        guard !turns.isEmpty else { return }
         let id = conversationId ?? UUID().uuidString
         conversationId = id
         if conversationTitle.isEmpty {
@@ -238,26 +250,56 @@ struct ChatScreen: View {
         .nodusGlass(NodusGlass(.thin, tint: session.accent))
     }
 
+    /// Where the question is typed.
+    ///
+    /// Two things were wrong with it and they were the same thing. The bar was a slab of grey
+    /// `.ultraThinMaterial` — the system's own material, not this app's glass, sitting between a
+    /// glass header and a glass tab bar — and the field on it was an accent wash at 18%, which
+    /// over that grey is very nearly the grey. So the one control on the screen that has to look
+    /// like somewhere to type looked like a seam between two bars.
+    ///
+    /// The bar keeps the page's colour, which is what it is standing on, and the field is the
+    /// app's own glass capsule — the same surface `NodusSearchField` uses, because it is the
+    /// same object: a place to put words.
+    ///
+    /// `fixedSize` vertically, because in a `VStack` under a `ScrollView` the greedy sibling
+    /// wins ties: the composer was being compressed to a fraction of its height and the capsule
+    /// with it. A row that states its own height cannot be squeezed by the conversation above.
     private var composer: some View {
-        HStack(spacing: 10) {
-            TextField("Ask a question", text: $draft, axis: .vertical)
+        HStack(alignment: .bottom, spacing: 10) {
+            TextField("", text: $draft, prompt: placeholder, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .nodusFieldSurface(accent: session.accent, cornerRadius: 18)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 11)
+                .frame(minHeight: 42)
+                .nodusGlass(NodusGlass(.regular, tint: session.accent), in: Capsule())
 
             Button {
                 if isThinking { running?.cancel() } else { ask() }
             } label: {
                 Image(systemName: isThinking ? "stop.circle.fill" : "arrow.up.circle.fill")
-                    .font(.title2)
+                    .font(.system(size: 30))
                     .foregroundStyle(session.accent)
+                    .frame(width: 42, height: 42)
+                    .contentShape(Circle())
             }
+            .buttonStyle(.plain)
             .disabled(!isThinking && draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            .accessibilityLabel(isThinking ? "Stop" : "Send")
         }
-        .padding(12)
-        .background(.ultraThinMaterial)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, NodusSpace.page)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+    }
+
+    /// The placeholder, said loudly enough to be read — the same reasoning as
+    /// `NodusSearchField`'s: a `TextField`'s own prompt is drawn at about a quarter of the label
+    /// colour, which over tinted glass is the faintest thing on the screen.
+    private var placeholder: Text {
+        Text("Ask a question").foregroundColor(.nodusTertiaryText)
     }
 
     private func ask() {
@@ -292,7 +334,7 @@ struct ChatScreen: View {
                 )
                 let material = try await retrieval.material(
                     for: question,
-                    include: ContextSectionKind.allCases.filter(include.contains)
+                    include: ContextSectionKind.allCases.filter(controls.include.contains)
                 )
                 guard !Task.isCancelled else { return }
 
@@ -344,6 +386,90 @@ struct ChatScreen: View {
     private var semanticIdentity: EmbeddingIdentity? {
         guard case .published(let identity) = session.embedding, session.embedding.isReachableFromPhone else { return nil }
         return identity
+    }
+}
+
+/// Changing the model without leaving the conversation.
+///
+/// The model is the one setting that belongs *on* the chat rather than in a settings screen: it
+/// is chosen per question, not per app — a cheap fast model for "what does this vault have on
+/// X", a careful one for the answer you are going to quote. Reaching it used to mean Providers,
+/// then the chat model row, then a list of several hundred, then back.
+///
+/// What it offers is the pinned models and nothing else. A menu is not a catalogue: OpenRouter
+/// alone publishes hundreds, and a dropdown of hundreds is the screen this is meant to save you
+/// from. The order is the same one `ModelPickerView` uses — alphabetical by provider, then by
+/// model — so a model is in the same place here as it is there.
+private struct ChatModelMenu: View {
+    @Environment(AISettings.self) private var settings
+    let accent: Color
+    var openProviders: (() -> Void)?
+
+    /// The pinned models, plus whatever is currently answering.
+    ///
+    /// The current model is included even when it is not pinned, because a menu that cannot show
+    /// the state it controls is a menu that lies: unpin the model you are using and the pill
+    /// would name a model the list does not contain.
+    private var featured: [ModelRef] {
+        var models = settings.pinnedModels
+        if let current = settings.model(for: .chat), !models.contains(current) {
+            models.append(current)
+        }
+        return models.sorted {
+            $0.provider.label == $1.provider.label
+                ? $0.model.localizedStandardCompare($1.model) == .orderedAscending
+                : $0.provider.label < $1.provider.label
+        }
+    }
+
+    private var current: ModelRef? { settings.model(for: .chat) }
+
+    var body: some View {
+        Menu {
+            ForEach(featured, id: \.self) { model in
+                Button {
+                    settings.setModel(model, for: .chat)
+                } label: {
+                    // Two `Text`s, which a menu draws as a title and a subtitle under it. The
+                    // provider is not decoration — two of them serve `gpt-4o-mini`, and the name
+                    // alone does not say which one is about to be billed — but joined into one
+                    // string it was what got truncated on the long ids, so the answer to "which
+                    // provider" disappeared exactly where the question was hardest.
+                    Text(verbatim: model.model)
+                    Text(verbatim: model.provider.label)
+                    if model == current { Image(systemName: "checkmark") }
+                }
+            }
+            if !featured.isEmpty { Divider() }
+            Button {
+                openProviders?()
+            } label: {
+                Label(featured.isEmpty ? "Choose a model" : "All models", systemImage: "slider.horizontal.3")
+            }
+        } label: {
+            HStack(spacing: 5) {
+                // `verbatim` for the model's own id, which is a name and not a phrase to be
+                // translated; the key for the case where there is nothing to name yet.
+                if let current {
+                    Text(verbatim: current.model)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text("Choose a model").lineLimit(1)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(accent.nodusReadable)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            // A control, so it is lit: this is the one thing on the strip that acts, and the
+            // strip itself is now the page's own colour.
+            .nodusGlass(NodusGlass(.thin, tint: accent, interactive: true), in: Capsule())
+        }
+        .accessibilityLabel("Model")
+        .accessibilityValue(current.map { "\($0.model), \($0.provider.label)" } ?? "")
     }
 }
 

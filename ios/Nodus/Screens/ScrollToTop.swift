@@ -15,24 +15,6 @@ enum NodusScrollAnchor: Hashable {
     case top
 }
 
-private struct TabBarClearanceKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    /// True for the four screens that are the root of a tab.
-    ///
-    /// On iOS 26 the tab bar floats *over* the content, so anything an overlay puts in the
-    /// bottom-right corner of a tab root lands on the bar and the bar takes the touch — which
-    /// on the tab you are already looking at does nothing at all, and reads exactly like a
-    /// dead button. A pushed screen has no bar there and wants the button low, where a thumb
-    /// is. The two cases need different numbers, so the shell says which one this is.
-    var nodusHasTabBar: Bool {
-        get { self[TabBarClearanceKey.self] }
-        set { self[TabBarClearanceKey.self] = newValue }
-    }
-}
-
 extension View {
     /// Marks the first element of a scrollable as the place "back to top" goes.
     func nodusTopAnchor() -> some View {
@@ -143,18 +125,39 @@ private struct ScrollToTopModifier: ViewModifier {
     /// chore, which is about a screen's worth. Both come out of the same geometry callback,
     /// because adding a second one to every scroll view in the app would be paying twice for a
     /// number the system already handed over.
+    ///
+    /// The header's answer is given as *two* thresholds rather than one, and that is the whole
+    /// of why the page no longer shakes. Collapsing the header takes seven points off the top
+    /// inset, and a scroll view keeps its offset when its inset changes — so the same gesture
+    /// that crossed a single threshold going down immediately crossed it again coming back:
+    /// collapse, seven points of slack, expand, seven points back, collapse. At rest that is a
+    /// flicker; at the bottom of a page, where the rubber band is already returning the content,
+    /// it is a page that bounces and a title that slides left and right as the record count
+    /// appears and disappears under it. The band between the two thresholds is twenty points —
+    /// comfortably more than the seven the collapse itself moves — so nothing the header does
+    /// can undo the reading that produced it.
     @ViewBuilder
     private func measured(_ content: Content) -> some View {
         if #available(iOS 18.0, *) {
             content.onScrollGeometryChange(for: Thresholds.self) { geometry in
-                Thresholds(
+                // Measured from where the content rests, not from the raw offset: a scroll view
+                // under a hundred-point header sits at −100 when it has not been touched, so
+                // `contentOffset.y > 16` meant "scrolled past a hundred and sixteen points" on
+                // one screen and something else on the next.
+                let travelled = geometry.contentOffset.y + geometry.contentInsets.top
+                return Thresholds(
                     // Past the top by more than a rubber-band wobble.
-                    moved: geometry.contentOffset.y > 16,
-                    far: geometry.contentOffset.y > geometry.containerSize.height * 0.75
+                    beyondCollapse: travelled > 24,
+                    beyondReturn: travelled > 4,
+                    far: travelled > geometry.containerSize.height * 0.75
                 )
             } action: { _, crossed in
                 isScrolled = crossed.far
-                chrome?.setScrolled(crossed.moved)
+                if crossed.beyondCollapse {
+                    chrome?.setScrolled(true)
+                } else if !crossed.beyondReturn {
+                    chrome?.setScrolled(false)
+                }
             }
         } else {
             content.onAppear { isScrolled = true }
@@ -162,7 +165,10 @@ private struct ScrollToTopModifier: ViewModifier {
     }
 
     private struct Thresholds: Equatable {
-        let moved: Bool
+        /// Far enough down that the header should give up its second line.
+        let beyondCollapse: Bool
+        /// Still far enough down that it should stay given up.
+        let beyondReturn: Bool
         let far: Bool
     }
 }

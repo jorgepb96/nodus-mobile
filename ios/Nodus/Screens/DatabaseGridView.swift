@@ -99,7 +99,11 @@ struct DatabaseGridView: View {
                                 .padding(.horizontal, 10).padding(.vertical, 10)
                             }
                         }
-                        .background(.ultraThinMaterial)
+                        // The app's own glass, not the system's material. On iOS 26 that is
+                        // `glassEffect` — the row of column names really refracts the rows
+                        // scrolling under it — and before 26 it is the same lit surface every
+                        // other bar in the app wears, in the vault's colour rather than in grey.
+                        .nodusGlass(NodusGlass(.thin, tint: session.accent), in: Rectangle())
                         }
                     }
                     .frame(
@@ -190,7 +194,7 @@ struct DatabaseGridView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
-        .background(.ultraThinMaterial)
+        .nodusGlass(NodusGlass(.thin, tint: session.accent), in: Rectangle())
     }
 
     /// A rough column width by type. Enough that dates and numbers do not get the same room as

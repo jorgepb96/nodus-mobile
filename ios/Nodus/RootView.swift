@@ -40,11 +40,11 @@ struct RootView: View {
         .environment(tray)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
-        .sheet(isPresented: $showingConnect) { ConnectView().environment(model) }
+        .nodusSheet(isPresented: $showingConnect) { ConnectView().environment(model) }
         // Attached here, above the branch, so one sheet serves both the picker and whatever
         // space happens to be open. Presenting it from inside `SpaceShell` would put it behind
         // that shell's own sheets, and iOS fails a second presentation silently.
-        .sheet(isPresented: $tray.isPresented) {
+        .nodusSheet(isPresented: $tray.isPresented) {
             OutboxTraySheet().environment(tray).environment(model)
         }
         .task {

@@ -785,6 +785,17 @@
         }
       }
     },
+    "All models": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos los modelos"
+          }
+        }
+      }
+    },
     "All reports": {
       "extractionState": "manual",
       "localizations": {
@@ -884,6 +895,17 @@
         }
       }
     },
+    "Antique book illustration": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ilustración antigua de libro"
+          }
+        }
+      }
+    },
     "Anything you write here appears in Nodi on your computer, whichever vault is open.": {
       "extractionState": "manual",
       "localizations": {
@@ -924,6 +946,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aplica"
+          }
+        }
+      }
+    },
+    "Archival photograph": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fotografía histórica"
           }
         }
       }
@@ -1060,6 +1093,17 @@
         }
       }
     },
+    "At most %lld sections": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Máximo %lld secciones"
+          }
+        }
+      }
+    },
     "Audience: \\($0)": {
       "extractionState": "manual",
       "localizations": {
@@ -1155,6 +1199,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ritmos"
+          }
+        }
+      }
+    },
+    "Being written": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En curso"
+          }
+        }
+      }
+    },
+    "Black and white": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blanco y negro"
           }
         }
       }
@@ -1368,6 +1434,17 @@
         }
       }
     },
+    "Choose a model": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un modelo"
+          }
+        }
+      }
+    },
     "Choose a model under Providers before sending this report.": {
       "extractionState": "manual",
       "localizations": {
@@ -1390,6 +1467,17 @@
         }
       }
     },
+    "Choose an image model under Providers to illustrate a report.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un modelo de imagen en Proveedores para ilustrar un informe."
+          }
+        }
+      }
+    },
     "Choose one under Providers before starting.": {
       "extractionState": "manual",
       "localizations": {
@@ -1397,6 +1485,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Elige uno en Proveedores antes de empezar."
+          }
+        }
+      }
+    },
+    "Cinematic": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cinematográfico"
           }
         }
       }
@@ -1419,6 +1518,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Clase"
+          }
+        }
+      }
+    },
+    "Classic scientific plate": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ilustración científica clásica"
           }
         }
       }
@@ -1485,6 +1595,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Colecciones"
+          }
+        }
+      }
+    },
+    "Coloured engraving": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grabado coloreado"
           }
         }
       }
@@ -1562,6 +1683,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conéctate al Nodus Server donde tu vault está publicado."
+          }
+        }
+      }
+    },
+    "Contemporary editorial": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ilustración editorial contemporánea"
           }
         }
       }
@@ -2006,6 +2138,17 @@
         }
       }
     },
+    "Decorative image": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagen decorativa"
+          }
+        }
+      }
+    },
     "Deep Research": {
       "extractionState": "manual",
       "localizations": {
@@ -2303,6 +2446,17 @@
         }
       }
     },
+    "Drawing the illustration": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generando la imagen"
+          }
+        }
+      }
+    },
     "Drawn from the %lld closest ideas. This space has more; the map is a real part of the argument, not all of it.": {
       "extractionState": "manual",
       "localizations": {
@@ -2314,6 +2468,17 @@
         }
       }
     },
+    "Drawn once, after the report is written.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se genera una sola vez, cuando el informe está escrito."
+          }
+        }
+      }
+    },
     "Dynasties": {
       "extractionState": "manual",
       "localizations": {
@@ -2321,6 +2486,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dinastías"
+          }
+        }
+      }
+    },
+    "Each section is one model call. It keeps going if you leave this screen, and you can stop it at any point and keep what was written.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada sección es una llamada al modelo. Sigue en marcha aunque salgas de esta pantalla, y puedes detenerlo en cualquier momento conservando lo ya escrito."
           }
         }
       }
@@ -3106,6 +3282,17 @@
         }
       }
     },
+    "Historical collage": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collage histórico"
+          }
+        }
+      }
+    },
     "History": {
       "extractionState": "manual",
       "localizations": {
@@ -3443,6 +3630,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sus funciones principales aún están en prueba; solo recomendable para testers."
+          }
+        }
+      }
+    },
+    "Keep going": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Que siga"
           }
         }
       }
@@ -3821,6 +4019,17 @@
         }
       }
     },
+    "Modernist poster": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cartel modernista"
+          }
+        }
+      }
+    },
     "Monday": {
       "extractionState": "manual",
       "localizations": {
@@ -4059,6 +4268,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sin ideas"
+          }
+        }
+      }
+    },
+    "No image model is chosen, so the report has no illustration.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ningún modelo de imagen elegido, así que el informe se queda sin ilustración."
           }
         }
       }
@@ -4778,6 +4998,17 @@
         }
       }
     },
+    "Oil painting": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pintura al óleo"
+          }
+        }
+      }
+    },
     "Oldest": {
       "extractionState": "manual",
       "localizations": {
@@ -5137,6 +5368,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Persona"
+          }
+        }
+      }
+    },
+    "Photograph": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fotografía realista"
           }
         }
       }
@@ -5801,6 +6043,17 @@
         }
       }
     },
+    "Resuming": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retomando"
+          }
+        }
+      }
+    },
     "Retrieved material": {
       "extractionState": "manual",
       "localizations": {
@@ -6138,6 +6391,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "La sección «\\(title)» falló: \\(error.localizedDescription)"
+          }
+        }
+      }
+    },
+    "Sections": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secciones"
+          }
+        }
+      }
+    },
+    "Sections: automatic": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secciones: automáticas"
           }
         }
       }
@@ -6681,6 +6956,50 @@
         }
       }
     },
+    "Stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detener"
+          }
+        }
+      }
+    },
+    "Stop it": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detenerlo"
+          }
+        }
+      }
+    },
+    "Stop this report": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detener este informe"
+          }
+        }
+      }
+    },
+    "Stop this report?": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Detener este informe?"
+          }
+        }
+      }
+    },
     "Story arcs": {
       "extractionState": "manual",
       "localizations": {
@@ -6732,6 +7051,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Temas de estudio"
+          }
+        }
+      }
+    },
+    "Style": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estilo"
           }
         }
       }
@@ -7176,6 +7506,17 @@
         }
       }
     },
+    "The report has no illustration": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El informe se queda sin imagen"
+          }
+        }
+      }
+    },
     "The report is incomplete": {
       "extractionState": "manual",
       "localizations": {
@@ -7194,6 +7535,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo codificar el secreto."
+          }
+        }
+      }
+    },
+    "The sections already written are kept, and you can carry on from there later. Nothing more will be spent.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las secciones ya escritas se conservan y podrás continuar desde ahí más adelante. No se gastará nada más."
           }
         }
       }
@@ -8295,6 +8647,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pendiente de que el propietario vuelva a publicar."
+          }
+        }
+      }
+    },
+    "Watercolour": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acuarela"
           }
         }
       }

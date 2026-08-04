@@ -65,7 +65,7 @@ struct SpaceShell: View {
             await session.loadMirror()
             await session.probeEmbedding()
         }
-        .sheet(isPresented: $showingSettings) {
+        .nodusSheet(isPresented: $showingSettings) {
             SpaceSettingsView(session: session)
         }
     }
@@ -143,6 +143,20 @@ struct SpaceShell: View {
     /// The backdrop goes inside each page rather than once behind the `TabView`: a TabView
     /// draws its own opaque page background over anything behind it, so a single shared
     /// backdrop showed up as plain black the moment a tab was selected.
+    ///
+    /// Room for the bar comes from the backdrop, and it is the same backdrop every screen in the
+    /// app asks for. The bar is added with `safeAreaInset` on the stack of pages, *outside* these
+    /// navigation stacks, and a `NavigationStack` does not pass an outer inset on to what it
+    /// shows: measured, a page in a tab reports 34 points of bottom safe area, which is the home
+    /// indicator and nothing else. So the last fifty points of every tab were drawn behind the
+    /// bar — the chat's composer, which was therefore not on screen at all, and the last card of
+    /// Home, which you could scroll to and still not see.
+    ///
+    /// This wrapper used to reserve those points itself, which fixed the four roots and left
+    /// every screen *pushed* from one still drawing its last row under the bar. The reservation
+    /// belongs to whatever is inside the stack rather than to the stack, so it went to
+    /// `nodusPageBackdrop` — where the root gets it from the call below, and a pushed screen gets
+    /// it from its own.
     private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         NavigationStack {
             content()
@@ -248,7 +262,12 @@ struct SpaceShell: View {
             activity: session.isLoading ? 1 : 0,
             collapsed: chrome.isScrolled
         ) {
-            headerButton("rectangle.stack", label: "Switch space") { model.closeSession() }
+            // Never more than two a side: the mark is centred by reserving 92 points at each
+            // end, and a third 44-point control would meet the vault's name in the middle.
+            HStack(spacing: 2) {
+                headerButton("rectangle.stack", label: "Switch space") { model.closeSession() }
+                if let chat = chatControls { historyButton(chat) }
+            }
         } trailing: {
             // Each glyph in its own 44-point box, not the pair in one.
             //
@@ -257,6 +276,7 @@ struct SpaceShell: View {
             // 17-point targets sitting eight points apart, which reads as one control that has
             // been drawn twice and misses half the taps aimed at either.
             HStack(spacing: 2) {
+                if let chat = chatControls { layersMenu(chat) }
                 if showsLayoutToggle { layoutToggle }
                 // In the chrome, and present in every vault including a read-only one: the queue
                 // spans the device, so a change queued in another space is still this device's
@@ -293,6 +313,54 @@ struct SpaceShell: View {
                 }
             }
             .animation(NodusMotion.quick, value: tray.outbox.pending)
+    }
+
+    /// The chat's controls, but only while the chat is the screen you are looking at.
+    ///
+    /// The four tabs are held side by side rather than swapped, so the chat page does not
+    /// disappear when you leave it and cannot be relied on to take its controls with it. What
+    /// decides whether they are on the header is the same thing that decides which page is
+    /// visible: the shell's own selection.
+    private var chatControls: ChatControls? {
+        let showingChat = wantsSidebar ? sidebarSelection == .chat : tab == .chat
+        return showingChat ? chrome.chat : nil
+    }
+
+    private func historyButton(_ chat: ChatControls) -> some View {
+        headerButton("clock.arrow.circlepath", label: "History") { chat.openHistory() }
+    }
+
+    /// Which layers of the corpus a question is answered from.
+    ///
+    /// Read straight off the chat's own state rather than from a copy, so a layer switched off
+    /// here is switched off in the payload the next question builds.
+    private func layersMenu(_ chat: ChatControls) -> some View {
+        Menu {
+            ForEach(ContextSectionKind.allCases, id: \.self) { kind in
+                Button {
+                    if chat.include.contains(kind) {
+                        chat.include.remove(kind)
+                    } else {
+                        chat.include.insert(kind)
+                    }
+                } label: {
+                    // `LocalizedStringKey(_:)` around the name, because the section's label is a
+                    // computed `String` and `Label(_:systemImage:)` handed one of those renders
+                    // it verbatim — which is how a menu of English layer names survived in a
+                    // Spanish app.
+                    Label(
+                        LocalizedStringKey(CorpusRetrieval.MaterialSection(kind: kind, rows: []).label),
+                        systemImage: chat.include.contains(kind) ? "checkmark" : ""
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .tint(session.accent)
+        .accessibilityLabel("Corpus layers")
     }
 
     /// The shape every control in the header wears: the glyph, centred in a 44-point square.
