@@ -442,6 +442,19 @@ struct CorpusProse: View {
         return parsed
     }
 
+    /// Whether this app opens the URL itself rather than handing it to the system.
+    ///
+    /// The two kinds of link the prose makes live: a citation into the corpus, and a numbered
+    /// reference pointing back at the page it is drawn on. Everything else — an ordinary web
+    /// address in the middle of a paragraph — belongs to whatever the system does with it.
+    ///
+    /// A predicate rather than a return value from the opening itself, because the one place
+    /// that has to answer it, `primaryActionFor`, is asked before anybody has decided to open
+    /// anything.
+    static func claims(_ url: URL) -> Bool {
+        PageChatReference.number(in: url) != nil || CorpusReference(url) != nil
+    }
+
     /// Turns bare `nodus://…` tokens into Markdown links so they are tappable.
     ///
     /// The desktop writes `[Arco Blanco (2020)](nodus://idea/g-8969)` and needs nothing here.
@@ -655,14 +668,54 @@ private struct DocumentProse: UIViewRepresentable {
             self.linksLive = linksLive
         }
 
+        /// What should happen if this citation is activated — which is not the same question as
+        /// "has it been activated", and answering the second one here is what made a scroll that
+        /// began on a citation open it.
+        ///
+        /// UIKit asks this the moment a finger lands on a text item, before it can possibly know
+        /// whether that finger is tapping or about to drag the page away; it then runs the action
+        /// it was handed only if the touch turns out to be a tap. So the opening goes *inside* the
+        /// returned action rather than beside it, and a finger that came down on a citation and
+        /// kept moving now scrolls the report, as it does everywhere else on the page.
+        ///
+        /// Measured rather than reasoned: with a probe in this method, the delegate call was
+        /// logged before the scroll view's own recognizers had seen `touchesBegan` at all — which
+        /// is also why nothing that watches the scroll (its `isDragging`, its `contentOffset`, a
+        /// recognizer on it) can help. At the moment of the question there is nothing to observe.
         func textView(
             _ textView: UITextView,
             primaryActionFor textItem: UITextItem,
             defaultAction: UIAction
         ) -> UIAction? {
-            guard case .link(let url) = textItem.content else { return defaultAction }
-            // nil means "do nothing further": the citation has already been opened here.
-            return onOpen(url) ? nil : defaultAction
+            // A link this app has nothing to do with — an ordinary `https://` in the prose —
+            // keeps the system's behaviour, and that decision is safe to take now because it
+            // reads the URL and nothing else.
+            guard case .link(let url) = textItem.content, CorpusProse.claims(url) else {
+                return defaultAction
+            }
+            return UIAction(title: "") { [weak self] _ in
+                MainActor.assumeIsolated { _ = self?.onOpen(url) }
+            }
+        }
+
+        /// No menu on a citation.
+        ///
+        /// The system's own is "Open / Copy / Share" over the raw `nodus://idea/g-8969`, which is
+        /// an internal address: sharing it sends somebody a string that does nothing, and Open
+        /// hands the scheme to a system that has no handler for it — so the first item of the
+        /// menu is the one that cannot work. A citation does one thing, and a tap does it.
+        ///
+        /// Only reachable since the opening moved into the tap: before, the press opened the
+        /// citation before the menu could be asked for.
+        func textView(
+            _ textView: UITextView,
+            menuConfigurationFor textItem: UITextItem,
+            defaultMenu: UIMenu
+        ) -> UITextItem.MenuConfiguration? {
+            guard case .link(let url) = textItem.content, CorpusProse.claims(url) else {
+                return UITextItem.MenuConfiguration(menu: defaultMenu)
+            }
+            return nil
         }
     }
 }
