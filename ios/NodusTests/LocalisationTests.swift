@@ -77,6 +77,67 @@ struct LocalisationTests {
         _ = try translated("Edit note")
     }
 
+    // Sending a report puts a document in somebody's corpus. Every word between the button and
+    // that consequence — the question, its two answers, the promise about when it lands, and
+    // each way it can fail — has to be in the reader's language, or the one irreversible act on
+    // this screen is the one that asks for consent in a language they did not choose.
+    @Test("everything said between pressing send and the report landing has Spanish")
+    func reportSendingStrings() throws {
+        _ = try translated("Send")
+        _ = try translated("Sent")
+        _ = try translated("Send again")
+        _ = try translated("Send to Nodus desktop?")
+        _ = try translated("Send this report again?")
+        _ = try translated("It travels to the server now. It joins the vault when whoever owns it next opens Nodus desktop and republishes.")
+        _ = try translated("It replaces the copy already in the vault rather than adding a second one.")
+        _ = try translated("Sent to the desktop")
+        _ = try translated("Could not send the report")
+        _ = try translated("The report could not be queued on this device.")
+        _ = try translated("Choose a model under Providers before sending this report.")
+        // Set by `sendReport` and rendered through `LocalizedStringKey`, so it is looked up at
+        // draw time and belongs to this screen as much as to the queue.
+        _ = try translated("Your access to this space is read only.")
+        // Spoken, never seen. A screen reader is the one place where a control labelled with a
+        // single word has to say what it does.
+        _ = try translated("Send the report to the vault")
+        _ = try translated("Send the report again")
+    }
+
+    // The queue's counts, which are the only strings in the app that have to agree with a
+    // number. The button used to read `"Send \(n) change\(n == 1 ? "" : "s")"` — an English
+    // plural built by hand, inside an interpolated key, and an interpolated key matches nothing
+    // in the catalogue. So the busiest control on the screen was English on every phone and
+    // wrong in Spanish twice over. Asserted through `String(localized:)` rather than a bare
+    // lookup because the plural rule lives in the compiled variations, not in the strings table.
+    @Test("the queue counts agree with their number, in Spanish")
+    func queueCountsInflect() throws {
+        let bundle = try spanish
+        #expect(String(localized: "^[Send \(1) change](inflect: true)", bundle: bundle) == "Enviar 1 cambio")
+        #expect(String(localized: "^[Send \(5) change](inflect: true)", bundle: bundle) == "Enviar 5 cambios")
+        #expect(String(localized: "^[\(1) change](inflect: true) to send", bundle: bundle) == "1 cambio por enviar")
+        #expect(String(localized: "^[\(3) change](inflect: true) to send", bundle: bundle) == "3 cambios por enviar")
+        #expect(String(localized: "^[\(1) change](inflect: true) waiting for its vault", bundle: bundle)
+                == "1 cambio esperando a su vault")
+        #expect(String(localized: "^[\(2) change](inflect: true) waiting for its vault", bundle: bundle)
+                == "2 cambios esperando a su vault")
+    }
+
+    @Test("everything the send queue says has Spanish")
+    func sendQueueStrings() throws {
+        _ = try translated("Send queue")
+        _ = try translated("How this reaches the vault")
+        _ = try translated("The server keeps your changes in a ledger. They join the vault when its owner opens Nodus desktop and republishes. Until then nobody sees them, you included.")
+        _ = try translated("Nothing queued")
+        _ = try translated("Notes you write and reports you send appear here before they travel.")
+        _ = try translated("Not sent")
+        _ = try translated("On the server")
+        _ = try translated("Rejected")
+        _ = try translated("Saved on this device.")
+        _ = try translated("Waiting for the owner to republish.")
+        _ = try translated("The server rejected it.")
+        _ = try translated("Remove")
+    }
+
     // These are read by iOS, not by the app, and a plist string on its own is shown verbatim in
     // every language — which is how both of them were Spanish-only for everybody.
     @Test("the permission prompts iOS shows are localised too")

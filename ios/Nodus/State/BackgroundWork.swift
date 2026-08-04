@@ -124,32 +124,16 @@ nonisolated enum BackgroundWork {
 /// (the client, the outbox, the mirror) are actors of their own: this layer only ever awaits.
 @MainActor
 enum BackgroundJobs {
-    private static let keychain = KeychainStore()
-
-    private static var spacesDirectory: URL {
-        URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
-    }
-
-    private static var cacheDirectory: URL {
-        URL.cachesDirectory.appendingPathComponent("nodus-http", isDirectory: true)
-    }
-
-    private static func client(for connection: AppModel.Connection) -> NodusClient? {
-        guard let token = keychain.value(for: KeychainStore.deviceTokenKey(
-            origin: connection.origin,
-            spaceId: connection.spaceId
-        )) else { return nil }
-        return NodusClient(
-            address: ServerAddress(trusted: connection.origin),
-            token: token,
-            cache: ResponseCache(directory: cacheDirectory)
-        )
-    }
+    private static var spacesDirectory: URL { ConnectionClient.spacesDirectory }
 
     // MARK: - Mutations
 
     static func hasAuthorisedMutations() async -> Bool {
         for connection in AppModel.storedConnections() where connection.role.canSendChanges {
+            // Probed before opening, for the reason `hasMirror` gives below: `MutationOutbox`
+            // creates its database, so asking every writable space whether anything is queued
+            // used to leave an empty outbox.sqlite in each of them — on every backgrounding.
+            guard MutationOutbox.exists(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
             guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
             if let count = try? await outbox.authorisedCount(), count > 0 { return true }
         }
@@ -165,11 +149,12 @@ enum BackgroundJobs {
         var everythingLanded = true
         for connection in AppModel.storedConnections() where connection.role.canSendChanges {
             if Task.isCancelled { return false }
+            guard MutationOutbox.exists(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
             guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
             guard let batch = try? await outbox.authorisedPending(limit: 200), !batch.isEmpty else { continue }
             // A locked phone cannot read the token. That is a reason to try again later, not a
             // failure of the change.
-            guard let client = client(for: connection) else { everythingLanded = false; continue }
+            guard let client = ConnectionClient.make(for: connection) else { everythingLanded = false; continue }
             do {
                 let receipt = try await client.send(mutations: batch, in: connection.spaceId)
                 try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
@@ -210,7 +195,7 @@ enum BackgroundJobs {
             guard let store = try? MirrorStore(spaceId: connection.spaceId, directory: spacesDirectory),
                   (try? await store.summary()) != nil
             else { continue }
-            guard let client = client(for: connection) else { allCurrent = false; continue }
+            guard let client = ConnectionClient.make(for: connection) else { allCurrent = false; continue }
             do {
                 let revision = try await client.snapshotRevision(in: connection.spaceId) ?? ""
                 if try await store.isCurrent(with: revision) { continue }
@@ -241,7 +226,7 @@ enum BackgroundJobs {
         for (spaceId, checkpoint) in unfinished {
             if Task.isCancelled { return false }
             guard let connection = connections.first(where: { $0.spaceId == spaceId }),
-                  let client = client(for: connection)
+                  let client = ConnectionClient.make(for: connection)
             else { allFinished = false; continue }
             // Presence, not value: the key itself is read inside the provider client.
             guard settings.hasKey(for: checkpoint.request.model.provider) else { allFinished = false; continue }
@@ -274,7 +259,7 @@ enum BackgroundJobs {
                 LocalReportStore.shared(for: spaceId).save(
                     report,
                     mode: checkpoint.request.mode,
-                    model: checkpoint.request.model.model
+                    model: checkpoint.request.model
                 )
                 DeepResearchCheckpointStore.clear(spaceId: spaceId)
             } catch {

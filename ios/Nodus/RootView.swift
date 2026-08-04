@@ -10,6 +10,9 @@ struct RootView: View {
     @State private var preferences = AppPreferences()
     @State private var tilt = DeviceTiltProvider()
     @State private var showingConnect = false
+    /// The queue belongs to the device rather than to a space, so it lives above the branch
+    /// that decides whether a space is open at all.
+    @State private var tray = OutboxTrayModel()
 
     var body: some View {
         Group {
@@ -34,12 +37,19 @@ struct RootView: View {
         .environment(ai)
         .environment(lock)
         .environment(preferences)
+        .environment(tray)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
         // Once, here, for every field in the app — including the ones inside sheets, which are
         // presented into this same window.
         .nodusDismissesKeyboardOnTap()
         .nodusSheet(isPresented: $showingConnect) { ConnectView().environment(model) }
+        // Attached here, above the branch, so one sheet serves both the picker and whatever
+        // space happens to be open. Presenting it from inside `SpaceShell` would put it behind
+        // that shell's own sheets, and iOS fails a second presentation silently.
+        .nodusSheet(isPresented: $tray.isPresented) {
+            OutboxTraySheet().environment(tray).environment(model)
+        }
         .task {
             // Reopen where the user left off, but only if the credential is still there — a
             // revoked token should land on the picker, not on a broken shell.
@@ -47,7 +57,13 @@ struct RootView: View {
                 model.open(recent)
             }
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            // Coming back is when the answer may have changed: the background flush may have
+            // finished a send while the app was away, and the counts on the tile and the header
+            // are read from this. It is a handful of SQLite opens, on a detached task, and only
+            // for spaces that actually have a queue on disk.
+            if phase == .active { Task { await tray.refresh() } }
+
             guard phase == .background else { return }
             // Immediately, with no grace period. A window in which the app reopens unlocked is
             // a window somebody else can use.
@@ -64,6 +80,7 @@ struct RootView: View {
 struct SpacePickerView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppPreferences.self) private var preferences
+    @Environment(OutboxTrayModel.self) private var tray
     @Binding var showingConnect: Bool
 
     @State private var query = ""
@@ -117,6 +134,11 @@ struct SpacePickerView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     masthead
+
+                    // Above the spaces rather than inside one of them: what is queued is a fact
+                    // about this device, and the picker is the only screen that belongs to the
+                    // device rather than to a vault.
+                    if tray.outbox.hasAnything { queueControl }
 
                     if let stranded = model.needsSignIn {
                         signInAgainNotice(stranded)
@@ -268,6 +290,34 @@ struct SpacePickerView: View {
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    /// What this device still owes its vaults, in one line.
+    ///
+    /// Only drawn when something is queued. A permanently visible control that says "nothing"
+    /// is a control that teaches people to stop reading it.
+    private var queueControl: some View {
+        Button {
+            tray.open()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "tray.and.arrow.up").font(.footnote)
+                // Two counts, said apart, because they are different facts: one is work that has
+                // not left the phone, the other is work that has left it and is waiting for
+                // somebody to open their desktop.
+                if tray.outbox.pending > 0 {
+                    Text("^[\(tray.outbox.pending) change](inflect: true) to send").font(.caption)
+                } else {
+                    Text("^[\(tray.outbox.accepted) change](inflect: true) waiting for its vault").font(.caption)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .nodusGlass(NodusGlass(.thin, tint: accent, interactive: true), in: NodusRadius.controlShape)
+            .foregroundStyle(.primary)
+        }
+        .buttonStyle(.plain)
     }
 
     private func controlLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {

@@ -61,7 +61,7 @@ struct ResearchLibraryView: View {
                 Section {
                     ForEach(matchingLocal) { saved in
                         NavigationLink {
-                            LocalReportReader(session: session, saved: saved)
+                            LocalReportReader(session: session, local: local, saved: saved)
                         } label: {
                             localRow(saved)
                         }
@@ -153,6 +153,13 @@ struct ResearchLibraryView: View {
                 Text(saved.title).font(.subheadline.weight(.medium)).lineLimit(2)
                 Text("\(saved.report.words.formatted()) words · \(saved.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2).foregroundStyle(.secondary)
+                // In the list rather than only in the report. Twenty reports and one question —
+                // which of these has the desktop already got? — is a question you answer by
+                // scanning, not by opening each one to look at the state of a button.
+                if saved.wasSent {
+                    Label("Sent to the desktop", systemImage: "paperplane.fill")
+                        .font(.caption2).foregroundStyle(Color.nodusSuccess)
+                }
                 if saved.report.citationsRejected > 0 {
                     Text("\(saved.report.citationsRejected) invented citations removed")
                         .font(.caption2).foregroundStyle(Color.nodusCaution)
@@ -328,6 +335,9 @@ struct ReportBody: View {
 /// A report generated here.
 struct LocalReportReader: View {
     let session: SpaceSession
+    /// Threaded in from the list rather than rebuilt, so marking this report as sent refreshes
+    /// the list standing behind the reader instead of a second store nobody is watching.
+    @Bindable var local: LocalReportStore
     let saved: LocalReportStore.Saved
 
     @Environment(AppPreferences.self) private var preferences
@@ -336,6 +346,15 @@ struct LocalReportReader: View {
 
     private var report: DeepResearchReport { repaired ?? saved.report }
     private var store: LocalReportStore { LocalReportStore.shared(for: session.connection.spaceId) }
+
+    /// What the send control needs, or nothing at all when this access cannot send.
+    private var sendContext: ReportSendContext? {
+        guard session.connection.role.canSendChanges else { return nil }
+        // Read back from the store rather than trusting the copy this view was handed: sending
+        // rewrites the record, and the row that navigated here is a value from before that.
+        let current = local.reports.first { $0.id == saved.id } ?? saved
+        return ReportSendContext(session: session, store: local, saved: current)
+    }
 
     var body: some View {
         ScrollView {
@@ -365,9 +384,13 @@ struct LocalReportReader: View {
                         )
                     }
 
+                    // A report you came back to is sendable too. It was not, and that was the
+                    // whole gap: the control lived on the screen that generated the report and
+                    // nowhere else, so a report from yesterday could only be shared as Markdown.
                     ReportActions(
                         markdown: report.markdown,
                         title: nil,
+                        send: sendContext,
                         accent: session.accent
                     )
                     .padding(.top, 4)

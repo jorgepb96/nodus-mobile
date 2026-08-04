@@ -145,7 +145,11 @@ final class DeepResearchRunner {
                 )
                 // Saved before anything else can go wrong. A run is one model call per section
                 // and losing it to a dismissed screen means paying for it twice.
-                let saved = store.save(report, mode: request.mode, model: request.model.model)
+                //
+                // The whole `ModelRef`, not just its name: sending the report to the vault needs
+                // the provider too, and a record that kept only the label could never be turned
+                // back into a sendable row.
+                let saved = store.save(report, mode: request.mode, model: request.model)
                 DeepResearchCheckpointStore.clear(spaceId: spaceId)
                 self.finished = saved
                 self.progress = nil

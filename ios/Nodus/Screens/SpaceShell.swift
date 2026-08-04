@@ -12,6 +12,7 @@ struct SpaceShell: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(AppModel.self) private var model
     @Environment(AppPreferences.self) private var preferences
+    @Environment(OutboxTrayModel.self) private var tray
 
     let session: SpaceSession
 
@@ -35,7 +36,6 @@ struct SpaceShell: View {
         case notes
         case deepResearch
         case search
-        case writing
         case research
         case chat
     }
@@ -215,11 +215,9 @@ struct SpaceShell: View {
                         .tag(SidebarItem.collection(collection.path))
                     }
                 }
-                if session.connection.role.canSendChanges {
-                    Section("Write") {
-                        Label("Send queue", systemImage: "tray.and.arrow.up").tag(SidebarItem.writing)
-                    }
-                }
+                // No "Write" section: the queue is a sheet now, and a `List(selection:)` row
+                // that opens one would stay highlighted behind it — a selection nothing ever
+                // clears. The header button above this split view is already on iPad.
                 if session.hasDebates || session.hasNotes || session.hasDeepResearch {
                     Section("Analyse") {
                         if session.hasDebates {
@@ -253,7 +251,6 @@ struct SpaceShell: View {
         case .debates: SpecialListView(session: session, resource: .debates)
         case .notes: SpecialListView(session: session, resource: .notes)
         case .deepResearch: SpecialListView(session: session, resource: .deepResearch)
-        case .writing: WritingView(session: session)
         case .collection(let path):
             if let collection = Collections[path] {
                 CollectionListView(session: session, collection: collection)
@@ -289,9 +286,41 @@ struct SpaceShell: View {
             HStack(spacing: 2) {
                 if let chat = chatControls { layersMenu(chat) }
                 if showsLayoutToggle { layoutToggle }
+                // In the chrome, and present in every vault including a read-only one: the queue
+                // spans the device, so a change queued in another space is still this device's
+                // unfinished business. Hidden only when nothing on this device could ever queue
+                // anything at all.
+                if canQueueAnywhere { queueButton }
                 headerButton("gearshape", label: "Settings") { showingSettings = true }
             }
         }
+    }
+
+    /// Whether any space this device holds could put something in the queue.
+    ///
+    /// Read from the model's own list rather than from `storedConnections()`, which re-parses
+    /// `UserDefaults` — and this is in a view body.
+    private var canQueueAnywhere: Bool {
+        model.connections.contains { $0.role.canSendChanges }
+    }
+
+    /// The queue, with a dot when it is holding something.
+    ///
+    /// A dot rather than a number: at 44 points beside two other glyphs there is no room for a
+    /// legible count, and the question this answers from here is "is there anything?" — the
+    /// tray itself is where "how much, and what" is answered.
+    private var queueButton: some View {
+        headerButton("tray.and.arrow.up", label: "Send queue") { tray.open() }
+            .overlay(alignment: .topTrailing) {
+                if tray.outbox.pending > 0 {
+                    Circle()
+                        .fill(Color.nodusCaution)
+                        .frame(width: 8, height: 8)
+                        .padding(.top, 9).padding(.trailing, 9)
+                        .allowsHitTesting(false)
+                }
+            }
+            .animation(NodusMotion.quick, value: tray.outbox.pending)
     }
 
     /// The chat's controls, but only while the chat is the screen you are looking at.

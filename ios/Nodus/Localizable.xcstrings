@@ -1445,6 +1445,17 @@
         }
       }
     },
+    "Choose a model under Providers before sending this report.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un modelo en Proveedores antes de enviar este informe."
+          }
+        }
+      }
+    },
     "Choose a space": {
       "extractionState": "manual",
       "localizations": {
@@ -1991,6 +2002,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo enviar"
+          }
+        }
+      }
+    },
+    "Could not send the report": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido enviar el informe"
           }
         }
       }
@@ -3546,6 +3568,28 @@
         }
       }
     },
+    "It replaces the copy already in the vault rather than adding a second one.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sustituye a la copia que ya está en el vault en lugar de añadir una segunda."
+          }
+        }
+      }
+    },
+    "It travels to the server now. It joins the vault when whoever owns it next opens Nodus desktop and republishes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Viaja al servidor ahora. Se incorpora al vault cuando quien lo posee abra Nodus de escritorio y vuelva a publicar."
+          }
+        }
+      }
+    },
     "It will appear as soon as its owner publishes from Nodus desktop.": {
       "extractionState": "manual",
       "localizations": {
@@ -4723,13 +4767,13 @@
         }
       }
     },
-    "Notes you write appear here before they travel.": {
+    "Notes you write and reports you send appear here before they travel.": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Las notas que escribas aparecerán aquí antes de viajar."
+            "value": "Las notas que escribes y los informes que envías aparecen aquí antes de viajar."
           }
         }
       }
@@ -6450,6 +6494,17 @@
         }
       }
     },
+    "Send again": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar otra vez"
+          }
+        }
+      }
+    },
     "Send it from the send queue. It joins the vault when its owner next opens Nodus desktop and republishes — until then this list still shows what was published.": {
       "extractionState": "manual",
       "localizations": {
@@ -6468,6 +6523,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cola de envío"
+          }
+        }
+      }
+    },
+    "Send the report again": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a enviar el informe"
+          }
+        }
+      }
+    },
+    "Send the report to the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar el informe al vault"
+          }
+        }
+      }
+    },
+    "Send this report again?": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Volver a enviar este informe?"
+          }
+        }
+      }
+    },
+    "Send to Nodus desktop?": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Enviar a Nodus de escritorio?"
           }
         }
       }
@@ -6501,6 +6600,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enviando…"
+          }
+        }
+      }
+    },
+    "Sent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado"
+          }
+        }
+      }
+    },
+    "Sent to the desktop": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado al escritorio"
           }
         }
       }
@@ -7359,6 +7480,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo maquetar el informe para imprimirlo."
+          }
+        }
+      }
+    },
+    "The report could not be queued on this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido poner el informe en la cola de este dispositivo."
           }
         }
       }
@@ -8900,6 +9032,129 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(unreachable.label) — no alcanzable desde iOS"
+          }
+        }
+      }
+    },
+    "^[%lld change](inflect: true) to send": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld change to send"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld changes to send"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambio por enviar"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambios por enviar"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "^[%lld change](inflect: true) waiting for its vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld change waiting for its vault"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld changes waiting for their vault"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambio esperando a su vault"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambios esperando a su vault"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "^[Send %lld change](inflect: true)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Send %lld change"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Send %lld changes"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Enviar %lld cambio"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Enviar %lld cambios"
+                }
+              }
+            }
           }
         }
       }

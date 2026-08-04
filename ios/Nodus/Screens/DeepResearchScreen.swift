@@ -18,9 +18,6 @@ struct DeepResearchScreen: View {
     /// A run that stopped before its last section. Kept so the sections already paid for are
     /// not thrown away by a screen that was dismissed or a phone that ran out of patience.
     @State private var unfinished: DeepResearchCheckpoint?
-    /// Set once this report has been put in the queue, so it cannot be queued twice.
-    @State private var sentReportId: String?
-
     @Environment(AppPreferences.self) private var preferences
 
     /// The run itself, which belongs to the space rather than to this screen: leaving here does
@@ -300,36 +297,22 @@ struct DeepResearchScreen: View {
 
                 // `report.markdown` already opens with the objective as its heading, so the
                 // listening copy is not given a title to prepend on top of it.
-                ReportActions(markdown: report.markdown, title: nil, accent: session.accent)
-                    .padding(.top, 4)
+                //
+                // The send control is built only for an access that may send changes, so a
+                // read-only reader gets its absence rather than a control that refuses.
+                ReportActions(
+                    markdown: report.markdown,
+                    title: nil,
+                    send: sendContext,
+                    accent: session.accent
+                )
+                .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(NodusSpace.cardPadding)
             .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
             ReportBody(report: report, session: session)
-
-            // Two different acts, kept apart. Sharing takes a copy off the phone; sending puts
-            // it in the ledger, where it becomes part of the vault the next time its owner
-            // republishes — which is a change to somebody's corpus, not an export.
-            if session.connection.role.canSendChanges {
-                Button {
-                    Task { await send(saved) }
-                } label: {
-                    Label(sentReportId == nil ? "Send to the vault" : "Sent — waiting for the owner",
-                          systemImage: sentReportId == nil ? "arrow.up.doc" : "checkmark.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                .disabled(sentReportId != nil)
-
-                Text(sentReportId == nil
-                     ? "It is queued on this device and travels when you send the queue. It joins the vault when its owner next opens Nodus desktop and republishes."
-                     : "Queued. Open the send queue to send it.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
 
             ShareLink(item: report.markdown) {
                 Label("Share as Markdown", systemImage: "square.and.arrow.up")
@@ -339,16 +322,13 @@ struct DeepResearchScreen: View {
         }
     }
 
-    /// Put the finished report in the queue, with the citations it really used.
-    private func send(_ saved: LocalReportStore.Saved) async {
-        guard let controller = await OutboxController.open(session: session), let model = ai.model(for: .deepResearch) else { return }
-        await controller.queueReport(
-            saved.report,
-            mode: saved.mode,
-            model: model,
-            language: Prompts.interfaceLanguage
-        )
-        sentReportId = saved.id
+    /// What the send control needs, or nothing at all when this access cannot send.
+    ///
+    /// Read from `runner.finished` rather than from a copy this screen holds: the run outlives
+    /// the screen, and the record is where "already sent" and the vault row id live.
+    private var sendContext: ReportSendContext? {
+        guard session.connection.role.canSendChanges, let saved = runner.finished else { return nil }
+        return ReportSendContext(session: session, store: local, saved: saved)
     }
 
     // MARK: Run
@@ -370,7 +350,9 @@ struct DeepResearchScreen: View {
     private func start() {
         guard let model = ai.model(for: .deepResearch) else { return }
         unfinished = nil
-        sentReportId = nil
+        // No `sentReportId` to clear: whether a report has been sent is now a fact on the saved
+        // record rather than a piece of this screen's memory, which is what lets the library
+        // and a reopened report agree with the button.
         runner.start(
             DeepResearchRequest(
                 objective: objective.trimmingCharacters(in: .whitespacesAndNewlines),

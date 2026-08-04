@@ -111,22 +111,38 @@ final class OutboxController {
         await refresh()
     }
 
-    /// Queue a finished Deep Research report as a saved draft in the vault.
+    /// Send a finished Deep Research report to the vault as a saved draft, now.
     ///
-    /// Until now a report generated on the phone could only leave it as shared Markdown: the
-    /// run cost one model call per section and its result lived in a local file the desktop
-    /// never saw. This is the other half — the same document, in the row shape the Writing
-    /// Workshop stores its own drafts in, so it appears in the vault's Deep Research list after
-    /// the owner republishes.
-    func queueReport(
+    /// Until this existed a report generated on the phone could only leave it as shared
+    /// Markdown: the run cost one model call per section and its result lived in a local file
+    /// the desktop never saw. This is the other half — the same document, in the row shape the
+    /// Writing Workshop stores its own drafts in, so it appears in the vault's Deep Research
+    /// list after the owner republishes.
+    ///
+    /// It sends rather than only queueing, and that is a correction rather than a convenience.
+    /// The background flush reads `authorisedPending` and nothing else, so a report that was
+    /// merely enqueued travelled nowhere at all — not in the foreground, not in the background,
+    /// not ever, until the user separately found the send queue and pressed flush. A control
+    /// labelled "send" behind a dialog that asks whether to send has to send.
+    ///
+    /// It authorises only itself. `authorisePending()` would also release a note the user wrote
+    /// and deliberately left queued, which is the one thing the `authorised` column exists to
+    /// prevent.
+    ///
+    /// - Parameter rowId: the id of the `writing_saved_drafts` row. Passing back the id a
+    ///   previous send used makes a re-send an upsert on the owner's own copy rather than a
+    ///   second report in their list — the desktop merges on the primary key.
+    /// - Returns: the outbox id and the row id, or nil if the queue would not take it.
+    @discardableResult
+    func sendReport(
         _ report: DeepResearchReport,
         mode: DeepResearchMode,
         model: ModelRef,
-        language: String
-    ) async {
-        let id = UUID().uuidString
+        language: String,
+        rowId: String = UUID().uuidString
+    ) async -> (outboxId: String, rowId: String)? {
         let row = ReportDraft.row(
-            id: id,
+            id: rowId,
             report: report,
             mode: mode,
             model: model,
@@ -136,12 +152,44 @@ final class OutboxController {
             clientId: clientId,
             kind: .upsert,
             table: .writingSavedDrafts,
-            key: [id],
+            key: [rowId],
             row: row,
             schemaVersion: schemaVersion
         )
-        try? await outbox.enqueue(mutation, title: report.objective)
+
+        lastError = nil
+        do {
+            try await outbox.enqueue(mutation, title: report.objective)
+            // Recorded before the request, for the reason `flush()` gives: a send cut off by a
+            // dead lift or an aeroplane leaves behind a change the background task is then
+            // allowed to finish. That is what makes "the server holds it until the desktop
+            // comes back" true from this end too.
+            try await outbox.authorise(ids: [mutation.id])
+        } catch {
+            lastError = error.localizedDescription
+            await refresh()
+            return nil
+        }
+
+        do {
+            let receipt = try await client.send(mutations: [mutation], in: spaceId)
+            try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
+            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason) })
+        } catch let error as APIError where error.isForbidden {
+            // Left as a bare key, the way `flush()` leaves it: the notice that renders this
+            // wraps it in `LocalizedStringKey`, so the lookup happens at draw time.
+            lastError = error.requiredNeed == .write
+                ? "Your access to this space is read only."
+                : error.localizedDescription
+        } catch {
+            // Deliberately not a failure: the report is queued and authorised, so the next
+            // flush or the next background window finishes it. Saying "could not send" here
+            // would be false, and would invite the user to press send again.
+            lastError = error.localizedDescription
+        }
+
         await refresh()
+        return (outboxId: mutation.id, rowId: rowId)
     }
 
     func flush() async {
@@ -157,19 +205,7 @@ final class OutboxController {
             // has not pressed send on ever travels on its own.
             try await outbox.authorisePending()
 
-            while true {
-                let batch = try await outbox.pending(limit: maxBatch)
-                guard !batch.isEmpty else { break }
-
-                let receipt = try await client.send(mutations: batch, in: spaceId)
-                // A duplicate is a success: the first attempt landed and the retry found it
-                // already there. Treating it as a failure would leave items stuck forever.
-                try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
-                try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason) })
-
-                if receipt.accepted.isEmpty, receipt.duplicate.isEmpty, !receipt.rejected.isEmpty { break }
-                if batch.count < maxBatch { break }
-            }
+            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, maxBatch: maxBatch)
         } catch let error as APIError where error.isForbidden {
             lastError = error.requiredNeed == .write
                 ? "Your access to this space is read only."
