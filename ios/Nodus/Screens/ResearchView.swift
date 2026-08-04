@@ -22,7 +22,7 @@ struct ResearchView: View {
             if let store { content(store) } else { ProgressView().tint(session.accent) }
         }
         .task {
-            if store == nil { store = LocalReportStore(spaceId: session.connection.spaceId) }
+            if store == nil { store = LocalReportStore.shared(for: session.connection.spaceId) }
             publishedReports = (try? await session.client.deepResearchReports(
                 in: session.connection.spaceId,
                 limit: 1
@@ -51,9 +51,15 @@ struct ResearchView: View {
                         row(
                             icon: "sparkles",
                             title: "Generate a report",
+                            // The run in flight, when there is one: this row is the way back to
+                            // it, and a row that says only which model is chosen does not look
+                            // like one.
                             // `String(localized:)`, because the fallback is a literal reaching
                             // `Text` as a value — the model name beside it really is data.
-                            subtitle: ai.model(for: .deepResearch)?.model ?? String(localized: "No model chosen")
+                            subtitle: runner.isRunning
+                                ? runner.request?.objective ?? String(localized: "In progress")
+                                : ai.model(for: .deepResearch)?.model ?? String(localized: "No model chosen"),
+                            isBusy: runner.isRunning
                         )
                     }
                     .buttonStyle(NodusCardButtonStyle())
@@ -114,12 +120,17 @@ struct ResearchView: View {
         }
     }
 
+    /// The run this space has going, if any. Held outside every view, so this screen can be
+    /// opened and closed without the report noticing.
+    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
+
     /// The same row Home uses, in the same surface, at the same height.
     private func row(
         icon: String,
         title: LocalizedStringKey,
         subtitle: String? = nil,
-        count: Int? = nil
+        count: Int? = nil,
+        isBusy: Bool = false
     ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
@@ -135,6 +146,9 @@ struct ResearchView: View {
                 }
             }
             Spacer(minLength: 8)
+            if isBusy {
+                ProgressView().controlSize(.small).tint(session.accent)
+            }
             if let count {
                 CountBadge(count: count, accent: session.accent.nodusReadable)
             }

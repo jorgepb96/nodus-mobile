@@ -11,12 +11,10 @@ struct DeepResearchScreen: View {
 
     @State private var objective = ""
     @State private var length: DeepResearchLength = .concise
+    @State private var sections: DeepResearchSectionChoice = .automatic
     @State private var mode: DeepResearchMode?
-    @State private var progress: DeepResearchProgress?
-    @State private var report: DeepResearchReport?
-    @State private var error: String?
-    @State private var running: Task<Void, Never>?
-    @State private var liveActivity: LiveActivityController?
+    @State private var wantsIllustration = false
+    @State private var imageStyle: DecorativeImageStyle = .fallback
     /// A run that stopped before its last section. Kept so the sections already paid for are
     /// not thrown away by a screen that was dismissed or a phone that ran out of patience.
     @State private var unfinished: DeepResearchCheckpoint?
@@ -25,20 +23,40 @@ struct DeepResearchScreen: View {
 
     @Environment(AppPreferences.self) private var preferences
 
+    /// The run itself, which belongs to the space rather than to this screen: leaving here does
+    /// not stop it, and coming back finds it exactly where it got to.
+    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
+
+    private var report: DeepResearchReport? { runner.finished?.report }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
-                if let report {
-                    reportView(report)
-                } else if let progress {
-                    progressView(progress)
+                if let saved = runner.finished {
+                    reportView(saved)
+                } else if let progress = runner.progress {
+                    DeepResearchProgressCard(
+                        objective: runner.request?.objective ?? objective,
+                        progress: progress,
+                        isIllustrating: runner.isIllustrating,
+                        accent: session.accent,
+                        onCancel: { runner.cancel() }
+                    )
                 } else {
                     if let unfinished { resumeNotice(unfinished) }
                     form
                 }
 
-                if let error {
-                    NodusNotice(tone: .blocked, title: "The report failed", message: LocalizedStringKey(error))
+                if let failure = runner.failure {
+                    NodusNotice(tone: .blocked, title: "The report failed", message: LocalizedStringKey(failure))
+                }
+                if let note = runner.illustrationFailure {
+                    NodusNotice(
+                        tone: .caution,
+                        title: "The report has no illustration",
+                        message: LocalizedStringKey(note),
+                        systemImage: "photo"
+                    )
                 }
             }
             .padding(NodusSpace.page)
@@ -54,20 +72,31 @@ struct DeepResearchScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .task {
-            guard running == nil, report == nil else { return }
-            let saved = DeepResearchCheckpointStore.load(spaceId: session.connection.spaceId)
-            unfinished = (saved?.isComplete == false) ? saved : nil
+            guard !runner.isRunning, runner.finished == nil else { return }
+            readCheckpoint()
+        }
+        // A run that has just stopped is the moment the offer to carry on matters most, and the
+        // run no longer belongs to this screen — so the checkpoint is re-read when it ends
+        // rather than only when the screen is opened.
+        .onChange(of: runner.isRunning) { _, running in
+            if !running, runner.finished == nil { readCheckpoint() }
         }
         .toolbar {
-            if report != nil {
+            if runner.finished != nil {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("New") { report = nil; progress = nil; error = nil }
+                    Button("New") { runner.clearFinished() }
                 }
             }
         }
     }
 
     // MARK: Resuming
+
+    /// The sections a stopped run already paid for, if there are any.
+    private func readCheckpoint() {
+        let saved = DeepResearchCheckpointStore.load(spaceId: session.connection.spaceId)
+        unfinished = (saved?.isComplete == false) ? saved : nil
+    }
 
     /// What a half-finished run looks like when you come back to it.
     ///
@@ -144,12 +173,26 @@ struct DeepResearchScreen: View {
             .pickerStyle(.menu)
             .tint(session.accent)
 
+            // The desktop's own second control beside the length (`DeepResearchView.tsx:59-66`).
+            // Length says how many pages; this says how they are divided, and the two are not
+            // the same question — eight pages in four sections is a different document from
+            // eight pages in ten.
+            Picker("Sections", selection: $sections) {
+                ForEach(DeepResearchSectionChoice.allCases) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(session.accent)
+
+            illustrationControls
+
             // A run is one model call per section plus planning. Saying so before the button
             // is pressed is the difference between a cost and a surprise.
             NodusNotice(
                 tone: .info,
                 title: LocalizedStringKey(costEstimate),
-                message: "Each section is one model call. You can cancel at any point and keep what was written up to then.",
+                message: "Each section is one model call. It keeps going if you leave this screen, and you can stop it at any point and keep what was written.",
                 systemImage: "hourglass"
             )
 
@@ -175,6 +218,39 @@ struct DeepResearchScreen: View {
         .nodusGlass(NodusGlass(.regular, tint: session.accent))
     }
 
+    /// The cover, and only the questions that follow from wanting one.
+    ///
+    /// The style picker appears once the toggle is on, exactly as it does on the desktop
+    /// (`DeepResearchView.tsx:1616-1627`): a list of twelve aesthetics beside a switch that is
+    /// off is twelve choices about nothing.
+    @ViewBuilder
+    private var illustrationControls: some View {
+        Toggle(isOn: $wantsIllustration) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Decorative image").font(.subheadline)
+                Text("Drawn once, after the report is written.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .tint(session.accent)
+        .disabled(ai.model(for: .image) == nil)
+
+        if wantsIllustration {
+            Picker("Style", selection: $imageStyle) {
+                ForEach(DecorativeImageStyle.allCases, id: \.self) { style in
+                    Text(LocalizedStringKey(style.label)).tag(style)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(session.accent)
+        }
+
+        if ai.model(for: .image) == nil {
+            Text("Choose an image model under Providers to illustrate a report.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
     /// Docencia vaults open on the unit pack; everything else on the report.
     private var defaultMode: DeepResearchMode {
         session.vaultType == .docencia ? .teachingUnit : .research
@@ -182,48 +258,19 @@ struct DeepResearchScreen: View {
 
     private var costEstimate: String {
         let pages = DeepResearchLimits.targetPages(length, citableCount: 200)
-        let plan = DeepResearchLimits.sectionPlan(pages: pages, requested: nil)
+        let plan = DeepResearchLimits.sectionPlan(pages: pages, requested: sections.limit)
         return "≈ \(plan.target) sections · \(pages.lowerBound)–\(pages.upperBound) pages"
-    }
-
-    // MARK: Progress
-
-    private func progressView(_ progress: DeepResearchProgress) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(objective).font(.subheadline.weight(.medium)).lineLimit(2)
-                Spacer()
-                Button("Cancel") { running?.cancel() }
-                    .font(.caption).tint(Color.nodusDanger)
-            }
-
-            if let fraction = progress.fraction {
-                ProgressView(value: fraction).tint(session.accent)
-            } else {
-                ProgressView().tint(session.accent)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(progress.message).font(.callout)
-                if let index = progress.sectionIndex, let total = progress.sectionTotal {
-                    Text("Section \(index + 1) of \(total)")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if progress.wordsSoFar > 0 {
-                    Text("\(progress.wordsSoFar.formatted()) words · \(String(format: "%.1f", progress.pagesSoFar)) pages")
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding(NodusSpace.cardPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nodusGlass(NodusGlass(.regular, tint: session.accent))
     }
 
     // MARK: Report
 
-    private func reportView(_ report: DeepResearchReport) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private func reportView(_ saved: LocalReportStore.Saved) -> some View {
+        let report = saved.report
+        return VStack(alignment: .leading, spacing: 16) {
+            if let url = local.imageURL(for: saved) {
+                LocalReportImage(url: url)
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text(report.objective).font(.title3.weight(.semibold))
                 HStack(spacing: 12) {
@@ -260,46 +307,14 @@ struct DeepResearchScreen: View {
             .padding(NodusSpace.cardPadding)
             .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
-            ForEach(Array(report.sections.enumerated()), id: \.offset) { _, section in
-                VStack(alignment: .leading, spacing: 14) {
-                    ReportSectionTitle(section.title, accent: session.accent)
-                    // The prose carries the citation tokens the validator kept. Rendered as
-                    // plain text they were bare `nodus://` URLs in the middle of a sentence;
-                    // rendered here they are the source's own name, and they open it.
-                    CorpusProse(
-                        section.prose,
-                        accent: session.accent,
-                        session: session,
-                        labels: referenceLabels(report)
-                    )
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(ReportLayout.sectionPadding)
-                // The same surface the header above it wears. A report that reads as one
-                // document should not be a card followed by a column of darker panels.
-                .nodusGlass(NodusGlass(.regular, tint: session.accent))
-            }
-
-            if !report.references.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    ReportSectionTitle("References", accent: session.accent)
-                    Text("Built from the works actually cited.")
-                        .font(.caption2).foregroundStyle(.secondary)
-                    ForEach(report.references, id: \.token) { reference in
-                        Text(verbatim: "· \(reference.label)").font(.caption)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(ReportLayout.sectionPadding)
-                .nodusGlass(NodusGlass(.regular, tint: session.accent))
-            }
+            ReportBody(report: report, session: session)
 
             // Two different acts, kept apart. Sharing takes a copy off the phone; sending puts
             // it in the ledger, where it becomes part of the vault the next time its owner
             // republishes — which is a change to somebody's corpus, not an export.
             if session.connection.role.canSendChanges {
                 Button {
-                    Task { await send(report) }
+                    Task { await send(saved) }
                 } label: {
                     Label(sentReportId == nil ? "Send to the vault" : "Sent — waiting for the owner",
                           systemImage: sentReportId == nil ? "arrow.up.doc" : "checkmark.circle")
@@ -324,22 +339,16 @@ struct DeepResearchScreen: View {
         }
     }
 
-    /// Token → label for everything the report actually cited, so a bare token in the prose
-    /// can be shown as the source it names.
-    private func referenceLabels(_ report: DeepResearchReport) -> [String: String] {
-        Dictionary(report.references.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first })
-    }
-
     /// Put the finished report in the queue, with the citations it really used.
-    private func send(_ report: DeepResearchReport) async {
+    private func send(_ saved: LocalReportStore.Saved) async {
         guard let controller = await OutboxController.open(session: session), let model = ai.model(for: .deepResearch) else { return }
         await controller.queueReport(
-            report,
-            mode: mode ?? defaultMode,
+            saved.report,
+            mode: saved.mode,
             model: model,
             language: Prompts.interfaceLanguage
         )
-        sentReportId = report.objective
+        sentReportId = saved.id
     }
 
     // MARK: Run
@@ -353,110 +362,127 @@ struct DeepResearchScreen: View {
         objective = checkpoint.request.objective
         length = checkpoint.request.targetLength
         mode = checkpoint.request.mode
-        start(from: checkpoint)
+        sections = DeepResearchSectionChoice(limit: checkpoint.request.sectionLimit)
+        unfinished = nil
+        runner.start(checkpoint.request, resuming: checkpoint, session: session, ai: ai)
     }
 
-    private func start(from checkpoint: DeepResearchCheckpoint? = nil) {
+    private func start() {
         guard let model = ai.model(for: .deepResearch) else { return }
-        error = nil
-        report = nil
         unfinished = nil
-        progress = DeepResearchProgress(
-            phase: .queued,
-            message: checkpoint == nil ? "Queued" : "Resuming",
-            wordsSoFar: checkpoint?.words ?? 0
+        sentReportId = nil
+        runner.start(
+            DeepResearchRequest(
+                objective: objective.trimmingCharacters(in: .whitespacesAndNewlines),
+                language: Prompts.interfaceLanguage,
+                targetLength: length,
+                sectionLimit: sections.limit,
+                mode: mode ?? defaultMode,
+                model: model,
+                illustration: wantsIllustration && ai.model(for: .image) != nil ? imageStyle : nil
+            ),
+            session: session,
+            ai: ai
         )
+    }
+}
 
-        let request = checkpoint?.request ?? DeepResearchRequest(
-            objective: objective.trimmingCharacters(in: .whitespacesAndNewlines),
-            language: Prompts.interfaceLanguage,
-            targetLength: length,
-            mode: mode ?? defaultMode,
-            model: model
-        )
-        let retrieval = CorpusRetrieval(
-            client: session.client,
-            spaceId: session.connection.spaceId,
-            embeddings: EmbeddingService(keyProvider: ai.keyProvider),
-            identity: semanticIdentity
-        )
-        let orchestrator = DeepResearchOrchestrator(
-            deps: DeepResearchWiring.deps(
-                retrieval: retrieval,
-                provider: ProviderClient(keyProvider: ai.keyProvider)
-            )
-        )
+/// How many sections the report is divided into.
+///
+/// The desktop's own list (`DEEP_SECTION_OPTIONS`, `DeepResearchView.tsx:59-66`): auto, or a
+/// ceiling of four, five, six, eight or ten. A number is a ceiling with one section of grace,
+/// never a quota — see `DeepResearchLimits.sectionPlan`.
+enum DeepResearchSectionChoice: Hashable, Identifiable, CaseIterable {
+    case automatic
+    case atMost(Int)
 
-        // The island is where a run this long belongs: it outlives the screen that started
-        // it, and the phone should be able to say what it is doing without being unlocked.
-        let activity = LiveActivityController(
-            kind: .deepResearch,
-            title: request.objective,
-            accentHex: session.vaultType?.accentHex ?? VaultType.academic.accentHex,
-            spaceName: session.connection.spaceName
-        )
-        activity.start()
-        liveActivity = activity
+    static let allCases: [DeepResearchSectionChoice] = [.automatic, .atMost(4), .atMost(5), .atMost(6), .atMost(8), .atMost(10)]
 
-        let spaceId = session.connection.spaceId
+    init(limit: Int?) {
+        self = limit.map { .atMost($0) } ?? .automatic
+    }
 
-        running = Task {
-            do {
-                let finished = try await orchestrator.run(
-                    request,
-                    resuming: checkpoint,
-                    // Written after every section, on whichever thread finished it. This is the
-                    // persisted state Info.plist has always claimed a run resumes from, and the
-                    // difference between an interrupted run and a wasted one.
-                    onCheckpoint: { reached in
-                        DeepResearchCheckpointStore.save(reached, spaceId: spaceId)
-                    },
-                    // Labelled, not trailing: `run` takes two closures now, and an unlabelled
-                    // one binds to the checkpoint hook.
-                    onProgress: { update in
-                        Task { @MainActor in
-                            progress = update
-                            activity.update(
-                                phase: update.phase.rawValue,
-                                detail: update.sectionTitle ?? update.message,
-                                fraction: update.fraction,
-                                step: update.sectionIndex.map { $0 + 1 },
-                                stepCount: update.sectionTotal
-                            )
-                        }
-                    }
-                )
-                report = finished
-                progress = nil
-                // Saved before anything else can go wrong. A run is one model call per section
-                // and losing it to a dismissed screen means paying for it twice.
-                local.save(finished, mode: request.mode, model: request.model.model)
-                DeepResearchCheckpointStore.clear(spaceId: spaceId)
-                activity.finish()
-            } catch is CancellationError {
-                progress = nil
-                error = "Cancelled."
-                // Deliberately kept: cancelling stops the spending, it does not throw away the
-                // sections already written. The screen offers to carry on from here.
-                unfinished = DeepResearchCheckpointStore.load(spaceId: spaceId)
-                activity.finish(failure: "Cancelled")
-            } catch DeepResearchError.emptyCorpus {
-                progress = nil
-                error = "Nothing citable was found for that objective in this space."
-                DeepResearchCheckpointStore.clear(spaceId: spaceId)
-                activity.finish(failure: "No citable material")
-            } catch {
-                progress = nil
-                self.error = error.localizedDescription
-                unfinished = DeepResearchCheckpointStore.load(spaceId: spaceId).flatMap { $0.isComplete ? nil : $0 }
-                activity.finish(failure: error.localizedDescription)
-            }
-            liveActivity = nil
+    var id: String {
+        switch self {
+        case .automatic: return "auto"
+        case .atMost(let count): return "\(count)"
         }
     }
 
-    private var semanticIdentity: EmbeddingIdentity? {
-        guard case .published(let identity) = session.embedding, session.embedding.isReachableFromPhone else { return nil }
-        return identity
+    var limit: Int? {
+        switch self {
+        case .automatic: return nil
+        case .atMost(let count): return count
+        }
+    }
+
+    /// `String(localized:)` rather than a key, because one of the two interpolates a number:
+    /// a `LocalizedStringKey` built from an already-interpolated string is looked up as
+    /// "At most 6 sections" and found in no catalogue.
+    var label: String {
+        switch self {
+        case .automatic: return String(localized: "Sections: automatic")
+        case .atMost(let count): return String(localized: "At most \(count) sections")
+        }
+    }
+}
+
+/// What a run looks like while it is running, wherever it is shown.
+///
+/// Cancelling asks first. A run is one model call per section, so the tap that stops it is a tap
+/// that spends nothing more and also finishes nothing — worth a sentence before it happens.
+struct DeepResearchProgressCard: View {
+    let objective: String
+    let progress: DeepResearchProgress
+    var isIllustrating = false
+    let accent: Color
+    let onCancel: () -> Void
+
+    @State private var confirming = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(objective).font(.subheadline.weight(.medium)).lineLimit(2)
+                Spacer()
+                Button("Cancel") { confirming = true }
+                    .font(.caption).tint(Color.nodusDanger)
+            }
+
+            if let fraction = progress.fraction {
+                ProgressView(value: fraction).tint(accent)
+            } else {
+                ProgressView().tint(accent)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(isIllustrating ? String(localized: "Drawing the illustration") : progress.message)
+                    .font(.callout)
+                if let index = progress.sectionIndex, let total = progress.sectionTotal {
+                    Text("Section \(index + 1) of \(total)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if progress.wordsSoFar > 0 {
+                    Text("\(progress.wordsSoFar.formatted()) words · \(String(format: "%.1f", progress.pagesSoFar)) pages")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(NodusSpace.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nodusGlass(NodusGlass(.regular, tint: accent))
+        .nodusConfirmsCancelling($confirming, onCancel: onCancel)
+    }
+}
+
+/// The one question asked before a run is stopped, worded the same wherever it is asked from.
+extension View {
+    func nodusConfirmsCancelling(_ isPresented: Binding<Bool>, onCancel: @escaping () -> Void) -> some View {
+        alert("Stop this report?", isPresented: isPresented) {
+            Button("Stop it", role: .destructive, action: onCancel)
+            Button("Keep going", role: .cancel) {}
+        } message: {
+            Text("The sections already written are kept, and you can carry on from there later. Nothing more will be spent.")
+        }
     }
 }

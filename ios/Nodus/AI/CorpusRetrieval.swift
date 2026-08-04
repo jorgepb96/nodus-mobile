@@ -173,7 +173,9 @@ struct CorpusRetrieval: Sendable {
                 kind: "passage",
                 id: id,
                 label: String((row.text("text") ?? "Passage").prefix(160)),
-                detail: row.text("section")
+                detail: row.text("section"),
+                workId: row.string("nodus_id"),
+                locator: row.text("page_label")
             )
         }
         if let id = row.string("nodus_id") {
@@ -182,7 +184,8 @@ struct CorpusRetrieval: Sendable {
                 kind: "work",
                 id: id,
                 label: row.text("title") ?? "Work",
-                detail: row.text("year")
+                detail: row.text("year"),
+                workId: id
             )
         }
         return nil
@@ -193,7 +196,8 @@ struct CorpusRetrieval: Sendable {
 nonisolated enum DeepResearchWiring {
     static func deps(
         retrieval: CorpusRetrieval,
-        provider: ProviderClient
+        provider: ProviderClient,
+        citations: CorpusCitations? = nil
     ) -> DeepResearchDeps {
         DeepResearchDeps(
             buildCatalog: { objective in
@@ -232,6 +236,13 @@ nonisolated enum DeepResearchWiring {
                     temperature: 0.55,
                     maxTokens: max(1200, wordTarget * 3)
                 ))
+            },
+            // Without a corpus to ask, every citation keeps the name its catalogue entry
+            // carried. That is a worse report than one whose sources are named, and a far
+            // better one than a page of primary keys.
+            describeCitations: { cited in
+                guard let citations else { return CitationLabelling.plain(cited) }
+                return await citations.labelling(for: cited)
             }
         )
     }
@@ -362,6 +373,30 @@ nonisolated enum Prompts {
                 .trimmingCharacters(in: .whitespaces)
         }
         return Array(lines.filter { !$0.isEmpty }.prefix(cap))
+    }
+
+    // MARK: - The illustration
+
+    /// `VISUAL_CONTEXT_SYSTEM` (`electron/ai/decorativeImages.ts:112-115`), word for word.
+    ///
+    /// One scene, not a summary. An image model handed three sentences of argument draws a
+    /// collage of nothing; handed a room, a light and an object, it draws a picture.
+    static let visualContextSystem = """
+    Describe una sola escena visual concreta que represente el contenido dado.
+    Máximo 45 palabras. Solo la escena: sin títulos, texto visible, letras, logos ni explicaciones.
+    """
+
+    /// What the scene is described from: the objective and as much of the opening as fits.
+    ///
+    /// The desktop reads the brief, the abstract and the draft in that order and clips at 2 400
+    /// characters (`decorativeImages.ts:99-108`). A report written here has no abstract, so the
+    /// first section stands in for one — it is where the argument is laid out.
+    static func visualContext(for report: DeepResearchReport) -> String {
+        let body = report.sections.prefix(2).map { "## \($0.title)\n\n\($0.prose)" }.joined(separator: "\n\n")
+        // The listening copy, because it strips exactly what an image model must not read:
+        // citations, their author-year parentheses, and every piece of Markdown syntax.
+        let clean = ReadingCopy.text(from: body, title: report.objective)
+        return String(clean.prefix(2_400))
     }
 
     static func languageName(_ code: String) -> String {

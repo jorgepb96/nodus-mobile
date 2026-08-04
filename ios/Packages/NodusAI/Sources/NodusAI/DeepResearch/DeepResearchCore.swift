@@ -57,6 +57,12 @@ public struct DeepResearchRequest: Sendable, Codable, Hashable {
     public var sectionLimit: Int?
     public var mode: DeepResearchMode
     public var model: ModelRef
+    /// Draw the report an illustration when it is finished, in this style.
+    ///
+    /// Part of the request rather than of the screen, so a run picked up by a background task
+    /// still produces the report the user asked for. Optional, so a checkpoint written before
+    /// illustrations existed still decodes.
+    public var illustration: DecorativeImageStyle?
 
     public init(
         objective: String,
@@ -69,7 +75,8 @@ public struct DeepResearchRequest: Sendable, Codable, Hashable {
         targetLength: DeepResearchLength = .adaptive,
         sectionLimit: Int? = nil,
         mode: DeepResearchMode = .research,
-        model: ModelRef
+        model: ModelRef,
+        illustration: DecorativeImageStyle? = nil
     ) {
         self.objective = objective
         self.language = language
@@ -78,6 +85,7 @@ public struct DeepResearchRequest: Sendable, Codable, Hashable {
         self.sectionLimit = sectionLimit
         self.mode = mode
         self.model = model
+        self.illustration = illustration
     }
 }
 
@@ -122,6 +130,8 @@ public enum DeepResearchLimits {
     public static let wordsPerPage = 450
     public static let minSections = 3
     public static let maxSections = 14
+    /// How far past a requested count the planner may go when the material asks for it.
+    public static let sectionGrace = 1
     public static let poolIdeas = 70
     public static let poolThemes = 20
     public static let poolGaps = 20
@@ -147,10 +157,16 @@ public enum DeepResearchLimits {
         }
     }
 
+    /// The counts a run aims for, and the one it may not pass.
+    ///
+    /// A number the user chose is a *ceiling with a grace of one*, not a quota
+    /// (`resolveSectionPlan`, `deepResearchCore.ts:736-738`): asking for six sections and being
+    /// given exactly six every time would make the planner pad a corpus that had five things to
+    /// say, and refuse a seventh that the material genuinely needed.
     public static func sectionPlan(pages: ClosedRange<Int>, requested: Int?) -> (target: Int, hardCap: Int) {
         if let requested {
             let clamped = min(maxSections, max(minSections, requested))
-            return (clamped, clamped)
+            return (clamped, min(maxSections, clamped + sectionGrace))
         }
         let derived = max(minSections, min(maxSections, Int((Double(pages.upperBound) / 1.5).rounded())))
         return (derived, min(maxSections, derived + 2))
@@ -171,13 +187,32 @@ public struct CitationCatalog: Sendable {
         public let id: String
         public let label: String
         public let detail: String?
+        /// The work this citation rests on, when the row said which one. An idea does not carry
+        /// it — the corpus keeps that in `idea_occurrences`, which no read endpoint projects —
+        /// so it is resolved once, at assembly, for the ideas that were really cited.
+        ///
+        /// Optional and defaulted, because reports saved before it existed have to keep opening:
+        /// a synthesised `Decodable` reads a missing key for an `Optional` as nil.
+        public let workId: String?
+        /// A page or locator, for a passage.
+        public let locator: String?
 
-        public init(token: String, kind: String, id: String, label: String, detail: String? = nil) {
+        public init(
+            token: String,
+            kind: String,
+            id: String,
+            label: String,
+            detail: String? = nil,
+            workId: String? = nil,
+            locator: String? = nil
+        ) {
             self.token = token
             self.kind = kind
             self.id = id
             self.label = label
             self.detail = detail
+            self.workId = workId
+            self.locator = locator
         }
     }
 
@@ -215,7 +250,9 @@ public struct CitationCatalog: Sendable {
                         kind: "passage",
                         id: id,
                         label: String((row.text("text") ?? "Passage").prefix(120)),
-                        detail: row.text("section")
+                        detail: row.text("section"),
+                        workId: row.string("nodus_id"),
+                        locator: row.text("page_label")
                     ))
                 case "works":
                     guard let id = row.string("nodus_id") else { continue }
@@ -225,7 +262,8 @@ public struct CitationCatalog: Sendable {
                         kind: "work",
                         id: id,
                         label: (row.text("title") ?? "Work") + year,
-                        detail: nil
+                        detail: nil,
+                        workId: id
                     ))
                 default:
                     continue
@@ -329,17 +367,26 @@ public struct DeepResearchDeps: Sendable {
     public var plan: @Sendable (_ request: DeepResearchRequest, _ catalog: CitationCatalog, _ target: Int, _ cap: Int) async throws -> [String]
     /// Writes one section's prose.
     public var writeSection: @Sendable (_ request: DeepResearchRequest, _ title: String, _ index: Int, _ total: Int, _ catalog: CitationCatalog, _ wordTarget: Int) async throws -> String
+    /// Turns the citations a report really used into what a reader sees: a label for each token
+    /// and the works behind them.
+    ///
+    /// Injected rather than computed here because naming a source is a question about the
+    /// corpus — an idea's work lives in a table no page of prose carries — and the orchestrator
+    /// is the one piece of this pipeline that never talks to a server.
+    public var describeCitations: @Sendable (_ cited: [CitationCatalog.Entry]) async -> CitationLabelling
 
     public init(
         buildCatalog: @escaping @Sendable (String) async throws -> CitationCatalog,
         retrieveForSection: @escaping @Sendable (String, String) async throws -> CitationCatalog,
         plan: @escaping @Sendable (DeepResearchRequest, CitationCatalog, Int, Int) async throws -> [String],
-        writeSection: @escaping @Sendable (DeepResearchRequest, String, Int, Int, CitationCatalog, Int) async throws -> String
+        writeSection: @escaping @Sendable (DeepResearchRequest, String, Int, Int, CitationCatalog, Int) async throws -> String,
+        describeCitations: @escaping @Sendable ([CitationCatalog.Entry]) async -> CitationLabelling = { CitationLabelling.plain($0) }
     ) {
         self.buildCatalog = buildCatalog
         self.retrieveForSection = retrieveForSection
         self.plan = plan
         self.writeSection = writeSection
+        self.describeCitations = describeCitations
     }
 }
 
@@ -481,6 +528,11 @@ public struct DeepResearchOrchestrator: Sendable {
         // resumes with a plan rather than paying to draw one up again.
         onCheckpoint(currentCheckpoint())
 
+        // Everything any section was allowed to cite. A section's own retrieval widens the
+        // catalogue for that section only, so a work first met in section seven was absent from
+        // the assembly catalogue and dropped out of the bibliography it belonged in.
+        var known = catalog
+
         let first = resume?.nextSectionIndex ?? 0
         for (index, title) in titles.enumerated() where index >= first {
             try Task.checkCancellation()
@@ -495,6 +547,7 @@ public struct DeepResearchOrchestrator: Sendable {
             // global one so a section can still reach back to the corpus as a whole.
             let sectionCatalog = (try? await deps.retrieveForSection(title, request.objective))
                 .map { catalog.merging($0) } ?? catalog
+            known = known.merging(sectionCatalog)
 
             onProgress(.init(
                 phase: .writing,
@@ -536,24 +589,35 @@ public struct DeepResearchOrchestrator: Sendable {
             wordsSoFar: words
         ))
 
-        // The bibliography is built from what was really cited, in order of first appearance —
-        // never from a list the model wrote.
+        // What was really cited, in order of first appearance — never a list the model wrote.
         var seen = Set<String>()
-        var references: [CitationCatalog.Entry] = []
+        var cited: [CitationCatalog.Entry] = []
         for section in sections {
             for token in section.citations where seen.insert(token).inserted {
-                guard let entry = catalog.entry(for: token) ?? sections.compactMap({ _ in catalog.entry(for: token) }).first
-                else { continue }
-                if entry.kind == "work" { references.append(entry) }
+                guard let entry = known.entry(for: token) else { continue }
+                cited.append(entry)
             }
+        }
+
+        // Naming the sources is the last thing that happens, and the only step that can reach
+        // the corpus for something the prose does not contain. It runs once over the whole
+        // report rather than once per section, so a book cited in six of them is looked up once.
+        let labelling = await deps.describeCitations(cited)
+        let named = sections.map { section in
+            DeepResearchSection(
+                title: section.title,
+                prose: CitationRendering.linking(section.prose, labels: labelling.inline),
+                citations: section.citations,
+                rejectedCitations: section.rejectedCitations
+            )
         }
 
         onProgress(.init(phase: .done, message: "Finished", wordsSoFar: words))
 
         return DeepResearchReport(
             objective: request.objective,
-            sections: sections,
-            references: references,
+            sections: named,
+            references: labelling.references,
             words: words,
             pages: Double(words) / Double(DeepResearchLimits.wordsPerPage),
             citationsChecked: checked,
