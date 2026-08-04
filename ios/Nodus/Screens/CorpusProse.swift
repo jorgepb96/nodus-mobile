@@ -492,77 +492,6 @@ struct CorpusProse: View {
 ///   measure pays for its straight right edge in word spacing rather than in broken words.
 /// - The find bar's highlights are painted on top rather than parsed in: the Markdown is the
 ///   expensive half and it does not change while somebody types in the search field.
-/// Whether the touch that just ended was a person choosing a citation, or a person reading.
-///
-/// A `UITextView` opens a link on touch-up, and touch-up is also how two other things end: the tap
-/// that stops a page still gliding, and the drag that scrolls it. Both were opening whatever
-/// happened to be under the finger, which on a cited report is often something. The rule has to be
-/// decided from the *whole* touch, so both halves are recorded as it happens and read at the end.
-struct TapIntent: Equatable {
-    /// The page was still moving when the finger landed, so this touch was aimed at stopping it.
-    var beganWhileScrolling = false
-    /// The finger travelled far enough that this was a drag, whatever it did at the end.
-    var movedTooFar = false
-
-    var opensCitation: Bool { !beganWhileScrolling && !movedTooFar }
-
-    /// How far a finger may wander and still have meant one spot.
-    ///
-    /// UIKit's own tap slop is around 10 points, and a citation is small: on a phone held in one
-    /// hand, a thumb reaching across the screen drifts several points on the way down without the
-    /// reader intending anything by it. Below this, a touch is a tap.
-    static let slop: CGFloat = 12
-}
-
-/// Watches a touch without ever claiming it.
-///
-/// A recognizer that never leaves `.possible` until the touch ends competes with nothing: text
-/// selection, scrolling and UIKit's own link handling all behave exactly as before. All this does
-/// is remember how the touch started and whether it moved, so the link action can be refused.
-private final class TapIntentWatcher: UIGestureRecognizer {
-    private(set) var intent = TapIntent()
-    private var origin: CGPoint = .zero
-    /// The scroll view this paragraph sits in, resolved lazily: at `makeUIView` time the text
-    /// view has no window and no ancestors to walk.
-    var enclosingScrollView: (() -> UIScrollView?)?
-
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        super.touchesBegan(touches, with: event)
-        guard let touch = touches.first else { return }
-        origin = touch.location(in: view)
-        let scrollView = enclosingScrollView?()
-        // Read at touch-down and not later, which is the whole point: tapping a gliding page
-        // stops it, so by the time UIKit calls the link action nothing is decelerating any more
-        // and the evidence that this touch was a brake has already been erased.
-        intent = TapIntent(
-            beganWhileScrolling: scrollView?.isDragging == true || scrollView?.isDecelerating == true,
-            movedTooFar: false
-        )
-    }
-
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-        super.touchesMoved(touches, with: event)
-        guard let touch = touches.first else { return }
-        let point = touch.location(in: view)
-        if hypot(point.x - origin.x, point.y - origin.y) > TapIntent.slop { intent.movedTooFar = true }
-    }
-
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-        super.touchesEnded(touches, with: event)
-        state = .failed
-    }
-
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
-        super.touchesCancelled(touches, with: event)
-        state = .failed
-    }
-
-    /// `reset()` runs when the touch is over, which is *around* the moment the link action is
-    /// decided. Clearing the verdict here would be a race with reading it, and the next touch
-    /// overwrites it in `touchesBegan` anyway.
-    override func reset() { super.reset() }
-}
-
 private struct DocumentProse: UIViewRepresentable {
     /// Markdown, already linkified.
     let source: String
@@ -591,21 +520,6 @@ private struct DocumentProse: UIViewRepresentable {
         view.adjustsFontForContentSizeCategory = false
         view.setContentCompressionResistancePriority(.required, for: .vertical)
         view.delegate = context.coordinator
-
-        let watcher = TapIntentWatcher()
-        watcher.cancelsTouchesInView = false
-        watcher.delaysTouchesBegan = false
-        watcher.delaysTouchesEnded = false
-        watcher.enclosingScrollView = { [weak view] in
-            var ancestor = view?.superview
-            while let current = ancestor {
-                if let scrollView = current as? UIScrollView { return scrollView }
-                ancestor = current.superview
-            }
-            return nil
-        }
-        view.addGestureRecognizer(watcher)
-        context.coordinator.watcher = watcher
         return view
     }
 
@@ -735,8 +649,6 @@ private struct DocumentProse: UIViewRepresentable {
         /// The marks currently on screen, so a keystroke that changes nothing here changes
         /// nothing here.
         var painted: PageSearch.Highlights?
-        /// What the touch behind the next link action was made of.
-        weak var watcher: TapIntentWatcher?
 
         init(onOpen: @escaping (URL) -> Bool, linksLive: Bool) {
             self.onOpen = onOpen
@@ -749,11 +661,7 @@ private struct DocumentProse: UIViewRepresentable {
             defaultAction: UIAction
         ) -> UIAction? {
             guard case .link(let url) = textItem.content else { return defaultAction }
-            // A touch that was braking a gliding page, or that was a drag, is not a choice. nil
-            // means "do nothing further", so the reader gets what they were actually doing:
-            // the page stops, or it scrolls, and nothing opens on top of it.
-            guard watcher?.intent.opensCitation ?? true else { return nil }
-            // nil again, for the opposite reason: the citation has already been opened here.
+            // nil means "do nothing further": the citation has already been opened here.
             return onOpen(url) ? nil : defaultAction
         }
     }
