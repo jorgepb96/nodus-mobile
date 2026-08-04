@@ -26,7 +26,20 @@ public enum CitationValidator {
         options: [.caseInsensitive]
     )
 
+    /// A whole Markdown link whose destination is a citation: `[Autor (2005)](nodus://work/x)`.
+    ///
+    /// The writer is asked for a bare token, but a model that has seen a bibliography in its
+    /// life sometimes writes the link instead. Matching it first is what makes an *invented*
+    /// one disappear completely: taking out only the URL would leave `[Autor (2005)]()` on the
+    /// page — a source that does not exist, still named, and now unopenable.
+    private static let linked = try! NSRegularExpression(
+        pattern: #"\[([^\]]*)\]\(\s*(nodus://[a-z_]+/[^\s)（）]+)\s*\)"#,
+        options: [.caseInsensitive]
+    )
+
     public static func validate(prose: String, against catalog: CitationCatalog) -> Result {
+        let unlinked = stripInventedLinks(from: prose, catalog: catalog)
+        let prose = unlinked.prose
         let range = NSRange(prose.startIndex..<prose.endIndex, in: prose)
         let matches = pattern.matches(in: prose, range: range)
 
@@ -52,8 +65,37 @@ public enum CitationValidator {
         return Result(
             prose: tidy(output),
             accepted: Array(accepted.reversed()),
-            rejected: Array(rejected.reversed())
+            rejected: unlinked.rejected + Array(rejected.reversed())
         )
+    }
+
+    /// Take out every Markdown link that points at a citation.
+    ///
+    /// A link the catalogue knows is unwrapped to its bare token, which is the shape everything
+    /// downstream is written against and which assembly relabels from the corpus rather than
+    /// from whatever name the model chose. A link the catalogue does not know goes entirely,
+    /// label and all.
+    private static func stripInventedLinks(
+        from prose: String,
+        catalog: CitationCatalog
+    ) -> (prose: String, rejected: [String]) {
+        let range = NSRange(prose.startIndex..<prose.endIndex, in: prose)
+        var output = prose
+        var rejected: [String] = []
+        for match in linked.matches(in: prose, range: range).reversed() {
+            guard
+                let tokenRange = Range(match.range(at: 2), in: prose),
+                let wholeRange = Range(match.range, in: output)
+            else { continue }
+            let token = String(prose[tokenRange]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:"))
+            if catalog.contains(token) {
+                output.replaceSubrange(wholeRange, with: token)
+            } else {
+                rejected.append(token)
+                output.replaceSubrange(wholeRange, with: "")
+            }
+        }
+        return (output, rejected.reversed())
     }
 
     /// Removing a citation leaves doubled spaces and stranded punctuation behind.

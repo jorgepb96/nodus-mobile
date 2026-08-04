@@ -255,7 +255,11 @@ enum BackgroundJobs {
             let orchestrator = DeepResearchOrchestrator(
                 deps: DeepResearchWiring.deps(
                     retrieval: retrieval,
-                    provider: ProviderClient(keyProvider: settings.keyProvider)
+                    provider: ProviderClient(keyProvider: settings.keyProvider),
+                    // The same naming the foreground gets. A report finished by a background
+                    // task is the same document, and it would be a strange one that cited raw
+                    // ids only because the app happened to be closed when it ended.
+                    citations: CorpusCitations(client: client, spaceId: spaceId)
                 )
             )
 
@@ -267,7 +271,7 @@ enum BackgroundJobs {
                         DeepResearchCheckpointStore.save(progress, spaceId: spaceId)
                     }
                 )
-                LocalReportStore(spaceId: spaceId).save(
+                LocalReportStore.shared(for: spaceId).save(
                     report,
                     mode: checkpoint.request.mode,
                     model: checkpoint.request.model.model
