@@ -81,6 +81,15 @@ public struct MutationReceipt: Sendable, Decodable {
         public let id: String
         /// `table_not_mutable`, `unknown_column:<col>`, `constraint`, `missing_asset`, …
         public let reason: String
+        /// A sentence the server wrote, when it had numbers worth stating. Nil from any
+        /// server that only sends the code, which is every server before 3.2.1.
+        public let errorDescription: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case reason
+            case errorDescription = "error_description"
+        }
     }
 
     public let accepted: [String]
@@ -89,6 +98,45 @@ public struct MutationReceipt: Sendable, Decodable {
     public let duplicate: [String]
     public let rejected: [Rejection]
     public let cursor: Int?
+}
+
+/// What the space at the other end will take in one change and in one request.
+///
+/// A queue of Deep Research reports is megabytes, because a report is a single row carrying its
+/// whole markdown. Counting rows says nothing about the size of the request they make, and
+/// counting rows is all this app used to do.
+public struct MutationLimits: Sendable, Hashable {
+    public let maxBatch: Int
+    /// Nil when the server does not publish it. Never guess a value here: refusing a change
+    /// locally against an invented ceiling throws away work the server would have taken.
+    public let maxRowBytes: Int?
+    public let maxBatchBytes: Int
+
+    /// What to assume of a server that will not say.
+    ///
+    /// Servers before 3.2.1 accepted a 2 MiB body and published nothing about it, so this stays
+    /// under that. Guessing low costs an extra request. Guessing high cost a 413 that marked
+    /// nothing and re-sent the same batch forever.
+    public static let unstated = MutationLimits(maxBatch: 200, maxRowBytes: nil, maxBatchBytes: 1_500_000)
+
+    public init(maxBatch: Int, maxRowBytes: Int?, maxBatchBytes: Int) {
+        self.maxBatch = max(1, maxBatch)
+        self.maxRowBytes = maxRowBytes
+        self.maxBatchBytes = max(1, maxBatchBytes)
+    }
+
+    public init(_ capabilities: ServerCapabilities) {
+        self.init(
+            maxBatch: capabilities.maxMutationBatch,
+            maxRowBytes: capabilities.maxMutationBytes,
+            maxBatchBytes: capabilities.maxMutationBatchBytes ?? MutationLimits.unstated.maxBatchBytes
+        )
+    }
+}
+
+public extension Mutation {
+    /// The bytes this change occupies on the wire, measured the way the server measures it.
+    var encodedSize: Int { (try? JSONEncoder.nodus.encode(self))?.count ?? 0 }
 }
 
 public extension NodusClient {

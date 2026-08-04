@@ -23,7 +23,7 @@ final class OutboxController {
     private let client: NodusClient
     private let spaceId: String
     private let clientId: String
-    private let maxBatch: Int
+    private let limits: MutationLimits
     private let schemaVersion: Int
 
     /// Opens the queue for a space, or answers nil when this access cannot send anything.
@@ -38,18 +38,36 @@ final class OutboxController {
             spaceId: session.connection.spaceId,
             directory: directory
         ) else { return nil }
-        return OutboxController(session: session, outbox: outbox)
+        // Asked once, here, because it is the one place that already waits on I/O. A server
+        // that does not answer leaves `.unstated`, which sends smaller batches and never
+        // refuses anything locally — the two things that are safe to do while guessing.
+        let limits = await (try? session.client.capabilities()).map(MutationLimits.init) ?? .unstated
+        return OutboxController(session: session, outbox: outbox, limits: limits)
     }
 
-    private init(session: SpaceSession, outbox: MutationOutbox) {
+    private init(session: SpaceSession, outbox: MutationOutbox, limits: MutationLimits) {
         self.outbox = outbox
+        self.limits = limits
         client = session.client
         spaceId = session.connection.spaceId
         // Stable per install: the server uses it to attribute a change, and a new id on every
         // launch would make one device look like many.
         clientId = OutboxController.installationId
-        maxBatch = 200
         schemaVersion = session.overview?.schemaVersion ?? 0
+    }
+
+    /// Why this change cannot be sent to this space, if it cannot.
+    ///
+    /// Only ever answers non-nil when the server has actually stated its ceiling. Refusing
+    /// against a guess would throw away work a server would have taken, and the app has no way
+    /// to know it guessed wrong.
+    private func refusal(for mutation: Mutation) -> String? {
+        guard let maxRowBytes = limits.maxRowBytes else { return nil }
+        let size = mutation.encodedSize
+        guard size > maxRowBytes else { return nil }
+        let measured = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+        let ceiling = ByteCountFormatter.string(fromByteCount: Int64(maxRowBytes), countStyle: .file)
+        return "This is \(measured) and the server accepts \(ceiling) per change. Ask whoever runs it to raise NODUS_MAX_MUTATION_BYTES, or write a shorter report."
     }
 
     func refresh() async {
@@ -158,6 +176,15 @@ final class OutboxController {
         )
 
         lastError = nil
+        // Measured before it is queued. A report takes minutes to write, and discovering the
+        // ceiling from a rejection afterwards told the user that the work they had just waited
+        // for would not travel, with no number to act on and nothing to do about it.
+        if let refusal = refusal(for: mutation) {
+            lastError = refusal
+            await refresh()
+            return nil
+        }
+
         do {
             try await outbox.enqueue(mutation, title: report.objective)
             // Recorded before the request, for the reason `flush()` gives: a send cut off by a
@@ -174,7 +201,7 @@ final class OutboxController {
         do {
             let receipt = try await client.send(mutations: [mutation], in: spaceId)
             try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
-            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason) })
+            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
         } catch let error as APIError where error.isForbidden {
             // Left as a bare key, the way `flush()` leaves it: the notice that renders this
             // wraps it in `LocalizedStringKey`, so the lookup happens at draw time.
@@ -205,7 +232,7 @@ final class OutboxController {
             // has not pressed send on ever travels on its own.
             try await outbox.authorisePending()
 
-            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, maxBatch: maxBatch)
+            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, limits: limits)
         } catch let error as APIError where error.isForbidden {
             lastError = error.requiredNeed == .write
                 ? "Your access to this space is read only."

@@ -55,20 +55,37 @@ enum OutboxDelivery {
         from outbox: MutationOutbox,
         using client: NodusClient,
         in spaceId: String,
-        maxBatch: Int = 200
+        limits: MutationLimits = .unstated
     ) async throws {
         while true {
-            let batch = try await outbox.pending(limit: maxBatch)
-            guard !batch.isEmpty else { return }
+            let queued = try await outbox.pending(limit: limits.maxBatch)
+            guard !queued.isEmpty else { return }
+
+            // Cut by bytes, not by count. One Deep Research report is a quarter of a megabyte,
+            // so a queue of them makes a request no count of rows would have predicted, and
+            // the whole request is refused together when it does not fit.
+            var batch: [Mutation] = []
+            var bytes = 0
+            for mutation in queued {
+                let size = mutation.encodedSize
+                // Always take the first, so a change bigger than a whole request is still
+                // attempted rather than blocking everything queued behind it forever.
+                if !batch.isEmpty, bytes + size > limits.maxBatchBytes { break }
+                bytes += size
+                batch.append(mutation)
+            }
 
             let receipt = try await client.send(mutations: batch, in: spaceId)
             // A duplicate is a success: the first attempt landed and the retry found it already
             // there. Treating it as a failure would leave items stuck forever.
             try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
-            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason) })
+            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
 
             if receipt.accepted.isEmpty, receipt.duplicate.isEmpty, !receipt.rejected.isEmpty { return }
-            if batch.count < maxBatch { return }
+            // Drained only when a short read was also sent whole. Testing the batch alone would
+            // stop early every time bytes ran out before rows did, leaving the rest queued with
+            // nothing to start it again.
+            if batch.count == queued.count, queued.count < limits.maxBatch { return }
         }
     }
 }
