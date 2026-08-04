@@ -12,6 +12,7 @@ struct HomeView: View {
     var openResearch: (() -> Void)?
 
     @Environment(AppPreferences.self) private var preferences
+    @Environment(OutboxTrayModel.self) private var tray
 
     var body: some View {
         ScrollView {
@@ -101,10 +102,18 @@ struct HomeView: View {
                 // in every space.
                 tileSection("Write") {
                     if session.connection.role.canSendChanges {
-                        NavigationLink {
-                            WritingView(session: session)
+                        // A button rather than a link, because the queue is no longer a page
+                        // inside this space: it is one sheet for the whole device, and it now
+                        // carries a real count instead of the `nil` this tile used to pass.
+                        Button {
+                            tray.open()
                         } label: {
-                            SectionTile(title: "Send queue", icon: "tray.and.arrow.up", count: nil, accent: session.accent)
+                            SectionTile(
+                                title: "Send queue",
+                                icon: "tray.and.arrow.up",
+                                count: tray.outbox.pending > 0 ? tray.outbox.pending : nil,
+                                accent: session.accent
+                            )
                         }
                         .buttonStyle(NodusCardButtonStyle())
                     }

@@ -4558,17 +4558,6 @@
         }
       }
     },
-    "Notes you write appear here before they travel.": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Las notas que escribas aparecerán aquí antes de viajar."
-          }
-        }
-      }
-    },
     "Nothing ahead": {
       "extractionState": "manual",
       "localizations": {

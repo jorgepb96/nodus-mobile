@@ -36,7 +36,6 @@ struct SpaceShell: View {
         case notes
         case deepResearch
         case search
-        case writing
         case research
         case chat
     }
@@ -194,11 +193,9 @@ struct SpaceShell: View {
                         .tag(SidebarItem.collection(collection.path))
                     }
                 }
-                if session.connection.role.canSendChanges {
-                    Section("Write") {
-                        Label("Send queue", systemImage: "tray.and.arrow.up").tag(SidebarItem.writing)
-                    }
-                }
+                // No "Write" section: the queue is a sheet now, and a `List(selection:)` row
+                // that opens one would stay highlighted behind it — a selection nothing ever
+                // clears. The header button above this split view is already on iPad.
                 if session.hasDebates || session.hasNotes || session.hasDeepResearch {
                     Section("Analyse") {
                         if session.hasDebates {
@@ -232,7 +229,6 @@ struct SpaceShell: View {
         case .debates: SpecialListView(session: session, resource: .debates)
         case .notes: SpecialListView(session: session, resource: .notes)
         case .deepResearch: SpecialListView(session: session, resource: .deepResearch)
-        case .writing: WritingView(session: session)
         case .collection(let path):
             if let collection = Collections[path] {
                 CollectionListView(session: session, collection: collection)
