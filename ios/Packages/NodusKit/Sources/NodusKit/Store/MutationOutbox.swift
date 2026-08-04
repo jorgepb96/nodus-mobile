@@ -137,6 +137,43 @@ public actor MutationOutbox {
         }
     }
 
+    /// Record that the user pressed send on *these* changes and no others.
+    ///
+    /// `authorisePending()` is right for a screen whose button says "send everything queued".
+    /// It is wrong for a control attached to one document: pressing send on a report would also
+    /// release a note written on a plane and deliberately left unsent, which is the exact
+    /// promise the `authorised` column exists to keep.
+    @discardableResult
+    public func authorise(ids: [String]) throws -> Int {
+        guard !ids.isEmpty else { return 0 }
+        // Placeholders, never interpolation: an id is a `Mutation.id` today, but the one thing
+        // an outbox must never do is build SQL out of something it was handed.
+        let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
+        return try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE outbox SET authorised = 1 WHERE state = ? AND authorised = 0 AND id IN (\(placeholders))",
+                arguments: StatementArguments([State.pending.rawValue] + ids)
+            )
+            return db.changesCount
+        }
+    }
+
+    /// Whether this space has a queue at all, without bringing one into being.
+    ///
+    /// `init` creates the directory and the database. So asking "is anything queued here?" by
+    /// opening one would answer "no" *and leave an empty outbox.sqlite behind* — in every space
+    /// this device has ever connected to, read-only ones included. The mirror had the same trap
+    /// and `BackgroundJobs.hasMirror` solves it the same way; this belongs on the type that
+    /// chooses the filename rather than beside the caller that guesses it.
+    public nonisolated static func exists(spaceId: String, directory: URL) -> Bool {
+        FileManager.default.fileExists(
+            atPath: directory
+                .appendingPathComponent(spaceId, isDirectory: true)
+                .appendingPathComponent("outbox.sqlite")
+                .path
+        )
+    }
+
     /// How many changes the background flush would be allowed to send right now.
     public func authorisedCount() throws -> Int {
         try dbQueue.read { db in

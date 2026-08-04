@@ -95,4 +95,46 @@ struct MutationOutboxAuthorisationTests {
         #expect(try await second.authorisedPending(limit: 10).map(\.id) == ["n-1"])
     }
 
+    // The whole reason `authorise(ids:)` exists. Sending a report is an act on one document, and
+    // a control on that document must not release a note the user chose to keep.
+    @Test("authorising by name leaves everything else waiting")
+    func authorisingByNameIsScoped() async throws {
+        let (outbox, _) = try makeOutbox()
+        try await outbox.enqueue(note("n-1"), title: "Una nota que se queda")
+        try await outbox.enqueue(note("r-1"), title: "Un informe que se envía")
+
+        let covered = try await outbox.authorise(ids: ["r-1"])
+        #expect(covered == 1)
+        #expect(try await outbox.authorisedPending(limit: 10).map(\.id) == ["r-1"])
+        #expect(try await outbox.authorisedCount() == 1,
+                "the note the user did not press send on must still be waiting")
+    }
+
+    @Test("authorising a change that already left covers nothing")
+    func authorisingByNameSkipsAccepted() async throws {
+        let (outbox, _) = try makeOutbox()
+        try await outbox.enqueue(note("n-1"), title: "Una nota")
+        try await outbox.markAccepted(["n-1"])
+
+        #expect(try await outbox.authorise(ids: ["n-1"]) == 0)
+        #expect(try await outbox.authorise(ids: []) == 0)
+        #expect(try await outbox.authorisedCount() == 0)
+    }
+
+    // A tray that shows every vault has to ask every space whether it has a queue. Asking must
+    // not be the thing that gives it one.
+    @Test("asking whether a queue exists does not create it")
+    func existsDoesNotCreateTheDatabase() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nodus-outbox-\(UUID().uuidString)")
+
+        #expect(MutationOutbox.exists(spaceId: "space-under-test", directory: folder) == false)
+        #expect(FileManager.default.fileExists(atPath: folder.path) == false,
+                "the probe must not bring the folder into being either")
+
+        let (outbox, _) = try makeOutbox(directory: folder)
+        try await outbox.enqueue(note("n-1"), title: "Una nota")
+        #expect(MutationOutbox.exists(spaceId: "space-under-test", directory: folder))
+        #expect(MutationOutbox.exists(spaceId: "another-space", directory: folder) == false)
+    }
 }
