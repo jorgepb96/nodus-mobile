@@ -85,6 +85,7 @@ struct NodiNotesView: View {
         .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
         .listStyle(.plain)
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .nodusScrollToTop(accent: session.accent)
         .navigationTitle("Nodi’s notes")
         .navigationBarTitleDisplayMode(.inline)

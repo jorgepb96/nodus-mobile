@@ -100,6 +100,108 @@ public extension Color {
     static let nodusDanger = nodusDynamic(light: "#b91c1c", dark: "#fb7185")
     static let nodusSuccess = nodusDynamic(light: "#15803d", dark: "#4ade80")
 
+    /// The second and third levels of text, stated rather than left to the system.
+    ///
+    /// SwiftUI's `.secondary` and `.tertiary` are the label colour at 60% and 30%, which is
+    /// tuned for text on `systemBackground` — a flat white or a flat black. This app's surfaces
+    /// are neither: tinted glass over an accent bloom, where 30% of the label colour is a grey
+    /// that has most of the violet behind it showing through. Every description, count,
+    /// placeholder and page number in the app was set in one of the two, and on a phone in
+    /// daylight the third level was barely there at all.
+    ///
+    /// These are the same two levels, pulled toward the text rather than toward the background,
+    /// and cool enough not to fight the violet. Both clear 4.5:1 against the surfaces they are
+    /// actually used on, in both schemes. They are installed once — see `nodusTextHierarchy` —
+    /// so `.secondary` at a call site keeps meaning "the second level" and now resolves to one
+    /// that can be read.
+    static let nodusSecondaryText = nodusDynamic(light: "#4a4459", dark: "#c8c3d8")
+    static let nodusTertiaryText = nodusDynamic(light: "#6e6880", dark: "#9c96ae")
+
+    /// A colour from the desktop's palette, made readable on both of this app's backgrounds.
+    ///
+    /// The relation and idea-type colours are shared with the desktop on purpose — green is
+    /// support and red is opposition on both, and a reader who has used one should not have to
+    /// relearn the other. But those hexes were picked against the desktop's single dark canvas:
+    /// `#eab308` on this app's pale surface is a yellow nobody can read, and `#3b82f6` on its
+    /// near-black one is only just there.
+    ///
+    /// So the hue is kept and the lightness is not. Each colour is walked toward black for the
+    /// light scheme and toward white for the dark one until it clears 4:1 against that scheme's
+    /// card surface — which is the same operation `nodusInfo` and its three siblings had done by
+    /// hand, done arithmetically so a palette that gains a colour cannot gain an illegible one.
+    /// Cached, because it is asked for inside a view body: an argument map is a hundred and
+    /// sixty cards, each naming a relation and a type, and the walk below costs a `UIColor`
+    /// round trip per step. There are twelve relations and six types in the whole vocabulary,
+    /// so the second card onward pays a dictionary lookup.
+    @MainActor
+    static func nodusSemantic(_ hex: String) -> Color {
+        if let known = semanticCache[hex] { return known }
+        let made = computedSemantic(hex)
+        semanticCache[hex] = made
+        return made
+    }
+
+    @MainActor
+    private static var semanticCache: [String: Color] = [:]
+
+    private static func computedSemantic(_ hex: String) -> Color {
+        let base = Color(hex: hex)
+        guard base.rgbaComponents.a > 0 else { return base }
+        let light = base.legible(onLuminance: Self.lightSurfaceLuminance, towardWhite: false)
+        let dark = base.legible(onLuminance: Self.darkSurfaceLuminance, towardWhite: true)
+        #if canImport(UIKit)
+        return Color(uiColor: UIColor { traits in
+            UIColor(traits.userInterfaceStyle == .dark ? dark : light)
+        })
+        #else
+        return dark
+        #endif
+    }
+
+    /// This colour, made to read on whichever surface the app is currently drawing.
+    ///
+    /// The vault accents come from `shared/vaultTypes.ts` and are chosen to look like a brand,
+    /// not to be set in eleven-point type: `#6366f1` as a caption over a pale card is a violet
+    /// smudge. Anywhere the accent carries *words* — a relation, a page reference, a section
+    /// name — it goes through here, and anywhere it is a fill, a stripe or a mark it does not,
+    /// because there the brand colour is exactly the right colour.
+    @MainActor
+    var nodusReadable: Color {
+        let components = rgbaComponents
+        guard components.a > 0 else { return self }
+        let hex = String(
+            format: "#%02x%02x%02x",
+            Int((components.r * 255).rounded()),
+            Int((components.g * 255).rounded()),
+            Int((components.b * 255).rounded())
+        )
+        return Color.nodusSemantic(hex)
+    }
+
+    /// The two surfaces a semantic colour is ever drawn on: the light card and the dark one, as
+    /// `NodusGlassModifier.opaqueFill` mixes them.
+    private static let lightSurfaceLuminance = Color(hex: "#fbfaff").relativeLuminance
+    private static let darkSurfaceLuminance = Color(hex: "#16141f").relativeLuminance
+
+    /// The nearest shade of this colour that reads against a background of the given luminance.
+    ///
+    /// Walks in twentieths rather than solving for it: `shaded(by:)` mixes in sRGB and luminance
+    /// is not linear in sRGB, so there is no closed form worth the arithmetic. Twenty steps is
+    /// finer than the eye resolves and stops at the endpoint, so a colour that cannot reach the
+    /// ratio at all comes back as black or white rather than as a loop.
+    func legible(onLuminance background: Double, towardWhite: Bool, minimumRatio: Double = 4) -> Color {
+        func ratio(_ colour: Color) -> Double {
+            let a = colour.relativeLuminance, b = background
+            return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+        }
+        guard ratio(self) < minimumRatio else { return self }
+        for step in 1...20 {
+            let candidate = shaded(by: (towardWhite ? 1 : -1) * Double(step) / 20)
+            if ratio(candidate) >= minimumRatio { return candidate }
+        }
+        return shaded(by: towardWhite ? 1 : -1)
+    }
+
     /// Relative luminance (WCAG), used to decide whether a tinted glass surface needs light
     /// or dark text on top of it.
     var relativeLuminance: Double {

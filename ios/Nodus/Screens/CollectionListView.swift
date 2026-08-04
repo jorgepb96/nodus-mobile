@@ -67,6 +67,7 @@ struct CollectionListView: View {
         .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
         .listStyle(.plain)
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .nodusScrollToTop(accent: session.accent)
         .navigationTitle(Text(LocalizedStringKey(collection.label)))
         .navigationBarTitleDisplayMode(.inline)
@@ -161,13 +162,17 @@ struct RowCell: View {
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: presenter.icon)
-                .font(.footnote)
-                .foregroundStyle(accent)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(accent.nodusReadable)
                 .frame(width: 22, height: 22)
                 .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(presenter.title(row))
+                    // Two lines, not three or four. An idea's label is a whole sentence and a
+                    // work's title is a sentence with a subtitle after it, and in a list the
+                    // point of the line is to be recognised, not read: four-line titles turned
+                    // a page of ten rows into a page of four.
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
                 if let subtitle = presenter.subtitle(row) {
@@ -177,13 +182,18 @@ struct RowCell: View {
                         .lineLimit(2)
                 }
                 if let detail = presenter.detail(row) {
-                    Text(detail)
-                        .font(.caption2)
-                        .foregroundStyle(accent.opacity(0.85))
+                    // A tag, in the colour its meaning carries everywhere else. `claim`,
+                    // `method` and `finding` were the accent at 85% — the same violet for three
+                    // different kinds of thing, in a size and weight no other tag in the app
+                    // used.
+                    // `key:`, because for an idea this is the corpus's own `type` column —
+                    // "claim", "finding" — and the catalogue has those words. Anything not in
+                    // it (a Zotero item type, "5 works", "p. 40") comes back unchanged.
+                    NodusChip(key: detail, tint: SemanticTone.ideaType(detail, fallback: accent))
                 }
             }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
     }
 }
 
@@ -268,6 +278,7 @@ struct SpecialListView: View {
         .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
         .listStyle(.plain)
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .nodusScrollToTop(accent: session.accent)
         .safeAreaInset(edge: .top) {
             NodusSearchField(text: $query, prompt: filterPrompt, accent: session.accent, isBusy: isLoading)

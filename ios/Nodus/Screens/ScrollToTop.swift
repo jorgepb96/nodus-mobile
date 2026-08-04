@@ -66,6 +66,10 @@ private struct ScrollToTopModifier: ViewModifier {
     @Environment(AppPreferences.self) private var preferences
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nodusHasTabBar) private var hasTabBar
+    /// Optional on purpose. Every long scrollable in the app is inside a `SpaceShell`, which
+    /// provides one — but a non-optional `@Environment` for an `@Observable` is a crash when it
+    /// is missing, and a "back to top" button is not worth taking a screen down for.
+    @Environment(NodusChrome.self) private var chrome: NodusChrome?
     @State private var isScrolled = false
 
     func body(content: Content) -> some View {
@@ -77,23 +81,36 @@ private struct ScrollToTopModifier: ViewModifier {
                             goToTop(proxy)
                         } label: {
                             Image(systemName: "chevron.up")
-                                .font(.footnote.weight(.semibold))
+                                .font(.system(size: 13, weight: .semibold))
+                                // A 36-point circle inside a 44-point target. The circle used
+                                // to *be* 44 and drawn in the prominent material with a glow
+                                // under it, which on a page of quiet cards made the one thing
+                                // that only scrolls the loudest object on the screen. The thumb
+                                // still gets its 44; the eye gets a good deal less.
+                                .frame(width: 36, height: 36)
+                                .nodusGlass(NodusGlass(.regular, tint: accent, interactive: true), in: Circle())
                                 .frame(width: 44, height: 44)
                                 .contentShape(Circle())
                         }
                         .tint(accent)
-                        .nodusGlass(NodusGlass(.prominent, tint: accent), in: Circle())
-                        .padding(.trailing, 16)
-                        // Clear of the floating tab bar where there is one, and low where
-                        // there is not. 20 points everywhere put the button *on* the bar, which
-                        // took the touch and did nothing with it; 92 everywhere left it hanging
-                        // mid-page on every pushed screen in the app.
-                        .padding(.bottom, hasTabBar ? 76 : 22)
+                        .padding(.trailing, NodusSpace.page)
+                        // Clear of the bottom bar where there is one, and low where there is
+                        // not. It used to need 76 to clear the system's floating tab bar, which
+                        // overlaps content and takes the touches landing on it. The bar the app
+                        // draws now goes in a `safeAreaInset`, so it is not floating over
+                        // anything and the button only has to sit above the bar's own height.
+                        .padding(.bottom, hasTabBar ? 62 : 22)
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
                         .accessibilityLabel("Back to top")
                     }
                 }
-                .animation(.easeOut(duration: 0.2), value: isScrolled)
+                .animation(NodusMotion.quick, value: isScrolled)
+                // Every scrollable in the shell reports its position, including the ones on
+                // pushed screens — where the header is not even on screen. Scrolling a dossier
+                // therefore collapsed the header of the tab root behind it, and popping back
+                // landed on a page at the top wearing a collapsed header, which reads as a bug
+                // because it is one. A screen that goes away stops speaking for the chrome.
+                .onDisappear { chrome?.setScrolled(false) }
         }
     }
 
@@ -109,7 +126,7 @@ private struct ScrollToTopModifier: ViewModifier {
         if reduceMotion {
             proxy.scrollTo(NodusScrollAnchor.top, anchor: .top)
         } else {
-            withAnimation(.easeOut(duration: 0.32)) {
+            withAnimation(NodusMotion.deliberate) {
                 proxy.scrollTo(NodusScrollAnchor.top, anchor: .top)
             }
         }
@@ -119,18 +136,33 @@ private struct ScrollToTopModifier: ViewModifier {
         }
     }
 
+    /// One measurement, two answers.
+    ///
+    /// The header wants to know whether the page has moved at all — that is a line or two, and
+    /// it wants to know immediately. The button wants to know whether scrolling back would be a
+    /// chore, which is about a screen's worth. Both come out of the same geometry callback,
+    /// because adding a second one to every scroll view in the app would be paying twice for a
+    /// number the system already handed over.
     @ViewBuilder
     private func measured(_ content: Content) -> some View {
         if #available(iOS 18.0, *) {
-            content.onScrollGeometryChange(for: Bool.self) { geometry in
-                // One screen's worth down: far enough that scrolling back is a chore, near
-                // enough that the button is there when it starts to be.
-                geometry.contentOffset.y > geometry.containerSize.height * 0.75
-            } action: { _, scrolled in
-                isScrolled = scrolled
+            content.onScrollGeometryChange(for: Thresholds.self) { geometry in
+                Thresholds(
+                    // Past the top by more than a rubber-band wobble.
+                    moved: geometry.contentOffset.y > 16,
+                    far: geometry.contentOffset.y > geometry.containerSize.height * 0.75
+                )
+            } action: { _, crossed in
+                isScrolled = crossed.far
+                chrome?.setScrolled(crossed.moved)
             }
         } else {
             content.onAppear { isScrolled = true }
         }
+    }
+
+    private struct Thresholds: Equatable {
+        let moved: Bool
+        let far: Bool
     }
 }

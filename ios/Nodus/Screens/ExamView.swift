@@ -82,13 +82,14 @@ struct ExamView: View {
             .nodusTopAnchor()
         }
         .nodusScrollToTop(accent: session.accent)
+        .nodusHidesBottomBar()
         .navigationTitle(Text(verbatim: detail.exam.text("title") ?? String(localized: "Exam")))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    withAnimation(.easeOut(duration: 0.2)) { showingSolutions.toggle() }
+                    withAnimation(NodusMotion.standard) { showingSolutions.toggle() }
                 } label: {
                     Image(systemName: showingSolutions ? "key.fill" : "key")
                 }

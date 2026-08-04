@@ -47,6 +47,7 @@ struct ResearchLibraryView: View {
                         } label: {
                             localRow(saved)
                         }
+                        .listRowBackground(Color.clear)
                         .swipeActions {
                             Button(role: .destructive) { local.delete(saved.id) } label: {
                                 Label("Delete", systemImage: "trash")
@@ -54,21 +55,26 @@ struct ResearchLibraryView: View {
                         }
                     }
                 } header: {
-                    Text("On this device")
+                    NodusSectionLabel("On this device")
                 } footer: {
                     Text("Generated here and kept on this device. They are not part of the vault until you send one.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
             if !matchingPublished.isEmpty {
-                Section("Published in the vault") {
+                Section {
                     ForEach(Array(matchingPublished.enumerated()), id: \.offset) { _, row in
                         NavigationLink {
                             PublishedReportReader(session: session, row: row)
                         } label: {
                             publishedRow(row)
                         }
+                        .listRowBackground(Color.clear)
                     }
+                } header: {
+                    NodusSectionLabel("Published in the vault")
                 }
             }
 
@@ -84,6 +90,19 @@ struct ResearchLibraryView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        // `.plain`, not the grouped default. Grouped gives every row its own opaque card —
+        // `secondarySystemGroupedBackground`, flat white or flat near-black — which is the
+        // "black panels" of item 8, and it inset those cards away from the separators that were
+        // supposed to be doing the separating.
+        .listStyle(.plain)
+        // The system's separator is a hairline of `separator`, which is the label colour at
+        // about a tenth — designed for a flat white table and all but invisible over this app's
+        // dark tinted glass. Two reports with two-line titles ran together into one block of
+        // text. This is the same hairline at a strength the surface it is drawn on can carry.
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
+        // The system sets a `List` header in small capitals of its own accord, which is the one
+        // typographic style nothing else in the app uses.
+        .textCase(nil)
         .nodusDismissesKeyboard()
         .navigationTitle("Reports")
         .navigationBarTitleDisplayMode(.inline)
@@ -95,13 +114,18 @@ struct ResearchLibraryView: View {
         .refreshable { await load() }
     }
 
+    /// The thumbnail every row in this list wears.
+    ///
+    /// 56 rather than 44, at the app's control radius. A report is a document with a cover, and
+    /// at 44 points the illustration the desktop generated for it was a stamp beside two lines
+    /// of text — too small to be recognised, and small enough that a row with a picture and a
+    /// row with a glyph read as two different kinds of row.
+    private static let thumbnail: CGFloat = 56
+
     private func localRow(_ saved: LocalReportStore.Saved) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: saved.mode == .teachingUnit ? "graduationcap" : "doc.text")
-                .font(.title3).foregroundStyle(session.accent)
-                .frame(width: 44, height: 44)
-                .background(session.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 13) {
+            glyphThumbnail(saved.mode == .teachingUnit ? "graduationcap" : "doc.text")
+            VStack(alignment: .leading, spacing: 3) {
                 Text(saved.title).font(.subheadline.weight(.medium)).lineLimit(2)
                 Text("\(saved.report.words.formatted()) words · \(saved.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -111,31 +135,38 @@ struct ResearchLibraryView: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
     }
 
     private func publishedRow(_ row: Row) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 13) {
             // The list endpoint carries the illustration's asset ref beside each report, which
             // is the only place a client can learn its hash.
             if let hash = row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
                 AssetImage(session: session, hash: hash)
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(width: Self.thumbnail, height: Self.thumbnail)
+                    .clipShape(NodusRadius.controlShape)
             } else {
-                Image(systemName: "doc.richtext")
-                    .font(.title3).foregroundStyle(session.accent)
-                    .frame(width: 44, height: 44)
-                    .background(session.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                glyphThumbnail("doc.richtext")
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(row.text("title") ?? "Report").font(.subheadline.weight(.medium)).lineLimit(2)
                 if let objective = row.text("objective") {
                     Text(objective).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+    }
+
+    /// The stand-in for a report that has no illustration: the same square, so the two kinds of
+    /// row line up down the left edge.
+    private func glyphThumbnail(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 22, weight: .regular))
+            .foregroundStyle(session.accent.nodusReadable)
+            .frame(width: Self.thumbnail, height: Self.thumbnail)
+            .background(session.accent.opacity(0.14), in: NodusRadius.controlShape)
     }
 
     private func load() async {
@@ -188,18 +219,19 @@ struct LocalReportReader: View {
                         )
                     }
 
-                    HStack(spacing: 0) {
-                        ReportCopyButtons(markdown: saved.report.markdown, title: nil, accent: session.accent)
-                        ReadingSizeButtons(accent: session.accent)
-                        Spacer(minLength: 0)
-                    }
+                    ReportActions(
+                        markdown: saved.report.markdown,
+                        title: nil,
+                        accent: session.accent
+                    )
+                    .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
+                .padding(NodusSpace.cardPadding)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
                 ForEach(Array(saved.report.sections.enumerated()), id: \.offset) { _, section in
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 14) {
                         ReportSectionTitle(section.title, accent: session.accent)
                         CorpusProse(
                             section.prose,
@@ -209,20 +241,24 @@ struct LocalReportReader: View {
                         )
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
-                    .nodusGlass(NodusGlass(.thin, tint: session.accent))
+                    .padding(ReportLayout.sectionPadding)
+                    // `.regular`, the same weight as the header above it. The sections were
+                    // `.thin` — a different, darker material — so a report was one solid card
+                    // followed by a column of near-black panels, which is the break item 8 is
+                    // about.
+                    .nodusGlass(NodusGlass(.regular, tint: session.accent))
                 }
 
                 if !saved.report.references.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         ReportSectionTitle("References", accent: session.accent)
                         ForEach(saved.report.references, id: \.token) { entry in
-                            Text("· \(entry.label)").font(.caption)
+                            Text(verbatim: "· \(entry.label)").font(.caption)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .nodusGlass(NodusGlass(.thin, tint: session.accent))
+                    .padding(ReportLayout.sectionPadding)
+                    .nodusGlass(NodusGlass(.regular, tint: session.accent))
                 }
 
                 ShareLink(item: saved.report.markdown) {
@@ -231,15 +267,31 @@ struct LocalReportReader: View {
                 }
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
             }
-            .padding(16)
+            .padding(NodusSpace.page)
+            .frame(maxWidth: ReportLayout.measure)
+            .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
-        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, justified: true))
+        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
         .nodusScrollToTop(accent: session.accent)
+        .nodusHidesBottomBar()
         .navigationTitle(saved.mode.label)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
     }
+}
+
+/// How a report is set on the page.
+enum ReportLayout {
+    /// The widest a column of prose is allowed to get.
+    ///
+    /// A phone is always narrower than this and is unaffected; an iPad in landscape was setting
+    /// a twenty-page report across 1 300 points, which is some twenty-five words to a line —
+    /// past the point where the eye reliably finds the start of the next one.
+    static let measure: CGFloat = 660
+    /// A little more than a card's own padding, because the one thing inside is prose and prose
+    /// wants a margin of its own.
+    static let sectionPadding: CGFloat = 19
 }
 
 /// A report the owner published from the desktop.
@@ -267,30 +319,21 @@ struct PublishedReportReader: View {
                         Text(objective).font(.subheadline).foregroundStyle(.secondary)
                     }
                     if let document {
-                        HStack(spacing: 0) {
-                            ReportCopyButtons(
-                                markdown: document,
-                                title: row.text("title"),
-                                accent: session.accent
-                            )
-                            // Beside the two copies, because it is the third way to take the
-                            // report with you — and the only one that keeps its layout.
-                            if let id = row.string("id") {
-                                ReportPDFButton(
-                                    session: session,
-                                    reportId: id,
-                                    title: row.text("title") ?? "informe",
-                                    accent: session.accent
-                                )
-                            }
-                            ReadingSizeButtons(accent: session.accent)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.top, 4)
+                        ReportActions(
+                            markdown: document,
+                            title: row.text("title"),
+                            // Beside the copy, because it is the other way to take the report
+                            // with you — and the only one that keeps its layout.
+                            pdf: row.string("id").map {
+                                (session, $0, row.text("title") ?? String(localized: "Report"))
+                            },
+                            accent: session.accent
+                        )
+                        .padding(.top, 6)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
+                .padding(NodusSpace.cardPadding)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
                 if let error {
@@ -299,7 +342,7 @@ struct PublishedReportReader: View {
 
                 if let sections = prose {
                     ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 14) {
                             if let heading = section.heading {
                                 ReportSectionTitle(heading, accent: session.accent)
                             }
@@ -309,18 +352,21 @@ struct PublishedReportReader: View {
                             CorpusProse(section.body, accent: session.accent, session: session)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(18)
-                        .nodusGlass(NodusGlass(.thin, tint: session.accent))
+                        .padding(ReportLayout.sectionPadding)
+                        .nodusGlass(NodusGlass(.regular, tint: session.accent))
                     }
                 } else if detail == nil, error == nil {
                     ProgressView().tint(session.accent).frame(maxWidth: .infinity)
                 }
             }
-            .padding(16)
+            .padding(NodusSpace.page)
+            .frame(maxWidth: ReportLayout.measure)
+            .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
-        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, justified: true))
+        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
         .nodusScrollToTop(accent: session.accent)
+        .nodusHidesBottomBar()
         .navigationTitle("Report")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)

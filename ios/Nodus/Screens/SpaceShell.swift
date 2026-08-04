@@ -11,14 +11,22 @@ struct SpaceShell: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(AppModel.self) private var model
+    @Environment(AppPreferences.self) private var preferences
 
     let session: SpaceSession
 
     @State private var tab: Tab = .home
+    /// Which tabs have ever been opened.
+    ///
+    /// The four pages are held side by side rather than swapped, so each keeps its navigation
+    /// stack and its scroll position — but a page nobody has opened should not be loading a
+    /// corpus in the background, which is the one thing `TabView` was doing for free.
+    @State private var visited: Set<Tab> = [.home]
     @State private var sidebarSelection: SidebarItem? = .home
     @State private var showingSettings = false
+    @State private var chrome = NodusChrome()
 
-    enum Tab: Hashable { case home, search, research, chat }
+    enum Tab: Hashable, CaseIterable { case home, search, research, chat }
 
     enum SidebarItem: Hashable {
         case home
@@ -51,6 +59,7 @@ struct SpaceShell: View {
                 tabView
             }
         }
+        .environment(chrome)
         .task {
             await session.load()
             await session.loadMirror()
@@ -63,30 +72,65 @@ struct SpaceShell: View {
 
     // MARK: iPhone
 
+    /// The four tabs and the bar under them, both drawn here.
+    ///
+    /// Not a `TabView`. Its bar cannot be shortened, its selected tab cannot be given a quieter
+    /// state than the large translucent capsule iOS 26 puts there, and it cannot be hidden for
+    /// the screens that are documents — see `NodusTabBar`. What a `TabView` was actually buying
+    /// is that each tab keeps its own navigation stack and scroll position while the others stay
+    /// loaded, and a `ZStack` of pages that have been visited buys the same thing: the identity
+    /// of each page is stable, so its state is too.
     private var tabView: some View {
-        // Four tabs, not five. "Browse" showed the same sections as Home in a list instead
-        // of a grid, so it cost a tab to say nothing new.
-        TabView(selection: $tab) {
-            page { HomeView(session: session, openResearch: { tab = .research }) }
-                .tabItem { Label("Home", systemImage: "house") }
-                .tag(Tab.home)
-
-            page { SearchScreen(session: session) }
-                .tabItem { Label("Search", systemImage: "magnifyingglass") }
-                .tag(Tab.search)
-
-            page { ResearchView(session: session) }
-                .tabItem { Label("Research", systemImage: "doc.text.magnifyingglass") }
-                .tag(Tab.research)
-
-            page { ChatTab(session: session) }
-                .tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right") }
-                .tag(Tab.chat)
+        ZStack {
+            // Four tabs, not five. "Browse" showed the same sections as Home in a list instead
+            // of a grid, so it cost a tab to say nothing new.
+            ForEach(Tab.allCases, id: \.self) { candidate in
+                if visited.contains(candidate) {
+                    page { content(for: candidate) }
+                        .opacity(tab == candidate ? 1 : 0)
+                        // Both are needed and they are not the same thing: a transparent view
+                        // still takes touches, and VoiceOver still reads it.
+                        .allowsHitTesting(tab == candidate)
+                        .accessibilityHidden(tab != candidate)
+                        .zIndex(tab == candidate ? 1 : 0)
+                }
+            }
         }
         .tint(session.accent)
-        // Everything inside a tab, pushed screens included: nothing here hides the tab bar on
-        // a push, so it floats over the bottom-right corner of every one of these screens.
-        .environment(\.nodusHasTabBar, true)
+        // Everything inside a tab, pushed screens included: the bar floats over the bottom of
+        // every one of these screens unless a screen has asked it not to.
+        .environment(\.nodusHasTabBar, !chrome.hidesBottomBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !chrome.hidesBottomBar {
+                NodusTabBar(selection: $tab, accent: session.accent, items: tabItems)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(NodusMotion.standard, value: chrome.hidesBottomBar)
+        .onChange(of: tab) { _, opened in
+            visited.insert(opened)
+            // A new page starts at the top, so the header does not arrive already collapsed.
+            chrome.setScrolled(false)
+        }
+    }
+
+    private var tabItems: [NodusTabBar<Tab>.Item] {
+        [
+            .init(tab: .home, title: "Home", systemImage: "house"),
+            .init(tab: .search, title: "Search", systemImage: "magnifyingglass"),
+            .init(tab: .research, title: "Research", systemImage: "doc.text.magnifyingglass"),
+            .init(tab: .chat, title: "Chat", systemImage: "bubble.left.and.text.bubble.right"),
+        ]
+    }
+
+    @ViewBuilder
+    private func content(for tab: Tab) -> some View {
+        switch tab {
+        case .home: HomeView(session: session, openResearch: { self.tab = .research })
+        case .search: SearchScreen(session: session)
+        case .research: ResearchView(session: session)
+        case .chat: ChatTab(session: session)
+        }
     }
 
     /// Each tab is its own navigation stack.
@@ -105,15 +149,6 @@ struct SpaceShell: View {
                 .safeAreaInset(edge: .top) { header }
                 .toolbar(.hidden, for: .navigationBar)
                 .nodusPageBackdrop(accent: session.accent)
-                // The tab bar's own background, stated rather than left to the system.
-                //
-                // Left alone it has two: a translucent one while content is passing under it,
-                // and an opaque `systemBackground` — flat white in light mode — the moment the
-                // content ends above it. So the same bar was a tinted band on one screen and a
-                // white slab with a hard edge on the next, on a page whose backdrop is neither.
-                // One material in both states, with the accent wash showing through it.
-                .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-                .toolbarBackground(.visible, for: .tabBar)
         }
     }
 
@@ -213,24 +248,67 @@ struct SpaceShell: View {
             title: session.connection.spaceName,
             subtitle: subtitle,
             accent: session.accent,
-            activity: session.isLoading ? 1 : 0
+            activity: session.isLoading ? 1 : 0,
+            collapsed: chrome.isScrolled
         ) {
-            Button {
-                model.closeSession()
-            } label: {
-                Image(systemName: "rectangle.stack")
-            }
-            .tint(session.accent)
-            .accessibilityLabel("Switch space")
+            headerButton("rectangle.stack", label: "Switch space") { model.closeSession() }
         } trailing: {
-            Button {
-                showingSettings = true
-            } label: {
-                Image(systemName: "gearshape")
+            // Each glyph in its own 44-point box, not the pair in one.
+            //
+            // The accessory slot sizes what it is handed, so handing it an `HStack` gave the
+            // *cluster* the 44 points and left each button as wide as its own drawing — two
+            // 17-point targets sitting eight points apart, which reads as one control that has
+            // been drawn twice and misses half the taps aimed at either.
+            HStack(spacing: 2) {
+                if showsLayoutToggle { layoutToggle }
+                headerButton("gearshape", label: "Settings") { showingSettings = true }
             }
-            .tint(session.accent)
-            .accessibilityLabel("Settings")
         }
+    }
+
+    /// The shape every control in the header wears: the glyph, centred in a 44-point square.
+    private func headerButton(
+        _ systemImage: String,
+        label: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .tint(session.accent)
+        .accessibilityLabel(label)
+    }
+
+    /// Board or list, in the chrome rather than on the page.
+    ///
+    /// It used to be a row of its own above Home's first section: a single 38-point circle
+    /// pinned right, with sixty points of nothing beside it and another twenty-six under it
+    /// before the content began. That is a lot of screen for one control, and it is the kind of
+    /// control the chrome is for — it changes the shape of the screen rather than being part of
+    /// what the screen says.
+    private var layoutToggle: some View {
+        Button {
+            withAnimation(NodusMotion.standard) {
+                preferences.homeLayout = preferences.homeLayout.toggled
+            }
+        } label: {
+            Image(systemName: preferences.homeLayout.toggled.systemImage)
+                // No glass circle any more: beside the gear it has to be the same kind of
+                // object as the gear, in the same 44-point square.
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .tint(session.accent)
+        .accessibilityLabel(preferences.homeLayout == .grid ? "Show as a list" : "Show as a grid")
+    }
+
+    /// Only where it does something. On the other three tabs it would be a control that changes
+    /// a screen you are not looking at.
+    private var showsLayoutToggle: Bool {
+        wantsSidebar ? sidebarSelection == .home : tab == .home
     }
 
     private var subtitle: String? {

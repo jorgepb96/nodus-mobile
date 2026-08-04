@@ -15,15 +15,19 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                HStack(spacing: 8) {
-                    // Every vault type but academic is still being proved, and a reader should
-                    // know that before they trust a screen with their work rather than after.
-                    if session.vaultType?.isAlpha == true {
-                        VaultPhaseTag()
-                    }
-                    Spacer()
-                    layoutToggle
+            // `NodusSpace.block` between blocks, not 16. The sections of this screen are
+            // separate subjects — what the vault publishes, what you write, what you analyse —
+            // and 16 points made them one long run of cards with occasional words in it.
+            VStack(alignment: .leading, spacing: NodusSpace.block) {
+                // Every vault type but academic is still being proved, and a reader should know
+                // that before they trust a screen with their work rather than after.
+                //
+                // On its own line rather than in a row with the board/list switch: that switch
+                // is in the header now, and what was left was an `HStack` holding one tag, a
+                // `Spacer` and nothing — which on an academic vault was a whole empty row
+                // before the screen began.
+                if session.vaultType?.isAlpha == true {
+                    VaultPhaseTag()
                 }
 
                 if !session.isPublished {
@@ -51,10 +55,10 @@ struct HomeView: View {
                 embeddingNotice
 
                 if !sections.isEmpty {
-                    NodusGlassContainer(spacing: 16) {
+                    NodusGlassContainer(spacing: NodusSpace.card) {
                         // `Self.tileColumns`, not a fresh `[GridItem]` per body pass, and the
                         // same grid every other section on this screen uses.
-                        LazyVGrid(columns: tileColumns, spacing: 12) {
+                        LazyVGrid(columns: tileColumns, spacing: NodusSpace.card) {
                             ForEach(sections, id: \.path) { collection in
                                 NavigationLink {
                                     CollectionListView(session: session, collection: collection)
@@ -66,7 +70,7 @@ struct HomeView: View {
                                         accent: session.accent
                                     )
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(NodusCardButtonStyle())
                             }
                         }
                     }
@@ -75,20 +79,16 @@ struct HomeView: View {
                 // Screens a vault type deserves that are not just a table listing: a family
                 // tree, a timetable, a deck of cards.
                 if !vaultTools.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(toolsHeading).font(.subheadline.weight(.semibold))
-                        LazyVGrid(columns: tileColumns, spacing: 12) {
-                            ForEach(vaultTools, id: \.title) { tool in
-                                NavigationLink {
-                                    tool.destination()
-                                } label: {
-                                    SectionTile(title: LocalizedStringKey(tool.title), icon: tool.icon, count: nil, accent: session.accent)
-                                }
-                                .buttonStyle(.plain)
+                    tileSection(toolsHeading) {
+                        ForEach(vaultTools, id: \.title) { tool in
+                            NavigationLink {
+                                tool.destination()
+                            } label: {
+                                SectionTile(title: LocalizedStringKey(tool.title), icon: tool.icon, count: nil, accent: session.accent)
                             }
+                            .buttonStyle(NodusCardButtonStyle())
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 // In the same grid as everything else, even alone. A single `NavigationLink`
@@ -106,14 +106,14 @@ struct HomeView: View {
                         } label: {
                             SectionTile(title: "Send queue", icon: "tray.and.arrow.up", count: nil, accent: session.accent)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(NodusCardButtonStyle())
                     }
                     NavigationLink {
                         NodiNotesView(session: session)
                     } label: {
                         SectionTile(title: "Nodi’s notes", icon: "sparkles", count: nil, accent: session.accent)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NodusCardButtonStyle())
                 }
 
                 if session.hasDebates || session.hasNotes || session.hasDeepResearch || session.hasImmersion {
@@ -127,7 +127,7 @@ struct HomeView: View {
                             } label: {
                                 SectionTile(title: "Argument map", icon: "arrow.triangle.branch", count: nil, accent: session.accent)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(NodusCardButtonStyle())
                         }
                         if session.hasDeepResearch {
                             // Goes *to* the Research section rather than opening a second copy
@@ -142,7 +142,7 @@ struct HomeView: View {
                                     accent: session.accent
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(NodusCardButtonStyle())
                             .disabled(openResearch == nil)
                         }
                         if session.hasImmersion {
@@ -168,7 +168,7 @@ struct HomeView: View {
                                 accent: session.accent
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(NodusCardButtonStyle())
                     }
                 }
 
@@ -181,31 +181,18 @@ struct HomeView: View {
                     .padding(.top, 40)
                 }
             }
-            .padding(16)
+            .padding(.horizontal, NodusSpace.page)
+            .padding(.vertical, NodusSpace.page)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .nodusTopAnchor()
         }
+        // Home is a board, not a list: it is one screen and a bit, and the indicator's only
+        // effect was a grey bar running down the right edge of every tile a dozen points from
+        // its corner. The long lists in the app keep theirs, because there the position of the
+        // thumb in nine thousand rows is worth knowing.
+        .scrollIndicators(.hidden)
         .nodusScrollToTop(accent: session.accent)
         .refreshable { await session.load() }
-    }
-
-    /// Board or list, switched here rather than buried in settings.
-    ///
-    /// A row of its own above the sections rather than floating over them: an overlay in the
-    /// top-right corner sat squarely on the first tile's count.
-    private var layoutToggle: some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.22)) {
-                preferences.homeLayout = preferences.homeLayout.toggled
-            }
-        } label: {
-            Image(systemName: preferences.homeLayout.toggled.systemImage)
-                .font(.footnote.weight(.semibold))
-                .frame(width: 38, height: 38)
-                .contentShape(Circle())
-        }
-        .tint(session.accent)
-        .nodusGlass(NodusGlass(.thin, tint: session.accent), in: Circle())
-        .accessibilityLabel(preferences.homeLayout == .grid ? "Show as a list" : "Show as a grid")
     }
 
     /// A headed section whose contents sit in the one grid this screen uses.
@@ -213,14 +200,21 @@ struct HomeView: View {
     /// Every tile on Home is the same size — that is what makes the screen read as one board
     /// rather than as several lists — so the grid is defined once and every section goes
     /// through it, including the ones that hold a single tile.
+    /// A section name has to be recognisable as a section name from across the screen and must
+    /// not read as the most important thing on it.
+    ///
+    /// "Write" and "Analyse" were `subheadline.semibold` in the primary colour — a hair heavier
+    /// than the tile titles under them and the same size, so they read as one more row that
+    /// happened to have no card. Smaller, in the second level of text, with the letters opened
+    /// out and real space above it: a label on the group rather than a member of it.
     @ViewBuilder
     private func tileSection<Content: View>(
         _ title: LocalizedStringKey,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.subheadline.weight(.semibold))
-            LazyVGrid(columns: tileColumns, spacing: 12) {
+        VStack(alignment: .leading, spacing: 9) {
+            NodusSectionLabel(title)
+            LazyVGrid(columns: tileColumns, spacing: NodusSpace.card) {
                 content()
             }
         }
@@ -233,8 +227,8 @@ struct HomeView: View {
     /// the toggle changes the shape of the whole screen rather than of one grid on it.
     private var tileColumns: [GridItem] {
         switch preferences.homeLayout {
-        case .grid: return [GridItem(.adaptive(minimum: 150), spacing: 12)]
-        case .list: return [GridItem(.flexible(), spacing: 12)]
+        case .grid: return [GridItem(.adaptive(minimum: 150), spacing: NodusSpace.card)]
+        case .list: return [GridItem(.flexible(), spacing: NodusSpace.card)]
         }
     }
 
@@ -331,7 +325,7 @@ struct HomeView: View {
         } label: {
             SectionTile(title: LocalizedStringKey(title), icon: icon, count: nil, accent: session.accent)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NodusCardButtonStyle())
     }
 
     /// The vault's embedding identity, stated plainly — including when this device can never
@@ -367,12 +361,16 @@ struct SectionTile: View {
     let accent: Color
 
     @Environment(AppPreferences.self) private var preferences
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// Two shapes, one surface.
     ///
     /// A square tile stacked in a single column is mostly empty card with a name at the
     /// bottom, so the list form is not the grid form stretched — it is a row: the icon
     /// leading, the name reading across, the count trailing, and half the height.
+    /// Not `interactive`. Every tile on this screen goes somewhere, so lighting the ones that do
+    /// would light all of them — which is where the app started. The chevron says a row goes;
+    /// `NodusCardButtonStyle` at the call site says it is being pressed.
     var body: some View {
         Group {
             switch preferences.homeLayout {
@@ -380,21 +378,18 @@ struct SectionTile: View {
             case .list: row
             }
         }
-        .nodusGlass(
-            NodusGlass(.regular, tint: accent, interactive: true),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
+        .nodusGlass(NodusGlass(.regular, tint: accent), in: NodusRadius.panelShape)
     }
 
     private var square: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundStyle(accent)
+                    .font(Self.glyph)
+                    .foregroundStyle(accent.nodusReadable)
                 Spacer()
                 if let count {
-                    CountBadge(count: count, accent: accent)
+                    CountBadge(count: count, accent: accent.nodusReadable)
                 }
             }
             Text(title)
@@ -403,28 +398,48 @@ struct SectionTile: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
-        .frame(height: 92, alignment: .topLeading)
+        .padding(13)
+        // A minimum rather than a fixed height: at the larger Dynamic Type sizes a two-line
+        // title needs more than 84 points, and a tile that clips its own name is worse than a
+        // row of tiles that are not quite the same height.
+        .frame(minHeight: 84, alignment: .topLeading)
     }
 
+    /// The list form, at the height a row of a list should be.
+    ///
+    /// 56 points is a comfortable row on a screen with six of them and a lot of screen on a
+    /// phone with fourteen — Home in list form on an academic vault runs to two and a half
+    /// screens of them. 48 is still well past the 44-point minimum and fits two more in a view.
     private var row: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(accent)
-                .frame(width: 26)
+                .font(Self.glyph)
+                .foregroundStyle(accent.nodusReadable)
+                .frame(width: 24)
             Text(title)
                 .font(.subheadline.weight(.medium))
-                .lineLimit(1)
+                // One line at the ordinary sizes, where every section name fits and a row that
+                // wraps looks broken. At the accessibility sizes nothing fits, and a menu entry
+                // reading "Árbol genealó…" is a menu entry nobody can use.
+                .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                // Without this the row proposes its own 48 points to the text and the text
+                // takes them: a name allowed three lines is drawn on three lines and clipped
+                // after the first.
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if let count {
-                CountBadge(count: count, accent: accent)
+                CountBadge(count: count, accent: accent.nodusReadable)
             }
             Image(systemName: "chevron.right")
-                .font(.caption2)
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 15)
-        .frame(height: 56)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 48)
     }
+
+    /// One size and one weight for a tile glyph. `.title3` grows to 26 points under Dynamic
+    /// Type, which is what turned a 56-point row into an 80-point one and pushed the count off
+    /// the end of it.
+    private static let glyph: Font = .system(size: 19, weight: .regular)
 }

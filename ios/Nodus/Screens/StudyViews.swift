@@ -182,7 +182,7 @@ struct FlashcardsView: View {
                     .foregroundStyle(.secondary)
 
                 card(cards[index])
-                    .onTapGesture { withAnimation(.spring(duration: 0.45)) { revealed.toggle() } }
+                    .onTapGesture { withAnimation(NodusMotion.press) { revealed.toggle() } }
 
                 HStack(spacing: 14) {
                     Button {
@@ -194,7 +194,7 @@ struct FlashcardsView: View {
                     .disabled(index == 0)
 
                     Button {
-                        withAnimation(.spring(duration: 0.4)) { revealed.toggle() }
+                        withAnimation(NodusMotion.press) { revealed.toggle() }
                     } label: {
                         Text(revealed ? "Hide" : "Show answer").frame(maxWidth: .infinity)
                     }
@@ -248,7 +248,7 @@ struct FlashcardsView: View {
         .gesture(
             DragGesture(minimumDistance: 40)
                 .onEnded { value in
-                    withAnimation(.spring(duration: 0.35)) {
+                    withAnimation(NodusMotion.press) {
                         move(by: value.translation.width < 0 ? 1 : -1)
                     }
                 }
@@ -339,6 +339,7 @@ struct QuestionBankView: View {
         .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
         .listStyle(.plain)
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .navigationTitle("Question bank")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)

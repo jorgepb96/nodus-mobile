@@ -46,7 +46,11 @@ struct RowDetailView: View {
 
     private var dossier: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            // `NodusSpace.block`, not 16. A dossier is three or four different kinds of thing
+            // stacked — what the idea says, the passages under it, the edges out of it, and the
+            // raw record at the bottom — and at 16 points apart they read as one long card with
+            // occasional bold words in it. The distance is what says where one ends.
+            VStack(alignment: .leading, spacing: NodusSpace.block) {
                 heading
 
                 if let error {
@@ -62,11 +66,11 @@ struct RowDetailView: View {
                             Spacer()
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
-                        .padding(15)
+                        .padding(NodusSpace.cardPadding)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .nodusGlass(NodusGlass(.regular, tint: session.accent, interactive: true))
+                        .nodusGlass(NodusGlass(.regular, tint: session.accent))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NodusCardButtonStyle())
                 }
 
                 switch enriched {
@@ -90,10 +94,13 @@ struct RowDetailView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(NodusSpace.page)
             .nodusTopAnchor()
         }
         .nodusScrollToTop(accent: session.accent)
+        // A dossier is a document. Nothing the tab bar leads to is on it, and the four tabs
+        // under a quotation are four ways to stop reading it.
+        .nodusHidesBottomBar()
         // `LocalizedStringKey`, not the bare `String`: a collection's label is a value, and a
         // value handed to `navigationTitle` ships in the base language on every phone — which
         // is how a Spanish reader opening a citation landed on a screen titled "Library". The
@@ -118,7 +125,7 @@ struct RowDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(NodusSpace.cardPadding)
             .nodusGlass(NodusGlass(.regular, tint: session.accent))
         } else {
             genericHeading
@@ -126,29 +133,34 @@ struct RowDetailView: View {
     }
 
     private var genericHeading: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             Text(presenter.title(row))
+                // Long titles are the norm here, not the exception: an idea's label is a
+                // sentence and a work's title is a sentence with a subtitle after it. At a flat
+                // `.title3` the four-line ones took most of a phone screen before the reader
+                // reached anything they had not already read in the list. Allowed to shrink a
+                // fifth and to stop at four lines, a long title is still a heading and a short
+                // one is unchanged.
                 .font(.title3.weight(.semibold))
+                .lineLimit(4)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
             if let subtitle = presenter.subtitle(row) {
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }
             if let detail = presenter.detail(row) {
-                Text(detail)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(session.accent)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(session.accent.opacity(0.14), in: Capsule())
+                NodusChip(detail, tint: session.accent.nodusReadable)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(NodusSpace.cardPadding)
         .nodusGlass(NodusGlass(.regular, tint: session.accent))
     }
 
     // MARK: Enriched bodies
 
     private func ideaBody(_ detail: IdeaDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: NodusSpace.block) {
             if !detail.themes.isEmpty {
                 chips(detail.themes, label: "Themes")
             }
@@ -156,27 +168,36 @@ struct RowDetailView: View {
             // means something as the support for a claim and very little in a list of 5 803.
             if !detail.evidence.isEmpty {
                 section("Passages that support it", count: detail.evidence.count) {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 16) {
                         ForEach(Array(detail.evidence.prefix(40).enumerated()), id: \.offset) { index, item in
-                            VStack(alignment: .leading, spacing: 5) {
+                            VStack(alignment: .leading, spacing: 8) {
                                 if let quote = item.text("quote") {
                                     Text(quote)
                                         .font(.callout)
                                         .textSelection(.enabled)
-                                        .padding(.leading, 10)
+                                        .padding(.leading, 11)
                                         .overlay(alignment: .leading) {
                                             Rectangle()
                                                 .fill(session.accent.opacity(0.5))
                                                 .frame(width: 2)
                                         }
                                 }
-                                HStack(spacing: 8) {
+                                // Where it is and how it was read, as two tags on one line
+                                // rather than as two loose sizes of grey. Same height, same
+                                // type, same padding as every other tag in the app.
+                                HStack(spacing: 6) {
                                     if let location = item.text("location") {
-                                        Text(location).font(.caption2).foregroundStyle(.secondary)
+                                        // The corpus's own words — "p. 40", "ff. 12–14" — so
+                                        // the chip is not allowed to tidy the case.
+                                        NodusChip(location, tint: .nodusSecondaryText, capitalises: false)
                                     }
                                     if let kind = item.text("kind") {
-                                        Text(kind == "explicit" ? "explicit" : "paraphrased")
-                                            .font(.caption2).foregroundStyle(session.accent.opacity(0.85))
+                                        NodusChip(
+                                            kind == "explicit"
+                                                ? String(localized: "Explicit")
+                                                : String(localized: "Paraphrased"),
+                                            tint: session.accent.nodusReadable
+                                        )
                                     }
                                 }
                             }
@@ -192,7 +213,7 @@ struct RowDetailView: View {
     }
 
     private func workBody(_ detail: WorkDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: NodusSpace.block) {
             if detail.passages > 0 {
                 NodusNotice(
                     tone: .info,
@@ -218,7 +239,7 @@ struct RowDetailView: View {
     /// screen, and saying it is the only useful thing this view can do in that case.
     @ViewBuilder
     private func passageBody(_ row: Row) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: NodusSpace.block) {
             if let text = row.text("text") ?? row.text("content") {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(text)
@@ -253,11 +274,11 @@ struct RowDetailView: View {
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }
-                    .padding(15)
+                    .padding(NodusSpace.cardPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .nodusGlass(NodusGlass(.regular, tint: session.accent, interactive: true))
+                    .nodusGlass(NodusGlass(.regular, tint: session.accent))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NodusCardButtonStyle())
                 .task { await session.names.resolve(workIds: [workId]) }
             }
 
@@ -268,7 +289,7 @@ struct RowDetailView: View {
     }
 
     private func personBody(_ detail: PersonDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: NodusSpace.block) {
             if let personId = detail.person.string("person_id") {
                 NavigationLink {
                     FamilyTreeView(session: session, rootPersonId: personId)
@@ -278,17 +299,17 @@ struct RowDetailView: View {
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }
-                    .padding(15)
+                    .padding(NodusSpace.cardPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .nodusGlass(NodusGlass(.regular, tint: session.accent, interactive: true))
+                    .nodusGlass(NodusGlass(.regular, tint: session.accent))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NodusCardButtonStyle())
             }
             if let portrait = detail.portrait, let hash = portrait.text("asset_ref") ?? portrait.text("hash") {
                 AssetImage(session: session, hash: hash)
                     .frame(maxWidth: .infinity)
                     .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .clipShape(NodusRadius.panelShape)
             }
             fields(of: detail.person)
             group("Names", detail.names, table: "person_names")
@@ -299,7 +320,7 @@ struct RowDetailView: View {
     }
 
     private func authorBody(_ detail: AuthorDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: NodusSpace.block) {
             fields(of: detail.author)
             // The synthesis is what the dossier is *for*: it says what this author argues
             // across everything the corpus holds of theirs. Below a list of works — which for
@@ -338,25 +359,24 @@ struct RowDetailView: View {
 
     private func authorRelationRow(_ edge: Row, selfId: String) -> some View {
         let otherId = (edge.string("from_author") == selfId ? edge.string("to_author") : edge.string("from_author")) ?? ""
+        let relation = edge.text("type") ?? ""
         return NavigationLink {
             AuthorByIdView(session: session, authorId: otherId)
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Image(systemName: "person")
-                        .font(.caption2).foregroundStyle(session.accent)
-                    Text(LocalizedStringKey(Self.relationLabel(edge.text("type") ?? "")))
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(session.accent)
-                }
+            VStack(alignment: .leading, spacing: 5) {
+                NodusChip(
+                    Bundle.main.localizedString(forKey: Self.relationLabel(relation), value: nil, table: nil),
+                    tint: SemanticTone.relation(relation, fallback: session.accent),
+                    systemImage: "person"
+                )
                 Text(session.names.author(otherId) ?? String(localized: "Loading…"))
                     .font(.subheadline).lineLimit(2).foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .padding(.vertical, 6)
+        .buttonStyle(NodusCardButtonStyle())
+        .padding(.vertical, 7)
     }
 
     /// A study plan is its blocks, on the days they fall.
@@ -368,7 +388,7 @@ struct RowDetailView: View {
         let days = Dictionary(grouping: detail.blocks.filter { $0.date("starts_at") != nil }) {
             calendar.startOfDay(for: $0.date("starts_at")!)
         }
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: NodusSpace.block) {
             fields(of: detail.plan)
             if !days.isEmpty {
                 section("Blocks", count: detail.blocks.count) {
@@ -402,7 +422,7 @@ struct RowDetailView: View {
     }
 
     private func databaseBody(_ detail: DatabaseDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: NodusSpace.block) {
             Text("\(detail.total.formatted()) rows · \(detail.columns.count) columns")
                 .font(.caption).foregroundStyle(.secondary)
             group("Columns", detail.columns, table: "db_columns")
@@ -440,20 +460,26 @@ struct RowDetailView: View {
         }
     }
 
+    /// One edge, in the colour its meaning carries everywhere else in the app.
+    ///
+    /// Both the relation and the direction were drawn in the vault's accent, so "supports" and
+    /// "contradicts" arrived as the same violet word and a list of forty relations said nothing
+    /// until it was read one line at a time. The argument map had been colouring these correctly
+    /// since it was written; this is the same table.
     private func relationRow(_ edge: Row, selfId: String) -> some View {
         let otherId = (edge.string("from_id") == selfId ? edge.string("to_id") : edge.string("from_id")) ?? ""
         let outgoing = edge.string("from_id") == selfId
+        let relation = edge.text("relation") ?? ""
+        let tone = SemanticTone.relation(relation, fallback: session.accent)
         return NavigationLink {
             IdeaByIdView(session: session, globalId: otherId)
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Image(systemName: outgoing ? "arrow.right" : "arrow.left")
-                        .font(.caption2).foregroundStyle(session.accent)
-                    Text(LocalizedStringKey(Self.relationLabel(edge.text("relation") ?? "")))
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(session.accent)
-                }
+            VStack(alignment: .leading, spacing: 5) {
+                NodusChip(
+                    Bundle.main.localizedString(forKey: Self.relationLabel(relation), value: nil, table: nil),
+                    tint: tone,
+                    systemImage: outgoing ? "arrow.right" : "arrow.left"
+                )
                 Text(session.names.idea(otherId) ?? String(localized: "Loading…"))
                     .font(.subheadline).lineLimit(2).foregroundStyle(.primary)
                 if let rationale = edge.text("rationale") {
@@ -463,8 +489,8 @@ struct RowDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .padding(.vertical, 6)
+        .buttonStyle(NodusCardButtonStyle())
+        .padding(.vertical, 7)
     }
 
     /// An occurrence shown as the work it appears in.
@@ -490,22 +516,24 @@ struct RowDetailView: View {
         return NavigationLink {
             WorkByIdView(session: session, nodusId: workId)
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(session.names.work(workId) ?? String(localized: "Loading…"))
                     .font(.subheadline).lineLimit(2).foregroundStyle(.primary)
                 if let development = occurrence.text("development") {
                     Text(development).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                 }
                 if let role = occurrence.text("role") {
-                    Text(LocalizedStringKey(role == "principal" ? "Principal" : "Secondary"))
-                        .font(.caption2).foregroundStyle(session.accent.opacity(0.85))
+                    NodusChip(
+                        role == "principal" ? String(localized: "Principal") : String(localized: "Secondary"),
+                        tint: session.accent.nodusReadable
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .padding(.vertical, 6)
+        .buttonStyle(NodusCardButtonStyle())
+        .padding(.vertical, 7)
     }
 
     /// The edge vocabulary, in the desktop's words.
@@ -528,15 +556,36 @@ struct RowDetailView: View {
 
     // MARK: Generic rendering
 
-    private func fields(of row: Row, hiding extra: Set<String> = []) -> some View {
+    /// The raw record, under a name that says that is what it is.
+    ///
+    /// It sat directly under the heading with no title of its own, which is how an idea's page
+    /// came to open with its label and statement and then repeat both of them verbatim four
+    /// hundred points further down under the words `LABEL` and `STATEMENT`. Titled, it reads as
+    /// the technical card at the bottom of a dossier — which is what a reader wants it to be.
+    private func fields(of row: Row, hiding extra: Set<String> = [], titled: Bool = true) -> some View {
+        Group {
+            if titled {
+                section("Record") { fieldRows(of: row, hiding: extra) }
+            } else {
+                fieldRows(of: row, hiding: extra)
+                    .padding(.horizontal, NodusSpace.cardPadding)
+                    .padding(.vertical, 4)
+                    .nodusGlass(NodusGlass(.thin, tint: session.accent))
+            }
+        }
+    }
+
+    private func fieldRows(of row: Row, hiding extra: Set<String> = []) -> some View {
         let keys = displayableKeys(of: row, hiding: extra)
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(keys, id: \.self) { key in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(humanise(key))
-                        .font(.caption2.weight(.medium))
+                    // Neither `.textCase(.uppercase)` nor the raw column name. Capitals are a
+                    // shout the rest of the app does not use, and the column name is what
+                    // showed a Spanish reader `GLOBAL ID`.
+                    Text(FieldNames.label(for: key))
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
                     Text(display(row[key], key: key) ?? "—")
                         .font(.callout)
                         .textSelection(.enabled)
@@ -546,9 +595,7 @@ struct RowDetailView: View {
                 if key != keys.last { Divider().opacity(0.4) }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
-        .nodusGlass(NodusGlass(.thin, tint: session.accent))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// A related list inside a detail.
@@ -582,7 +629,7 @@ struct RowDetailView: View {
                                     }
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(NodusCardButtonStyle())
                                 .padding(.vertical, 4)
                             } else {
                                 RowCell(row: row, presenter: RowPresenter.forTable(table), accent: session.accent)
@@ -609,31 +656,21 @@ struct RowDetailView: View {
         count: Int? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text(title).font(.subheadline.weight(.semibold))
-                if let count {
-                    Text("· \(count.formatted())")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
+        VStack(alignment: .leading, spacing: 9) {
+            NodusSectionLabel(title, count: count)
             content()
-                .padding(14)
+                .padding(NodusSpace.cardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .nodusGlass(NodusGlass(.thin, tint: session.accent))
         }
     }
 
     private func chips(_ values: [String], label: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 7) {
+            NodusSectionLabel(label)
             FlowLayout(spacing: 6) {
                 ForEach(values, id: \.self) { value in
-                    Text(value)
-                        .font(.caption)
-                        .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(session.accent.opacity(0.15), in: Capsule())
+                    NodusChip(value, tint: session.accent.nodusReadable)
                 }
             }
         }
@@ -670,21 +707,34 @@ struct RowDetailView: View {
             }
     }
 
-    private func humanise(_ key: String) -> String {
-        key.replacingOccurrences(of: "_", with: " ")
-    }
-
     private func display(_ value: JSONValue?, key: String) -> String? {
         guard let value, !value.isNull else { return nil }
         switch value {
         case .array(let items):
-            return items.count == 1 ? "1 item" : "\(items.count) items"
+            return items.count == 1
+                ? String(localized: "1 item")
+                : String(localized: "\(items.count) items")
         case .object(let object):
-            return object.count == 1 ? "1 field" : "\(object.count) fields"
+            return object.count == 1
+                ? String(localized: "1 field")
+                : String(localized: "\(object.count) fields")
         case .int(let number) where Self.booleanColumns.contains(key):
             // SQLite has no boolean type, so these arrive as 0 and 1. Printing the integer is
             // technically the value and tells the reader nothing.
-            return number == 0 ? "No" : "Sí"
+            //
+            // `String(localized:)`, and the English is the key. The literal here used to be
+            // "Sí" — a Spanish word in an app whose base language is English, which is exactly
+            // the trap `LocalisationTests` was written to catch: it made the *English* bundle
+            // answer in Spanish, and no catalogue entry can fix that.
+            return number == 0 ? String(localized: "No") : String(localized: "Yes")
+        case .string(let raw) where Self.vocabularyColumns.contains(key):
+            // The corpus's own vocabulary — `claim`, `supports`, `principal` — which the
+            // catalogue already holds because the chips elsewhere on this screen use it. Shown
+            // raw, a Spanish reader met "Tipo: claim" one line under a chip reading
+            // "Afirmación".
+            return NodusChip.sentenceCased(
+                Bundle.main.localizedString(forKey: raw, value: raw, table: nil)
+            )
         default:
             return value.stringValue
         }
@@ -692,6 +742,12 @@ struct RowDetailView: View {
 
     private static let booleanColumns: Set<String> = [
         "archived", "pinned", "manual_deep", "internal", "dismissed", "resolved", "hidden", "starred",
+    ]
+
+    /// Columns whose values come from a closed vocabulary the app can name, rather than from
+    /// whatever somebody typed. Anything outside the catalogue passes through unchanged.
+    private static let vocabularyColumns: Set<String> = [
+        "type", "kind", "relation", "role", "status", "sex", "subtype",
     ]
 
     // MARK: Loading

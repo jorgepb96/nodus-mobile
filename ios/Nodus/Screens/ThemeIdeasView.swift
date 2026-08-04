@@ -70,6 +70,7 @@ struct ThemeIdeasView: View {
         .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
         .listStyle(.plain)
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .navigationTitle(label)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)

@@ -30,68 +30,75 @@ struct ResearchView: View {
         }
     }
 
+    /// A `ScrollView` of the app's own cards, not a `List`.
+    ///
+    /// This screen was the last stock-iOS surface in the app and it looked it: a grouped `List`
+    /// gives every row `secondarySystemGroupedBackground`, which is flat white in light mode and
+    /// a flat near-black in dark, and its section headers are the system's own small capitals.
+    /// So the Research tab was three black slabs and three shouting headings on a page whose
+    /// every other screen is tinted glass over an accent wash — which is the break item 8 names.
+    /// (`.listRowBackground` was there and did nothing: it applies to a row, and putting it on
+    /// the `List` reaches no row at all.)
     private func content(_ local: LocalReportStore) -> some View {
-        List {
-            Section {
-                NavigationLink {
-                    DeepResearchScreen(session: session, local: local)
-                        .environment(ai)
-                } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Generate a report")
+        ScrollView {
+            VStack(alignment: .leading, spacing: NodusSpace.block) {
+                VStack(alignment: .leading, spacing: 9) {
+                    NodusSectionLabel("Deep Research")
+                    NavigationLink {
+                        DeepResearchScreen(session: session, local: local)
+                            .environment(ai)
+                    } label: {
+                        row(
+                            icon: "sparkles",
+                            title: "Generate a report",
                             // `String(localized:)`, because the fallback is a literal reaching
                             // `Text` as a value — the model name beside it really is data.
-                            Text(ai.model(for: .deepResearch)?.model ?? String(localized: "No model chosen"))
-                                .font(.caption).foregroundStyle(.secondary)
-                                .lineLimit(1).truncationMode(.head)
-                        }
-                    } icon: {
-                        Image(systemName: "sparkles").foregroundStyle(session.accent)
+                            subtitle: ai.model(for: .deepResearch)?.model ?? String(localized: "No model chosen")
+                        )
                     }
+                    .buttonStyle(NodusCardButtonStyle())
+                    Text("One model call per section, with citations checked against the corpus. Your key never passes through the server.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 2)
                 }
-            } header: {
-                Text("Deep Research")
-            } footer: {
-                Text("One model call per section, with citations checked against the corpus. Your key never passes through the server.")
-            }
 
-            Section("Reports") {
-                NavigationLink {
-                    ResearchLibraryView(session: session, local: local)
-                } label: {
-                    HStack {
-                        Label("All reports", systemImage: "books.vertical")
-                        Spacer()
+                VStack(alignment: .leading, spacing: 9) {
+                    NodusSectionLabel("Reports")
+                    NavigationLink {
+                        ResearchLibraryView(session: session, local: local)
+                    } label: {
                         // Both origins. Counting only the ones generated here read as "this
                         // vault has no reports" beside a vault with eighteen of them.
-                        Text("\(local.reports.count + publishedReports)")
-                            .font(.caption).foregroundStyle(.secondary)
+                        row(
+                            icon: "books.vertical",
+                            title: "All reports",
+                            count: local.reports.count + publishedReports
+                        )
+                    }
+                    .buttonStyle(NodusCardButtonStyle())
+                }
+
+                if session.hasImmersion {
+                    VStack(alignment: .leading, spacing: 9) {
+                        NodusSectionLabel("Immersion")
+                        NavigationLink {
+                            SpecialListView(session: session, resource: .immersion)
+                        } label: {
+                            row(icon: "waveform", title: "Sessions")
+                        }
+                        .buttonStyle(NodusCardButtonStyle())
                     }
                 }
-            }
 
-            if session.hasImmersion {
-                Section("Immersion") {
-                    NavigationLink {
-                        SpecialListView(session: session, resource: .immersion)
-                    } label: {
-                        Label("Sessions", systemImage: "waveform")
-                    }
-                }
-            }
-
-            if !session.hasDeepResearch, !session.hasImmersion {
-                Section {
+                if !session.hasDeepResearch, !session.hasImmersion {
                     Text("This space has published no reports or immersion sessions yet. You can generate one above.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .padding(NodusSpace.page)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scrollContentBackground(.hidden)
-        // Without this the rows keep the system's own opaque background — white in light mode,
-        // near-black in dark — and the screen reads as half Nodus and half stock iOS.
-        .listRowBackground(Color.clear)
         .nodusPageBackdrop(accent: session.accent)
         .navigationTitle("Research")
         .navigationBarTitleDisplayMode(.inline)
@@ -105,6 +112,40 @@ struct ResearchView: View {
             ProviderSettingsView(accent: session.accent, requiredEmbedding: requiredEmbedding)
                 .environment(ai)
         }
+    }
+
+    /// The same row Home uses, in the same surface, at the same height.
+    private func row(
+        icon: String,
+        title: LocalizedStringKey,
+        subtitle: String? = nil,
+        count: Int? = nil
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 19, weight: .regular))
+                .foregroundStyle(session.accent.nodusReadable)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.medium))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.head)
+                }
+            }
+            Spacer(minLength: 8)
+            if let count {
+                CountBadge(count: count, accent: session.accent.nodusReadable)
+            }
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: subtitle == nil ? 48 : 60)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nodusGlass(NodusGlass(.regular, tint: session.accent), in: NodusRadius.panelShape)
     }
 
     private var requiredEmbedding: EmbeddingIdentity? {

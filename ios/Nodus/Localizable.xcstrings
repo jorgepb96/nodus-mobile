@@ -166,6 +166,88 @@
         }
       }
     },
+    "%lld derivations": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld derivation"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld derivations"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld derivación"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld derivaciones"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld fields": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld field"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fields"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld campo"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld campos"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld invented citations removed": {
       "extractionState": "manual",
       "localizations": {
@@ -184,6 +266,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld citas inventadas, eliminadas"
+          }
+        }
+      }
+    },
+    "%lld items": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld item"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld items"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld elemento"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld elementos"
+                }
+              }
+            }
           }
         }
       }
@@ -321,6 +444,17 @@
         }
       }
     },
+    "+%lld not drawn": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld sin dibujar"
+          }
+        }
+      }
+    },
     ", progress.pagesSoFar)) pages": {
       "extractionState": "manual",
       "localizations": {
@@ -328,6 +462,28 @@
           "stringUnit": {
             "state": "translated",
             "value": ", progress.pagesSoFar)) páginas"
+          }
+        }
+      }
+    },
+    "1 field": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 campo"
+          }
+        }
+      }
+    },
+    "1 item": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 elemento"
           }
         }
       }
@@ -464,6 +620,17 @@
         }
       }
     },
+    "Academic year": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Curso"
+          }
+        }
+      }
+    },
     "Access": {
       "extractionState": "manual",
       "localizations": {
@@ -482,6 +649,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cuenta"
+          }
+        }
+      }
+    },
+    "Actions": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acciones"
           }
         }
       }
@@ -559,6 +737,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dirección"
+          }
+        }
+      }
+    },
+    "Affiliation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afiliación"
           }
         }
       }
@@ -658,6 +847,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Otra semilla"
+          }
+        }
+      }
+    },
+    "Answer": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respuesta"
           }
         }
       }
@@ -915,6 +1115,17 @@
         }
       }
     },
+    "Back": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reverso"
+          }
+        }
+      }
+    },
     "Back to top": {
       "extractionState": "manual",
       "localizations": {
@@ -955,6 +1166,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bloques"
+          }
+        }
+      }
+    },
+    "Born": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nacimiento"
           }
         }
       }
@@ -1058,6 +1280,17 @@
         }
       }
     },
+    "Category": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Categoría"
+          }
+        }
+      }
+    },
     "Change batch": {
       "extractionState": "manual",
       "localizations": {
@@ -1157,6 +1390,17 @@
         }
       }
     },
+    "Citation key": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clave de cita"
+          }
+        }
+      }
+    },
     "Class": {
       "extractionState": "manual",
       "localizations": {
@@ -1252,6 +1496,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Compara"
+          }
+        }
+      }
+    },
+    "Confidence": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confianza"
+          }
+        }
+      }
+    },
+    "Confidence %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confianza %@"
           }
         }
       }
@@ -1366,6 +1632,17 @@
         }
       }
     },
+    "Copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar"
+          }
+        }
+      }
+    },
     "Copy the answer": {
       "extractionState": "manual",
       "localizations": {
@@ -1373,6 +1650,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copiar la respuesta"
+          }
+        }
+      }
+    },
+    "Copy the report": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar el informe"
           }
         }
       }
@@ -1586,6 +1874,17 @@
         }
       }
     },
+    "Country": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "País"
+          }
+        }
+      }
+    },
     "Courses": {
       "extractionState": "manual",
       "localizations": {
@@ -1604,6 +1903,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Culturas"
+          }
+        }
+      }
+    },
+    "DOI": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DOI"
           }
         }
       }
@@ -1648,6 +1958,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bases de datos"
+          }
+        }
+      }
+    },
+    "Date": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fecha"
           }
         }
       }
@@ -1784,6 +2105,17 @@
         }
       }
     },
+    "Description": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descripción"
+          }
+        }
+      }
+    },
     "Detail": {
       "extractionState": "manual",
       "localizations": {
@@ -1791,6 +2123,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "Detalle"
+          }
+        }
+      }
+    },
+    "Development": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desarrollo"
+          }
+        }
+      }
+    },
+    "Died": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Defunción"
+          }
+        }
+      }
+    },
+    "Difficulty": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dificultad"
           }
         }
       }
@@ -2048,6 +2413,17 @@
         }
       }
     },
+    "Ends": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Termina"
+          }
+        }
+      }
+    },
     "Event": {
       "extractionState": "manual",
       "localizations": {
@@ -2158,6 +2534,28 @@
         }
       }
     },
+    "Explanation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explicación"
+          }
+        }
+      }
+    },
+    "Explicit": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explícito"
+          }
+        }
+      }
+    },
     "Extends": {
       "extractionState": "manual",
       "localizations": {
@@ -2165,6 +2563,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Extiende"
+          }
+        }
+      }
+    },
+    "Extract": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extracto"
           }
         }
       }
@@ -2209,6 +2618,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Familias"
+          }
+        }
+      }
+    },
+    "Family name": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apellidos"
           }
         }
       }
@@ -2411,6 +2831,17 @@
         }
       }
     },
+    "Fragment": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fragmento"
+          }
+        }
+      }
+    },
     "Friday": {
       "extractionState": "manual",
       "localizations": {
@@ -2418,6 +2849,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Viernes"
+          }
+        }
+      }
+    },
+    "Front": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anverso"
           }
         }
       }
@@ -2532,6 +2974,28 @@
         }
       }
     },
+    "Given name": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre de pila"
+          }
+        }
+      }
+    },
+    "Global ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Identificador global"
+          }
+        }
+      }
+    },
     "Goals": {
       "extractionState": "manual",
       "localizations": {
@@ -2561,6 +3025,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Se asume HTTPS. El servidor rechaza cualquier dirección pública que no lo sea."
+          }
+        }
+      }
+    },
+    "Heading": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encabezado"
           }
         }
       }
@@ -2649,6 +3124,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cómo iniciar sesión"
+          }
+        }
+      }
+    },
+    "ISBN": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ISBN"
           }
         }
       }
@@ -2950,6 +3436,50 @@
         }
       }
     },
+    "Kind": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tipo"
+          }
+        }
+      }
+    },
+    "Kind of block": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tipo de bloque"
+          }
+        }
+      }
+    },
+    "Kind of event": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tipo de evento"
+          }
+        }
+      }
+    },
+    "Kind of work": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tipo de obra"
+          }
+        }
+      }
+    },
     "Kinship": {
       "extractionState": "manual",
       "localizations": {
@@ -2957,6 +3487,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Parentesco"
+          }
+        }
+      }
+    },
+    "Label": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Etiqueta"
+          }
+        }
+      }
+    },
+    "Language": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idioma"
           }
         }
       }
@@ -3049,6 +3601,17 @@
         }
       }
     },
+    "Link": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enlace"
+          }
+        }
+      }
+    },
     "Loading…": {
       "extractionState": "manual",
       "localizations": {
@@ -3056,6 +3619,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cargando…"
+          }
+        }
+      }
+    },
+    "Location": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ubicación"
           }
         }
       }
@@ -3111,6 +3685,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cumplidos"
+          }
+        }
+      }
+    },
+    "Metadata": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadatos"
+          }
+        }
+      }
+    },
+    "Minutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minutos"
+          }
+        }
+      }
+    },
+    "Minutes available": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minutos disponibles"
           }
         }
       }
@@ -3210,6 +3817,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nombre"
+          }
+        }
+      }
+    },
+    "Name shown": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre mostrado"
           }
         }
       }
@@ -4292,6 +4910,28 @@
         }
       }
     },
+    "PDF": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF"
+          }
+        }
+      }
+    },
+    "Page": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Página"
+          }
+        }
+      }
+    },
     "Pair": {
       "extractionState": "manual",
       "localizations": {
@@ -4299,6 +4939,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Emparejar"
+          }
+        }
+      }
+    },
+    "Paraphrased": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parafraseado"
           }
         }
       }
@@ -4420,6 +5071,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Personas"
+          }
+        }
+      }
+    },
+    "Period": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Periodo"
           }
         }
       }
@@ -4556,6 +5218,17 @@
         }
       }
     },
+    "Progress": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Progreso"
+          }
+        }
+      }
+    },
     "Projects": {
       "extractionState": "manual",
       "localizations": {
@@ -4644,6 +5317,17 @@
         }
       }
     },
+    "Publisher": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editorial"
+          }
+        }
+      }
+    },
     "Querying": {
       "extractionState": "manual",
       "localizations": {
@@ -4662,6 +5346,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Consultando %@…"
+          }
+        }
+      }
+    },
+    "Question": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pregunta"
           }
         }
       }
@@ -4728,6 +5423,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ordenado por significado"
+          }
+        }
+      }
+    },
+    "Rationale": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Justificación"
           }
         }
       }
@@ -4809,6 +5515,17 @@
         }
       }
     },
+    "Record": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ficha técnica"
+          }
+        }
+      }
+    },
     "Recordings": {
       "extractionState": "manual",
       "localizations": {
@@ -4853,6 +5570,17 @@
         }
       }
     },
+    "Region": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Región"
+          }
+        }
+      }
+    },
     "Rejected": {
       "extractionState": "manual",
       "localizations": {
@@ -4860,6 +5588,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rechazado"
+          }
+        }
+      }
+    },
+    "Relation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relación"
           }
         }
       }
@@ -5062,6 +5801,17 @@
         }
       }
     },
+    "Role": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Papel"
+          }
+        }
+      }
+    },
     "Rows": {
       "extractionState": "manual",
       "localizations": {
@@ -5102,6 +5852,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Guardar"
+          }
+        }
+      }
+    },
+    "Save as PDF": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar en PDF"
           }
         }
       }
@@ -5289,6 +6050,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Secretos"
+          }
+        }
+      }
+    },
+    "Section": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sección"
           }
         }
       }
@@ -5524,6 +6296,17 @@
         }
       }
     },
+    "Sex": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sexo"
+          }
+        }
+      }
+    },
     "Share as Markdown": {
       "extractionState": "manual",
       "localizations": {
@@ -5711,6 +6494,28 @@
         }
       }
     },
+    "Starts": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empieza"
+          }
+        }
+      }
+    },
+    "Statement": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enunciado"
+          }
+        }
+      }
+    },
     "Station %lld": {
       "extractionState": "manual",
       "localizations": {
@@ -5821,6 +6626,17 @@
         }
       }
     },
+    "Subtype": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtipo"
+          }
+        }
+      }
+    },
     "Suggested kinships": {
       "extractionState": "manual",
       "localizations": {
@@ -5828,6 +6644,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Parentescos sugeridos"
+          }
+        }
+      }
+    },
+    "Summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Síntesis"
           }
         }
       }
@@ -5887,6 +6714,17 @@
         }
       }
     },
+    "Target": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objetivo"
+          }
+        }
+      }
+    },
     "Teaching": {
       "extractionState": "manual",
       "localizations": {
@@ -5905,6 +6743,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unidad didáctica"
+          }
+        }
+      }
+    },
+    "Text": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texto"
+          }
+        }
+      }
+    },
+    "Text size": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamaño del texto"
           }
         }
       }
@@ -7065,6 +7925,17 @@
         }
       }
     },
+    "Unit": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unidad"
+          }
+        }
+      }
+    },
     "Unit topic": {
       "extractionState": "manual",
       "localizations": {
@@ -7307,6 +8178,17 @@
         }
       }
     },
+    "Weight": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Peso"
+          }
+        }
+      }
+    },
     "What ALPHA means": {
       "extractionState": "manual",
       "localizations": {
@@ -7512,6 +8394,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "XXXX-XXXX"
+          }
+        }
+      }
+    },
+    "Year": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Año"
           }
         }
       }
@@ -7738,6 +8631,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "contradice"
+          }
+        }
+      }
+    },
+    "critique": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "crítica"
           }
         }
       }

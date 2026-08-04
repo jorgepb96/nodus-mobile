@@ -71,8 +71,9 @@ struct ArgumentMapView: View {
 
     private func mapBody(_ map: ArgumentMap) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: NodusSpace.block) {
                 header(map)
+                if !levels.isEmpty { controls }
                 ArgumentBlockTree(
                     block: map.root,
                     depth: 0,
@@ -81,13 +82,20 @@ struct ArgumentMapView: View {
                     session: session
                 )
             }
-            .padding(16)
+            .padding(NodusSpace.page)
         }
+        // A map is a document too, and the four tabs under it are four ways to lose your place
+        // in a tree you have just spent six taps unfolding.
+        .nodusHidesBottomBar()
     }
 
     private func header(_ map: ArgumentMap) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(map.seedLabel).font(.headline)
+        VStack(alignment: .leading, spacing: 9) {
+            Text(map.seedLabel)
+                .font(.headline)
+                .lineLimit(4)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 12) {
                 Label("\(map.blockCount)", systemImage: "square.stack.3d.up")
@@ -107,32 +115,42 @@ struct ArgumentMapView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-
-            if !levels.isEmpty {
-                HStack(spacing: 10) {
-                    Button {
-                        revealLevel()
-                    } label: {
-                        Label("Unfold a level", systemImage: "plus.magnifyingglass")
-                    }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                    .disabled(revealedLevels >= levels.count)
-
-                    Button {
-                        expanded = []
-                        revealedLevels = 0
-                    } label: {
-                        Label("Collapse", systemImage: "arrow.down.right.and.arrow.up.left")
-                    }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                    .disabled(expanded.isEmpty)
-                }
-                .font(.caption)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(NodusSpace.cardPadding)
         .nodusGlass(NodusGlass(.regular, tint: session.accent))
+    }
+
+    /// The two controls, outside the card rather than inside it.
+    ///
+    /// They used to be the last row of the header card, in the same glass and the same weight as
+    /// the three counts above them, so "Unfold a level" and "Collapse" read as two more facts
+    /// about the map rather than as the only two things on the screen you can do to it. Out on
+    /// the page, filled and outlined in the accent, they are unmistakably controls — and the two
+    /// of them are now the only accent-filled objects on this screen, which is the point.
+    private var controls: some View {
+        HStack(spacing: NodusSpace.card) {
+            Button {
+                revealLevel()
+            } label: {
+                Label("Unfold a level", systemImage: "plus.magnifyingglass")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+            .disabled(revealedLevels >= levels.count)
+
+            Button {
+                withAnimation(NodusMotion.standard) {
+                    expanded = []
+                    revealedLevels = 0
+                }
+            } label: {
+                Label("Collapse", systemImage: "arrow.down.right.and.arrow.up.left")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+            .disabled(expanded.isEmpty)
+        }
     }
 
     /// Open one more level of the tree, everywhere at once.
@@ -142,7 +160,7 @@ struct ArgumentMapView: View {
     /// under a collapsed parent.
     private func revealLevel() {
         guard revealedLevels < levels.count else { return }
-        withAnimation(.easeOut(duration: 0.24)) {
+        withAnimation(NodusMotion.standard) {
             expanded.formUnion(levels[revealedLevels])
             revealedLevels += 1
         }
@@ -265,6 +283,7 @@ private struct ArgumentSeedPicker: View {
         .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
         .listStyle(.plain)
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .safeAreaInset(edge: .top) {
             NodusSearchField(
                 text: $query,
@@ -315,17 +334,17 @@ private struct ArgumentBlockTree: View {
     let session: SpaceSession
 
     private var isExpanded: Bool { expanded.contains(block.id) }
-    private var relationAccent: Color { Color(hex: block.relation.accentHex) }
+    private var relationAccent: Color { SemanticTone.relation(block.relation.rawValue, fallback: accent) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             card
 
             if !block.children.isEmpty, isExpanded {
                 // Only the wrapper animates. Animating the card itself scale-corrects its own
                 // text, which leaves a collapsed card stretched to the height the whole branch
                 // used to take — the same trap the desktop hit.
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 7) {
                     ForEach(block.children) { child in
                         ArgumentBlockTree(
                             block: child,
@@ -336,11 +355,16 @@ private struct ArgumentBlockTree: View {
                         )
                     }
                 }
-                .padding(.leading, 14)
+                // A wider indent and a real line, in the colour of the edge the branch hangs
+                // from. A one-point hairline in `.quaternary` at a fourteen-point indent is
+                // invisible at arm's length, which left three levels of a tree looking like one
+                // list of cards that happened to start at slightly different places.
+                .padding(.leading, 18)
                 .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(.quaternary)
-                        .frame(width: 1)
+                    Capsule()
+                        .fill(relationAccent.opacity(0.45))
+                        .frame(width: 2)
+                        .padding(.vertical, 2)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -348,28 +372,24 @@ private struct ArgumentBlockTree: View {
     }
 
     private var card: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: 9) {
             // The relation, as a stripe. It is the whole reason a branch is where it is.
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
+            Capsule()
                 .fill(relationAccent)
-                .frame(width: 4)
+                .frame(width: 3)
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    Text(LocalizedStringKey(ArgumentLabels.type(block.type)))
-                        .font(.caption2.weight(.medium))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color(hex: block.typeAccentHex).opacity(0.18), in: Capsule())
-                        .foregroundStyle(Color(hex: block.typeAccentHex))
-
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 5) {
+                    NodusChip(
+                        key: ArgumentLabels.type(block.type),
+                        tint: SemanticTone.ideaType(block.type, fallback: accent)
+                    )
                     if block.relation != .root {
-                        Label {
-                            Text(LocalizedStringKey(ArgumentLabels.relation(block.relation)))
-                        } icon: {
-                            Image(systemName: "arrow.turn.right.up")
-                        }
-                        .font(.caption2)
-                        .foregroundStyle(relationAccent)
+                        NodusChip(
+                            key: ArgumentLabels.relation(block.relation),
+                            tint: relationAccent,
+                            systemImage: "arrow.turn.right.up"
+                        )
                     }
                 }
 
@@ -381,54 +401,76 @@ private struct ArgumentBlockTree: View {
                 // there. Showing every statement turns the map into a wall of prose.
                 if depth == 0, !block.statement.isEmpty {
                     Text(block.statement).font(.caption).foregroundStyle(.secondary)
-                } else if block.relation != .root {
-                    Text(summary).font(.caption2).foregroundStyle(.secondary)
                 }
 
-                if block.hiddenChildren > 0 {
-                    Text("+\(block.hiddenChildren) connections not drawn")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+                if block.relation != .root || block.hiddenChildren > 0 { metadata }
             }
 
             Spacer(minLength: 0)
 
             if !block.children.isEmpty {
                 Button {
-                    withAnimation(.easeOut(duration: 0.24)) {
+                    withAnimation(NodusMotion.standard) {
                         if isExpanded { expanded.remove(block.id) } else { expanded.insert(block.id) }
                     }
                 } label: {
-                    Image(systemName: isExpanded ? "minus" : "plus")
-                        .font(.caption.weight(.semibold))
-                        .frame(width: 26, height: 26)
+                    // The count of what is under here belongs *on* the control that opens it,
+                    // not floated in the corner of the card below the text: the two were
+                    // separate before, so a reader had to connect a number in the bottom right
+                    // with a plus button in the top right to learn that pressing one revealed
+                    // the other.
+                    VStack(spacing: 1) {
+                        Image(systemName: isExpanded ? "minus" : "plus")
+                            .font(.caption.weight(.bold))
+                        if block.descendantCount > 0, !isExpanded {
+                            Text("\(block.descendantCount)")
+                                .font(.system(size: 9, weight: .semibold).monospacedDigit())
+                        }
+                    }
+                    .frame(width: 34, height: 34)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(accent.nodusReadable)
                 .accessibilityLabel(isExpanded ? "Collapse the branch" : "Unfold the branch")
             }
         }
-        .padding(10)
-        .nodusFieldSurface(accent: session.accent, cornerRadius: 11)
-        .overlay(alignment: .bottomTrailing) {
-            if block.descendantCount > 0, !isExpanded {
-                Text("\(block.descendantCount)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-                    .padding(.trailing, 34).padding(.bottom, 8)
-            }
-        }
+        .padding(11)
+        // No accent border. Every block in a hundred-and-sixty-block tree wore one, which is
+        // the clearest case in the app of an outline that told a reader nothing: the stripe on
+        // the left already says what kind of block this is.
+        .nodusGlass(NodusGlass(.thin, tint: accent), in: NodusRadius.controlShape)
     }
 
-    /// What the desktop puts under the label: the relation, how confident the analysis was, and
-    /// how much argument hangs off this block.
-    private var summary: String {
-        let confidence = String(format: "%.2f", block.confidence)
-        if block.children.isEmpty {
-            return String(localized: "confidence \(confidence)")
+    /// The three numbers on one line, as tags.
+    ///
+    /// They used to be a sentence in `caption2` ("confidence 0.82 · 3 derivations"), a second
+    /// line in `tertiary` for the links not drawn, and a floating number in the card's bottom
+    /// corner — three typographic treatments for three facts of exactly the same weight, on a
+    /// card whose subject is one line of text above them.
+    private var metadata: some View {
+        // A wrapping layout rather than an `HStack`: three chips of text that grows with Dynamic
+        // Type do not fit across a card that is already indented three levels deep, and a row
+        // that overflows clips its last chip rather than dropping to a second line.
+        FlowLayout(spacing: 5) {
+            if block.relation != .root {
+                NodusChip(String(format: "%.2f", block.confidence), tint: .nodusSecondaryText)
+            }
+            if !block.children.isEmpty {
+                NodusChip(
+                    String(localized: "\(block.children.count) derivations"),
+                    tint: .nodusSecondaryText
+                )
+            }
+            if block.hiddenChildren > 0 {
+                NodusChip(
+                    String(localized: "+\(block.hiddenChildren) not drawn"),
+                    tint: .nodusTertiaryText
+                )
+            }
         }
-        return String(localized: "confidence \(confidence) · \(block.children.count) derivations")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Confidence \(String(format: "%.2f", block.confidence))"))
     }
 }
 

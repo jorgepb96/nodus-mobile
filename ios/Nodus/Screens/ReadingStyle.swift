@@ -10,9 +10,16 @@ import UIKit
 struct ReadingStyle: Equatable {
     /// A multiple of whatever Dynamic Type already decided. 1 is "as the rest of the app".
     var scale: Double = 1
-    /// Justified paragraphs, which only a document wants: a chat bubble or a list cell set
-    /// justified is a ragged mess of word spacing.
-    var justified = false
+    /// Set for prose that is meant to be read for minutes rather than glanced at: a report, an
+    /// immersion station. It buys open leading, real space between paragraphs and headings that
+    /// can be found by scrolling past them.
+    ///
+    /// It used to be called `justified`, and it used to justify. On a phone that was a mistake:
+    /// a 370-point measure holds seven or eight words, so forcing both margins straight opens
+    /// rivers of white down the middle of every paragraph, and the hyphenation added to hide
+    /// them broke a word on most lines. Ragged right on a narrow column is not a compromise —
+    /// it is what a narrow column wants.
+    var document = false
 
     static let plain = ReadingStyle()
 
@@ -60,6 +67,13 @@ struct ReadingSizeButtons: View {
 
     @Environment(AppPreferences.self) private var preferences
 
+    /// Two ends of one control, inside one border.
+    ///
+    /// They were two bare glyphs in the same row as three other bare glyphs, and the two that
+    /// change the text size looked exactly as much like "copy" as the ones that copy. Drawn as
+    /// a single bordered group with a divider down the middle, the pair reads as a stepper — the
+    /// shape iOS uses for exactly this — and gains a visible area to aim at, which is what a
+    /// 17-point glyph floating on a page never had.
     var body: some View {
         HStack(spacing: 0) {
             button(
@@ -68,6 +82,9 @@ struct ReadingSizeButtons: View {
                 enabled: preferences.canShrinkReading,
                 delta: -AppPreferences.readingScaleStep
             )
+            Rectangle()
+                .fill(accent.opacity(0.3))
+                .frame(width: 1, height: 22)
             button(
                 "textformat.size.larger",
                 label: "Larger text",
@@ -75,6 +92,9 @@ struct ReadingSizeButtons: View {
                 delta: AppPreferences.readingScaleStep
             )
         }
+        .reportActionSurface(accent: accent)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Text size")
     }
 
     private func button(
@@ -92,12 +112,12 @@ struct ReadingSizeButtons: View {
             preferences.adjustReading(by: delta)
         } label: {
             Image(systemName: systemImage)
-                .font(.callout)
-                .frame(width: 44, height: 44)
+                .font(.system(size: 17, weight: .medium))
+                .frame(width: 46, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(enabled ? accent : Color.secondary.opacity(0.5))
+        .foregroundStyle(enabled ? accent.nodusReadable : Color.nodusTertiaryText)
         .disabled(!enabled)
         .accessibilityLabel(label)
     }

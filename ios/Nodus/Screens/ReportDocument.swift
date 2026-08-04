@@ -224,29 +224,27 @@ struct ReportPDFButton: View {
             if let file {
                 // Once it exists it is a share sheet, not a button that builds it again.
                 ShareLink(item: file) {
-                    Image(systemName: "arrow.down.doc.fill")
-                        .font(.callout)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                    label("arrow.up.doc", title: "PDF")
                 }
-                .foregroundStyle(accent)
                 .accessibilityLabel("Save the PDF")
             } else {
                 Button {
                     build()
                 } label: {
-                    Group {
-                        if isBuilding {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.down.doc").font(.callout)
+                    if isBuilding {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small).tint(accent)
+                            Text("PDF").font(.subheadline.weight(.semibold))
                         }
+                        .foregroundStyle(accent.nodusReadable)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .reportActionSurface(accent: accent)
+                    } else {
+                        label("arrow.down.doc", title: "PDF")
                     }
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(accent)
                 .disabled(isBuilding)
                 .accessibilityLabel("Download as a PDF")
             }
@@ -259,6 +257,21 @@ struct ReportPDFButton: View {
         } message: {
             Text(LocalizedStringKey(error ?? ""))
         }
+    }
+
+    /// The same shape the copy control and the size stepper wear, so the row of actions reads as
+    /// a row of one kind of thing.
+    private func label(_ systemImage: String, title: LocalizedStringKey) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: systemImage)
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(accent.nodusReadable)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .reportActionSurface(accent: accent)
     }
 
     private func build() {

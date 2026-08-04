@@ -302,6 +302,7 @@ private struct ImmersionStationView: View {
             .nodusTopAnchor()
         }
         .nodusScrollToTop(accent: accent)
+        .nodusHidesBottomBar()
         .navigationTitle(station.title)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: accent)
@@ -358,6 +359,7 @@ private struct ImmersionQuizView: View {
             }
             .padding(16)
         }
+        .nodusHidesBottomBar()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: accent)

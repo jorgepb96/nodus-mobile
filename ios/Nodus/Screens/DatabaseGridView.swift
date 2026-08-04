@@ -38,6 +38,7 @@ struct DatabaseGridView: View {
                 ContentUnavailableView("Empty database", systemImage: "tablecells")
             }
         }
+        .nodusHidesBottomBar()
         .navigationTitle(Text(verbatim: database.text("name") ?? String(localized: "Database")))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
@@ -275,6 +276,7 @@ struct DatabaseRowView: View {
             .nodusTopAnchor()
         }
         .nodusScrollToTop(accent: session.accent)
+        .nodusHidesBottomBar()
         .navigationTitle(Text(verbatim: heading))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)

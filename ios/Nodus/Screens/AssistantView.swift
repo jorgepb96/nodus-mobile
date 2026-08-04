@@ -460,7 +460,7 @@ private struct AnswerCopyButton: View {
                 Label("Copy with citation links", systemImage: "link")
             }
         }
-        .animation(.easeOut(duration: 0.2), value: copied)
+        .animation(NodusMotion.quick, value: copied)
     }
 
     private func copy(_ text: String) {

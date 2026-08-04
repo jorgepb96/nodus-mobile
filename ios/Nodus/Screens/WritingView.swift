@@ -88,14 +88,23 @@ struct WritingView: View {
                     )
                 }
             } else {
-                Section("Queue") {
+                Section {
                     ForEach(controller.items) { item in
                         row(item, controller: controller)
                     }
+                } header: {
+                    NodusSectionLabel("Queue")
                 }
             }
         }
         .scrollContentBackground(.hidden)
+        // The same three lines every other list in the app now carries: the grouped style's
+        // opaque row cards are the "black panels" of item 8, its separators are drawn for a
+        // white table, and its headers are set in small capitals nothing else here uses.
+        .listStyle(.plain)
+        .listRowBackground(Color.clear)
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
+        .textCase(nil)
         .refreshable { await controller.refresh() }
     }
 

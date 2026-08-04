@@ -152,7 +152,10 @@ struct SpacePickerView: View {
                     }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
                 }
-                .padding(.horizontal, 20)
+                // `NodusSpace.page`, the same margin every other screen uses. This one was 20
+                // and the rest were 16, which is exactly the kind of four points nobody can
+                // name and everybody feels when they move between two screens.
+                .padding(.horizontal, NodusSpace.page)
                 .padding(.bottom, 24)
                 // A 13-inch iPad is not a very wide iPhone. Stretching a list of four
                 // connections across 1 000 points gives rows that are mostly empty and a line
@@ -194,7 +197,7 @@ struct SpacePickerView: View {
         } label: {
             ConnectionCard(connection: connection, needsSignIn: !usable)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NodusCardButtonStyle())
         .contextMenu {
             Button(role: .destructive) {
                 model.forget(connection)
@@ -340,9 +343,12 @@ private struct ConnectionCard: View {
             Spacer()
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
         }
-        .padding(15)
+        .padding(NodusSpace.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nodusGlass(NodusGlass(.regular, tint: needsSignIn ? Color.nodusCaution : connection.accent, interactive: true))
+        // A row that goes somewhere, not a control that acts: the chevron says so and
+        // `NodusCardButtonStyle` gives under the thumb. Five of these stacked, each with a lit
+        // edge and a coloured glow, was the space picker's whole problem.
+        .nodusGlass(NodusGlass(.regular, tint: needsSignIn ? Color.nodusCaution : connection.accent))
     }
 
     /// `String(localized:)`: interpolated into a line of data, so it reaches `Text` as a value

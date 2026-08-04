@@ -79,6 +79,7 @@ struct SearchScreen: View {
         .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
         .listStyle(.plain)
+        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .nodusScrollToTop(accent: session.accent)
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
@@ -241,12 +242,12 @@ private struct HitCell: View {
     let accent: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Image(systemName: icon).font(.caption2).foregroundStyle(accent)
-                Text(LocalizedStringKey(typeLabel)).font(.caption2.weight(.medium)).foregroundStyle(accent)
+                // The kind, as the same tag every other list in the app puts it in.
+                NodusChip(key: typeLabel, tint: accent.nodusReadable, systemImage: icon)
                 if let page = hit.page {
-                    Text("· \(page)").font(.caption2).foregroundStyle(.tertiary)
+                    Text(verbatim: page).font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
                 // Shown only for a semantic hit, because only a semantic hit has a distance.

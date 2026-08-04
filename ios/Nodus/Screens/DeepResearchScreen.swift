@@ -23,9 +23,11 @@ struct DeepResearchScreen: View {
     /// Set once this report has been put in the queue, so it cannot be queued twice.
     @State private var sentReportId: String?
 
+    @Environment(AppPreferences.self) private var preferences
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: NodusSpace.block) {
                 if let report {
                     reportView(report)
                 } else if let progress {
@@ -39,9 +41,13 @@ struct DeepResearchScreen: View {
                     NodusNotice(tone: .blocked, title: "The report failed", message: LocalizedStringKey(error))
                 }
             }
-            .padding(16)
+            .padding(NodusSpace.page)
+            .frame(maxWidth: ReportLayout.measure)
+            .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
+        // A finished report is a document and is set as one; the form that starts it is not.
+        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: report != nil))
         .nodusScrollToTop(accent: session.accent)
         .nodusDismissesKeyboard()
         .navigationTitle("Deep Research")
@@ -209,7 +215,7 @@ struct DeepResearchScreen: View {
                 }
             }
         }
-        .padding(16)
+        .padding(NodusSpace.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nodusGlass(NodusGlass(.regular, tint: session.accent))
     }
@@ -247,15 +253,16 @@ struct DeepResearchScreen: View {
 
                 // `report.markdown` already opens with the objective as its heading, so the
                 // listening copy is not given a title to prepend on top of it.
-                ReportCopyButtons(markdown: report.markdown, title: nil, accent: session.accent)
+                ReportActions(markdown: report.markdown, title: nil, accent: session.accent)
+                    .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(NodusSpace.cardPadding)
             .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
             ForEach(Array(report.sections.enumerated()), id: \.offset) { _, section in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(section.title).font(.headline)
+                VStack(alignment: .leading, spacing: 14) {
+                    ReportSectionTitle(section.title, accent: session.accent)
                     // The prose carries the citation tokens the validator kept. Rendered as
                     // plain text they were bare `nodus://` URLs in the middle of a sentence;
                     // rendered here they are the source's own name, and they open it.
@@ -267,22 +274,24 @@ struct DeepResearchScreen: View {
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .nodusGlass(NodusGlass(.thin, tint: session.accent))
+                .padding(ReportLayout.sectionPadding)
+                // The same surface the header above it wears. A report that reads as one
+                // document should not be a card followed by a column of darker panels.
+                .nodusGlass(NodusGlass(.regular, tint: session.accent))
             }
 
             if !report.references.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("References").font(.headline)
+                    ReportSectionTitle("References", accent: session.accent)
                     Text("Built from the works actually cited.")
                         .font(.caption2).foregroundStyle(.secondary)
                     ForEach(report.references, id: \.token) { reference in
-                        Text("· \(reference.label)").font(.caption)
+                        Text(verbatim: "· \(reference.label)").font(.caption)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .nodusGlass(NodusGlass(.thin, tint: session.accent))
+                .padding(ReportLayout.sectionPadding)
+                .nodusGlass(NodusGlass(.regular, tint: session.accent))
             }
 
             // Two different acts, kept apart. Sharing takes a copy off the phone; sending puts

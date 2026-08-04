@@ -31,24 +31,36 @@ public struct NodusSearchField: View {
         self.isBusy = isBusy
     }
 
+    /// The placeholder, said loudly enough to be read.
+    ///
+    /// A `TextField`'s own prompt is drawn in `placeholderText`, which is the label colour at
+    /// about a quarter — tuned for a white field, and over tinted glass on an accent bloom it
+    /// was the faintest thing on the screen. Handing `prompt:` a styled `Text` is the only way
+    /// to say otherwise: the string parameter has no colour to give.
+    private var placeholder: Text {
+        Text(prompt).foregroundColor(.nodusTertiaryText)
+    }
+
     public var body: some View {
         HStack(spacing: 9) {
             Image(systemName: isBusy ? "ellipsis" : "magnifyingglass")
-                .font(.callout)
-                .foregroundStyle(accent)
+                .font(.callout.weight(.medium))
+                // The accent, walked until it reads. A `#6366f1` glyph on a pale violet capsule
+                // is the same violet twice.
+                .foregroundStyle(accent.nodusReadable)
                 .symbolEffect(.variableColor, isActive: isBusy)
 
             // `textInputAutocapitalization` and `submitLabel` are UIKit-only, and this package
             // builds for macOS as well so its rules can be unit-tested without a simulator.
             #if os(iOS)
-            TextField(prompt, text: $text)
+            TextField("", text: $text, prompt: placeholder)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .submitLabel(.search)
                 .focused($focused)
             #else
-            TextField(prompt, text: $text)
+            TextField("", text: $text, prompt: placeholder)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 .focused($focused)
@@ -59,7 +71,7 @@ public struct NodusSearchField: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.nodusTertiaryText)
                         // A 17-point glyph is not a target. The same lesson the header
                         // buttons taught, applied before anybody has to report it.
                         .frame(width: 32, height: 32)
@@ -72,8 +84,11 @@ public struct NodusSearchField: View {
         .padding(.leading, 13)
         .padding(.trailing, text.isEmpty ? 13 : 5)
         .padding(.vertical, 10)
+        // Not `interactive`, deliberately. The field is a place to type, not a control that
+        // lights up: with the lit edge on it, its bright accent outline was the strongest line
+        // on a screen whose subject is the list underneath.
         .nodusGlass(NodusGlass(.regular, tint: accent), in: Capsule())
-        .padding(.horizontal, 16)
+        .padding(.horizontal, NodusSpace.page)
         .padding(.bottom, 8)
     }
 }

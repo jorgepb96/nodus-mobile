@@ -63,6 +63,7 @@ struct FamilyTreeView: View {
             }
             .padding(16)
         }
+        .nodusHidesBottomBar()
         .navigationTitle("Family tree")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)

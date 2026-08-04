@@ -249,14 +249,16 @@ struct CorpusProse: View {
     }
 
     var body: some View {
-        // A document breathes; a chat bubble does not. The wider spacing is part of the same
-        // decision as the justification, and both arrive with the reading style.
-        VStack(alignment: .leading, spacing: reading.justified ? 13 : 9) {
+        // A document breathes; a chat bubble does not. Twenty points between paragraphs rather
+        // than thirteen: on a phone the gap between paragraphs is the only cue a reader has that
+        // one has ended, because the line lengths are too short for the last line's rag to say
+        // it, and the leading inside a paragraph has gone up too.
+        VStack(alignment: .leading, spacing: reading.document ? 20 : 9) {
             ForEach(blocks) { block in
                 if block.level > 0 {
                     heading(block)
-                } else if reading.justified {
-                    JustifiedProse(
+                } else if reading.document {
+                    DocumentProse(
                         source: Self.linkify(block.text, labels: labels),
                         font: reading.uiFont(.callout),
                         accent: accent,
@@ -308,12 +310,16 @@ struct CorpusProse: View {
         // every heading in every published report was set as a minor one. Seen against the
         // demo corpus: "Introduction" and "What the registers omit" arrived at body weight,
         // indistinguishable from the paragraph under them.
-        let isPart = block.level <= 2 && reading.justified
+        let isPart = block.level <= 2 && reading.document
         return Text(isPart ? block.text.uppercased() : block.text)
             .font(reading.font(isPart ? .title3 : .headline, weight: .bold))
             .tracking(isPart ? 0.7 : 0)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, reading.justified ? (isPart ? 12 : 6) : 3)
+            // A heading belongs to what comes after it, so the space above it is what tells a
+            // reader that the previous section has ended. Eight points more than the paragraph
+            // gap below it is the least that reads as a break rather than as a wide line.
+            .padding(.top, reading.document ? (isPart ? 20 : 10) : 3)
     }
 
     /// Split into headings and paragraphs before parsing.
@@ -398,21 +404,24 @@ struct CorpusProse: View {
     }
 }
 
-/// One paragraph, justified.
+/// One paragraph of a document.
 ///
-/// SwiftUI's `Text` aligns leading, centre or trailing and has no fourth option: justification
-/// is a paragraph-style attribute and `Text` drops paragraph styles on the way in. So a
-/// justified paragraph is a `UITextView` — non-editable, non-scrolling, sized by SwiftUI — and
-/// everything `Text` was doing is done here explicitly instead of hoped for:
+/// A `UITextView` rather than a `Text` — non-editable, non-scrolling, sized by SwiftUI — because
+/// leading is a paragraph-style attribute and `Text` drops paragraph styles on the way in.
+/// SwiftUI's `lineSpacing` adds points between lines without telling the layout what the line
+/// height *is*, which is not the same thing and does not scale with the reader's text size.
+/// Everything `Text` was doing is done here explicitly instead of hoped for:
 ///
 /// - The Markdown is parsed once and each run is given a real `UIFont`, because the inline
 ///   presentation intents an `AttributedString` carries mean nothing to UIKit: converting one
 ///   directly loses every bold and italic in the report.
 /// - A `nodus://` link is coloured, underlined and handed back to the caller on tap. The system
 ///   has no handler for that scheme, so letting the default action run opens nothing.
-/// - Hyphenation is on. Justified prose without it opens rivers of white space down a phone's
-///   narrow column, which is worse than the ragged edge it replaced.
-private struct JustifiedProse: UIViewRepresentable {
+/// - The measure is set ragged right at a line height of 1.3. It was justified and hyphenated,
+///   which is right for a printed page two columns wide and wrong for a phone: seven words to a
+///   line cannot be justified without opening rivers, and the hyphenation that was hiding them
+///   broke a word on most lines of a twenty-page report.
+private struct DocumentProse: UIViewRepresentable {
     /// Markdown, already linkified.
     let source: String
     let font: UIFont
@@ -505,10 +514,12 @@ private struct JustifiedProse: UIViewRepresentable {
         }
 
         let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .justified
+        // `.natural`, not `.justified`: right for Arabic and Hebrew as well as for Spanish, and
+        // ragged on the trailing edge in all of them.
+        paragraph.alignment = .natural
         paragraph.lineBreakMode = .byWordWrapping
-        paragraph.hyphenationFactor = 1
-        paragraph.lineHeightMultiple = 1.1
+        paragraph.hyphenationFactor = 0
+        paragraph.lineHeightMultiple = 1.3
         output.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: output.length))
         return output
     }

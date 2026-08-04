@@ -28,69 +28,49 @@ struct ReportCopyButtons: View {
         var id: String { rawValue }
     }
 
+    /// One control with a menu, not two glyphs.
+    ///
+    /// The choice between the two copies is a real one and it cannot be drawn: `doc` and
+    /// `doc.plaintext` differ by three lines inside the page icon and stand for the presence or
+    /// absence of a bibliography. In a menu the two are sentences, which is the only form in
+    /// which the difference is legible.
     var body: some View {
-        // No spacing between them: each button is already a 44-point target around a
-        // callout-sized glyph, so the frames alone give an even gap — and adding to it on
-        // one side only made the pair sit further from the download beside them than from
-        // each other.
-        HStack(spacing: 0) {
-            button(
-                .withReferences,
-                systemImage: "doc",
-                label: "Copy with references",
-                text: markdown
-            )
-            button(
-                .withoutReferences,
-                systemImage: "doc.plaintext",
-                label: "Copy without references",
-                text: ReadingCopy.text(from: markdown, title: title)
-            )
-        }
-        // Floated under the row rather than beside it: there is a third button to the right
-        // now, and a confirmation that pushes it sideways is worse than one that appears
-        // where the eye already is.
-        .overlay(alignment: .bottomLeading) {
-            if let copied {
-                Label(
-                    copied == .withReferences ? "Copied" : "Copied without references",
-                    systemImage: "checkmark"
-                )
-                .font(.caption2)
-                .foregroundStyle(accent)
-                .fixedSize()
-                .offset(y: 16)
-                .allowsHitTesting(false)
-                .transition(.opacity)
+        Menu {
+            Button {
+                copy(.withReferences, text: markdown)
+            } label: {
+                Label("Copy with references", systemImage: "doc.text")
             }
-        }
-        .animation(.easeOut(duration: 0.2), value: copied)
-    }
-
-    private func button(
-        _ kind: Copied,
-        systemImage: String,
-        label: LocalizedStringKey,
-        text: @autoclosure @escaping () -> String
-    ) -> some View {
-        Button {
-            // Built on the tap rather than on every render: the listening copy is two hundred
-            // lines of regular expressions over a twenty-page document, and a report that is
-            // merely on screen has no reason to pay for it.
-            UIPasteboard.general.string = text()
-            copied = kind
-            Task {
-                try? await Task.sleep(for: .seconds(2))
-                if copied == kind { copied = nil }
+            Button {
+                // Built on the tap rather than on every render: the listening copy is two
+                // hundred lines of regular expressions over a twenty-page document, and a
+                // report that is merely on screen has no reason to pay for it.
+                copy(.withoutReferences, text: ReadingCopy.text(from: markdown, title: title))
+            } label: {
+                Label("Copy without references", systemImage: "text.alignleft")
             }
         } label: {
-            Image(systemName: systemImage)
-                .font(.callout)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            Label {
+                Text(copied == nil ? "Copy" : "Copied")
+            } icon: {
+                Image(systemName: copied == nil ? "doc.on.doc" : "checkmark")
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(accent.nodusReadable)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .reportActionSurface(accent: accent)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(accent)
-        .accessibilityLabel(label)
+        .accessibilityLabel("Copy the report")
+        .animation(NodusMotion.quick, value: copied)
+    }
+
+    private func copy(_ kind: Copied, text: String) {
+        UIPasteboard.general.string = text
+        copied = kind
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if copied == kind { copied = nil }
+        }
     }
 }

@@ -27,11 +27,18 @@ public struct NodusBackdrop: View {
     /// one per tab. A radial gradient draws the same soft bloom in a single pass with no
     /// offscreen buffer, and a background that holds still is a background nobody notices,
     /// which is what a background is for.
+    /// One accent bloom and one slate one.
+    ///
+    /// Both used to be the accent — a lighter violet at the top and a darker violet at the
+    /// bottom — so the page was violet corner to corner and every glass panel on it was a violet
+    /// panel on violet. The accent stays where the eye enters the page and the far corner is
+    /// given to a cool grey, which is what lets the accent read as a colour rather than as the
+    /// light in the room.
     public var body: some View {
         ZStack {
             base
-            bloom(accent.shaded(by: 0.15), centre: UnitPoint(x: 0.16, y: 0.14), scale: 0.72)
-            bloom(accent.shaded(by: -0.35), centre: UnitPoint(x: 0.9, y: 0.78), scale: 0.62)
+            bloom(accent, centre: UnitPoint(x: 0.16, y: 0.12), scale: 0.7, strength: 1)
+            bloom(slate, centre: UnitPoint(x: 0.92, y: 0.8), scale: 0.66, strength: 0.8)
         }
         // The wash never changes and never reacts to a touch. Flattening it means the
         // compositor can treat it as one static layer, and hit-testing skips it entirely.
@@ -46,17 +53,34 @@ public struct NodusBackdrop: View {
         .ignoresSafeArea()
     }
 
+    /// The page, which is the darker of the two in light mode and the lighter in dark.
+    ///
+    /// It matters that this is a shade *away* from `NodusSurface.base`: the cards are drawn in
+    /// a translucent material, so whatever separation they have from the page is the difference
+    /// between these two values seen through it. A page and a card three points apart is a page
+    /// with faint outlines on it.
     private var base: Color {
-        colorScheme == .dark ? Color(hex: "#0a0912") : Color(hex: "#f6f5fb")
+        colorScheme == .dark ? Color(hex: "#0b0a11") : Color(hex: "#eceaf3")
     }
 
-    private func bloom(_ color: Color, centre: UnitPoint, scale: CGFloat) -> some View {
+    /// The cool grey the far corner is washed with. Not black and not the accent: a blue-grey
+    /// with a trace of the vault in it, so the two blooms read as one lighting rather than as
+    /// two decisions.
+    private var slate: Color {
+        let grey = colorScheme == .dark ? Color(hex: "#39415c") : Color(hex: "#7b829b")
+        return grey.blended(with: accent, amount: 0.18)
+    }
+
+    private func bloom(_ color: Color, centre: UnitPoint, scale: CGFloat, strength: Double) -> some View {
         GeometryReader { proxy in
             let radius = max(proxy.size.width, proxy.size.height) * scale
+            // Weaker than it was — 0.5 of a saturated accent over half a phone screen is not a
+            // background, it is a colour the content has to survive.
+            let peak = (colorScheme == .dark ? 0.30 : 0.14) * strength
             RadialGradient(
                 stops: [
-                    .init(color: color.opacity(colorScheme == .dark ? 0.5 : 0.28), location: 0),
-                    .init(color: color.opacity(colorScheme == .dark ? 0.22 : 0.12), location: 0.45),
+                    .init(color: color.opacity(peak), location: 0),
+                    .init(color: color.opacity(peak * 0.44), location: 0.45),
                     .init(color: color.opacity(0), location: 1),
                 ],
                 center: centre,
@@ -68,6 +92,19 @@ public struct NodusBackdrop: View {
 }
 
 public extension View {
+    /// Installs the app's own second and third levels of text under this view.
+    ///
+    /// `.foregroundStyle(_:_:_:)` is what makes this one modifier rather than an edit at every
+    /// call site: it redefines what `.secondary` and `.tertiary` *resolve to* for the whole
+    /// subtree, so the two hundred places in the app that ask for "the second level" keep asking
+    /// for it and start getting one that can be read over tinted glass.
+    ///
+    /// It goes on the page, beside the backdrop, because the two are the same decision: this is
+    /// the text that has to work over that wash.
+    func nodusTextHierarchy() -> some View {
+        foregroundStyle(Color.primary, Color.nodusSecondaryText, Color.nodusTertiaryText)
+    }
+
     /// The accent backdrop, behind one screen's content.
     ///
     /// It goes on the screen's *content*, and every screen has to ask for it. That is not an
@@ -80,6 +117,7 @@ public extension View {
     /// A pushed screen is a new view in the same container, so it needs its own.
     func nodusPageBackdrop(accent: Color) -> some View {
         background { NodusBackdrop(accent: accent).ignoresSafeArea() }
+            .nodusTextHierarchy()
     }
 }
 
@@ -92,7 +130,7 @@ public extension View {
     /// white. This is the accent at low strength: the field reads as cut into the surface it
     /// sits on rather than pasted onto it, and it is the same colour in both schemes rather
     /// than two different greys.
-    func nodusFieldSurface(accent: Color, cornerRadius: CGFloat = 14) -> some View {
+    func nodusFieldSurface(accent: Color, cornerRadius: CGFloat = NodusRadius.control) -> some View {
         modifier(NodusFieldSurface(accent: accent, cornerRadius: cornerRadius))
     }
 }
@@ -133,7 +171,7 @@ public struct NodusPrimaryButtonStyle: ButtonStyle {
             .padding(.vertical, 13)
             .padding(.horizontal, 18)
             .background {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                NodusRadius.controlShape
                     .fill(
                         LinearGradient(
                             colors: [accent.shaded(by: 0.18), accent.shaded(by: -0.16)],
@@ -142,32 +180,100 @@ public struct NodusPrimaryButtonStyle: ButtonStyle {
                         )
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        NodusRadius.controlShape
                             .strokeBorder(.white.opacity(0.28), lineWidth: 0.66)
                     }
             }
             .opacity(isEnabled ? 1 : 0.45)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(duration: 0.22), value: configuration.isPressed)
+            .animation(NodusMotion.press, value: configuration.isPressed)
     }
 }
 
-/// A glass button for secondary actions. Uses the system glass button style on iOS 26.
+/// A glass button for secondary actions.
+///
+/// It has to look pressable, and for a while it did not. The map's "Unfold a level" and
+/// "Collapse" sat inside the same glass card as the counts above them, in the same weight, with
+/// a border no stronger than the card's own — so they read as two more lines of that card rather
+/// than as the two controls on the screen. A button is the one place the accent is allowed to
+/// carry: a tinted fill under it, a border in the accent rather than in white, and the lit edge
+/// that ordinary cards have given up.
 public struct NodusGlassButtonStyle: ButtonStyle {
     public var accent: Color
+    @Environment(\.isEnabled) private var isEnabled
+
     public init(accent: Color) { self.accent = accent }
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.subheadline.weight(.medium))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(accent)
             .padding(.vertical, 11)
             .padding(.horizontal, 16)
+            .background(accent.opacity(0.12), in: NodusRadius.controlShape)
             .nodusGlass(
                 NodusGlass(.regular, tint: accent, interactive: true),
-                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                in: NodusRadius.controlShape
             )
+            .overlay {
+                NodusRadius.controlShape
+                    .strokeBorder(accent.opacity(0.55), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .opacity(isEnabled ? 1 : 0.4)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(duration: 0.22), value: configuration.isPressed)
+            .animation(NodusMotion.press, value: configuration.isPressed)
+    }
+}
+
+/// The name of a group of things, and the one style it is set in.
+///
+/// "Write" and "Analyse" on Home, "Passages that support it" and "Relationships" on a dossier,
+/// "On this device" over the reports — the same job on four screens, in four different sizes and
+/// two different colours, one of them heavier than the titles it was labelling. Small, in the
+/// second level of text, letters a little open, with the count beside it rather than glued into
+/// the same string: a label on the group rather than a member of it.
+public struct NodusSectionLabel: View {
+    private let title: LocalizedStringKey
+    private let count: Int?
+
+    public init(_ title: LocalizedStringKey, count: Int? = nil) {
+        self.title = title
+        self.count = count
+    }
+
+    public var body: some View {
+        HStack(spacing: 5) {
+            Text(title)
+            if let count {
+                // A separate `Text`, because interpolating the count into the title makes the
+                // whole line the catalogue key and nothing matches it.
+                Text(verbatim: "· \(count.formatted())").monospacedDigit()
+            }
+        }
+        .font(.footnote.weight(.semibold))
+        .tracking(0.5)
+        .foregroundStyle(.secondary)
+        .padding(.leading, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A card that happens to be tappable.
+///
+/// Home is a board of navigation tiles and a dossier is a stack of rows that open things, so
+/// "can this be pressed" cannot be what decides which surfaces glow — on those screens the
+/// answer is everything, which is how the app ended up with no foreground. What separates a tile
+/// from a control is that a control *acts* and a tile *goes*: the chevron already says a tile
+/// goes, so the tile keeps the quiet surface and says the rest by giving under the thumb.
+public struct NodusCardButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(NodusMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -183,11 +289,81 @@ public struct CountBadge: View {
 
     public var body: some View {
         Text(count.formatted())
-            .font(.caption2.weight(.semibold).monospacedDigit())
+            .font(NodusChip.font.monospacedDigit())
             .foregroundStyle(accent)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
+            .padding(.horizontal, NodusChip.horizontalPadding)
+            .padding(.vertical, NodusChip.verticalPadding)
             .background(accent.opacity(0.16), in: Capsule())
+    }
+}
+
+/// A labelled tag: an idea's type, a relation, a role, a kind.
+///
+/// There were five of these and no two were alike. The argument map set a type in
+/// `caption2.medium` with 6 points of padding inside a capsule; a dossier's detail line used
+/// `caption.medium` with 8; the theme chips used `caption` with 9; the count badge used 7. Some
+/// arrived capitalised from the catalogue and some — `claim`, `constructo`, `apoya` — did not,
+/// because they are the corpus's own lowercase vocabulary passed straight through.
+///
+/// One shape, one type size, one padding, and sentence case applied here rather than hoped for
+/// in the catalogue, so a screen showing a type beside a relation shows two of the same thing.
+public struct NodusChip: View {
+    static let font: Font = .caption2.weight(.semibold)
+    static let horizontalPadding: CGFloat = 8
+    static let verticalPadding: CGFloat = 3
+
+    private let text: String
+    private let tint: Color
+    private let systemImage: String?
+    private let capitalises: Bool
+
+    /// `text` is already in the reader's language. Its case is not trusted by default: the
+    /// corpus spells its vocabulary lowercase and the catalogue translates it that way, which is
+    /// right in the middle of a sentence and wrong on a tag.
+    ///
+    /// `capitalises: false` for a value the corpus wrote rather than a word from the vocabulary
+    /// — a page reference is "p. 40" and turning it into "P. 40" is editing somebody's data to
+    /// make a chip look tidy.
+    public init(_ text: String, tint: Color, systemImage: String? = nil, capitalises: Bool = true) {
+        self.text = text
+        self.tint = tint
+        self.systemImage = systemImage
+        self.capitalises = capitalises
+    }
+
+    /// A key the catalogue holds but the source cannot spell as a literal — an idea's `type` as
+    /// the row carries it. `LocalizedStringKey` cannot do this: it localises literals, and a
+    /// value handed to one is looked up as "%@".
+    public init(key: String, tint: Color, systemImage: String? = nil) {
+        self.init(
+            Bundle.main.localizedString(forKey: key, value: key, table: nil),
+            tint: tint,
+            systemImage: systemImage
+        )
+    }
+
+    public var body: some View {
+        HStack(spacing: 3) {
+            if let systemImage {
+                Image(systemName: systemImage).font(Self.font)
+            }
+            Text(capitalises ? Self.sentenceCased(text) : text)
+                .font(Self.font)
+                .lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, Self.horizontalPadding)
+        .padding(.vertical, Self.verticalPadding)
+        .background(tint.opacity(0.16), in: Capsule())
+        // A tag is a label on something, so it never grows past the thing it labels.
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// The first letter up and the rest left alone. `localizedCapitalized` would give "Comparte
+    /// Método", which is a title, not a tag.
+    public static func sentenceCased(_ text: String) -> String {
+        guard let first = text.first, first.isLowercase else { return text }
+        return String(first).localizedUppercase + text.dropFirst()
     }
 }
 
@@ -232,7 +408,7 @@ public struct NodusNotice: View {
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nodusGlass(NodusGlass(.thin, tint: colour), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .nodusGlass(NodusGlass(.thin, tint: colour), in: NodusRadius.panelShape)
     }
 
     private var colour: Color {

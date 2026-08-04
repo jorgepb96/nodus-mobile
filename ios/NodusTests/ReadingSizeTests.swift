@@ -59,7 +59,7 @@ struct ReadingSizeTests {
     @Test("scale 1 is the system's own size")
     func neutralScale() {
         #expect(ReadingStyle.plain.scale == 1)
-        #expect(!ReadingStyle.plain.justified)
+        #expect(!ReadingStyle.plain.document)
         #expect(ReadingStyle(scale: 2).size(.body) == ReadingStyle.plain.size(.body) * 2)
     }
 }

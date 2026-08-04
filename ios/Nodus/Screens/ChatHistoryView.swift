@@ -222,7 +222,7 @@ struct TypingDots: View {
                     .offset(y: reduceMotion ? 0 : (phase == index ? -3 : 0))
             }
         }
-        .animation(.easeInOut(duration: 0.24), value: phase)
+        .animation(NodusMotion.standard, value: phase)
         .onReceive(Self.timer) { _ in
             guard !reduceMotion else { return }
             phase = (phase + 1) % 3

@@ -39,6 +39,12 @@ public struct NodusGlass: Sendable, Equatable {
     public var tint: Color?
     /// Whether the surface reacts to touch. Maps to `Glass.interactive()` on iOS 26 and to a
     /// press-scale on the fallback.
+    ///
+    /// It also decides whether the surface is *lit* — see `GlassSurfaceFill`. Every card in the
+    /// app wore the same bright bevel and the same specular sweep, which meant a section tile
+    /// you can press, a notice you cannot, and the paragraph of a report all announced
+    /// themselves equally loudly. The glow is now what tells them apart, so it goes where the
+    /// touch goes.
     public var interactive: Bool
 
     public init(_ weight: Weight = .regular, tint: Color? = nil, interactive: Bool = false) {
@@ -65,7 +71,7 @@ public extension View {
     /// between the system material and the fallback is made once.
     func nodusGlass(
         _ glass: NodusGlass = .regular,
-        in shape: some InsettableShape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        in shape: some InsettableShape = NodusRadius.panelShape
     ) -> some View {
         modifier(NodusGlassModifier(glass: glass, shape: shape))
     }
@@ -161,12 +167,26 @@ struct SystemGlass<S: InsettableShape>: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background {
-                if !fitsInGlass { GlassSurfaceFill(glass: glass, shape: shape, expansive: true) }
+                if fitsInGlass {
+                    // The floor under the system material.
+                    //
+                    // `glassEffect` is very nearly clear: it refracts the page rather than
+                    // covering it, which is beautiful on a photo and a problem on a violet
+                    // bloom — a card of body text sat on whatever the wash happened to be doing
+                    // behind it, and two cards a screen apart were two different colours. This
+                    // is a neutral slate at just under half opacity, so the glass has something
+                    // of its own to refract and every panel starts from the same place.
+                    shape.fill(NodusSurface.base(colourScheme, tint: glass.tint, weight: glass.weight))
+                } else {
+                    GlassSurfaceFill(glass: glass, shape: shape, expansive: true)
+                }
             }
             .glassEffect(systemGlass, in: shape)
             .contentShape(shape)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
     }
+
+    @Environment(\.colorScheme) private var colourScheme
 
     private var systemGlass: Glass {
         var value = Glass.regular
@@ -181,11 +201,16 @@ struct SystemGlass<S: InsettableShape>: ViewModifier {
         return value
     }
 
+    /// Weaker than it was, and weaker again when nothing is going to be pressed.
+    ///
+    /// Half the "everything is violet" of this app was here: an 18% accent tint on every card,
+    /// on top of an accent-tinted page, under an accent-coloured heading. A card that is only
+    /// holding text needs enough tint to belong to the vault and no more.
     private var tintStrength: Double {
         switch glass.weight {
-        case .thin: return 0.12
-        case .regular: return 0.18
-        case .prominent: return 0.30
+        case .thin: return glass.interactive ? 0.10 : 0.06
+        case .regular: return glass.interactive ? 0.15 : 0.09
+        case .prominent: return 0.24
         }
     }
 }
@@ -221,15 +246,28 @@ struct GlassSurfaceFill<S: InsettableShape>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nodusTilt) private var tilt
 
+    /// Lit surfaces are the ones you can press.
+    ///
+    /// The specular sweep and the bright bevel are what make a rectangle read as a raised
+    /// object, and an app where every rectangle is raised has no foreground. A card that only
+    /// holds text keeps the material, the floor and a hairline; the highlight is spent on the
+    /// things that do something.
+    private var lit: Bool { glass.interactive && !expansive }
+
     var body: some View {
         shape
-            .fill(material)
-            // A blur desaturates what it blurs; glass does not. Pushing saturation
-            // back up is most of the difference between "frosted" and "glass".
-            .saturation(1.55)
+            // Under the material, not instead of it: the blur still blurs what is behind the
+            // panel, it simply no longer blurs it all the way down to the page.
+            .fill(NodusSurface.base(colorScheme, tint: glass.tint, weight: glass.weight))
+            .overlay { shape.fill(material) }
+            // A blur desaturates what it blurs; glass does not. Pushing saturation back up is
+            // most of the difference between "frosted" and "glass" — but 1.55 over an accent
+            // bloom was pushing the violet past where the palette put it, which is the single
+            // biggest reason the app read as more saturated than its own colours.
+            .saturation(1.2)
             .overlay { shape.fill(tintWash) }
-            .overlay { if !expansive { specular } }
-            .overlay { shape.strokeBorder(bevel, lineWidth: 0.66) }
+            .overlay { if lit { specular } }
+            .overlay { shape.strokeBorder(bevel, lineWidth: lit ? 0.66 : 0.5) }
             .compositingGroup()
             .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowRadius * 0.4)
     }
@@ -244,7 +282,12 @@ struct GlassSurfaceFill<S: InsettableShape>: View {
 
     private var tintWash: LinearGradient {
         let tint = glass.tint ?? .clear
-        let strength: Double = glass.weight == .prominent ? 0.26 : 0.14
+        let strength: Double
+        switch glass.weight {
+        case .prominent: strength = 0.20
+        case .regular: strength = lit ? 0.13 : 0.08
+        case .thin: strength = lit ? 0.10 : 0.06
+        }
         return LinearGradient(
             colors: [tint.opacity(strength), tint.opacity(strength * 0.35)],
             startPoint: .topLeading,
@@ -265,8 +308,8 @@ struct GlassSurfaceFill<S: InsettableShape>: View {
                         // white blob with the rest of the card fading out of it. Dark mode has
                         // the room for it and light mode does not, so light mode keeps barely
                         // enough to round the corner and leaves the edge to the bevel.
-                        .init(color: .white.opacity(colorScheme == .dark ? 0.38 : 0.16), location: 0),
-                        .init(color: .white.opacity(colorScheme == .dark ? 0.06 : 0.04), location: 0.34),
+                        .init(color: .white.opacity(colorScheme == .dark ? 0.26 : 0.10), location: 0),
+                        .init(color: .white.opacity(colorScheme == .dark ? 0.05 : 0.03), location: 0.34),
                         .init(color: .clear, location: 0.62),
                     ],
                     startPoint: angle,
@@ -277,31 +320,75 @@ struct GlassSurfaceFill<S: InsettableShape>: View {
             .allowsHitTesting(false)
     }
 
-    /// Bright where the light lands, nearly absent on the far corner. A uniform hairline
-    /// border is the single thing that most makes a fake glass panel look printed on.
+    /// A bevel on a lit surface, and a hairline on everything else.
+    ///
+    /// The bevel is bright where the light lands and nearly gone on the far corner, which is the
+    /// whole of how a real edge announces itself. A card that is not raised has no such edge to
+    /// announce, so it gets a plain, even, quiet line — enough to separate it from the panel
+    /// behind it and not enough to claim anything.
     private var bevel: LinearGradient {
+        guard lit else {
+            let quiet = colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.10)
+            return LinearGradient(colors: [quiet, quiet], startPoint: .top, endPoint: .bottom)
+        }
         // Same reasoning as the specular: a white hairline at 0.85 over a pale surface is a
         // white outline, and every card wore one.
-        let lit = colorScheme == .dark ? 0.44 : 0.55
-        let unlit = colorScheme == .dark ? 0.05 : 0.12
+        let bright = colorScheme == .dark ? 0.44 : 0.55
+        let dim = colorScheme == .dark ? 0.05 : 0.12
         let origin = reduceMotion ? UnitPoint(x: 0.16, y: 0) : tilt.highlightOrigin
         return LinearGradient(
-            colors: [.white.opacity(lit), .white.opacity(unlit)],
+            colors: [.white.opacity(bright), .white.opacity(dim)],
             startPoint: origin,
             endPoint: UnitPoint(x: 1 - origin.x, y: 1 - origin.y)
         )
     }
 
+    /// Neutral unless the surface is one you press.
+    ///
+    /// An accent-tinted shadow under every card is an accent halo under every card, and stacked
+    /// down a scrolling page that is a violet glow the content sits in rather than on.
     private var shadowColor: Color {
-        let tint = glass.tint ?? (colorScheme == .dark ? Color.black : Color(hex: "#2a2340"))
-        return tint.opacity(colorScheme == .dark ? 0.42 : 0.16)
+        let base = colorScheme == .dark ? Color.black : Color(hex: "#2a2340")
+        let tint = lit ? (glass.tint ?? base) : base
+        return tint.opacity(colorScheme == .dark ? (lit ? 0.26 : 0.22) : (lit ? 0.12 : 0.08))
     }
 
     private var shadowRadius: CGFloat {
         switch glass.weight {
         case .thin: return 8
-        case .regular: return 14
+        case .regular: return lit ? 14 : 10
         case .prominent: return 20
+        }
+    }
+}
+
+/// The floor under every glass surface in the app.
+///
+/// One neutral slate, mixed a little toward the vault's accent so a panel still belongs to the
+/// space it is in, and no more than a little — the tint wash above it is where the accent is
+/// meant to show. Blue-grey rather than violet on purpose: it is what gives the saturated accent
+/// something to be saturated *against*.
+enum NodusSurface {
+    /// A card is always *away* from the page, and which direction that is depends on the scheme.
+    ///
+    /// In dark mode a raised surface is lighter than what it sits on; in light mode it is
+    /// whiter. The first version of this used one cool grey for both, which in light mode was a
+    /// shade *darker* than the page — so every card read as a dent rather than as paper, and the
+    /// only thing separating a card from its background was the hairline round it.
+    static func base(_ scheme: ColorScheme, tint: Color?, weight: NodusGlass.Weight) -> Color {
+        let raised = scheme == .dark ? Color(hex: "#15141d") : Color(hex: "#fdfcff")
+        let mixed = tint.map { raised.blended(with: $0, amount: scheme == .dark ? 0.14 : 0.07) } ?? raised
+        return mixed.opacity(opacity(scheme, weight: weight))
+    }
+
+    /// How much of the page a panel is allowed to let through. A bar has to stay out of the
+    /// content's way and so stays thinner than a card; a prominent surface is the one the eye is
+    /// meant to land on and is nearly solid.
+    private static func opacity(_ scheme: ColorScheme, weight: NodusGlass.Weight) -> Double {
+        switch weight {
+        case .thin: return scheme == .dark ? 0.34 : 0.40
+        case .regular: return scheme == .dark ? 0.52 : 0.60
+        case .prominent: return scheme == .dark ? 0.66 : 0.74
         }
     }
 }
