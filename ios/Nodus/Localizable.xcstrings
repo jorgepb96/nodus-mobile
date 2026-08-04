@@ -785,6 +785,17 @@
         }
       }
     },
+    "All models": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos los modelos"
+          }
+        }
+      }
+    },
     "All reports": {
       "extractionState": "manual",
       "localizations": {
@@ -1364,6 +1375,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Elige un modelo de chat en Proveedores."
+          }
+        }
+      }
+    },
+    "Choose a model": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un modelo"
           }
         }
       }
@@ -6153,6 +6175,17 @@
         }
       }
     },
+    "Send": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar"
+          }
+        }
+      }
+    },
     "Send %lld change%@": {
       "extractionState": "manual",
       "localizations": {
@@ -6545,6 +6578,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Estado"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detener"
           }
         }
       }

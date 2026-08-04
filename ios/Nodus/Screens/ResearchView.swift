@@ -166,7 +166,9 @@ struct ChatTab: View {
             if ai.configuredProviders.isEmpty {
                 setupPrompt
             } else {
-                ChatScreen(session: session)
+                // The chat's model menu offers the pinned models; everything else — the full
+                // catalogue, the keys — is behind this sheet, which the tab owns.
+                ChatScreen(session: session, openProviders: { showingProviders = true })
             }
         }
         .toolbar {

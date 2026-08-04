@@ -143,13 +143,34 @@ struct SpaceShell: View {
     /// The backdrop goes inside each page rather than once behind the `TabView`: a TabView
     /// draws its own opaque page background over anything behind it, so a single shared
     /// backdrop showed up as plain black the moment a tab was selected.
+    ///
+    /// The bar at the bottom is reserved for here rather than inherited from there, and that is
+    /// not belt and braces — it is the whole reason the bar could be tapped through. The bar is
+    /// added with `safeAreaInset` on the stack of pages, *outside* these navigation stacks, and a
+    /// `NavigationStack` does not pass an outer inset on to what it shows: measured, a page in a
+    /// tab reports 34 points of bottom safe area, which is the home indicator and nothing else.
+    /// So the last fifty points of every tab were drawn behind the bar — the chat's composer,
+    /// which was therefore not on screen at all, and the last card of Home, which you could
+    /// scroll to and still not see.
     private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         NavigationStack {
             content()
                 .safeAreaInset(edge: .top) { header }
+                .safeAreaInset(edge: .bottom, spacing: 0) { barClearance }
                 .toolbar(.hidden, for: .navigationBar)
                 .nodusPageBackdrop(accent: session.accent)
         }
+    }
+
+    /// Room for the bar, and nothing drawn in it.
+    ///
+    /// Clear rather than the bar itself: the bar is drawn once, over all four pages, so that
+    /// content scrolls *under* its glass — which is what the material is for. This only stops
+    /// the page from coming to rest there.
+    private var barClearance: some View {
+        Color.clear
+            .frame(height: chrome.hidesBottomBar ? 0 : NodusTabBarMetrics.height)
+            .allowsHitTesting(false)
     }
 
     // MARK: iPad
@@ -251,7 +272,12 @@ struct SpaceShell: View {
             activity: session.isLoading ? 1 : 0,
             collapsed: chrome.isScrolled
         ) {
-            headerButton("rectangle.stack", label: "Switch space") { model.closeSession() }
+            // Never more than two a side: the mark is centred by reserving 92 points at each
+            // end, and a third 44-point control would meet the vault's name in the middle.
+            HStack(spacing: 2) {
+                headerButton("rectangle.stack", label: "Switch space") { model.closeSession() }
+                if let chat = chatControls { historyButton(chat) }
+            }
         } trailing: {
             // Each glyph in its own 44-point box, not the pair in one.
             //
@@ -260,10 +286,59 @@ struct SpaceShell: View {
             // 17-point targets sitting eight points apart, which reads as one control that has
             // been drawn twice and misses half the taps aimed at either.
             HStack(spacing: 2) {
+                if let chat = chatControls { layersMenu(chat) }
                 if showsLayoutToggle { layoutToggle }
                 headerButton("gearshape", label: "Settings") { showingSettings = true }
             }
         }
+    }
+
+    /// The chat's controls, but only while the chat is the screen you are looking at.
+    ///
+    /// The four tabs are held side by side rather than swapped, so the chat page does not
+    /// disappear when you leave it and cannot be relied on to take its controls with it. What
+    /// decides whether they are on the header is the same thing that decides which page is
+    /// visible: the shell's own selection.
+    private var chatControls: ChatControls? {
+        let showingChat = wantsSidebar ? sidebarSelection == .chat : tab == .chat
+        return showingChat ? chrome.chat : nil
+    }
+
+    private func historyButton(_ chat: ChatControls) -> some View {
+        headerButton("clock.arrow.circlepath", label: "History") { chat.openHistory() }
+    }
+
+    /// Which layers of the corpus a question is answered from.
+    ///
+    /// Read straight off the chat's own state rather than from a copy, so a layer switched off
+    /// here is switched off in the payload the next question builds.
+    private func layersMenu(_ chat: ChatControls) -> some View {
+        Menu {
+            ForEach(ContextSectionKind.allCases, id: \.self) { kind in
+                Button {
+                    if chat.include.contains(kind) {
+                        chat.include.remove(kind)
+                    } else {
+                        chat.include.insert(kind)
+                    }
+                } label: {
+                    // `LocalizedStringKey(_:)` around the name, because the section's label is a
+                    // computed `String` and `Label(_:systemImage:)` handed one of those renders
+                    // it verbatim — which is how a menu of English layer names survived in a
+                    // Spanish app.
+                    Label(
+                        LocalizedStringKey(CorpusRetrieval.MaterialSection(kind: kind, rows: []).label),
+                        systemImage: chat.include.contains(kind) ? "checkmark" : ""
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .tint(session.accent)
+        .accessibilityLabel("Corpus layers")
     }
 
     /// The shape every control in the header wears: the glyph, centred in a 44-point square.

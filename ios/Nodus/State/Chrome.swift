@@ -1,3 +1,4 @@
+import NodusKit
 import SwiftUI
 
 /// What the shell's chrome is doing, asked for by the screens underneath it.
@@ -27,6 +28,15 @@ final class NodusChrome {
 
     var hidesBottomBar: Bool { !hiders.isEmpty }
 
+    /// The chat's own controls, for as long as the chat is the screen on show.
+    ///
+    /// The shell draws the header, so anything that belongs in the header has to be reachable
+    /// from the shell — and the chat's controls are the chat's state. Handing over the object
+    /// rather than a snapshot of it is what keeps the corpus-layer menu honest: it is
+    /// `@Observable`, so a tick added from the header is seen by the screen and by the header,
+    /// and neither has to be told.
+    var chat: ChatControls?
+
     func setScrolled(_ scrolled: Bool) {
         guard isScrolled != scrolled else { return }
         isScrolled = scrolled
@@ -34,6 +44,24 @@ final class NodusChrome {
 
     func hideBottomBar(_ token: UUID) { hiders.insert(token) }
     func showBottomBar(_ token: UUID) { hiders.remove(token) }
+}
+
+/// The two chat controls that live in the chrome rather than on the page.
+///
+/// They used to be a bar of their own under the header — a strip of grey material carrying a
+/// history button, the conversation's name and a filter, above a conversation that had nowhere
+/// to go but down. That is a whole row of screen spent on two controls that never change while
+/// you read, which is what the header is for; the strip they leave behind is given to the one
+/// thing you *do* change mid-conversation, which is the model answering it.
+@MainActor
+@Observable
+final class ChatControls {
+    /// Which layers of the corpus enter the payload — the same choice the desktop's assistant
+    /// offers, since a question about a gap in the literature wants different material from one
+    /// about what a work argues.
+    var include: Set<ContextSectionKind> = Set(ContextSectionKind.allCases)
+    /// Opens the conversation list. Set by the screen, called by the header.
+    var openHistory: () -> Void = {}
 }
 
 extension View {
