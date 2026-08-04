@@ -205,19 +205,7 @@ final class OutboxController {
             // has not pressed send on ever travels on its own.
             try await outbox.authorisePending()
 
-            while true {
-                let batch = try await outbox.pending(limit: maxBatch)
-                guard !batch.isEmpty else { break }
-
-                let receipt = try await client.send(mutations: batch, in: spaceId)
-                // A duplicate is a success: the first attempt landed and the retry found it
-                // already there. Treating it as a failure would leave items stuck forever.
-                try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
-                try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason) })
-
-                if receipt.accepted.isEmpty, receipt.duplicate.isEmpty, !receipt.rejected.isEmpty { break }
-                if batch.count < maxBatch { break }
-            }
+            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, maxBatch: maxBatch)
         } catch let error as APIError where error.isForbidden {
             lastError = error.requiredNeed == .write
                 ? "Your access to this space is read only."
