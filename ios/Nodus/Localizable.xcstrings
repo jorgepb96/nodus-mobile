@@ -1368,6 +1368,17 @@
         }
       }
     },
+    "Choose a model under Providers before sending this report.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un modelo en Proveedores antes de enviar este informe."
+          }
+        }
+      }
+    },
     "Choose a space": {
       "extractionState": "manual",
       "localizations": {
@@ -1859,6 +1870,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo enviar"
+          }
+        }
+      }
+    },
+    "Could not send the report": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido enviar el informe"
           }
         }
       }
@@ -3355,6 +3377,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Se refiere a un «%@», que este espacio no publica."
+          }
+        }
+      }
+    },
+    "It replaces the copy already in the vault rather than adding a second one.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sustituye a la copia que ya está en el vault en lugar de añadir una segunda."
+          }
+        }
+      }
+    },
+    "It travels to the server now. It joins the vault when whoever owns it next opens Nodus desktop and republishes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Viaja al servidor ahora. Se incorpora al vault cuando quien lo posee abra Nodus de escritorio y vuelva a publicar."
           }
         }
       }
@@ -6153,6 +6197,17 @@
         }
       }
     },
+    "Send": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar"
+          }
+        }
+      }
+    },
     "Send %lld change%@": {
       "extractionState": "manual",
       "localizations": {
@@ -6160,6 +6215,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enviar %lld cambio%@"
+          }
+        }
+      }
+    },
+    "Send again": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar otra vez"
           }
         }
       }
@@ -6182,6 +6248,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cola de envío"
+          }
+        }
+      }
+    },
+    "Send the report again": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a enviar el informe"
+          }
+        }
+      }
+    },
+    "Send the report to the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar el informe al vault"
+          }
+        }
+      }
+    },
+    "Send this report again?": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Volver a enviar este informe?"
+          }
+        }
+      }
+    },
+    "Send to Nodus desktop?": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Enviar a Nodus de escritorio?"
           }
         }
       }
@@ -6215,6 +6325,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enviando…"
+          }
+        }
+      }
+    },
+    "Sent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado"
+          }
+        }
+      }
+    },
+    "Sent to the desktop": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado al escritorio"
           }
         }
       }
@@ -7018,6 +7150,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo maquetar el informe para imprimirlo."
+          }
+        }
+      }
+    },
+    "The report could not be queued on this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido poner el informe en la cola de este dispositivo."
           }
         }
       }

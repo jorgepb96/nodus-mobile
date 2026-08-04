@@ -77,6 +77,32 @@ struct LocalisationTests {
         _ = try translated("Edit note")
     }
 
+    // Sending a report puts a document in somebody's corpus. Every word between the button and
+    // that consequence — the question, its two answers, the promise about when it lands, and
+    // each way it can fail — has to be in the reader's language, or the one irreversible act on
+    // this screen is the one that asks for consent in a language they did not choose.
+    @Test("everything said between pressing send and the report landing has Spanish")
+    func reportSendingStrings() throws {
+        _ = try translated("Send")
+        _ = try translated("Sent")
+        _ = try translated("Send again")
+        _ = try translated("Send to Nodus desktop?")
+        _ = try translated("Send this report again?")
+        _ = try translated("It travels to the server now. It joins the vault when whoever owns it next opens Nodus desktop and republishes.")
+        _ = try translated("It replaces the copy already in the vault rather than adding a second one.")
+        _ = try translated("Sent to the desktop")
+        _ = try translated("Could not send the report")
+        _ = try translated("The report could not be queued on this device.")
+        _ = try translated("Choose a model under Providers before sending this report.")
+        // Set by `sendReport` and rendered through `LocalizedStringKey`, so it is looked up at
+        // draw time and belongs to this screen as much as to the queue.
+        _ = try translated("Your access to this space is read only.")
+        // Spoken, never seen. A screen reader is the one place where a control labelled with a
+        // single word has to say what it does.
+        _ = try translated("Send the report to the vault")
+        _ = try translated("Send the report again")
+    }
+
     // These are read by iOS, not by the app, and a plist string on its own is shown verbatim in
     // every language — which is how both of them were Spanish-only for everybody.
     @Test("the permission prompts iOS shows are localised too")
