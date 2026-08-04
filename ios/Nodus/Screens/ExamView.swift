@@ -81,7 +81,7 @@ struct ExamView: View {
             .padding(16)
             .nodusTopAnchor()
         }
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .nodusHidesBottomBar()
         .navigationTitle(Text(verbatim: detail.exam.text("title") ?? String(localized: "Exam")))
         .navigationBarTitleDisplayMode(.inline)

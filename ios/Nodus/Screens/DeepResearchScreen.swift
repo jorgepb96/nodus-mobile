@@ -63,7 +63,7 @@ struct DeepResearchScreen: View {
         }
         // A finished report is a document and is set as one; the form that starts it is not.
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: report != nil))
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .nodusDismissesKeyboard()
         .navigationTitle("Deep Research")
         .navigationBarTitleDisplayMode(.inline)
@@ -269,7 +269,7 @@ struct DeepResearchScreen: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(report.objective).font(.title3.weight(.semibold))
+                PageText(report.objective, order: 0).font(.title3.weight(.semibold))
                 HStack(spacing: 12) {
                     Label("\(report.words.formatted()) words", systemImage: "text.alignleft")
                     Label(String(format: "%.1f pp.", report.pages), systemImage: "doc")
@@ -311,6 +311,9 @@ struct DeepResearchScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(NodusSpace.cardPadding)
             .nodusGlass(NodusGlass(.regular, tint: session.accent))
+            // Nought: the objective is the first thing on the page, and the sections number
+            // themselves from one.
+            .nodusSearchOrder(0)
 
             ReportBody(report: report, session: session)
 

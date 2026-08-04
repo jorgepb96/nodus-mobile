@@ -11,14 +11,15 @@ struct ReadingStyle: Equatable {
     /// A multiple of whatever Dynamic Type already decided. 1 is "as the rest of the app".
     var scale: Double = 1
     /// Set for prose that is meant to be read for minutes rather than glanced at: a report, an
-    /// immersion station. It buys open leading, real space between paragraphs and headings that
-    /// can be found by scrolling past them.
+    /// immersion station. It buys open leading, real space between paragraphs, headings that can
+    /// be found by scrolling past them, and both margins straight.
     ///
-    /// It used to be called `justified`, and it used to justify. On a phone that was a mistake:
-    /// a 370-point measure holds seven or eight words, so forcing both margins straight opens
-    /// rivers of white down the middle of every paragraph, and the hyphenation added to hide
-    /// them broke a word on most lines. Ragged right on a narrow column is not a compromise —
-    /// it is what a narrow column wants.
+    /// The justification is the one setting here that has been argued twice. It went away
+    /// because a 370-point measure holds seven or eight words and straightening both margins on
+    /// that opens rivers of white — and it is back because a report is a document, the desktop
+    /// sets the same prose justified, and a phone showing it ragged was the odd one out. What
+    /// does not come back with it is the hyphenation: that is what actually made it unreadable,
+    /// breaking a word on most lines of twenty pages.
     var document = false
 
     static let plain = ReadingStyle()

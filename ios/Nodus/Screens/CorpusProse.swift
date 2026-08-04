@@ -234,6 +234,11 @@ struct CorpusProse: View {
 
     @State private var opened: CorpusReference?
     @Environment(\.nodusReadingStyle) private var reading
+    /// The page's find bar, when there is one. Prose is the thing a reader searches, so this is
+    /// where the words of a page are declared — after the Markdown and the citations have been
+    /// resolved, because what is registered has to be what is on the screen.
+    @Environment(PageSearch.self) private var search: PageSearch?
+    @Environment(\.nodusSearchPath) private var searchPath
 
     init(_ text: String, accent: Color, session: SpaceSession? = nil, labels: [String: String] = [:]) {
         self.text = text
@@ -242,8 +247,11 @@ struct CorpusProse: View {
         self.labels = labels
     }
 
+    /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: the
+    /// list is recomputed on every pass of the body, and an identity that changes with it throws
+    /// away every `UITextView` on the page — and, now, the anchor the find bar scrolls to.
     private struct Block: Identifiable {
-        let id = UUID()
+        let id: Int
         let level: Int
         let text: String
     }
@@ -255,25 +263,34 @@ struct CorpusProse: View {
         // it, and the leading inside a paragraph has gone up too.
         VStack(alignment: .leading, spacing: reading.document ? 20 : 9) {
             ForEach(blocks) { block in
-                if block.level > 0 {
-                    heading(block)
-                } else if reading.document {
-                    DocumentProse(
-                        source: Self.linkify(block.text, labels: labels),
-                        font: reading.uiFont(.callout),
-                        accent: accent,
-                        linksLive: session != nil,
-                        onOpen: { url in
-                            guard let reference = CorpusReference(url) else { return false }
-                            opened = reference
-                            return true
-                        }
-                    )
-                } else {
-                    Text(attributed(block.text))
-                        .font(reading.font(.callout))
-                        .textSelection(.enabled)
+                let path = searchPath + [block.id]
+                Group {
+                    if block.level > 0 {
+                        heading(block, path: path)
+                    } else if reading.document {
+                        DocumentProse(
+                            source: Self.linkify(block.text, labels: labels),
+                            font: reading.uiFont(.callout),
+                            accent: accent,
+                            justified: true,
+                            linksLive: session != nil,
+                            highlights: search?.highlights(for: path),
+                            onOpen: { url in
+                                guard let reference = CorpusReference(url) else { return false }
+                                opened = reference
+                                return true
+                            }
+                        )
+                    } else {
+                        Text(attributed(block.text, path: path))
+                            .font(reading.font(.callout))
+                            .textSelection(.enabled)
+                    }
                 }
+                .id(PageSearchAnchor(path: path))
+                .onAppear { search?.register(path, text: displayed(block)) }
+                .onChange(of: block.text) { _, _ in search?.register(path, text: displayed(block)) }
+                .onDisappear { search?.unregister(path) }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -304,14 +321,19 @@ struct CorpusProse: View {
     /// above the body and indistinguishable from it three paragraphs later. Uppercase, bold,
     /// two sizes up and with room above it, a reader can find where a section starts by
     /// scrolling past rather than by reading.
-    private func heading(_ block: Block) -> some View {
+    private func heading(_ block: Block, path: PageSearch.Path) -> some View {
         // `##`, not just `#`. A Deep Research document opens at level two — the title is the
         // report's own, so its sections are `##` — and keying the part style to level one meant
         // every heading in every published report was set as a minor one. Seen against the
         // demo corpus: "Introduction" and "What the registers omit" arrived at body weight,
         // indistinguishable from the paragraph under them.
         let isPart = block.level <= 2 && reading.document
-        return Text(isPart ? block.text.uppercased() : block.text)
+        let shown = displayed(block)
+        var attributed = AttributedString(shown)
+        if let highlights = search?.highlights(for: path) {
+            attributed.nodusHighlight(highlights, in: shown)
+        }
+        return Text(attributed)
             .font(reading.font(isPart ? .title3 : .headline, weight: .bold))
             .tracking(isPart ? 0.7 : 0)
             .fixedSize(horizontal: false, vertical: true)
@@ -334,7 +356,7 @@ struct CorpusProse: View {
 
         func flush() {
             let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !joined.isEmpty { result.append(Block(level: 0, text: joined)) }
+            if !joined.isEmpty { result.append(Block(id: result.count, level: 0, text: joined)) }
             paragraph = []
         }
 
@@ -345,7 +367,7 @@ struct CorpusProse: View {
                 let heading = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
                 if !heading.isEmpty {
                     flush()
-                    result.append(Block(level: min(hashes, 3), text: heading))
+                    result.append(Block(id: result.count, level: min(hashes, 3), text: heading))
                     continue
                 }
             }
@@ -355,7 +377,27 @@ struct CorpusProse: View {
         return result
     }
 
-    private func attributed(_ source: String) -> AttributedString {
+    /// What this block puts on the screen, in plain characters.
+    ///
+    /// Not the Markdown: a reader looking for "registers" is looking for the word they can see,
+    /// and the source they cannot see spells it `**registers**` and spells a citation
+    /// `[Arco Blanco (2020)](nodus://idea/g-8969)`. Searching the source would miss the first
+    /// and match the second on a URL nobody was shown.
+    private func displayed(_ block: Block) -> String {
+        guard block.level == 0 else {
+            let isPart = block.level <= 2 && reading.document
+            return isPart ? block.text.uppercased() : block.text
+        }
+        guard let parsed = try? AttributedString(
+            markdown: Self.linkify(block.text, labels: labels),
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) else {
+            return block.text
+        }
+        return String(parsed.characters)
+    }
+
+    private func attributed(_ source: String, path: PageSearch.Path) -> AttributedString {
         guard var parsed = try? AttributedString(
             markdown: Self.linkify(source, labels: labels),
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
@@ -370,6 +412,9 @@ struct CorpusProse: View {
             parsed[run.range].foregroundColor = accent
             parsed[run.range].font = reading.font(.callout, weight: .medium)
             parsed[run.range].underlineStyle = session == nil ? nil : .single
+        }
+        if let highlights = search?.highlights(for: path) {
+            parsed.nodusHighlight(highlights, in: String(parsed.characters))
         }
         return parsed
     }
@@ -417,16 +462,23 @@ struct CorpusProse: View {
 ///   directly loses every bold and italic in the report.
 /// - A `nodus://` link is coloured, underlined and handed back to the caller on tap. The system
 ///   has no handler for that scheme, so letting the default action run opens nothing.
-/// - The measure is set ragged right at a line height of 1.3. It was justified and hyphenated,
-///   which is right for a printed page two columns wide and wrong for a phone: seven words to a
-///   line cannot be justified without opening rivers, and the hyphenation that was hiding them
-///   broke a word on most lines of a twenty-page report.
+/// - A document is set justified at a line height of 1.3, which is what a report asked to look
+///   like a report wants: both margins straight, the way the desktop sets the same prose and the
+///   way the PDF it exports comes out. Hyphenation stays off — it was tried, and breaking a word
+///   on most lines of a twenty-page report costs more than the white it saves — so a narrow
+///   measure pays for its straight right edge in word spacing rather than in broken words.
+/// - The find bar's highlights are painted on top rather than parsed in: the Markdown is the
+///   expensive half and it does not change while somebody types in the search field.
 private struct DocumentProse: UIViewRepresentable {
     /// Markdown, already linkified.
     let source: String
     let font: UIFont
     let accent: Color
+    /// Both margins straight. Set for a document; a chat bubble is never justified.
+    let justified: Bool
     let linksLive: Bool
+    /// What the page's search wants painted on this paragraph, if anything.
+    let highlights: PageSearch.Highlights?
     let onOpen: (URL) -> Bool
 
     func makeUIView(context: Context) -> UITextView {
@@ -450,19 +502,46 @@ private struct DocumentProse: UIViewRepresentable {
 
         // Parsing the Markdown and building the runs is the expensive part, and SwiftUI calls
         // this for any change anywhere in the tree — a scroll, a sheet, the size control being
-        // pressed on a *different* section. Only the four inputs below can change what the
-        // paragraph looks like, so anything else costs one comparison instead of a reparse.
-        let identity = Identity(source: source, size: font.pointSize, accent: accent, linksLive: linksLive)
-        guard context.coordinator.identity != identity else { return }
-        context.coordinator.identity = identity
-        view.attributedText = attributed()
+        // pressed on a *different* section. Only the five inputs below can change what the
+        // paragraph *says*, so anything else costs one comparison instead of a reparse.
+        let identity = Identity(
+            source: source,
+            size: font.pointSize,
+            accent: accent,
+            justified: justified,
+            linksLive: linksLive
+        )
+        let rebuilt = context.coordinator.identity != identity
+        if rebuilt {
+            context.coordinator.identity = identity
+            context.coordinator.base = attributed()
+        }
+        // Typing in the find bar changes every paragraph on the page, so the one thing it must
+        // not do is reparse them: the highlights go on a copy of what was already built.
+        guard rebuilt || context.coordinator.painted != highlights else { return }
+        context.coordinator.painted = highlights
+        view.attributedText = painted(context.coordinator.base)
     }
 
     struct Identity: Equatable {
         let source: String
         let size: CGFloat
         let accent: Color
+        let justified: Bool
         let linksLive: Bool
+    }
+
+    /// The paragraph with the search's marks on it, or exactly what was built when there are none.
+    private func painted(_ base: NSAttributedString) -> NSAttributedString {
+        guard let highlights, !highlights.ranges.isEmpty else { return base }
+        let output = NSMutableAttributedString(attributedString: base)
+        let whole = NSRange(location: 0, length: output.length)
+        for range in highlights.ranges {
+            guard let clamped = range.intersection(whole), clamped.length > 0 else { continue }
+            let colour = range == highlights.active ? Color.nodusFindActive : Color.nodusFindMatch
+            output.addAttribute(.backgroundColor, value: UIColor(colour), range: clamped)
+        }
+        return output
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
@@ -514,10 +593,14 @@ private struct DocumentProse: UIViewRepresentable {
         }
 
         let paragraph = NSMutableParagraphStyle()
-        // `.natural`, not `.justified`: right for Arabic and Hebrew as well as for Spanish, and
-        // ragged on the trailing edge in all of them.
-        paragraph.alignment = .natural
+        // Justified for a document, `.natural` for everything else. `.natural` is the one that
+        // is right for Arabic and Hebrew as well as for Spanish; `.justified` straightens both
+        // margins in all of them, which is what a report is asked to look like and what the
+        // same prose looks like on the desktop and in the PDF it exports.
+        paragraph.alignment = justified ? .justified : .natural
         paragraph.lineBreakMode = .byWordWrapping
+        // Still nought. Justification on a phone's measure pays in word spacing, and that is
+        // the cheaper of the two prices: hyphenation here broke a word on most lines.
         paragraph.hyphenationFactor = 0
         paragraph.lineHeightMultiple = 1.3
         output.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: output.length))
@@ -529,6 +612,11 @@ private struct DocumentProse: UIViewRepresentable {
         var linksLive: Bool
         /// What the text view was last built from, so an unrelated update costs nothing.
         var identity: Identity?
+        /// The parsed paragraph, before the search painted anything on it.
+        var base = NSAttributedString()
+        /// The marks currently on screen, so a keystroke that changes nothing here changes
+        /// nothing here.
+        var painted: PageSearch.Highlights?
 
         init(onOpen: @escaping (URL) -> Bool, linksLive: Bool) {
             self.onOpen = onOpen

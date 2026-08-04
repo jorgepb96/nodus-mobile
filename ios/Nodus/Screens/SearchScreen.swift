@@ -80,7 +80,7 @@ struct SearchScreen: View {
         .nodusDismissesKeyboard()
         .listStyle(.plain)
         .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
         // The field is drawn here rather than with `.searchable`. This is a *root* screen of

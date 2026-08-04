@@ -25,16 +25,19 @@ struct ImmersionView: View {
                 if let error {
                     NodusNotice(tone: .blocked, title: "Could not open the session", message: LocalizedStringKey(error))
                 } else if let plan {
-                    header(plan)
+                    // The numbers are the reading order the find bar walks: an itinerary is
+                    // read from its overview down to its frontiers, whatever the layout does.
+                    header(plan).nodusSearchOrder(1)
                     if !plan.overview.isEmpty {
                         card(title: "Overview", icon: "text.alignleft") {
                             CorpusProse(plan.overview, accent: session.accent, session: session)
                         }
+                        .nodusSearchOrder(2)
                     }
-                    stations(plan)
-                    if !plan.keyTerms.isEmpty { keyTerms(plan) }
-                    if !plan.contrasts.isEmpty { contrasts(plan) }
-                    if !plan.frontiers.isEmpty { frontiers(plan) }
+                    stations(plan).nodusSearchOrder(3)
+                    if !plan.keyTerms.isEmpty { keyTerms(plan).nodusSearchOrder(4) }
+                    if !plan.contrasts.isEmpty { contrasts(plan).nodusSearchOrder(5) }
+                    if !plan.frontiers.isEmpty { frontiers(plan).nodusSearchOrder(6) }
                     if !plan.exam.isEmpty { examLink(plan) }
                 } else {
                     ProgressView().tint(session.accent).frame(maxWidth: .infinity).padding(.top, 40)
@@ -43,7 +46,7 @@ struct ImmersionView: View {
             .padding(16)
             .nodusTopAnchor()
         }
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .navigationTitle("Immersion")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
@@ -54,9 +57,9 @@ struct ImmersionView: View {
 
     private func header(_ plan: ImmersionPlan) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(plan.title.isEmpty ? title : plan.title).font(.title3.weight(.semibold))
+            PageText(plan.title.isEmpty ? title : plan.title, order: 0).font(.title3.weight(.semibold))
             if !plan.topic.isEmpty {
-                Text(plan.topic).font(.footnote).foregroundStyle(.secondary)
+                PageText(plan.topic, order: 1).font(.footnote).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
                 if plan.minutes > 0 { Label("\(plan.minutes) min", systemImage: "clock") }
@@ -85,10 +88,11 @@ struct ImmersionView: View {
                             .background(session.accent.opacity(0.18), in: Circle())
                             .foregroundStyle(session.accent)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(station.title).font(.subheadline.weight(.medium))
+                            PageText(station.title, order: 0).font(.subheadline.weight(.medium))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             if !station.question.isEmpty {
-                                Text(station.question).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                PageText(station.question, order: 1)
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             }
                             HStack(spacing: 10) {
                                 if station.minutes > 0 { Label("\(station.minutes) min", systemImage: "clock") }
@@ -103,6 +107,7 @@ struct ImmersionView: View {
                     .nodusGlass(NodusGlass(.thin, tint: session.accent, interactive: true))
                 }
                 .buttonStyle(.plain)
+                .nodusSearchOrder(index)
             }
         }
     }
@@ -110,12 +115,13 @@ struct ImmersionView: View {
     private func keyTerms(_ plan: ImmersionPlan) -> some View {
         card(title: "Key terms", icon: "character.book.closed") {
             VStack(alignment: .leading, spacing: 9) {
-                ForEach(plan.keyTerms, id: \.term) { term in
+                ForEach(Array(plan.keyTerms.enumerated()), id: \.element.term) { index, term in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(term.term).font(.caption.weight(.semibold))
-                        Text(term.definition).font(.caption).foregroundStyle(.secondary)
+                        PageText(term.term, order: 0).font(.caption.weight(.semibold))
+                        PageText(term.definition, order: 1).font(.caption).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .nodusSearchOrder(index)
                 }
             }
         }
@@ -129,18 +135,21 @@ struct ImmersionView: View {
     private func contrasts(_ plan: ImmersionPlan) -> some View {
         card(title: "Positions in contrast", icon: "person.2") {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(plan.contrasts, id: \.stationId) { row in
+                ForEach(Array(plan.contrasts.enumerated()), id: \.element.stationId) { index, row in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(row.question).font(.caption.weight(.semibold))
-                        ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
+                        PageText(row.question, order: 0).font(.caption.weight(.semibold))
+                        ForEach(Array(row.cells.enumerated()), id: \.offset) { cellIndex, cell in
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(cell.author).font(.caption2.weight(.medium)).foregroundStyle(session.accent)
-                                Text(cell.stance).font(.caption2).foregroundStyle(.secondary)
+                                PageText(cell.author, order: 0)
+                                    .font(.caption2.weight(.medium)).foregroundStyle(session.accent)
+                                PageText(cell.stance, order: 1).font(.caption2).foregroundStyle(.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .nodusSearchOrder(cellIndex + 1)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .nodusSearchOrder(index)
                 }
             }
         }
@@ -149,14 +158,15 @@ struct ImmersionView: View {
     private func frontiers(_ plan: ImmersionPlan) -> some View {
         card(title: "Open frontiers", icon: "questionmark.diamond") {
             VStack(alignment: .leading, spacing: 9) {
-                ForEach(Array(plan.frontiers.enumerated()), id: \.offset) { _, frontier in
+                ForEach(Array(plan.frontiers.enumerated()), id: \.offset) { index, frontier in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(frontier.statement).font(.caption)
+                        PageText(frontier.statement, order: 0).font(.caption)
                         if let detail = frontier.detail, !detail.isEmpty {
-                            Text(detail).font(.caption2).foregroundStyle(.tertiary)
+                            PageText(detail, order: 1).font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .nodusSearchOrder(index)
                 }
             }
         }
@@ -223,64 +233,75 @@ private struct ImmersionStationView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Station \(number)").font(.caption).foregroundStyle(accent)
-                    Text(station.title).font(.title3.weight(.semibold))
+                    PageText(station.title, order: 0).font(.title3.weight(.semibold))
                     if !station.question.isEmpty {
-                        Text(station.question).font(.footnote).foregroundStyle(.secondary)
+                        PageText(station.question, order: 1).font(.footnote).foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .nodusGlass(NodusGlass(.regular, tint: accent))
+                .nodusSearchOrder(1)
 
                 if !station.context.isEmpty {
                     block("Why this matters", "map") { CorpusProse(station.context, accent: accent, session: session) }
+                        .nodusSearchOrder(2)
                 }
                 if !station.synthesis.isEmpty {
                     block("Synthesis", "text.alignleft") { CorpusProse(station.synthesis, accent: accent, session: session) }
+                        .nodusSearchOrder(3)
                 }
                 if !station.takeaways.isEmpty {
                     block("What to take away", "checkmark.circle") {
                         VStack(alignment: .leading, spacing: 7) {
-                            ForEach(Array(station.takeaways.enumerated()), id: \.offset) { _, line in
+                            ForEach(Array(station.takeaways.enumerated()), id: \.offset) { index, line in
                                 HStack(alignment: .top, spacing: 7) {
                                     Image(systemName: "circle.fill").font(.system(size: 5)).foregroundStyle(accent)
                                         .padding(.top, 6)
-                                    Text(line).font(.callout)
+                                    PageText(line, order: index).font(.callout)
                                 }
                             }
                         }
                     }
+                    .nodusSearchOrder(4)
                 }
                 if !station.positions.isEmpty {
                     block("Who argues what", "person.2") {
                         VStack(alignment: .leading, spacing: 9) {
-                            ForEach(Array(station.positions.enumerated()), id: \.offset) { _, position in
+                            ForEach(Array(station.positions.enumerated()), id: \.offset) { index, position in
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(position.name).font(.caption.weight(.semibold)).foregroundStyle(accent)
-                                    Text(position.position).font(.caption).foregroundStyle(.secondary)
+                                    PageText(position.name, order: 0)
+                                        .font(.caption.weight(.semibold)).foregroundStyle(accent)
+                                    PageText(position.position, order: 1)
+                                        .font(.caption).foregroundStyle(.secondary)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .nodusSearchOrder(index)
                             }
                         }
                     }
+                    .nodusSearchOrder(5)
                 }
                 if !station.citations.isEmpty {
                     block("Sources", "text.quote") {
                         VStack(alignment: .leading, spacing: 11) {
-                            ForEach(Array(station.citations.enumerated()), id: \.offset) { _, citation in
+                            ForEach(Array(station.citations.enumerated()), id: \.offset) { index, citation in
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(citation.reference).font(.caption2.weight(.medium)).foregroundStyle(accent)
+                                    PageText(citation.reference, order: 0)
+                                        .font(.caption2.weight(.medium)).foregroundStyle(accent)
                                     if !citation.text.isEmpty {
-                                        Text("“\(citation.text)”")
+                                        PageText("“\(citation.text)”", order: 1)
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                             .textSelection(.enabled)
                                     }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .nodusSearchOrder(index)
                             }
                         }
                     }
+                    .nodusSearchOrder(6)
                 }
                 if !station.quiz.isEmpty {
                     NavigationLink {
@@ -301,7 +322,7 @@ private struct ImmersionStationView: View {
             .padding(16)
             .nodusTopAnchor()
         }
-        .nodusScrollToTop(accent: accent)
+        .nodusPageFunctions(accent: accent)
         .nodusHidesBottomBar()
         .navigationTitle(station.title)
         .navigationBarTitleDisplayMode(.inline)

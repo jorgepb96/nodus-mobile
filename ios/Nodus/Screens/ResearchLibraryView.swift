@@ -295,7 +295,7 @@ struct ReportBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ForEach(Array(report.sections.enumerated()), id: \.offset) { _, section in
+            ForEach(Array(report.sections.enumerated()), id: \.offset) { index, section in
                 VStack(alignment: .leading, spacing: 14) {
                     ReportSectionTitle(section.title, accent: session.accent)
                     // The prose carries the citations the validator kept. Rendered as plain
@@ -307,12 +307,18 @@ struct ReportBody: View {
                         session: session,
                         labels: referenceLabels
                     )
+                    // One, because the title above it took nought. Every paragraph of the prose
+                    // numbers itself under this.
+                    .nodusSearchOrder(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(ReportLayout.sectionPadding)
                 // The same surface the header above it wears. A report that reads as one
                 // document should not be a card followed by a column of darker panels.
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                // Where this section sits in the report, so find-in-page walks the matches
+                // down the document rather than in whatever order the paragraphs registered.
+                .nodusSearchOrder(index + 1)
             }
 
             if !report.references.isEmpty {
@@ -320,13 +326,15 @@ struct ReportBody: View {
                     ReportSectionTitle("References", accent: session.accent)
                     Text("Built from the works actually cited.")
                         .font(.caption2).foregroundStyle(.secondary)
-                    ForEach(report.references, id: \.token) { entry in
-                        Text(verbatim: "· \(entry.label)").font(.caption)
+                    ForEach(Array(report.references.enumerated()), id: \.element.token) { index, entry in
+                        PageText("· \(entry.label)", order: index + 1).font(.caption)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(ReportLayout.sectionPadding)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                // After every section, whatever the report turned out to have.
+                .nodusSearchOrder(report.sections.count + 1)
             }
         }
     }
@@ -367,7 +375,7 @@ struct LocalReportReader: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(saved.title).font(.title3.weight(.semibold))
+                    PageText(saved.title, order: 0).font(.title3.weight(.semibold))
                     HStack(spacing: 12) {
                         Label("\(report.words.formatted()) words", systemImage: "text.alignleft")
                         Label(String(format: "%.1f pp.", report.pages), systemImage: "doc")
@@ -398,6 +406,7 @@ struct LocalReportReader: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(NodusSpace.cardPadding)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                .nodusSearchOrder(0)
 
                 ReportBody(report: report, session: session)
 
@@ -413,7 +422,7 @@ struct LocalReportReader: View {
             .nodusTopAnchor()
         }
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .nodusHidesBottomBar()
         .navigationTitle(saved.mode.label)
         .navigationBarTitleDisplayMode(.inline)
@@ -468,9 +477,10 @@ struct PublishedReportReader: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(row.text("title") ?? "Report").font(.title3.weight(.semibold))
+                    PageText(row.text("title") ?? String(localized: "Report"), order: 0)
+                        .font(.title3.weight(.semibold))
                     if let objective = row.text("objective") {
-                        Text(objective).font(.subheadline).foregroundStyle(.secondary)
+                        PageText(objective, order: 1).font(.subheadline).foregroundStyle(.secondary)
                     }
                     if let document {
                         ReportActions(
@@ -489,13 +499,14 @@ struct PublishedReportReader: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(NodusSpace.cardPadding)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                .nodusSearchOrder(0)
 
                 if let error {
                     NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(error))
                 }
 
                 if let sections = prose {
-                    ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                    ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
                         VStack(alignment: .leading, spacing: 14) {
                             if let heading = section.heading {
                                 ReportSectionTitle(heading, accent: session.accent)
@@ -504,10 +515,12 @@ struct PublishedReportReader: View {
                             // and `nodus://` citations in it. Rendered as plain text, both
                             // arrived as punctuation.
                             CorpusProse(section.body, accent: session.accent, session: session)
+                                .nodusSearchOrder(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(ReportLayout.sectionPadding)
                         .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                        .nodusSearchOrder(index + 1)
                     }
                 } else if detail == nil, error == nil {
                     ProgressView().tint(session.accent).frame(maxWidth: .infinity)
@@ -519,7 +532,7 @@ struct PublishedReportReader: View {
             .nodusTopAnchor()
         }
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .nodusHidesBottomBar()
         .navigationTitle("Report")
         .navigationBarTitleDisplayMode(.inline)
@@ -611,7 +624,8 @@ struct ReportSectionTitle: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
+            // Zero, so a section's own name is the first thing the find bar walks onto inside it.
+            PageText(title.uppercased(), order: 0)
                 .font(reading.font(.title3, weight: .bold))
                 .tracking(0.8)
                 .fixedSize(horizontal: false, vertical: true)

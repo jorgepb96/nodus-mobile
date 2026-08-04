@@ -1060,6 +1060,17 @@
         }
       }
     },
+    "Ask about this page": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preguntar sobre esta página"
+          }
+        }
+      }
+    },
     "Ask the vault something and the exchange is kept on this device.": {
       "extractionState": "manual",
       "localizations": {
@@ -1551,6 +1562,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Borrar"
+          }
+        }
+      }
+    },
+    "Close the page tools": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar las herramientas de la página"
+          }
+        }
+      }
+    },
+    "Close the search": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar la búsqueda"
           }
         }
       }
@@ -2963,6 +2996,17 @@
         }
       }
     },
+    "Find on this page": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar en esta página"
+          }
+        }
+      }
+    },
     "Find the idea to start from": {
       "extractionState": "manual",
       "localizations": {
@@ -3898,6 +3942,17 @@
         }
       }
     },
+    "Match %lld of %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coincidencia %lld de %lld"
+          }
+        }
+      }
+    },
     "Materials": {
       "extractionState": "manual",
       "localizations": {
@@ -4158,6 +4213,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Siguiente"
+          }
+        }
+      }
+    },
+    "Next match": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coincidencia siguiente"
           }
         }
       }
@@ -5207,6 +5273,17 @@
         }
       }
     },
+    "Page tools": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramientas de la página"
+          }
+        }
+      }
+    },
     "Pair": {
       "extractionState": "manual",
       "localizations": {
@@ -5478,6 +5555,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Anterior"
+          }
+        }
+      }
+    },
+    "Previous match": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coincidencia anterior"
           }
         }
       }
