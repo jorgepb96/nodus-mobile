@@ -42,7 +42,7 @@ struct WritingView: View {
                 }
             }
         }
-        .sheet(isPresented: $composing) {
+        .nodusSheet(isPresented: $composing) {
             NoteEditor(accent: session.accent, note: nil) { title, body in
                 await controller?.queueNote(title: title, body: body, folderId: nil)
             }

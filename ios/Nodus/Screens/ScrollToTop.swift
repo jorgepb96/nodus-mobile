@@ -15,24 +15,6 @@ enum NodusScrollAnchor: Hashable {
     case top
 }
 
-private struct TabBarClearanceKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    /// True for the four screens that are the root of a tab.
-    ///
-    /// On iOS 26 the tab bar floats *over* the content, so anything an overlay puts in the
-    /// bottom-right corner of a tab root lands on the bar and the bar takes the touch — which
-    /// on the tab you are already looking at does nothing at all, and reads exactly like a
-    /// dead button. A pushed screen has no bar there and wants the button low, where a thumb
-    /// is. The two cases need different numbers, so the shell says which one this is.
-    var nodusHasTabBar: Bool {
-        get { self[TabBarClearanceKey.self] }
-        set { self[TabBarClearanceKey.self] = newValue }
-    }
-}
-
 extension View {
     /// Marks the first element of a scrollable as the place "back to top" goes.
     func nodusTopAnchor() -> some View {

@@ -115,9 +115,20 @@ public extension View {
     /// scrolling looked like it "lost" the tint: there was never any tint underneath to lose.
     ///
     /// A pushed screen is a new view in the same container, so it needs its own.
-    func nodusPageBackdrop(accent: Color) -> some View {
+    ///
+    /// And since it is the one thing every screen in the app already says about itself, it is
+    /// also where the screen reserves the height of the bottom bar — see
+    /// `NodusBottomBarClearance`. The two are the same statement: this view is a page, it paints
+    /// the wash, and it does not come to rest under the bar floating over it. Reserving it here
+    /// rather than at each screen's own bottom is what covers the pushed destinations, which are
+    /// exactly the screens nobody remembers to give an inset to.
+    ///
+    /// `reservesBottomBar: false` is for a backdrop behind a screen the shell has already made
+    /// room for. There is one, and the parameter exists so that it can say so.
+    func nodusPageBackdrop(accent: Color, reservesBottomBar: Bool = true) -> some View {
         background { NodusBackdrop(accent: accent).ignoresSafeArea() }
             .nodusTextHierarchy()
+            .modifier(NodusBottomBarClearance(enabled: reservesBottomBar))
     }
 }
 

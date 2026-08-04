@@ -284,7 +284,7 @@ struct CorpusProse: View {
             opened = reference
             return .handled
         })
-        .sheet(item: $opened) { reference in
+        .nodusSheet(item: $opened) { reference in
             if let session {
                 NavigationStack {
                     CorpusReferenceView(session: session, reference: reference)
