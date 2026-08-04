@@ -221,14 +221,21 @@ public struct NodusGlassButtonStyle: ButtonStyle {
             .foregroundStyle(accent)
             .padding(.vertical, 11)
             .padding(.horizontal, 16)
-            .background(accent.opacity(0.12), in: NodusRadius.controlShape)
+            // The tint belongs to the glass, not to a plate under it.
+            //
+            // This used to add `accent.opacity(0.12)` as a `background` *inside* the glass —
+            // which puts an opaque wash between the material and the label, the one place
+            // Apple's guidance says a fill must never go. On iOS 26 it was most of why a
+            // secondary button read as a coloured rectangle rather than as glass. The colour is
+            // now carried by `Glass.tint`, which is the supported way to say it, and the rim is
+            // quiet enough to be an edge rather than an outline.
             .nodusGlass(
                 NodusGlass(.regular, tint: accent, interactive: true),
                 in: NodusRadius.controlShape
             )
             .overlay {
                 NodusRadius.controlShape
-                    .strokeBorder(accent.opacity(0.55), lineWidth: 1)
+                    .strokeBorder(accent.opacity(0.32), lineWidth: 1)
                     .allowsHitTesting(false)
             }
             .opacity(isEnabled ? 1 : 0.4)

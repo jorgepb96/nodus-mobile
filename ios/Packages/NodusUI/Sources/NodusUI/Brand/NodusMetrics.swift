@@ -60,4 +60,13 @@ public enum NodusMotion {
     public static let deliberate: Animation = .easeOut(duration: 0.34)
     /// The one springy thing: a press, where the overshoot reads as give rather than as motion.
     public static let press: Animation = .spring(response: 0.3, dampingFraction: 0.72)
+    /// Glass moving from one place to another.
+    ///
+    /// The second springy thing, and for the same reason as the first: `easeOut` is what a
+    /// rectangle does and a spring is what a liquid does. The bottom bar's lozenge travels on
+    /// this, so it trails a little behind the finger dragging it and arrives with the small
+    /// settle that tells you it has weight — which is most of what makes it read as a material
+    /// rather than as a rectangle being moved. Quick enough to keep up with a thumb: a slower
+    /// response reads as lag rather than as weight.
+    public static let morph: Animation = .spring(response: 0.32, dampingFraction: 0.8)
 }
