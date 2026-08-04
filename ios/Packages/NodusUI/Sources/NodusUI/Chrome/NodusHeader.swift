@@ -57,15 +57,6 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
             .overlay(alignment: .leading) { accessory(Leading.self) { leading } }
             .overlay(alignment: .trailing) { accessory(Trailing.self) { trailing } }
             .padding(.horizontal, 6)
-            // Room to breathe under the cutout, and no more.
-            //
-            // This used to be a stacked mark, title and subtitle with 10 above and 14 below —
-            // some eighty-eight points of chrome before the first thing anybody opened the app
-            // for, repeated on all four tabs. Laid out across instead of down, it is a little
-            // over half that, and the mark, the name, the count and both controls are all still
-            // on it.
-            .padding(.top, collapsed ? 2 : 5)
-            .padding(.bottom, collapsed ? 5 : 9)
         // The chrome bleeds up behind the cutout; the content does not. Putting the halo and
         // the glass in the *background* rather than beside the content in a ZStack is what
         // keeps them separable — an earlier version had the halo's GeometryReader stretch the
@@ -115,7 +106,19 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
         }
     }
 
-    /// The mark, the vault's name and its count — across, not down.
+    /// The mark on the centre line, and everything else small underneath it.
+    ///
+    /// Down, not across. Laid out across, the mark sat wherever the vault's name left room for
+    /// it: "Franquismo" and "Testimonios orales del exilio" are not the same width, so the one
+    /// fixed thing in the chrome moved from screen to screen and from vault to vault. Centring
+    /// the *cluster* is not centring the mark. On its own line it is on the centre line of the
+    /// screen and stays there, whatever is written under it.
+    ///
+    /// What is written under it is the vault's name and its record count, in the type the count
+    /// was already set in — small, second level, one line. They are data about the space, not a
+    /// title, and at that size they cost nothing: the mark and the caption together come to
+    /// thirty-six points inside a row whose floor is the accessories' forty-four, so the header
+    /// is exactly as tall as it was.
     ///
     /// `ViewThatFits` rather than a layout priority: when a long vault name and its record count
     /// cannot both fit, the count is what goes, and it goes *entirely*. Compressed instead, it
@@ -123,9 +126,32 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
     /// same clutter saying nothing. The name never truncates, because two spaces on one server
     /// can differ only in their last few words.
     private var centrepiece: some View {
-        ViewThatFits(in: .horizontal) {
-            cluster(withSubtitle: true)
-            cluster(withSubtitle: false)
+        // Two centrings, one inside the other, and no hand-set gaps at all.
+        //
+        // The mark is centred in the whole of the chrome below the cutout, so it sits on the
+        // horizontal centre line of the header as well as the vertical one. What is left under
+        // it — from the mark's own bottom edge to the bottom of the header — is then the space
+        // the caption is centred in. Neither number is written down: the mark's top padding is
+        // half of what the chrome has spare, and the caption simply fills the rest, which is
+        // what keeps the two balanced when the chrome collapses and when a reader's text size
+        // makes the caption taller.
+        VStack(spacing: 0) {
+            NodusMark(style: .accent(accent), progress: markProgress, nodeReveal: markProgress)
+                .frame(width: Self.markSize, height: Self.markSize)
+                .padding(.top, (contentHeight - Self.markSize) / 2)
+                .accessibilityHidden(false)
+                .accessibilityLabel("Nodus")
+            // Two spacers rather than `maxHeight: .infinity` on the caption. A child that will
+            // take any height it is offered, inside a frame whose height is only a *minimum*,
+            // is offered the whole window — the header grew to fill the screen, mark at the top
+            // and caption in the middle of it. A pair of spacers divides what is actually left
+            // and cannot ask for more than that.
+            Spacer(minLength: 0)
+            ViewThatFits(in: .horizontal) {
+                caption(withSubtitle: true)
+                caption(withSubtitle: false)
+            }
+            Spacer(minLength: 0)
         }
         // Room reserved for the accessories, rather than a fixed cap on the title.
         //
@@ -137,36 +163,53 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
         // a 440-point phone, 191 on the narrowest one the app supports, and the count beside
         // the vault's name appears or does not according to which of those it is.
         .padding(.horizontal, 92)
-        // `minHeight`, not `height`: the accessories set the floor at 44 and the title is
-        // allowed to make it taller rather than be clipped by it.
-        .frame(minHeight: 44)
+        // Stated, not a floor. The two centrings above are both measured against this number, so
+        // it has to be a number: a minimum leaves the frame free to accept whatever height it is
+        // offered, and inside a `safeAreaInset` what it is offered is the window.
+        .frame(height: contentHeight)
         .accessibilityElement(children: .combine)
     }
 
-    private func cluster(withSubtitle: Bool) -> some View {
-        HStack(spacing: 7) {
-            NodusMark(style: .accent(accent), progress: markProgress, nodeReveal: markProgress)
-                .frame(width: 22, height: 22)
-                .accessibilityHidden(false)
-                .accessibilityLabel("Nodus")
+    /// The mark's own size, named because two of the header's measurements are taken from it.
+    /// Computed rather than stored: `NodusHeader` is generic over its two accessories, and a
+    /// generic type may not hold a static stored property.
+    private static var markSize: CGFloat { 22 }
+
+    /// What the chrome occupies below the cutout, and the whole of what the layout above is
+    /// centred in.
+    ///
+    /// It was three numbers before — five above the row, forty-four of row, nine below — and the
+    /// nine was the gap to the content under the chrome rather than anything about the header,
+    /// which is what put a centred block off centre. One number, and the same total as the three
+    /// it replaces, so the header is the height it has always been.
+    private var contentHeight: CGFloat { collapsed ? 51 : 58 }
+
+    /// The vault's name and its record count, in one voice.
+    ///
+    /// The count was already `.caption2` in the second level of text, and the name was a
+    /// semibold subheadline in the first — two sizes and two weights for two facts of the same
+    /// kind. Under the mark they are one line of small print about the space you are in, so
+    /// they are set the same way, and the separator between them is the one the app uses
+    /// everywhere else it puts two facts on a line.
+    private func caption(withSubtitle: Bool) -> some View {
+        HStack(spacing: 4) {
             if let title {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                     // The one piece of the header that grows with the reader's text size, so it
                     // is also the one that has to be allowed to give: at the accessibility sizes
-                    // a subheadline is nearly twice its default and would push the count off the
-                    // row and the row past the chrome that draws it.
+                    // even a caption is far past its default and would push the count off the
+                    // line and the line past the chrome that draws it.
                     .minimumScaleFactor(0.75)
                 if withSubtitle, let subtitle, !collapsed {
                     Text(verbatim: "· \(subtitle)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .transition(.opacity)
                 }
             }
         }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
     }
 
     /// The bar itself, extended up under the status area so the cutout sits *on* the chrome.
