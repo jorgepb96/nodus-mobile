@@ -51,11 +51,9 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
         // The centrepiece is the content and the accessories float over it, not the other way
         // round. With an HStack of small buttons driving the height, the taller centred cluster
         // overflowed at both ends — the mark disappearing under the Dynamic Island and the
-        // subtitle being cut off by the glass.
+        // subtitle being cut off by the glass. Nothing here but the padding to the screen edge,
+        // which is the accessories' own margin: they are overlaid one level down, on the mark.
         centrepiece
-            .frame(maxWidth: .infinity)
-            .overlay(alignment: .leading) { accessory(Leading.self) { leading } }
-            .overlay(alignment: .trailing) { accessory(Trailing.self) { trailing } }
             .padding(.horizontal, 6)
         // The chrome bleeds up behind the cutout; the content does not. Putting the halo and
         // the glass in the *background* rather than beside the content in a ZStack is what
@@ -117,8 +115,8 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
     /// What is written under it is the vault's name and its record count, in the type the count
     /// was already set in — small, second level, one line. They are data about the space, not a
     /// title, and at that size they cost nothing: the mark and the caption together come to
-    /// thirty-six points inside a row whose floor is the accessories' forty-four, so the header
-    /// is exactly as tall as it was.
+    /// thirty-five points inside a chrome that is fifty-eight tall, so the header is exactly as
+    /// tall as it has always been and the pair sits in the middle of it.
     ///
     /// `ViewThatFits` rather than a layout priority: when a long vault name and its record count
     /// cannot both fit, the count is what goes, and it goes *entirely*. Compressed instead, it
@@ -126,51 +124,80 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
     /// same clutter saying nothing. The name never truncates, because two spaces on one server
     /// can differ only in their last few words.
     private var centrepiece: some View {
-        // Two centrings, one inside the other, and no hand-set gaps at all.
+        // One block, centred as a block — no hand-set gaps at all.
         //
-        // The mark is centred in the whole of the chrome below the cutout, so it sits on the
-        // horizontal centre line of the header as well as the vertical one. What is left under
-        // it — from the mark's own bottom edge to the bottom of the header — is then the space
-        // the caption is centred in. Neither number is written down: the mark's top padding is
-        // half of what the chrome has spare, and the caption simply fills the rest, which is
-        // what keeps the two balanced when the chrome collapses and when a reader's text size
-        // makes the caption taller.
-        VStack(spacing: 0) {
-            NodusMark(style: .accent(accent), progress: markProgress, nodeReveal: markProgress)
-                .frame(width: Self.markSize, height: Self.markSize)
-                .padding(.top, (contentHeight - Self.markSize) / 2)
-                .accessibilityHidden(false)
-                .accessibilityLabel("Nodus")
-            // Two spacers rather than `maxHeight: .infinity` on the caption. A child that will
-            // take any height it is offered, inside a frame whose height is only a *minimum*,
-            // is offered the whole window — the header grew to fill the screen, mark at the top
-            // and caption in the middle of it. A pair of spacers divides what is actually left
-            // and cannot ask for more than that.
-            Spacer(minLength: 0)
-            ViewThatFits(in: .horizontal) {
-                caption(withSubtitle: true)
-                caption(withSubtitle: false)
-            }
-            Spacer(minLength: 0)
+        // The mark used to be centred in the chrome *on its own*, with the caption dropped into
+        // whatever was left underneath. That is not the same thing as a centred header: it put
+        // eighteen points of air above the mark and three below the caption, so the mark, the
+        // glyphs beside it and the small print all sat low in the glass, hard against its bottom
+        // edge. What has to be centred is the pair. Stacking them and letting the fixed frame
+        // centre the stack splits the spare height evenly above and below the two together, and
+        // keeps doing so when the chrome collapses and when a reader's text size makes the
+        // caption taller.
+        //
+        // The gap between the two is the same size as the space left over above and below them.
+        // Butted together, the caption sat under the mark's lower node with nothing between them
+        // and read as part of the drawing. Eight points is what makes the three gaps equal at the
+        // default text size — mark and caption come to thirty-five points, the chrome is
+        // fifty-eight, and what is spare divides into two margins of a little over seven.
+        VStack(spacing: 8) {
+            markRow
+            captionRow
         }
-        // Room reserved for the accessories, rather than a fixed cap on the title.
-        //
-        // They are overlaid on this view rather than laid out beside it — that is what keeps
-        // the mark centred on the screen and not centred on whatever is left — so nothing
-        // stops them meeting the title in the middle except this. Symmetric, and sized for the
-        // widest side (two 44-point controls), so the mark stays on the centre line and the
-        // header does not shift as you change tab. What is left is width − 184: 256 points on
-        // a 440-point phone, 191 on the narrowest one the app supports, and the count beside
-        // the vault's name appears or does not according to which of those it is.
-        .padding(.horizontal, 92)
-        // Stated, not a floor. The two centrings above are both measured against this number, so
-        // it has to be a number: a minimum leaves the frame free to accept whatever height it is
-        // offered, and inside a `safeAreaInset` what it is offered is the window.
+        // Stated, not a floor. The centring above is measured against this number, so it has to
+        // be a number: a minimum leaves the frame free to accept whatever height it is offered,
+        // and inside a `safeAreaInset` what it is offered is the window.
         .frame(height: contentHeight)
+    }
+
+    /// The mark on the centre line of the screen, and the accessories on the centre line of the
+    /// mark.
+    ///
+    /// The two clusters are overlaid on the mark's own row rather than on the header as a whole.
+    /// Overlaid on the header they were centred in it, which was the mark's centre line only for
+    /// as long as the mark was the thing centred in it — the moment the caption joined the mark
+    /// in one centred block, a header-centred glyph sat six points below the mark it is meant to
+    /// sit beside. Measured against the row, a glyph and the mark share a line whatever the
+    /// caption under them does, and at the accessibility text sizes the caption is nearly twice
+    /// its default height.
+    ///
+    /// An overlay does not enlarge what it is over, so the 44-point accessory box hangs eleven
+    /// points past the 22-point row at each end. That is deliberate: the box is a target, the
+    /// 17-point glyph inside it is the drawing, and the glass it hangs over runs up behind the
+    /// status area anyway.
+    private var markRow: some View {
+        NodusMark(style: .accent(accent), progress: markProgress, nodeReveal: markProgress)
+            .frame(width: Self.markSize, height: Self.markSize)
+            .accessibilityHidden(false)
+            .accessibilityLabel("Nodus")
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .leading) { accessory(Leading.self) { leading } }
+            .overlay(alignment: .trailing) { accessory(Trailing.self) { trailing } }
+    }
+
+    /// The line of small print, kept clear of the accessories.
+    ///
+    /// Room reserved for them, rather than a fixed cap on the title. They are overlaid on the row
+    /// above rather than laid out beside this — that is what keeps the mark centred on the screen
+    /// and not centred on whatever is left — so nothing stops them meeting the title in the
+    /// middle except this. Symmetric, and sized for the widest side (two 44-point controls), so
+    /// the header does not shift as you change tab. What is left is width − 184: 256 points on a
+    /// 440-point phone, 191 on the narrowest one the app supports, and the count beside the
+    /// vault's name appears or does not according to which of those it is.
+    ///
+    /// One element, not two: the name and the count are one fact about the space you are in, and
+    /// VoiceOver reading "nodus-m2-air" and "· 135 533 records" as separate stops is two stops
+    /// for one line.
+    private var captionRow: some View {
+        ViewThatFits(in: .horizontal) {
+            caption(withSubtitle: true)
+            caption(withSubtitle: false)
+        }
+        .padding(.horizontal, 92)
         .accessibilityElement(children: .combine)
     }
 
-    /// The mark's own size, named because two of the header's measurements are taken from it.
+    /// The mark's own size, named because the header's measurements are taken from it.
     /// Computed rather than stored: `NodusHeader` is generic over its two accessories, and a
     /// generic type may not hold a static stored property.
     private static var markSize: CGFloat { 22 }
@@ -209,6 +236,15 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
             }
         }
         .font(.caption2)
+        // Grows with the reader, up to the point where it would stop fitting in the thing that
+        // draws it. The glyphs beside it are stated in points for this reason and the chrome is
+        // a stated height for the same one; a caption that keeps growing after both have stopped
+        // is a line of small print hanging out of the bottom of the glass, which is what the
+        // accessibility sizes did to it — at the largest, "Franquismo" was set larger than the
+        // vault's own screen titles and its descenders were cut off by the header's own edge.
+        // The last non-accessibility size is a little over half as large again as the default,
+        // and it is the last one the chrome can hold.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .foregroundStyle(.secondary)
     }
 
