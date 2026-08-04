@@ -270,7 +270,7 @@ enum BackgroundJobs {
                 LocalReportStore(spaceId: spaceId).save(
                     report,
                     mode: checkpoint.request.mode,
-                    model: checkpoint.request.model.model
+                    model: checkpoint.request.model
                 )
                 DeepResearchCheckpointStore.clear(spaceId: spaceId)
             } catch {

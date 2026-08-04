@@ -22,14 +22,38 @@ final class LocalReportStore {
         let createdAt: Date
         let modelLabel: String
 
+        // Everything below is optional because it is younger than the stored format, and
+        // `reload()` decodes inside a `compactMap`: a required field this app added later
+        // would throw `keyNotFound` on every report already on disk and quietly drop the lot
+        // from the list. The same reasoning, and the same shape, as `Connection.addedAt`
+        // (`AppModel.swift:24`).
+
+        /// When this report was put on the wire. Its presence is what "sent" means.
+        var sentAt: Date?
+        /// The outbox row it travelled as, so the tray and the report can name each other.
+        var outboxId: String?
+        /// The id minted for the `writing_saved_drafts` row in the vault.
+        ///
+        /// Kept so a second send is an upsert on the same row rather than a second copy of the
+        /// report in the owner's Deep Research list — the desktop merges on the primary key.
+        var vaultRowId: String?
+        /// The model as a reference rather than a label.
+        ///
+        /// `modelLabel` is for reading; `ReportDraft.row` needs the provider too. Without this
+        /// a report reopened from the library cannot be turned into a sendable row at all.
+        var modelRef: ModelRef?
+
         var title: String { report.objective }
+        var wasSent: Bool { sentAt != nil }
     }
 
     private(set) var reports: [Saved] = []
     private let directory: URL
 
-    init(spaceId: String) {
-        directory = URL.applicationSupportDirectory
+    /// - Parameter root: where the `spaces` folder lives. Application Support everywhere except
+    ///   in tests, which need a directory they can throw away rather than the test host's own.
+    init(spaceId: String, root: URL = .applicationSupportDirectory) {
+        directory = root
             .appendingPathComponent("spaces", isDirectory: true)
             .appendingPathComponent(spaceId, isDirectory: true)
             .appendingPathComponent("reports", isDirectory: true)
@@ -49,20 +73,32 @@ final class LocalReportStore {
     }
 
     @discardableResult
-    func save(_ report: DeepResearchReport, mode: DeepResearchMode, model: String) -> Saved {
+    func save(_ report: DeepResearchReport, mode: DeepResearchMode, model: ModelRef) -> Saved {
         let saved = Saved(
             id: UUID().uuidString,
             report: report,
             mode: mode,
             createdAt: Date(),
-            modelLabel: model
+            modelLabel: model.model,
+            modelRef: model
         )
-        if let data = try? JSONEncoder.nodusReports.encode(saved) {
-            try? data.write(
-                to: directory.appendingPathComponent("\(saved.id).json"),
-                options: [.atomic, .completeFileProtectionUnlessOpen]
-            )
-        }
+        write(saved)
+        reload()
+        return saved
+    }
+
+    /// Record that this report has left the device, and as what.
+    ///
+    /// Written back to the file rather than only to the array: `ResearchLibraryView` calls
+    /// `reload()` every time it appears, so an in-memory flag would last exactly until the
+    /// user navigated away from the report they had just sent.
+    @discardableResult
+    func markSent(_ id: String, outboxId: String, vaultRowId: String, at when: Date = Date()) -> Saved? {
+        guard var saved = reports.first(where: { $0.id == id }) else { return nil }
+        saved.sentAt = when
+        saved.outboxId = outboxId
+        saved.vaultRowId = vaultRowId
+        write(saved)
         reload()
         return saved
     }
@@ -70,6 +106,14 @@ final class LocalReportStore {
     func delete(_ id: String) {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(id).json"))
         reload()
+    }
+
+    private func write(_ saved: Saved) {
+        guard let data = try? JSONEncoder.nodusReports.encode(saved) else { return }
+        try? data.write(
+            to: directory.appendingPathComponent("\(saved.id).json"),
+            options: [.atomic, .completeFileProtectionUnlessOpen]
+        )
     }
 }
 

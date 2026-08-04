@@ -430,7 +430,7 @@ struct DeepResearchScreen: View {
                 progress = nil
                 // Saved before anything else can go wrong. A run is one model call per section
                 // and losing it to a dismissed screen means paying for it twice.
-                local.save(finished, mode: request.mode, model: request.model.model)
+                local.save(finished, mode: request.mode, model: request.model)
                 DeepResearchCheckpointStore.clear(spaceId: spaceId)
                 activity.finish()
             } catch is CancellationError {
