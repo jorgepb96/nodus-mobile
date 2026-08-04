@@ -231,6 +231,9 @@ struct CorpusProse: View {
     /// written on this device does exactly that: the model is told to copy the token, and the
     /// catalogue is the only place its label lives.
     private let labels: [String: String]
+    /// A tap on a numbered reference — `[3]` — in an answer about a page. Only the report chat
+    /// passes one; everywhere else a bracketed number is a bracketed number.
+    private let onReference: ((Int) -> Void)?
 
     @State private var opened: CorpusReference?
     @Environment(\.nodusReadingStyle) private var reading
@@ -240,11 +243,18 @@ struct CorpusProse: View {
     @Environment(PageSearch.self) private var search: PageSearch?
     @Environment(\.nodusSearchPath) private var searchPath
 
-    init(_ text: String, accent: Color, session: SpaceSession? = nil, labels: [String: String] = [:]) {
+    init(
+        _ text: String,
+        accent: Color,
+        session: SpaceSession? = nil,
+        labels: [String: String] = [:],
+        onReference: ((Int) -> Void)? = nil
+    ) {
         self.text = text
         self.accent = accent
         self.session = session
         self.labels = labels
+        self.onReference = onReference
     }
 
     /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: the
@@ -274,8 +284,13 @@ struct CorpusProse: View {
                             accent: accent,
                             justified: true,
                             linksLive: session != nil,
+                            referencesLive: onReference != nil,
                             highlights: search?.highlights(for: path),
                             onOpen: { url in
+                                if let number = PageChatReference.number(in: url) {
+                                    onReference?(number)
+                                    return true
+                                }
                                 guard let reference = CorpusReference(url) else { return false }
                                 opened = reference
                                 return true
@@ -287,6 +302,7 @@ struct CorpusProse: View {
                             .textSelection(.enabled)
                     }
                 }
+                .nodusRevealed(search?.revealed == path)
                 .id(PageSearchAnchor(path: path))
                 .onAppear { search?.register(path, text: displayed(block)) }
                 .onChange(of: block.text) { _, _ in search?.register(path, text: displayed(block)) }
@@ -297,6 +313,10 @@ struct CorpusProse: View {
         // The link is handled here rather than by the system: `nodus://` has no handler, so
         // letting it through opens nothing at all.
         .environment(\.openURL, OpenURLAction { url in
+            if let number = PageChatReference.number(in: url) {
+                onReference?(number)
+                return .handled
+            }
             guard session != nil, let reference = CorpusReference(url) else { return .systemAction }
             opened = reference
             return .handled
@@ -405,13 +425,16 @@ struct CorpusProse: View {
             return AttributedString(source)
         }
         for run in parsed.runs where run.link != nil {
-            // Kept live when there is a session to open it against, and struck back to plain
-            // accent text when there is not: a link that looks live and goes nowhere is worse
-            // than one that never claimed to.
-            if session == nil { parsed[run.range].link = nil }
+            // Kept live when there is somewhere for it to go, and struck back to plain accent
+            // text when there is not: a link that looks live and goes nowhere is worse than one
+            // that never claimed to. A citation needs a session to open a record against; a
+            // numbered reference points at this very page and needs only a handler.
+            let isReference = run.link.map { PageChatReference.number(in: $0) != nil } ?? false
+            let live = isReference ? onReference != nil : session != nil
+            if !live { parsed[run.range].link = nil }
             parsed[run.range].foregroundColor = accent
             parsed[run.range].font = reading.font(.callout, weight: .medium)
-            parsed[run.range].underlineStyle = session == nil ? nil : .single
+            parsed[run.range].underlineStyle = live ? .single : nil
         }
         if let highlights = search?.highlights(for: path) {
             parsed.nodusHighlight(highlights, in: String(parsed.characters))
@@ -476,7 +499,11 @@ private struct DocumentProse: UIViewRepresentable {
     let accent: Color
     /// Both margins straight. Set for a document; a chat bubble is never justified.
     let justified: Bool
+    /// Whether a `nodus://` citation has a session to be opened against.
     let linksLive: Bool
+    /// Whether a `nodusref://` number has a handler to be given back to. Separate, because a
+    /// reference points at the page it is drawn on and needs no corpus at all.
+    var referencesLive = false
     /// What the page's search wants painted on this paragraph, if anything.
     let highlights: PageSearch.Highlights?
     let onOpen: (URL) -> Bool
@@ -509,7 +536,8 @@ private struct DocumentProse: UIViewRepresentable {
             size: font.pointSize,
             accent: accent,
             justified: justified,
-            linksLive: linksLive
+            linksLive: linksLive,
+            referencesLive: referencesLive
         )
         let rebuilt = context.coordinator.identity != identity
         if rebuilt {
@@ -529,6 +557,7 @@ private struct DocumentProse: UIViewRepresentable {
         let accent: Color
         let justified: Bool
         let linksLive: Bool
+        let referencesLive: Bool
     }
 
     /// The paragraph with the search's marks on it, or exactly what was built when there are none.
@@ -583,8 +612,11 @@ private struct DocumentProse: UIViewRepresentable {
             if let link = run.link {
                 attributes[.foregroundColor] = UIColor(accent)
                 // A link that looks live and goes nowhere is worse than one that never
-                // claimed to, which is the same rule the SwiftUI path follows.
-                if linksLive {
+                // claimed to, which is the same rule the SwiftUI path follows — and the same
+                // split between a citation, which needs a session, and a numbered reference,
+                // which needs only somebody listening.
+                let live = PageChatReference.number(in: link) != nil ? referencesLive : linksLive
+                if live {
                     attributes[.link] = link
                     attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 }

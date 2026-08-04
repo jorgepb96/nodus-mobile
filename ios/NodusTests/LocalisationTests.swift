@@ -82,6 +82,19 @@ struct LocalisationTests {
         _ = try translated("No matches")
     }
 
+    /// The report chat is a modal a reader opens mid-page, and everything in it — what it is
+    /// for, what it promises about the conversation, and how it fails — is read in that moment.
+    @Test("the report chat speaks Spanish")
+    func reportChatStrings() throws {
+        _ = try translated("Ask about this report")
+        _ = try translated("Ask about what you are reading")
+        _ = try translated("The conversation lasts as long as this report is open. Nothing is saved.")
+        _ = try translated("The question failed")
+        _ = try translated("Go to passage %lld")
+        _ = try translated("Choose a chat model under Providers.")
+        _ = try translated("Cancelled.")
+    }
+
     @Test("everything the new search and writing paths say has Spanish")
     func searchAndWritingStrings() throws {
         _ = try translated("Ranked by meaning")
