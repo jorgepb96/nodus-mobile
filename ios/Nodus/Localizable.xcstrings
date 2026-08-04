@@ -1071,6 +1071,28 @@
         }
       }
     },
+    "Ask about this report": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preguntar sobre este informe"
+          }
+        }
+      }
+    },
+    "Ask about what you are reading": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pregunta sobre lo que estás leyendo"
+          }
+        }
+      }
+    },
     "Ask the vault something and the exchange is kept on this device.": {
       "extractionState": "manual",
       "localizations": {
@@ -3234,6 +3256,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Identificador global"
+          }
+        }
+      }
+    },
+    "Go to passage %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ir al pasaje %lld"
           }
         }
       }
@@ -7418,6 +7451,17 @@
         }
       }
     },
+    "The conversation lasts as long as this report is open. Nothing is saved.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conversación dura lo que dure este informe abierto. No se guarda nada."
+          }
+        }
+      }
+    },
     "The copy is out of date": {
       "extractionState": "manual",
       "localizations": {
@@ -7557,6 +7601,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "La consulta falló"
+          }
+        }
+      }
+    },
+    "The question failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La pregunta falló"
           }
         }
       }
@@ -7766,6 +7821,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "El modelo lo fija el vault, no esta app: la recuperación solo funciona si el proveedor, el modelo y la dimensión coinciden exactamente."
+          }
+        }
+      }
+    },
+    "The whole report is in front of the model, numbered. When an answer rests on a passage it says which one, and tapping the number takes you there. Corpus citations work as they do everywhere else.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modelo tiene delante el informe entero, numerado. Cuando una respuesta se apoya en un pasaje dice en cuál, y al tocar el número vas a él. Las citas del corpus funcionan como en el resto de la app."
           }
         }
       }

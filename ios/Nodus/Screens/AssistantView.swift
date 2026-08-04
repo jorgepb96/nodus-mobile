@@ -400,7 +400,7 @@ struct ChatScreen: View {
 /// alone publishes hundreds, and a dropdown of hundreds is the screen this is meant to save you
 /// from. The order is the same one `ModelPickerView` uses — alphabetical by provider, then by
 /// model — so a model is in the same place here as it is there.
-private struct ChatModelMenu: View {
+struct ChatModelMenu: View {
     @Environment(AISettings.self) private var settings
     let accent: Color
     var openProviders: (() -> Void)?

@@ -422,7 +422,10 @@ struct LocalReportReader: View {
             .nodusTopAnchor()
         }
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
-        .nodusPageFunctions(accent: session.accent)
+        .nodusPageFunctions(
+            accent: session.accent,
+            chat: PageChatSubject(id: saved.id, title: saved.title, session: session)
+        )
         .nodusHidesBottomBar()
         .navigationTitle(saved.mode.label)
         .navigationBarTitleDisplayMode(.inline)
@@ -532,7 +535,14 @@ struct PublishedReportReader: View {
             .nodusTopAnchor()
         }
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
-        .nodusPageFunctions(accent: session.accent)
+        .nodusPageFunctions(
+            accent: session.accent,
+            chat: PageChatSubject(
+                id: row.string("id") ?? row.text("title") ?? "report",
+                title: row.text("title") ?? String(localized: "Report"),
+                session: session
+            )
+        )
         .nodusHidesBottomBar()
         .navigationTitle("Report")
         .navigationBarTitleDisplayMode(.inline)

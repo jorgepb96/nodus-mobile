@@ -49,6 +49,13 @@ final class PageSearch {
     /// The matches of one block, so a paragraph can paint its own without walking the page's.
     private(set) var grouped: [Path: [NSRange]] = [:]
 
+    /// A block being pointed at from somewhere else — an answer that cited it — marked for long
+    /// enough to be found by eye and then let go of. Not a selection: nothing is being acted on,
+    /// and a mark that stayed would have to be dismissed.
+    private(set) var revealed: Path?
+    /// Cancels the fade when a second reference is tapped before the first one has finished.
+    @ObservationIgnored private var fading: Task<Void, Never>?
+
     /// Path → the text that block is showing. Deliberately not observed: it changes a hundred
     /// times while a report appears, and nothing in a view's body reads it.
     @ObservationIgnored private var entries: [Path: String] = [:]
@@ -104,6 +111,35 @@ final class PageSearch {
         guard entries.removeValue(forKey: path) != nil else { return }
         hasContent = !entries.isEmpty
         if !query.isEmpty { recompute(keepingActive: true) }
+    }
+
+    // MARK: Being pointed at
+
+    /// Everything the page is showing, numbered in reading order.
+    ///
+    /// This is what the report chat puts in front of the model: the text a reader can see, in
+    /// the order they see it, so an answer can point at a paragraph by number. Very short
+    /// entries are left out — a two-word label is not a passage anybody cites.
+    func passages(minimumLength: Int = 24) -> [(path: Path, text: String)] {
+        entries.keys
+            .sorted(by: Self.precedes)
+            .compactMap { path in
+                guard let text = entries[path], text.count >= minimumLength else { return nil }
+                return (path, text)
+            }
+    }
+
+    /// Bring a block into view and mark it for a moment.
+    func reveal(_ path: Path, for seconds: Double = 2.4) {
+        guard entries[path] != nil else { return }
+        scrollTarget = Target(path: path, nonce: (scrollTarget?.nonce ?? 0) + 1)
+        revealed = path
+        fading?.cancel()
+        fading = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self?.revealed = nil
+        }
     }
 
     // MARK: Walking the matches

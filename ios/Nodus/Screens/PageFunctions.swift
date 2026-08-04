@@ -31,8 +31,27 @@ extension View {
     }
 
     /// Floats the page's function hub over a scrollable that carries a `nodusTopAnchor()`.
-    func nodusPageFunctions(accent: Color) -> some View {
-        modifier(PageFunctionsModifier(accent: accent))
+    ///
+    /// `chat` is what the third seat opens onto. A page that has a document worth asking about
+    /// passes one; everywhere else the petal is drawn dimmed and does nothing, which is the
+    /// truth about it.
+    func nodusPageFunctions(accent: Color, chat: PageChatSubject? = nil) -> some View {
+        modifier(PageFunctionsModifier(accent: accent, chat: chat))
+    }
+
+    /// The mark a passage wears for a moment while an answer points at it.
+    ///
+    /// Not a selection — nothing is being acted on, and a mark that stayed would be one more
+    /// thing to dismiss. The same yellow the find bar uses, because "the app is showing you
+    /// where" should look the same wherever it happens.
+    func nodusRevealed(_ isRevealed: Bool) -> some View {
+        background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.nodusFindMatch.opacity(isRevealed ? 0.6 : 0))
+                .padding(.horizontal, -7)
+                .padding(.vertical, -5)
+        }
+        .animation(NodusMotion.standard, value: isRevealed)
     }
 }
 
@@ -77,13 +96,12 @@ enum PageFunction: Hashable, Identifiable {
         case .chat: return "Ask about this page"
         }
     }
-
-    /// False for a seat that is reserved rather than built.
-    var isLive: Bool { self != .chat }
 }
 
 private struct PageFunctionsModifier: ViewModifier {
     let accent: Color
+    /// The document this page is, when it is one worth asking about.
+    let chat: PageChatSubject?
 
     @Environment(AppPreferences.self) private var preferences
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -97,6 +115,7 @@ private struct PageFunctionsModifier: ViewModifier {
     @State private var search = PageSearch()
     @State private var isScrolled = false
     @State private var isWheelOpen = false
+    @State private var isChatOpen = false
     /// How much room the find bar is taking at the bottom, measured rather than guessed.
     @State private var findBarHeight: CGFloat = 0
 
@@ -146,6 +165,18 @@ private struct PageFunctionsModifier: ViewModifier {
                     guard let target else { return }
                     scroll(proxy, to: PageSearchAnchor(path: target.path), anchor: .center)
                 }
+                .nodusSheet(isPresented: $isChatOpen) {
+                    if let chat {
+                        PageChatSheet(
+                            subject: chat,
+                            passages: chatPassages,
+                            accent: accent,
+                            // The sheet has closed by the time this runs: the whole point of
+                            // tapping a reference is to see the paragraph it names.
+                            onReveal: { passage in search.reveal(passage.path) }
+                        )
+                    }
+                }
                 // Every scrollable in the shell reports its position, including the ones on
                 // pushed screens — where the header is not even on screen. Scrolling a dossier
                 // therefore collapsed the header of the tab root behind it, and popping back
@@ -160,7 +191,12 @@ private struct PageFunctionsModifier: ViewModifier {
     @ViewBuilder
     private func hub(_ proxy: ScrollViewProxy) -> some View {
         if showsHub {
-            PageFunctionWheel(functions: available, accent: accent, isOpen: $isWheelOpen) { function in
+            PageFunctionWheel(
+                functions: available,
+                disabled: unbuilt,
+                accent: accent,
+                isOpen: $isWheelOpen
+            ) { function in
                 perform(function, proxy)
             }
             .padding(.trailing, NodusSpace.page)
@@ -187,13 +223,25 @@ private struct PageFunctionsModifier: ViewModifier {
         return functions
     }
 
+    /// The seats that are reserved rather than built on this page.
+    private var unbuilt: Set<PageFunction> {
+        chat == nil ? [.chat] : []
+    }
+
+    /// Everything the page is showing, numbered for an answer to point at.
+    private var chatPassages: [PageChatPassage] {
+        search.passages().enumerated().map { index, entry in
+            PageChatPassage(number: index + 1, path: entry.path, text: entry.text)
+        }
+    }
+
     /// Whether the hub is on the screen at all.
     ///
     /// Once the page has been scrolled — the rule the single button always followed — or as soon
     /// as there is prose to search, which is worth offering from the first line rather than from
     /// the second screenful. A page with neither has nothing to open the wheel for.
     private var showsHub: Bool {
-        guard available.contains(where: \.isLive) else { return false }
+        guard available.contains(where: { !unbuilt.contains($0) }) else { return false }
         return isScrolled || search.hasContent
     }
 
@@ -205,7 +253,9 @@ private struct PageFunctionsModifier: ViewModifier {
         case .find:
             search.open()
         case .chat:
-            break
+            guard chat != nil else { return }
+            search.close()
+            isChatOpen = true
         }
     }
 
@@ -309,6 +359,8 @@ private struct PageFunctionsModifier: ViewModifier {
 /// folds the rest away.
 private struct PageFunctionWheel: View {
     let functions: [PageFunction]
+    /// Seats that are drawn but do nothing on this page.
+    let disabled: Set<PageFunction>
     let accent: Color
     @Binding var isOpen: Bool
     let choose: (PageFunction) -> Void
@@ -322,10 +374,10 @@ private struct PageFunctionWheel: View {
         ZStack(alignment: .bottomTrailing) {
             ForEach(Array(functions.enumerated()), id: \.element) { index, function in
                 circle(function.systemImage, label: Text(function.label)) { choose(function) }
-                    .disabled(!function.isLive)
+                    .disabled(disabled.contains(function))
                     // A seat that is reserved rather than built says so by being dim, which is
                     // the only honest thing a control that does nothing can do.
-                    .opacity(function.isLive ? 1 : 0.45)
+                    .opacity(disabled.contains(function) ? 0.45 : 1)
                     .offset(isOpen ? offset(index) : .zero)
                     .opacity(isOpen ? 1 : 0)
                     .scaleEffect(isOpen ? 1 : 0.5)
@@ -476,6 +528,7 @@ struct PageText: View {
 
     var body: some View {
         Text(highlighted)
+            .nodusRevealed(search?.revealed == path)
             .id(PageSearchAnchor(path: path))
             .onAppear { search?.register(path, text: text) }
             .onChange(of: text) { _, latest in search?.register(path, text: latest) }

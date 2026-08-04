@@ -63,7 +63,7 @@ struct DeepResearchScreen: View {
         }
         // A finished report is a document and is set as one; the form that starts it is not.
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: report != nil))
-        .nodusPageFunctions(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent, chat: chatSubject)
         .nodusDismissesKeyboard()
         .navigationTitle("Deep Research")
         .navigationBarTitleDisplayMode(.inline)
@@ -79,12 +79,23 @@ struct DeepResearchScreen: View {
             if !running, runner.finished == nil { readCheckpoint() }
         }
         .toolbar {
-            if runner.finished != nil {
+            if let finished = runner.finished {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("New") { runner.clearFinished() }
+                    Button("New") {
+                        // The conversation was about *that* report. Starting another one is
+                        // exactly the moment it stops meaning anything.
+                        PageChatStore.forget(finished.id)
+                        runner.clearFinished()
+                    }
                 }
             }
         }
+    }
+
+    /// What the hub's third seat opens onto, once there is a report to ask about.
+    private var chatSubject: PageChatSubject? {
+        guard let saved = runner.finished else { return nil }
+        return PageChatSubject(id: saved.id, title: saved.report.objective, session: session)
     }
 
     // MARK: Resuming
