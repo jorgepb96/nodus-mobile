@@ -279,7 +279,7 @@ struct DatabaseRowView: View {
             .padding(16)
             .nodusTopAnchor()
         }
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .nodusHidesBottomBar()
         .navigationTitle(Text(verbatim: heading))
         .navigationBarTitleDisplayMode(.inline)

@@ -67,6 +67,21 @@ struct LocalisationTests {
         _ = try translated("Blocks")
     }
 
+    /// The find bar is read while reading, which is the one moment a reader is least willing to
+    /// translate a control in their head. Its placeholder is the whole of its instructions.
+    @Test("the page's own tools and its find bar speak Spanish")
+    func pageFunctionStrings() throws {
+        _ = try translated("Find on this page")
+        _ = try translated("Page tools")
+        _ = try translated("Close the page tools")
+        _ = try translated("Ask about this page")
+        _ = try translated("Previous match")
+        _ = try translated("Next match")
+        _ = try translated("Close the search")
+        _ = try translated("Back to top")
+        _ = try translated("No matches")
+    }
+
     @Test("everything the new search and writing paths say has Spanish")
     func searchAndWritingStrings() throws {
         _ = try translated("Ranked by meaning")

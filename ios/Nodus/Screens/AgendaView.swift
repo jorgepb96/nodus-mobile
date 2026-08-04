@@ -78,7 +78,7 @@ struct AgendaView: View {
             .padding(16)
             .nodusTopAnchor()
         }
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .navigationTitle("Agenda")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
@@ -263,7 +263,7 @@ struct GoalsView: View {
             .padding(16)
             .nodusTopAnchor()
         }
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .navigationTitle("Goals")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)

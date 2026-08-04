@@ -97,7 +97,7 @@ struct RowDetailView: View {
             .padding(NodusSpace.page)
             .nodusTopAnchor()
         }
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         // A dossier is a document. Nothing the tab bar leads to is on it, and the four tabs
         // under a quotation are four ways to stop reading it.
         .nodusHidesBottomBar()

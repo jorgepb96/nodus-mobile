@@ -200,7 +200,7 @@ struct HomeView: View {
         // its corner. The long lists in the app keep theirs, because there the position of the
         // thumb in nine thousand rows is worth knowing.
         .scrollIndicators(.hidden)
-        .nodusScrollToTop(accent: session.accent)
+        .nodusPageFunctions(accent: session.accent)
         .refreshable { await session.load() }
     }
 
