@@ -193,7 +193,7 @@ public extension URLSession {
         // large corpus does, and it is worth waiting for.
         configuration.timeoutIntervalForResource = 600
         configuration.waitsForConnectivity = true
-        configuration.httpAdditionalHeaders = ["User-Agent": "Nodus-iOS/3.1.0"]
+        configuration.httpAdditionalHeaders = ["User-Agent": "Nodus-iOS/3.2.0"]
         return URLSession(configuration: configuration)
     }()
 
@@ -216,7 +216,7 @@ public extension URLSession {
         // the whole attempt.
         configuration.timeoutIntervalForResource = 15
         configuration.waitsForConnectivity = false
-        configuration.httpAdditionalHeaders = ["User-Agent": "Nodus-iOS/3.1.0"]
+        configuration.httpAdditionalHeaders = ["User-Agent": "Nodus-iOS/3.2.0"]
         return URLSession(configuration: configuration)
     }()
 }
