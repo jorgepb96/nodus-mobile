@@ -12,6 +12,9 @@ struct ChatScreen: View {
     /// for an `@Observable` is a crash where it is missing, and this screen is previewable
     /// outside the shell that provides one.
     @Environment(NodusChrome.self) private var chrome: NodusChrome?
+    /// Read only to know when a fetch from iCloud has landed. Optional for the same reason the
+    /// chrome above is.
+    @Environment(CloudBackup.self) private var cloud: CloudBackup?
     let session: SpaceSession
     /// Opens the key and model screen. The chat cannot present it itself — `ChatTab` owns that
     /// sheet — and the model menu needs somewhere to send a reader with nothing to choose from.
@@ -113,6 +116,9 @@ struct ChatScreen: View {
             controls.openHistory = openHistory
             chrome?.chat = controls
         }
+        // A fetch from iCloud writes conversation files underneath this store, which would
+        // otherwise keep showing the list it read when the screen opened.
+        .onChange(of: cloud?.lastFetchedAt) { _, _ in history.reload() }
         .onDisappear {
             // Only if they are still ours. On iPad the detail column really does swap screens,
             // and a chat that has been replaced should not leave its controls on the header.

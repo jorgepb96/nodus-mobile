@@ -5,8 +5,11 @@ import SwiftUI
 /// The handful of choices that belong to the person rather than to a space.
 ///
 /// Kept apart from `SpaceSession` on purpose: a preference set while reading one vault should
-/// hold when the next one is opened. `UserDefaults` rather than the Keychain because none of
-/// this is a secret — losing it costs a toggle, not access.
+/// hold when the next one is opened. Not the Keychain, because none of this is a secret — losing
+/// it costs a toggle, not access — and through `SyncedDefaults` rather than `UserDefaults`
+/// directly, because a choice that belongs to the person should follow them to their other
+/// device. These four are a few dozen bytes that change once a month; see that type for the
+/// conflict rule and for what is deliberately left behind.
 @Observable
 @MainActor
 final class AppPreferences {
@@ -15,7 +18,7 @@ final class AppPreferences {
     /// On by default. A corpus screen is thousands of rows deep and the alternative — the
     /// status-bar tap iOS has always had — is a gesture nobody discovers.
     var showsScrollToTop: Bool {
-        didSet { defaults.set(showsScrollToTop, forKey: Key.scrollToTop) }
+        didSet { persist { store.set(showsScrollToTop, forKey: Key.scrollToTop) } }
     }
 
     /// How Home lays its sections out.
@@ -24,7 +27,7 @@ final class AppPreferences {
     /// list is for a vault with many of them, where square tiles mean scrolling past two
     /// columns of mostly empty card to read the names.
     var homeLayout: HomeLayout {
-        didSet { defaults.set(homeLayout.rawValue, forKey: Key.homeLayout) }
+        didSet { persist { store.set(homeLayout.rawValue, forKey: Key.homeLayout) } }
     }
 
     enum HomeLayout: String, CaseIterable, Sendable {
@@ -45,7 +48,7 @@ final class AppPreferences {
     /// How the space picker orders its list. Remembered, because re-picking an order on every
     /// launch is the surest way to make somebody stop using it.
     var spaceOrder: SpaceOrder {
-        didSet { defaults.set(spaceOrder.rawValue, forKey: Key.spaceOrder) }
+        didSet { persist { store.set(spaceOrder.rawValue, forKey: Key.spaceOrder) } }
     }
 
     enum SpaceOrder: String, CaseIterable, Sendable, Identifiable {
@@ -85,7 +88,7 @@ final class AppPreferences {
     /// its own `didSet` calls the setter again, and again — the app died on the stack the first
     /// time somebody pressed A⁺. An observer here may persist the value. It may not change it.
     var readingScale: Double {
-        didSet { defaults.set(readingScale, forKey: Key.readingScale) }
+        didSet { persist { store.set(readingScale, forKey: Key.readingScale) } }
     }
 
     static let minReadingScale = 0.85
@@ -101,22 +104,48 @@ final class AppPreferences {
         readingScale = min(Self.maxReadingScale, max(Self.minReadingScale, wanted))
     }
 
-    private let defaults: UserDefaults
+    private let store: SyncedDefaults
 
     private enum Key {
         static let scrollToTop = "nodus.prefs.scrollToTop"
         static let homeLayout = "nodus.prefs.homeLayout"
         static let spaceOrder = "nodus.prefs.spaceOrder"
         static let readingScale = "nodus.prefs.readingScale"
+
+        static let all: Set<String> = [scrollToTop, homeLayout, spaceOrder, readingScale]
     }
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        // `object(forKey:)` rather than `bool(forKey:)`: an absent key reads as false, which
-        // would ship the feature switched off for everyone who never touched the switch.
-        showsScrollToTop = defaults.object(forKey: Key.scrollToTop) as? Bool ?? true
-        homeLayout = HomeLayout(rawValue: defaults.string(forKey: Key.homeLayout) ?? "") ?? .grid
-        spaceOrder = SpaceOrder(rawValue: defaults.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
-        readingScale = defaults.object(forKey: Key.readingScale) as? Double ?? 1
+    init(store: SyncedDefaults = .shared) {
+        self.store = store
+        // Optional reads rather than `bool(forKey:)`-style ones with a built-in zero: an absent
+        // key would read as false, which would ship the back-to-top button switched off for
+        // everyone who never touched the switch.
+        showsScrollToTop = store.bool(forKey: Key.scrollToTop) ?? true
+        homeLayout = HomeLayout(rawValue: store.string(forKey: Key.homeLayout) ?? "") ?? .grid
+        spaceOrder = SpaceOrder(rawValue: store.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
+        readingScale = store.double(forKey: Key.readingScale) ?? 1
+        store.onExternalChange(of: Key.all) { [weak self] in self?.adoptRemote() }
+    }
+
+    /// Whether a change to one of these properties is this device's decision or somebody else's.
+    ///
+    /// Every setter persists, which is right when a person taps a switch and wrong when the
+    /// value arrived from their iPad: writing it back would stamp it as this device's newer
+    /// choice and push it out again, and the two devices would trade the same preference until
+    /// one of them was switched off.
+    private var isAdoptingRemote = false
+
+    private func persist(_ write: () -> Void) {
+        guard !isAdoptingRemote else { return }
+        write()
+    }
+
+    private func adoptRemote() {
+        isAdoptingRemote = true
+        defer { isAdoptingRemote = false }
+        showsScrollToTop = store.bool(forKey: Key.scrollToTop) ?? true
+        homeLayout = HomeLayout(rawValue: store.string(forKey: Key.homeLayout) ?? "") ?? .grid
+        spaceOrder = SpaceOrder(rawValue: store.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
+        readingScale = store.double(forKey: Key.readingScale) ?? 1
     }
 }

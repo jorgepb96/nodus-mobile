@@ -10,6 +10,7 @@ struct SpaceSettingsView: View {
     @Environment(AISettings.self) private var ai
     @Environment(AppLock.self) private var lock
     @Environment(AppPreferences.self) private var preferences
+    @Environment(CloudBackup.self) private var cloud
     @State private var health: ServerHealth?
     @State private var capabilities: ServerCapabilities?
     @State private var diagnosticFailure: ConnectionFailure?
@@ -180,6 +181,39 @@ struct SpaceSettingsView: View {
                     } else {
                         Text("This device has no passcode set, so there is nothing to lock with.")
                     }
+                }
+
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { cloud.isEnabled },
+                        // Turning it on fetches before it sends, so a second device joins the
+                        // copy rather than replacing it — see `CloudBackup`.
+                        set: { wanted in Task { await cloud.setEnabled(wanted) } }
+                    )) {
+                        Label("Chats and reports in iCloud", systemImage: "icloud")
+                    }
+                    .tint(session.accent)
+
+                    switch cloud.status {
+                    case .off:
+                        EmptyView()
+                    case .working:
+                        Label("Updating…", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption).foregroundStyle(.secondary)
+                    case .ready(let when):
+                        if let when {
+                            labelled("Last updated", when.formatted(date: .abbreviated, time: .shortened))
+                        }
+                    case .failed(let message):
+                        Text(message).font(.caption).foregroundStyle(Color.nodusCaution)
+                    }
+                } header: {
+                    Text("iCloud")
+                } footer: {
+                    // The one sentence somebody reads before deciding. It has to say what leaves
+                    // the device and where it lands, and it has to be as true of the code as of
+                    // the promise two sections above about the keys.
+                    Text("Your conversations and the reports written here are copied to your own private iCloud, so a new phone finds them. They never reach a Nodus server, and your provider keys and the offline copy never leave this device.")
                 }
 
                 Section {

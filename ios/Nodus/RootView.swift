@@ -13,6 +13,10 @@ struct RootView: View {
     /// The queue belongs to the device rather than to a space, so it lives above the branch
     /// that decides whether a space is open at all.
     @State private var tray = OutboxTrayModel()
+    /// The one state object that is a singleton rather than owned here: the two stores that feed
+    /// it are not views. Put in the environment all the same, so a settings screen reads it the
+    /// way it reads everything else.
+    private let cloud = CloudBackup.shared
 
     var body: some View {
         Group {
@@ -38,6 +42,7 @@ struct RootView: View {
         .environment(lock)
         .environment(preferences)
         .environment(tray)
+        .environment(cloud)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
         // Once, here, for every field in the app — including the ones inside sheets, which are
@@ -56,6 +61,13 @@ struct RootView: View {
             if model.session == nil, let recent = model.mostRecent {
                 model.open(recent)
             }
+            // Which of this device's files a backup carries, decided in one place and applied
+            // to whatever is already on disk. Detached because it is `setxattr` per file and
+            // this is the launch path; nothing on screen waits for the answer.
+            Task.detached(priority: .utility) {
+                BackupPolicy.apply(toSpacesDirectory: URL.applicationSupportDirectory
+                    .appendingPathComponent("spaces", isDirectory: true))
+            }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // Coming back is when the answer may have changed: the background flush may have
@@ -63,7 +75,12 @@ struct RootView: View {
             // question — somebody may have opened their desktop and collected it. It is a
             // handful of SQLite opens and, only for spaces actually holding changes in a
             // ledger, one request each.
-            if phase == .active { Task { await tray.confirmDeliveries() } }
+            if phase == .active {
+                Task { await tray.confirmDeliveries() }
+                // Coming back is also when another device may have written a report or a chat.
+                // Returns on the first line unless the user switched the iCloud copy on.
+                Task { await cloud.refresh() }
+            }
 
             guard phase == .background else { return }
             // Immediately, with no grace period. A window in which the app reopens unlocked is

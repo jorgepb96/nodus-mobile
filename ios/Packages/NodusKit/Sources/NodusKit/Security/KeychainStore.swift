@@ -15,6 +15,14 @@ import Security
 /// The desktop has a `b64:` fallback for machines whose OS keychain is unavailable
 /// (`secretStore.ts:108`). That is a degraded path there and is deliberately not reproduced
 /// here: iOS always has a Keychain, so a failure to store means a failure, not a weaker store.
+///
+/// The app now has iCloud capabilities — preferences travel through the key-value store, and
+/// chats and reports can be copied into the user's private database — and none of that changes
+/// the line above. Adding `kSecAttrSynchronizable` here would be one word and would work, but it
+/// would also change what the app *is*: `ConnectView` tells every new user, in writing, that AI
+/// keys never leave this device, and the settings screen repeats it. If that is ever offered it
+/// has to be its own switch, off, with the consequence spelled out beside it, and the two
+/// sentences that currently promise otherwise have to be rewritten in the same commit.
 public struct KeychainStore: Sendable {
     public let service: String
     /// Set to share secrets with the widget extension. Left nil, items are private to the app.

@@ -64,6 +64,10 @@ public actor MutationOutbox {
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: url.path
         )
+        // Deliberately backed up, and said out loud rather than left to the default: a queued
+        // note or an unsent report has not reached the ledger, so this file is the only copy
+        // there is. See `BackupPolicy`.
+        BackupPolicy.apply(.backedUp, to: url)
         try migrate()
     }
 
