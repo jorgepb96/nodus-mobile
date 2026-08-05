@@ -3502,6 +3502,28 @@
         }
       }
     },
+    "In the owner's Nodus. It joins the published copy when they republish.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el Nodus del propietario. Se une a la copia publicada cuando vuelva a publicar."
+          }
+        }
+      }
+    },
+    "In the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el vault"
+          }
+        }
+      }
+    },
     "Indexed with %@ · %lld dimensions": {
       "extractionState": "manual",
       "localizations": {
@@ -9186,6 +9208,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(unreachable.label) — no alcanzable desde iOS"
+          }
+        }
+      }
+    },
+    "^[%lld change](inflect: true) in the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld change in the vault"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld changes in the vault"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambio en el vault"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambios en el vault"
+                }
+              }
+            }
           }
         }
       }

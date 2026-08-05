@@ -148,6 +148,10 @@ struct LocalisationTests {
                 == "1 cambio esperando a su vault")
         #expect(String(localized: "^[\(2) change](inflect: true) waiting for its vault", bundle: bundle)
                 == "2 cambios esperando a su vault")
+        #expect(String(localized: "^[\(1) change](inflect: true) in the vault", bundle: bundle)
+                == "1 cambio en el vault")
+        #expect(String(localized: "^[\(4) change](inflect: true) in the vault", bundle: bundle)
+                == "4 cambios en el vault")
     }
 
     @Test("everything the send queue says has Spanish")
@@ -164,6 +168,15 @@ struct LocalisationTests {
         _ = try translated("Waiting for the owner to republish.")
         _ = try translated("The server rejected it.")
         _ = try translated("Remove")
+    }
+
+    /// The end of the journey, which is the one part of it the app could never say before. The
+    /// distinction it draws — the owner has your change, and has not yet published it — is the
+    /// whole reason the state exists, so its sentence is worth as much in Spanish as the badge.
+    @Test("everything about a change reaching the vault has Spanish")
+    func deliveredStrings() throws {
+        _ = try translated("In the vault")
+        _ = try translated("In the owner's Nodus. It joins the published copy when they republish.")
     }
 
     // These are read by iOS, not by the app, and a plist string on its own is shown verbatim in

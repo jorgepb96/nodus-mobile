@@ -23,9 +23,12 @@ let package = Package(
             dependencies: [.product(name: "GRDB", package: "GRDB.swift")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        // GRDB is here as well as in the target above so a test can write a database in the
+        // shape an *older* build of the app left behind, and then watch the migration open it.
+        // Nothing else can prove that a queue already on somebody's phone survives an upgrade.
         .testTarget(
             name: "NodusKitTests",
-            dependencies: ["NodusKit"],
+            dependencies: ["NodusKit", .product(name: "GRDB", package: "GRDB.swift")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]

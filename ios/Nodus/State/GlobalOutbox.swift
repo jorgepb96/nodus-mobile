@@ -34,6 +34,7 @@ final class GlobalOutbox {
     private(set) var pending = 0
     private(set) var accepted = 0
     private(set) var rejected = 0
+    private(set) var delivered = 0
     private(set) var isRefreshing = false
     private(set) var isSending = false
     /// Set per space rather than globally: five vaults are five separate journeys, and one
@@ -65,7 +66,7 @@ final class GlobalOutbox {
         defer { isRefreshing = false }
 
         var collected: [Entry] = []
-        var counts = (pending: 0, accepted: 0, rejected: 0)
+        var counts = (pending: 0, accepted: 0, rejected: 0, delivered: 0)
 
         for connection in connectionsWithQueues {
             guard let outbox = await outbox(for: connection) else { continue }
@@ -75,6 +76,7 @@ final class GlobalOutbox {
                 counts.pending += spaceCounts.pending
                 counts.accepted += spaceCounts.accepted
                 counts.rejected += spaceCounts.rejected
+                counts.delivered += spaceCounts.delivered
             }
         }
 
@@ -86,6 +88,7 @@ final class GlobalOutbox {
         pending = counts.pending
         accepted = counts.accepted
         rejected = counts.rejected
+        delivered = counts.delivered
     }
 
     /// Send every space's queue, and report per space.

@@ -302,13 +302,19 @@ struct SpacePickerView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "tray.and.arrow.up").font(.footnote)
-                // Two counts, said apart, because they are different facts: one is work that has
-                // not left the phone, the other is work that has left it and is waiting for
-                // somebody to open their desktop.
+                // Three counts, said apart, because they are different facts: work that has not
+                // left the phone, work that has left it and is waiting for somebody to open
+                // their desktop, and work that got there. The most urgent one that applies wins
+                // the line — and when none of them does, because everything queued was
+                // refused, the control says what it is rather than counting nothing.
                 if tray.outbox.pending > 0 {
                     Text("^[\(tray.outbox.pending) change](inflect: true) to send").font(.caption)
-                } else {
+                } else if tray.outbox.accepted > 0 {
                     Text("^[\(tray.outbox.accepted) change](inflect: true) waiting for its vault").font(.caption)
+                } else if tray.outbox.delivered > 0 {
+                    Text("^[\(tray.outbox.delivered) change](inflect: true) in the vault").font(.caption)
+                } else {
+                    Text("Send queue").font(.caption)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)

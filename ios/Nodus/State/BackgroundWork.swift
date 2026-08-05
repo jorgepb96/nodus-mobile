@@ -169,7 +169,7 @@ enum BackgroundJobs {
             guard let client = ConnectionClient.make(for: connection) else { everythingLanded = false; continue }
             do {
                 let receipt = try await client.send(mutations: batch, in: connection.spaceId)
-                try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
+                try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
                 try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
             } catch {
                 everythingLanded = false

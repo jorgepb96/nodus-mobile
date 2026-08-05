@@ -16,6 +16,7 @@ final class OutboxController {
     private(set) var pending = 0
     private(set) var accepted = 0
     private(set) var rejected = 0
+    private(set) var delivered = 0
     private(set) var isFlushing = false
     private(set) var lastError: String?
 
@@ -72,10 +73,11 @@ final class OutboxController {
 
     func refresh() async {
         items = (try? await outbox.items()) ?? []
-        let counts = (try? await outbox.counts()) ?? (pending: 0, accepted: 0, rejected: 0)
+        let counts = (try? await outbox.counts()) ?? (pending: 0, accepted: 0, rejected: 0, delivered: 0)
         pending = counts.pending
         accepted = counts.accepted
         rejected = counts.rejected
+        delivered = counts.delivered
     }
 
     /// Queue a note, new or edited. Local only until `flush()`.
@@ -200,7 +202,7 @@ final class OutboxController {
 
         do {
             let receipt = try await client.send(mutations: [mutation], in: spaceId)
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate)
+            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
             try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
         } catch let error as APIError where error.isForbidden {
             // Left as a bare key, the way `flush()` leaves it: the notice that renders this

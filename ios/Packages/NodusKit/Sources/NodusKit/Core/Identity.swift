@@ -113,6 +113,16 @@ public struct SpaceSummary: Sendable, Hashable, Codable, Identifiable {
     public let revision: String?
     public let schemaVersion: Int?
     public let hasSnapshot: Bool
+    /// How far into this space's ledger the owner's desktop has acknowledged.
+    ///
+    /// The server publishes it so a client can tell "the server is holding this" apart from
+    /// "the owner has collected it": a device keeps the `cursor` its own POST came back with,
+    /// and this is the number that eventually catches up with it.
+    ///
+    /// Nil means the server does not publish it, and nil is emphatically not zero. Reading a
+    /// silence as a cursor of zero would leave every queued change permanently undelivered,
+    /// and defaulting it the other way would report deliveries that never happened.
+    public let mutationCursor: Int?
 
     public init(
         id: String,
@@ -123,7 +133,8 @@ public struct SpaceSummary: Sendable, Hashable, Codable, Identifiable {
         updatedAt: Date? = nil,
         revision: String? = nil,
         schemaVersion: Int? = nil,
-        hasSnapshot: Bool = false
+        hasSnapshot: Bool = false,
+        mutationCursor: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -134,6 +145,7 @@ public struct SpaceSummary: Sendable, Hashable, Codable, Identifiable {
         self.revision = revision
         self.schemaVersion = schemaVersion
         self.hasSnapshot = hasSnapshot
+        self.mutationCursor = mutationCursor
     }
 }
 

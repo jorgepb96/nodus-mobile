@@ -26,9 +26,9 @@ final class OutboxTrayModel {
 /// Everything queued on this device, in every vault.
 ///
 /// A change that has reached the server is *in a ledger*; it becomes part of the vault only when
-/// the owner's Nodus drains it and republishes. So a queued change has two states worth telling
-/// apart — "not sent yet" and "sent, waiting for the owner" — and collapsing them would tell
-/// somebody their work is in the vault when it is not. Every row here says which it is.
+/// the owner's Nodus drains it. So a queued change has three states worth telling apart — "not
+/// sent yet", "sent, waiting for the owner" and "the owner has it" — and collapsing any two of
+/// them would tell somebody their work is somewhere it is not. Every row here says which it is.
 struct OutboxTraySheet: View {
     @Environment(OutboxTrayModel.self) private var tray
     @Environment(\.dismiss) private var dismiss
@@ -173,6 +173,8 @@ struct OutboxTraySheet: View {
         case .pending: ("Not sent", Color.nodusCaution)
         case .accepted: ("On the server", entry.connection.accent)
         case .rejected: ("Rejected", Color.nodusDanger)
+        // The one green thing on this screen, and the only state that is the end of a journey.
+        case .delivered: ("In the vault", Color.nodusSuccess)
         }
         return Text(label)
             .font(.caption2.weight(.medium))
@@ -193,6 +195,11 @@ struct OutboxTraySheet: View {
             return String(localized: "Waiting for the owner to republish.")
         case .rejected:
             return String(localized: "The server rejected it.")
+        case .delivered:
+            // Applied is not published, and this sentence is the whole difference. The owner's
+            // Nodus has written it into their own database; the copy everybody reads — this
+            // phone included — is the last one they published, and this is not in it yet.
+            return String(localized: "In the owner's Nodus. It joins the published copy when they republish.")
         }
     }
 }
