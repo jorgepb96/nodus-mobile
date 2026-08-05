@@ -17,6 +17,11 @@ struct ResearchLibraryView: View {
     @State private var isLoading = true
     @State private var error: String?
 
+    /// What this reader has done with these reports. One store for both sections, because
+    /// "which have I read" is a question about the list rather than about where a report
+    /// was written.
+    private var marks: ReportMarks { ReportMarks.shared(for: session.connection.spaceId) }
+
     private var matchingLocal: [LocalReportStore.Saved] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return local.reports }
@@ -67,9 +72,16 @@ struct ResearchLibraryView: View {
                         }
                         .listRowBackground(Color.clear)
                         .swipeActions {
-                            Button(role: .destructive) { local.delete(saved.id) } label: {
+                            Button(role: .destructive) {
+                                // The marks go with the report. Ids are minted per report, but
+                                // a mark outliving the thing it is about is a bookmark waiting
+                                // to be inherited by whatever takes the id next.
+                                marks.forget(saved.id)
+                                local.delete(saved.id)
+                            } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                            readAction(for: saved.id)
                         }
                     }
                 } header: {
@@ -90,6 +102,10 @@ struct ResearchLibraryView: View {
                             publishedRow(row)
                         }
                         .listRowBackground(Color.clear)
+                        // Only the mark. A published report belongs to the vault and this
+                        // account may not even be allowed to write to it — there is no delete
+                        // to offer, and having read it is this device's business anyway.
+                        .swipeActions { row.string("id").map { readAction(for: $0) } }
                     }
                 } header: {
                     NodusSectionLabel("Published in the vault")
@@ -150,7 +166,7 @@ struct ResearchLibraryView: View {
                 glyphThumbnail(saved.mode == .teachingUnit ? "graduationcap" : "doc.text")
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(saved.title).font(.subheadline.weight(.medium)).lineLimit(2)
+                title(saved.title, id: saved.id)
                 Text("\(saved.report.words.formatted()) words · \(saved.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2).foregroundStyle(.secondary)
                 // In the list rather than only in the report. Twenty reports and one question —
@@ -160,6 +176,7 @@ struct ResearchLibraryView: View {
                     Label("Sent to the desktop", systemImage: "paperplane.fill")
                         .font(.caption2).foregroundStyle(Color.nodusSuccess)
                 }
+                marksLine(for: saved.id)
                 if saved.report.citationsRejected > 0 {
                     Text("\(saved.report.citationsRejected) invented citations removed")
                         .font(.caption2).foregroundStyle(Color.nodusCaution)
@@ -181,13 +198,59 @@ struct ResearchLibraryView: View {
                 glyphThumbnail("doc.richtext")
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(row.text("title") ?? "Report").font(.subheadline.weight(.medium)).lineLimit(2)
+                title(row.text("title") ?? String(localized: "Report"), id: row.string("id"))
                 if let objective = row.text("objective") {
                     Text(objective).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 }
+                if let id = row.string("id") { marksLine(for: id) }
             }
         }
         .padding(.vertical, 6)
+    }
+
+    /// A report's name, one weight lighter once it has been read.
+    ///
+    /// The same rule an inbox uses, and for the same reason: a list where every entry is set at
+    /// the same weight has to be read to be triaged, and the whole point of the mark is that it
+    /// answers "what is still waiting" without reading anything.
+    private func title(_ text: String, id: String?) -> some View {
+        let read = id.map { marks.isRead($0) } ?? false
+        return Text(text)
+            .font(.subheadline.weight(read ? .regular : .medium))
+            .foregroundStyle(read ? Color.nodusSecondaryText : Color.primary)
+            .lineLimit(2)
+    }
+
+    /// What this reader has done with the report: finished it, and kept a place in it.
+    @ViewBuilder
+    private func marksLine(for id: String) -> some View {
+        let mark = marks.mark(for: id)
+        if mark.readAt != nil || mark.bookmark != nil {
+            HStack(spacing: 9) {
+                if mark.readAt != nil {
+                    Label("Read", systemImage: "checkmark.circle.fill")
+                }
+                if mark.bookmark != nil {
+                    Label("Bookmarked", systemImage: "bookmark.fill")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(Color.nodusSuccess)
+        }
+    }
+
+    /// Marking a report read from the list, which is where the question is usually asked.
+    private func readAction(for id: String) -> some View {
+        let read = marks.isRead(id)
+        return Button {
+            marks.setRead(id, !read)
+        } label: {
+            Label(
+                read ? "Unread" : "Read",
+                systemImage: read ? "circle" : "checkmark.circle.fill"
+            )
+        }
+        .tint(Color.nodusSuccess)
     }
 
     /// The stand-in for a report that has no illustration: the same square, so the two kinds of
@@ -278,6 +341,142 @@ struct LocalReportImage: View {
                 .resizable()
                 .scaledToFill()
                 .clipped()
+        }
+    }
+}
+
+// MARK: - What a reader has done with one report
+
+/// The two marks an open report carries: whether it is finished, and where the reader stopped.
+///
+/// A modifier rather than two copies, because there are two kinds of reader — a report written
+/// here and a report the owner published — and the marks are about neither of those facts. They
+/// are about the person holding the phone.
+///
+/// The bookmark object is made here and handed down the environment, so the prose several views
+/// below can draw the mark and offer to make one without any of the screens in between knowing
+/// that reading bookmarks exist.
+struct ReportReadingMarks: ViewModifier {
+    private let marks: ReportMarks
+    private let id: String
+    private let accent: Color
+
+    @State private var bookmarks: ReadingBookmarks
+    @State private var removing = false
+
+    init(spaceId: String, id: String, accent: Color) {
+        let store = ReportMarks.shared(for: spaceId)
+        marks = store
+        self.id = id
+        self.accent = accent
+        _bookmarks = State(
+            initialValue: ReadingBookmarks(bookmark: store.bookmark(for: id)) { next in
+                store.setBookmark(next, for: id)
+            }
+        )
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .environment(bookmarks)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { readButton }
+                if bookmarks.bookmark != nil {
+                    ToolbarItem(placement: .topBarTrailing) { bookmarkMenu }
+                }
+            }
+            .confirmationDialog(
+                "Remove the reading bookmark?",
+                isPresented: $removing,
+                titleVisibility: .visible
+            ) {
+                Button("Remove the bookmark", role: .destructive) { bookmarks.clear() }
+                Button("Keep it", role: .cancel) {}
+            }
+            .task { await openWhereTheyStopped() }
+    }
+
+    private var readButton: some View {
+        let read = marks.isRead(id)
+        return Button {
+            marks.setRead(id, !read)
+        } label: {
+            Label(
+                read ? "Mark as unread" : "Mark as read",
+                systemImage: read ? "checkmark.circle.fill" : "checkmark.circle"
+            )
+        }
+        .tint(read ? Color.nodusSuccess : accent)
+    }
+
+    /// The bookmark, where a reader can reach it without finding the marked words first.
+    ///
+    /// The mark in the prose is the indicator and pressing it is how it is removed — but a
+    /// twenty-page report can be reopened, scrolled past the mark and then wanted back, and
+    /// hunting for a green line is not a way to navigate. So the same two acts sit here too,
+    /// under the passage they are about.
+    private var bookmarkMenu: some View {
+        Menu {
+            Section {
+                Button {
+                    bookmarks.aimAtBookmark()
+                } label: {
+                    Label("Go to the bookmark", systemImage: "arrow.down.to.line")
+                }
+                Button(role: .destructive) {
+                    removing = true
+                } label: {
+                    Label("Remove the bookmark", systemImage: "bookmark.slash")
+                }
+            } header: {
+                // The reader's own words, so it is obvious which passage this is about. Not a
+                // localised string: it is a quotation from the report.
+                Text(ReadingBookmarks.label(bookmarks.bookmark?.snippet ?? ""))
+            }
+        } label: {
+            Image(systemName: "bookmark.fill")
+        }
+        .tint(Color.nodusBookmarkRule)
+        .accessibilityLabel("The reading bookmark")
+    }
+
+    /// Open the report where the reader left it.
+    ///
+    /// Asked for twice, and that is not superstition. The first request is made while the
+    /// report is still being laid out — a twenty-page document is several thousand points of
+    /// text views whose heights are not known until they have been measured — and a scroll
+    /// against a content size that is still growing lands short. The second is made once it has
+    /// settled; if the first one landed, the second moves nothing.
+    private func openWhereTheyStopped() async {
+        guard bookmarks.bookmark != nil else { return }
+        try? await Task.sleep(for: .milliseconds(180))
+        bookmarks.aimAtBookmark()
+        try? await Task.sleep(for: .milliseconds(480))
+        bookmarks.aimAtBookmark()
+    }
+}
+
+extension View {
+    /// Gives this report its read mark and its reading bookmark.
+    func nodusReadingMarks(spaceId: String, id: String, accent: Color) -> some View {
+        modifier(ReportReadingMarks(spaceId: spaceId, id: id, accent: accent))
+    }
+}
+
+/// The same, for a report that may not have an id yet.
+///
+/// A `ViewModifier` cannot be applied conditionally without changing the view's identity — and
+/// changing a reader's identity halfway through loading it would throw away the scroll position
+/// this feature exists to restore. So the condition is inside.
+struct OptionalReadingMarks: ViewModifier {
+    let session: SpaceSession
+    let id: String?
+
+    func body(content: Content) -> some View {
+        if let id {
+            content.nodusReadingMarks(spaceId: session.connection.spaceId, id: id, accent: session.accent)
+        } else {
+            content
         }
     }
 }
@@ -430,6 +629,7 @@ struct LocalReportReader: View {
         .navigationTitle(saved.mode.label)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
+        .nodusReadingMarks(spaceId: session.connection.spaceId, id: saved.id, accent: session.accent)
         .task { await nameTheSources() }
     }
 
@@ -547,6 +747,10 @@ struct PublishedReportReader: View {
         .navigationTitle("Report")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
+        // Only when the vault names the row. Without an id there is nothing stable to hang a
+        // mark on, and a mark keyed on a title would move to whatever report was renamed into
+        // it — so the report reads exactly as it did before instead.
+        .modifier(OptionalReadingMarks(session: session, id: row.string("id")))
         .task { await load() }
     }
 

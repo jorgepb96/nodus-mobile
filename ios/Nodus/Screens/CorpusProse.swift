@@ -236,11 +236,16 @@ struct CorpusProse: View {
     private let onReference: ((Int) -> Void)?
 
     @State private var opened: CorpusReference?
+    /// Whether the reader has pressed on their own bookmark and is being asked about removing it.
+    @State private var removingBookmark = false
     @Environment(\.nodusReadingStyle) private var reading
     /// The page's find bar, when there is one. Prose is the thing a reader searches, so this is
     /// where the words of a page are declared — after the Markdown and the citations have been
     /// resolved, because what is registered has to be what is on the screen.
     @Environment(PageSearch.self) private var search: PageSearch?
+    /// The open report's reading bookmark, when this prose is inside one. Optional, so an
+    /// immersion station or a chat bubble keeps the plain selection menu it always had.
+    @Environment(ReadingBookmarks.self) private var bookmarks: ReadingBookmarks?
     @Environment(\.nodusSearchPath) private var searchPath
 
     init(
@@ -286,6 +291,19 @@ struct CorpusProse: View {
                             linksLive: session != nil,
                             referencesLive: onReference != nil,
                             highlights: search?.highlights(for: path),
+                            // A paragraph of a document is the only thing on the page that can
+                            // be selected by the word, which is why the bookmark lives here and
+                            // not on a heading or a bibliography entry.
+                            bookmark: bookmarks?.placement(for: path),
+                            // Whether the *report* has one, which is not the same question as
+                            // whether this paragraph does: a reader marking section five has to
+                            // be told they are moving the mark out of section one, and only the
+                            // page knows that.
+                            reportHasBookmark: bookmarks?.bookmark != nil,
+                            onMark: bookmarks.map { marks in
+                                { range, snippet in marks.set(path: path, range: range, snippet: snippet) }
+                            },
+                            onTapBookmark: bookmarks == nil ? nil : { removingBookmark = true },
                             onOpen: { url in
                                 if let number = PageChatReference.number(in: url) {
                                     onReference?(number)
@@ -306,9 +324,17 @@ struct CorpusProse: View {
                 .id(PageSearchAnchor(path: path))
                 // A paragraph of a document is a text view, and only it knows where inside
                 // itself a word sits. A heading is one line and the page can place it.
-                .onAppear { search?.register(path, text: displayed(block), placesItsOwnMatches: placesItsOwnMatches(block)) }
+                .onAppear {
+                    let text = displayed(block)
+                    search?.register(path, text: text, placesItsOwnMatches: placesItsOwnMatches(block))
+                    bookmarks?.reconcile(path: path, displayed: text)
+                }
                 .onChange(of: block.text) { _, _ in
-                    search?.register(path, text: displayed(block), placesItsOwnMatches: placesItsOwnMatches(block))
+                    let text = displayed(block)
+                    search?.register(path, text: text, placesItsOwnMatches: placesItsOwnMatches(block))
+                    // The report was rewritten under the mark — its citations were named. The
+                    // words are looked for again rather than the offsets being trusted.
+                    bookmarks?.reconcile(path: path, displayed: text)
                 }
                 .onDisappear { search?.unregister(path) }
             }
@@ -336,6 +362,17 @@ struct CorpusProse: View {
                         }
                 }
             }
+        }
+        // Pressing the mark asks rather than removes. It is one tap inside a paragraph a
+        // reader is also selecting, scrolling and tapping citations in, and losing the place
+        // you saved to a mistimed touch is not a mistake this screen can undo for you.
+        .confirmationDialog(
+            "Remove the reading bookmark?",
+            isPresented: $removingBookmark,
+            titleVisibility: .visible
+        ) {
+            Button("Remove the bookmark", role: .destructive) { bookmarks?.clear() }
+            Button("Keep it", role: .cancel) {}
         }
     }
 
@@ -546,6 +583,16 @@ private struct DocumentProse: UIViewRepresentable {
     var referencesLive = false
     /// What the page's search wants painted on this paragraph, if anything.
     let highlights: PageSearch.Highlights?
+    /// The reading bookmark, when it sits in this paragraph.
+    var bookmark: ReadingBookmarks.Placement?
+    /// Whether the report has a bookmark anywhere, which is what decides whether marking a
+    /// selection is adding one or moving the one that exists.
+    var reportHasBookmark = false
+    /// Called with the selected range and the words in it. Nil where the page keeps no
+    /// bookmark, and that absence is what removes the menu item rather than dimming it.
+    var onMark: ((NSRange, String) -> Void)?
+    /// A press that landed on the mark itself.
+    var onTapBookmark: (() -> Void)?
     let onOpen: (URL) -> Bool
 
     func makeUIView(context: Context) -> UITextView {
@@ -560,12 +607,24 @@ private struct DocumentProse: UIViewRepresentable {
         view.adjustsFontForContentSizeCategory = false
         view.setContentCompressionResistancePriority(.required, for: .vertical)
         view.delegate = context.coordinator
+        // Pressing the mark. `cancelsTouchesInView = false` because this recognizer must not be
+        // the reason a citation stops opening or a paragraph stops being selectable: it watches
+        // the touch and lets everything else have it too, then does nothing unless the tap
+        // actually landed on the marked words.
+        let press = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pressedBookmark(_:)))
+        press.cancelsTouchesInView = false
+        press.delaysTouchesEnded = false
+        view.addGestureRecognizer(press)
         return view
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.onOpen = onOpen
         context.coordinator.linksLive = linksLive
+        context.coordinator.onMark = onMark
+        context.coordinator.onTapBookmark = onTapBookmark
+        context.coordinator.bookmark = bookmark?.range
+        context.coordinator.reportHasBookmark = reportHasBookmark
 
         // Parsing the Markdown and building the runs is the expensive part, and SwiftUI calls
         // this for any change anywhere in the tree — a scroll, a sheet, the size control being
@@ -585,10 +644,14 @@ private struct DocumentProse: UIViewRepresentable {
             context.coordinator.base = attributed()
         }
         // Typing in the find bar changes every paragraph on the page, so the one thing it must
-        // not do is reparse them: the highlights go on a copy of what was already built.
-        guard rebuilt || context.coordinator.painted != highlights else { return }
-        context.coordinator.painted = highlights
-        view.attributedText = painted(context.coordinator.base)
+        // not do is reparse them: the highlights and the bookmark go on a copy of what was
+        // already built.
+        let marked = bookmark?.range
+        if rebuilt || context.coordinator.painted != highlights || context.coordinator.marked != marked {
+            context.coordinator.painted = highlights
+            context.coordinator.marked = marked
+            view.attributedText = painted(context.coordinator.base)
+        }
 
         // The word, not the paragraph. Deferred by a turn of the run loop because the frame this
         // measurement is against is the one SwiftUI is still deciding: `updateUIView` runs before
@@ -597,6 +660,14 @@ private struct DocumentProse: UIViewRepresentable {
         if let highlights, let active = highlights.active, highlights.aim != context.coordinator.aimed {
             context.coordinator.aimed = highlights.aim
             DispatchQueue.main.async { Self.bringIntoView(active, of: view) }
+        }
+
+        // Opening a report where the reader left it. The same machinery as walking onto a
+        // match, and for the same reason: the page can only scroll to a paragraph as a whole,
+        // and in a paragraph taller than the screen that says nothing about where the mark is.
+        if let bookmark, bookmark.aim != context.coordinator.aimedBookmark {
+            context.coordinator.aimedBookmark = bookmark.aim
+            DispatchQueue.main.async { Self.bringIntoView(bookmark.range, of: view) }
         }
     }
 
@@ -642,14 +713,25 @@ private struct DocumentProse: UIViewRepresentable {
         let referencesLive: Bool
     }
 
-    /// The paragraph with the search's marks on it, or exactly what was built when there are none.
+    /// The paragraph with the search's marks and the reading bookmark on it, or exactly what was
+    /// built when it has neither.
+    ///
+    /// The bookmark goes on first, so a word that is both marked and being searched for shows
+    /// the search: the find bar is a thing happening now, and the bookmark will still be there
+    /// when it closes.
     private func painted(_ base: NSAttributedString) -> NSAttributedString {
-        guard let highlights, !highlights.ranges.isEmpty else { return base }
+        let searched = highlights?.ranges ?? []
+        guard !searched.isEmpty || bookmark != nil else { return base }
         let output = NSMutableAttributedString(attributedString: base)
         let whole = NSRange(location: 0, length: output.length)
-        for range in highlights.ranges {
+        if let bookmark, let clamped = bookmark.range.intersection(whole), clamped.length > 0 {
+            output.addAttribute(.backgroundColor, value: UIColor(Color.nodusBookmark), range: clamped)
+            output.addAttribute(.underlineStyle, value: NSUnderlineStyle.thick.rawValue, range: clamped)
+            output.addAttribute(.underlineColor, value: UIColor(Color.nodusBookmarkRule), range: clamped)
+        }
+        for range in searched {
             guard let clamped = range.intersection(whole), clamped.length > 0 else { continue }
-            let colour = range == highlights.active ? Color.nodusFindActive : Color.nodusFindMatch
+            let colour = range == highlights?.active ? Color.nodusFindActive : Color.nodusFindMatch
             output.addAttribute(.backgroundColor, value: UIColor(colour), range: clamped)
         }
         return output
@@ -724,6 +806,16 @@ private struct DocumentProse: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var onOpen: (URL) -> Bool
         var linksLive: Bool
+        /// Where a selection goes when the reader marks it. Nil where the page keeps no
+        /// bookmark, which is what leaves the ordinary selection menu alone.
+        var onMark: ((NSRange, String) -> Void)?
+        /// A press that landed inside the mark.
+        var onTapBookmark: (() -> Void)?
+        /// Where the mark sits in this paragraph, when it is in this one at all.
+        var bookmark: NSRange?
+        /// Whether the report has one anywhere. A paragraph that does not hold the mark still
+        /// has to say "move" rather than "add" — there is only ever one.
+        var reportHasBookmark = false
         /// What the text view was last built from, so an unrelated update costs nothing.
         var identity: Identity?
         /// The parsed paragraph, before the search painted anything on it.
@@ -731,12 +823,72 @@ private struct DocumentProse: UIViewRepresentable {
         /// The marks currently on screen, so a keystroke that changes nothing here changes
         /// nothing here.
         var painted: PageSearch.Highlights?
+        /// And the bookmark that is currently painted, for the same reason.
+        var marked: NSRange?
         /// The last request this paragraph brought a match into view for.
         var aimed = 0
+        /// The same, for the reading bookmark. Separate counters because the two are separate
+        /// requests: closing the find bar must not scroll the page back to the bookmark.
+        var aimedBookmark = 0
 
         init(onOpen: @escaping (URL) -> Bool, linksLive: Bool) {
             self.onOpen = onOpen
             self.linksLive = linksLive
+        }
+
+        /// Marking a selection, offered in the menu the selection already opens.
+        ///
+        /// Added to the system's own items rather than replacing them: copy, look up, share and
+        /// translate are what a reader expects of selected text, and a report is a document
+        /// people quote from as much as they navigate.
+        ///
+        /// Returning `nil` would mean "no menu at all", so a page with no bookmark hands back
+        /// the suggested actions untouched.
+        func textView(
+            _ textView: UITextView,
+            editMenuForTextIn range: NSRange,
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            guard let onMark, range.length > 0 else { return UIMenu(children: suggestedActions) }
+            let text = (textView.text as NSString).substring(with: range)
+            // "Move" rather than "Add" when there is already one, because there is only ever
+            // one bookmark and a reader who is not told that will look for the old one. Asked
+            // of the report and not of this paragraph: the mark being moved is usually in a
+            // different section from the words being selected.
+            let title = reportHasBookmark
+                ? String(localized: "Move the bookmark here")
+                : String(localized: "Reading bookmark")
+            let mark = UIAction(title: title, image: UIImage(systemName: "bookmark")) { _ in
+                MainActor.assumeIsolated {
+                    onMark(range, text)
+                    // The selection has served its purpose, and leaving it up puts the system's
+                    // handles over the mark the reader has just made.
+                    textView.selectedTextRange = nil
+                }
+            }
+            return UIMenu(children: suggestedActions + [mark])
+        }
+
+        /// A press on the marked words.
+        ///
+        /// Hit-tested twice, because `closestPosition(to:)` answers for a tap anywhere in the
+        /// paragraph — it is the *closest* position, not the one under the finger. So the
+        /// character it names has to be inside the mark, and the point has to be on that
+        /// character's own line. Without the second test, tapping the blank end of a short last
+        /// line three paragraphs' worth of leading below the mark counts as pressing it.
+        @objc func pressedBookmark(_ recognizer: UITapGestureRecognizer) {
+            guard let view = recognizer.view as? UITextView,
+                  let onTapBookmark,
+                  let bookmark,
+                  bookmark.length > 0
+            else { return }
+            let point = recognizer.location(in: view)
+            guard let position = view.closestPosition(to: point) else { return }
+            let index = view.offset(from: view.beginningOfDocument, to: position)
+            guard NSLocationInRange(index, bookmark) else { return }
+            let caret = view.caretRect(for: position)
+            guard point.y >= caret.minY - 2, point.y <= caret.maxY + 2 else { return }
+            MainActor.assumeIsolated { onTapBookmark() }
         }
 
         /// What should happen if this citation is activated — which is not the same question as

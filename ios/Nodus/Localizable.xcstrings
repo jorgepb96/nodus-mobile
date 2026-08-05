@@ -1302,6 +1302,17 @@
         }
       }
     },
+    "Bookmarked": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Con marcador"
+          }
+        }
+      }
+    },
     "Born": {
       "extractionState": "manual",
       "localizations": {
@@ -3403,6 +3414,17 @@
         }
       }
     },
+    "Go to the bookmark": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ir al marcador"
+          }
+        }
+      }
+    },
     "Goals": {
       "extractionState": "manual",
       "localizations": {
@@ -3898,6 +3920,17 @@
         }
       }
     },
+    "Keep it": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conservarlo"
+          }
+        }
+      }
+    },
     "Keeps the whole publication on the device: works with no network, sorts instantly, and reaches the tables the API does not expose.": {
       "extractionState": "manual",
       "localizations": {
@@ -4162,6 +4195,28 @@
         }
       }
     },
+    "Mark as read": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como leído"
+          }
+        }
+      }
+    },
+    "Mark as unread": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como no leído"
+          }
+        }
+      }
+    },
     "Match %lld of %lld": {
       "extractionState": "manual",
       "localizations": {
@@ -4334,6 +4389,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Más del espacio"
+          }
+        }
+      }
+    },
+    "Move the bookmark here": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mover aquí el marcador"
           }
         }
       }
@@ -6098,6 +6164,17 @@
         }
       }
     },
+    "Read": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leído"
+          }
+        }
+      }
+    },
     "Read only": {
       "extractionState": "manual",
       "localizations": {
@@ -6127,6 +6204,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Acceso de lectura"
+          }
+        }
+      }
+    },
+    "Reading bookmark": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcador de lectura"
           }
         }
       }
@@ -6292,6 +6380,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quitar"
+          }
+        }
+      }
+    },
+    "Remove the bookmark": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar el marcador"
+          }
+        }
+      }
+    },
+    "Remove the reading bookmark?": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Quitar el marcador de lectura?"
           }
         }
       }
@@ -8056,6 +8166,17 @@
         }
       }
     },
+    "The reading bookmark": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El marcador de lectura"
+          }
+        }
+      }
+    },
     "The refutation is that “%@” refuses “%@”.": {
       "extractionState": "manual",
       "localizations": {
@@ -9307,6 +9428,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quitar de destacados"
+          }
+        }
+      }
+    },
+    "Unread": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin leer"
           }
         }
       }

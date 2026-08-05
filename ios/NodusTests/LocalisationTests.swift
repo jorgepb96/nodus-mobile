@@ -82,6 +82,28 @@ struct LocalisationTests {
         _ = try translated("No matches")
     }
 
+    /// The reading marks are pressed while reading, in a menu the system opens over the reader's
+    /// own selection. A control that appears among Copy, Look Up and Share in one language and
+    /// then in another is the one place an English word is most jarring — and the question asked
+    /// before a saved place is thrown away has to be understood before it is answered.
+    @Test("the read mark and the reading bookmark speak Spanish")
+    func readingMarkStrings() throws {
+        #expect(try translated("Mark as read") == "Marcar como leído")
+        #expect(try translated("Mark as unread") == "Marcar como no leído")
+        #expect(try translated("Reading bookmark") == "Marcador de lectura")
+        _ = try translated("Move the bookmark here")
+        _ = try translated("Go to the bookmark")
+        _ = try translated("Remove the reading bookmark?")
+        _ = try translated("Remove the bookmark")
+        _ = try translated("Keep it")
+        // Read in the library, beside a report rather than inside one.
+        _ = try translated("Read")
+        _ = try translated("Unread")
+        _ = try translated("Bookmarked")
+        // Spoken, never seen: the bookmark control in the bar is a glyph and nothing else.
+        _ = try translated("The reading bookmark")
+    }
+
     /// The report chat is a modal a reader opens mid-page, and everything in it — what it is
     /// for, what it promises about the conversation, and how it fails — is read in that moment.
     @Test("the report chat speaks Spanish")

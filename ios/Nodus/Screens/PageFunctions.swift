@@ -578,4 +578,15 @@ extension Color {
     /// dark page so black text on them stays black text.
     static let nodusFindMatch = nodusDynamic(light: "#fde68a", dark: "#8a6d1f")
     static let nodusFindActive = nodusDynamic(light: "#fb923c", dark: "#c2620d")
+
+    /// Where the reader stopped.
+    ///
+    /// Deliberately not in the yellows above. A find highlight is a thing happening now and
+    /// disappears when the bar closes; a bookmark is still there tomorrow, and two marks in the
+    /// same family would have a reader closing the find bar to work out which was which. Green
+    /// instead — and quieter than either yellow, because it sits under prose that is being read
+    /// rather than scanned. The rule under it is what makes it legible to somebody who cannot
+    /// tell the two hues apart at all.
+    static let nodusBookmark = nodusDynamic(light: "#bbf7d0", dark: "#2f6b46")
+    static let nodusBookmarkRule = nodusDynamic(light: "#15803d", dark: "#6ee7b7")
 }
