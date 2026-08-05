@@ -137,6 +137,28 @@ public struct MutationLimits: Sendable, Hashable {
 public extension Mutation {
     /// The bytes this change occupies on the wire, measured the way the server measures it.
     var encodedSize: Int { (try? JSONEncoder.nodus.encode(self))?.count ?? 0 }
+
+    /// What this row says it is, in the vocabulary the desktop's own inbox records.
+    ///
+    /// Two columns say it, because two tables spell it differently: `decorative_images` carries
+    /// an `entity_kind` outright, and a saved writing draft declares itself inside `brief_json`
+    /// — `kind: "deep_research"` is the exact value the corpus route filters a Deep Research
+    /// report on, and the exact value `ReportDraft` writes.
+    ///
+    /// Nil for a note, a folder, a delete, or anything else that never claimed to be a kind of
+    /// thing. Nil is the common case and means only "this row did not say".
+    var entityKind: String? {
+        guard let row else { return nil }
+        if let declared = row["entity_kind"]?.stringValue { return declared }
+        // Only `brief_json` is parsed, never the whole row: the draft beside it holds the entire
+        // markdown of a report, and this is read while queueing one.
+        guard
+            let brief = row["brief_json"]?.stringValue,
+            let data = brief.data(using: .utf8),
+            let object = try? JSONDecoder().decode([String: JSONValue].self, from: data)
+        else { return nil }
+        return object["kind"]?.stringValue
+    }
 }
 
 public extension NodusClient {

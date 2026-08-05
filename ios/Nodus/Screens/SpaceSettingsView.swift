@@ -13,7 +13,7 @@ struct SpaceSettingsView: View {
     @Environment(CloudBackup.self) private var cloud
     @State private var health: ServerHealth?
     @State private var capabilities: ServerCapabilities?
-    @State private var diagnosticError: String?
+    @State private var diagnosticFailure: ConnectionFailure?
 
     var body: some View {
         NavigationStack {
@@ -47,8 +47,12 @@ struct SpaceSettingsView: View {
                             labelled("Largest change", ByteCountFormatter.string(fromByteCount: Int64(maxMutationBytes), countStyle: .file))
                         }
                     }
-                    if let diagnosticError {
-                        Text(diagnosticError).font(.caption).foregroundStyle(Color.nodusDanger)
+                    if let diagnosticFailure {
+                        // One line, and a way to find out more. The whole of what this screen
+                        // could say about a failure used to be `error.localizedDescription`.
+                        Text(LocalizedStringKey(diagnosticFailure.sentence))
+                            .font(.caption)
+                            .foregroundStyle(diagnosticFailure.tone == .caution ? Color.nodusCaution : Color.nodusDanger)
                     }
                 } header: {
                     Text("Server")
@@ -57,6 +61,19 @@ struct SpaceSettingsView: View {
                         Text("This connection is not encrypted. That should only ever be a local test.")
                             .foregroundStyle(Color.nodusCaution)
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        ConnectionDiagnosticsView(connection: session.connection)
+                            .environment(model)
+                    } label: {
+                        Label("Diagnostics", systemImage: "stethoscope")
+                    }
+                } header: {
+                    Text("Connection")
+                } footer: {
+                    Text("Runs the checks in order — this device's network, then the address, then whether a Nodus Server is behind it — and says where it stops.")
                 }
 
                 Section {
@@ -325,14 +342,27 @@ struct SpaceSettingsView: View {
         .font(.callout)
     }
 
+    /// The two public calls this screen shows numbers from.
+    ///
+    /// The full ordered run lives one tap away, on its own screen: this one is settings, and it
+    /// needs the ceilings and the version, not a verdict. What it does share is the wording —
+    /// when the two calls fail, the sentence comes from the same classifier.
     private func diagnose() async {
         do {
             async let health = session.client.health()
             async let capabilities = session.client.capabilities()
             self.health = try await health
             self.capabilities = try await capabilities
+            diagnosticFailure = nil
         } catch {
-            diagnosticError = error.localizedDescription
+            let network = await NetworkReachability.current()
+            diagnosticFailure = ConnectionFailure.classify(
+                error: error,
+                origin: session.connection.origin,
+                network: network,
+                knock: .unauthenticated,
+                appVersion: NodusVersion.current
+            )
         }
     }
 }

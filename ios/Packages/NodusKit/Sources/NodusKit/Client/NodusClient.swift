@@ -207,7 +207,16 @@ public extension URLSession {
     /// `timeoutIntervalForResource` gave up ten minutes later.
     ///
     /// A probe has to be able to answer "there is nothing here", so it does not wait.
-    static let nodusProbe: URLSession = {
+    static let nodusProbe = URLSession(configuration: .nodusProbe)
+}
+
+public extension URLSessionConfiguration {
+    /// What a probe session is configured with, apart from who watches it.
+    ///
+    /// Shared by `URLSession.nodusProbe` and by the diagnostics session that carries a
+    /// certificate inspector, because two copies of these five lines is two places for the one
+    /// setting that matters — `waitsForConnectivity` — to be turned back on by accident.
+    static var nodusProbe: URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -217,6 +226,6 @@ public extension URLSession {
         configuration.timeoutIntervalForResource = 15
         configuration.waitsForConnectivity = false
         configuration.httpAdditionalHeaders = ["User-Agent": "Nodus-iOS/3.2.0"]
-        return URLSession(configuration: configuration)
-    }()
+        return configuration
+    }
 }

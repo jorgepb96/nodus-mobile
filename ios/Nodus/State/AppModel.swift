@@ -62,24 +62,77 @@ final class AppModel {
     // MARK: - Connecting
 
     /// Step one: reach a server and ask what it supports, before asking the user for anything.
+    ///
+    /// Everything it can throw is a `ConnectionFailure`, because the address field is where a
+    /// person meets every one of these for the first time and "could not connect to server" is
+    /// no help at any of them.
     func probe(_ input: String) async throws -> (ServerAddress, ServerCapabilities) {
-        let address = try ServerAddress(validating: input)
-        // `nodusProbe`, not the default session: the default waits for connectivity, and while
-        // it waits it ignores request timeouts — so an address with nothing behind it left the
-        // screen saying "looking for the server" indefinitely instead of saying there was
-        // nothing there.
+        let address: ServerAddress
+        do {
+            address = try ServerAddress(validating: input)
+        } catch {
+            throw ConnectionFailure.badAddress(input)
+        }
+
+        // A session of its own, so the certificate can be looked at. The default session waits
+        // for connectivity, and while it waits it ignores request timeouts — so an address with
+        // nothing behind it left the screen saying "looking for the server" indefinitely
+        // instead of saying there was nothing there.
+        let inspector = CertificateInspector()
+        let session = URLSession.nodusProbe(observing: inspector)
+        defer { session.finishTasksAndInvalidate() }
         let client = NodusClient(
             address: address,
-            session: .nodusProbe,
+            session: session,
             cache: ResponseCache(directory: cacheDirectory)
         )
-        let capabilities = try await client.capabilities(timeout: 12)
-        guard capabilities.supportsAnyKnownSnapshotVersion else {
-            throw TransportError.malformedResponse(
-                expected: "a snapshot format this app reads (\(SnapshotFormat.supportedVersions.sorted()))"
-            )
+
+        do {
+            // Four seconds, not the session's twelve. A sleeping computer answers nothing at
+            // all, and the only way to say so promptly is to stop waiting promptly; a server
+            // that is actually there answers this in well under a second on any network the
+            // app can reach it over.
+            let capabilities = try await client.capabilities(timeout: 4)
+            // It answered, so it is a Nodus Server. The one thing left that makes an address
+            // unusable is a release this build cannot read, and only the capabilities can say.
+            let gap = ConnectionFailure.gap(between: capabilities, appVersion: NodusVersion.current)
+            guard !gap.blocks else { throw ConnectionFailure.versionGap(gap) }
+            return (address, capabilities)
+        } catch let failure as ConnectionFailure {
+            throw failure
+        } catch {
+            // The network is measured only now, on the way out. Asking first would put a
+            // monitor in front of every successful connection to answer a question that only
+            // matters when something has already gone wrong — and half a second is the whole
+            // of what is left of the five in which a sleeping computer has to be named.
+            let network = await NetworkReachability.current(within: 0.5)
+            let host = ConnectionFailure.host(of: address.origin)
+            throw ConnectionFailure.classify(
+                error: error,
+                origin: address.origin,
+                network: network,
+                knock: .unauthenticated,
+                appVersion: NodusVersion.current,
+                fingerprint: inspector.evidence(for: host)?.fingerprint
+            ) ?? .unclassified(host: host, detail: error.localizedDescription)
         }
-        return (address, capabilities)
+    }
+
+    /// Run the checks against one of this device's connections.
+    ///
+    /// It lives here and not in the diagnostics view because the token does. Connections are in
+    /// `UserDefaults` and their tokens are in the Keychain, and a token is only ever read back
+    /// into a client — never into a view. The view receives a report, which is built so that it
+    /// cannot carry one.
+    func diagnose(_ connection: Connection) async -> ConnectionReport {
+        await ConnectionDiagnostics.run(
+            address: ServerAddress(trusted: connection.origin),
+            token: keychain.value(for: KeychainStore.deviceTokenKey(
+                origin: connection.origin,
+                spaceId: connection.spaceId
+            )),
+            cacheDirectory: cacheDirectory
+        )
     }
 
     func signIn(to address: ServerAddress, email: String, password: String) async throws -> LoginTicket {
@@ -181,6 +234,7 @@ final class AppModel {
             return false
         }
         needsSignIn = nil
+        lastFailure = nil
         let updated = { var copy = connection; copy.lastOpenedAt = Date(); return copy }()
         if let index = connections.firstIndex(where: { $0.id == connection.id }) {
             connections[index] = updated
@@ -190,7 +244,8 @@ final class AppModel {
             connection: updated,
             token: token,
             cacheDirectory: cacheDirectory,
-            onUnauthorized: { [weak self, updated] in await self?.handleRevocation(of: updated) }
+            onUnauthorized: { [weak self, updated] in await self?.handleRevocation(of: updated) },
+            onFailure: { [weak self, updated] failure in self?.report(failure, on: updated) }
         )
         return true
     }
@@ -205,6 +260,23 @@ final class AppModel {
     private(set) var needsSignIn: Connection?
 
     func clearSignInNotice() { needsSignIn = nil }
+
+    /// The last time reaching a server went wrong, and which space it was.
+    ///
+    /// The picker is where somebody lands after a space fails to open, and until now it said
+    /// nothing at all about why — the shell knew, and the shell was the screen they had just
+    /// left. A revoked credential has had its own notice here for a while; a sleeping computer
+    /// deserves the same one, next to it.
+    private(set) var lastFailure: (connection: Connection, failure: ConnectionFailure)?
+
+    func report(_ failure: ConnectionFailure, on connection: Connection) {
+        // A credential the server has stopped accepting already has a notice of its own, raised
+        // from the 401 handler. Two notices about one fact is one notice too many.
+        if case .credentialRejected = failure { return }
+        lastFailure = (connection, failure)
+    }
+
+    func clearFailureNotice() { lastFailure = nil }
 
     /// A 401 means this token no longer opens this space. Drop the secret but keep the
     /// connection: the user's next move is to sign in again, not to retype a server address.

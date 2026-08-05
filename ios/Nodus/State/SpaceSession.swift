@@ -15,9 +15,17 @@ final class SpaceSession {
     let client: NodusClient
 
     private(set) var overview: SpaceOverview?
-    private(set) var loadError: String?
+    /// Why the space could not be read, classified rather than described.
+    ///
+    /// It used to be `error.localizedDescription`, which for the ordinary case — a laptop that
+    /// went to sleep — is "Could not connect to the server." on a screen that has just failed
+    /// to connect to a server.
+    private(set) var loadFailure: ConnectionFailure?
     private(set) var isPublished = true
     private(set) var isLoading = false
+
+    /// Told to `AppModel` so the space picker can say the same thing this screen says.
+    private let onFailure: (ConnectionFailure) -> Void
 
     /// The vault's embedding identity, read once by probing the semantic endpoint. Nil until
     /// probed, `.none` when the vault has no published vectors.
@@ -36,9 +44,11 @@ final class SpaceSession {
         connection: AppModel.Connection,
         token: String,
         cacheDirectory: URL,
-        onUnauthorized: @escaping @Sendable () async -> Void
+        onUnauthorized: @escaping @Sendable () async -> Void,
+        onFailure: @escaping (ConnectionFailure) -> Void = { _ in }
     ) {
         self.connection = connection
+        self.onFailure = onFailure
         let address = ServerAddress(trusted: connection.origin)
         self.client = NodusClient(
             address: address,
@@ -170,19 +180,37 @@ final class SpaceSession {
         isLoading = true
         defer { isLoading = false }
         do {
-            overview = try await client.space(connection.spaceId)
+            // The first call after a space is opened is a knock at an address as much as it is
+            // a read: it is where a computer that has gone to sleep since last time gets
+            // discovered, and the session's own 30 s is half a minute of spinner to say so.
+            // Later refreshes are against a server that has already answered, and keep it.
+            let isFirstKnock = overview == nil
+            overview = try await client.space(connection.spaceId, timeout: isFirstKnock ? 4 : nil)
             isPublished = overview?.hasBeenPublished ?? false
-            loadError = nil
+            loadFailure = nil
         } catch let error as APIError where error.isNotPublished {
             // Not a failure: the owner has not published yet. The shell shows an empty state
             // that says so, rather than an error that suggests something is broken.
             isPublished = false
-            loadError = nil
+            loadFailure = nil
         } catch where error.isCancellation {
             // A pull-to-refresh that was let go of, or a screen that went away mid-request.
             // Nothing failed and nothing changed, so the last good read stands.
         } catch {
-            loadError = error.localizedDescription
+            // The network is only measured once something has already gone wrong, and briefly:
+            // it is spent on top of the timeout that already elapsed. This is a credentialed
+            // route, so a 401 here really is this device's token and not a proxy guarding a
+            // public one.
+            let network = await NetworkReachability.current(within: 0.5)
+            let failure = ConnectionFailure.classify(
+                error: error,
+                origin: connection.origin,
+                network: network,
+                knock: .credentialed,
+                appVersion: NodusVersion.current
+            )
+            loadFailure = failure
+            if let failure { onFailure(failure) }
         }
     }
 
