@@ -107,6 +107,10 @@ final class SyncedDefaults {
         }
         cloud?.set(value, forKey: key)
         cloud?.set(stamp, forKey: Self.stampKey(key))
+        // Not required — iCloud uploads on its own schedule — but it is what turns "eventually"
+        // into seconds, and the whole point of this is that a model set on the iPad is already
+        // set when the phone is picked up.
+        cloud?.synchronize()
     }
 
     /// Take a value that came from iCloud, keeping the stamp it arrived with.
