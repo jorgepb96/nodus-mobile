@@ -27,28 +27,7 @@ public extension NodusClient {
             extraHeaders: ["Accept": SnapshotFormat.contentType]
         ))
 
-        let json = Gzip.isGzipped(response.data) ? try Gzip.inflate(response.data) : response.data
-        guard let object = try? JSONDecoder().decode([String: JSONValue].self, from: json) else {
-            throw TransportError.malformedResponse(expected: "a snapshot document")
-        }
-        guard object["format"]?.stringValue == SnapshotFormat.identifier else {
-            throw TransportError.malformedResponse(expected: "format \"\(SnapshotFormat.identifier)\"")
-        }
-        let version = object["formatVersion"]?.intValue ?? 0
-        guard SnapshotFormat.supportedVersions.contains(version) else {
-            // A newer server can publish a format this build does not read. Saying so beats
-            // importing half of it and showing a corpus with holes in it.
-            throw TransportError.malformedResponse(
-                expected: "snapshot format version in \(SnapshotFormat.supportedVersions.sorted()), got \(version)"
-            )
-        }
-
-        return SnapshotDownload(
-            document: object,
-            formatVersion: version,
-            revision: response.revision ?? object["revision"]?.stringValue,
-            byteCount: response.data.count
-        )
+        return try SnapshotDownload.read(response.data, revision: response.revision)
     }
 }
 
@@ -75,6 +54,40 @@ public struct SnapshotDownload: Sendable {
     public let revision: String?
     /// Compressed size, i.e. what actually crossed the network.
     public let byteCount: Int
+
+    /// Reads a published snapshot from the bytes it arrived as, gzipped or not.
+    ///
+    /// Separate from the request that fetched it because the app also carries one in its own
+    /// bundle — the example vault, which never crosses a network — and a second parser for it
+    /// would be a second opinion about what a valid publication is.
+    ///
+    /// - Parameter revision: what the transport said the revision was, when there was a
+    ///   transport. The document's own `revision` is the fallback, which is what a snapshot
+    ///   read off disk relies on.
+    public static func read(_ data: Data, revision: String? = nil) throws -> SnapshotDownload {
+        let json = Gzip.isGzipped(data) ? try Gzip.inflate(data) : data
+        guard let object = try? JSONDecoder().decode([String: JSONValue].self, from: json) else {
+            throw TransportError.malformedResponse(expected: "a snapshot document")
+        }
+        guard object["format"]?.stringValue == SnapshotFormat.identifier else {
+            throw TransportError.malformedResponse(expected: "format \"\(SnapshotFormat.identifier)\"")
+        }
+        let version = object["formatVersion"]?.intValue ?? 0
+        guard SnapshotFormat.supportedVersions.contains(version) else {
+            // A newer server can publish a format this build does not read. Saying so beats
+            // importing half of it and showing a corpus with holes in it.
+            throw TransportError.malformedResponse(
+                expected: "snapshot format version in \(SnapshotFormat.supportedVersions.sorted()), got \(version)"
+            )
+        }
+
+        return SnapshotDownload(
+            document: object,
+            formatVersion: version,
+            revision: revision ?? object["revision"]?.stringValue,
+            byteCount: data.count
+        )
+    }
 
     public var vault: VaultDescriptor? {
         guard let raw = document["vault"]?.objectValue else { return nil }

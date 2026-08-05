@@ -446,6 +446,25 @@ public actor MirrorStore {
         }
     }
 
+    /// Every row of one table, in publication order.
+    ///
+    /// The one read that is not a page. `LocalCorpus` needs it because the shapes the server
+    /// assembles — an idea with its relations, a debate with both its sides — are joins across
+    /// whole tables, and a paged read would be a join over an arbitrary slice of one.
+    public func allRows(table: String) throws -> [Row] {
+        try dbQueue.read { db in
+            try GRDB.Row.fetchAll(db, sql: "SELECT body FROM rows_json WHERE tbl = ? ORDER BY ordinal", arguments: [table])
+                .compactMap { row in
+                    guard
+                        let body: String = row["body"],
+                        let data = body.data(using: .utf8),
+                        let columns = try? JSONDecoder().decode([String: JSONValue].self, from: data)
+                    else { return nil }
+                    return NodusKit.Row(columns)
+                }
+        }
+    }
+
     /// Rows of one table whose declared key is in a set. Used after a link table hands back ids.
     public func rows(table: String, ids: [String]) throws -> [Row] {
         guard !ids.isEmpty else { return [] }

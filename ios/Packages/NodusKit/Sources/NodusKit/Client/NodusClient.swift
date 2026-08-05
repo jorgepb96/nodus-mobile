@@ -24,6 +24,13 @@ public actor NodusClient {
     /// Raised when the server answers 401, so the app can drop the stored credential once
     /// rather than every screen discovering it separately.
     private var onUnauthorized: (@Sendable () async -> Void)?
+    /// A corpus held on this device that answers instead of a server.
+    ///
+    /// Set only for the example vault the app carries in its bundle. Every screen in the app
+    /// reads through this client, so a demo that opened no socket had to be either a second
+    /// `SpaceSession` — two of everything, drifting apart — or a client that answers from the
+    /// device. It is the second, and the seam is the first four lines of `perform`.
+    private let local: LocalCorpus?
 
     public init(
         address: ServerAddress,
@@ -35,6 +42,21 @@ public actor NodusClient {
         self.bearerToken = token
         self.session = session
         self.cache = cache
+        self.local = nil
+    }
+
+    /// A client for a corpus that lives on this device and nowhere else.
+    ///
+    /// It holds no token and no session because it needs neither: nothing it is asked for
+    /// leaves the process. The address is a name for the space, not a place — `perform`
+    /// returns before it is ever resolved — and it is what the routes are built from, so the
+    /// paths this answers are the paths a real server would have been asked for.
+    public init(local: LocalCorpus, address: ServerAddress, cache: ResponseCache) {
+        self.address = address
+        self.bearerToken = nil
+        self.session = .nodusProbe
+        self.cache = cache
+        self.local = local
     }
 
     public func setToken(_ token: String?) {
@@ -80,6 +102,14 @@ public actor NodusClient {
     }
 
     func perform(_ request: Request, allowRetry: Bool = true) async throws -> Response {
+        // Before the URL is even built. A local corpus is not a cache in front of a server and
+        // must never fall through to one: the example vault has no server behind it, and a
+        // request it cannot answer is a 404 from this device rather than a socket left open in
+        // aeroplane mode.
+        if let local {
+            return try await local.answer(request)
+        }
+
         let url = try address.url(path: request.path, query: request.query)
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method
