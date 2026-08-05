@@ -177,6 +177,28 @@ struct LocalisationTests {
     func deliveredStrings() throws {
         _ = try translated("In the vault")
         _ = try translated("In the owner's Nodus. It joins the published copy when they republish.")
+        // Read on a lock screen, hours after the app was last open, and the only words that
+        // will be read at all if the report is never opened again.
+        _ = try translated("Your report is in the vault")
+        // Asked through the interpolation the notification really builds rather than by
+        // looking the key up: two `%@` in a sentence is exactly the shape that ships in English
+        // when the catalogue holds a key nothing generates.
+        let bundle = try spanish
+        #expect(
+            String(
+                localized: "“\("El comercio atlántico")” reached \("Mi vault"). Nobody reads it back, you included, until its owner republishes.",
+                bundle: bundle
+            ) == "«El comercio atlántico» ha llegado a Mi vault. Nadie lo lee, tú incluido, hasta que su propietario vuelva a publicar."
+        )
+    }
+
+    /// A key that has run out stops a queue without explaining itself. These are the sentences
+    /// that turn "sending failed" into something with a next step in it.
+    @Test("what the queue says about a key that is running out has Spanish")
+    func credentialStrings() throws {
+        _ = try translated("Sign in again soon")
+        _ = try translated("This device's key for “%@” stops working on %@.")
+        _ = try translated("The server no longer accepts this device's key for “%@”. Nothing queued is lost; it travels once you have signed in again.")
     }
 
     // These are read by iOS, not by the app, and a plist string on its own is shown verbatim in

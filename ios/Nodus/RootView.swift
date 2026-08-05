@@ -59,10 +59,11 @@ struct RootView: View {
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // Coming back is when the answer may have changed: the background flush may have
-            // finished a send while the app was away, and the counts on the tile and the header
-            // are read from this. It is a handful of SQLite opens, on a detached task, and only
-            // for spaces that actually have a queue on disk.
-            if phase == .active { Task { await tray.refresh() } }
+            // finished a send while the app was away, and — the other half of the same
+            // question — somebody may have opened their desktop and collected it. It is a
+            // handful of SQLite opens and, only for spaces actually holding changes in a
+            // ledger, one request each.
+            if phase == .active { Task { await tray.confirmDeliveries() } }
 
             guard phase == .background else { return }
             // Immediately, with no grace period. A window in which the app reopens unlocked is

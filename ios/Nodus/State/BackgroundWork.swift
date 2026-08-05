@@ -38,7 +38,15 @@ nonisolated enum BackgroundWork {
 
     static func registerHandlers() {
         register(mutationFlushIdentifier) { await BackgroundJobs.flushAuthorisedMutations() }
-        register(mirrorRefreshIdentifier) { await BackgroundJobs.refreshStaleMirrors() }
+        // Two jobs under one identifier, because Info.plist permits three and asking for a
+        // fourth would be advertising a capability this bundle does not have. They belong
+        // together anyway: both are "while nobody was looking, what changed at the other end?",
+        // both need only the network, and both are hourly work rather than urgent work.
+        register(mirrorRefreshIdentifier) {
+            let delivered = await BackgroundJobs.confirmDeliveries()
+            let mirrors = await BackgroundJobs.refreshStaleMirrors()
+            return delivered && mirrors
+        }
         register(deepResearchIdentifier) { await BackgroundJobs.resumeDeepResearch() }
     }
 
@@ -81,7 +89,16 @@ nonisolated enum BackgroundWork {
     @MainActor
     static func scheduleWhatIsPending() async {
         if await BackgroundJobs.hasAuthorisedMutations() { submitProcessing(mutationFlushIdentifier, delay: 120) }
-        if BackgroundJobs.hasMirrors() { submitProcessing(mirrorRefreshIdentifier, delay: 3600) }
+        // Either half of that handler having work is reason enough. A device with no offline
+        // copy at all still has a queue whose changes are sitting in a ledger waiting for
+        // somebody to open their desktop, and that is precisely the news it cannot get any
+        // other way. Two ifs rather than one `||`, because the second question opens a database
+        // per space and a device that has already answered yes need not be asked it.
+        if BackgroundJobs.hasMirrors() {
+            submitProcessing(mirrorRefreshIdentifier, delay: 3600)
+        } else if await BackgroundJobs.awaitsDeliveries() {
+            submitProcessing(mirrorRefreshIdentifier, delay: 3600)
+        }
         if !DeepResearchCheckpointStore.spacesWithUnfinishedRuns().isEmpty {
             submitProcessing(deepResearchIdentifier, delay: 60)
         }
@@ -129,11 +146,7 @@ enum BackgroundJobs {
     // MARK: - Mutations
 
     static func hasAuthorisedMutations() async -> Bool {
-        for connection in AppModel.storedConnections() where connection.role.canSendChanges {
-            // Probed before opening, for the reason `hasMirror` gives below: `MutationOutbox`
-            // creates its database, so asking every writable space whether anything is queued
-            // used to leave an empty outbox.sqlite in each of them — on every backgrounding.
-            guard MutationOutbox.exists(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
+        for connection in connectionsWithQueues {
             guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
             if let count = try? await outbox.authorisedCount(), count > 0 { return true }
         }
@@ -176,6 +189,47 @@ enum BackgroundJobs {
             }
         }
         return everythingLanded
+    }
+
+    /// Spaces this device can send to and already has a queue for.
+    ///
+    /// Existence is asked of the filesystem, never by opening one: `MutationOutbox.init` creates
+    /// its database, so a speculative open would leave an empty queue behind in every space this
+    /// device has ever connected to.
+    private static var connectionsWithQueues: [AppModel.Connection] {
+        AppModel.storedConnections().filter {
+            $0.role.canSendChanges && MutationOutbox.exists(spaceId: $0.spaceId, directory: spacesDirectory)
+        }
+    }
+
+    /// Whether any space is holding changes whose fate this device could still learn.
+    static func awaitsDeliveries() async -> Bool {
+        for connection in connectionsWithQueues {
+            guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
+            if let waiting = try? await outbox.awaitingDelivery(), waiting > 0 { return true }
+        }
+        return false
+    }
+
+    /// Ask each space how far its owner has collected, while nobody is looking.
+    ///
+    /// The other half of the same question the app asks when it comes back. This is the half
+    /// that makes a report land in the vault overnight and be announced before its author has
+    /// opened the app — which is the entire point of closing this loop.
+    ///
+    /// Anything it learns about a credential is deliberately dropped here: a background window
+    /// has nowhere to say it, and the foreground pass will find the same thing the moment there
+    /// is a screen to say it on.
+    static func confirmDeliveries() async -> Bool {
+        let connections = connectionsWithQueues
+        guard !connections.isEmpty else { return true }
+
+        let outcome = await MutationDelivery.confirm(for: connections) { connection in
+            try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory)
+        }
+        // `mayAsk: false` — the prompt is only ever shown to an app that is on screen.
+        await DeliveryNotice.announce(outcome.landings, mayAsk: false)
+        return outcome.everySpaceAnswered
     }
 
     // MARK: - Mirror

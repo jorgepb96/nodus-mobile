@@ -18,6 +18,11 @@ final class OutboxTrayModel {
     /// has one, and a cold start should not pay for a screen nobody has asked for.
     func refresh() async { await outbox.refresh() }
 
+    /// Reads the queues *and* asks each server how far its owner has collected. Attached to
+    /// coming back to the app and to pulling the tray down — both moments when a person is
+    /// asking "any news?", and neither of them a loop.
+    func confirmDeliveries() async { await outbox.confirmDeliveries() }
+
     func open() {
         isPresented = true
     }
@@ -83,6 +88,13 @@ struct OutboxTraySheet: View {
                 }
             }
 
+            // The other thing the delivery check learns. A queue whose token has run out will
+            // keep failing to send with a message about the network, and this is the only
+            // screen in a position to say what is actually wrong.
+            ForEach(credentialNotices, id: \.spaceId) { notice in
+                Section { credentialNotice(notice) }
+            }
+
             if outbox.entries.isEmpty {
                 Section {
                     ContentUnavailableView(
@@ -108,7 +120,9 @@ struct OutboxTraySheet: View {
         .listRowBackground(Color.clear)
         .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .textCase(nil)
-        .refreshable { await outbox.refresh() }
+        // Pulling this list down is somebody asking "any news?", so it asks the servers rather
+        // than only re-reading the queues. It is a gesture, not a loop.
+        .refreshable { await outbox.confirmDeliveries() }
     }
 
     private var failures: [(spaceId: String, spaceName: String, reason: String)] {
@@ -118,6 +132,41 @@ struct OutboxTraySheet: View {
             return (spaceId: spaceId, spaceName: name, reason: reason)
         }
         .sorted { $0.spaceName < $1.spaceName }
+    }
+
+    private var credentialNotices: [(spaceId: String, spaceName: String, credential: MutationDelivery.Credential)] {
+        outbox.credentials.compactMap { spaceId, credential in
+            guard let name = outbox.entries.first(where: { $0.connection.spaceId == spaceId })?.connection.spaceName
+            else { return nil }
+            return (spaceId: spaceId, spaceName: name, credential: credential)
+        }
+        .sorted { $0.spaceName < $1.spaceName }
+    }
+
+    /// Interpolated into a `LocalizedStringKey` literal rather than built with
+    /// `String(localized:)`: interpolation into a key produces a key with `%@` in it, which is
+    /// what the catalogue holds. A string built first and wrapped afterwards is looked up as
+    /// itself, and matches nothing on any phone.
+    @ViewBuilder
+    private func credentialNotice(
+        _ notice: (spaceId: String, spaceName: String, credential: MutationDelivery.Credential)
+    ) -> some View {
+        switch notice.credential {
+        case .rejected:
+            NodusNotice(
+                tone: .blocked,
+                title: "Sign in again",
+                message: "The server no longer accepts this device's key for “\(notice.spaceName)”. Nothing queued is lost; it travels once you have signed in again.",
+                systemImage: "key.slash"
+            )
+        case .expiring(let date):
+            NodusNotice(
+                tone: .caution,
+                title: "Sign in again soon",
+                message: "This device's key for “\(notice.spaceName)” stops working on \(date.formatted(date: .abbreviated, time: .omitted)).",
+                systemImage: "key"
+            )
+        }
     }
 
     private var relayExplanation: some View {

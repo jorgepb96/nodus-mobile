@@ -40,6 +40,10 @@ final class GlobalOutbox {
     /// Set per space rather than globally: five vaults are five separate journeys, and one
     /// aeroplane-mode failure should not present itself as "the queue is broken".
     private(set) var failures: [String: String] = [:]
+    /// What the delivery check learned about this device's own credentials, per space. Only
+    /// spaces with something wrong appear.
+    private(set) var credentials: [String: MutationDelivery.Credential] = [:]
+    private var isConfirming = false
 
     /// Opened queues, kept. Reopening SQLite on every refresh is four disk operations per space
     /// per appearance, and this view is meant to be cheap enough to reach for.
@@ -89,6 +93,27 @@ final class GlobalOutbox {
         accepted = counts.accepted
         rejected = counts.rejected
         delivered = counts.delivered
+    }
+
+    /// Ask every space whether its owner has collected what this device sent, then refresh.
+    ///
+    /// Run when the app comes back and when the user pulls the tray down, and nowhere else. A
+    /// change reaches the vault when somebody opens their desktop, which is not an event a
+    /// phone can be sitting and waiting for: polling in a loop would spend a battery to learn
+    /// nothing on nearly every attempt.
+    func confirmDeliveries() async {
+        guard !isConfirming else { return }
+        isConfirming = true
+        defer { isConfirming = false }
+
+        let outcome = await MutationDelivery.confirm(for: connectionsWithQueues) { connection in
+            await outbox(for: connection)
+        }
+        credentials = outcome.credentials
+        await refresh()
+        // After the refresh, so the tray is already showing what the notification talks about
+        // by the time it can be tapped.
+        await DeliveryNotice.announce(outcome.landings, mayAsk: true)
     }
 
     /// Send every space's queue, and report per space.
