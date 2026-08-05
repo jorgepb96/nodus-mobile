@@ -166,6 +166,53 @@ struct LocalisationTests {
         _ = try translated("Remove")
     }
 
+    /// A connection that fails is the one screen somebody reads while already frustrated, and
+    /// the wording is the whole feature: "could not connect to server" in Spanish would be
+    /// exactly as useless as it was in English. Every sentence here is computed — the host and
+    /// the release numbers are interpolated into it — so every one of them is a `String` that
+    /// `Text` renders rather than looks up, and a missing translation ships silently.
+    @Test("everything a failed connection says has Spanish")
+    func connectionFailureStrings() throws {
+        // The frequent one: a laptop that went to sleep.
+        #expect(try translated("Nobody answers at %@") == "Nadie contesta en %@")
+        _ = try translated("That usually means the computer Nodus lives on is off, asleep, or has the application closed.")
+        // The other five the classifier separates.
+        _ = try translated("No network")
+        _ = try translated("This device is not on any network right now, so nothing was contacted.")
+        _ = try translated("No machine called “%@”")
+        _ = try translated("Something else is at %@")
+        _ = try translated("Something answered there, and not the way a Nodus Server answers. Check the address, and the port if the server uses one.")
+        _ = try translated("That address is served by “%@”, not by a Nodus Server.")
+        _ = try translated("This app and that server are different releases")
+        _ = try translated("This app is on %@ and that server on %@. Where the two disagree the server decides, so this app is the side to update.")
+        _ = try translated("This app is on %@ and that server on %@. Where the two disagree the server decides, so update Nodus on the computer that serves it.")
+        _ = try translated("This device does not trust that certificate")
+        _ = try translated("Nodus desktop's basic local-network mode serves HTTPS with a certificate from an authority it generated itself. iOS refuses it until that authority is installed and trusted on this device.")
+        _ = try translated("The server no longer accepts this device's credential for this space.")
+    }
+
+    /// The diagnostics screen is read out loud to whoever runs the server, often over the
+    /// phone. Its six labels and its three verdicts are the vocabulary that conversation uses.
+    @Test("the diagnostics screen speaks Spanish, verdicts included")
+    func diagnosticsStrings() throws {
+        #expect(try translated("Diagnostics") == "Diagnóstico")
+        #expect(try translated("Connection") == "Conexión")
+        _ = try translated("This device has a network")
+        _ = try translated("Something answers at that address")
+        _ = try translated("The certificate")
+        _ = try translated("It is a Nodus Server")
+        _ = try translated("The two releases agree")
+        _ = try translated("This device's credential")
+        // Spoken by VoiceOver in place of a glyph, which says nothing out loud.
+        _ = try translated("passed")
+        _ = try translated("failed")
+        _ = try translated("not asked")
+        _ = try translated("Copy the report")
+        _ = try translated("The report goes to the clipboard and nowhere else. It carries no credential and no provider key.")
+        _ = try translated("Run the checks again")
+        _ = try translated("What went wrong")
+    }
+
     // These are read by iOS, not by the app, and a plist string on its own is shown verbatim in
     // every language — which is how both of them were Spanish-only for everybody.
     @Test("the permission prompts iOS shows are localised too")

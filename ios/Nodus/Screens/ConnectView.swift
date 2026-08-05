@@ -25,7 +25,11 @@ struct ConnectView: View {
     @State private var password = ""
     @State private var pairingCode = ""
     @State private var usePairingCode = false
-    @State private var error: String?
+    /// A failure that is about reaching the server: it gets the classifier's sentence.
+    @State private var failure: ConnectionFailure?
+    /// A refusal the server explained itself — a wrong password, an expired ticket. Its own
+    /// words are better than anything this screen could invent, so they are kept.
+    @State private var refusal: String?
     @State private var isBusy = false
 
     private let accent = Color(hex: VaultType.academic.accentHex)
@@ -56,8 +60,25 @@ struct ConnectView: View {
                         case .credentials(let address, let capabilities): credentialsStep(address, capabilities)
                         case .space(let address, let ticket): spaceStep(address, ticket)
                         }
-                        if let error {
-                            Label(error, systemImage: "exclamationmark.triangle")
+                        if let failure {
+                            // The classified failure, in the shape every other screen shows one
+                            // in. A wrong password and a sleeping computer used to arrive here
+                            // as the same grey line of text.
+                            NodusNotice(
+                                tone: failure.tone,
+                                title: LocalizedStringKey(failure.title),
+                                message: LocalizedStringKey(failure.sentence),
+                                systemImage: failure.systemImage
+                            )
+                            if let detail = failure.detail {
+                                Text(detail)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
+                        } else if let refusal {
+                            Label(refusal, systemImage: "exclamationmark.triangle")
                                 .font(.footnote)
                                 .foregroundStyle(Color.nodusDanger)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,88 +251,98 @@ struct ConnectView: View {
     // MARK: Actions
 
     private func probe() async {
-        isBusy = true; error = nil
-        defer { isBusy = false }
-        do {
+        await attempt {
             let (address, capabilities) = try await model.probe(addressInput)
             step = .credentials(address, capabilities)
-        } catch {
-            self.error = describe(error)
         }
     }
 
     private func signIn(_ address: ServerAddress) async {
-        isBusy = true; error = nil
-        defer { isBusy = false }
-        do {
+        await attempt {
             let ticket = try await model.signIn(to: address, email: email, password: password)
             password = ""
             step = .space(address, ticket)
-        } catch {
-            self.error = describe(error)
         }
     }
 
     private func pair(_ address: ServerAddress) async {
-        isBusy = true; error = nil
-        defer { isBusy = false }
-        do {
+        await attempt {
             let connection = try await model.pair(to: address, code: pairingCode.uppercased())
             model.open(connection)
             dismiss()
-        } catch {
-            self.error = describe(error)
         }
     }
 
     private func connect(_ address: ServerAddress, _ ticket: LoginTicket, _ space: SpaceSummary) async {
-        isBusy = true; error = nil
-        defer { isBusy = false }
-        do {
+        await attempt {
             let connection = try await model.connect(to: address, ticket: ticket, space: space)
             model.open(connection)
             dismiss()
-        } catch {
-            self.error = describe(error)
         }
     }
 
-    /// Turn a server refusal into something a person can act on.
-    private func describe(_ error: any Error) -> String {
-        if let api = error as? APIError {
-            switch api.code {
-            case "invalid_credentials": return "That email or password is not right."
-            case "invalid_ticket": return "The sign-in expired. Sign in again."
-            case "rate_limited":
-                let seconds = Int(api.retryAfter ?? 60)
-                return "Too many attempts. Try again in \(seconds) s."
-            default: return api.localizedDescription
-            }
+    /// One step of the flow, with the same busy state and the same way of failing.
+    ///
+    /// The four steps used to repeat five lines each, and the last of those lines was a
+    /// `describe` that carried a second, older copy of every sentence in
+    /// `ConnectionFailureText`. Two copies of a sentence is two sentences to keep translated.
+    private func attempt(_ work: () async throws -> Void) async {
+        isBusy = true
+        failure = nil
+        refusal = nil
+        defer { isBusy = false }
+        do {
+            try await work()
+        } catch {
+            await record(error)
         }
-        // The wording lives here, not in NodusKit. The package has no string catalogue — a
-        // literal returned from it is English on every phone — so the typed case crosses the
-        // boundary and the sentence is chosen on this side, where it can be translated.
-        if let transport = error as? TransportError {
-            switch transport {
-            case .badServerURL:
-                return String(localized: "That address will not work. Enter just the domain, with no path.")
-            case .hostNotFound:
-                return String(localized: "No machine by that name. If the server is on a private network — Tailscale, a VPN, your own Wi-Fi — this device has to be on it too.")
-            case .cannotConnect:
-                return String(localized: "The name resolves, but nothing answered. The server may be stopped, or reachable only from the machine it runs on.")
-            case .certificateRejected:
-                return String(localized: "The certificate was refused. A Nodus Server needs one this device already trusts.")
-            case .insecureBlocked:
-                return String(localized: "iOS refuses plain HTTP to anything but this device. Use an https:// address.")
-            case .offline:
-                return String(localized: "This device has no network.")
-            case .timedOut:
-                return String(localized: "The server took too long to answer.")
-            case .cancelled, .malformedResponse, .underlying:
-                return transport.localizedDescription
-            }
+    }
+
+    /// A refusal the server explained keeps its own words; everything else is classified.
+    private func record(_ error: any Error) async {
+        if let api = error as? APIError, let sentence = Self.explain(api) {
+            refusal = sentence
+            return
         }
-        return error.localizedDescription
+        // Already classified on the way out of `probe`, and there is nothing to add to it.
+        if let classified = error as? ConnectionFailure {
+            failure = classified
+            return
+        }
+        // Sign-in and pairing go through the ordinary session, so they can fail in every way a
+        // probe can — the computer sleeps between typing the address and typing the password.
+        let origin = currentOrigin
+        let network = await NetworkReachability.current(within: 0.5)
+        failure = ConnectionFailure.classify(
+            error: error,
+            origin: origin,
+            network: network,
+            knock: .unauthenticated,
+            appVersion: NodusVersion.current
+        ) ?? .unclassified(host: ConnectionFailure.host(of: origin), detail: error.localizedDescription)
+    }
+
+    /// The address the current step is talking to: what was typed until it has been validated,
+    /// and the normalised origin after.
+    private var currentOrigin: String {
+        switch step {
+        case .address: return addressInput.trimmingCharacters(in: .whitespaces)
+        case .credentials(let address, _), .space(let address, _): return address.origin
+        }
+    }
+
+    /// The three refusals this screen provokes on purpose, in words that name the field to fix.
+    /// Anything else the server says is a sentence it wrote itself, and it goes to the
+    /// classifier to be placed rather than being paraphrased here.
+    private static func explain(_ api: APIError) -> String? {
+        switch api.code {
+        case "invalid_credentials": return String(localized: "That email or password is not right.")
+        case "invalid_ticket": return String(localized: "The sign-in expired. Sign in again.")
+        case "rate_limited":
+            let seconds = Int(api.retryAfter ?? 60)
+            return String(localized: "Too many attempts. Try again in \(seconds) s.")
+        default: return nil
+        }
     }
 }
 
