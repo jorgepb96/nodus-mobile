@@ -141,9 +141,35 @@ final class ReportMarks {
         return mark
     }
 
+    /// The durable copy, written off the main thread.
+    ///
+    /// An atomic write with file protection is a temporary file, a rename and a flush — about a
+    /// millisecond and a half on a desktop SSD and rather more on a phone. Inline, that put the
+    /// filesystem in the frame that placed the bookmark, which is half of the hesitation this
+    /// screen was reported for. (The other half was the prose being re-split on every pass; see
+    /// `CorpusProse.blocks`.)
+    ///
+    /// The list in memory is updated first and synchronously, so the screen is right immediately
+    /// and nothing here can be observed to lag. Only the file waits, on a serial queue, which is
+    /// what keeps two marks placed in quick succession from landing in the wrong order. The cost
+    /// is that a report marked in the last few milliseconds before the app is killed outright may
+    /// come back unmarked, which is a reading mark and one press to put back.
     private func write() {
         guard let data = try? JSONEncoder.nodusReports.encode(marks) else { return }
-        try? data.write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+        let file = self.file
+        Self.disk.async { try? data.write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen]) }
+    }
+
+    /// Serial, so writes land in the order they were made.
+    private static let disk = DispatchQueue(label: "com.drakonis96.nodus.report-marks", qos: .utility)
+
+    /// Waits for the file to catch up with the list.
+    ///
+    /// The app never needs this — it reads the list, not the file — but a test that reopens the
+    /// store does, and so would anything that had to know the disk was current. Sound because the
+    /// queue is serial: everything already queued has run by the time this returns.
+    static func settle() {
+        disk.sync {}
     }
 }
 

@@ -33,6 +33,7 @@ struct ReportMarksTests {
 
         store.setRead("r-1", true)
 
+        ReportMarks.settle()
         let reopened = ReportMarks(spaceId: "space-2", root: root)
         #expect(reopened.isRead("r-1"))
         #expect(reopened.isRead("r-2") == false, "one report's mark is not another's")
@@ -49,6 +50,7 @@ struct ReportMarksTests {
         store.setRead("r-1", false)
 
         #expect(store.marks["r-1"] == nil)
+        ReportMarks.settle()
         let reopened = ReportMarks(spaceId: "space-3", root: root)
         #expect(reopened.marks.isEmpty)
     }
@@ -67,6 +69,7 @@ struct ReportMarksTests {
             for: "r-1"
         )
 
+        ReportMarks.settle()
         let reopened = ReportMarks(spaceId: "space-4", root: root)
         let bookmark = reopened.bookmark(for: "r-1")
         #expect(bookmark?.snippet == "última")
@@ -85,6 +88,7 @@ struct ReportMarksTests {
         store.setRead("r-1", true)
         store.setRead("r-1", false)
 
+        ReportMarks.settle()
         let reopened = ReportMarks(spaceId: "space-5", root: root)
         #expect(reopened.isRead("r-1") == false)
         #expect(reopened.bookmark(for: "r-1")?.snippet == "Donde", "unmarking as read must not drop the bookmark")
@@ -105,6 +109,7 @@ struct ReportMarksTests {
         store.setRead("r-2", true)
         store.forget("r-1")
 
+        ReportMarks.settle()
         let reopened = ReportMarks(spaceId: "space-6", root: root)
         #expect(reopened.marks["r-1"] == nil)
         #expect(reopened.isRead("r-2"), "another report's mark is untouched")
@@ -115,6 +120,7 @@ struct ReportMarksTests {
         let root = temporaryRoot()
         ReportMarks(spaceId: "space-a", root: root).setRead("r-1", true)
 
+        ReportMarks.settle()
         #expect(ReportMarks(spaceId: "space-b", root: root).isRead("r-1") == false)
         #expect(ReportMarks(spaceId: "space-a", root: root).isRead("r-1"))
     }

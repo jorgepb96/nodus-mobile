@@ -224,13 +224,8 @@ struct PassageByIdView: View {
 /// accent — rather than as a URL in the middle of a sentence. Tapping one opens what it points
 /// at, which is what the desktop does and what makes a cited report worth reading on a phone.
 struct CorpusProse: View {
-    private let text: String
     private let accent: Color
     private let session: SpaceSession?
-    /// Token → label, for prose that cites with bare tokens instead of Markdown links. A report
-    /// written on this device does exactly that: the model is told to copy the token, and the
-    /// catalogue is the only place its label lives.
-    private let labels: [String: String]
     /// A tap on a numbered reference — `[3]` — in an answer about a page. Only the report chat
     /// passes one; everywhere else a bracketed number is a bracketed number.
     private let onReference: ((Int) -> Void)?
@@ -255,20 +250,82 @@ struct CorpusProse: View {
         labels: [String: String] = [:],
         onReference: ((Int) -> Void)? = nil
     ) {
-        self.text = text
         self.accent = accent
         self.session = session
-        self.labels = labels
         self.onReference = onReference
+        // The text and the labels are not kept: everything that reads them is done here. What
+        // survives is `blocks`, which is what they were for.
+        blocks = Self.prepare(text, labels: labels)
     }
 
-    /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: the
-    /// list is recomputed on every pass of the body, and an identity that changes with it throws
-    /// away every `UITextView` on the page — and, now, the anchor the find bar scrolls to.
+    /// The prose, split into blocks and linkified, once.
+    ///
+    /// Held rather than computed, and that is the whole of a stutter this screen had. `body` runs
+    /// again for every paragraph on the page whenever anything on it changes — a bookmark placed,
+    /// a citation's sheet opening, that sheet closing — and not one of those changes a word of
+    /// the prose. Splitting the section and running the citation regex over every paragraph on
+    /// each of those passes measured about 3.3 ms for a twenty-section report on a Mac, which on
+    /// a phone is a dropped frame or two: exactly the "it hesitates and then catches up" this was
+    /// reported as.
+    ///
+    /// `init` is where it belongs, and not by luck. SwiftUI does not call `init` again when
+    /// observation invalidates a view — it re-runs `body` on the value the parent already built —
+    /// so the work now happens when the report itself changes, which is when it has something new
+    /// to say. It also makes every `DocumentProse` compare equal on the way in: the source string
+    /// handed to it is now the same instance each pass, so the identity check that decides whether
+    /// to reparse the Markdown short-circuits instead of walking two copies of a paragraph.
+    private let blocks: [Block]
+
+    /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: an
+    /// identity that changed with each pass would throw away every `UITextView` on the page — and
+    /// the anchor the find bar scrolls to with them.
     private struct Block: Identifiable {
         let id: Int
         let level: Int
         let text: String
+        /// The same text with every bare `nodus://` token already turned into a Markdown link.
+        /// For a heading, which carries no citations, this is the text itself.
+        let source: String
+    }
+
+    /// Split into headings and paragraphs, then linkify each. See `blocks` for why this runs
+    /// where it does.
+    private static func prepare(_ text: String, labels: [String: String]) -> [Block] {
+        var result: [Block] = []
+        var paragraph: [String] = []
+
+        func append(level: Int, text: String) {
+            result.append(
+                Block(
+                    id: result.count,
+                    level: level,
+                    text: text,
+                    source: level == 0 ? linkify(text, labels: labels) : text
+                )
+            )
+        }
+
+        func flush() {
+            let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { append(level: 0, text: joined) }
+            paragraph = []
+        }
+
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") {
+                let hashes = trimmed.prefix { $0 == "#" }.count
+                let heading = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
+                if !heading.isEmpty {
+                    flush()
+                    append(level: min(hashes, 3), text: heading)
+                    continue
+                }
+            }
+            paragraph.append(line)
+        }
+        flush()
+        return result
     }
 
     var body: some View {
@@ -284,7 +341,7 @@ struct CorpusProse: View {
                         heading(block, path: path)
                     } else if reading.document {
                         DocumentProse(
-                            source: Self.linkify(block.text, labels: labels),
+                            source: block.source,
                             font: reading.uiFont(.callout),
                             accent: accent,
                             justified: true,
@@ -315,7 +372,7 @@ struct CorpusProse: View {
                             }
                         )
                     } else {
-                        Text(attributed(block.text, path: path))
+                        Text(attributed(block.source, path: path))
                             .font(reading.font(.callout))
                             .textSelection(.enabled)
                     }
@@ -411,52 +468,22 @@ struct CorpusProse: View {
             .padding(.top, reading.document ? (isPart ? 20 : 10) : 3)
     }
 
-    /// Split into headings and paragraphs before parsing.
-    ///
-    /// `AttributedString(markdown:)` in inline mode leaves `###` sitting in the text, and its
-    /// full mode carries a heading as a presentation intent that `Text` then ignores — so
-    /// either way a heading arrives as literal hashes in the middle of the prose. Splitting
-    /// first is what makes a heading look like one.
-    private var blocks: [Block] {
-        var result: [Block] = []
-        var paragraph: [String] = []
-
-        func flush() {
-            let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !joined.isEmpty { result.append(Block(id: result.count, level: 0, text: joined)) }
-            paragraph = []
-        }
-
-        for line in text.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("#") {
-                let hashes = trimmed.prefix { $0 == "#" }.count
-                let heading = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
-                if !heading.isEmpty {
-                    flush()
-                    result.append(Block(id: result.count, level: min(hashes, 3), text: heading))
-                    continue
-                }
-            }
-            paragraph.append(line)
-        }
-        flush()
-        return result
-    }
-
     /// What this block puts on the screen, in plain characters.
     ///
     /// Not the Markdown: a reader looking for "registers" is looking for the word they can see,
     /// and the source they cannot see spells it `**registers**` and spells a citation
     /// `[Arco Blanco (2020)](nodus://idea/g-8969)`. Searching the source would miss the first
     /// and match the second on a URL nobody was shown.
+    ///
+    /// Called when a block appears and when its text changes, not on every pass — which is why
+    /// it can afford to parse the Markdown while `body` cannot.
     private func displayed(_ block: Block) -> String {
         guard block.level == 0 else {
             let isPart = block.level <= 2 && reading.document
             return isPart ? block.text.uppercased() : block.text
         }
         guard let parsed = try? AttributedString(
-            markdown: Self.linkify(block.text, labels: labels),
+            markdown: block.source,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) else {
             return block.text
@@ -466,7 +493,7 @@ struct CorpusProse: View {
 
     private func attributed(_ source: String, path: PageSearch.Path) -> AttributedString {
         guard var parsed = try? AttributedString(
-            markdown: Self.linkify(source, labels: labels),
+            markdown: source,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) else {
             return AttributedString(source)
@@ -508,11 +535,16 @@ struct CorpusProse: View {
     /// A report generated on the phone writes the bare token in parentheses, because that is
     /// what the citation policy asks the model for — so the token is swapped for its catalogue
     /// label, and a token with no label keeps its own text rather than disappearing.
+    /// Compiled once. `NSRegularExpression` is immutable and documented as safe to use from
+    /// several threads, which is what `nonisolated(unsafe)` is asserting here — the alternative,
+    /// building it per call, was a fifth of the cost of preparing a report's prose.
+    nonisolated(unsafe) private static let citation = try? NSRegularExpression(
+        pattern: #"(?<!\]\()\bnodus://[a-z_]+/[^\s)\]（）]+"#,
+        options: [.caseInsensitive]
+    )
+
     static func linkify(_ source: String, labels: [String: String]) -> String {
-        guard let regex = try? NSRegularExpression(
-            pattern: #"(?<!\]\()\bnodus://[a-z_]+/[^\s)\]（）]+"#,
-            options: [.caseInsensitive]
-        ) else { return source }
+        guard let regex = citation else { return source }
 
         let range = NSRange(source.startIndex..<source.endIndex, in: source)
         var output = source
