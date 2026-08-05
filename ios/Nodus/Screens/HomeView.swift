@@ -40,8 +40,16 @@ struct HomeView: View {
                         message: "It will appear as soon as its owner publishes from Nodus desktop.",
                         systemImage: "tray"
                     )
-                } else if let error = session.loadError {
-                    NodusNotice(tone: .blocked, title: "Could not read the space", message: LocalizedStringKey(error))
+                } else if let failure = session.loadFailure {
+                    // The failure's own words, not "could not read the space": a laptop that
+                    // went to sleep and a credential the server revoked are two different
+                    // things to go and do, and this notice is where the reader learns which.
+                    NodusNotice(
+                        tone: failure.tone,
+                        title: LocalizedStringKey(failure.title),
+                        message: LocalizedStringKey(failure.sentence),
+                        systemImage: failure.systemImage
+                    )
                 }
 
                 if session.connection.role == .reader {
@@ -187,7 +195,7 @@ struct HomeView: View {
                     }
                 }
 
-                if session.isPublished, session.sections.isEmpty, session.loadError == nil, !session.isLoading {
+                if session.isPublished, session.sections.isEmpty, session.loadFailure == nil, !session.isLoading {
                     ContentUnavailableView(
                         "Empty publication",
                         systemImage: "square.dashed",

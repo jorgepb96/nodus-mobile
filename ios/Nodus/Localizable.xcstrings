@@ -1126,6 +1126,17 @@
         }
       }
     },
+    "Asking…": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preguntando…"
+          }
+        }
+      }
+    },
     "Assembling": {
       "extractionState": "manual",
       "localizations": {
@@ -1456,6 +1467,17 @@
         }
       }
     },
+    "Chats and reports in iCloud": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats e informes en iCloud"
+          }
+        }
+      }
+    },
     "Check yourself": {
       "extractionState": "manual",
       "localizations": {
@@ -1463,6 +1485,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Compruébate"
+          }
+        }
+      }
+    },
+    "Checks": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobaciones"
           }
         }
       }
@@ -1764,6 +1797,17 @@
         }
       }
     },
+    "Connection": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conexión"
+          }
+        }
+      }
+    },
     "Contemporary editorial": {
       "extractionState": "manual",
       "localizations": {
@@ -1881,6 +1925,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copiar el informe"
+          }
+        }
+      }
+    },
+    "Copy the report to the clipboard": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar el informe al portapapeles"
           }
         }
       }
@@ -2046,6 +2101,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo abrir la sesión"
+          }
+        }
+      }
+    },
+    "Could not reach %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido llegar a %@"
           }
         }
       }
@@ -2391,6 +2457,17 @@
         }
       }
     },
+    "Diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnóstico"
+          }
+        }
+      }
+    },
     "Died": {
       "extractionState": "manual",
       "localizations": {
@@ -2574,6 +2651,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dinastías"
+          }
+        }
+      }
+    },
+    "Each check only means anything once the one above it has passed, so a run stops at the first failure.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada comprobación solo significa algo cuando ha pasado la de arriba, así que la serie se detiene en el primer fallo."
           }
         }
       }
@@ -3491,6 +3579,17 @@
         }
       }
     },
+    "If the server is on a private network — Tailscale, a VPN, your own Wi-Fi — this device has to be on it too.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si el servidor está en una red privada —Tailscale, una VPN, tu propio wifi—, este dispositivo también tiene que estar en ella."
+          }
+        }
+      }
+    },
     "Images": {
       "extractionState": "manual",
       "localizations": {
@@ -3542,6 +3641,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "En marcha"
+          }
+        }
+      }
+    },
+    "In the owner's Nodus. It joins the published copy when they republish.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el Nodus del propietario. Se une a la copia publicada cuando vuelva a publicar."
+          }
+        }
+      }
+    },
+    "In the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el vault"
           }
         }
       }
@@ -3663,6 +3784,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Guarda \\(rows.formatted()) filas de una publicación anterior."
+          }
+        }
+      }
+    },
+    "It is a Nodus Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es un Nodus Server"
           }
         }
       }
@@ -3894,6 +4026,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Imagen máxima"
+          }
+        }
+      }
+    },
+    "Last updated": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Última actualización"
           }
         }
       }
@@ -4459,6 +4602,17 @@
         }
       }
     },
+    "No machine called “%@”": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ninguna máquina llamada «%@»"
+          }
+        }
+      }
+    },
     "No matches": {
       "extractionState": "manual",
       "localizations": {
@@ -4499,6 +4653,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ningún modelo contiene «\\(query)»."
+          }
+        }
+      }
+    },
+    "No network": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin red"
           }
         }
       }
@@ -4701,6 +4866,17 @@
         }
       }
     },
+    "Nobody answers at %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nadie contesta en %@"
+          }
+        }
+      }
+    },
     "Nodi’s notes": {
       "extractionState": "manual",
       "localizations": {
@@ -4756,6 +4932,17 @@
         }
       }
     },
+    "Nodus desktop's basic local-network mode serves HTTPS with a certificate from an authority it generated itself. iOS refuses it until that authority is installed and trusted on this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modo básico de red local de Nodus escritorio sirve HTTPS con un certificado de una autoridad que él mismo genera. iOS lo rechaza mientras esa autoridad no esté instalada y sea de confianza en este dispositivo."
+          }
+        }
+      }
+    },
     "Nodus desktop, Nodus Server and this app ship as one release and carry one number.": {
       "extractionState": "manual",
       "localizations": {
@@ -4807,6 +4994,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ninguno de los proveedores configurados publica un modelo de imagen."
+          }
+        }
+      }
+    },
+    "Not asked": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin comprobar"
           }
         }
       }
@@ -6307,6 +6505,39 @@
         }
       }
     },
+    "Run again": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repetir"
+          }
+        }
+      }
+    },
+    "Run the checks again": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repetir las comprobaciones"
+          }
+        }
+      }
+    },
+    "Runs the checks in order — this device's network, then the address, then whether a Nodus Server is behind it — and says where it stops.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecuta las comprobaciones en orden —la red de este dispositivo, luego la dirección, luego si detrás hay un Nodus Server— y dice dónde se detiene."
+          }
+        }
+      }
+    },
     "Saturday": {
       "extractionState": "manual",
       "localizations": {
@@ -7022,6 +7253,28 @@
         }
       }
     },
+    "Sign in again soon": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a entrar pronto"
+          }
+        }
+      }
+    },
+    "Sign in to iCloud on this device to use this.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicia sesión en iCloud en este dispositivo para usarlo."
+          }
+        }
+      }
+    },
     "Smaller text": {
       "extractionState": "manual",
       "localizations": {
@@ -7029,6 +7282,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Texto más pequeño"
+          }
+        }
+      }
+    },
+    "Snapshot formats — this app %@, that server %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formatos de instantánea: esta app %1$@, ese servidor %2$@"
+          }
+        }
+      }
+    },
+    "Something answered there, and not the way a Nodus Server answers. Check the address, and the port if the server uses one.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Algo ha contestado ahí, y no como contesta un Nodus Server. Revisa la dirección, y el puerto si el servidor usa uno."
+          }
+        }
+      }
+    },
+    "Something answers at that address": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Algo contesta en esa dirección"
+          }
+        }
+      }
+    },
+    "Something else is at %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En %@ hay otra cosa"
           }
         }
       }
@@ -7418,6 +7715,28 @@
         }
       }
     },
+    "That address is served by “%@”, not by a Nodus Server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esa dirección la sirve «%@», no un Nodus Server."
+          }
+        }
+      }
+    },
+    "That address will not work": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esa dirección no vale"
+          }
+        }
+      }
+    },
     "That address will not work. Enter just the domain, with no path.": {
       "extractionState": "manual",
       "localizations": {
@@ -7451,6 +7770,17 @@
         }
       }
     },
+    "That usually means the computer Nodus lives on is off, asleep, or has the application closed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suele significar que el ordenador donde vive Nodus está apagado, dormido o con la aplicación cerrada."
+          }
+        }
+      }
+    },
     "The %@ key is missing, and that is the provider this vault was indexed with.": {
       "extractionState": "manual",
       "localizations": {
@@ -7480,6 +7810,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "La app y el servidor están en versiones distintas. Si algo se comporta de forma rara, sospecha primero de aquí."
+          }
+        }
+      }
+    },
+    "The certificate": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El certificado"
           }
         }
       }
@@ -7535,6 +7876,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "La conversación dura lo que dure este informe abierto. No se guarda nada."
+          }
+        }
+      }
+    },
+    "The copy in iCloud was removed from another device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La copia en iCloud se eliminó desde otro dispositivo."
           }
         }
       }
@@ -7748,6 +8100,17 @@
         }
       }
     },
+    "The report goes to the clipboard and nowhere else. It carries no credential and no provider key.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El informe va al portapapeles y a ningún otro sitio. No lleva ninguna credencial ni ninguna clave de proveedor."
+          }
+        }
+      }
+    },
     "The report has no illustration": {
       "extractionState": "manual",
       "localizations": {
@@ -7814,6 +8177,17 @@
         }
       }
     },
+    "The server no longer accepts this device's credential for this space.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor ya no acepta la credencial de este dispositivo para este espacio."
+          }
+        }
+      }
+    },
     "The server no longer accepts this device's credential for “%@”. Adding the server again restores it.": {
       "extractionState": "manual",
       "localizations": {
@@ -7821,6 +8195,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "El servidor ya no acepta la credencial de este dispositivo para «%@». Volver a añadir el servidor la restablece."
+          }
+        }
+      }
+    },
+    "The server no longer accepts this device's key for “%@”. Nothing queued is lost; it travels once you have signed in again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor ya no acepta la clave de este dispositivo para «%@». No se pierde nada de lo que esté en la cola: viajará cuando vuelvas a entrar."
+          }
+        }
+      }
+    },
+    "The server refused the request.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor ha rechazado la petición."
           }
         }
       }
@@ -7854,6 +8250,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "El servidor rechazó la fila por una restricción de la base de datos."
+          }
+        }
+      }
+    },
+    "The server said no": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor ha dicho que no"
           }
         }
       }
@@ -7909,6 +8316,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "El árbol necesita todas las relaciones a la vez. La API las entrega de una en una, así que se arma desde la publicación descargada."
+          }
+        }
+      }
+    },
+    "The two releases agree": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las dos versiones concuerdan"
           }
         }
       }
@@ -8012,6 +8430,50 @@
         }
       }
     },
+    "This app and that server are different releases": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta app y ese servidor son versiones distintas"
+          }
+        }
+      }
+    },
+    "This app is on %@ and that server on %@. Neither states a release the other can compare against.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta app va por %1$@ y ese servidor por %2$@. Ninguno declara una versión que el otro pueda comparar."
+          }
+        }
+      }
+    },
+    "This app is on %@ and that server on %@. Where the two disagree the server decides, so this app is the side to update.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta app va por %1$@ y ese servidor por %2$@. Cuando discrepan manda el servidor, así que la que hay que actualizar es esta app."
+          }
+        }
+      }
+    },
+    "This app is on %@ and that server on %@. Where the two disagree the server decides, so update Nodus on the computer that serves it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta app va por %1$@ y ese servidor por %2$@. Cuando discrepan manda el servidor, así que actualiza Nodus en el ordenador que lo sirve."
+          }
+        }
+      }
+    },
     "This build carries no example vault.": {
       "extractionState": "manual",
       "localizations": {
@@ -8067,6 +8529,28 @@
         }
       }
     },
+    "This device does not trust that certificate": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este dispositivo no confía en ese certificado"
+          }
+        }
+      }
+    },
+    "This device has a network": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este dispositivo tiene red"
+          }
+        }
+      }
+    },
     "This device has no network.": {
       "extractionState": "manual",
       "localizations": {
@@ -8100,6 +8584,39 @@
         }
       }
     },
+    "This device is not on any network right now, so nothing was contacted.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este dispositivo no está en ninguna red ahora mismo, así que no se ha contactado con nada."
+          }
+        }
+      }
+    },
+    "This device's credential": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La credencial de este dispositivo"
+          }
+        }
+      }
+    },
+    "This device's key for “%@” stops working on %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clave de este dispositivo para «%@» deja de funcionar el %@."
+          }
+        }
+      }
+    },
     "This exam was published without any question in it.": {
       "extractionState": "manual",
       "localizations": {
@@ -8107,6 +8624,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Este examen se publicó sin ninguna pregunta dentro."
+          }
+        }
+      }
+    },
+    "This failure has no name yet. The diagnostics screen carries what the system said about it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este fallo todavía no tiene nombre. La pantalla de diagnóstico recoge lo que ha dicho el sistema."
           }
         }
       }
@@ -8519,6 +9047,17 @@
         }
       }
     },
+    "Too many attempts. Try again in %lld s.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demasiados intentos. Vuelve a probar en %lld s."
+          }
+        }
+      }
+    },
     "Too many attempts. Try again in \\(seconds) s.": {
       "extractionState": "manual",
       "localizations": {
@@ -8625,6 +9164,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tipo"
+          }
+        }
+      }
+    },
+    "Type just the server's address — the domain, and the port if it has one. No path and no page.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribe solo la dirección del servidor: el dominio y, si lo tiene, el puerto. Sin ruta ni página."
           }
         }
       }
@@ -8827,6 +9377,17 @@
         }
       }
     },
+    "Updating…": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizando…"
+          }
+        }
+      }
+    },
     "Variant of": {
       "extractionState": "manual",
       "localizations": {
@@ -9025,6 +9586,28 @@
         }
       }
     },
+    "What was asked": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo que se ha preguntado"
+          }
+        }
+      }
+    },
+    "What went wrong": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qué ha fallado"
+          }
+        }
+      }
+    },
     "Who argues what": {
       "extractionState": "manual",
       "localizations": {
@@ -9212,6 +9795,17 @@
         }
       }
     },
+    "Your conversations and the reports written here are copied to your own private iCloud, so a new phone finds them. They never reach a Nodus server, and your provider keys and the offline copy never leave this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus conversaciones y los informes escritos aquí se copian a tu propio iCloud privado, para que un teléfono nuevo los encuentre. No llegan a ningún servidor de Nodus, y tus claves de proveedor y la copia sin conexión nunca salen de este dispositivo."
+          }
+        }
+      }
+    },
     "Your keys and the copies of your vaults on this device stay closed until you unlock them.": {
       "extractionState": "manual",
       "localizations": {
@@ -9241,6 +9835,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tus claves se quedan en el llavero de este dispositivo. El Nodus Server no recibe ninguna: entrega el material y esta app llama a tu proveedor."
+          }
+        }
+      }
+    },
+    "Your report is in the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu informe está en el vault"
           }
         }
       }
@@ -9296,6 +9901,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(unreachable.label) — no alcanzable desde iOS"
+          }
+        }
+      }
+    },
+    "^[%lld change](inflect: true) in the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld change in the vault"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld changes in the vault"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambio en el vault"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambios en el vault"
+                }
+              }
+            }
           }
         }
       }
@@ -9419,6 +10065,17 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "an unstated release": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "una versión que no declara"
           }
         }
       }
@@ -9561,6 +10218,17 @@
         }
       }
     },
+    "failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "falla"
+          }
+        }
+      }
+    },
     "field": {
       "extractionState": "manual",
       "localizations": {
@@ -9601,6 +10269,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "marco"
+          }
+        }
+      }
+    },
+    "iCloud is restricted on this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud está restringido en este dispositivo."
+          }
+        }
+      }
+    },
+    "iOS blocked a plain HTTP address": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS ha bloqueado una dirección HTTP sin cifrar"
           }
         }
       }
@@ -9682,6 +10372,17 @@
         }
       }
     },
+    "not asked": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sin comprobar"
+          }
+        }
+      }
+    },
     "owner": {
       "extractionState": "manual",
       "localizations": {
@@ -9700,6 +10401,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "parafraseada"
+          }
+        }
+      }
+    },
+    "passed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bien"
           }
         }
       }
@@ -9887,6 +10599,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "«%@» se elimina de este dispositivo. No se puede deshacer."
+          }
+        }
+      }
+    },
+    "“%@” reached %@. Nobody reads it back, you included, until its owner republishes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» ha llegado a %@. Nadie lo lee, tú incluido, hasta que su propietario vuelva a publicar."
           }
         }
       }

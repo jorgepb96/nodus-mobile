@@ -11,10 +11,13 @@ import Testing
 /// fail if that comes back: it hangs and then dies, which is exactly what the app did.
 @Suite("Reading size")
 struct ReadingSizeTests {
+    /// `cloud: nil` throughout: these are about the control, not about the sync, and a real
+    /// ubiquitous store would make them depend on whether the machine running them is signed
+    /// into iCloud.
     private func preferences(_ name: String) -> AppPreferences {
         let defaults = UserDefaults(suiteName: "nodus.tests.\(name)")!
         defaults.removePersistentDomain(forName: "nodus.tests.\(name)")
-        return AppPreferences(defaults: defaults)
+        return AppPreferences(store: SyncedDefaults(defaults: defaults, cloud: nil))
     }
 
     @Test("one step up is one step, and it comes back")
@@ -50,7 +53,9 @@ struct ReadingSizeTests {
         prefs.adjustReading(by: AppPreferences.readingScaleStep)
         let chosen = prefs.readingScale
 
-        let reopened = AppPreferences(defaults: UserDefaults(suiteName: "nodus.tests.\(name)")!)
+        let reopened = AppPreferences(
+            store: SyncedDefaults(defaults: UserDefaults(suiteName: "nodus.tests.\(name)")!, cloud: nil)
+        )
         #expect(abs(reopened.readingScale - chosen) < 0.0001)
     }
 

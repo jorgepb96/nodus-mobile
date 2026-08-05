@@ -8,8 +8,15 @@ public extension NodusClient {
     /// Answers even when the space has never been published, which is exactly what makes it
     /// useful: it distinguishes "no access" from "nothing here yet", and its `counts` say
     /// which sections the app should offer at all.
-    func space(_ spaceId: String) async throws -> SpaceOverview {
-        let response = try await perform(.init(path: address.spacePath(spaceId), cacheable: true))
+    /// - Parameter timeout: for the first call after a space is opened, which is a knock at an
+    ///   address as much as a read. The session's 30 s is right for a server known to be
+    ///   answering and is half a minute of spinner for one whose computer has gone to sleep.
+    func space(_ spaceId: String, timeout: TimeInterval? = nil) async throws -> SpaceOverview {
+        let response = try await perform(.init(
+            path: address.spacePath(spaceId),
+            cacheable: true,
+            timeout: timeout
+        ))
         return try decode(SpaceOverview.self, from: response)
     }
 

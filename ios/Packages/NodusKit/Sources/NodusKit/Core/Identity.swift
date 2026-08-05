@@ -113,6 +113,16 @@ public struct SpaceSummary: Sendable, Hashable, Codable, Identifiable {
     public let revision: String?
     public let schemaVersion: Int?
     public let hasSnapshot: Bool
+    /// How far into this space's ledger the owner's desktop has acknowledged.
+    ///
+    /// The server publishes it so a client can tell "the server is holding this" apart from
+    /// "the owner has collected it": a device keeps the `cursor` its own POST came back with,
+    /// and this is the number that eventually catches up with it.
+    ///
+    /// Nil means the server does not publish it, and nil is emphatically not zero. Reading a
+    /// silence as a cursor of zero would leave every queued change permanently undelivered,
+    /// and defaulting it the other way would report deliveries that never happened.
+    public let mutationCursor: Int?
 
     public init(
         id: String,
@@ -123,7 +133,8 @@ public struct SpaceSummary: Sendable, Hashable, Codable, Identifiable {
         updatedAt: Date? = nil,
         revision: String? = nil,
         schemaVersion: Int? = nil,
-        hasSnapshot: Bool = false
+        hasSnapshot: Bool = false,
+        mutationCursor: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -134,6 +145,7 @@ public struct SpaceSummary: Sendable, Hashable, Codable, Identifiable {
         self.revision = revision
         self.schemaVersion = schemaVersion
         self.hasSnapshot = hasSnapshot
+        self.mutationCursor = mutationCursor
     }
 }
 
@@ -196,6 +208,33 @@ public enum NodusVersion {
     public static let current: String = {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }()
+
+    /// Order two releases, or refuse to.
+    ///
+    /// Dot-separated integers, most significant first, missing places read as zero — the shape
+    /// the three parts are actually numbered in. Nil when either side is not that shape: a
+    /// server older than the shared version scheme states no version at all, and inventing an
+    /// order for "unknown" would name the wrong side as the one to update.
+    public static func compare(_ lhs: String, _ rhs: String) -> ComparisonResult? {
+        guard let left = places(in: lhs), let right = places(in: rhs) else { return nil }
+        for index in 0..<max(left.count, right.count) {
+            let one = index < left.count ? left[index] : 0
+            let other = index < right.count ? right[index] : 0
+            guard one != other else { continue }
+            return one < other ? .orderedAscending : .orderedDescending
+        }
+        return .orderedSame
+    }
+
+    private static func places(in value: String) -> [Int]? {
+        let segments = value.trimmingCharacters(in: .whitespaces).split(separator: ".")
+        guard !segments.isEmpty else { return nil }
+        let numbers = segments.compactMap { Int($0) }
+        // All of them or none: "3.2.2-rc1" is a release this comparison has no opinion about,
+        // and half-parsing it to 3.2 would claim it is older than the release it precedes.
+        guard numbers.count == segments.count else { return nil }
+        return numbers
+    }
 }
 
 /// `GET /api/v1/capabilities` — public, unauthenticated, and the first call the app makes.
@@ -239,6 +278,13 @@ public struct ServerCapabilities: Sendable, Hashable, Codable {
     public var supportsAnyKnownSnapshotVersion: Bool {
         snapshotVersions.contains { SnapshotFormat.supportedVersions.contains($0) }
     }
+
+    /// The API generation this build speaks. Every path in `NodusClient` is `/api/v1/…`, so a
+    /// server that answers with any other generation is one this build cannot address at all,
+    /// however recent its release number happens to be.
+    public static let knownAPI = "v1"
+
+    public var speaksAKnownAPI: Bool { api == Self.knownAPI }
 }
 
 public enum SnapshotFormat {

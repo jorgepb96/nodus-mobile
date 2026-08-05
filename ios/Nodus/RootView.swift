@@ -13,6 +13,10 @@ struct RootView: View {
     /// The queue belongs to the device rather than to a space, so it lives above the branch
     /// that decides whether a space is open at all.
     @State private var tray = OutboxTrayModel()
+    /// The one state object that is a singleton rather than owned here: the two stores that feed
+    /// it are not views. Put in the environment all the same, so a settings screen reads it the
+    /// way it reads everything else.
+    private let cloud = CloudBackup.shared
 
     var body: some View {
         Group {
@@ -38,6 +42,7 @@ struct RootView: View {
         .environment(lock)
         .environment(preferences)
         .environment(tray)
+        .environment(cloud)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
         // Once, here, for every field in the app — including the ones inside sheets, which are
@@ -60,13 +65,26 @@ struct RootView: View {
                     model.open(recent)
                 }
             }
+            // Which of this device's files a backup carries, decided in one place and applied
+            // to whatever is already on disk. Detached because it is `setxattr` per file and
+            // this is the launch path; nothing on screen waits for the answer.
+            Task.detached(priority: .utility) {
+                BackupPolicy.apply(toSpacesDirectory: URL.applicationSupportDirectory
+                    .appendingPathComponent("spaces", isDirectory: true))
+            }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // Coming back is when the answer may have changed: the background flush may have
-            // finished a send while the app was away, and the counts on the tile and the header
-            // are read from this. It is a handful of SQLite opens, on a detached task, and only
-            // for spaces that actually have a queue on disk.
-            if phase == .active { Task { await tray.refresh() } }
+            // finished a send while the app was away, and — the other half of the same
+            // question — somebody may have opened their desktop and collected it. It is a
+            // handful of SQLite opens and, only for spaces actually holding changes in a
+            // ledger, one request each.
+            if phase == .active {
+                Task { await tray.confirmDeliveries() }
+                // Coming back is also when another device may have written a report or a chat.
+                // Returns on the first line unless the user switched the iCloud copy on.
+                Task { await cloud.refresh() }
+            }
 
             guard phase == .background else { return }
             // Immediately, with no grace period. A window in which the app reopens unlocked is
@@ -89,6 +107,8 @@ struct SpacePickerView: View {
 
     @State private var query = ""
     @State private var vaultFilter: VaultType?
+    /// The connection whose diagnostics are open, presented from the notice above the list.
+    @State private var diagnosing: AppModel.Connection?
 
     private let accent = Color(hex: VaultType.academic.accentHex)
 
@@ -148,6 +168,16 @@ struct SpacePickerView: View {
                         signInAgainNotice(stranded)
                     }
 
+                    // Beside the sign-in notice, and for the same reason: somebody who lands
+                    // back here after a space failed to open should be told why by the screen
+                    // they are looking at, not by the one they have just left.
+                    if let (connection, failure) = model.lastFailure {
+                        unreachableNotice(connection, failure)
+                    }
+
+                    // A separate notice from the one above, because it is a separate kind of
+                    // fault: no network and no credential are involved, and nothing the reader
+                    // can do fixes it — the corpus the build was supposed to carry is not there.
                     if let failure = model.demoFailure {
                         NodusNotice(
                             tone: .blocked,
@@ -204,6 +234,19 @@ struct SpacePickerView: View {
                 .frame(maxWidth: .infinity)
             }
             .nodusDismissesKeyboard()
+        }
+        .nodusSheet(item: $diagnosing) { connection in
+            // Its own stack: the picker has no navigation bar of its own, and the screen needs
+            // a title and a "run again" control.
+            NavigationStack {
+                ConnectionDiagnosticsView(connection: connection)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { diagnosing = nil }
+                        }
+                    }
+            }
+            .environment(model)
         }
     }
 
@@ -297,6 +340,33 @@ struct SpacePickerView: View {
         }
     }
 
+    /// The last server that could not be reached, in the failure's own words.
+    ///
+    /// No retry button. A classified failure is shown once and the user decides: the computer
+    /// they need is asleep in another room, and an app that keeps knocking on its own is an app
+    /// that spends a battery saying the same thing.
+    private func unreachableNotice(_ connection: AppModel.Connection, _ failure: ConnectionFailure) -> some View {
+        // Built as a `String` and then wrapped: `LocalizedStringKey("\(a) — \(b)")` would go
+        // looking for a catalogue entry called "%@ — %@", and both halves are already
+        // translated by the time they get here.
+        let message = "\(connection.spaceName) — \(failure.sentence)"
+        return VStack(spacing: 10) {
+            NodusNotice(
+                tone: failure.tone,
+                title: LocalizedStringKey(failure.title),
+                message: LocalizedStringKey(message),
+                systemImage: failure.systemImage
+            )
+            HStack(spacing: 10) {
+                Button("What went wrong") { diagnosing = connection }
+                    .buttonStyle(NodusGlassButtonStyle(accent: accent))
+                Button("Dismiss") { model.clearFailureNotice() }
+                    .font(.subheadline)
+                    .tint(.secondary)
+            }
+        }
+    }
+
     /// The search field, and the two controls under it centred beneath it.
     ///
     /// Two chips pinned to the left edge of a 560-point column read as the start of a toolbar
@@ -348,13 +418,19 @@ struct SpacePickerView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "tray.and.arrow.up").font(.footnote)
-                // Two counts, said apart, because they are different facts: one is work that has
-                // not left the phone, the other is work that has left it and is waiting for
-                // somebody to open their desktop.
+                // Three counts, said apart, because they are different facts: work that has not
+                // left the phone, work that has left it and is waiting for somebody to open
+                // their desktop, and work that got there. The most urgent one that applies wins
+                // the line — and when none of them does, because everything queued was
+                // refused, the control says what it is rather than counting nothing.
                 if tray.outbox.pending > 0 {
                     Text("^[\(tray.outbox.pending) change](inflect: true) to send").font(.caption)
-                } else {
+                } else if tray.outbox.accepted > 0 {
                     Text("^[\(tray.outbox.accepted) change](inflect: true) waiting for its vault").font(.caption)
+                } else if tray.outbox.delivered > 0 {
+                    Text("^[\(tray.outbox.delivered) change](inflect: true) in the vault").font(.caption)
+                } else {
+                    Text("Send queue").font(.caption)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)

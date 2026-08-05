@@ -5,9 +5,9 @@ import GRDB
 ///
 /// Persistent because nothing here is finished when the network says so. A change accepted by
 /// the server is *in the ledger*; it becomes part of the vault only when the owner's Nodus
-/// drains it and republishes. So a queued item has two distinct states worth showing — "not
-/// sent yet" and "sent, waiting for the owner" — and collapsing them would tell the user their
-/// note is in the vault when it is not.
+/// drains it and republishes. So a queued item has distinct states worth showing — "not sent
+/// yet", "sent, waiting for the owner", and "the owner has taken it" — and collapsing them
+/// would tell the user their note is in the vault when it is not.
 public actor MutationOutbox {
     public enum State: String, Sendable, Codable {
         /// Written locally, not yet accepted by the server.
@@ -17,6 +17,13 @@ public actor MutationOutbox {
         case accepted
         /// The server refused it. `detail` carries the reason it gave.
         case rejected
+        /// The owner's desktop has drained it out of the ledger and applied it.
+        ///
+        /// One step further than `accepted` and one step short of readable: applying a change
+        /// writes it into the desktop's own SQLite, and nobody — the author included — reads it
+        /// back until that desktop republishes. Which is why this is a fourth state and not a
+        /// renaming of the third.
+        case delivered
     }
 
     public struct Item: Sendable, Identifiable {
@@ -27,7 +34,22 @@ public actor MutationOutbox {
         public let detail: String?
         public let createdAt: Date
         public let sentAt: Date?
+        /// When the owner's cursor was seen to have passed this change. Nil in every other state.
+        public let deliveredAt: Date?
+        /// What the row calls itself, when it calls itself anything: `Mutation.entityKind`,
+        /// recorded once at enqueue rather than parsed back out of the payload on every read.
+        /// A queue of Deep Research reports is megabytes, and this is read to draw a list.
+        public let entityKind: String?
     }
+
+    /// How long a delivered change stays in the queue before it is swept.
+    ///
+    /// Not zero, and not forever. Purging on the same pass that discovers the delivery would
+    /// mean the queue never showed the good news at all — the row would vanish between one
+    /// glance and the next, which is indistinguishable from having lost it. A day is long
+    /// enough that somebody who sent a report in the evening still sees it landed in the
+    /// morning.
+    public static let deliveredRetention: TimeInterval = 24 * 60 * 60
 
     private let dbQueue: DatabaseQueue
     public let spaceId: String
@@ -42,6 +64,10 @@ public actor MutationOutbox {
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: url.path
         )
+        // Deliberately backed up, and said out loud rather than left to the default: a queued
+        // note or an unsent report has not reached the ledger, so this file is the only copy
+        // there is. See `BackupPolicy`.
+        BackupPolicy.apply(.backedUp, to: url)
         try migrate()
     }
 
@@ -60,12 +86,26 @@ public actor MutationOutbox {
                 );
                 CREATE INDEX IF NOT EXISTS outbox_state ON outbox (state, created_at);
                 """)
-            // Added after the queue already existed on devices, so it is an ALTER guarded by a
+            // Added after the queue already existed on devices, so these are ALTERs guarded by a
             // column check rather than a change to the CREATE above — which would never run
             // again on a database that already has the table.
             let columns = try db.columns(in: "outbox").map(\.name)
             if !columns.contains("authorised") {
                 try db.execute(sql: "ALTER TABLE outbox ADD COLUMN authorised INTEGER NOT NULL DEFAULT 0")
+            }
+            // All three are nullable with no default, and that is the migration: every row that
+            // was already in the queue keeps its state and gains three nulls. A null `cursor`
+            // means "sent to a server that would not say where it landed", which is exactly the
+            // truth about a row accepted before this column existed, and it is the reason
+            // `markDelivered` refuses to touch such a row rather than guessing.
+            if !columns.contains("cursor") {
+                try db.execute(sql: "ALTER TABLE outbox ADD COLUMN cursor INTEGER")
+            }
+            if !columns.contains("delivered_at") {
+                try db.execute(sql: "ALTER TABLE outbox ADD COLUMN delivered_at TEXT")
+            }
+            if !columns.contains("entity_kind") {
+                try db.execute(sql: "ALTER TABLE outbox ADD COLUMN entity_kind TEXT")
             }
         }
     }
@@ -92,13 +132,18 @@ public actor MutationOutbox {
             // `authorised` is written as 0 rather than left to its default because this is an
             // INSERT OR REPLACE: editing a change that was already authorised puts it back
             // behind the send button, which is the honest reading of "this is a new change".
+            // `cursor` and `delivered_at` are named and nulled for the same reason: re-queueing
+            // an id that had already landed is a *new* change under an old name, and inheriting
+            // the old cursor would report it delivered the moment it was sent.
             try db.execute(sql: """
-                INSERT OR REPLACE INTO outbox (id, tbl, title, state, detail, payload, created_at, sent_at, authorised)
-                VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, 0)
+                INSERT OR REPLACE INTO outbox
+                    (id, tbl, title, state, detail, payload, created_at, sent_at, authorised, cursor, delivered_at, entity_kind)
+                VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, 0, NULL, NULL, ?)
                 """, arguments: [
                     mutation.id, mutation.table, title, State.pending.rawValue,
                     String(data: payload, encoding: .utf8) ?? "{}",
                     ISO8601DateFormatter.nodusFractional.string(from: mutation.createdAt),
+                    mutation.entityKind,
                 ])
         }
     }
@@ -197,16 +242,88 @@ public actor MutationOutbox {
         }
     }
 
-    public func markAccepted(_ ids: [String]) throws {
+    /// Record that the server took these changes, and where in its ledger they came to rest.
+    ///
+    /// - Parameter cursor: `MutationReceipt.cursor` — the ledger sequence this batch reached.
+    ///   Kept per row so that the space's own `mutationCursor`, which is how far the owner has
+    ///   collected, can later be compared against it. Nil from a server that does not publish
+    ///   one, and a nil is written as a nil: a row with no cursor can never be reported
+    ///   delivered, which is the right end of that trade.
+    public func markAccepted(_ ids: [String], cursor: Int? = nil) throws {
         guard !ids.isEmpty else { return }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         try dbQueue.write { db in
             for id in ids {
                 try db.execute(
-                    sql: "UPDATE outbox SET state = ?, sent_at = ?, detail = NULL WHERE id = ?",
-                    arguments: [State.accepted.rawValue, now, id]
+                    sql: "UPDATE outbox SET state = ?, sent_at = ?, detail = NULL, cursor = ? WHERE id = ?",
+                    arguments: [State.accepted.rawValue, now, cursor, id]
                 )
             }
+        }
+    }
+
+    /// Move to `delivered` everything the owner's cursor has now passed.
+    ///
+    /// - Parameter cursor: the space's `mutationCursor`, which the server advances when the
+    ///   owner's desktop acknowledges the ledger up to that sequence.
+    /// - Returns: the rows that changed state on this call, so a caller can say something about
+    ///   them exactly once. An empty array means nothing new landed, not that nothing is queued.
+    @discardableResult
+    public func markDelivered(upTo cursor: Int) throws -> [Item] {
+        let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
+        return try dbQueue.write { db in
+            // `cursor IS NOT NULL` carries the whole promise about old servers. A row sent
+            // before this column existed, or to a server that publishes no receipt cursor, has
+            // nothing to compare and stays where it is for good.
+            let ids = try String.fetchAll(db, sql: """
+                SELECT id FROM outbox
+                WHERE state = ? AND cursor IS NOT NULL AND cursor <= ?
+                """, arguments: [State.accepted.rawValue, cursor])
+            guard !ids.isEmpty else { return [] }
+
+            let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
+            try db.execute(
+                sql: "UPDATE outbox SET state = ?, delivered_at = ? WHERE id IN (\(placeholders))",
+                arguments: StatementArguments([State.delivered.rawValue, now] + ids)
+            )
+            // Read back rather than patched in memory, so what the caller announces is what the
+            // queue will show when the user goes looking for it.
+            return try GRDB.Row
+                .fetchAll(db, sql: "SELECT * FROM outbox WHERE id IN (\(placeholders)) ORDER BY created_at DESC",
+                          arguments: StatementArguments(ids))
+                .compactMap(Self.item(from:))
+        }
+    }
+
+    /// How many changes are sitting in the ledger with a cursor to compare against.
+    ///
+    /// The gate on asking the server anything: a space with nothing here has no reason to be
+    /// asked how far its owner has collected, and neither has a device whose whole queue
+    /// predates the cursor.
+    public func awaitingDelivery() throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM outbox WHERE state = ? AND cursor IS NOT NULL",
+                arguments: [State.accepted.rawValue]
+            ) ?? 0
+        }
+    }
+
+    /// Drop delivered changes the user has had time to see.
+    ///
+    /// The queue answers "has my work left this phone yet?", and a change that reached the
+    /// vault a day ago is no longer part of that question — but it is part of it for a while,
+    /// which is why this is a sweep on a clock rather than a delete inside `markDelivered`.
+    @discardableResult
+    public func purgeDelivered(deliveredBefore cutoff: Date) throws -> Int {
+        let stamp = ISO8601DateFormatter.nodusFractional.string(from: cutoff)
+        return try dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM outbox WHERE state = ? AND delivered_at IS NOT NULL AND delivered_at < ?",
+                arguments: [State.delivered.rawValue, stamp]
+            )
+            return db.changesCount
         }
     }
 
@@ -235,39 +352,52 @@ public actor MutationOutbox {
 
     public func items() throws -> [Item] {
         try dbQueue.read { db in
-            try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox ORDER BY created_at DESC").compactMap { row in
-                guard
-                    let id: String = row["id"],
-                    let table: String = row["tbl"],
-                    let title: String = row["title"],
-                    let stateRaw: String = row["state"],
-                    let state = State(rawValue: stateRaw),
-                    let createdRaw: String = row["created_at"],
-                    let created = ISO8601DateFormatter.nodusFractional.date(from: createdRaw)
-                        ?? ISO8601DateFormatter.nodusPlain.date(from: createdRaw)
-                else { return nil }
-                let sentRaw: String? = row["sent_at"]
-                return Item(
-                    id: id,
-                    table: table,
-                    title: title,
-                    state: state,
-                    detail: row["detail"],
-                    createdAt: created,
-                    sentAt: sentRaw.flatMap {
-                        ISO8601DateFormatter.nodusFractional.date(from: $0) ?? ISO8601DateFormatter.nodusPlain.date(from: $0)
-                    }
-                )
-            }
+            try GRDB.Row
+                .fetchAll(db, sql: "SELECT * FROM outbox ORDER BY created_at DESC")
+                .compactMap(Self.item(from:))
         }
     }
 
-    public func counts() throws -> (pending: Int, accepted: Int, rejected: Int) {
+    /// One row of the queue as the screens read it.
+    ///
+    /// Shared with `markDelivered`, which has to answer with the same shape the tray shows —
+    /// two mappers would eventually disagree about which state a row is in on the one call
+    /// whose whole job is to change it.
+    private static func item(from row: GRDB.Row) -> Item? {
+        guard
+            let id: String = row["id"],
+            let table: String = row["tbl"],
+            let title: String = row["title"],
+            let stateRaw: String = row["state"],
+            let state = State(rawValue: stateRaw),
+            let createdRaw: String = row["created_at"],
+            let created = date(createdRaw)
+        else { return nil }
+        let sentRaw: String? = row["sent_at"]
+        let deliveredRaw: String? = row["delivered_at"]
+        return Item(
+            id: id,
+            table: table,
+            title: title,
+            state: state,
+            detail: row["detail"],
+            createdAt: created,
+            sentAt: sentRaw.flatMap(date),
+            deliveredAt: deliveredRaw.flatMap(date),
+            entityKind: row["entity_kind"]
+        )
+    }
+
+    private static func date(_ raw: String) -> Date? {
+        ISO8601DateFormatter.nodusFractional.date(from: raw) ?? ISO8601DateFormatter.nodusPlain.date(from: raw)
+    }
+
+    public func counts() throws -> (pending: Int, accepted: Int, rejected: Int, delivered: Int) {
         try dbQueue.read { db in
             func count(_ state: State) throws -> Int {
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE state = ?", arguments: [state.rawValue]) ?? 0
             }
-            return (try count(.pending), try count(.accepted), try count(.rejected))
+            return (try count(.pending), try count(.accepted), try count(.rejected), try count(.delivered))
         }
     }
 

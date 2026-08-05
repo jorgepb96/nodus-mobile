@@ -116,11 +116,28 @@ public extension NodusClient {
 
 // MARK: - Wire shapes
 
-public struct ServerHealth: Sendable, Codable {
+public struct ServerHealth: Sendable, Codable, Hashable {
     public let ok: Bool
     public let service: String?
     public let version: String?
     public let language: String?
+
+    public init(ok: Bool, service: String? = nil, version: String? = nil, language: String? = nil) {
+        self.ok = ok
+        self.service = service
+        self.version = version
+        self.language = language
+    }
+
+    /// The name of whatever answered, when it is somebody else's.
+    ///
+    /// A server too old to name itself sends no `service` at all, and calling that an impostor
+    /// would be a worse failure than the one it is trying to explain. So silence counts as a
+    /// yes, and only a name that is plainly not Nodus counts as a no.
+    public var namesAnotherService: String? {
+        guard let service, !service.isEmpty else { return nil }
+        return service.lowercased().contains("nodus") ? nil : service
+    }
 }
 
 struct LoginResponse: Decodable {

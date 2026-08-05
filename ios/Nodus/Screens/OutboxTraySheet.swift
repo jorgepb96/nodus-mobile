@@ -18,6 +18,11 @@ final class OutboxTrayModel {
     /// has one, and a cold start should not pay for a screen nobody has asked for.
     func refresh() async { await outbox.refresh() }
 
+    /// Reads the queues *and* asks each server how far its owner has collected. Attached to
+    /// coming back to the app and to pulling the tray down — both moments when a person is
+    /// asking "any news?", and neither of them a loop.
+    func confirmDeliveries() async { await outbox.confirmDeliveries() }
+
     func open() {
         isPresented = true
     }
@@ -26,9 +31,9 @@ final class OutboxTrayModel {
 /// Everything queued on this device, in every vault.
 ///
 /// A change that has reached the server is *in a ledger*; it becomes part of the vault only when
-/// the owner's Nodus drains it and republishes. So a queued change has two states worth telling
-/// apart — "not sent yet" and "sent, waiting for the owner" — and collapsing them would tell
-/// somebody their work is in the vault when it is not. Every row here says which it is.
+/// the owner's Nodus drains it. So a queued change has three states worth telling apart — "not
+/// sent yet", "sent, waiting for the owner" and "the owner has it" — and collapsing any two of
+/// them would tell somebody their work is somewhere it is not. Every row here says which it is.
 struct OutboxTraySheet: View {
     @Environment(OutboxTrayModel.self) private var tray
     @Environment(\.dismiss) private var dismiss
@@ -83,6 +88,13 @@ struct OutboxTraySheet: View {
                 }
             }
 
+            // The other thing the delivery check learns. A queue whose token has run out will
+            // keep failing to send with a message about the network, and this is the only
+            // screen in a position to say what is actually wrong.
+            ForEach(credentialNotices, id: \.spaceId) { notice in
+                Section { credentialNotice(notice) }
+            }
+
             if outbox.entries.isEmpty {
                 Section {
                     ContentUnavailableView(
@@ -108,7 +120,9 @@ struct OutboxTraySheet: View {
         .listRowBackground(Color.clear)
         .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .textCase(nil)
-        .refreshable { await outbox.refresh() }
+        // Pulling this list down is somebody asking "any news?", so it asks the servers rather
+        // than only re-reading the queues. It is a gesture, not a loop.
+        .refreshable { await outbox.confirmDeliveries() }
     }
 
     private var failures: [(spaceId: String, spaceName: String, reason: String)] {
@@ -118,6 +132,41 @@ struct OutboxTraySheet: View {
             return (spaceId: spaceId, spaceName: name, reason: reason)
         }
         .sorted { $0.spaceName < $1.spaceName }
+    }
+
+    private var credentialNotices: [(spaceId: String, spaceName: String, credential: MutationDelivery.Credential)] {
+        outbox.credentials.compactMap { spaceId, credential in
+            guard let name = outbox.entries.first(where: { $0.connection.spaceId == spaceId })?.connection.spaceName
+            else { return nil }
+            return (spaceId: spaceId, spaceName: name, credential: credential)
+        }
+        .sorted { $0.spaceName < $1.spaceName }
+    }
+
+    /// Interpolated into a `LocalizedStringKey` literal rather than built with
+    /// `String(localized:)`: interpolation into a key produces a key with `%@` in it, which is
+    /// what the catalogue holds. A string built first and wrapped afterwards is looked up as
+    /// itself, and matches nothing on any phone.
+    @ViewBuilder
+    private func credentialNotice(
+        _ notice: (spaceId: String, spaceName: String, credential: MutationDelivery.Credential)
+    ) -> some View {
+        switch notice.credential {
+        case .rejected:
+            NodusNotice(
+                tone: .blocked,
+                title: "Sign in again",
+                message: "The server no longer accepts this device's key for “\(notice.spaceName)”. Nothing queued is lost; it travels once you have signed in again.",
+                systemImage: "key.slash"
+            )
+        case .expiring(let date):
+            NodusNotice(
+                tone: .caution,
+                title: "Sign in again soon",
+                message: "This device's key for “\(notice.spaceName)” stops working on \(date.formatted(date: .abbreviated, time: .omitted)).",
+                systemImage: "key"
+            )
+        }
     }
 
     private var relayExplanation: some View {
@@ -173,6 +222,8 @@ struct OutboxTraySheet: View {
         case .pending: ("Not sent", Color.nodusCaution)
         case .accepted: ("On the server", entry.connection.accent)
         case .rejected: ("Rejected", Color.nodusDanger)
+        // The one green thing on this screen, and the only state that is the end of a journey.
+        case .delivered: ("In the vault", Color.nodusSuccess)
         }
         return Text(label)
             .font(.caption2.weight(.medium))
@@ -193,6 +244,11 @@ struct OutboxTraySheet: View {
             return String(localized: "Waiting for the owner to republish.")
         case .rejected:
             return String(localized: "The server rejected it.")
+        case .delivered:
+            // Applied is not published, and this sentence is the whole difference. The owner's
+            // Nodus has written it into their own database; the copy everybody reads — this
+            // phone included — is the last one they published, and this is not in it yet.
+            return String(localized: "In the owner's Nodus. It joins the published copy when they republish.")
         }
     }
 }

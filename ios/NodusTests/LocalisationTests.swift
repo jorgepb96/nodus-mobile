@@ -148,6 +148,10 @@ struct LocalisationTests {
                 == "1 cambio esperando a su vault")
         #expect(String(localized: "^[\(2) change](inflect: true) waiting for its vault", bundle: bundle)
                 == "2 cambios esperando a su vault")
+        #expect(String(localized: "^[\(1) change](inflect: true) in the vault", bundle: bundle)
+                == "1 cambio en el vault")
+        #expect(String(localized: "^[\(4) change](inflect: true) in the vault", bundle: bundle)
+                == "4 cambios en el vault")
     }
 
     @Test("everything the send queue says has Spanish")
@@ -164,6 +168,101 @@ struct LocalisationTests {
         _ = try translated("Waiting for the owner to republish.")
         _ = try translated("The server rejected it.")
         _ = try translated("Remove")
+    }
+
+    // The switch that decides whether somebody's conversations and reports leave the device. The
+    // sentence under it is the whole of what they are told before deciding, so it has to be in
+    // their language for the same reason the send dialog does: consent asked in a language the
+    // reader did not choose is not consent.
+    @Test("the iCloud copy explains itself in Spanish")
+    func cloudBackupStrings() throws {
+        #expect(try translated("Chats and reports in iCloud") == "Chats e informes en iCloud")
+        _ = try translated("Your conversations and the reports written here are copied to your own private iCloud, so a new phone finds them. They never reach a Nodus server, and your provider keys and the offline copy never leave this device.")
+        _ = try translated("Updating…")
+        _ = try translated("Last updated")
+        // Every way it can refuse. These are `LocalizedError` descriptions built in Swift, which
+        // is exactly the shape that ships in English when nobody checks.
+        _ = try translated("Sign in to iCloud on this device to use this.")
+        _ = try translated("iCloud is restricted on this device.")
+        _ = try translated("The copy in iCloud was removed from another device.")
+    }
+
+    /// The end of the journey, which is the one part of it the app could never say before. The
+    /// distinction it draws — the owner has your change, and has not yet published it — is the
+    /// whole reason the state exists, so its sentence is worth as much in Spanish as the badge.
+    @Test("everything about a change reaching the vault has Spanish")
+    func deliveredStrings() throws {
+        _ = try translated("In the vault")
+        _ = try translated("In the owner's Nodus. It joins the published copy when they republish.")
+        // Read on a lock screen, hours after the app was last open, and the only words that
+        // will be read at all if the report is never opened again.
+        _ = try translated("Your report is in the vault")
+        // Asked through the interpolation the notification really builds rather than by
+        // looking the key up: two `%@` in a sentence is exactly the shape that ships in English
+        // when the catalogue holds a key nothing generates.
+        let bundle = try spanish
+        #expect(
+            String(
+                localized: "“\("El comercio atlántico")” reached \("Mi vault"). Nobody reads it back, you included, until its owner republishes.",
+                bundle: bundle
+            ) == "«El comercio atlántico» ha llegado a Mi vault. Nadie lo lee, tú incluido, hasta que su propietario vuelva a publicar."
+        )
+    }
+
+    /// A key that has run out stops a queue without explaining itself. These are the sentences
+    /// that turn "sending failed" into something with a next step in it.
+    @Test("what the queue says about a key that is running out has Spanish")
+    func credentialStrings() throws {
+        _ = try translated("Sign in again soon")
+        _ = try translated("This device's key for “%@” stops working on %@.")
+        _ = try translated("The server no longer accepts this device's key for “%@”. Nothing queued is lost; it travels once you have signed in again.")
+    }
+
+    /// A connection that fails is the one screen somebody reads while already frustrated, and
+    /// the wording is the whole feature: "could not connect to server" in Spanish would be
+    /// exactly as useless as it was in English. Every sentence here is computed — the host and
+    /// the release numbers are interpolated into it — so every one of them is a `String` that
+    /// `Text` renders rather than looks up, and a missing translation ships silently.
+    @Test("everything a failed connection says has Spanish")
+    func connectionFailureStrings() throws {
+        // The frequent one: a laptop that went to sleep.
+        #expect(try translated("Nobody answers at %@") == "Nadie contesta en %@")
+        _ = try translated("That usually means the computer Nodus lives on is off, asleep, or has the application closed.")
+        // The other five the classifier separates.
+        _ = try translated("No network")
+        _ = try translated("This device is not on any network right now, so nothing was contacted.")
+        _ = try translated("No machine called “%@”")
+        _ = try translated("Something else is at %@")
+        _ = try translated("Something answered there, and not the way a Nodus Server answers. Check the address, and the port if the server uses one.")
+        _ = try translated("That address is served by “%@”, not by a Nodus Server.")
+        _ = try translated("This app and that server are different releases")
+        _ = try translated("This app is on %@ and that server on %@. Where the two disagree the server decides, so this app is the side to update.")
+        _ = try translated("This app is on %@ and that server on %@. Where the two disagree the server decides, so update Nodus on the computer that serves it.")
+        _ = try translated("This device does not trust that certificate")
+        _ = try translated("Nodus desktop's basic local-network mode serves HTTPS with a certificate from an authority it generated itself. iOS refuses it until that authority is installed and trusted on this device.")
+        _ = try translated("The server no longer accepts this device's credential for this space.")
+    }
+
+    /// The diagnostics screen is read out loud to whoever runs the server, often over the
+    /// phone. Its six labels and its three verdicts are the vocabulary that conversation uses.
+    @Test("the diagnostics screen speaks Spanish, verdicts included")
+    func diagnosticsStrings() throws {
+        #expect(try translated("Diagnostics") == "Diagnóstico")
+        #expect(try translated("Connection") == "Conexión")
+        _ = try translated("This device has a network")
+        _ = try translated("Something answers at that address")
+        _ = try translated("The certificate")
+        _ = try translated("It is a Nodus Server")
+        _ = try translated("The two releases agree")
+        _ = try translated("This device's credential")
+        // Spoken by VoiceOver in place of a glyph, which says nothing out loud.
+        _ = try translated("passed")
+        _ = try translated("failed")
+        _ = try translated("not asked")
+        _ = try translated("Copy the report")
+        _ = try translated("The report goes to the clipboard and nowhere else. It carries no credential and no provider key.")
+        _ = try translated("Run the checks again")
+        _ = try translated("What went wrong")
     }
 
     // These are read by iOS, not by the app, and a plist string on its own is shown verbatim in

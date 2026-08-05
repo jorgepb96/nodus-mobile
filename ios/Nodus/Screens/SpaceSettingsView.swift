@@ -10,9 +10,10 @@ struct SpaceSettingsView: View {
     @Environment(AISettings.self) private var ai
     @Environment(AppLock.self) private var lock
     @Environment(AppPreferences.self) private var preferences
+    @Environment(CloudBackup.self) private var cloud
     @State private var health: ServerHealth?
     @State private var capabilities: ServerCapabilities?
-    @State private var diagnosticError: String?
+    @State private var diagnosticFailure: ConnectionFailure?
 
     var body: some View {
         NavigationStack {
@@ -46,8 +47,12 @@ struct SpaceSettingsView: View {
                             labelled("Largest change", ByteCountFormatter.string(fromByteCount: Int64(maxMutationBytes), countStyle: .file))
                         }
                     }
-                    if let diagnosticError {
-                        Text(diagnosticError).font(.caption).foregroundStyle(Color.nodusDanger)
+                    if let diagnosticFailure {
+                        // One line, and a way to find out more. The whole of what this screen
+                        // could say about a failure used to be `error.localizedDescription`.
+                        Text(LocalizedStringKey(diagnosticFailure.sentence))
+                            .font(.caption)
+                            .foregroundStyle(diagnosticFailure.tone == .caution ? Color.nodusCaution : Color.nodusDanger)
                     }
                 } header: {
                     Text("Server")
@@ -56,6 +61,19 @@ struct SpaceSettingsView: View {
                         Text("This connection is not encrypted. That should only ever be a local test.")
                             .foregroundStyle(Color.nodusCaution)
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        ConnectionDiagnosticsView(connection: session.connection)
+                            .environment(model)
+                    } label: {
+                        Label("Diagnostics", systemImage: "stethoscope")
+                    }
+                } header: {
+                    Text("Connection")
+                } footer: {
+                    Text("Runs the checks in order — this device's network, then the address, then whether a Nodus Server is behind it — and says where it stops.")
                 }
 
                 Section {
@@ -163,6 +181,39 @@ struct SpaceSettingsView: View {
                     } else {
                         Text("This device has no passcode set, so there is nothing to lock with.")
                     }
+                }
+
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { cloud.isEnabled },
+                        // Turning it on fetches before it sends, so a second device joins the
+                        // copy rather than replacing it — see `CloudBackup`.
+                        set: { wanted in Task { await cloud.setEnabled(wanted) } }
+                    )) {
+                        Label("Chats and reports in iCloud", systemImage: "icloud")
+                    }
+                    .tint(session.accent)
+
+                    switch cloud.status {
+                    case .off:
+                        EmptyView()
+                    case .working:
+                        Label("Updating…", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption).foregroundStyle(.secondary)
+                    case .ready(let when):
+                        if let when {
+                            labelled("Last updated", when.formatted(date: .abbreviated, time: .shortened))
+                        }
+                    case .failed(let message):
+                        Text(message).font(.caption).foregroundStyle(Color.nodusCaution)
+                    }
+                } header: {
+                    Text("iCloud")
+                } footer: {
+                    // The one sentence somebody reads before deciding. It has to say what leaves
+                    // the device and where it lands, and it has to be as true of the code as of
+                    // the promise two sections above about the keys.
+                    Text("Your conversations and the reports written here are copied to your own private iCloud, so a new phone finds them. They never reach a Nodus server, and your provider keys and the offline copy never leave this device.")
                 }
 
                 Section {
@@ -291,14 +342,27 @@ struct SpaceSettingsView: View {
         .font(.callout)
     }
 
+    /// The two public calls this screen shows numbers from.
+    ///
+    /// The full ordered run lives one tap away, on its own screen: this one is settings, and it
+    /// needs the ceilings and the version, not a verdict. What it does share is the wording —
+    /// when the two calls fail, the sentence comes from the same classifier.
     private func diagnose() async {
         do {
             async let health = session.client.health()
             async let capabilities = session.client.capabilities()
             self.health = try await health
             self.capabilities = try await capabilities
+            diagnosticFailure = nil
         } catch {
-            diagnosticError = error.localizedDescription
+            let network = await NetworkReachability.current()
+            diagnosticFailure = ConnectionFailure.classify(
+                error: error,
+                origin: session.connection.origin,
+                network: network,
+                knock: .unauthenticated,
+                appVersion: NodusVersion.current
+            )
         }
     }
 }
