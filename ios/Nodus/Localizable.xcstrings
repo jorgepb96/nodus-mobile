@@ -565,6 +565,28 @@
         }
       }
     },
+    "A read-only corpus that ships with the app. No account, no server, works offline.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un corpus de solo lectura que viene con la app. Sin cuenta, sin servidor y sin conexión."
+          }
+        }
+      }
+    },
+    "A small corpus of public-domain works, so the app has something to show without a server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un corpus breve de obras de dominio público, para que la app tenga algo que enseñar sin servidor."
+          }
+        }
+      }
+    },
     "A table with no rows was published empty. A table that is absent was never published at all — and the endpoint for it answers an empty page rather than an error.": {
       "extractionState": "manual",
       "localizations": {
@@ -2006,6 +2028,17 @@
         }
       }
     },
+    "Could not open the example vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir el vault de ejemplo"
+          }
+        }
+      }
+    },
     "Could not open the session": {
       "extractionState": "manual",
       "localizations": {
@@ -2739,6 +2772,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Examen"
+          }
+        }
+      }
+    },
+    "Example vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vault de ejemplo"
           }
         }
       }
@@ -5240,6 +5284,17 @@
         }
       }
     },
+    "Opens a small read-only corpus stored in the app. No account and no connection.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre un corpus pequeño de solo lectura guardado en la app. Sin cuenta y sin conexión."
+          }
+        }
+      }
+    },
     "Oral history": {
       "extractionState": "manual",
       "localizations": {
@@ -6538,6 +6593,17 @@
         }
       }
     },
+    "See an example vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver un vault de ejemplo"
+          }
+        }
+      }
+    },
     "See the ideas under this theme": {
       "extractionState": "manual",
       "localizations": {
@@ -7451,6 +7517,17 @@
         }
       }
     },
+    "The contradiction is that “%@” is in tension with “%@”.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La contradicción está en que «%@» entra en tensión con «%@»."
+          }
+        }
+      }
+    },
     "The conversation lasts as long as this report is open. Nothing is saved.": {
       "extractionState": "manual",
       "localizations": {
@@ -7491,6 +7568,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "El proveedor de embeddings respondió \\(status)."
+          }
+        }
+      }
+    },
+    "The example vault is on this device, so there is no server to answer this.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El vault de ejemplo está en este dispositivo, así que no hay servidor que pueda responder a esto."
           }
         }
       }
@@ -7612,6 +7700,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "La pregunta falló"
+          }
+        }
+      }
+    },
+    "The refutation is that “%@” refuses “%@”.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La refutación está en que «%@» rechaza «%@»."
           }
         }
       }
@@ -7909,6 +8008,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Esta app"
+          }
+        }
+      }
+    },
+    "This build carries no example vault.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta versión no incluye ningún vault de ejemplo."
           }
         }
       }
