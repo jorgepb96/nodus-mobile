@@ -51,6 +51,11 @@ public actor MirrorStore {
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: fileURL.path
         )
+        // Kept out of the device backup, and marked here because this is the one line every
+        // process that touches a mirror goes through — including the ones that opened it before
+        // this rule existed. See `BackupPolicy`: a mirror is somebody else's publication and one
+        // tap re-downloads it, so restoring a phone should not spend an hour on it.
+        BackupPolicy.apply(.excluded, to: fileURL)
         try migrate()
     }
 

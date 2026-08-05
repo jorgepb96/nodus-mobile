@@ -56,6 +56,13 @@ struct RootView: View {
             if model.session == nil, let recent = model.mostRecent {
                 model.open(recent)
             }
+            // Which of this device's files a backup carries, decided in one place and applied
+            // to whatever is already on disk. Detached because it is `setxattr` per file and
+            // this is the launch path; nothing on screen waits for the answer.
+            Task.detached(priority: .utility) {
+                BackupPolicy.apply(toSpacesDirectory: URL.applicationSupportDirectory
+                    .appendingPathComponent("spaces", isDirectory: true))
+            }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // Coming back is when the answer may have changed: the background flush may have
