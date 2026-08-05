@@ -27,6 +27,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- No LSApplicationQueriesSchemes for `zotero`, deliberately. That key exists so an app can
+	     ASK whether another one is installed, and this app has no reason to know: it opens the
+	     link and reports what happened. Asking first would also make the control decide, once,
+	     that Zotero is absent — and then go on saying so to a reader who has since installed it. -->
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
