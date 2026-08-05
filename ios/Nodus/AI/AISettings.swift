@@ -29,19 +29,46 @@ final class AISettings {
     private(set) var rejectedProviders: Set<AIProvider> = []
 
     private let keychain = KeychainStore()
+    private let store: SyncedDefaults
     private let defaultsKey = "nodus.ai.models.v1"
     private let pinnedKey = "nodus.ai.pinned.v1"
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: defaultsKey),
+    /// The choices travel; the keys do not.
+    ///
+    /// Which model writes a report is a preference, and one worth carrying to the other device —
+    /// it is a name, it is chosen once, and re-choosing it on every device is exactly the kind of
+    /// tedium a person notices. The key that pays for the call is a secret and stays in this
+    /// device's Keychain, which is what `ConnectView` promises in as many words. The split here
+    /// is the same one the whole type is built around: `configuredProviders` is a set of ids and
+    /// never a value.
+    init(store: SyncedDefaults = .shared) {
+        self.store = store
+        if let data = store.data(forKey: defaultsKey),
            let decoded = try? JSONDecoder().decode(Models.self, from: data) {
             models = decoded
         }
-        if let data = UserDefaults.standard.data(forKey: pinnedKey),
+        if let data = store.data(forKey: pinnedKey),
            let decoded = try? JSONDecoder().decode([ModelRef].self, from: data) {
             pinnedModels = decoded
         }
         refreshConfigured()
+        store.onExternalChange(of: [defaultsKey, pinnedKey]) { [weak self] in self?.adoptRemote() }
+    }
+
+    /// Take what another device chose.
+    ///
+    /// Assigning the properties directly rather than going through `setModel` or `togglePinned`:
+    /// those persist, and persisting a value that came from iCloud would stamp it as this
+    /// device's own newer choice and send it straight back — see `SyncedDefaults`.
+    private func adoptRemote() {
+        if let data = store.data(forKey: defaultsKey),
+           let decoded = try? JSONDecoder().decode(Models.self, from: data) {
+            models = decoded
+        }
+        if let data = store.data(forKey: pinnedKey),
+           let decoded = try? JSONDecoder().decode([ModelRef].self, from: data) {
+            pinnedModels = decoded
+        }
     }
 
     // MARK: - Keys
@@ -144,12 +171,12 @@ final class AISettings {
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(models) else { return }
-        UserDefaults.standard.set(data, forKey: defaultsKey)
+        store.set(data, forKey: defaultsKey)
     }
 
     private func persistPinned() {
         guard let data = try? JSONEncoder().encode(pinnedModels) else { return }
-        UserDefaults.standard.set(data, forKey: pinnedKey)
+        store.set(data, forKey: pinnedKey)
     }
 }
 

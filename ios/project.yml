@@ -67,6 +67,9 @@ targets:
         MARKETING_VERSION: "3.2.2"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: Nodus/Info.plist
+        # iCloud's key-value store, for the preferences in `SyncedDefaults`. The file itself
+        # says what is in it and what is deliberately not.
+        CODE_SIGN_ENTITLEMENTS: Nodus/Nodus.entitlements
         ENABLE_PREVIEWS: YES
         SUPPORTS_MACCATALYST: NO
       configs:
