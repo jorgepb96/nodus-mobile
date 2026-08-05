@@ -532,6 +532,111 @@ struct CorpusProse: View {
     }
 }
 
+/// The one paragraph on the screen that is holding a selection.
+///
+/// A `UITextView` keeps its selection until something takes it away, and nothing did. Two
+/// paragraphs of a report are two text views, so selecting in one and then tapping in another
+/// left the first one still marked — and worse, the tap that should have opened a citation went
+/// into dismissing the edit menu instead, which reads exactly like a link that does not work.
+///
+/// Global rather than per page, because the thing it models is: only one selection can exist in
+/// an application at a time. Weak, so a paragraph that scrolls away and is released takes its
+/// entry with it rather than being resurrected by a stale pointer.
+@MainActor
+enum ProseSelection {
+    private static weak var holder: UITextView?
+
+    /// This paragraph now holds the selection. Any other one lets go of its own.
+    static func began(in view: UITextView) {
+        if let holder, holder !== view { holder.clearSelection() }
+        holder = view
+    }
+
+    static func ended(in view: UITextView) {
+        if holder === view { holder = nil }
+    }
+
+    /// Let go of whatever is selected. Called by every page that shows prose, on any tap.
+    static func clear() {
+        holder?.clearSelection()
+        holder = nil
+    }
+}
+
+extension UITextView {
+    /// Drop the selection and stop being the first responder.
+    ///
+    /// Both halves are needed. Clearing the range alone leaves the text view first responder,
+    /// so the edit menu can come back on a touch that was meant for something else; resigning
+    /// alone leaves the highlight painted on a paragraph nobody is acting on.
+    func clearSelection() {
+        guard selectedTextRange != nil || isFirstResponder else { return }
+        selectedTextRange = nil
+        resignFirstResponder()
+    }
+}
+
+/// A tap anywhere on a page of prose, which is what lets a selection go.
+///
+/// UIKit rather than SwiftUI, and that is not a preference. A `simultaneousGesture` on the
+/// scrolling container was tried first and it stopped citations opening at all: SwiftUI arbitrates
+/// its own gestures against a `UIViewRepresentable`'s recognizers by delaying the touch, and a
+/// `UITextView` decides whether a touch is a link tap in that same moment. A recognizer added to
+/// the scroll view itself, told to cancel nothing and delay nothing, sees every tap and takes
+/// none of them.
+///
+/// Installed once per scroll view, from whichever paragraph appears in it first.
+final class ProseSelectionClearer: UITapGestureRecognizer, UIGestureRecognizerDelegate {
+    static func install(on scrollView: UIScrollView) {
+        let existing = scrollView.gestureRecognizers ?? []
+        guard !existing.contains(where: { $0 is ProseSelectionClearer }) else { return }
+        scrollView.addGestureRecognizer(ProseSelectionClearer())
+    }
+
+    private init() {
+        super.init(target: nil, action: nil)
+        addTarget(self, action: #selector(fired))
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+        delegate = self
+    }
+
+    @objc private func fired() {
+        MainActor.assumeIsolated { ProseSelection.clear() }
+    }
+
+    /// Only touches that land on something that is not prose.
+    ///
+    /// A touch on a paragraph is the text view's business, and it already does the right thing
+    /// with it: a tap collapses the selection, a long press makes one. This recognizer took
+    /// those touches too at first, and with them went the long press — selecting a word stopped
+    /// working entirely on every report. What is left for it is the case UIKit genuinely does
+    /// not cover, because nothing there takes first responder: the card around the paragraph,
+    /// the space between two sections, the margin down either side.
+    ///
+    /// The whole chain up, not `touch.view` alone. A touch inside a `UITextView` is delivered to
+    /// one of its own layout subviews, so asking whether the hit view *is* a text view answers
+    /// no for every touch that lands on a word — which is exactly the check that let this
+    /// recognizer go on eating long presses after it was supposed to have stopped.
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        var candidate = touch.view
+        while let view = candidate {
+            if view is UITextView { return false }
+            candidate = view.superview
+        }
+        return true
+    }
+
+    /// And when it does take one, it shares. It observes; it never wins.
+    func gestureRecognizer(
+        _ recognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+}
+
 extension UIView {
     /// The scroll view this view is inside, when it is inside one.
     ///
@@ -607,13 +712,23 @@ private struct DocumentProse: UIViewRepresentable {
         view.adjustsFontForContentSizeCategory = false
         view.setContentCompressionResistancePriority(.required, for: .vertical)
         view.delegate = context.coordinator
-        // Pressing the mark. `cancelsTouchesInView = false` because this recognizer must not be
-        // the reason a citation stops opening or a paragraph stops being selectable: it watches
-        // the touch and lets everything else have it too, then does nothing unless the tap
-        // actually landed on the marked words.
+        // Pressing the mark.
+        //
+        // Three things keep this from being the reason a citation stops opening, and it needed
+        // all three: `cancelsTouchesInView = false` so the touch still reaches the text view, a
+        // delegate that declines every touch except one landing on the marked words, and a
+        // delegate that says yes to recognising alongside the text view's own recognizers.
+        //
+        // The middle one is the one that was missing, and it is not belt-and-braces. A tap
+        // recognizer on a `UITextView` competes with the recognizer UIKit uses to decide that a
+        // touch was a link tap, and competing was enough: for a fortnight every citation in
+        // every report simply did nothing when pressed, on a page where nothing else had
+        // changed. Declining the touch outright means that in the ordinary case — no bookmark
+        // under the finger — this recognizer is not in the fight at all.
         let press = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pressedBookmark(_:)))
         press.cancelsTouchesInView = false
         press.delaysTouchesEnded = false
+        press.delegate = context.coordinator
         view.addGestureRecognizer(press)
         return view
     }
@@ -669,6 +784,18 @@ private struct DocumentProse: UIViewRepresentable {
             context.coordinator.aimedBookmark = bookmark.aim
             DispatchQueue.main.async { Self.bringIntoView(bookmark.range, of: view) }
         }
+
+        // The page's own "let go of the selection" tap, hung off the scroll view the first time
+        // a paragraph of this page is on screen. Deferred a turn for the same reason the scroll
+        // above is: SwiftUI updates a representable before putting it in the hierarchy, so the
+        // walk up to the scroll view finds nothing from here.
+        if !context.coordinator.installedClearer {
+            context.coordinator.installedClearer = true
+            DispatchQueue.main.async {
+                if let scrollView = view.enclosingScrollView { ProseSelectionClearer.install(on: scrollView) }
+            }
+        }
+
     }
 
     /// Puts one match in the middle of the screen.
@@ -803,7 +930,7 @@ private struct DocumentProse: UIViewRepresentable {
         return output
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var onOpen: (URL) -> Bool
         var linksLive: Bool
         /// Where a selection goes when the reader marks it. Nil where the page keeps no
@@ -830,6 +957,9 @@ private struct DocumentProse: UIViewRepresentable {
         /// The same, for the reading bookmark. Separate counters because the two are separate
         /// requests: closing the find bar must not scroll the page back to the bookmark.
         var aimedBookmark = 0
+        /// Whether this paragraph has already gone looking for its scroll view to hang the
+        /// page's selection-clearing tap off. Once per paragraph, not once per update.
+        var installedClearer = false
 
         init(onOpen: @escaping (URL) -> Bool, linksLive: Bool) {
             self.onOpen = onOpen
@@ -841,6 +971,13 @@ private struct DocumentProse: UIViewRepresentable {
         /// Added to the system's own items rather than replacing them: copy, look up, share and
         /// translate are what a reader expects of selected text, and a report is a document
         /// people quote from as much as they navigate.
+        ///
+        /// Second, straight after Copy, and as its glyph alone. Both of those are about the one
+        /// row the reader actually sees: the edit menu opens collapsed, with room for three or
+        /// four items and a chevron for the rest, and appending the mark to the end put it
+        /// behind that chevron — two taps for the one action this screen adds. A `.small`
+        /// palette of one renders the action as its icon, which costs a third of the width of a
+        /// labelled item and leaves Look Up and Translate where a reader expects to find them.
         ///
         /// Returning `nil` would mean "no menu at all", so a page with no bookmark hands back
         /// the suggested actions untouched.
@@ -854,41 +991,89 @@ private struct DocumentProse: UIViewRepresentable {
             // "Move" rather than "Add" when there is already one, because there is only ever
             // one bookmark and a reader who is not told that will look for the old one. Asked
             // of the report and not of this paragraph: the mark being moved is usually in a
-            // different section from the words being selected.
+            // different section from the words being selected. The title is still set even
+            // though the palette hides it: it is what VoiceOver reads, and what the item falls
+            // back to if the system ever lays this menu out fully.
             let title = reportHasBookmark
                 ? String(localized: "Move the bookmark here")
                 : String(localized: "Reading bookmark")
-            let mark = UIAction(title: title, image: UIImage(systemName: "bookmark")) { _ in
+            let mark = UIAction(
+                title: "",
+                image: UIImage(systemName: reportHasBookmark ? "bookmark.fill" : "bookmark")
+            ) { _ in
                 MainActor.assumeIsolated {
                     onMark(range, text)
                     // The selection has served its purpose, and leaving it up puts the system's
                     // handles over the mark the reader has just made.
-                    textView.selectedTextRange = nil
+                    textView.clearSelection()
                 }
             }
-            return UIMenu(children: suggestedActions + [mark])
+            // Spoken rather than shown. The title is empty on purpose — see above — and this is
+            // the only thing left for VoiceOver to read, so it carries the whole meaning.
+            mark.accessibilityLabel = title
+            let palette = UIMenu(title: "", options: .displayInline, preferredElementSize: .small, children: [mark])
+
+            // After the standard edit group — Copy — rather than at a fixed index, because the
+            // group the system offers is its own business and has changed shape between
+            // releases. When it is not there at all, second is still the intent.
+            var children = suggestedActions
+            let afterCopy = children.firstIndex { ($0 as? UIMenu)?.identifier == .standardEdit }.map { $0 + 1 }
+            children.insert(palette, at: afterCopy ?? min(1, children.count))
+            return UIMenu(children: children)
+        }
+
+        /// Which paragraph is holding a selection, so any other one can let go of its own.
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            if let range = textView.selectedTextRange, !range.isEmpty {
+                ProseSelection.began(in: textView)
+            } else {
+                ProseSelection.ended(in: textView)
+            }
         }
 
         /// A press on the marked words.
+        @objc func pressedBookmark(_ recognizer: UITapGestureRecognizer) {
+            guard let view = recognizer.view as? UITextView, let onTapBookmark else { return }
+            guard hitsBookmark(in: view, at: recognizer.location(in: view)) else { return }
+            MainActor.assumeIsolated { onTapBookmark() }
+        }
+
+        /// Whether a point in this paragraph is on the marked words.
         ///
         /// Hit-tested twice, because `closestPosition(to:)` answers for a tap anywhere in the
         /// paragraph — it is the *closest* position, not the one under the finger. So the
         /// character it names has to be inside the mark, and the point has to be on that
         /// character's own line. Without the second test, tapping the blank end of a short last
         /// line three paragraphs' worth of leading below the mark counts as pressing it.
-        @objc func pressedBookmark(_ recognizer: UITapGestureRecognizer) {
-            guard let view = recognizer.view as? UITextView,
-                  let onTapBookmark,
-                  let bookmark,
-                  bookmark.length > 0
-            else { return }
-            let point = recognizer.location(in: view)
-            guard let position = view.closestPosition(to: point) else { return }
+        private func hitsBookmark(in view: UITextView, at point: CGPoint) -> Bool {
+            guard let bookmark, bookmark.length > 0 else { return false }
+            guard let position = view.closestPosition(to: point) else { return false }
             let index = view.offset(from: view.beginningOfDocument, to: position)
-            guard NSLocationInRange(index, bookmark) else { return }
+            guard NSLocationInRange(index, bookmark) else { return false }
             let caret = view.caretRect(for: position)
-            guard point.y >= caret.minY - 2, point.y <= caret.maxY + 2 else { return }
-            MainActor.assumeIsolated { onTapBookmark() }
+            return point.y >= caret.minY - 2 && point.y <= caret.maxY + 2
+        }
+
+        // MARK: The bookmark's recognizer, kept out of everything else's way
+
+        /// Take the touch only when it is on the mark.
+        ///
+        /// Declining is what matters. A tap recognizer on a `UITextView` competes with the one
+        /// UIKit uses to decide a touch was a link tap, and merely not cancelling the touch was
+        /// not enough: while this recognizer accepted every touch, no citation in any report
+        /// opened at all. With no mark under the finger it now never enters the arbitration.
+        func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard onTapBookmark != nil, let view = recognizer.view as? UITextView else { return false }
+            return hitsBookmark(in: view, at: touch.location(in: view))
+        }
+
+        /// And when it does take one, it shares. Belt to the braces above: a touch on the mark
+        /// is not a touch the text view should stop hearing about.
+        func gestureRecognizer(
+            _ recognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool {
+            true
         }
 
         /// What should happen if this citation is activated — which is not the same question as
