@@ -160,7 +160,7 @@ enum BackgroundJobs {
     /// would quietly turn that promise into a lie.
     static func flushAuthorisedMutations() async -> Bool {
         var everythingLanded = true
-        for connection in AppModel.storedConnections() where connection.role.canSendChanges {
+        for connection in AppModel.syncableConnections() where connection.role.canSendChanges {
             if Task.isCancelled { return false }
             guard MutationOutbox.exists(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
             guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
@@ -197,7 +197,9 @@ enum BackgroundJobs {
     /// its database, so a speculative open would leave an empty queue behind in every space this
     /// device has ever connected to.
     private static var connectionsWithQueues: [AppModel.Connection] {
-        AppModel.storedConnections().filter {
+        // `syncableConnections`, not `storedConnections`: the example vault is on this device and
+        // has no server, so it can hold nothing that could ever be delivered.
+        AppModel.syncableConnections().filter {
             $0.role.canSendChanges && MutationOutbox.exists(spaceId: $0.spaceId, directory: spacesDirectory)
         }
     }
@@ -247,7 +249,7 @@ enum BackgroundJobs {
     }
 
     static func hasMirrors() -> Bool {
-        AppModel.storedConnections().contains { hasMirror(spaceId: $0.spaceId) }
+        AppModel.syncableConnections().contains { hasMirror(spaceId: $0.spaceId) }
     }
 
     /// Bring offline copies back up to date, and only ones that already exist.
@@ -256,7 +258,7 @@ enum BackgroundJobs {
     /// spend their bytes on a decision they did not make.
     static func refreshStaleMirrors() async -> Bool {
         var allCurrent = true
-        for connection in AppModel.storedConnections() where hasMirror(spaceId: connection.spaceId) {
+        for connection in AppModel.syncableConnections() where hasMirror(spaceId: connection.spaceId) {
             if Task.isCancelled { return false }
             guard let store = try? MirrorStore(spaceId: connection.spaceId, directory: spacesDirectory),
                   (try? await store.summary()) != nil
@@ -285,7 +287,7 @@ enum BackgroundJobs {
         let unfinished = DeepResearchCheckpointStore.spacesWithUnfinishedRuns()
         guard !unfinished.isEmpty else { return true }
 
-        let connections = AppModel.storedConnections()
+        let connections = AppModel.syncableConnections()
         let settings = AISettings()
         var allFinished = true
 

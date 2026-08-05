@@ -108,29 +108,35 @@ struct HomeView: View {
                 // are things you *write*. They are also the one tile here that is not about
                 // this vault: Nodi follows the person, so the same notes are behind this tile
                 // in every space.
-                tileSection("Write") {
-                    if session.connection.role.canSendChanges {
-                        // A button rather than a link, because the queue is no longer a page
-                        // inside this space: it is one sheet for the whole device, and it now
-                        // carries a real count instead of the `nil` this tile used to pass.
-                        Button {
-                            tray.open()
+                //
+                // Which is exactly why the whole section is absent from the example vault:
+                // Nodi follows the person and a demo has no person, and the queue needs
+                // somewhere to send to. Both tiles could only ever end in an error.
+                if !session.isDemo {
+                    tileSection("Write") {
+                        if session.connection.role.canSendChanges {
+                            // A button rather than a link, because the queue is no longer a page
+                            // inside this space: it is one sheet for the whole device, and it now
+                            // carries a real count instead of the `nil` this tile used to pass.
+                            Button {
+                                tray.open()
+                            } label: {
+                                SectionTile(
+                                    title: "Send queue",
+                                    icon: "tray.and.arrow.up",
+                                    count: tray.outbox.pending > 0 ? tray.outbox.pending : nil,
+                                    accent: session.accent
+                                )
+                            }
+                            .buttonStyle(NodusCardButtonStyle())
+                        }
+                        NavigationLink {
+                            NodiNotesView(session: session)
                         } label: {
-                            SectionTile(
-                                title: "Send queue",
-                                icon: "tray.and.arrow.up",
-                                count: tray.outbox.pending > 0 ? tray.outbox.pending : nil,
-                                accent: session.accent
-                            )
+                            SectionTile(title: "Nodi’s notes", icon: "sparkles", count: nil, accent: session.accent)
                         }
                         .buttonStyle(NodusCardButtonStyle())
                     }
-                    NavigationLink {
-                        NodiNotesView(session: session)
-                    } label: {
-                        SectionTile(title: "Nodi’s notes", icon: "sparkles", count: nil, accent: session.accent)
-                    }
-                    .buttonStyle(NodusCardButtonStyle())
                 }
 
                 if session.hasDebates || session.hasNotes || session.hasDeepResearch || session.hasImmersion {

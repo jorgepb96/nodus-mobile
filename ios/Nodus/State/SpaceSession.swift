@@ -40,27 +40,63 @@ final class SpaceSession {
     var accent: Color { connection.accent }
     var vaultType: VaultType? { overview?.vault?.type ?? connection.vaultType }
 
-    init(
+    private init(
+        connection: AppModel.Connection,
+        client: NodusClient,
+        // Defaulted because a corpus held on this device has no connection to fail: the example
+        // vault opens or the build is broken, and neither is something the space picker can
+        // offer a way out of.
+        onFailure: @escaping (ConnectionFailure) -> Void = { _ in }
+    ) {
+        self.connection = connection
+        self.client = client
+        self.onFailure = onFailure
+        // Application Support, not Caches: the mirror is what the app falls back to on a plane,
+        // and the system is free to delete Caches whenever it likes.
+        mirrorDirectory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
+        names = CorpusNames(client: client, spaceId: connection.spaceId)
+    }
+
+    convenience init(
         connection: AppModel.Connection,
         token: String,
         cacheDirectory: URL,
         onUnauthorized: @escaping @Sendable () async -> Void,
         onFailure: @escaping (ConnectionFailure) -> Void = { _ in }
     ) {
-        self.connection = connection
-        self.onFailure = onFailure
-        let address = ServerAddress(trusted: connection.origin)
-        self.client = NodusClient(
-            address: address,
-            token: token,
-            cache: ResponseCache(directory: cacheDirectory)
+        self.init(
+            connection: connection,
+            client: NodusClient(
+                address: ServerAddress(trusted: connection.origin),
+                token: token,
+                cache: ResponseCache(directory: cacheDirectory)
+            ),
+            onFailure: onFailure
         )
-        // Application Support, not Caches: the mirror is what the app falls back to on a plane,
-        // and the system is free to delete Caches whenever it likes.
-        mirrorDirectory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
-        names = CorpusNames(client: client, spaceId: connection.spaceId)
-        Task { await client.setUnauthorizedHandler(onUnauthorized) }
+        Task { [client] in await client.setUnauthorizedHandler(onUnauthorized) }
     }
+
+    /// The example vault: the same session over a client that answers from this device.
+    ///
+    /// Deliberately not a second `SpaceSession`. Every screen the demo is meant to show reads
+    /// through this object, and a parallel one would be two of everything — two loaders, two
+    /// mirrors, two ideas of what a section is — drifting apart from the first release after
+    /// this one. What differs is where the answers come from, and that is one object further
+    /// down: no token, because there is nobody to authorise; no revocation handler, because
+    /// nothing can answer 401.
+    convenience init(demo connection: AppModel.Connection, corpus: LocalCorpus, cacheDirectory: URL) {
+        self.init(
+            connection: connection,
+            client: NodusClient(
+                local: corpus,
+                address: ServerAddress(trusted: connection.origin),
+                cache: ResponseCache(directory: cacheDirectory)
+            )
+        )
+    }
+
+    /// Whether this is the bundled example vault rather than a space on a server.
+    var isDemo: Bool { connection.isDemo }
 
     // MARK: - Offline mirror
 

@@ -30,6 +30,16 @@ final class AppModel {
 
         var id: String { "\(origin)|\(spaceId)" }
         var accent: Color { Color(hex: vaultType?.accentHex ?? VaultType.academic.accentHex) }
+
+        /// The example vault in the bundle rather than a space on a server.
+        ///
+        /// Read from the origin rather than from a stored flag. A new `Bool` property would
+        /// have to be optional to keep decoding the connections already on people's phones —
+        /// synthesised `Decodable` throws on a missing key rather than taking a default, and
+        /// one throw loses the *whole* array — and an optional flag is a third state nobody
+        /// wants. The origin is already stored, already unique, and already the thing that
+        /// decides where a request goes.
+        var isDemo: Bool { origin == DemoSpace.origin }
     }
 
     private(set) var connections: [Connection] = []
@@ -51,6 +61,16 @@ final class AppModel {
     /// and they still need to know which spaces this device holds a token for.
     static func storedConnections() -> [Connection] {
         loadConnections(key: defaultsKey)
+    }
+
+    /// The connections a background task may act on.
+    ///
+    /// The example vault is not one of them, and not merely as an optimisation: it has no
+    /// server, so every job that could pick it up — flushing a queue, refreshing a stale
+    /// mirror — would wake the device to discover there is nobody to talk to, and would report
+    /// failure for a space that is perfectly healthy and permanently current.
+    static func syncableConnections() -> [Connection] {
+        storedConnections().filter { !$0.isDemo }
     }
 
     var hasAnyConnection: Bool { !connections.isEmpty }
@@ -213,7 +233,48 @@ final class AppModel {
     /// can open — and a card that looks identical to the ones that work, and does nothing when
     /// tapped, is indistinguishable from a broken app.
     func hasCredential(for connection: Connection) -> Bool {
-        keychain.contains(KeychainStore.deviceTokenKey(origin: connection.origin, spaceId: connection.spaceId))
+        // The example vault needs none and can never lose one. Asking the Keychain would answer
+        // no, and the picker would draw the one card that always works as the one card that is
+        // broken.
+        if connection.isDemo { return true }
+        return keychain.contains(KeychainStore.deviceTokenKey(origin: connection.origin, spaceId: connection.spaceId))
+    }
+
+    /// Why the example vault could not be opened, when it could not be.
+    ///
+    /// It is the one space whose failure is a fault in the build rather than in the network or
+    /// in a credential, so it is said on the picker instead of being swallowed.
+    private(set) var demoFailure: String?
+
+    func clearDemoFailure() { demoFailure = nil }
+
+    /// Opens the example vault, importing its snapshot the first time.
+    ///
+    /// Separate from `open` because it is genuinely asynchronous — a snapshot is read from the
+    /// bundle and imported into a mirror — while opening a server space is a Keychain read and
+    /// a constructor. Folding the two together would make every card on the picker wait on a
+    /// task for the benefit of one of them.
+    @discardableResult
+    func openDemo() async -> Bool {
+        do {
+            let prepared = try await DemoSpace.prepare()
+            var connection = prepared.connection
+            connection.lastOpenedAt = Date()
+            // Remembered like any other space, so leaving it lands on a picker that can go back
+            // in rather than on the empty state it came from.
+            connection.addedAt = connections.first { $0.id == connection.id }?.addedAt ?? Date()
+            connections.removeAll { $0.id == connection.id }
+            connections.append(connection)
+            persist()
+
+            needsSignIn = nil
+            demoFailure = nil
+            session = SpaceSession(demo: connection, corpus: prepared.corpus, cacheDirectory: cacheDirectory)
+            return true
+        } catch {
+            demoFailure = error.localizedDescription
+            return false
+        }
     }
 
     /// Opens a space, or reports that it cannot be opened.
@@ -288,6 +349,11 @@ final class AppModel {
 
     func forget(_ connection: Connection) {
         try? keychain.remove(KeychainStore.deviceTokenKey(origin: connection.origin, spaceId: connection.spaceId))
+        // The example vault's whole corpus is a mirror this app wrote, and forgetting a space
+        // whose database is still on disk is not forgetting it. A server space keeps its mirror
+        // on purpose — the credential can be taken again and the download is expensive — but
+        // this one is rebuilt from the bundle in a fraction of a second.
+        if connection.isDemo { DemoSpace.removeStoredData() }
         connections.removeAll { $0.id == connection.id }
         if session?.connection.id == connection.id { session = nil }
         persist()
@@ -305,7 +371,10 @@ final class AppModel {
             let data = UserDefaults.standard.data(forKey: key),
             let decoded = try? JSONDecoder().decode([Connection].self, from: data)
         else { return [] }
-        return decoded
+        // The demo's name and server are catalogue strings, and what was stored is whatever
+        // language the phone was in when it was first opened. Everything else on the list was
+        // named by a server and stays as it was named.
+        return decoded.map { $0.isDemo ? DemoSpace.refreshed($0) : $0 }
     }
 
     static var deviceName: String {

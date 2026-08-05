@@ -59,7 +59,11 @@ struct RootView: View {
             // Reopen where the user left off, but only if the credential is still there — a
             // revoked token should land on the picker, not on a broken shell.
             if model.session == nil, let recent = model.mostRecent {
-                model.open(recent)
+                if recent.isDemo {
+                    await model.openDemo()
+                } else {
+                    model.open(recent)
+                }
             }
             // Which of this device's files a backup carries, decided in one place and applied
             // to whatever is already on disk. Detached because it is `setxattr` per file and
@@ -171,6 +175,18 @@ struct SpacePickerView: View {
                         unreachableNotice(connection, failure)
                     }
 
+                    // A separate notice from the one above, because it is a separate kind of
+                    // fault: no network and no credential are involved, and nothing the reader
+                    // can do fixes it — the corpus the build was supposed to carry is not there.
+                    if let failure = model.demoFailure {
+                        NodusNotice(
+                            tone: .blocked,
+                            title: "Could not open the example vault",
+                            message: LocalizedStringKey(failure),
+                            systemImage: "shippingbox"
+                        )
+                    }
+
                     if offersFinding { finding }
 
                     if model.hasAnyConnection {
@@ -203,6 +219,8 @@ struct SpacePickerView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
+
+                    if !hasDemo { exampleVaultButton }
                 }
                 // `NodusSpace.page`, the same margin every other screen uses. This one was 20
                 // and the rest were 16, which is exactly the kind of four points nobody can
@@ -253,12 +271,43 @@ struct SpacePickerView: View {
         .padding(.top, model.hasAnyConnection ? 10 : 40)
     }
 
+    /// Whether the example vault is already on the list, in which case its card is the way in
+    /// and a second button beside it would be the same door twice.
+    private var hasDemo: Bool { model.connections.contains(where: \.isDemo) }
+
+    /// The way in for somebody with no server.
+    ///
+    /// Under "Add a server" rather than above it, and quieter than it: connecting a vault is
+    /// still what this app is for, and this is the answer to "what does it look like?" — a
+    /// question that has to be answerable before the first one is worth asking.
+    private var exampleVaultButton: some View {
+        VStack(spacing: 6) {
+            Button {
+                Task { await model.openDemo() }
+            } label: {
+                Label("See an example vault", systemImage: "books.vertical")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(NodusGlassButtonStyle(accent: accent))
+            .accessibilityHint("Opens a small read-only corpus stored in the app. No account and no connection.")
+
+            Text("A read-only corpus that ships with the app. No account, no server, works offline.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+    }
+
     private func card(_ connection: AppModel.Connection) -> some View {
         // Asked once per card rather than assumed: a connection whose token is gone opens
         // nothing, and the card says so instead of being a button that does nothing.
         let usable = model.hasCredential(for: connection)
         return Button {
-            if !usable || !model.open(connection) { showingConnect = true }
+            if connection.isDemo {
+                Task { await model.openDemo() }
+            } else if !usable || !model.open(connection) {
+                showingConnect = true
+            }
         } label: {
             ConnectionCard(connection: connection, needsSignIn: !usable)
         }

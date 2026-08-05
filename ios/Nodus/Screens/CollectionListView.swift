@@ -402,13 +402,16 @@ struct SpecialListView: View {
         }
     }
 
+    /// `String(localized:)`, not a literal: this is the *title* of a debate row, and a title
+    /// reaches `Text` as a value rather than as a key — so the five words that name what a
+    /// disagreement is stayed English on every phone.
     private func relationLabel(_ relation: String) -> String {
         switch relation {
-        case "contradicts": return "Contradicts"
-        case "refutes": return "Refutes"
-        case "refines": return "Refines"
-        case "variant_of": return "Variant of"
-        case "extends": return "Extends"
+        case "contradicts": return String(localized: "Contradicts")
+        case "refutes": return String(localized: "Refutes")
+        case "refines": return String(localized: "Refines")
+        case "variant_of": return String(localized: "Variant of")
+        case "extends": return String(localized: "Extends")
         default: return relation
         }
     }
