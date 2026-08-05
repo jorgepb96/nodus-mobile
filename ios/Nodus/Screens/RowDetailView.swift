@@ -34,6 +34,23 @@ struct RowDetailView: View {
 
     private var theme: String? { row.string("theme_id") }
 
+    /// The Zotero item this record came from, when it came from one.
+    ///
+    /// Read from the enriched work as well as from the row: a work reached through a citation is
+    /// fetched by the enriched handler, and the row this view was handed is the one the *list*
+    /// carried, which for some routes is a summary without the key in it. Blank keys are treated
+    /// as absent — the column exists for every work, including the ones a vault created by hand.
+    private var zoteroKey: String? {
+        let raw: String?
+        if case .work(let detail) = enriched {
+            raw = detail.work.string("zotero_key") ?? row.string("zotero_key")
+        } else {
+            raw = row.string("zotero_key")
+        }
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
     var body: some View {
         // An exam is a document, not a dossier: it gets the whole screen rather than a
         // "Questions" section under a field list nobody reads.
@@ -52,6 +69,12 @@ struct RowDetailView: View {
             // occasional bold words in it. The distance is what says where one ends.
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 heading
+
+                // Under the title, because following a work back to the library it came from is
+                // something a reader does *instead* of reading this screen rather than after it.
+                if let key = zoteroKey {
+                    ZoteroItemLink(key: key, accent: session.accent)
+                }
 
                 if let error {
                     NodusNotice(tone: .caution, title: "Could not expand", message: LocalizedStringKey(error))
@@ -691,6 +714,10 @@ struct RowDetailView: View {
             "light_at", "light_status", "deep_at", "deep_status", "deep_trigger", "manual_deep",
             "summary_at", "summary_status", "source_type", "zotero_version", "order_idx",
             "created_at", "updated_at",
+            // Shown as the control at the top of the dossier, which carries the key itself as
+            // its subtitle. Listing it here as well would put the same eight characters on the
+            // screen twice, once as something you can press and once as something you cannot.
+            "zotero_key",
         ]
         return row.columns.keys
             .filter { key in

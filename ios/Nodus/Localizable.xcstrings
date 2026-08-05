@@ -3788,6 +3788,17 @@
         }
       }
     },
+    "Install Zotero for iPhone and iPad, and open this library in it, to follow a work back to its item.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instala Zotero para iPhone y iPad, y abre en él esta biblioteca, para llegar desde una obra hasta su ítem."
+          }
+        }
+      }
+    },
     "It holds %@ rows from an earlier publication.": {
       "extractionState": "manual",
       "localizations": {
@@ -5500,6 +5511,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fronteras abiertas"
+          }
+        }
+      }
+    },
+    "Open in Zotero": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir en Zotero"
           }
         }
       }
@@ -10000,6 +10022,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tus vaults, donde estés."
+          }
+        }
+      }
+    },
+    "Zotero": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zotero"
+          }
+        }
+      }
+    },
+    "Zotero did not open": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zotero no se ha abierto"
           }
         }
       }

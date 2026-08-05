@@ -104,6 +104,17 @@ struct LocalisationTests {
         _ = try translated("The reading bookmark")
     }
 
+    /// Leaving the app for another one is a thing to say plainly, and the sentence that explains
+    /// why nothing happened is the only useful thing this control can offer when Zotero is not
+    /// there. ("Zotero" itself is deliberately not asked for: it is a proper noun, and
+    /// `translated` reads Spanish-that-equals-English as a missing translation.)
+    @Test("following a work into Zotero speaks Spanish")
+    func zoteroStrings() throws {
+        #expect(try translated("Open in Zotero") == "Abrir en Zotero")
+        _ = try translated("Zotero did not open")
+        _ = try translated("Install Zotero for iPhone and iPad, and open this library in it, to follow a work back to its item.")
+    }
+
     /// The report chat is a modal a reader opens mid-page, and everything in it — what it is
     /// for, what it promises about the conversation, and how it fails — is read in that moment.
     @Test("the report chat speaks Spanish")
