@@ -148,6 +148,10 @@ struct LocalisationTests {
                 == "1 cambio esperando a su vault")
         #expect(String(localized: "^[\(2) change](inflect: true) waiting for its vault", bundle: bundle)
                 == "2 cambios esperando a su vault")
+        #expect(String(localized: "^[\(1) change](inflect: true) in the vault", bundle: bundle)
+                == "1 cambio en el vault")
+        #expect(String(localized: "^[\(4) change](inflect: true) in the vault", bundle: bundle)
+                == "4 cambios en el vault")
     }
 
     @Test("everything the send queue says has Spanish")
@@ -164,6 +168,37 @@ struct LocalisationTests {
         _ = try translated("Waiting for the owner to republish.")
         _ = try translated("The server rejected it.")
         _ = try translated("Remove")
+    }
+
+    /// The end of the journey, which is the one part of it the app could never say before. The
+    /// distinction it draws — the owner has your change, and has not yet published it — is the
+    /// whole reason the state exists, so its sentence is worth as much in Spanish as the badge.
+    @Test("everything about a change reaching the vault has Spanish")
+    func deliveredStrings() throws {
+        _ = try translated("In the vault")
+        _ = try translated("In the owner's Nodus. It joins the published copy when they republish.")
+        // Read on a lock screen, hours after the app was last open, and the only words that
+        // will be read at all if the report is never opened again.
+        _ = try translated("Your report is in the vault")
+        // Asked through the interpolation the notification really builds rather than by
+        // looking the key up: two `%@` in a sentence is exactly the shape that ships in English
+        // when the catalogue holds a key nothing generates.
+        let bundle = try spanish
+        #expect(
+            String(
+                localized: "“\("El comercio atlántico")” reached \("Mi vault"). Nobody reads it back, you included, until its owner republishes.",
+                bundle: bundle
+            ) == "«El comercio atlántico» ha llegado a Mi vault. Nadie lo lee, tú incluido, hasta que su propietario vuelva a publicar."
+        )
+    }
+
+    /// A key that has run out stops a queue without explaining itself. These are the sentences
+    /// that turn "sending failed" into something with a next step in it.
+    @Test("what the queue says about a key that is running out has Spanish")
+    func credentialStrings() throws {
+        _ = try translated("Sign in again soon")
+        _ = try translated("This device's key for “%@” stops working on %@.")
+        _ = try translated("The server no longer accepts this device's key for “%@”. Nothing queued is lost; it travels once you have signed in again.")
     }
 
     /// A connection that fails is the one screen somebody reads while already frustrated, and

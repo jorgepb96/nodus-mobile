@@ -15,6 +15,14 @@ import NodusKit
 /// and no others: the server checks every column against what the vault has published, and a
 /// name this app invented would be rejected as `unknown_column`.
 enum ReportDraft {
+    /// The one value the server filters a Deep Research report on, and therefore the one value
+    /// that decides whether a row queued here is a report at all.
+    ///
+    /// A constant rather than two literals because it is now read twice: once when the brief is
+    /// written, and once when the queue asks whether a change that reached the vault was worth
+    /// telling somebody about. Those two answers have to be the same answer.
+    static let entityKind = "deep_research"
+
     /// The row for one finished report.
     ///
     /// - Parameter language: the interface language the report was written in, which the
@@ -33,7 +41,7 @@ enum ReportDraft {
         let brief: [String: Any] = [
             // The one value the server filters on. Anything else and the report is stored and
             // never listed.
-            "kind": "deep_research",
+            "kind": entityKind,
             "objective": report.objective,
             "tone": "academic",
             "language": language,

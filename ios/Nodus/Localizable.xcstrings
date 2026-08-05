@@ -3590,6 +3590,28 @@
         }
       }
     },
+    "In the owner's Nodus. It joins the published copy when they republish.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el Nodus del propietario. Se une a la copia publicada cuando vuelva a publicar."
+          }
+        }
+      }
+    },
+    "In the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el vault"
+          }
+        }
+      }
+    },
     "Indexed with %@ · %lld dimensions": {
       "extractionState": "manual",
       "localizations": {
@@ -7143,6 +7165,17 @@
         }
       }
     },
+    "Sign in again soon": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a entrar pronto"
+          }
+        }
+      }
+    },
     "Smaller text": {
       "extractionState": "manual",
       "localizations": {
@@ -8023,6 +8056,17 @@
         }
       }
     },
+    "The server no longer accepts this device's key for “%@”. Nothing queued is lost; it travels once you have signed in again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor ya no acepta la clave de este dispositivo para «%@». No se pierde nada de lo que esté en la cola: viajará cuando vuelvas a entrar."
+          }
+        }
+      }
+    },
     "The server refused the request.": {
       "extractionState": "manual",
       "localizations": {
@@ -8404,6 +8448,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "La credencial de este dispositivo"
+          }
+        }
+      }
+    },
+    "This device's key for “%@” stops working on %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clave de este dispositivo para «%@» deja de funcionar el %@."
           }
         }
       }
@@ -9608,6 +9663,17 @@
         }
       }
     },
+    "Your report is in the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu informe está en el vault"
+          }
+        }
+      }
+    },
     "Your server holds a published projection of the vault. AI keys never leave this device.": {
       "extractionState": "manual",
       "localizations": {
@@ -9659,6 +9725,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "\\(unreachable.label) — no alcanzable desde iOS"
+          }
+        }
+      }
+    },
+    "^[%lld change](inflect: true) in the vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld change in the vault"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld changes in the vault"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambio en el vault"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cambios en el vault"
+                }
+              }
+            }
           }
         }
       }
@@ -10305,6 +10412,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "«%@» se elimina de este dispositivo. No se puede deshacer."
+          }
+        }
+      }
+    },
+    "“%@” reached %@. Nobody reads it back, you included, until its owner republishes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» ha llegado a %@. Nadie lo lee, tú incluido, hasta que su propietario vuelva a publicar."
           }
         }
       }
