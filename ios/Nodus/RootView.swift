@@ -86,6 +86,8 @@ struct SpacePickerView: View {
 
     @State private var query = ""
     @State private var vaultFilter: VaultType?
+    /// The connection whose diagnostics are open, presented from the notice above the list.
+    @State private var diagnosing: AppModel.Connection?
 
     private let accent = Color(hex: VaultType.academic.accentHex)
 
@@ -145,6 +147,13 @@ struct SpacePickerView: View {
                         signInAgainNotice(stranded)
                     }
 
+                    // Beside the sign-in notice, and for the same reason: somebody who lands
+                    // back here after a space failed to open should be told why by the screen
+                    // they are looking at, not by the one they have just left.
+                    if let (connection, failure) = model.lastFailure {
+                        unreachableNotice(connection, failure)
+                    }
+
                     if offersFinding { finding }
 
                     if model.hasAnyConnection {
@@ -190,6 +199,19 @@ struct SpacePickerView: View {
                 .frame(maxWidth: .infinity)
             }
             .nodusDismissesKeyboard()
+        }
+        .nodusSheet(item: $diagnosing) { connection in
+            // Its own stack: the picker has no navigation bar of its own, and the screen needs
+            // a title and a "run again" control.
+            NavigationStack {
+                ConnectionDiagnosticsView(connection: connection)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { diagnosing = nil }
+                        }
+                    }
+            }
+            .environment(model)
         }
     }
 
@@ -246,6 +268,33 @@ struct SpacePickerView: View {
                 Button("Add the server again") { showingConnect = true }
                     .buttonStyle(NodusGlassButtonStyle(accent: accent))
                 Button("Dismiss") { model.clearSignInNotice() }
+                    .font(.subheadline)
+                    .tint(.secondary)
+            }
+        }
+    }
+
+    /// The last server that could not be reached, in the failure's own words.
+    ///
+    /// No retry button. A classified failure is shown once and the user decides: the computer
+    /// they need is asleep in another room, and an app that keeps knocking on its own is an app
+    /// that spends a battery saying the same thing.
+    private func unreachableNotice(_ connection: AppModel.Connection, _ failure: ConnectionFailure) -> some View {
+        // Built as a `String` and then wrapped: `LocalizedStringKey("\(a) — \(b)")` would go
+        // looking for a catalogue entry called "%@ — %@", and both halves are already
+        // translated by the time they get here.
+        let message = "\(connection.spaceName) — \(failure.sentence)"
+        return VStack(spacing: 10) {
+            NodusNotice(
+                tone: failure.tone,
+                title: LocalizedStringKey(failure.title),
+                message: LocalizedStringKey(message),
+                systemImage: failure.systemImage
+            )
+            HStack(spacing: 10) {
+                Button("What went wrong") { diagnosing = connection }
+                    .buttonStyle(NodusGlassButtonStyle(accent: accent))
+                Button("Dismiss") { model.clearFailureNotice() }
                     .font(.subheadline)
                     .tint(.secondary)
             }
