@@ -11,6 +11,12 @@ import NodusAI
 /// One per space, not one per attempt. A second run in the same space replaces the first —
 /// keeping a pile of abandoned half-reports would mean deciding later which of them the user
 /// meant, and there is no honest way to guess.
+///
+/// Carried by the device backup (`BackupPolicy`) and deliberately not by the iCloud copy
+/// (`CloudBackup`). The two answers are not inconsistent: a restore puts the phone back where it
+/// was, whereas a half-finished run resumed on a *second* device would mean two `BGTask`s writing
+/// sections of the same report at once, and the checkpoint has no way to say which of them the
+/// user is watching. The finished report is what travels.
 /// `nonisolated` because the orchestrator calls `save` from whichever thread finished a
 /// section, and hopping to the main actor to write one small file after every model call would
 /// put file I/O on the thread that draws.

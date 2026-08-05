@@ -13,6 +13,10 @@ struct RootView: View {
     /// The queue belongs to the device rather than to a space, so it lives above the branch
     /// that decides whether a space is open at all.
     @State private var tray = OutboxTrayModel()
+    /// The one state object that is a singleton rather than owned here: the two stores that feed
+    /// it are not views. Put in the environment all the same, so a settings screen reads it the
+    /// way it reads everything else.
+    private let cloud = CloudBackup.shared
 
     var body: some View {
         Group {
@@ -38,6 +42,7 @@ struct RootView: View {
         .environment(lock)
         .environment(preferences)
         .environment(tray)
+        .environment(cloud)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
         // Once, here, for every field in the app — including the ones inside sheets, which are
@@ -69,7 +74,12 @@ struct RootView: View {
             // finished a send while the app was away, and the counts on the tile and the header
             // are read from this. It is a handful of SQLite opens, on a detached task, and only
             // for spaces that actually have a queue on disk.
-            if phase == .active { Task { await tray.refresh() } }
+            if phase == .active {
+                Task { await tray.refresh() }
+                // Coming back is also when another device may have written a report or a chat.
+                // Returns on the first line unless the user switched the iCloud copy on.
+                Task { await cloud.refresh() }
+            }
 
             guard phase == .background else { return }
             // Immediately, with no grace period. A window in which the app reopens unlocked is

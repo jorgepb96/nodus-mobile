@@ -3,19 +3,34 @@
 <plist version="1.0">
 <dict>
 	<!--
-	    iCloud's key-value store, and nothing else.
+	    iCloud's key-value store.
 
 	    This is what carries the handful of preferences in `SyncedDefaults` — the model chosen
 	    for each task, the pinned models, the reading size, how the space picker sorts, how Home
 	    lays out — to the same person's other device. A kilobyte of plist, no container, no
-	    account setup, no schema.
-
-	    Deliberately not here: `com.apple.developer.icloud-container-identifiers` and the
-	    CloudKit service. Provider API keys stay in this device's Keychain, space tokens are
-	    bound to one device by design, and the offline mirror is a copy of somebody else's
-	    publication that one tap re-downloads.
+	    account setup, no schema. Always on, because none of it is a secret and losing it costs
+	    a toggle.
 	-->
 	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
 	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
+
+	<!--
+	    CloudKit, for `CloudBackup`: conversations and the reports written on this device, in the
+	    user's own private database. Having the capability is not having the feature — the switch
+	    in Settings ships off, and with it off the app never constructs a container at all.
+
+	    Deliberately not carried by any of this: provider API keys, which stay in this device's
+	    Keychain and which `ConnectView` promises never leave it; space tokens, which the server
+	    binds to one device on purpose; and the offline mirror, which is somebody else's
+	    publication that one tap re-downloads.
+	-->
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.drakonis96.nodus.ios</string>
+	</array>
 </dict>
 </plist>

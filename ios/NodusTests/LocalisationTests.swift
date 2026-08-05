@@ -166,6 +166,23 @@ struct LocalisationTests {
         _ = try translated("Remove")
     }
 
+    // The switch that decides whether somebody's conversations and reports leave the device. The
+    // sentence under it is the whole of what they are told before deciding, so it has to be in
+    // their language for the same reason the send dialog does: consent asked in a language the
+    // reader did not choose is not consent.
+    @Test("the iCloud copy explains itself in Spanish")
+    func cloudBackupStrings() throws {
+        #expect(try translated("Chats and reports in iCloud") == "Chats e informes en iCloud")
+        _ = try translated("Your conversations and the reports written here are copied to your own private iCloud, so a new phone finds them. They never reach a Nodus server, and your provider keys and the offline copy never leave this device.")
+        _ = try translated("Updating…")
+        _ = try translated("Last updated")
+        // Every way it can refuse. These are `LocalizedError` descriptions built in Swift, which
+        // is exactly the shape that ships in English when nobody checks.
+        _ = try translated("Sign in to iCloud on this device to use this.")
+        _ = try translated("iCloud is restricted on this device.")
+        _ = try translated("The copy in iCloud was removed from another device.")
+    }
+
     // These are read by iOS, not by the app, and a plist string on its own is shown verbatim in
     // every language — which is how both of them were Spanish-only for everybody.
     @Test("the permission prompts iOS shows are localised too")

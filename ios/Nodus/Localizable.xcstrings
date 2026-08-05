@@ -1434,6 +1434,17 @@
         }
       }
     },
+    "Chats and reports in iCloud": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats e informes en iCloud"
+          }
+        }
+      }
+    },
     "Check yourself": {
       "extractionState": "manual",
       "localizations": {
@@ -3850,6 +3861,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Imagen máxima"
+          }
+        }
+      }
+    },
+    "Last updated": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Última actualización"
           }
         }
       }
@@ -6956,6 +6978,17 @@
         }
       }
     },
+    "Sign in to iCloud on this device to use this.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicia sesión en iCloud en este dispositivo para usarlo."
+          }
+        }
+      }
+    },
     "Smaller text": {
       "extractionState": "manual",
       "localizations": {
@@ -7458,6 +7491,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "La conversación dura lo que dure este informe abierto. No se guarda nada."
+          }
+        }
+      }
+    },
+    "The copy in iCloud was removed from another device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La copia en iCloud se eliminó desde otro dispositivo."
           }
         }
       }
@@ -8717,6 +8761,17 @@
         }
       }
     },
+    "Updating…": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizando…"
+          }
+        }
+      }
+    },
     "Variant of": {
       "extractionState": "manual",
       "localizations": {
@@ -9098,6 +9153,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tu acceso a este espacio es de solo lectura."
+          }
+        }
+      }
+    },
+    "Your conversations and the reports written here are copied to your own private iCloud, so a new phone finds them. They never reach a Nodus server, and your provider keys and the offline copy never leave this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus conversaciones y los informes escritos aquí se copian a tu propio iCloud privado, para que un teléfono nuevo los encuentre. No llegan a ningún servidor de Nodus, y tus claves de proveedor y la copia sin conexión nunca salen de este dispositivo."
           }
         }
       }
@@ -9491,6 +9557,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "marco"
+          }
+        }
+      }
+    },
+    "iCloud is restricted on this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud está restringido en este dispositivo."
           }
         }
       }

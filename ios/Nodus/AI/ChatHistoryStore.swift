@@ -47,15 +47,30 @@ final class ChatHistoryStore {
 
     private(set) var conversations: [Conversation] = []
     private let directory: URL
+    private let spaceId: String
 
     var active: [Conversation] { conversations.filter { !$0.isArchived } }
     var archived: [Conversation] { conversations.filter(\.isArchived) }
 
-    init(spaceId: String) {
-        directory = URL.applicationSupportDirectory
+    /// Where one space's conversations sit.
+    ///
+    /// `nonisolated static` because the iCloud copy has to find these files without a store to
+    /// ask — it runs before any chat screen exists, and often for spaces that are not open. One
+    /// definition of the path, so a sync and a store cannot disagree about where a chat lives.
+    nonisolated static func directory(spaceId: String, root: URL = .applicationSupportDirectory) -> URL {
+        root
             .appendingPathComponent("spaces", isDirectory: true)
             .appendingPathComponent(spaceId, isDirectory: true)
             .appendingPathComponent("chats", isDirectory: true)
+    }
+
+    nonisolated static func fileURL(spaceId: String, id: String, root: URL = .applicationSupportDirectory) -> URL {
+        directory(spaceId: spaceId, root: root).appendingPathComponent("\(id).json")
+    }
+
+    init(spaceId: String) {
+        self.spaceId = spaceId
+        directory = Self.directory(spaceId: spaceId)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         reload()
     }
@@ -81,11 +96,12 @@ final class ChatHistoryStore {
     func save(_ conversation: Conversation) -> Conversation {
         var stored = conversation
         stored.updatedAt = Date()
+        let file = directory.appendingPathComponent("\(stored.id).json")
         if let data = try? JSONEncoder.nodusReports.encode(stored) {
-            try? data.write(
-                to: directory.appendingPathComponent("\(stored.id).json"),
-                options: [.atomic, .completeFileProtectionUnlessOpen]
-            )
+            try? data.write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+            // Does nothing at all unless the user has switched the iCloud copy on, which is the
+            // default and the state most installs stay in.
+            CloudBackup.shared.record(.chat, spaceId: spaceId, id: stored.id, document: file, updatedAt: stored.updatedAt)
         }
         reload()
         return stored
@@ -99,6 +115,9 @@ final class ChatHistoryStore {
 
     func delete(_ id: String) {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(id).json"))
+        // Deleting means deleting, in both places. A conversation that came back from iCloud
+        // after the user threw it away would be the worst thing this feature could do.
+        CloudBackup.shared.forget(.chat, spaceId: spaceId, id: id)
         reload()
     }
 
@@ -126,6 +145,7 @@ final class ChatHistoryStore {
     func deleteAll(_ scope: Scope) {
         for conversation in conversations where scope.includes(conversation) {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(conversation.id).json"))
+            CloudBackup.shared.forget(.chat, spaceId: spaceId, id: conversation.id)
         }
         reload()
     }

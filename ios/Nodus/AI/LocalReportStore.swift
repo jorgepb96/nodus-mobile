@@ -47,9 +47,15 @@ final class LocalReportStore {
         /// `modelLabel` is for reading; `ReportDraft.row` needs the provider too. Without this
         /// a report reopened from the library cannot be turned into a sendable row at all.
         var modelRef: ModelRef?
+        /// The last time anything about this record changed, which is what decides an argument
+        /// between two devices. `createdAt` cannot: attaching an illustration or marking a
+        /// report sent changes the record without changing when it was written.
+        var updatedAt: Date?
 
         var title: String { report.objective }
         var wasSent: Bool { sentAt != nil }
+        /// Written before `updatedAt` existed, so it falls back to the only date it has.
+        var lastChangedAt: Date { updatedAt ?? createdAt }
     }
 
     private(set) var reports: [Saved] = []
@@ -74,12 +80,36 @@ final class LocalReportStore {
     ///   Deliberately not routed through `shared(for:)`, which is a cache keyed on space alone
     ///   and would hand a second test the first one's directory.
     init(spaceId: String, root: URL = .applicationSupportDirectory) {
-        directory = root
+        self.spaceId = spaceId
+        directory = Self.directory(spaceId: spaceId, root: root)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        reload()
+    }
+
+    private let spaceId: String
+
+    /// Where one space's reports sit.
+    ///
+    /// `nonisolated static` for the same reason `ChatHistoryStore` has one: the iCloud copy has
+    /// to find these files with no store to ask, for spaces that are not open.
+    nonisolated static func directory(spaceId: String, root: URL = .applicationSupportDirectory) -> URL {
+        root
             .appendingPathComponent("spaces", isDirectory: true)
             .appendingPathComponent(spaceId, isDirectory: true)
             .appendingPathComponent("reports", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        reload()
+    }
+
+    nonisolated static func fileURL(spaceId: String, id: String, root: URL = .applicationSupportDirectory) -> URL {
+        directory(spaceId: spaceId, root: root).appendingPathComponent("\(id).json")
+    }
+
+    /// Every live store, told to read the folder again.
+    ///
+    /// Called after a fetch from iCloud has written files underneath them. A store that kept
+    /// showing its own list would leave a report that had just arrived from the iPad invisible
+    /// until the app was killed.
+    static func reloadAll() {
+        for store in stores.values { store.reload() }
     }
 
     func reload() {
@@ -158,6 +188,9 @@ final class LocalReportStore {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
         }
         try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(id).json"))
+        // The copy in iCloud goes with it. A report that reappeared after being thrown away
+        // would make the library untrustworthy, which is worse than not having a copy at all.
+        CloudBackup.shared.forget(.report, spaceId: spaceId, id: id)
         reload()
     }
 
@@ -178,11 +211,24 @@ final class LocalReportStore {
         reload()
     }
 
+    /// The one place a report reaches the disk, which is why it is also the one place it reaches
+    /// iCloud. Stamping `updatedAt` here rather than at each caller means attaching an
+    /// illustration, marking a report sent and repairing its citations all count as changes —
+    /// which they are, as far as another device is concerned.
     private func write(_ saved: Saved) {
-        guard let data = try? JSONEncoder.nodusReports.encode(saved) else { return }
-        try? data.write(
-            to: directory.appendingPathComponent("\(saved.id).json"),
-            options: [.atomic, .completeFileProtectionUnlessOpen]
+        var stamped = saved
+        stamped.updatedAt = Date()
+        guard let data = try? JSONEncoder.nodusReports.encode(stamped) else { return }
+        let file = directory.appendingPathComponent("\(stamped.id).json")
+        try? data.write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+        CloudBackup.shared.record(
+            .report,
+            spaceId: spaceId,
+            id: stamped.id,
+            document: file,
+            illustration: stamped.imageFile.map { directory.appendingPathComponent($0) },
+            illustrationName: stamped.imageFile,
+            updatedAt: stamped.updatedAt ?? Date()
         )
     }
 }
