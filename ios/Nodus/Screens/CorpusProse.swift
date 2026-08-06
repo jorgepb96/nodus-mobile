@@ -235,9 +235,16 @@ struct CorpusProse: View {
     /// passes one; everywhere else a bracketed number is a bracketed number.
     private let onReference: ((Int) -> Void)?
 
-    @State private var opened: CorpusReference?
-    /// Whether the reader has pressed on their own bookmark and is being asked about removing it.
-    @State private var removingBookmark = false
+    /// What this prose has asked to show, and the question it has asked.
+    ///
+    /// An object rather than two `@State` properties, and nothing in `body` reads it. That is the
+    /// whole point: `body` is the expensive half of a report — it splits the section into
+    /// paragraphs, and every paragraph it hands to SwiftUI is a `UITextView` that has to be laid
+    /// out and measured again — and a `@State` that `body` reads makes opening or closing a
+    /// citation pay for all of it. Pressing "Done" hid that: the work happened while the sheet
+    /// still covered the screen. Swiping the sheet down did not, because then the same work lands
+    /// in the middle of the dismissal, which is exactly the pause a reader saw.
+    @State private var presenting = Presentation()
     @Environment(\.nodusReadingStyle) private var reading
     /// The page's find bar, when there is one. Prose is the thing a reader searches, so this is
     /// where the words of a page are declared — after the Markdown and the citations have been
@@ -247,6 +254,13 @@ struct CorpusProse: View {
     /// immersion station or a chat bubble keeps the plain selection menu it always had.
     @Environment(ReadingBookmarks.self) private var bookmarks: ReadingBookmarks?
     @Environment(\.nodusSearchPath) private var searchPath
+
+    /// Split once, when the prose arrives, rather than on every pass of the body.
+    ///
+    /// Both halves of the work depend only on `text` and `labels`, which are `let`s, so a body
+    /// that runs again for an unrelated reason was re-splitting the section and running the
+    /// citation regex over every paragraph of it to arrive at the same answer.
+    private let blocks: [Block]
 
     init(
         _ text: String,
@@ -260,6 +274,7 @@ struct CorpusProse: View {
         self.session = session
         self.labels = labels
         self.onReference = onReference
+        blocks = Self.split(text, labels: labels)
     }
 
     /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: the
@@ -269,6 +284,18 @@ struct CorpusProse: View {
         let id: Int
         let level: Int
         let text: String
+        /// The same Markdown with every bare `nodus://` token turned into a link.
+        let source: String
+    }
+
+    /// The sheet and the dialog this prose can put up, held where `body` cannot see them.
+    @MainActor
+    @Observable
+    final class Presentation {
+        var reference: CorpusReference?
+        /// Whether the reader has pressed on their own bookmark and is being asked about
+        /// removing it.
+        var isRemovingBookmark = false
     }
 
     var body: some View {
@@ -284,7 +311,7 @@ struct CorpusProse: View {
                         heading(block, path: path)
                     } else if reading.document {
                         DocumentProse(
-                            source: Self.linkify(block.text, labels: labels),
+                            source: block.source,
                             font: reading.uiFont(.callout),
                             accent: accent,
                             justified: true,
@@ -303,19 +330,21 @@ struct CorpusProse: View {
                             onMark: bookmarks.map { marks in
                                 { range, snippet in marks.set(path: path, range: range, snippet: snippet) }
                             },
-                            onTapBookmark: bookmarks == nil ? nil : { removingBookmark = true },
-                            onOpen: { url in
+                            onTapBookmark: bookmarks == nil ? nil : { [presenting] in
+                                presenting.isRemovingBookmark = true
+                            },
+                            onOpen: { [presenting] url in
                                 if let number = PageChatReference.number(in: url) {
                                     onReference?(number)
                                     return true
                                 }
                                 guard let reference = CorpusReference(url) else { return false }
-                                opened = reference
+                                presenting.reference = reference
                                 return true
                             }
                         )
                     } else {
-                        Text(attributed(block.text, path: path))
+                        Text(attributed(block, path: path))
                             .font(reading.font(.callout))
                             .textSelection(.enabled)
                     }
@@ -342,37 +371,23 @@ struct CorpusProse: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // The link is handled here rather than by the system: `nodus://` has no handler, so
         // letting it through opens nothing at all.
-        .environment(\.openURL, OpenURLAction { url in
+        .environment(\.openURL, OpenURLAction { [presenting] url in
             if let number = PageChatReference.number(in: url) {
                 onReference?(number)
                 return .handled
             }
             guard session != nil, let reference = CorpusReference(url) else { return .systemAction }
-            opened = reference
+            presenting.reference = reference
             return .handled
         })
-        .nodusSheet(item: $opened) { reference in
-            if let session {
-                NavigationStack {
-                    CorpusReferenceView(session: session, reference: reference)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button("Done") { opened = nil }
-                            }
-                        }
-                }
-            }
-        }
-        // Pressing the mark asks rather than removes. It is one tap inside a paragraph a
-        // reader is also selecting, scrolling and tapping citations in, and losing the place
-        // you saved to a mistimed touch is not a mistake this screen can undo for you.
-        .confirmationDialog(
-            "Remove the reading bookmark?",
-            isPresented: $removingBookmark,
-            titleVisibility: .visible
-        ) {
-            Button("Remove the bookmark", role: .destructive) { bookmarks?.clear() }
-            Button("Keep it", role: .cancel) {}
+        // Behind the prose rather than on it, and that is the point: what a sheet's coming and
+        // going invalidates is this small view, not the paragraphs it is drawn over.
+        .background {
+            ProseSheets(
+                session: session,
+                presenting: presenting,
+                removeBookmark: { [bookmarks] in bookmarks?.clear() }
+            )
         }
     }
 
@@ -417,13 +432,17 @@ struct CorpusProse: View {
     /// full mode carries a heading as a presentation intent that `Text` then ignores — so
     /// either way a heading arrives as literal hashes in the middle of the prose. Splitting
     /// first is what makes a heading look like one.
-    private var blocks: [Block] {
+    private static func split(_ text: String, labels: [String: String]) -> [Block] {
         var result: [Block] = []
         var paragraph: [String] = []
 
+        func append(level: Int, text: String) {
+            result.append(Block(id: result.count, level: level, text: text, source: linkify(text, labels: labels)))
+        }
+
         func flush() {
             let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !joined.isEmpty { result.append(Block(id: result.count, level: 0, text: joined)) }
+            if !joined.isEmpty { append(level: 0, text: joined) }
             paragraph = []
         }
 
@@ -434,7 +453,7 @@ struct CorpusProse: View {
                 let heading = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
                 if !heading.isEmpty {
                     flush()
-                    result.append(Block(id: result.count, level: min(hashes, 3), text: heading))
+                    append(level: min(hashes, 3), text: heading)
                     continue
                 }
             }
@@ -456,7 +475,7 @@ struct CorpusProse: View {
             return isPart ? block.text.uppercased() : block.text
         }
         guard let parsed = try? AttributedString(
-            markdown: Self.linkify(block.text, labels: labels),
+            markdown: block.source,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) else {
             return block.text
@@ -464,12 +483,12 @@ struct CorpusProse: View {
         return String(parsed.characters)
     }
 
-    private func attributed(_ source: String, path: PageSearch.Path) -> AttributedString {
+    private func attributed(_ block: Block, path: PageSearch.Path) -> AttributedString {
         guard var parsed = try? AttributedString(
-            markdown: Self.linkify(source, labels: labels),
+            markdown: block.source,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) else {
-            return AttributedString(source)
+            return AttributedString(block.text)
         }
         for run in parsed.runs where run.link != nil {
             // Kept live when there is somewhere for it to go, and struck back to plain accent
@@ -529,6 +548,61 @@ struct CorpusProse: View {
             output.replaceSubrange(replaceRange, with: "[\(safe)](\(trimmed))")
         }
         return output
+    }
+}
+
+/// Everything the prose can put over the page, and nothing that the prose itself has to redraw.
+///
+/// It exists to be the only view invalidated when a citation opens or closes. A sheet dismissed
+/// by a swipe hands SwiftUI its state change halfway through the dismissal animation, and
+/// whatever that change invalidates is laid out again on the main thread while the sheet is still
+/// moving — which for a section of a report is every paragraph in it, measured again. Here that is
+/// a `Color.clear`.
+private struct ProseSheets: View {
+    let session: SpaceSession?
+    let presenting: CorpusProse.Presentation
+    let removeBookmark: () -> Void
+
+    var body: some View {
+        // Both values are read here, and that read is the whole of why the sheet opens at all.
+        // A `Binding`'s getter runs inside the presentation machinery, which is outside the
+        // scope `@Observable` tracks — so handing the modifier `$presenting.reference` and
+        // nothing else never made this view depend on the property, and tapping a citation set
+        // it while nothing redrew. Measured, not reasoned: a probe logged the reference being
+        // assigned and this body never running. `@State` hides the trap, because SwiftUI's own
+        // storage invalidates the view whether or not anybody read it.
+        let reference = presenting.reference
+        let isRemovingBookmark = presenting.isRemovingBookmark
+
+        return Color.clear
+            .nodusSheet(
+                item: Binding(get: { reference }, set: { presenting.reference = $0 })
+            ) { reference in
+                if let session {
+                    NavigationStack {
+                        CorpusReferenceView(session: session, reference: reference)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { presenting.reference = nil }
+                                }
+                            }
+                    }
+                }
+            }
+            // Pressing the mark asks rather than removes. It is one tap inside a paragraph a
+            // reader is also selecting, scrolling and tapping citations in, and losing the place
+            // you saved to a mistimed touch is not a mistake this screen can undo for you.
+            .confirmationDialog(
+                "Remove the reading bookmark?",
+                isPresented: Binding(
+                    get: { isRemovingBookmark },
+                    set: { presenting.isRemovingBookmark = $0 }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Remove the bookmark", role: .destructive) { removeBookmark() }
+                Button("Keep it", role: .cancel) {}
+            }
     }
 }
 
