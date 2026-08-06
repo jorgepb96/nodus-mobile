@@ -113,16 +113,30 @@ private struct PageFunctionsModifier: ViewModifier {
     /// One per page, and it belongs here rather than to the screen: a report and the dossier
     /// pushed on top of it are two pages, and each searches itself.
     @State private var search = PageSearch()
+    /// The way into the page's conversation, held here for the same reason the search is: it
+    /// belongs to this page, and the prose several views below reaches it through the
+    /// environment rather than through every screen in between.
+    @State private var invite = PageChatInvite()
     @State private var isScrolled = false
     @State private var isWheelOpen = false
-    @State private var isChatOpen = false
     /// How much room the find bar is taking at the bottom, measured rather than guessed.
     @State private var findBarHeight: CGFloat = 0
 
     func body(content: Content) -> some View {
-        ScrollViewReader { proxy in
+        // Read rather than only bound. A `Binding` handed to `.sheet` has its getter called by
+        // the presentation machinery, outside the scope `@Observable` tracks, so nothing here
+        // would depend on `isOpen` and neither the wheel's chat seat nor a selection in the
+        // prose would open the modal. `@State` never showed this because SwiftUI's own storage
+        // invalidates the view whether or not anybody read it.
+        let isChatOpen = invite.isOpen
+
+        return ScrollViewReader { proxy in
             measured(content)
                 .environment(search)
+                // Only where there is a conversation to invite anybody into. Absent, the prose
+                // shows no "ask about this" in its selection menu rather than an inert one.
+                .environment(chat == nil ? nil : invite)
+                .onChange(of: chat?.id, initial: true) { _, id in invite.reportId = id }
                 // An inset rather than an overlay: the bar has to move with the keyboard, and
                 // the last paragraph of a report has to stay readable while it is on screen.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -173,7 +187,7 @@ private struct PageFunctionsModifier: ViewModifier {
                     guard let target, !search.placesItsOwnMatches(target.path) else { return }
                     scroll(proxy, to: PageSearchAnchor(path: target.path), anchor: .center)
                 }
-                .nodusSheet(isPresented: $isChatOpen) {
+                .nodusSheet(isPresented: Binding(get: { isChatOpen }, set: { invite.isOpen = $0 })) {
                     if let chat {
                         PageChatSheet(
                             subject: chat,
@@ -263,7 +277,7 @@ private struct PageFunctionsModifier: ViewModifier {
         case .chat:
             guard chat != nil else { return }
             search.close()
-            isChatOpen = true
+            invite.isOpen = true
         }
     }
 

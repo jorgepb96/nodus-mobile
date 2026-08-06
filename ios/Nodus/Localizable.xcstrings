@@ -1049,6 +1049,17 @@
         }
       }
     },
+    "Ask": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preguntar"
+          }
+        }
+      }
+    },
     "Ask %@": {
       "extractionState": "manual",
       "localizations": {
@@ -1298,6 +1309,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bloques"
+          }
+        }
+      }
+    },
+    "Bookmark": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcador"
           }
         }
       }
@@ -4404,13 +4426,13 @@
         }
       }
     },
-    "Move the bookmark here": {
+    "Move bookmark": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mover aquí el marcador"
+            "value": "Mover marcador"
           }
         }
       }
@@ -6241,17 +6263,6 @@
         }
       }
     },
-    "Reading bookmark": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Marcador de lectura"
-          }
-        }
-      }
-    },
     "Reading the ideas in this space…": {
       "extractionState": "manual",
       "localizations": {
@@ -6424,6 +6435,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quitar el marcador"
+          }
+        }
+      }
+    },
+    "Remove the quotation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar la cita"
           }
         }
       }

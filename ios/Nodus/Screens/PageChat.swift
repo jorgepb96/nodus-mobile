@@ -26,6 +26,30 @@ struct PageChatSubject: Identifiable, Equatable {
     static func == (lhs: PageChatSubject, rhs: PageChatSubject) -> Bool { lhs.id == rhs.id }
 }
 
+/// Opening a report's conversation from somewhere that is not the wheel.
+///
+/// The wheel's third seat opens the chat empty. This is the other door: words the reader selected
+/// in the report itself, carried into the composer as a quotation so the question they then type
+/// is already about something. Handed down the environment exactly like `PageSearch` and the
+/// reading bookmark, and provided only by a page that really has a conversation — so prose
+/// somewhere else keeps the plain selection menu rather than offering a control that does nothing.
+@MainActor
+@Observable
+final class PageChatInvite {
+    /// The report whose conversation this page's chat belongs to.
+    var reportId: String?
+    /// Whether the modal is up. The page's own chat button sets it too, so there is one answer
+    /// to "is the chat open" rather than two that can disagree.
+    var isOpen = false
+
+    /// Ask about a passage the reader selected.
+    func ask(about selection: String) {
+        guard let reportId else { return }
+        PageChatStore.shared(for: reportId).quote(selection)
+        isOpen = true
+    }
+}
+
 /// One report's conversation, for as long as that report is open.
 @MainActor
 @Observable
@@ -34,6 +58,9 @@ final class PageChatStore {
         let id = UUID()
         let role: ChatMessage.Role
         var text: String
+        /// The passage the reader selected before asking, when the question came from the report
+        /// rather than from an empty composer.
+        var quote: String?
         /// Corpus sources that survived validation, so a citation reads as its label.
         var citations: [CitationCatalog.Entry] = []
         var warning: String?
@@ -43,6 +70,9 @@ final class PageChatStore {
 
     private(set) var turns: [Turn] = []
     var draft = ""
+    /// A passage waiting under the composer, put there by selecting it in the report. Cleared by
+    /// asking, and by the reader taking it back.
+    var quoted: String?
     private(set) var isThinking = false
     var failure: String?
 
@@ -74,6 +104,17 @@ final class PageChatStore {
         cancel()
         turns = []
         failure = nil
+        quoted = nil
+    }
+
+    /// Put a passage of the report under the composer. Selections arrive with whatever whitespace
+    /// the finger caught, and a quotation broken across the lines of a justified paragraph is not
+    /// what the reader pointed at.
+    func quote(_ selection: String) {
+        let text = selection
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        quoted = text.isEmpty ? nil : text
     }
 
     // MARK: Asking
@@ -92,16 +133,23 @@ final class PageChatStore {
         let asked = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !asked.isEmpty else { return }
 
+        // The quotation belongs to this question and to no other. Taken before the turn is built
+        // so a second question asked straight afterwards starts from an empty composer.
+        let quotation = quoted
+        quoted = nil
+
         draft = ""
         failure = nil
-        turns.append(Turn(role: .user, text: asked))
+        turns.append(Turn(role: .user, text: asked, quote: quotation))
         let answer = turns.count
         turns.append(Turn(role: .assistant, text: ""))
         isThinking = true
 
         let session = subject.session
         let history = turns.dropLast(2).suffix(8).map { turn in
-            ChatMessage(role: turn.role, content: turn.text)
+            // The quotation goes into the history as part of what was asked, because two turns
+            // later "and what does it rest on?" means nothing without it.
+            ChatMessage(role: turn.role, content: PageChatPrompt.asked(turn.text, quoting: turn.quote))
         }
 
         running = Task {
@@ -130,7 +178,8 @@ final class PageChatStore {
                     asked,
                     title: subject.title,
                     passages: passages,
-                    catalog: catalog
+                    catalog: catalog,
+                    quote: quotation
                 )))
 
                 let provider = ProviderClient(keyProvider: ai.keyProvider)
@@ -199,6 +248,19 @@ nonisolated enum PageChatPrompt {
         """
     }
 
+    /// What the reader asked, with the passage they selected in front of it when there was one.
+    ///
+    /// One place, so the history and the question the model is handed now say the same thing.
+    static func asked(_ question: String, quoting quote: String?) -> String {
+        guard let quote, !quote.isEmpty else { return question }
+        return """
+        Sobre este fragmento del documento:
+        «\(quote)»
+
+        \(question)
+        """
+    }
+
     /// The question, the document under it, and the corpus catalogue under that.
     ///
     /// The document is capped at a budget rather than sent whole: a twenty-page report is well
@@ -209,6 +271,7 @@ nonisolated enum PageChatPrompt {
         title: String,
         passages: [PageChatPassage],
         catalog: CitationCatalog,
+        quote: String? = nil,
         budget: Int = 48_000
     ) -> String {
         var document = ""
@@ -226,7 +289,7 @@ nonisolated enum PageChatPrompt {
 
         return """
         PREGUNTA
-        \(question)
+        \(asked(question, quoting: quote))
 
         DOCUMENTO ABIERTO: \(title)
         \(document)\(truncated)
@@ -361,6 +424,10 @@ struct PageChatSheet: View {
             .nodusSheet(isPresented: $showingProviders) {
                 ProviderSettingsView(accent: accent)
             }
+            // Opened from a selection, the passage is already there and the question is what is
+            // missing — so the keyboard comes up. Opened from the wheel there is nothing to say
+            // yet, and a keyboard over the empty state would only hide what it explains.
+            .onAppear { composerFocused = store.quoted != nil }
         }
     }
 
@@ -411,42 +478,84 @@ struct PageChatSheet: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField(
-                "",
-                text: Binding(get: { store.draft }, set: { store.draft = $0 }),
-                prompt: Text("Ask about this report").foregroundColor(.nodusTertiaryText),
-                axis: .vertical
-            )
-            .lineLimit(1...5)
-            .textFieldStyle(.plain)
-            .focused($composerFocused)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 11)
-            .frame(minHeight: 42)
-            .nodusGlass(NodusGlass(.regular, tint: accent), in: Capsule())
+        VStack(alignment: .leading, spacing: 8) {
+            quotation
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField(
+                    "",
+                    text: Binding(get: { store.draft }, set: { store.draft = $0 }),
+                    prompt: Text("Ask about this report").foregroundColor(.nodusTertiaryText),
+                    axis: .vertical
+                )
+                .lineLimit(1...5)
+                .textFieldStyle(.plain)
+                .focused($composerFocused)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 11)
+                .frame(minHeight: 42)
+                .nodusGlass(NodusGlass(.regular, tint: accent), in: Capsule())
 
-            Button {
-                if store.isThinking {
-                    store.cancel()
-                } else {
-                    store.ask(store.draft, passages: passages, subject: subject, ai: ai)
+                Button {
+                    if store.isThinking {
+                        store.cancel()
+                    } else {
+                        store.ask(store.draft, passages: passages, subject: subject, ai: ai)
+                    }
+                } label: {
+                    Image(systemName: store.isThinking ? "stop.circle.fill" : "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(accent)
+                        .frame(width: 42, height: 42)
+                        .contentShape(Circle())
                 }
-            } label: {
-                Image(systemName: store.isThinking ? "stop.circle.fill" : "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(accent)
-                    .frame(width: 42, height: 42)
-                    .contentShape(Circle())
+                .buttonStyle(.plain)
+                .disabled(!store.isThinking && store.draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityLabel(store.isThinking ? "Stop" : "Send")
             }
-            .buttonStyle(.plain)
-            .disabled(!store.isThinking && store.draft.trimmingCharacters(in: .whitespaces).isEmpty)
-            .accessibilityLabel(store.isThinking ? "Stop" : "Send")
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, NodusSpace.page)
         .padding(.top, 8)
         .padding(.bottom, 10)
+        .animation(NodusMotion.quick, value: store.quoted)
+    }
+
+    /// The passage the reader selected in the report, waiting above the composer.
+    ///
+    /// Above the field rather than inside it, and that is the point of doing it this way at all:
+    /// dropping the words into the text field would leave the reader deleting a paragraph to
+    /// write a question. Here the quotation is what the question is *about*, it is visibly
+    /// attached, and one press takes it back.
+    @ViewBuilder
+    private var quotation: some View {
+        if let quoted = store.quoted {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "text.quote")
+                    .font(.caption)
+                    .foregroundStyle(accent.nodusReadable)
+                Text(quoted)
+                    .font(.caption)
+                    .foregroundStyle(Color.nodusSecondaryText)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    store.quoted = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.nodusTertiaryText)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove the quotation")
+            }
+            .padding(.leading, 13)
+            .padding(.trailing, 2)
+            .padding(.vertical, 6)
+            .nodusGlass(NodusGlass(.thin, tint: accent))
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
     }
 
     private func reveal(_ number: Int) {
@@ -467,10 +576,25 @@ private struct PageChatBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if turn.role == .user {
-                Text(turn.text)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .nodusGlass(NodusGlass(.regular, tint: accent))
+                VStack(alignment: .leading, spacing: 8) {
+                    // The passage this question was asked about, set as a quotation: a rule down
+                    // its left edge and the report's own words in the secondary colour, so the
+                    // turn reads as "about this, I asked that" rather than as one long message.
+                    if let quote = turn.quote {
+                        Text(quote)
+                            .font(.caption)
+                            .italic()
+                            .foregroundStyle(Color.nodusSecondaryText)
+                            .padding(.leading, 10)
+                            .overlay(alignment: .leading) {
+                                Capsule().fill(accent.opacity(0.5)).frame(width: 2.5)
+                            }
+                    }
+                    Text(turn.text)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .nodusGlass(NodusGlass(.regular, tint: accent))
             } else {
                 if let warning = turn.warning {
                     NodusNotice(tone: .caution, title: "Lexical retrieval", message: LocalizedStringKey(warning))

@@ -253,6 +253,9 @@ struct CorpusProse: View {
     /// The open report's reading bookmark, when this prose is inside one. Optional, so an
     /// immersion station or a chat bubble keeps the plain selection menu it always had.
     @Environment(ReadingBookmarks.self) private var bookmarks: ReadingBookmarks?
+    /// The report's own conversation, when this page has one. Optional for the same reason the
+    /// bookmark is: prose that has nothing to ask about keeps the plain selection menu.
+    @Environment(PageChatInvite.self) private var chat: PageChatInvite?
     @Environment(\.nodusSearchPath) private var searchPath
 
     /// Split once, when the prose arrives, rather than on every pass of the body.
@@ -329,6 +332,12 @@ struct CorpusProse: View {
                             reportHasBookmark: bookmarks?.bookmark != nil,
                             onMark: bookmarks.map { marks in
                                 { range, snippet in marks.set(path: path, range: range, snippet: snippet) }
+                            },
+                            // Beside the bookmark, and on the same terms: a report you can mark
+                            // your place in is a report you can ask about, and the passage under
+                            // your finger is the one you want to ask about.
+                            onAsk: chat.map { invite in
+                                { selection in invite.ask(about: selection) }
                             },
                             onTapBookmark: bookmarks == nil ? nil : { [presenting] in
                                 presenting.isRemovingBookmark = true
@@ -665,6 +674,9 @@ private struct DocumentProse: UIViewRepresentable {
     /// Called with the selected range and the words in it. Nil where the page keeps no
     /// bookmark, and that absence is what removes the menu item rather than dimming it.
     var onMark: ((NSRange, String) -> Void)?
+    /// Called with the selected words when the reader asks about them. Nil where the page has no
+    /// conversation to put them in.
+    var onAsk: ((String) -> Void)?
     /// A press that landed on the mark itself.
     var onTapBookmark: (() -> Void)?
     let onOpen: (URL) -> Bool
@@ -696,6 +708,7 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.onOpen = onOpen
         context.coordinator.linksLive = linksLive
         context.coordinator.onMark = onMark
+        context.coordinator.onAsk = onAsk
         context.coordinator.onTapBookmark = onTapBookmark
         context.coordinator.bookmark = bookmark?.range
         context.coordinator.reportHasBookmark = reportHasBookmark
@@ -915,6 +928,9 @@ private struct DocumentProse: UIViewRepresentable {
         /// Where a selection goes when the reader marks it. Nil where the page keeps no
         /// bookmark, which is what leaves the ordinary selection menu alone.
         var onMark: ((NSRange, String) -> Void)?
+        /// Where a selection goes when the reader asks about it. Nil for the same reason, and
+        /// separately: a page can have a bookmark and no conversation, or the other way round.
+        var onAsk: ((String) -> Void)?
         /// A press that landed inside the mark.
         var onTapBookmark: (() -> Void)?
         /// Where the mark sits in this paragraph, when it is in this one at all.
@@ -942,37 +958,66 @@ private struct DocumentProse: UIViewRepresentable {
             self.linksLive = linksLive
         }
 
-        /// Marking a selection, offered in the menu the selection already opens.
+        /// What a reader can do with words they have selected, beyond what the system offers.
         ///
         /// Added to the system's own items rather than replacing them: copy, look up, share and
         /// translate are what a reader expects of selected text, and a report is a document
         /// people quote from as much as they navigate.
         ///
-        /// Returning `nil` would mean "no menu at all", so a page with no bookmark hands back
-        /// the suggested actions untouched.
+        /// Two items, side by side, and the same shape: keep this passage, or ask about it. Both
+        /// appear only where the page can honestly do them, so prose outside a report — a chat
+        /// bubble, an immersion station — keeps the plain menu it always had. Returning `nil`
+        /// would mean "no menu at all", so that case hands the suggested actions back untouched.
+        ///
+        /// They go *before* copy, look up, translate and share, and their titles are one word
+        /// each. An edit menu is a single row that pages: put two items of this app's own after
+        /// the four the system suggests and both land behind the chevron, so the reader has to
+        /// find them before they can press them. First and short is what makes selecting a
+        /// passage and marking or asking about it one gesture rather than three.
         func textView(
             _ textView: UITextView,
             editMenuForTextIn range: NSRange,
             suggestedActions: [UIMenuElement]
         ) -> UIMenu? {
-            guard let onMark, range.length > 0 else { return UIMenu(children: suggestedActions) }
+            guard range.length > 0 else { return UIMenu(children: suggestedActions) }
             let text = (textView.text as NSString).substring(with: range)
-            // "Move" rather than "Add" when there is already one, because there is only ever
-            // one bookmark and a reader who is not told that will look for the old one. Asked
-            // of the report and not of this paragraph: the mark being moved is usually in a
-            // different section from the words being selected.
-            let title = reportHasBookmark
-                ? String(localized: "Move the bookmark here")
-                : String(localized: "Reading bookmark")
-            let mark = UIAction(title: title, image: UIImage(systemName: "bookmark")) { _ in
-                MainActor.assumeIsolated {
-                    onMark(range, text)
-                    // The selection has served its purpose, and leaving it up puts the system's
-                    // handles over the mark the reader has just made.
-                    textView.selectedTextRange = nil
-                }
+            var added: [UIMenuElement] = []
+
+            if let onMark {
+                // "Move" rather than "Add" when there is already one, because there is only ever
+                // one bookmark and a reader who is not told that will look for the old one. Asked
+                // of the report and not of this paragraph: the mark being moved is usually in a
+                // different section from the words being selected.
+                let title = reportHasBookmark
+                    ? String(localized: "Move bookmark")
+                    : String(localized: "Bookmark")
+                added.append(UIAction(title: title, image: UIImage(systemName: "bookmark")) { _ in
+                    MainActor.assumeIsolated {
+                        onMark(range, text)
+                        // The selection has served its purpose, and leaving it up puts the
+                        // system's handles over the mark the reader has just made.
+                        textView.selectedTextRange = nil
+                    }
+                })
             }
-            return UIMenu(children: suggestedActions + [mark])
+
+            if let onAsk {
+                // The passage goes into the report's conversation as a quotation, so the
+                // question the reader then types is already about something. Asking about a
+                // paragraph used to mean opening the chat and describing the paragraph.
+                added.append(UIAction(
+                    title: String(localized: "Ask"),
+                    image: UIImage(systemName: "bubble.left.and.bubble.right")
+                ) { _ in
+                    MainActor.assumeIsolated {
+                        onAsk(text)
+                        textView.selectedTextRange = nil
+                    }
+                })
+            }
+
+            guard !added.isEmpty else { return UIMenu(children: suggestedActions) }
+            return UIMenu(children: added + suggestedActions)
         }
 
         /// A press inside the prose: on the reading mark, or on a citation.
