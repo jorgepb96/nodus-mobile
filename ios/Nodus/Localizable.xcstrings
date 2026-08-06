@@ -1049,17 +1049,6 @@
         }
       }
     },
-    "Ask": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preguntar"
-          }
-        }
-      }
-    },
     "Ask %@": {
       "extractionState": "manual",
       "localizations": {
@@ -1089,6 +1078,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Escribe una pregunta"
+          }
+        }
+      }
+    },
+    "Ask about this": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preguntar sobre esto"
           }
         }
       }
@@ -1309,17 +1309,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bloques"
-          }
-        }
-      }
-    },
-    "Bookmark": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Marcador"
           }
         }
       }
@@ -4426,13 +4415,13 @@
         }
       }
     },
-    "Move bookmark": {
+    "Move the bookmark here": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mover marcador"
+            "value": "Mover aquí el marcador"
           }
         }
       }
@@ -6259,6 +6248,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Acceso de lectura"
+          }
+        }
+      }
+    },
+    "Reading bookmark": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcador de lectura"
           }
         }
       }

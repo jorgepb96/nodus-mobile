@@ -224,13 +224,8 @@ struct PassageByIdView: View {
 /// accent — rather than as a URL in the middle of a sentence. Tapping one opens what it points
 /// at, which is what the desktop does and what makes a cited report worth reading on a phone.
 struct CorpusProse: View {
-    private let text: String
     private let accent: Color
     private let session: SpaceSession?
-    /// Token → label, for prose that cites with bare tokens instead of Markdown links. A report
-    /// written on this device does exactly that: the model is told to copy the token, and the
-    /// catalogue is the only place its label lives.
-    private let labels: [String: String]
     /// A tap on a numbered reference — `[3]` — in an answer about a page. Only the report chat
     /// passes one; everywhere else a bracketed number is a bracketed number.
     private let onReference: ((Int) -> Void)?
@@ -238,10 +233,9 @@ struct CorpusProse: View {
     /// What this prose has asked to show, and the question it has asked.
     ///
     /// An object rather than two `@State` properties, and nothing in `body` reads it. That is the
-    /// whole point: `body` is the expensive half of a report — it splits the section into
-    /// paragraphs, and every paragraph it hands to SwiftUI is a `UITextView` that has to be laid
-    /// out and measured again — and a `@State` that `body` reads makes opening or closing a
-    /// citation pay for all of it. Pressing "Done" hid that: the work happened while the sheet
+    /// whole point: every paragraph `body` hands to SwiftUI is a `UITextView` that has to be laid
+    /// out and measured again, and a `@State` that `body` reads makes opening or closing a
+    /// citation pay for all of it. Pressing "Done" hid that — the work happened while the sheet
     /// still covered the screen. Swiping the sheet down did not, because then the same work lands
     /// in the middle of the dismissal, which is exactly the pause a reader saw.
     @State private var presenting = Presentation()
@@ -258,39 +252,6 @@ struct CorpusProse: View {
     @Environment(PageChatInvite.self) private var chat: PageChatInvite?
     @Environment(\.nodusSearchPath) private var searchPath
 
-    /// Split once, when the prose arrives, rather than on every pass of the body.
-    ///
-    /// Both halves of the work depend only on `text` and `labels`, which are `let`s, so a body
-    /// that runs again for an unrelated reason was re-splitting the section and running the
-    /// citation regex over every paragraph of it to arrive at the same answer.
-    private let blocks: [Block]
-
-    init(
-        _ text: String,
-        accent: Color,
-        session: SpaceSession? = nil,
-        labels: [String: String] = [:],
-        onReference: ((Int) -> Void)? = nil
-    ) {
-        self.text = text
-        self.accent = accent
-        self.session = session
-        self.labels = labels
-        self.onReference = onReference
-        blocks = Self.split(text, labels: labels)
-    }
-
-    /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: the
-    /// list is recomputed on every pass of the body, and an identity that changes with it throws
-    /// away every `UITextView` on the page — and, now, the anchor the find bar scrolls to.
-    private struct Block: Identifiable {
-        let id: Int
-        let level: Int
-        let text: String
-        /// The same Markdown with every bare `nodus://` token turned into a link.
-        let source: String
-    }
-
     /// The sheet and the dialog this prose can put up, held where `body` cannot see them.
     @MainActor
     @Observable
@@ -299,6 +260,91 @@ struct CorpusProse: View {
         /// Whether the reader has pressed on their own bookmark and is being asked about
         /// removing it.
         var isRemovingBookmark = false
+    }
+
+    init(
+        _ text: String,
+        accent: Color,
+        session: SpaceSession? = nil,
+        labels: [String: String] = [:],
+        onReference: ((Int) -> Void)? = nil
+    ) {
+        self.accent = accent
+        self.session = session
+        self.onReference = onReference
+        // The text and the labels are not kept: everything that reads them is done here. What
+        // survives is `blocks`, which is what they were for.
+        blocks = Self.prepare(text, labels: labels)
+    }
+
+    /// The prose, split into blocks and linkified, once.
+    ///
+    /// Held rather than computed, and that is the whole of a stutter this screen had. `body` runs
+    /// again for every paragraph on the page whenever anything on it changes — a bookmark placed,
+    /// a citation's sheet opening, that sheet closing — and not one of those changes a word of
+    /// the prose. Splitting the section and running the citation regex over every paragraph on
+    /// each of those passes measured about 3.3 ms for a twenty-section report on a Mac, which on
+    /// a phone is a dropped frame or two: exactly the "it hesitates and then catches up" this was
+    /// reported as.
+    ///
+    /// `init` is where it belongs, and not by luck. SwiftUI does not call `init` again when
+    /// observation invalidates a view — it re-runs `body` on the value the parent already built —
+    /// so the work now happens when the report itself changes, which is when it has something new
+    /// to say. It also makes every `DocumentProse` compare equal on the way in: the source string
+    /// handed to it is now the same instance each pass, so the identity check that decides whether
+    /// to reparse the Markdown short-circuits instead of walking two copies of a paragraph.
+    private let blocks: [Block]
+
+    /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: an
+    /// identity that changed with each pass would throw away every `UITextView` on the page — and
+    /// the anchor the find bar scrolls to with them.
+    private struct Block: Identifiable {
+        let id: Int
+        let level: Int
+        let text: String
+        /// The same text with every bare `nodus://` token already turned into a Markdown link.
+        /// For a heading, which carries no citations, this is the text itself.
+        let source: String
+    }
+
+    /// Split into headings and paragraphs, then linkify each. See `blocks` for why this runs
+    /// where it does.
+    private static func prepare(_ text: String, labels: [String: String]) -> [Block] {
+        var result: [Block] = []
+        var paragraph: [String] = []
+
+        func append(level: Int, text: String) {
+            result.append(
+                Block(
+                    id: result.count,
+                    level: level,
+                    text: text,
+                    source: level == 0 ? linkify(text, labels: labels) : text
+                )
+            )
+        }
+
+        func flush() {
+            let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { append(level: 0, text: joined) }
+            paragraph = []
+        }
+
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") {
+                let hashes = trimmed.prefix { $0 == "#" }.count
+                let heading = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
+                if !heading.isEmpty {
+                    flush()
+                    append(level: min(hashes, 3), text: heading)
+                    continue
+                }
+            }
+            paragraph.append(line)
+        }
+        flush()
+        return result
     }
 
     var body: some View {
@@ -353,7 +399,7 @@ struct CorpusProse: View {
                             }
                         )
                     } else {
-                        Text(attributed(block, path: path))
+                        Text(attributed(block.source, path: path))
                             .font(reading.font(.callout))
                             .textSelection(.enabled)
                     }
@@ -435,49 +481,15 @@ struct CorpusProse: View {
             .padding(.top, reading.document ? (isPart ? 20 : 10) : 3)
     }
 
-    /// Split into headings and paragraphs before parsing.
-    ///
-    /// `AttributedString(markdown:)` in inline mode leaves `###` sitting in the text, and its
-    /// full mode carries a heading as a presentation intent that `Text` then ignores — so
-    /// either way a heading arrives as literal hashes in the middle of the prose. Splitting
-    /// first is what makes a heading look like one.
-    private static func split(_ text: String, labels: [String: String]) -> [Block] {
-        var result: [Block] = []
-        var paragraph: [String] = []
-
-        func append(level: Int, text: String) {
-            result.append(Block(id: result.count, level: level, text: text, source: linkify(text, labels: labels)))
-        }
-
-        func flush() {
-            let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !joined.isEmpty { append(level: 0, text: joined) }
-            paragraph = []
-        }
-
-        for line in text.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("#") {
-                let hashes = trimmed.prefix { $0 == "#" }.count
-                let heading = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
-                if !heading.isEmpty {
-                    flush()
-                    append(level: min(hashes, 3), text: heading)
-                    continue
-                }
-            }
-            paragraph.append(line)
-        }
-        flush()
-        return result
-    }
-
     /// What this block puts on the screen, in plain characters.
     ///
     /// Not the Markdown: a reader looking for "registers" is looking for the word they can see,
     /// and the source they cannot see spells it `**registers**` and spells a citation
     /// `[Arco Blanco (2020)](nodus://idea/g-8969)`. Searching the source would miss the first
     /// and match the second on a URL nobody was shown.
+    ///
+    /// Called when a block appears and when its text changes, not on every pass — which is why
+    /// it can afford to parse the Markdown while `body` cannot.
     private func displayed(_ block: Block) -> String {
         guard block.level == 0 else {
             let isPart = block.level <= 2 && reading.document
@@ -492,12 +504,12 @@ struct CorpusProse: View {
         return String(parsed.characters)
     }
 
-    private func attributed(_ block: Block, path: PageSearch.Path) -> AttributedString {
+    private func attributed(_ source: String, path: PageSearch.Path) -> AttributedString {
         guard var parsed = try? AttributedString(
-            markdown: block.source,
+            markdown: source,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) else {
-            return AttributedString(block.text)
+            return AttributedString(source)
         }
         for run in parsed.runs where run.link != nil {
             // Kept live when there is somewhere for it to go, and struck back to plain accent
@@ -536,11 +548,16 @@ struct CorpusProse: View {
     /// A report generated on the phone writes the bare token in parentheses, because that is
     /// what the citation policy asks the model for — so the token is swapped for its catalogue
     /// label, and a token with no label keeps its own text rather than disappearing.
+    /// Compiled once. `NSRegularExpression` is immutable and documented as safe to use from
+    /// several threads, which is what `nonisolated(unsafe)` is asserting here — the alternative,
+    /// building it per call, was a fifth of the cost of preparing a report's prose.
+    nonisolated(unsafe) private static let citation = try? NSRegularExpression(
+        pattern: #"(?<!\]\()\bnodus://[a-z_]+/[^\s)\]（）]+"#,
+        options: [.caseInsensitive]
+    )
+
     static func linkify(_ source: String, labels: [String: String]) -> String {
-        guard let regex = try? NSRegularExpression(
-            pattern: #"(?<!\]\()\bnodus://[a-z_]+/[^\s)\]（）]+"#,
-            options: [.caseInsensitive]
-        ) else { return source }
+        guard let regex = citation else { return source }
 
         let range = NSRange(source.startIndex..<source.endIndex, in: source)
         var output = source
@@ -612,6 +629,111 @@ private struct ProseSheets: View {
                 Button("Remove the bookmark", role: .destructive) { removeBookmark() }
                 Button("Keep it", role: .cancel) {}
             }
+    }
+}
+
+/// The one paragraph on the screen that is holding a selection.
+///
+/// A `UITextView` keeps its selection until something takes it away, and nothing did. Two
+/// paragraphs of a report are two text views, so selecting in one and then tapping in another
+/// left the first one still marked — and worse, the tap that should have opened a citation went
+/// into dismissing the edit menu instead, which reads exactly like a link that does not work.
+///
+/// Global rather than per page, because the thing it models is: only one selection can exist in
+/// an application at a time. Weak, so a paragraph that scrolls away and is released takes its
+/// entry with it rather than being resurrected by a stale pointer.
+@MainActor
+enum ProseSelection {
+    private static weak var holder: UITextView?
+
+    /// This paragraph now holds the selection. Any other one lets go of its own.
+    static func began(in view: UITextView) {
+        if let holder, holder !== view { holder.clearSelection() }
+        holder = view
+    }
+
+    static func ended(in view: UITextView) {
+        if holder === view { holder = nil }
+    }
+
+    /// Let go of whatever is selected. Called by every page that shows prose, on any tap.
+    static func clear() {
+        holder?.clearSelection()
+        holder = nil
+    }
+}
+
+extension UITextView {
+    /// Drop the selection and stop being the first responder.
+    ///
+    /// Both halves are needed. Clearing the range alone leaves the text view first responder,
+    /// so the edit menu can come back on a touch that was meant for something else; resigning
+    /// alone leaves the highlight painted on a paragraph nobody is acting on.
+    func clearSelection() {
+        guard selectedTextRange != nil || isFirstResponder else { return }
+        selectedTextRange = nil
+        resignFirstResponder()
+    }
+}
+
+/// A tap anywhere on a page of prose, which is what lets a selection go.
+///
+/// UIKit rather than SwiftUI, and that is not a preference. A `simultaneousGesture` on the
+/// scrolling container was tried first and it stopped citations opening at all: SwiftUI arbitrates
+/// its own gestures against a `UIViewRepresentable`'s recognizers by delaying the touch, and a
+/// `UITextView` decides whether a touch is a link tap in that same moment. A recognizer added to
+/// the scroll view itself, told to cancel nothing and delay nothing, sees every tap and takes
+/// none of them.
+///
+/// Installed once per scroll view, from whichever paragraph appears in it first.
+final class ProseSelectionClearer: UITapGestureRecognizer, UIGestureRecognizerDelegate {
+    static func install(on scrollView: UIScrollView) {
+        let existing = scrollView.gestureRecognizers ?? []
+        guard !existing.contains(where: { $0 is ProseSelectionClearer }) else { return }
+        scrollView.addGestureRecognizer(ProseSelectionClearer())
+    }
+
+    private init() {
+        super.init(target: nil, action: nil)
+        addTarget(self, action: #selector(fired))
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+        delegate = self
+    }
+
+    @objc private func fired() {
+        MainActor.assumeIsolated { ProseSelection.clear() }
+    }
+
+    /// Only touches that land on something that is not prose.
+    ///
+    /// A touch on a paragraph is the text view's business, and it already does the right thing
+    /// with it: a tap collapses the selection, a long press makes one. This recognizer took
+    /// those touches too at first, and with them went the long press — selecting a word stopped
+    /// working entirely on every report. What is left for it is the case UIKit genuinely does
+    /// not cover, because nothing there takes first responder: the card around the paragraph,
+    /// the space between two sections, the margin down either side.
+    ///
+    /// The whole chain up, not `touch.view` alone. A touch inside a `UITextView` is delivered to
+    /// one of its own layout subviews, so asking whether the hit view *is* a text view answers
+    /// no for every touch that lands on a word — which is exactly the check that let this
+    /// recognizer go on eating long presses after it was supposed to have stopped.
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        var candidate = touch.view
+        while let view = candidate {
+            if view is UITextView { return false }
+            candidate = view.superview
+        }
+        return true
+    }
+
+    /// And when it does take one, it shares. It observes; it never wins.
+    func gestureRecognizer(
+        _ recognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
 }
 
@@ -693,13 +815,24 @@ private struct DocumentProse: UIViewRepresentable {
         view.adjustsFontForContentSizeCategory = false
         view.setContentCompressionResistancePriority(.required, for: .vertical)
         view.delegate = context.coordinator
-        // The one recognizer that answers both presses inside the prose: the reading mark, and a
-        // citation. `cancelsTouchesInView = false` because it must not be the reason a paragraph
-        // stops being selectable or scrollable: it watches the touch and lets everything else
-        // have it too, then does nothing unless the tap landed on something that answers.
+        // Pressing the mark, and pressing a citation.
+        //
+        // Three things keep this from being the reason a citation stops opening, and it needed
+        // all three: `cancelsTouchesInView = false` so the touch still reaches the text view, a
+        // delegate that declines every touch except one landing on something this recognizer
+        // answers for, and a delegate that says yes to recognising alongside the text view's own
+        // recognizers.
+        //
+        // The middle one is the one that was missing, and it is not belt-and-braces. A tap
+        // recognizer on a `UITextView` competes with the recognizer UIKit uses to decide that a
+        // touch was a link tap, and competing was enough: for a fortnight every citation in
+        // every report simply did nothing when pressed, on a page where nothing else had
+        // changed. Declining the touch outright means that on ordinary prose — no mark and no
+        // source under the finger — this recognizer is not in the fight at all.
         let press = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pressed(_:)))
         press.cancelsTouchesInView = false
         press.delaysTouchesEnded = false
+        press.delegate = context.coordinator
         view.addGestureRecognizer(press)
         return view
     }
@@ -761,6 +894,18 @@ private struct DocumentProse: UIViewRepresentable {
             context.coordinator.aimedBookmark = bookmark.aim
             DispatchQueue.main.async { Self.bringIntoView(bookmark.range, of: view) }
         }
+
+        // The page's own "let go of the selection" tap, hung off the scroll view the first time
+        // a paragraph of this page is on screen. Deferred a turn for the same reason the scroll
+        // above is: SwiftUI updates a representable before putting it in the hierarchy, so the
+        // walk up to the scroll view finds nothing from here.
+        if !context.coordinator.installedClearer {
+            context.coordinator.installedClearer = true
+            DispatchQueue.main.async {
+                if let scrollView = view.enclosingScrollView { ProseSelectionClearer.install(on: scrollView) }
+            }
+        }
+
     }
 
     /// Puts one match in the middle of the screen.
@@ -876,10 +1021,10 @@ private struct DocumentProse: UIViewRepresentable {
                     // The two are drawn identically and reach UIKit differently. An ordinary
                     // web address stays a `.link`, because everything the system does with one
                     // — the menu, the preview, opening it — is right. A citation carries this
-                    // app's own key instead, and that is what makes a tap on it *immediate*:
-                    // a `.link` is a text item, and a text item is highlighted grey on touch
-                    // down and only acted on when UIKit has satisfied itself that the touch was
-                    // a tap and not the start of a double tap. That wait is the whole of the
+                    // app's own key instead, and that is what makes a press on it *immediate*:
+                    // a `.link` is a text item, and a text item is tinted grey under the finger
+                    // and only acted on once UIKit has satisfied itself that the touch was a tap
+                    // rather than the opening of a double tap. That wait is the whole of the
                     // delay a reader saw between pressing a source and its opening.
                     attributes[CorpusProse.claims(link) ? .nodusCitation : .link] = link
                     attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
@@ -922,7 +1067,7 @@ private struct DocumentProse: UIViewRepresentable {
         return actions.isEmpty ? nil : actions
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var onOpen: (URL) -> Bool
         var linksLive: Bool
         /// Where a selection goes when the reader marks it. Nil where the page keeps no
@@ -952,28 +1097,34 @@ private struct DocumentProse: UIViewRepresentable {
         /// The same, for the reading bookmark. Separate counters because the two are separate
         /// requests: closing the find bar must not scroll the page back to the bookmark.
         var aimedBookmark = 0
+        /// Whether this paragraph has already gone looking for its scroll view to hang the
+        /// page's selection-clearing tap off. Once per paragraph, not once per update.
+        var installedClearer = false
 
         init(onOpen: @escaping (URL) -> Bool, linksLive: Bool) {
             self.onOpen = onOpen
             self.linksLive = linksLive
         }
 
-        /// What a reader can do with words they have selected, beyond what the system offers.
+        /// What a reader can do with the words they have selected: keep this passage, or ask
+        /// about it.
         ///
         /// Added to the system's own items rather than replacing them: copy, look up, share and
         /// translate are what a reader expects of selected text, and a report is a document
         /// people quote from as much as they navigate.
         ///
-        /// Two items, side by side, and the same shape: keep this passage, or ask about it. Both
-        /// appear only where the page can honestly do them, so prose outside a report — a chat
-        /// bubble, an immersion station — keeps the plain menu it always had. Returning `nil`
-        /// would mean "no menu at all", so that case hands the suggested actions back untouched.
+        /// Second, straight after Copy, and as glyphs alone. Both of those are about the one row
+        /// the reader actually sees: the edit menu opens collapsed, with room for three or four
+        /// items and a chevron for the rest, and appending these to the end put them behind that
+        /// chevron — two taps for the actions this screen adds, which is exactly the navigation
+        /// they exist to remove. A `.small` palette renders each action as its icon, so two of
+        /// them cost less width than one labelled item and Look Up and Translate stay where a
+        /// reader expects to find them.
         ///
-        /// They go *before* copy, look up, translate and share, and their titles are one word
-        /// each. An edit menu is a single row that pages: put two items of this app's own after
-        /// the four the system suggests and both land behind the chevron, so the reader has to
-        /// find them before they can press them. First and short is what makes selecting a
-        /// passage and marking or asking about it one gesture rather than three.
+        /// Each appears only where the page can honestly do it, so prose outside a report — a
+        /// chat bubble, an immersion station — keeps the plain menu it always had. Returning
+        /// `nil` would mean "no menu at all", so that case hands the suggested actions back
+        /// untouched.
         func textView(
             _ textView: UITextView,
             editMenuForTextIn range: NSRange,
@@ -981,46 +1132,72 @@ private struct DocumentProse: UIViewRepresentable {
         ) -> UIMenu? {
             guard range.length > 0 else { return UIMenu(children: suggestedActions) }
             let text = (textView.text as NSString).substring(with: range)
-            var added: [UIMenuElement] = []
+            var ours: [UIMenuElement] = []
 
             if let onMark {
                 // "Move" rather than "Add" when there is already one, because there is only ever
                 // one bookmark and a reader who is not told that will look for the old one. Asked
                 // of the report and not of this paragraph: the mark being moved is usually in a
-                // different section from the words being selected.
+                // different section from the words being selected. The title is still set even
+                // though the palette hides it: it is what VoiceOver reads, and what the item
+                // falls back to if the system ever lays this menu out fully.
                 let title = reportHasBookmark
-                    ? String(localized: "Move bookmark")
-                    : String(localized: "Bookmark")
-                added.append(UIAction(title: title, image: UIImage(systemName: "bookmark")) { _ in
+                    ? String(localized: "Move the bookmark here")
+                    : String(localized: "Reading bookmark")
+                let mark = UIAction(
+                    title: "",
+                    image: UIImage(systemName: reportHasBookmark ? "bookmark.fill" : "bookmark")
+                ) { _ in
                     MainActor.assumeIsolated {
                         onMark(range, text)
                         // The selection has served its purpose, and leaving it up puts the
                         // system's handles over the mark the reader has just made.
-                        textView.selectedTextRange = nil
+                        textView.clearSelection()
                     }
-                })
+                }
+                // Spoken rather than shown. The title is empty on purpose — see above — and this
+                // is the only thing left for VoiceOver to read, so it carries the whole meaning.
+                mark.accessibilityLabel = title
+                ours.append(mark)
             }
 
             if let onAsk {
-                // The passage goes into the report's conversation as a quotation, so the
-                // question the reader then types is already about something. Asking about a
-                // paragraph used to mean opening the chat and describing the paragraph.
-                added.append(UIAction(
-                    title: String(localized: "Ask"),
-                    image: UIImage(systemName: "bubble.left.and.bubble.right")
-                ) { _ in
+                // The passage goes into the report's conversation as a quotation, so the question
+                // the reader then types is already about something. Asking about a paragraph used
+                // to mean opening the chat from the wheel and describing the paragraph — from a
+                // document that was right there.
+                let ask = UIAction(title: "", image: UIImage(systemName: "bubble.left.and.bubble.right")) { _ in
                     MainActor.assumeIsolated {
                         onAsk(text)
-                        textView.selectedTextRange = nil
+                        textView.clearSelection()
                     }
-                })
+                }
+                ask.accessibilityLabel = String(localized: "Ask about this")
+                ours.append(ask)
             }
 
-            guard !added.isEmpty else { return UIMenu(children: suggestedActions) }
-            return UIMenu(children: added + suggestedActions)
+            guard !ours.isEmpty else { return UIMenu(children: suggestedActions) }
+            let palette = UIMenu(title: "", options: .displayInline, preferredElementSize: .small, children: ours)
+
+            // After the standard edit group — Copy — rather than at a fixed index, because the
+            // group the system offers is its own business and has changed shape between
+            // releases. When it is not there at all, second is still the intent.
+            var children = suggestedActions
+            let afterCopy = children.firstIndex { ($0 as? UIMenu)?.identifier == .standardEdit }.map { $0 + 1 }
+            children.insert(palette, at: afterCopy ?? min(1, children.count))
+            return UIMenu(children: children)
         }
 
-        /// A press inside the prose: on the reading mark, or on a citation.
+        /// Which paragraph is holding a selection, so any other one can let go of its own.
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            if let range = textView.selectedTextRange, !range.isEmpty {
+                ProseSelection.began(in: textView)
+            } else {
+                ProseSelection.ended(in: textView)
+            }
+        }
+
+        /// A press inside the prose: on the marked words, or on a citation.
         ///
         /// Both are answered here rather than by UIKit, and the citation is the reason. A tap on
         /// a text item is deliberately not instantaneous — UIKit tints it and waits — and a
@@ -1032,27 +1209,12 @@ private struct DocumentProse: UIViewRepresentable {
             // under the finger as well would take the reader off the page they were quoting.
             guard view.selectedTextRange?.isEmpty ?? true else { return }
             let point = recognizer.location(in: view)
-            if pressedBookmark(at: point, in: view) { return }
+            if onTapBookmark != nil, hitsBookmark(in: view, at: point) {
+                MainActor.assumeIsolated { onTapBookmark?() }
+                return
+            }
             guard let url = Self.citation(at: point, in: view) else { return }
             MainActor.assumeIsolated { _ = onOpen(url) }
-        }
-
-        /// A press on the marked words.
-        ///
-        /// Hit-tested twice, because `closestPosition(to:)` answers for a tap anywhere in the
-        /// paragraph — it is the *closest* position, not the one under the finger. So the
-        /// character it names has to be inside the mark, and the point has to be on that
-        /// character's own line. Without the second test, tapping the blank end of a short last
-        /// line three paragraphs' worth of leading below the mark counts as pressing it.
-        private func pressedBookmark(at point: CGPoint, in view: UITextView) -> Bool {
-            guard let onTapBookmark, let bookmark, bookmark.length > 0 else { return false }
-            guard let position = view.closestPosition(to: point) else { return false }
-            let index = view.offset(from: view.beginningOfDocument, to: position)
-            guard NSLocationInRange(index, bookmark) else { return false }
-            let caret = view.caretRect(for: position)
-            guard point.y >= caret.minY - 2, point.y <= caret.maxY + 2 else { return false }
-            MainActor.assumeIsolated { onTapBookmark() }
-            return true
         }
 
         /// The citation under this point, when the point really is on one.
@@ -1063,7 +1225,7 @@ private struct DocumentProse: UIViewRepresentable {
         /// boundary are asked, and the answer only counts if the point falls inside that
         /// character's own box — which is what stops the blank end of a line that happens to
         /// finish on a source from opening it.
-        private static func citation(at point: CGPoint, in view: UITextView) -> URL? {
+        static func citation(at point: CGPoint, in view: UITextView) -> URL? {
             guard let text = view.attributedText, text.length > 0,
                   let position = view.closestPosition(to: point)
             else { return nil }
@@ -1087,15 +1249,57 @@ private struct DocumentProse: UIViewRepresentable {
             return rect.isNull || rect.isInfinite ? nil : rect
         }
 
-        /// The two delegate methods that answer for text items, and a citation is no longer one.
+        /// Whether a point in this paragraph is on the marked words.
         ///
-        /// Both are kept, and both now say the same thing about the case they were written for:
-        /// a `nodus://` address must never reach the system. Its menu is "Open / Copy / Share"
-        /// over `nodus://idea/g-8969` — an internal address, so sharing it sends somebody a
-        /// string that does nothing and Open hands a scheme to a system that has no handler for
-        /// it. Since the citation carries this app's own attribute instead of `.link`, neither
-        /// method should see one at all; they refuse anyway, because a paragraph built by some
-        /// future path that still sets `.link` would otherwise offer exactly that menu.
+        /// Hit-tested twice, because `closestPosition(to:)` answers for a tap anywhere in the
+        /// paragraph — it is the *closest* position, not the one under the finger. So the
+        /// character it names has to be inside the mark, and the point has to be on that
+        /// character's own line. Without the second test, tapping the blank end of a short last
+        /// line three paragraphs' worth of leading below the mark counts as pressing it.
+        private func hitsBookmark(in view: UITextView, at point: CGPoint) -> Bool {
+            guard let bookmark, bookmark.length > 0 else { return false }
+            guard let position = view.closestPosition(to: point) else { return false }
+            let index = view.offset(from: view.beginningOfDocument, to: position)
+            guard NSLocationInRange(index, bookmark) else { return false }
+            let caret = view.caretRect(for: position)
+            return point.y >= caret.minY - 2 && point.y <= caret.maxY + 2
+        }
+
+        // MARK: This recognizer, kept out of everything else's way
+
+        /// Take the touch only when it is on something this paragraph answers for.
+        ///
+        /// Declining is what matters. A tap recognizer on a `UITextView` competes with the ones
+        /// UIKit uses to select a word and to decide a touch was a link tap, and merely not
+        /// cancelling the touch was not enough: while this recognizer accepted every touch, no
+        /// citation in any report opened at all. On ordinary prose it now never enters the
+        /// arbitration — and on the two things it does claim, the mark and a citation, it is the
+        /// only one that wants them.
+        func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let view = recognizer.view as? UITextView else { return false }
+            let point = touch.location(in: view)
+            if onTapBookmark != nil, hitsBookmark(in: view, at: point) { return true }
+            return Coordinator.citation(at: point, in: view) != nil
+        }
+
+        /// And when it does take one, it shares. Belt to the braces above: a touch on the mark
+        /// is not a touch the text view should stop hearing about.
+        func gestureRecognizer(
+            _ recognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+
+        /// The two methods that answer for text items, and a citation is no longer one.
+        ///
+        /// Both are kept, and both still refuse the case they were written for: a `nodus://`
+        /// address must never reach the system. Its menu is "Open / Copy / Share" over
+        /// `nodus://idea/g-8969` — an internal address, so sharing it sends somebody a string
+        /// that does nothing and Open hands a scheme to a system with no handler for it. Since
+        /// the citation now carries this app's own attribute instead of `.link`, neither method
+        /// should see one at all; they refuse anyway, because a paragraph built by some future
+        /// path that still sets `.link` would otherwise offer exactly that menu.
         ///
         /// What does reach them is an ordinary `https://` in the prose, which keeps every bit of
         /// the system's behaviour.

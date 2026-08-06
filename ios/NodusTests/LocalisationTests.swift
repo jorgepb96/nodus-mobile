@@ -90,10 +90,8 @@ struct LocalisationTests {
     func readingMarkStrings() throws {
         #expect(try translated("Mark as read") == "Marcar como leído")
         #expect(try translated("Mark as unread") == "Marcar como no leído")
-        // One word each, and first in the menu, so both of this app's items are on the page the
-        // selection already opens rather than behind its chevron.
-        #expect(try translated("Bookmark") == "Marcador")
-        #expect(try translated("Move bookmark") == "Mover marcador")
+        #expect(try translated("Reading bookmark") == "Marcador de lectura")
+        _ = try translated("Move the bookmark here")
         _ = try translated("Go to the bookmark")
         _ = try translated("Remove the reading bookmark?")
         _ = try translated("Remove the bookmark")
@@ -122,9 +120,9 @@ struct LocalisationTests {
     @Test("the report chat speaks Spanish")
     func reportChatStrings() throws {
         _ = try translated("Ask about this report")
-        // The other door into it: a selection in the report, in the same system menu the
-        // bookmark is offered from, and the quotation it puts under the composer.
-        #expect(try translated("Ask") == "Preguntar")
+        // The other door into it: a selection in the report, spoken beside the bookmark's glyph
+        // in the same system menu, and the quotation it puts under the composer.
+        #expect(try translated("Ask about this") == "Preguntar sobre esto")
         _ = try translated("Remove the quotation")
         _ = try translated("Ask about what you are reading")
         _ = try translated("The conversation lasts as long as this report is open. Nothing is saved.")
