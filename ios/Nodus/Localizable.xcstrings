@@ -5504,6 +5504,17 @@
         }
       }
     },
+    "Open %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir %@"
+          }
+        }
+      }
+    },
     "Open frontiers": {
       "extractionState": "manual",
       "localizations": {

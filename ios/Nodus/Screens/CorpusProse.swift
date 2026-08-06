@@ -607,11 +607,11 @@ private struct DocumentProse: UIViewRepresentable {
         view.adjustsFontForContentSizeCategory = false
         view.setContentCompressionResistancePriority(.required, for: .vertical)
         view.delegate = context.coordinator
-        // Pressing the mark. `cancelsTouchesInView = false` because this recognizer must not be
-        // the reason a citation stops opening or a paragraph stops being selectable: it watches
-        // the touch and lets everything else have it too, then does nothing unless the tap
-        // actually landed on the marked words.
-        let press = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pressedBookmark(_:)))
+        // The one recognizer that answers both presses inside the prose: the reading mark, and a
+        // citation. `cancelsTouchesInView = false` because it must not be the reason a paragraph
+        // stops being selectable or scrollable: it watches the touch and lets everything else
+        // have it too, then does nothing unless the tap landed on something that answers.
+        let press = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pressed(_:)))
         press.cancelsTouchesInView = false
         press.delaysTouchesEnded = false
         view.addGestureRecognizer(press)
@@ -642,6 +642,11 @@ private struct DocumentProse: UIViewRepresentable {
         if rebuilt {
             context.coordinator.identity = identity
             context.coordinator.base = attributed()
+            // A citation is not a `.link` any more, so it is not a text item and VoiceOver would
+            // never find it. Named actions on the paragraph are the better trade anyway: one
+            // rotor gesture lists every source the paragraph rests on, by its own label, rather
+            // than asking somebody to land on a word inside a justified line.
+            view.accessibilityCustomActions = Self.openings(in: context.coordinator.base, using: context.coordinator)
         }
         // Typing in the find bar changes every paragraph on the page, so the one thing it must
         // not do is reparse them: the highlights and the bookmark go on a copy of what was
@@ -781,7 +786,15 @@ private struct DocumentProse: UIViewRepresentable {
                 // which needs only somebody listening.
                 let live = PageChatReference.number(in: link) != nil ? referencesLive : linksLive
                 if live {
-                    attributes[.link] = link
+                    // The two are drawn identically and reach UIKit differently. An ordinary
+                    // web address stays a `.link`, because everything the system does with one
+                    // — the menu, the preview, opening it — is right. A citation carries this
+                    // app's own key instead, and that is what makes a tap on it *immediate*:
+                    // a `.link` is a text item, and a text item is highlighted grey on touch
+                    // down and only acted on when UIKit has satisfied itself that the touch was
+                    // a tap and not the start of a double tap. That wait is the whole of the
+                    // delay a reader saw between pressing a source and its opening.
+                    attributes[CorpusProse.claims(link) ? .nodusCitation : .link] = link
                     attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 }
             }
@@ -801,6 +814,25 @@ private struct DocumentProse: UIViewRepresentable {
         paragraph.lineHeightMultiple = 1.3
         output.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: output.length))
         return output
+    }
+
+    /// One named action per citation in the paragraph, for a reader who cannot aim at a word.
+    private static func openings(
+        in text: NSAttributedString,
+        using coordinator: Coordinator
+    ) -> [UIAccessibilityCustomAction]? {
+        var actions: [UIAccessibilityCustomAction] = []
+        text.enumerateAttribute(.nodusCitation, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+            guard let url = value as? URL else { return }
+            let label = text.attributedSubstring(from: range).string
+            actions.append(
+                UIAccessibilityCustomAction(name: String(localized: "Open \(label)")) { [weak coordinator] _ in
+                    guard let coordinator else { return false }
+                    return MainActor.assumeIsolated { coordinator.onOpen(url) }
+                }
+            )
+        }
+        return actions.isEmpty ? nil : actions
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
@@ -869,6 +901,23 @@ private struct DocumentProse: UIViewRepresentable {
             return UIMenu(children: suggestedActions + [mark])
         }
 
+        /// A press inside the prose: on the reading mark, or on a citation.
+        ///
+        /// Both are answered here rather than by UIKit, and the citation is the reason. A tap on
+        /// a text item is deliberately not instantaneous — UIKit tints it and waits — and a
+        /// source that takes a beat to open after visibly acknowledging the press reads as the
+        /// app hesitating. Nothing here waits for anything.
+        @objc func pressed(_ recognizer: UITapGestureRecognizer) {
+            guard let view = recognizer.view as? UITextView else { return }
+            // A tap that ends a selection is ending a selection. Opening whatever happened to be
+            // under the finger as well would take the reader off the page they were quoting.
+            guard view.selectedTextRange?.isEmpty ?? true else { return }
+            let point = recognizer.location(in: view)
+            if pressedBookmark(at: point, in: view) { return }
+            guard let url = Self.citation(at: point, in: view) else { return }
+            MainActor.assumeIsolated { _ = onOpen(url) }
+        }
+
         /// A press on the marked words.
         ///
         /// Hit-tested twice, because `closestPosition(to:)` answers for a tap anywhere in the
@@ -876,43 +925,66 @@ private struct DocumentProse: UIViewRepresentable {
         /// character it names has to be inside the mark, and the point has to be on that
         /// character's own line. Without the second test, tapping the blank end of a short last
         /// line three paragraphs' worth of leading below the mark counts as pressing it.
-        @objc func pressedBookmark(_ recognizer: UITapGestureRecognizer) {
-            guard let view = recognizer.view as? UITextView,
-                  let onTapBookmark,
-                  let bookmark,
-                  bookmark.length > 0
-            else { return }
-            let point = recognizer.location(in: view)
-            guard let position = view.closestPosition(to: point) else { return }
+        private func pressedBookmark(at point: CGPoint, in view: UITextView) -> Bool {
+            guard let onTapBookmark, let bookmark, bookmark.length > 0 else { return false }
+            guard let position = view.closestPosition(to: point) else { return false }
             let index = view.offset(from: view.beginningOfDocument, to: position)
-            guard NSLocationInRange(index, bookmark) else { return }
+            guard NSLocationInRange(index, bookmark) else { return false }
             let caret = view.caretRect(for: position)
-            guard point.y >= caret.minY - 2, point.y <= caret.maxY + 2 else { return }
+            guard point.y >= caret.minY - 2, point.y <= caret.maxY + 2 else { return false }
             MainActor.assumeIsolated { onTapBookmark() }
+            return true
         }
 
-        /// What should happen if this citation is activated — which is not the same question as
-        /// "has it been activated", and answering the second one here is what made a scroll that
-        /// began on a citation open it.
+        /// The citation under this point, when the point really is on one.
         ///
-        /// UIKit asks this the moment a finger lands on a text item, before it can possibly know
-        /// whether that finger is tapping or about to drag the page away; it then runs the action
-        /// it was handed only if the touch turns out to be a tap. So the opening goes *inside* the
-        /// returned action rather than beside it, and a finger that came down on a citation and
-        /// kept moving now scrolls the report, as it does everywhere else on the page.
+        /// `closestPosition(to:)` names a caret position rather than a character: a tap on the
+        /// right half of a glyph answers with the index *after* it, and a tap in the white beyond
+        /// the end of a line answers with the last character on that line. So both sides of the
+        /// boundary are asked, and the answer only counts if the point falls inside that
+        /// character's own box — which is what stops the blank end of a line that happens to
+        /// finish on a source from opening it.
+        private static func citation(at point: CGPoint, in view: UITextView) -> URL? {
+            guard let text = view.attributedText, text.length > 0,
+                  let position = view.closestPosition(to: point)
+            else { return nil }
+            let offset = view.offset(from: view.beginningOfDocument, to: position)
+            for index in [offset, offset - 1] where index >= 0 && index < text.length {
+                guard let url = text.attribute(.nodusCitation, at: index, effectiveRange: nil) as? URL,
+                      let box = box(ofCharacterAt: index, in: view),
+                      box.insetBy(dx: -1, dy: 0).contains(point)
+                else { continue }
+                return url
+            }
+            return nil
+        }
+
+        private static func box(ofCharacterAt index: Int, in view: UITextView) -> CGRect? {
+            guard let start = view.position(from: view.beginningOfDocument, offset: index),
+                  let end = view.position(from: start, offset: 1),
+                  let range = view.textRange(from: start, to: end)
+            else { return nil }
+            let rect = view.firstRect(for: range)
+            return rect.isNull || rect.isInfinite ? nil : rect
+        }
+
+        /// The two delegate methods that answer for text items, and a citation is no longer one.
         ///
-        /// Measured rather than reasoned: with a probe in this method, the delegate call was
-        /// logged before the scroll view's own recognizers had seen `touchesBegan` at all — which
-        /// is also why nothing that watches the scroll (its `isDragging`, its `contentOffset`, a
-        /// recognizer on it) can help. At the moment of the question there is nothing to observe.
+        /// Both are kept, and both now say the same thing about the case they were written for:
+        /// a `nodus://` address must never reach the system. Its menu is "Open / Copy / Share"
+        /// over `nodus://idea/g-8969` — an internal address, so sharing it sends somebody a
+        /// string that does nothing and Open hands a scheme to a system that has no handler for
+        /// it. Since the citation carries this app's own attribute instead of `.link`, neither
+        /// method should see one at all; they refuse anyway, because a paragraph built by some
+        /// future path that still sets `.link` would otherwise offer exactly that menu.
+        ///
+        /// What does reach them is an ordinary `https://` in the prose, which keeps every bit of
+        /// the system's behaviour.
         func textView(
             _ textView: UITextView,
             primaryActionFor textItem: UITextItem,
             defaultAction: UIAction
         ) -> UIAction? {
-            // A link this app has nothing to do with — an ordinary `https://` in the prose —
-            // keeps the system's behaviour, and that decision is safe to take now because it
-            // reads the URL and nothing else.
             guard case .link(let url) = textItem.content, CorpusProse.claims(url) else {
                 return defaultAction
             }
@@ -921,15 +993,6 @@ private struct DocumentProse: UIViewRepresentable {
             }
         }
 
-        /// No menu on a citation.
-        ///
-        /// The system's own is "Open / Copy / Share" over the raw `nodus://idea/g-8969`, which is
-        /// an internal address: sharing it sends somebody a string that does nothing, and Open
-        /// hands the scheme to a system that has no handler for it — so the first item of the
-        /// menu is the one that cannot work. A citation does one thing, and a tap does it.
-        ///
-        /// Only reachable since the opening moved into the tap: before, the press opened the
-        /// citation before the menu could be asked for.
         func textView(
             _ textView: UITextView,
             menuConfigurationFor textItem: UITextItem,
@@ -941,4 +1004,15 @@ private struct DocumentProse: UIViewRepresentable {
             return nil
         }
     }
+}
+
+extension NSAttributedString.Key {
+    /// A citation into the corpus, drawn like a link and opened by this app rather than by UIKit.
+    ///
+    /// Deliberately not `.link`. UIKit treats a link as a *text item*: it tints it grey under the
+    /// finger, waits to see whether the touch becomes a double tap, and only then runs the action
+    /// — which is the right behaviour for a web address and the wrong one for a footnote in the
+    /// document you are reading. Under this key the same URL is invisible to that machinery, so
+    /// the paragraph's own tap recognizer opens it on the spot.
+    static let nodusCitation = NSAttributedString.Key("NodusCitation")
 }
