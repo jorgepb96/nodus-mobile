@@ -76,4 +76,25 @@ extension View {
     func reportActionSurface(accent: Color) -> some View {
         modifier(ReportActionSurface(accent: accent))
     }
+
+    /// Holds a chip at the width of the longest thing it can say.
+    ///
+    /// Two of these controls change their word when they are pressed — "Copy" for "Copied",
+    /// "Send" for "Sent" — and in every language the app ships the acknowledgement is the longer
+    /// of the two. Growing is not the problem; growing *inside a `FlowLayout`* is. The row is
+    /// laid out again from the new ideal width and places the chip at it immediately, while the
+    /// chip's own border is still animating there from the old one. For the length of that
+    /// animation the border and the surface under it are two rectangles of different widths,
+    /// which is exactly what a reader sees: a button whose outline is broken down one side and
+    /// which then appears to shrink back.
+    ///
+    /// Laying the other states out invisibly underneath means there is no new width to animate
+    /// to. The chip is as wide as its longest state from the first frame, and pressing it swaps
+    /// a word inside a box that does not move.
+    func reportActionWidth(@ViewBuilder reserving states: () -> some View) -> some View {
+        ZStack {
+            states().hidden()
+            self
+        }
+    }
 }

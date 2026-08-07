@@ -42,20 +42,17 @@ struct ReportSendButton: View {
         Button {
             confirming = true
         } label: {
-            Label {
-                Text(wasSent ? "Sent" : "Send")
-            } icon: {
-                if sending {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: wasSent ? "checkmark.circle" : "arrow.up.doc")
+            // Sized for both words, for the reason `reportActionWidth` gives: "Sent" arrives on
+            // a press, it is the longer word, and a chip that grows on a press is drawn with a
+            // broken outline while its row is placed again around it.
+            chip
+                .reportActionWidth {
+                    label("Send", icon: "arrow.up.doc")
+                    label("Sent", icon: "checkmark.circle")
                 }
-            }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(accent.nodusReadable)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 44)
-            .reportActionSurface(accent: accent)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .reportActionSurface(accent: accent)
         }
         .buttonStyle(.plain)
         .disabled(sending)
@@ -84,6 +81,29 @@ struct ReportSendButton: View {
         } message: {
             Text(LocalizedStringKey(failure ?? ""))
         }
+    }
+
+    /// What the chip is saying now: the word for the state it is in, and a spinner in place of
+    /// the glyph while the report is on its way.
+    @ViewBuilder
+    private var chip: some View {
+        if sending {
+            Label { Text("Send") } icon: { ProgressView().controlSize(.small) }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(accent.nodusReadable)
+        } else {
+            label(wasSent ? "Sent" : "Send", icon: wasSent ? "checkmark.circle" : "arrow.up.doc")
+        }
+    }
+
+    private func label(_ title: LocalizedStringKey, icon: String) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: icon)
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(accent.nodusReadable)
     }
 
     private func send() async {

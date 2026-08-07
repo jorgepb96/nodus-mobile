@@ -50,19 +50,32 @@ struct ReportCopyButtons: View {
                 Label("Copy without references", systemImage: "text.alignleft")
             }
         } label: {
-            Label {
-                Text(copied == nil ? "Copy" : "Copied")
-            } icon: {
-                Image(systemName: copied == nil ? "doc.on.doc" : "checkmark")
-            }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(accent.nodusReadable)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 44)
-            .reportActionSurface(accent: accent)
+            // Laid out for both words rather than for the one showing: "Copied" is the wider of
+            // the two in every language, and a chip that grows when it is pressed is a chip
+            // whose outline breaks while the row it sits in is placed again. See
+            // `reportActionWidth`.
+            chip(copied == nil ? "Copy" : "Copied", icon: copied == nil ? "doc.on.doc" : "checkmark")
+                .reportActionWidth {
+                    chip("Copy", icon: "doc.on.doc")
+                    chip("Copied", icon: "checkmark")
+                }
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .reportActionSurface(accent: accent)
         }
         .accessibilityLabel("Copy the report")
         .animation(NodusMotion.quick, value: copied)
+    }
+
+    /// One state of the chip: what it says, and the glyph it says it with.
+    private func chip(_ title: LocalizedStringKey, icon: String) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: icon)
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(accent.nodusReadable)
     }
 
     private func copy(_ kind: Copied, text: String) {
