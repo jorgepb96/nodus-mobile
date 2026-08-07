@@ -61,8 +61,8 @@ final class PageChatStore {
         /// The passage the reader selected before asking, when the question came from the report
         /// rather than from an empty composer.
         var quote: String?
-        /// Corpus sources that survived validation, so a citation reads as its label.
-        var citations: [CitationCatalog.Entry] = []
+        /// Token → the name the corpus gives that source, so a citation reads as a citation.
+        var labels: [String: String] = [:]
         var warning: String?
         /// Which numbered passages of the report the answer actually used.
         var passages: [Int] = []
@@ -77,6 +77,12 @@ final class PageChatStore {
     var failure: String?
 
     private var running: Task<Void, Never>?
+    /// The corpus, asked what the sources of this conversation are called.
+    ///
+    /// Held for as long as the conversation is, rather than built per question: the actor
+    /// remembers every work it has looked up, and a reader asking five questions about one
+    /// report cites the same handful of books in all five answers.
+    private var naming: CorpusCitations?
 
     /// One store per report, kept alive by the registry rather than by any view, so closing the
     /// modal and opening it again lands back in the same conversation.
@@ -197,8 +203,21 @@ final class PageChatStore {
                 // points at this page and not at the vault.
                 let validated = CitationValidator.validate(prose: text, against: catalog)
                 turns[answer].text = PageChatPrompt.dropUnknownReferences(validated.prose, count: passages.count)
-                turns[answer].citations = validated.accepted.compactMap(catalog.entry(for:))
                 turns[answer].passages = PageChatPrompt.referenced(in: turns[answer].text, count: passages.count)
+
+                // What the corpus calls each source, rather than the material its catalogue
+                // entry carries. An idea's entry is its whole statement and a passage's is the
+                // first hundred and sixty characters of the quotation — set in the middle of a
+                // sentence, either one is a paragraph of link where the reader expects
+                // `Allcock, J., 1988, p. 42`. So the same lookup the reports make, which means
+                // a source is named identically whether a report cited it or a question about
+                // one did. A citation the corpus cannot name keeps its token: an empty label
+                // would be a link with nothing to press.
+                let cited = validated.accepted.compactMap(catalog.entry(for:))
+                guard !cited.isEmpty, !Task.isCancelled else { return }
+                let named = await namer(for: session).labelling(for: cited)
+                guard !Task.isCancelled else { return }
+                turns[answer].labels = named.inline.filter { !$0.value.isEmpty }
             } catch is CancellationError {
                 turns[answer].text += turns[answer].text.isEmpty ? String(localized: "Cancelled.") : "\n\n_\(String(localized: "Cancelled."))_"
             } catch {
@@ -210,6 +229,13 @@ final class PageChatStore {
                 failure = error.localizedDescription
             }
         }
+    }
+
+    private func namer(for session: SpaceSession) -> CorpusCitations {
+        if let naming { return naming }
+        let made = CorpusCitations(client: session.client, spaceId: session.connection.spaceId)
+        naming = made
+        return made
     }
 
     private static func semanticIdentity(for session: SpaceSession) -> EmbeddingIdentity? {
@@ -606,7 +632,7 @@ private struct PageChatBubble: View {
                         PageChatPrompt.linkifyReferences(turn.text, count: passageCount),
                         accent: accent,
                         session: session,
-                        labels: Dictionary(turn.citations.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first }),
+                        labels: turn.labels,
                         onReference: onReference
                     )
                 }
