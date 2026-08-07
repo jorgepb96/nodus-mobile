@@ -109,6 +109,7 @@ struct ChatScreen: View {
                 currentId: conversationId,
                 onOpen: open
             )
+            .nodusModalClose(accent: session.accent)
         }
         .task {
             // Lent to the chrome, not copied into it: the header ticks layers on and off in the

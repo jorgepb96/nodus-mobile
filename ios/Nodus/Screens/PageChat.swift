@@ -449,6 +449,7 @@ struct PageChatSheet: View {
             }
             .nodusSheet(isPresented: $showingProviders) {
                 ProviderSettingsView(accent: accent)
+                    .nodusModalClose(accent: accent)
             }
             // Opened from a selection, the passage is already there and the question is what is
             // missing — so the keyboard comes up. Opened from the wheel there is nothing to say

@@ -67,6 +67,7 @@ struct SpaceShell: View {
         }
         .nodusSheet(isPresented: $showingSettings) {
             SpaceSettingsView(session: session)
+                .nodusModalClose(accent: session.accent)
         }
     }
 

@@ -613,6 +613,9 @@ private struct ProseSheets: View {
                                 }
                             }
                     }
+                    // A source is opened from the middle of a paragraph and closed to get back
+                    // to it, which is a round trip to the top of the screen for a glance.
+                    .nodusModalClose(accent: session.accent)
                 }
             }
             // Pressing the mark asks rather than removes. It is one tap inside a paragraph a

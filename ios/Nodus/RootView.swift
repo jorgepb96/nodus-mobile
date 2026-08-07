@@ -53,7 +53,12 @@ struct RootView: View {
         // space happens to be open. Presenting it from inside `SpaceShell` would put it behind
         // that shell's own sheets, and iOS fails a second presentation silently.
         .nodusSheet(isPresented: $tray.isPresented) {
-            OutboxTraySheet().environment(tray).environment(model)
+            OutboxTraySheet()
+                .environment(tray)
+                .environment(model)
+                // The open space's colour when there is one; the queue is also reachable from
+                // the picker, where no vault is open to lend one.
+                .nodusModalClose(accent: model.session?.accent ?? Color(hex: VaultType.academic.accentHex))
         }
         .task {
             // Reopen where the user left off, but only if the credential is still there — a
@@ -247,6 +252,7 @@ struct SpacePickerView: View {
                     }
             }
             .environment(model)
+            .nodusModalClose(accent: connection.accent)
         }
     }
 

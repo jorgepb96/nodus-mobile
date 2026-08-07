@@ -121,6 +121,7 @@ struct ResearchView: View {
         .nodusSheet(isPresented: $showingProviders) {
             ProviderSettingsView(accent: session.accent, requiredEmbedding: requiredEmbedding)
                 .environment(ai)
+                .nodusModalClose(accent: session.accent)
         }
     }
 
@@ -198,6 +199,7 @@ struct ChatTab: View {
         .nodusSheet(isPresented: $showingProviders) {
             ProviderSettingsView(accent: session.accent, requiredEmbedding: requiredEmbedding)
                 .environment(ai)
+                .nodusModalClose(accent: session.accent)
         }
     }
 
