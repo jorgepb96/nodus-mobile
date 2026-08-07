@@ -419,17 +419,21 @@ private struct PageFunctionWheel: View {
         .frame(width: Self.radius + 44, height: Self.radius + 44, alignment: .bottomTrailing)
     }
 
+    /// One seat of the wheel, and the hub, which wear the same disc.
+    ///
+    /// Both the ring round the glass and the glyph inside it are taken to the shade of the accent
+    /// that reads against the surface the app is drawing. A floating control is the one thing on
+    /// the screen with no layout around it to say where it is, so it is also the one that cannot
+    /// afford an edge the page swallows — which is what it had: pale on a pale page, dark on a
+    /// dark one. See `nodusFloatingCircle`.
     private func circle(_ systemImage: String, label: Text, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .semibold))
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 36, height: 36)
-                .nodusGlass(NodusGlass(.regular, tint: accent, interactive: true), in: Circle())
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
+                .nodusFloatingCircle(accent: accent)
         }
-        .tint(accent)
+        .tint(accent.nodusReadable)
         .accessibilityLabel(label)
     }
 
