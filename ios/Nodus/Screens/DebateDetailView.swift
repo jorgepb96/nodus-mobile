@@ -1,6 +1,7 @@
 import NodusKit
 import NodusUI
 import SwiftUI
+import UIKit
 
 /// The published shape behind a contradiction citation.
 ///
@@ -12,6 +13,11 @@ struct DebateCitation {
     struct Side {
         let label: String
         let statement: String?
+
+        /// The complete claim when the corpus publishes it, otherwise the short label the
+        /// reader can see. Copying an empty statement would make a control appear to succeed
+        /// while putting nothing on the clipboard.
+        var copyText: String { statement ?? label }
 
         init(_ value: JSONValue?) {
             let object = value?.objectValue ?? [:]
@@ -208,14 +214,21 @@ private struct DebateCitationView: View {
     private func side(_ side: DebateCitation.Side, label: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             NodusChip(label, tint: accent.nodusReadable, capitalises: false)
-            Text(side.label)
-                .font(.headline)
-                .textSelection(.enabled)
-            if let statement = side.statement {
-                Text(statement)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(side.label)
+                        .font(.headline)
+                        .textSelection(.enabled)
+                    if let statement = side.statement {
+                        Text(statement)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                ClaimCopyButton(text: side.copyText, accent: accent)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -262,5 +275,39 @@ private struct DebateCitationView: View {
     private var localizedRelation: String {
         let key = RowDetailView.relationLabel(debate.relation)
         return Bundle.main.localizedString(forKey: key, value: debate.relation, table: nil)
+    }
+}
+
+/// A claim-sized copy action: only a glyph on the page, with the full touch target and spoken
+/// label a control still needs. The tick is the confirmation; no alert interrupts comparison of
+/// the two positions.
+private struct ClaimCopyButton: View {
+    let text: String
+    let accent: Color
+
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            UIPasteboard.general.string = text
+            copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                copied = false
+            }
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.caption.weight(.semibold))
+                .frame(width: 30, height: 30)
+                .background(accent.opacity(0.12), in: Circle())
+                // The glyph stays small beside the claim; the invisible area around it makes
+                // the control comfortable to hit without making the card look button-heavy.
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(accent.nodusReadable)
+        .accessibilityLabel(copied ? Text("Claim copied") : Text("Copy claim"))
+        .animation(NodusMotion.quick, value: copied)
     }
 }
