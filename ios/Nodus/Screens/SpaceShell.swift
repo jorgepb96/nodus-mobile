@@ -4,12 +4,9 @@ import SwiftUI
 
 /// The shell around an open space.
 ///
-/// iPhone gets a tab bar; iPad gets the desktop's sidebar as a split view. Both share the same
-/// header — the mark centred, the cutout absorbed into the chrome — and the same screens
-/// underneath, because the difference is navigation, not content.
+/// iPhone and iPad share the same bottom navigation, header, and screens. Keeping one shell
+/// across form factors makes moving between sections predictable wherever the space is opened.
 struct SpaceShell: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(AppModel.self) private var model
     @Environment(AppPreferences.self) private var preferences
     @Environment(OutboxTrayModel.self) private var tray
@@ -23,55 +20,26 @@ struct SpaceShell: View {
     /// stack and its scroll position — but a page nobody has opened should not be loading a
     /// corpus in the background, which is the one thing `TabView` was doing for free.
     @State private var visited: Set<Tab> = [.home]
-    @State private var sidebarSelection: SidebarItem? = .home
     @State private var showingSettings = false
     @State private var chrome = NodusChrome()
 
     enum Tab: Hashable, CaseIterable { case home, search, research, chat }
 
-    enum SidebarItem: Hashable {
-        case home
-        case collection(String)
-        case debates
-        case notes
-        case deepResearch
-        case search
-        case research
-        case chat
-    }
-
-    /// The sidebar is for an iPad-shaped canvas, not for any wide one.
-    ///
-    /// `horizontalSizeClass == .regular` alone is true of a large iPhone held sideways, and
-    /// that phone got the iPad layout: a sidebar over 390 points of height, a detail column
-    /// beside it, and the floating header sitting on top of the split view's own toggle. A
-    /// phone in landscape is a phone. Both classes regular is what actually means "there is
-    /// room for two columns".
-    private var wantsSidebar: Bool {
-        horizontalSizeClass == .regular && verticalSizeClass == .regular
-    }
-
     var body: some View {
-        Group {
-            if wantsSidebar {
-                splitView
-            } else {
-                tabView
+        tabView
+            .environment(chrome)
+            .task {
+                await session.load()
+                await session.loadMirror()
+                await session.probeEmbedding()
             }
-        }
-        .environment(chrome)
-        .task {
-            await session.load()
-            await session.loadMirror()
-            await session.probeEmbedding()
-        }
-        .nodusSheet(isPresented: $showingSettings) {
-            SpaceSettingsView(session: session)
-                .nodusModalClose(accent: session.accent)
-        }
+            .nodusSheet(isPresented: $showingSettings) {
+                SpaceSettingsView(session: session)
+                    .nodusModalClose(accent: session.accent)
+            }
     }
 
-    // MARK: iPhone
+    // MARK: Navigation
 
     /// The four tabs and the bar under them, both drawn here.
     ///
@@ -172,95 +140,6 @@ struct SpaceShell: View {
         }
     }
 
-    // MARK: iPad
-
-    /// The header above the split view, not floating over it.
-    ///
-    /// It used to be an `.overlay(alignment: .top)` with 96 points of clear inset pushed into
-    /// both columns to make room. That works until something else wants the top of a column —
-    /// and something does: the split view's own show/hide-sidebar button lives in the detail
-    /// column's navigation bar, exactly under the overlay. It was there the whole time, behind
-    /// the glass, and could not be tapped. A `VStack` gives the header the top of the window
-    /// and leaves the columns their own.
-    private var splitView: some View {
-        VStack(spacing: 0) {
-            header
-            splitColumns
-        }
-        .background { NodusBackdrop(accent: session.accent) }
-        // The same statement the tab bar makes: choosing another screen is finishing with the
-        // field on this one.
-        .onChange(of: sidebarSelection) { _, _ in Keyboard.dismiss() }
-    }
-
-    private var splitColumns: some View {
-        NavigationSplitView {
-            List(selection: $sidebarSelection) {
-                Section {
-                    Label("Home", systemImage: "house").tag(SidebarItem.home)
-                    Label("Search", systemImage: "magnifyingglass").tag(SidebarItem.search)
-                    Label("Research", systemImage: "doc.text.magnifyingglass").tag(SidebarItem.research)
-                    Label("Chat", systemImage: "bubble.left.and.text.bubble.right").tag(SidebarItem.chat)
-                }
-                Section("Browse") {
-                    ForEach(session.sections, id: \.path) { collection in
-                        Label {
-                            HStack {
-                                Text(LocalizedStringKey(collection.label))
-                                Spacer()
-                                CountBadge(count: session.count(of: collection), accent: session.accent)
-                            }
-                        } icon: {
-                            Image(systemName: collection.icon)
-                        }
-                        .tag(SidebarItem.collection(collection.path))
-                    }
-                }
-                // No "Write" section: the queue is a sheet now, and a `List(selection:)` row
-                // that opens one would stay highlighted behind it — a selection nothing ever
-                // clears. The header button above this split view is already on iPad.
-                if session.hasDebates || session.hasNotes || session.hasDeepResearch {
-                    Section("Analyse") {
-                        if session.hasDebates {
-                            Label("Debates", systemImage: "bubble.left.and.bubble.right").tag(SidebarItem.debates)
-                        }
-                        if session.hasDeepResearch {
-                            Label("Deep Research", systemImage: "doc.text.magnifyingglass").tag(SidebarItem.deepResearch)
-                        }
-                        if session.hasNotes {
-                            Label("Notes", systemImage: "note.text").tag(SidebarItem.notes)
-                        }
-                    }
-                }
-            }
-            .navigationTitle(session.connection.spaceName)
-            .tint(session.accent)
-        } detail: {
-            NavigationStack {
-                detailContent
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var detailContent: some View {
-        switch sidebarSelection {
-        case .home, .none: HomeView(session: session, openResearch: { sidebarSelection = .research })
-        case .search: SearchScreen(session: session)
-        case .research: ResearchView(session: session)
-        case .chat: ChatTab(session: session)
-        case .debates: SpecialListView(session: session, resource: .debates)
-        case .notes: SpecialListView(session: session, resource: .notes)
-        case .deepResearch: SpecialListView(session: session, resource: .deepResearch)
-        case .collection(let path):
-            if let collection = Collections[path] {
-                CollectionListView(session: session, collection: collection)
-            } else {
-                ContentUnavailableView("Unknown section", systemImage: "questionmark.folder")
-            }
-        }
-    }
-
     // MARK: Chrome
 
     private var header: some View {
@@ -331,8 +210,7 @@ struct SpaceShell: View {
     /// decides whether they are on the header is the same thing that decides which page is
     /// visible: the shell's own selection.
     private var chatControls: ChatControls? {
-        let showingChat = wantsSidebar ? sidebarSelection == .chat : tab == .chat
-        return showingChat ? chrome.chat : nil
+        tab == .chat ? chrome.chat : nil
     }
 
     private func historyButton(_ chat: ChatControls) -> some View {
@@ -414,7 +292,7 @@ struct SpaceShell: View {
     /// Only where it does something. On the other three tabs it would be a control that changes
     /// a screen you are not looking at.
     private var showsLayoutToggle: Bool {
-        wantsSidebar ? sidebarSelection == .home : tab == .home
+        tab == .home
     }
 
     private var subtitle: String? {
