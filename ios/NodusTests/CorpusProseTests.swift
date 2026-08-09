@@ -1,4 +1,5 @@
 import Foundation
+import NodusKit
 import Testing
 @testable import Nodus
 
@@ -79,5 +80,54 @@ struct CorpusProseTests {
         )
 
         #expect(linked == "Ver ([Arco (sic) Blanco](nodus://idea/g-8969)).")
+    }
+
+    @Test("a contradiction citation routes to its published debate")
+    func contradictionRoutesToDebate() throws {
+        let singular = try #require(CorpusReference(URL(string: "nodus://contradiction/edge-42")!))
+        let plural = CorpusReference(kind: "contradictions", recordId: "edge-42")
+
+        #expect(singular.kind == "contradiction")
+        #expect(singular.recordId == "edge-42")
+        #expect(singular.destination == .debate)
+        #expect(plural.destination == .debate)
+    }
+
+    @Test("a published debate retains both positions and their evidence")
+    func debateCitationKeepsSourceMaterial() {
+        let row = Row([
+            "relation": .string("contradicts"),
+            "basis": .string("inferred"),
+            "confidence": .double(0.9),
+            "tension": .string("The positions disagree."),
+            "sideA": .object([
+                "label": .string("Representation and reality"),
+                "statement": .string("Tourism photography idealises its subjects."),
+                "works": .array([.object([
+                    "evidence": .array([.object([
+                        "quote": .string("The official image concealed material hardship."),
+                        "location": .string("p. 619"),
+                        "kind": .string("explicit"),
+                    ])]),
+                ])]),
+            ]),
+            "sideB": .object([
+                "label": .string("Photography as critique"),
+                "statement": .string("Documentary photography exposed social reality."),
+                "works": .array([]),
+            ]),
+        ])
+
+        let debate = DebateCitation(row)
+
+        #expect(debate.relation == "contradicts")
+        #expect(debate.basis == "inferred")
+        #expect(debate.confidence == 0.9)
+        #expect(debate.sideA.label == "Representation and reality")
+        #expect(debate.sideB.label == "Photography as critique")
+        #expect(debate.evidence.count == 1)
+        #expect(debate.evidence[0].quote == "The official image concealed material hardship.")
+        #expect(debate.evidence[0].location == "p. 619")
+        #expect(debate.evidence[0].side == "A")
     }
 }

@@ -9,6 +9,16 @@ import SwiftUI
 /// stripped to their label, so the one thing the reader most wants to do with a citation, which
 /// is see what it rests on, was the one thing they could not do.
 struct CorpusReference: Identifiable, Hashable {
+    enum Destination: Equatable {
+        case idea
+        case work
+        case note
+        case passage
+        case debate
+        case collection
+        case unsupported
+    }
+
     /// `idea`, `work`, `passage`, `theme`, `gap` — whatever the scheme carried.
     let kind: String
     /// The record's own identifier: a `global_id`, a `nodus_id`, a `passage_id`.
@@ -39,6 +49,7 @@ struct CorpusReference: Identifiable, Hashable {
         case "persons", "people": return "person"
         case "places": return "place"
         case "events": return "event"
+        case "contradictions", "debate", "debates": return "contradiction"
         case let other: return other
         }
     }
@@ -78,6 +89,22 @@ struct CorpusReference: Identifiable, Hashable {
         default: return nil
         }
     }
+
+    /// The reader that owns this reference kind.
+    ///
+    /// Contradictions are derived debates, not collection rows. Keeping that distinction here
+    /// prevents a valid citation from falling through the collection lookup and being described
+    /// as outside the corpus merely because no `contradictions` table exists.
+    var destination: Destination {
+        switch kind {
+        case "idea": return .idea
+        case "work": return .work
+        case "note": return .note
+        case "passage": return .passage
+        case "contradiction": return .debate
+        default: return collection == nil ? .unsupported : .collection
+        }
+    }
 }
 
 /// Opens whatever a citation points at.
@@ -91,25 +118,27 @@ struct CorpusReferenceView: View {
 
     var body: some View {
         Group {
-            switch reference.kind {
-            case "idea":
+            switch reference.destination {
+            case .idea:
                 IdeaByIdView(session: session, globalId: reference.recordId)
-            case "work":
+            case .work:
                 WorkByIdView(session: session, nodusId: reference.recordId)
-            case "note":
+            case .note:
                 NoteByIdView(session: session, noteId: reference.recordId)
-            case "passage":
+            case .passage:
                 PassageByIdView(session: session, id: reference.recordId)
-            default:
+            case .debate:
+                DebateByIdView(session: session, edgeId: reference.recordId)
+            case .collection:
                 if let collection = reference.collection {
                     RowByIdView(session: session, collection: collection, id: reference.recordId)
-                } else {
-                    ContentUnavailableView(
-                        "This citation points outside the corpus",
-                        systemImage: "questionmark.circle",
-                        description: Text("It refers to a “\(reference.kind)”, which this space does not publish.")
-                    )
                 }
+            case .unsupported:
+                ContentUnavailableView(
+                    "This citation points outside the corpus",
+                    systemImage: "questionmark.circle",
+                    description: Text("It refers to a “\(reference.kind)”, which this space does not publish.")
+                )
             }
         }
         // The detail screens carry their own; this covers the loading and the dead end, which
