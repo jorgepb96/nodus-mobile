@@ -1599,6 +1599,39 @@
         }
       }
     },
+    "Cited contradiction": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contradicción citada"
+          }
+        }
+      }
+    },
+    "Cited contradiction not found": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró la contradicción citada"
+          }
+        }
+      }
+    },
+    "Cited source": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fuente citada"
+          }
+        }
+      }
+    },
     "Cinematic": {
       "extractionState": "manual",
       "localizations": {
@@ -5933,6 +5966,17 @@
         }
       }
     },
+    "Positions": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Posiciones"
+          }
+        }
+      }
+    },
     "Positions in contrast": {
       "extractionState": "manual",
       "localizations": {
@@ -8041,6 +8085,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "La contradicción está en que «%@» entra en tensión con «%@»."
+          }
+        }
+      }
+    },
+    "The contradiction could not be loaded from this space.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cargar la contradicción desde este espacio."
+          }
+        }
+      }
+    },
+    "The published corpus no longer contains this contradiction.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El corpus publicado ya no contiene esta contradicción."
           }
         }
       }
@@ -10423,6 +10489,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "explícita"
+          }
+        }
+      }
+    },
+    "inferred": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "inferida"
           }
         }
       }

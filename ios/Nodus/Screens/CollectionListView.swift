@@ -243,6 +243,10 @@ struct SpecialListView: View {
                     // own reader; everything else here really is a row.
                     if resource == .immersion, let id = row.string("id") {
                         ImmersionView(session: session, sessionId: id, title: row.text("title") ?? title)
+                    } else if resource == .debates, let id = row.string("id") {
+                        // The list row is intentionally lean; opening it resolves the full
+                        // debate so both positions and all published evidence remain visible.
+                        DebateByIdView(session: session, edgeId: id)
                     } else {
                         RowDetailView(session: session, collection: nil, row: row, title: title)
                     }
