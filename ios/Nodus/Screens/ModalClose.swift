@@ -9,11 +9,10 @@ import SwiftUI
 /// check — that is the whole length of the phone travelled for an action that means "put this
 /// away and give me back what I was reading".
 ///
-/// So the same disc the page's own tools wear, in the opposite corner, pointing down. Down
-/// because that is the direction the sheet goes when it closes, so the glyph says what will
-/// happen rather than naming it. The opposite corner because `nodusPageFunctions` floats its
-/// wheel at the bottom trailing edge, and a modal showing a report or a record has one: two
-/// floating controls in the same corner would be two controls hit by the same thumb.
+/// So the same disc the page's own tools wear, centred along the bottom edge, pointing down.
+/// Down because that is the direction the sheet goes when it closes, so the glyph says what
+/// will happen rather than naming it. Centring keeps dismissal in a stable place whichever
+/// page tools the modal happens to carry and stops the control reading as attached to a corner.
 ///
 /// Applied per sheet rather than by `nodusSheet` itself, because not every modal closes by being
 /// closed. An editor's dismissal is a Cancel and belongs beside its Save, where a reader can see
@@ -25,7 +24,7 @@ struct NodusModalClose: ViewModifier {
     @Environment(\.dismiss) private var dismiss
 
     func body(content: Content) -> some View {
-        content.overlay(alignment: .bottomLeading) {
+        content.overlay(alignment: .bottom) {
             Button {
                 dismiss()
             } label: {
@@ -35,7 +34,6 @@ struct NodusModalClose: ViewModifier {
             }
             .tint(accent.nodusReadable)
             .accessibilityLabel("Close")
-            .padding(.leading, NodusSpace.page)
             // The same height off the bottom the page tools sit at inside a sheet, where there
             // is no bar under them: the two read as one pair rather than as two decisions.
             .padding(.bottom, 22)
@@ -44,7 +42,7 @@ struct NodusModalClose: ViewModifier {
 }
 
 extension View {
-    /// Floats a "close this" control over a modal, in the corner the page tools do not use.
+    /// Floats a centred "close this" control over a modal's bottom edge.
     func nodusModalClose(accent: Color) -> some View {
         modifier(NodusModalClose(accent: accent))
     }
