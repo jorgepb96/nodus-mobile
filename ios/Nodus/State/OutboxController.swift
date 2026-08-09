@@ -131,6 +131,62 @@ final class OutboxController {
         await refresh()
     }
 
+    /// Persist and immediately relay a reader annotation.
+    ///
+    /// These edits have no separate "Send" button: placing a highlight is the act
+    /// that authorises it. The mutation is written before the request and marked as
+    /// authorised, so the ordinary background flush finishes an interrupted send.
+    @discardableResult
+    func syncReaderAnnotation(
+        kind: Mutation.Kind,
+        rowId: String,
+        row: [String: JSONValue]? = nil,
+        title: String
+    ) async -> String? {
+        let mutation = Mutation(
+            clientId: clientId,
+            kind: kind,
+            table: .writingDraftAnnotations,
+            key: [rowId],
+            row: row,
+            schemaVersion: schemaVersion
+        )
+        do {
+            try await outbox.enqueue(mutation, title: title)
+            try await outbox.authorise(ids: [mutation.id])
+        } catch {
+            lastError = error.localizedDescription
+            await refresh()
+            return nil
+        }
+
+        do {
+            let receipt = try await client.send(mutations: [mutation], in: spaceId)
+            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
+            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
+            if let rejection = receipt.rejected.first(where: { $0.id == mutation.id }) {
+                lastError = rejection.errorDescription ?? rejection.reason
+            } else {
+                lastError = nil
+            }
+        } catch let error as APIError where error.isForbidden {
+            lastError = error.requiredNeed == .write
+                ? "Your access to this space is read only."
+                : error.localizedDescription
+        } catch {
+            // Still safely queued and authorised; a later foreground/background flush retries.
+            lastError = error.localizedDescription
+        }
+        await refresh()
+        return mutation.id
+    }
+
+    /// The persisted optimistic layer for annotations, including changes already in
+    /// the ledger but not present in a republished snapshot yet.
+    func retainedReaderAnnotationMutations() async -> [Mutation] {
+        (try? await outbox.retainedMutations(table: .writingDraftAnnotations)) ?? []
+    }
+
     /// Send a finished Deep Research report to the vault as a saved draft, now.
     ///
     /// Until this existed a report generated on the phone could only leave it as shared

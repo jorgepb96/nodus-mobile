@@ -481,6 +481,255 @@ struct OptionalReadingMarks: ViewModifier {
     }
 }
 
+/// The published report's local read flag plus its server-backed reader annotations.
+///
+/// The read flag remains personal to this phone. Highlights, comments and the bookmark
+/// instead enter the mutation ledger immediately and are overlaid from that durable queue
+/// until the owner's next publication contains them.
+struct SyncedReportReadingTools: ViewModifier {
+    let session: SpaceSession
+    let id: String
+    let rows: [Row]
+
+    private let marks: ReportMarks
+    @State private var legacyBookmark: ReadingBookmarks
+    @State private var annotations: ReaderAnnotations
+
+    init(session: SpaceSession, id: String, rows: [Row]) {
+        self.session = session
+        self.id = id
+        self.rows = rows
+        let store = ReportMarks.shared(for: session.connection.spaceId)
+        marks = store
+        _legacyBookmark = State(initialValue: ReadingBookmarks(bookmark: store.bookmark(for: id)) { next in
+            store.setBookmark(next, for: id)
+        })
+        _annotations = State(initialValue: ReaderAnnotations(
+            draftId: id,
+            isWritable: session.connection.role.canSendChanges
+        ))
+    }
+
+    private var rowStamp: String {
+        rows.map { "\($0.string("id") ?? ""):\($0.string("updated_at") ?? "")" }.joined(separator: "|")
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .environment(legacyBookmark)
+            .environment(annotations)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { readButton }
+                if annotations.isWritable {
+                    ToolbarItem(placement: .topBarTrailing) { highlighterMenu }
+                }
+                if annotations.bookmark != nil || legacyBookmark.bookmark != nil {
+                    ToolbarItem(placement: .topBarTrailing) { bookmarkMenu }
+                }
+            }
+            .sheet(
+                item: Binding(
+                    get: { annotations.presentation },
+                    set: { annotations.presentation = $0 }
+                )
+            ) { presentation in
+                ReaderAnnotationSheet(annotations: annotations, presentation: presentation)
+                    .presentationDetents([.height(230), .medium])
+                    .presentationDragIndicator(.visible)
+            }
+            .alert(
+                "The annotation is waiting on this device",
+                isPresented: Binding(
+                    get: { annotations.error != nil },
+                    set: { if !$0 { annotations.dismissError() } }
+                )
+            ) {
+                Button("OK") { annotations.dismissError() }
+            } message: {
+                Text(annotations.error ?? "It will be retried from the send queue.")
+            }
+            .task(id: rowStamp) {
+                await annotations.load(rows: rows, session: session)
+                guard annotations.bookmark != nil else { return }
+                // The document is still measuring on the first pass; the second aim lands
+                // once a long report has its final content height.
+                try? await Task.sleep(for: .milliseconds(180))
+                annotations.aimAtBookmark()
+                try? await Task.sleep(for: .milliseconds(480))
+                annotations.aimAtBookmark()
+            }
+            .onChange(of: annotations.bookmark?.id) { _, synced in
+                if synced != nil, legacyBookmark.bookmark != nil { legacyBookmark.clear() }
+            }
+    }
+
+    private var readButton: some View {
+        let read = marks.isRead(id)
+        return Button {
+            marks.setRead(id, !read)
+        } label: {
+            Label(
+                read ? "Mark as unread" : "Mark as read",
+                systemImage: read ? "checkmark.circle.fill" : "checkmark.circle"
+            )
+        }
+        .tint(read ? Color.nodusSuccess : session.accent)
+    }
+
+    private var highlighterMenu: some View {
+        Menu {
+            Section("Keep highlighting") {
+                ForEach(ReaderAnnotationColor.allCases) { colour in
+                    Button {
+                        annotations.fixedColor = colour
+                    } label: {
+                        Label(colour.label, systemImage: annotations.fixedColor == colour ? "checkmark.circle.fill" : "circle.fill")
+                    }
+                    .tint(colour.color)
+                }
+            }
+            if annotations.fixedColor != nil {
+                Button {
+                    annotations.fixedColor = nil
+                } label: {
+                    Label("Turn highlighter off", systemImage: "cursorarrow")
+                }
+            }
+        } label: {
+            Image(systemName: annotations.fixedColor == nil ? "highlighter" : "highlighter")
+        }
+        .tint(annotations.fixedColor?.color ?? session.accent)
+        .accessibilityLabel(annotations.fixedColor == nil ? "Highlighter" : "Highlighter on")
+    }
+
+    private var bookmarkMenu: some View {
+        Menu {
+            Button {
+                if annotations.bookmark != nil { annotations.aimAtBookmark() }
+                else { legacyBookmark.aimAtBookmark() }
+            } label: {
+                Label("Go to the bookmark", systemImage: "arrow.down.to.line")
+            }
+            Button(role: .destructive) {
+                if let bookmark = annotations.bookmark { annotations.delete(bookmark) }
+                else { legacyBookmark.clear() }
+            } label: {
+                Label("Remove the bookmark", systemImage: "bookmark.slash")
+            }
+        } label: {
+            Image(systemName: "bookmark.fill")
+        }
+        .tint(Color.nodusBookmarkRule)
+        .accessibilityLabel("The reading bookmark")
+    }
+}
+
+private struct ReaderAnnotationSheet: View {
+    let annotations: ReaderAnnotations
+    let presentation: ReaderAnnotations.Presentation
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch presentation {
+                case .highlight(let annotation):
+                    actionSheet(annotation, title: "Highlight", icon: "highlighter")
+                case .bookmark(let annotation):
+                    actionSheet(annotation, title: "Reading bookmark", icon: "bookmark.fill")
+                case .comment(let annotation):
+                    ReaderCommentEditor(annotations: annotations, annotation: annotation, anchor: annotation.anchor)
+                case .newComment(let anchor):
+                    ReaderCommentEditor(annotations: annotations, annotation: nil, anchor: anchor)
+                }
+            }
+            .padding(NodusSpace.page)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { annotations.presentation = nil }
+                }
+            }
+        }
+    }
+
+    private func actionSheet(_ annotation: ReaderAnnotation, title: LocalizedStringKey, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label(title, systemImage: icon).font(.headline)
+            Text("“\(ReadingBookmarks.label(annotation.anchor.selectedText))”")
+                .font(.callout).foregroundStyle(.secondary)
+            if annotations.isWritable {
+                Button(role: .destructive) {
+                    // Highlights deliberately have no confirmation. The bookmark is one
+                    // reversible place marker and follows the same lightweight treatment.
+                    annotations.delete(annotation)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(NodusGlassButtonStyle(accent: .red))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ReaderCommentEditor: View {
+    let annotations: ReaderAnnotations
+    let annotation: ReaderAnnotation?
+    let anchor: ReaderAnnotationAnchor
+
+    @State private var bodyText: String
+    @State private var confirmingDelete = false
+
+    init(annotations: ReaderAnnotations, annotation: ReaderAnnotation?, anchor: ReaderAnnotationAnchor) {
+        self.annotations = annotations
+        self.annotation = annotation
+        self.anchor = anchor
+        _bodyText = State(initialValue: annotation?.comment ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(annotation == nil ? "New comment" : "Comment", systemImage: "text.bubble")
+                .font(.headline)
+            Text("“\(ReadingBookmarks.label(anchor.selectedText))”")
+                .font(.caption).foregroundStyle(.secondary)
+
+            if annotations.isWritable {
+                TextEditor(text: $bodyText)
+                    .frame(minHeight: 82)
+                    .padding(8)
+                    .nodusFieldSurface(accent: .secondary)
+                HStack {
+                    if annotation != nil {
+                        Button(role: .destructive) { confirmingDelete = true } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    Spacer()
+                    Button("Save") {
+                        if let annotation { annotations.updateComment(annotation, body: bodyText) }
+                        else { annotations.saveNewComment(anchor, body: bodyText) }
+                    }
+                    .buttonStyle(NodusPrimaryButtonStyle(accent: .accentColor))
+                    .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            } else {
+                Text(annotation?.comment ?? "")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .confirmationDialog(
+            "Delete this comment?",
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            if let annotation {
+                Button("Delete the comment", role: .destructive) { annotations.delete(annotation) }
+            }
+            Button("Keep it", role: .cancel) {}
+        }
+    }
+}
+
 /// The prose of a report and the sources under it, set the same way wherever it is read.
 struct ReportBody: View {
     let report: DeepResearchReport
@@ -747,10 +996,13 @@ struct PublishedReportReader: View {
         .navigationTitle("Report")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        // Only when the vault names the row. Without an id there is nothing stable to hang a
-        // mark on, and a mark keyed on a title would move to whatever report was renamed into
-        // it — so the report reads exactly as it did before instead.
-        .modifier(OptionalReadingMarks(session: session, id: row.string("id")))
+        // Published reports use the server-backed annotation rows. A row without an id
+        // has no stable identity and therefore keeps the plain reader.
+        .modifier(OptionalSyncedReportReadingTools(
+            session: session,
+            id: row.string("id"),
+            rows: detail?.annotations ?? []
+        ))
         .task { await load() }
     }
 
@@ -761,13 +1013,21 @@ struct PublishedReportReader: View {
     /// bodies. `outline` beside it holds titles and purposes with no text in them, which is why
     /// reading `outline` for prose returns a report of empty sections.
     ///
-    /// The `sections` branch is kept because that is the shape this app's own orchestrator
-    /// produces, and a report written on the phone before it could be sent to the vault is
-    /// still on the phone. Rendered as plain paragraphs rather than parsed as Markdown, because
-    /// a half-parsed heading reads worse than none.
+    /// The `sections` fallback is kept because that is the shape older versions of this app's
+    /// orchestrator produced. Once published, `draftMarkdown` wins so every device renders one
+    /// canonical document and annotation offsets never restart at a section boundary.
     private var prose: [Prose]? {
         guard let detail else { return nil }
         let draft = (detail.report.embeddedJSON("draft") ?? detail.report["draft"])?.objectValue
+
+        // The desktop's own drafts, and everything this app now sends to a vault.
+        //
+        // `abstract` is deliberately not shown beside it: `draftMarkdown` is the whole
+        // document and already opens with the abstract under its own heading, so rendering
+        // both printed the summary twice.
+        if let markdown = draft?["draftMarkdown"]?.stringValue, !markdown.isEmpty {
+            return [Prose(heading: nil, body: markdown)]
+        }
 
         if let sections = draft?["sections"]?.arrayValue, !sections.isEmpty {
             let parsed = sections.compactMap { entry -> Prose? in
@@ -777,15 +1037,6 @@ struct PublishedReportReader: View {
                 return Prose(heading: object["title"]?.stringValue, body: body)
             }
             if !parsed.isEmpty { return parsed }
-        }
-
-        // The desktop's own drafts, and everything this app now sends to a vault.
-        //
-        // `abstract` is deliberately not shown beside it: `draftMarkdown` is the whole
-        // document and already opens with the abstract under its own heading, so rendering
-        // both printed the summary twice.
-        if let markdown = draft?["draftMarkdown"]?.stringValue, !markdown.isEmpty {
-            return [Prose(heading: nil, body: markdown)]
         }
 
         guard let body = detail.report.text("content") ?? detail.report.text("markdown") else { return nil }
@@ -814,6 +1065,20 @@ struct PublishedReportReader: View {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+}
+
+private struct OptionalSyncedReportReadingTools: ViewModifier {
+    let session: SpaceSession
+    let id: String?
+    let rows: [Row]
+
+    func body(content: Content) -> some View {
+        if let id {
+            content.modifier(SyncedReportReadingTools(session: session, id: id, rows: rows))
+        } else {
+            content
         }
     }
 }

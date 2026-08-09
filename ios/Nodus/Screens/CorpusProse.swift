@@ -276,6 +276,9 @@ struct CorpusProse: View {
     /// The open report's reading bookmark, when this prose is inside one. Optional, so an
     /// immersion station or a chat bubble keeps the plain selection menu it always had.
     @Environment(ReadingBookmarks.self) private var bookmarks: ReadingBookmarks?
+    /// Server-backed highlights, comments and bookmark for a published report.
+    /// Optional keeps ordinary prose and local-only reports on their existing path.
+    @Environment(ReaderAnnotations.self) private var readerAnnotations: ReaderAnnotations?
     /// The report's own conversation, when this page has one. Optional for the same reason the
     /// bookmark is: prose that has nothing to ask about keeps the plain selection menu.
     @Environment(PageChatInvite.self) private var chat: PageChatInvite?
@@ -377,6 +380,8 @@ struct CorpusProse: View {
     }
 
     var body: some View {
+        let displayedBlocks = blocks.map(displayed)
+        let annotationDocument = ReaderAnnotationDocument(blocks: displayedBlocks)
         // A document breathes; a chat bubble does not. Twenty points between paragraphs rather
         // than thirteen: on a phone the gap between paragraphs is the only cue a reader has that
         // one has ended, because the line lengths are too short for the last line's rag to say
@@ -384,6 +389,13 @@ struct CorpusProse: View {
         VStack(alignment: .leading, spacing: reading.document ? 20 : 9) {
             ForEach(blocks) { block in
                 let path = searchPath + [block.id]
+                let placements = readerAnnotations.map {
+                    annotationDocument.placements(
+                        for: block.id,
+                        annotations: $0.items,
+                        bookmarkAim: $0.bookmarkAim
+                    )
+                } ?? []
                 Group {
                     if block.level > 0 {
                         heading(block, path: path)
@@ -396,6 +408,7 @@ struct CorpusProse: View {
                             linksLive: session != nil,
                             referencesLive: onReference != nil,
                             highlights: search?.highlights(for: path),
+                            readerAnnotations: placements,
                             // A paragraph of a document is the only thing on the page that can
                             // be selected by the word, which is why the bookmark lives here and
                             // not on a heading or a bibliography entry.
@@ -404,8 +417,29 @@ struct CorpusProse: View {
                             // whether this paragraph does: a reader marking section five has to
                             // be told they are moving the mark out of section one, and only the
                             // page knows that.
-                            reportHasBookmark: bookmarks?.bookmark != nil,
-                            onMark: bookmarks.map { marks in
+                            reportHasBookmark: readerAnnotations?.bookmark != nil || bookmarks?.bookmark != nil,
+                            fixedHighlighter: readerAnnotations?.fixedColor,
+                            onHighlight: readerAnnotations.flatMap { annotations in
+                                guard annotations.isWritable else { return nil }
+                                return { range, color in
+                                    guard let anchor = annotationDocument.anchor(block: block.id, range: range) else { return }
+                                    annotations.addHighlight(anchor, color: color)
+                                }
+                            },
+                            onComment: readerAnnotations.flatMap { annotations in
+                                guard annotations.isWritable else { return nil }
+                                return { range in
+                                    guard let anchor = annotationDocument.anchor(block: block.id, range: range) else { return }
+                                    annotations.beginComment(anchor)
+                                }
+                            },
+                            onMark: readerAnnotations.flatMap { annotations in
+                                guard annotations.isWritable else { return nil }
+                                return { range, _ in
+                                    guard let anchor = annotationDocument.anchor(block: block.id, range: range) else { return }
+                                    annotations.setBookmark(anchor)
+                                }
+                            } ?? bookmarks.map { marks in
                                 { range, snippet in marks.set(path: path, range: range, snippet: snippet) }
                             },
                             // Beside the bookmark, and on the same terms: a report you can mark
@@ -414,8 +448,11 @@ struct CorpusProse: View {
                             onAsk: chat.map { invite in
                                 { selection in invite.ask(about: selection) }
                             },
-                            onTapBookmark: bookmarks == nil ? nil : { [presenting] in
+                            onTapBookmark: bookmarks == nil || readerAnnotations != nil ? nil : { [presenting] in
                                 presenting.isRemovingBookmark = true
+                            },
+                            onOpenAnnotation: readerAnnotations.map { annotations in
+                                { id in annotations.open(id) }
                             },
                             onOpen: { [presenting] url in
                                 if let number = PageChatReference.number(in: url) {
@@ -440,14 +477,26 @@ struct CorpusProse: View {
                 .onAppear {
                     let text = displayed(block)
                     search?.register(path, text: text, placesItsOwnMatches: placesItsOwnMatches(block))
-                    bookmarks?.reconcile(path: path, displayed: text)
+                    // The first mobile bookmark format was local and block-based. Once
+                    // this paragraph is available, translate it to the shared UTF-16
+                    // document anchor and remove the legacy copy after the synced row is
+                    // created. Existing readers therefore keep their place across upgrade.
+                    if let readerAnnotations,
+                       readerAnnotations.isWritable,
+                       readerAnnotations.bookmark == nil,
+                       let legacy = bookmarks?.placement(for: path),
+                       let anchor = annotationDocument.anchor(block: block.id, range: legacy.range) {
+                        readerAnnotations.setBookmark(anchor)
+                        bookmarks?.clear()
+                    }
+                    if readerAnnotations == nil { bookmarks?.reconcile(path: path, displayed: text) }
                 }
                 .onChange(of: block.text) { _, _ in
                     let text = displayed(block)
                     search?.register(path, text: text, placesItsOwnMatches: placesItsOwnMatches(block))
                     // The report was rewritten under the mark — its citations were named. The
                     // words are looked for again rather than the offsets being trusted.
-                    bookmarks?.reconcile(path: path, displayed: text)
+                    if readerAnnotations == nil { bookmarks?.reconcile(path: path, displayed: text) }
                 }
                 .onDisappear { search?.unregister(path) }
             }
@@ -820,11 +869,18 @@ private struct DocumentProse: UIViewRepresentable {
     var referencesLive = false
     /// What the page's search wants painted on this paragraph, if anything.
     let highlights: PageSearch.Highlights?
+    /// Persistent server-backed marks intersecting this paragraph.
+    var readerAnnotations: [ReaderAnnotationDocument.Placement] = []
     /// The reading bookmark, when it sits in this paragraph.
     var bookmark: ReadingBookmarks.Placement?
     /// Whether the report has a bookmark anywhere, which is what decides whether marking a
     /// selection is adding one or moving the one that exists.
     var reportHasBookmark = false
+    /// A colour chosen in the report toolbar. While present, a stable selection is
+    /// committed as a highlight without turning the highlighter off.
+    var fixedHighlighter: ReaderAnnotationColor?
+    var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
+    var onComment: ((NSRange) -> Void)?
     /// Called with the selected range and the words in it. Nil where the page keeps no
     /// bookmark, and that absence is what removes the menu item rather than dimming it.
     var onMark: ((NSRange, String) -> Void)?
@@ -833,6 +889,7 @@ private struct DocumentProse: UIViewRepresentable {
     var onAsk: ((String) -> Void)?
     /// A press that landed on the mark itself.
     var onTapBookmark: (() -> Void)?
+    var onOpenAnnotation: ((String) -> Void)?
     let onOpen: (URL) -> Bool
 
     func makeUIView(context: Context) -> UITextView {
@@ -875,8 +932,22 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.onMark = onMark
         context.coordinator.onAsk = onAsk
         context.coordinator.onTapBookmark = onTapBookmark
+        context.coordinator.onHighlight = onHighlight
+        context.coordinator.onComment = onComment
+        context.coordinator.onOpenAnnotation = onOpenAnnotation
+        context.coordinator.fixedHighlighter = fixedHighlighter
+        context.coordinator.readerAnnotations = readerAnnotations
         context.coordinator.bookmark = bookmark?.range
         context.coordinator.reportHasBookmark = reportHasBookmark
+
+        let hasMarginMarker = readerAnnotations.contains {
+            $0.beginsHere && ($0.annotation.kind == .comment || $0.annotation.kind == .bookmark)
+        }
+        let wantedInset = hasMarginMarker ? CGFloat(30) : 0
+        if view.textContainerInset.right != wantedInset {
+            view.textContainerInset.right = wantedInset
+            view.invalidateIntrinsicContentSize()
+        }
 
         // Parsing the Markdown and building the runs is the expensive part, and SwiftUI calls
         // this for any change anywhere in the tree — a scroll, a sheet, the size control being
@@ -904,11 +975,15 @@ private struct DocumentProse: UIViewRepresentable {
         // not do is reparse them: the highlights and the bookmark go on a copy of what was
         // already built.
         let marked = bookmark?.range
-        if rebuilt || context.coordinator.painted != highlights || context.coordinator.marked != marked {
+        if rebuilt || context.coordinator.painted != highlights || context.coordinator.marked != marked
+            || context.coordinator.paintedAnnotations != readerAnnotations {
             context.coordinator.painted = highlights
             context.coordinator.marked = marked
+            context.coordinator.paintedAnnotations = readerAnnotations
             view.attributedText = painted(context.coordinator.base)
         }
+
+        DispatchQueue.main.async { context.coordinator.updateMarginMarkers(in: view) }
 
         // The word, not the paragraph. Deferred by a turn of the run loop because the frame this
         // measurement is against is the one SwiftUI is still deciding: `updateUIView` runs before
@@ -925,6 +1000,11 @@ private struct DocumentProse: UIViewRepresentable {
         if let bookmark, bookmark.aim != context.coordinator.aimedBookmark {
             context.coordinator.aimedBookmark = bookmark.aim
             DispatchQueue.main.async { Self.bringIntoView(bookmark.range, of: view) }
+        }
+        if let syncedBookmark = readerAnnotations.first(where: { $0.annotation.kind == .bookmark }),
+           syncedBookmark.aim != context.coordinator.aimedSyncedBookmark {
+            context.coordinator.aimedSyncedBookmark = syncedBookmark.aim
+            DispatchQueue.main.async { Self.bringIntoView(syncedBookmark.range, of: view) }
         }
 
         // The page's own "let go of the selection" tap, hung off the scroll view the first time
@@ -990,9 +1070,25 @@ private struct DocumentProse: UIViewRepresentable {
     /// when it closes.
     private func painted(_ base: NSAttributedString) -> NSAttributedString {
         let searched = highlights?.ranges ?? []
-        guard !searched.isEmpty || bookmark != nil else { return base }
+        guard !searched.isEmpty || bookmark != nil || !readerAnnotations.isEmpty else { return base }
         let output = NSMutableAttributedString(attributedString: base)
         let whole = NSRange(location: 0, length: output.length)
+        for placement in readerAnnotations {
+            guard let range = placement.range.intersection(whole), range.length > 0 else { continue }
+            switch placement.annotation.kind {
+            case .highlight:
+                if let color = placement.annotation.color {
+                    output.addAttribute(.backgroundColor, value: UIColor(color.color).withAlphaComponent(0.62), range: range)
+                }
+            case .comment:
+                let style = NSUnderlineStyle.single.union(.patternDot).rawValue
+                output.addAttribute(.underlineStyle, value: style, range: range)
+                output.addAttribute(.underlineColor, value: UIColor.secondaryLabel, range: range)
+            case .bookmark:
+                output.addAttribute(.underlineStyle, value: NSUnderlineStyle.thick.rawValue, range: range)
+                output.addAttribute(.underlineColor, value: UIColor(Color.nodusBookmarkRule), range: range)
+            }
+        }
         if let bookmark, let clamped = bookmark.range.intersection(whole), clamped.length > 0 {
             output.addAttribute(.backgroundColor, value: UIColor(Color.nodusBookmark), range: clamped)
             output.addAttribute(.underlineStyle, value: NSUnderlineStyle.thick.rawValue, range: clamped)
@@ -1108,8 +1204,13 @@ private struct DocumentProse: UIViewRepresentable {
         /// Where a selection goes when the reader asks about it. Nil for the same reason, and
         /// separately: a page can have a bookmark and no conversation, or the other way round.
         var onAsk: ((String) -> Void)?
+        var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
+        var onComment: ((NSRange) -> Void)?
         /// A press that landed inside the mark.
         var onTapBookmark: (() -> Void)?
+        var onOpenAnnotation: ((String) -> Void)?
+        var fixedHighlighter: ReaderAnnotationColor?
+        var readerAnnotations: [ReaderAnnotationDocument.Placement] = []
         /// Where the mark sits in this paragraph, when it is in this one at all.
         var bookmark: NSRange?
         /// Whether the report has one anywhere. A paragraph that does not hold the mark still
@@ -1124,11 +1225,15 @@ private struct DocumentProse: UIViewRepresentable {
         var painted: PageSearch.Highlights?
         /// And the bookmark that is currently painted, for the same reason.
         var marked: NSRange?
+        var paintedAnnotations: [ReaderAnnotationDocument.Placement] = []
         /// The last request this paragraph brought a match into view for.
         var aimed = 0
         /// The same, for the reading bookmark. Separate counters because the two are separate
         /// requests: closing the find bar must not scroll the page back to the bookmark.
         var aimedBookmark = 0
+        var aimedSyncedBookmark = 0
+        private var fixedHighlightWork: DispatchWorkItem?
+        private var marginButtons: [UIButton] = []
         /// Whether this paragraph has already gone looking for its scroll view to hang the
         /// page's selection-clearing tap off. Once per paragraph, not once per update.
         var installedClearer = false
@@ -1165,6 +1270,35 @@ private struct DocumentProse: UIViewRepresentable {
             guard range.length > 0 else { return UIMenu(children: suggestedActions) }
             let text = (textView.text as NSString).substring(with: range)
             var ours: [UIMenuElement] = []
+
+            if let onHighlight {
+                let colours = ReaderAnnotationColor.allCases.map { colour in
+                    let image = UIImage(systemName: "highlighter")?.withTintColor(
+                        UIColor(colour.color),
+                        renderingMode: .alwaysOriginal
+                    )
+                    let action = UIAction(title: String(localized: "\(colour.rawValue.capitalized)"), image: image) { _ in
+                        MainActor.assumeIsolated {
+                            onHighlight(range, colour)
+                            textView.clearSelection()
+                        }
+                    }
+                    action.accessibilityLabel = String(localized: "Highlight \(colour.rawValue)")
+                    return action
+                }
+                ours.append(UIMenu(title: String(localized: "Highlight"), image: UIImage(systemName: "highlighter"), children: colours))
+            }
+
+            if let onComment {
+                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
+                    MainActor.assumeIsolated {
+                        onComment(range)
+                        textView.clearSelection()
+                    }
+                }
+                comment.accessibilityLabel = String(localized: "Add comment")
+                ours.append(comment)
+            }
 
             if let onMark {
                 // "Move" rather than "Add" when there is already one, because there is only ever
@@ -1224,9 +1358,30 @@ private struct DocumentProse: UIViewRepresentable {
         func textViewDidChangeSelection(_ textView: UITextView) {
             if let range = textView.selectedTextRange, !range.isEmpty {
                 ProseSelection.began(in: textView)
+                scheduleFixedHighlight(in: textView)
             } else {
                 ProseSelection.ended(in: textView)
+                fixedHighlightWork?.cancel()
             }
+        }
+
+        /// The fixed highlighter commits once the selection handles have been still
+        /// briefly. Every movement cancels the previous request, so dragging across a
+        /// sentence creates one highlight, not one row per intermediate range.
+        private func scheduleFixedHighlight(in textView: UITextView) {
+            fixedHighlightWork?.cancel()
+            guard let colour = fixedHighlighter, let onHighlight else { return }
+            let range = textView.selectedRange
+            guard range.length > 0 else { return }
+            let work = DispatchWorkItem { [weak textView] in
+                guard let textView, textView.selectedRange == range else { return }
+                MainActor.assumeIsolated {
+                    onHighlight(range, colour)
+                    textView.clearSelection()
+                }
+            }
+            fixedHighlightWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
         }
 
         /// A press inside the prose: on the marked words, or on a citation.
@@ -1243,6 +1398,10 @@ private struct DocumentProse: UIViewRepresentable {
             let point = recognizer.location(in: view)
             if onTapBookmark != nil, hitsBookmark(in: view, at: point) {
                 MainActor.assumeIsolated { onTapBookmark?() }
+                return
+            }
+            if let annotation = annotation(at: point, in: view) {
+                MainActor.assumeIsolated { onOpenAnnotation?(annotation.annotation.id) }
                 return
             }
             guard let url = Self.citation(at: point, in: view) else { return }
@@ -1297,6 +1456,62 @@ private struct DocumentProse: UIViewRepresentable {
             return point.y >= caret.minY - 2 && point.y <= caret.maxY + 2
         }
 
+        private func annotation(at point: CGPoint, in view: UITextView) -> ReaderAnnotationDocument.Placement? {
+            guard onOpenAnnotation != nil, let position = view.closestPosition(to: point) else { return nil }
+            let offset = view.offset(from: view.beginningOfDocument, to: position)
+            // UIKit returns a caret boundary, so the pressed glyph can be immediately before
+            // or after it. Requiring the glyph box also prevents whitespace at line ends from
+            // opening an annotation that merely happens to be the closest text.
+            for index in [offset, offset - 1] where index >= 0 {
+                guard let box = Self.box(ofCharacterAt: index, in: view),
+                      box.insetBy(dx: -1, dy: 0).contains(point)
+                else { continue }
+                if let placement = readerAnnotations
+                    .filter({ $0.range.length > 0 && NSLocationInRange(index, $0.range) })
+                    .sorted(by: { $0.range.length < $1.range.length })
+                    .first {
+                    return placement
+                }
+            }
+            return nil
+        }
+
+        func updateMarginMarkers(in view: UITextView) {
+            marginButtons.forEach { $0.removeFromSuperview() }
+            marginButtons = []
+            guard view.bounds.width > 0, onOpenAnnotation != nil else { return }
+
+            var lastY = -CGFloat.greatestFiniteMagnitude
+            for placement in readerAnnotations
+                .filter({ $0.beginsHere && ($0.annotation.kind == .comment || $0.annotation.kind == .bookmark) })
+                .sorted(by: { $0.range.location < $1.range.location }) {
+                guard let start = view.position(from: view.beginningOfDocument, offset: placement.range.location),
+                      let end = view.position(from: start, offset: max(1, placement.range.length)),
+                      let range = view.textRange(from: start, to: end)
+                else { continue }
+                let rect = view.firstRect(for: range)
+                guard !rect.isNull, !rect.isInfinite else { continue }
+                let button = UIButton(type: .system)
+                let isBookmark = placement.annotation.kind == .bookmark
+                button.setImage(UIImage(systemName: isBookmark ? "bookmark.fill" : "text.bubble.fill"), for: .normal)
+                button.tintColor = isBookmark ? UIColor(Color.nodusBookmarkRule) : .secondaryLabel
+                button.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.82)
+                button.layer.cornerRadius = 10
+                let y = max(rect.midY - 10, lastY + 22)
+                lastY = y
+                button.frame = CGRect(x: max(0, view.bounds.width - 22), y: y, width: 20, height: 20)
+                button.accessibilityLabel = isBookmark
+                    ? String(localized: "Reading bookmark")
+                    : String(localized: "Open comment")
+                let id = placement.annotation.id
+                button.addAction(UIAction { [weak self] _ in
+                    MainActor.assumeIsolated { self?.onOpenAnnotation?(id) }
+                }, for: .touchUpInside)
+                view.addSubview(button)
+                marginButtons.append(button)
+            }
+        }
+
         // MARK: This recognizer, kept out of everything else's way
 
         /// Take the touch only when it is on something this paragraph answers for.
@@ -1311,6 +1526,7 @@ private struct DocumentProse: UIViewRepresentable {
             guard let view = recognizer.view as? UITextView else { return false }
             let point = touch.location(in: view)
             if onTapBookmark != nil, hitsBookmark(in: view, at: point) { return true }
+            if annotation(at: point, in: view) != nil { return true }
             return Coordinator.citation(at: point, in: view) != nil
         }
 

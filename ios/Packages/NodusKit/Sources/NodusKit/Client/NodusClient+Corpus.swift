@@ -507,6 +507,9 @@ public struct DeepResearchReportDetail: Sendable, Decodable {
     public let report: Row
     public let image: Row?
     public let translations: [Row]
+    /// Anchored highlights, comments and the reading bookmark. Optional so a phone
+    /// can still read reports from a server released before annotations existed.
+    public let annotations: [Row]?
     public let revision: String?
 }
 

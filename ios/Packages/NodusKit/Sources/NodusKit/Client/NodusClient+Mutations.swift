@@ -66,6 +66,7 @@ public enum MutableTable: String, Sendable, Codable, CaseIterable {
     case noteFolders = "note_folders"
     case noteLinks = "note_links"
     case writingSavedDrafts = "writing_saved_drafts"
+    case writingDraftAnnotations = "writing_draft_annotations"
     /// Only rows whose `entity_kind` is `deep_research`. Any other kind is rejected.
     case decorativeImages = "decorative_images"
     case immersionSessions = "immersion_sessions"

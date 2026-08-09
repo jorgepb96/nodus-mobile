@@ -153,6 +153,18 @@ public actor MutationOutbox {
                       arguments: [State.pending.rawValue, limit])
     }
 
+    /// Mutations that still form this device's optimistic view of one table.
+    ///
+    /// Accepted and delivered rows remain here deliberately: neither state means the
+    /// owner's next published snapshot contains the change yet. Rejected rows do not
+    /// participate because the server explicitly refused them.
+    public func retainedMutations(table: MutableTable) throws -> [Mutation] {
+        try mutations(
+            sql: "SELECT payload FROM outbox WHERE tbl = ? AND state <> ? ORDER BY created_at, rowid",
+            arguments: [table.rawValue, State.rejected.rawValue]
+        )
+    }
+
     /// Pending changes the user has already asked to send.
     ///
     /// The background flush reads this and never `pending(limit:)`, which is the whole

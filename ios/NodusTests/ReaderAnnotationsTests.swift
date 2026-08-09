@@ -1,0 +1,163 @@
+import Foundation
+import NodusKit
+import Testing
+@testable import Nodus
+
+@Suite("Reader annotation anchors")
+@MainActor
+struct ReaderAnnotationsTests {
+    @Test("a mobile selection becomes the same UTF-16 anchor the desktop uses")
+    func anchorRoundTrip() throws {
+        let blocks = ["Introducción 😀", "La memoria compartida sostiene el archivo."]
+        let document = ReaderAnnotationDocument(blocks: blocks)
+        let range = (blocks[1] as NSString).range(of: "memoria compartida")
+        let anchor = try #require(document.anchor(block: 1, range: range))
+
+        #expect(anchor.endOffset - anchor.startOffset == (anchor.selectedText as NSString).length)
+        #expect(anchor.prefix.hasSuffix("Introducción 😀\nLa "))
+        #expect(anchor.suffix.hasPrefix(" sostiene"))
+
+        let item = ReaderAnnotation(
+            id: "h-1",
+            draftId: "r-1",
+            kind: .highlight,
+            color: .lavender,
+            anchor: anchor
+        )
+        let placement = try #require(document.placements(for: 1, annotations: [item], bookmarkAim: 0).first)
+        #expect(placement.range == range)
+        #expect((blocks[1] as NSString).substring(with: placement.range) == "memoria compartida")
+    }
+
+    @Test("text and context recover an anchor after rendering offsets move")
+    func fallbackRecoversMovedText() throws {
+        let text = "Preámbulo nuevo. La memoria aparece aquí. La memoria aparece después."
+        let document = ReaderAnnotationDocument(blocks: [text])
+        let wanted = (text as NSString).range(of: "memoria", options: [], range: NSRange(location: 25, length: 35))
+        let anchor = ReaderAnnotationAnchor(
+            startOffset: 2,
+            endOffset: 9,
+            selectedText: "memoria",
+            prefix: "aquí. La ",
+            suffix: " aparece después."
+        )
+        let comment = ReaderAnnotation(
+            id: "c-1",
+            draftId: "r-1",
+            kind: .comment,
+            anchor: anchor,
+            comment: "La segunda aparición."
+        )
+
+        let placement = try #require(document.placements(for: 0, annotations: [comment], bookmarkAim: 0).first)
+        #expect(placement.range == wanted)
+    }
+
+    @Test("a desktop row decodes and returns to the mutation wire without losing fields")
+    func wireRoundTrip() throws {
+        let row = Row([
+            "id": .string("reader-bookmark:r-1:source"),
+            "draft_id": .string("r-1"),
+            "scope": .string("source"),
+            "kind": .string("bookmark"),
+            "color": .null,
+            "start_offset": .int(4),
+            "end_offset": .int(9),
+            "selected_text": .string("texto"),
+            "prefix": .string("El "),
+            "suffix": .string(" sigue"),
+            "comment_text": .null,
+            "created_at": .string("2026-08-10T00:00:00.000Z"),
+            "updated_at": .string("2026-08-10T00:00:00.000Z"),
+        ])
+        let annotation = try #require(ReaderAnnotation(row: row))
+
+        #expect(annotation.kind == .bookmark)
+        #expect(annotation.row["id"]?.stringValue == "reader-bookmark:r-1:source")
+        #expect(annotation.row["selected_text"]?.stringValue == "texto")
+        #expect(annotation.row["color"]?.isNull == true)
+    }
+
+    @Test("all six pastel identifiers match the desktop contract")
+    func paletteContract() {
+        #expect(ReaderAnnotationColor.allCases.map(\.rawValue) == [
+            "yellow", "rose", "blue", "mint", "lavender", "peach",
+        ])
+    }
+
+    @Test("the newest side wins while delivered mobile changes await cleanup")
+    func optimisticOverlayConverges() throws {
+        let old = Date(timeIntervalSince1970: 1_000)
+        let middle = Date(timeIntervalSince1970: 2_000)
+        let newest = Date(timeIntervalSince1970: 3_000)
+        let anchor = ReaderAnnotationAnchor(
+            startOffset: 0,
+            endOffset: 5,
+            selectedText: "Texto",
+            prefix: "",
+            suffix: " sigue"
+        )
+        let published = ReaderAnnotation(
+            id: "h-1",
+            draftId: "r-1",
+            kind: .highlight,
+            color: .blue,
+            anchor: anchor,
+            createdAt: old,
+            updatedAt: newest
+        )
+        let staleMobile = ReaderAnnotation(
+            id: "h-1",
+            draftId: "r-1",
+            kind: .highlight,
+            color: .rose,
+            anchor: anchor,
+            createdAt: old,
+            updatedAt: middle
+        )
+        let oldUpsert = Mutation(
+            id: "mut-upsert",
+            clientId: "phone",
+            kind: .upsert,
+            table: .writingDraftAnnotations,
+            key: ["h-1"],
+            row: staleMobile.row,
+            schemaVersion: 127,
+            createdAt: middle
+        )
+        let oldDelete = Mutation(
+            id: "mut-delete",
+            clientId: "phone",
+            kind: .delete,
+            table: .writingDraftAnnotations,
+            key: ["h-1"],
+            schemaVersion: 127,
+            createdAt: middle
+        )
+
+        var result = ReaderAnnotations.merged(
+            remote: [published],
+            mutations: [oldUpsert, oldDelete],
+            draftId: "r-1",
+            scope: "source"
+        )
+        #expect(result.first?.color == .blue, "a later desktop edit must not be hidden for 24 hours")
+
+        let freshDelete = Mutation(
+            id: "mut-delete-new",
+            clientId: "phone",
+            kind: .delete,
+            table: .writingDraftAnnotations,
+            key: ["h-1"],
+            schemaVersion: 127,
+            createdAt: newest.addingTimeInterval(1)
+        )
+        result = ReaderAnnotations.merged(
+            remote: [published],
+            mutations: [freshDelete],
+            draftId: "r-1",
+            scope: "source"
+        )
+        #expect(result.isEmpty, "a newer local deletion stays optimistic until publication")
+    }
+}

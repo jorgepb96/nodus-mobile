@@ -29,6 +29,24 @@ struct MutationOutboxAuthorisationTests {
         )
     }
 
+    private func annotation(_ mutationId: String, rowId: String, kind: Mutation.Kind = .upsert) -> Mutation {
+        Mutation(
+            id: mutationId,
+            clientId: "client-1",
+            kind: kind,
+            table: .writingDraftAnnotations,
+            key: [rowId],
+            row: kind == .delete ? nil : [
+                "id": .string(rowId),
+                "draft_id": .string("r-1"),
+                "scope": .string("source"),
+                "kind": .string("highlight"),
+                "color": .string("yellow"),
+            ],
+            schemaVersion: 127
+        )
+    }
+
     @Test("a queued change waits behind the send button")
     func queuedChangesAreNotAuthorised() async throws {
         let (outbox, _) = try makeOutbox()
@@ -137,6 +155,27 @@ struct MutationOutboxAuthorisationTests {
         try await outbox.enqueue(note("n-1"), title: "Una nota")
         #expect(MutationOutbox.exists(spaceId: "space-under-test", directory: folder))
         #expect(MutationOutbox.exists(spaceId: "another-space", directory: folder) == false)
+    }
+
+    @Test("annotation mutations remain an optimistic layer until publication catches up")
+    func retainedAnnotationOverlay() async throws {
+        let (outbox, _) = try makeOutbox()
+        try await outbox.enqueue(annotation("up-1", rowId: "h-1"), title: "Highlight")
+        try await outbox.authorise(ids: ["up-1"])
+        try await outbox.markAccepted(["up-1"], cursor: 4)
+        try await outbox.enqueue(annotation("del-1", rowId: "h-2", kind: .delete), title: "Delete highlight")
+        try await outbox.authorise(ids: ["del-1"])
+
+        var retained = try await outbox.retainedMutations(table: .writingDraftAnnotations)
+        #expect(retained.map(\.id) == ["up-1", "del-1"])
+        #expect(retained.map(\.kind) == [.upsert, .delete])
+
+        try await outbox.markDelivered(upTo: 4)
+        retained = try await outbox.retainedMutations(table: .writingDraftAnnotations)
+        #expect(retained.first?.id == "up-1", "delivered still precedes readable publication")
+
+        try await outbox.markRejected([(id: "del-1", reason: "constraint", detail: nil)])
+        #expect(try await outbox.retainedMutations(table: .writingDraftAnnotations).map(\.id) == ["up-1"])
     }
 }
 
