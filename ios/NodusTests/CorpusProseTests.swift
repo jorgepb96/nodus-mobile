@@ -125,9 +125,18 @@ struct CorpusProseTests {
         #expect(debate.confidence == 0.9)
         #expect(debate.sideA.label == "Representation and reality")
         #expect(debate.sideB.label == "Photography as critique")
+        #expect(debate.sideA.copyText == "Tourism photography idealises its subjects.")
+        #expect(debate.sideB.copyText == "Documentary photography exposed social reality.")
         #expect(debate.evidence.count == 1)
         #expect(debate.evidence[0].quote == "The official image concealed material hardship.")
         #expect(debate.evidence[0].location == "p. 619")
         #expect(debate.evidence[0].side == "A")
+    }
+
+    @Test("copying a claim falls back to its visible label when no statement was published")
+    func claimCopyFallsBackToLabel() {
+        let side = DebateCitation.Side(.object(["label": .string("Photography as critique")]))
+
+        #expect(side.copyText == "Photography as critique")
     }
 }

@@ -1599,6 +1599,17 @@
         }
       }
     },
+    "Claim copied": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afirmación copiada"
+          }
+        }
+      }
+    },
     "Cited contradiction": {
       "extractionState": "manual",
       "localizations": {
@@ -1969,6 +1980,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copiar"
+          }
+        }
+      }
+    },
+    "Copy claim": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar afirmación"
           }
         }
       }
