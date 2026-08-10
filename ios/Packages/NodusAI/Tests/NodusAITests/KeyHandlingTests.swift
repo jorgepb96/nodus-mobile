@@ -58,7 +58,7 @@ struct KeyHandlingTests {
         }
         // And the snapshot the client reads has these stripped server-side; asserting the
         // client agrees about which columns are machinery keeps the two in step.
-        #expect(MutableTable(rawValue: "settings") == nil)
+        #expect(!MutableTable.allCases.map(\.rawValue).contains("settings"))
     }
 
     @Test("an error carries the provider's message, never the request that produced it")
