@@ -184,6 +184,10 @@ struct RowDetailView: View {
 
     private func ideaBody(_ detail: IdeaDetail) -> some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
+            // Start with provenance: before classifying an idea by theme, show the works where
+            // the reader can actually find it. This also puts the most useful navigation out
+            // of an idea above its longer evidence and record sections.
+            occurrencesSection(detail)
             if !detail.themes.isEmpty {
                 chips(detail.themes, label: "Themes")
             }
@@ -231,7 +235,6 @@ struct RowDetailView: View {
             }
             fields(of: detail.idea)
             relationsSection(detail)
-            occurrencesSection(detail)
         }
     }
 
