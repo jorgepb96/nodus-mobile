@@ -1330,6 +1330,18 @@ private struct DocumentProse: UIViewRepresentable {
             let text = (textView.text as NSString).substring(with: range)
             var ours: [UIMenuElement] = []
 
+            // The system presents Copy as the only labelled item in an otherwise icon-sized
+            // ribbon. Provide the same operation as the first glyph so it no longer consumes a
+            // third of the visible row, while keeping its full spoken name for VoiceOver.
+            let copy = UIAction(title: "", image: UIImage(systemName: "doc.on.doc")) { _ in
+                MainActor.assumeIsolated {
+                    UIPasteboard.general.string = text
+                    textView.clearSelection()
+                }
+            }
+            copy.accessibilityLabel = String(localized: "Copy")
+            ours.append(copy)
+
             if let onHighlight, let colour = selectedHighlightColor {
                 // Pastel ink is right on the page and almost invisible as a tiny glyph over the
                 // light edit-menu material. Keep the pen itself in the dynamic label colour and
@@ -1404,15 +1416,15 @@ private struct DocumentProse: UIViewRepresentable {
                 ours.append(ask)
             }
 
-            guard !ours.isEmpty else { return UIMenu(children: suggestedActions) }
             let palette = UIMenu(title: "", options: .displayInline, preferredElementSize: .small, children: ours)
 
-            // After the standard edit group — Copy — rather than at a fixed index, because the
-            // group the system offers is its own business and has changed shape between
-            // releases. When it is not there at all, second is still the intent.
-            var children = suggestedActions
-            let afterCopy = children.firstIndex { ($0 as? UIMenu)?.identifier == .standardEdit }.map { $0 + 1 }
-            children.insert(palette, at: afterCopy ?? min(1, children.count))
+            // The non-editable text view's standard edit group contains Copy. Its icon above is
+            // the replacement, not an additional way to copy, so remove the labelled group and
+            // leave Look Up, Translate, Share and the rest of the system's suggestions intact.
+            var children = suggestedActions.filter { element in
+                (element as? UIMenu)?.identifier != .standardEdit
+            }
+            children.insert(palette, at: 0)
             return UIMenu(children: children)
         }
 

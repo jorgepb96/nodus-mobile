@@ -88,6 +88,7 @@ struct LocalisationTests {
     /// before a saved place is thrown away has to be understood before it is answered.
     @Test("the read mark and the reading bookmark speak Spanish")
     func readingMarkStrings() throws {
+        #expect(try translated("Copy") == "Copiar")
         #expect(try translated("Mark as read") == "Marcar como leído")
         #expect(try translated("Mark as unread") == "Marcar como no leído")
         #expect(try translated("Reading bookmark") == "Marcador de lectura")
