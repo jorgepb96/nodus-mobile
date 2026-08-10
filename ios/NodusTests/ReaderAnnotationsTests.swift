@@ -1,6 +1,7 @@
 import Foundation
 import NodusKit
 import Testing
+import UIKit
 @testable import Nodus
 
 @Suite("Reader annotation anchors")
@@ -83,6 +84,19 @@ struct ReaderAnnotationsTests {
         #expect(ReaderAnnotationColor.allCases.map(\.rawValue) == [
             "yellow", "rose", "blue", "mint", "lavender", "peach",
         ])
+    }
+
+    @Test("the highlight menu uses six original-colour raster swatches")
+    func menuSwatchesKeepTheirColours() throws {
+        let traits = UITraitCollection(userInterfaceStyle: .dark)
+        let images = ReaderAnnotationColor.allCases.map {
+            ReaderHighlightMenuSwatch.image(for: $0, selected: false, traits: traits)
+        }
+
+        #expect(images.allSatisfy { $0.renderingMode == .alwaysOriginal })
+        #expect(images.allSatisfy { $0.cgImage != nil })
+        let encoded = try images.map { try #require($0.pngData()) }
+        #expect(Set(encoded).count == ReaderAnnotationColor.allCases.count)
     }
 
     @Test("the highlighter toggle preserves the independently selected colour")

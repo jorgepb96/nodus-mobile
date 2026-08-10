@@ -2,6 +2,49 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
+/// A real raster swatch for the edit-menu palette.
+///
+/// `UIEditMenuInteraction` treats SF Symbol images as template artwork even when the symbol has
+/// a palette configuration, which turned every `circle.fill` black in the colour submenu. A
+/// tiny original-mode bitmap keeps the six inks distinct. Only the outline follows the current
+/// appearance; the ink itself is the exact colour used on the page.
+enum ReaderHighlightMenuSwatch {
+    static func image(
+        for colour: ReaderAnnotationColor,
+        selected: Bool,
+        traits: UITraitCollection
+    ) -> UIImage {
+        let size = CGSize(width: 20, height: 20)
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.opaque = false
+        format.scale = 3
+
+        var rendered = UIImage()
+        traits.performAsCurrent {
+            rendered = UIGraphicsImageRenderer(size: size, format: format).image { context in
+                let circle = CGRect(x: 2, y: 2, width: 16, height: 16)
+                let graphics = context.cgContext
+                graphics.setFillColor(UIColor(colour.color).cgColor)
+                graphics.fillEllipse(in: circle)
+                graphics.setStrokeColor(UIColor.label.withAlphaComponent(0.32).cgColor)
+                graphics.setLineWidth(1)
+                graphics.strokeEllipse(in: circle.insetBy(dx: 0.5, dy: 0.5))
+
+                guard selected else { return }
+                graphics.setStrokeColor(UIColor.black.withAlphaComponent(0.78).cgColor)
+                graphics.setLineWidth(1.8)
+                graphics.setLineCap(.round)
+                graphics.setLineJoin(.round)
+                graphics.move(to: CGPoint(x: 6.2, y: 10.2))
+                graphics.addLine(to: CGPoint(x: 8.8, y: 12.7))
+                graphics.addLine(to: CGPoint(x: 14.1, y: 7.3))
+                graphics.strokePath()
+            }
+        }
+        return rendered.withRenderingMode(.alwaysOriginal)
+    }
+}
+
 /// A citation pointing into the corpus: `nodus://idea/g-8969`.
 ///
 /// The desktop writes these into every piece of generated prose — immersion stations, Deep
@@ -1673,10 +1716,13 @@ private struct DocumentProse: UIViewRepresentable {
             var actions: [UIMenuElement] = []
 
             if let onChangeHighlightColor {
+                let traits = interaction.view?.traitCollection ?? .current
                 let colors = ReaderAnnotationColor.allCases.map { colour in
-                    let symbol = UIImage.SymbolConfiguration(paletteColors: [UIColor(colour.color)])
-                    let image = UIImage(systemName: annotation.color == colour ? "checkmark.circle.fill" : "circle.fill", withConfiguration: symbol)?
-                        .withRenderingMode(.alwaysOriginal)
+                    let image = ReaderHighlightMenuSwatch.image(
+                        for: colour,
+                        selected: annotation.color == colour,
+                        traits: traits
+                    )
                     let action = UIAction(title: String(localized: colour.labelKey), image: image) { _ in
                         MainActor.assumeIsolated { onChangeHighlightColor(annotation, colour) }
                     }

@@ -3,42 +3,16 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
-/// The two ways a dated report library can be walked.
-///
-/// A missing date always goes last. Treating it as `.distantPast` would put an old published
-/// row first when the reader asks for the oldest report, even though its age is actually
-/// unknown. The original position breaks ties so changing the direction never makes equal-date
-/// rows jump around arbitrarily.
-enum ReportLibrarySortOrder: Hashable {
-    case newest
-    case oldest
+/// A published row keeps the identity it received from the server while the list is filtered or
+/// reversed. SwiftUI state follows this value, so an already loaded cover moves with its report
+/// instead of staying attached to the old list position and starting another network request.
+struct PublishedReportListItem: Identifiable, Hashable {
+    let id: String
+    let row: Row
 
-    func ordered<Element>(_ elements: [Element], date: (Element) -> Date?) -> [Element] {
-        elements.enumerated().sorted { lhs, rhs in
-            switch (date(lhs.element), date(rhs.element)) {
-            case let (left?, right?) where left != right:
-                return self == .newest ? left > right : left < right
-            case (_?, nil):
-                return true
-            case (nil, _?):
-                return false
-            default:
-                return lhs.offset < rhs.offset
-            }
-        }.map(\.element)
-    }
-}
-
-/// Which reading state is allowed into the report library.
-enum ReportLibraryReadFilter: Hashable {
-    case all
-    case read
-    case unread
-
-    func includes(id: String?, isRead: (String) -> Bool) -> Bool {
-        guard self != .all else { return true }
-        let read = id.map(isRead) ?? false
-        return self == .read ? read : !read
+    init(row: Row, fallbackIndex: Int) {
+        self.row = row
+        id = row.text("id").map { "report:\($0)" } ?? "position:\(fallbackIndex)"
     }
 }
 
@@ -50,13 +24,15 @@ enum ReportLibraryReadFilter: Hashable {
 struct ResearchLibraryView: View {
     let session: SpaceSession
     @Bindable var local: LocalReportStore
+    @Environment(AppPreferences.self) private var preferences
 
-    @State private var published: [Row] = []
+    @State private var published: [PublishedReportListItem] = []
     @State private var query = ""
     @State private var isLoading = true
     @State private var error: String?
-    @State private var sortOrder: ReportLibrarySortOrder = .newest
-    @State private var readFilter: ReportLibraryReadFilter = .all
+
+    private var sortOrder: ReportLibrarySortOrder { preferences.reportLibrarySortOrder }
+    private var readFilter: ReportLibraryReadFilter { preferences.reportLibraryReadFilter }
 
     /// What this reader has done with these reports. One store for both sections, because
     /// "which have I read" is a question about the list rather than about where a report
@@ -76,16 +52,16 @@ struct ResearchLibraryView: View {
         return sortOrder.ordered(filtered) { $0.createdAt }
     }
 
-    private var matchingPublished: [Row] {
+    private var matchingPublished: [PublishedReportListItem] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let searched = needle.isEmpty ? published : published.filter {
-            $0.searchableText.lowercased().contains(needle)
+            $0.row.searchableText.lowercased().contains(needle)
         }
         let filtered = searched.filter {
-            readFilter.includes(id: $0.string("id"), isRead: marks.isRead)
+            readFilter.includes(id: $0.row.string("id"), isRead: marks.isRead)
         }
         return sortOrder.ordered(filtered) {
-            $0.date("created_at") ?? $0.date("updated_at")
+            $0.row.date("created_at") ?? $0.row.date("updated_at")
         }
     }
 
@@ -147,17 +123,17 @@ struct ResearchLibraryView: View {
 
             if !matchingPublished.isEmpty {
                 Section {
-                    ForEach(Array(matchingPublished.enumerated()), id: \.offset) { _, row in
+                    ForEach(matchingPublished) { item in
                         NavigationLink {
-                            PublishedReportReader(session: session, row: row)
+                            PublishedReportReader(session: session, row: item.row)
                         } label: {
-                            publishedRow(row)
+                            publishedRow(item.row)
                         }
                         .listRowBackground(Color.clear)
                         // Only the mark. A published report belongs to the vault and this
                         // account may not even be allowed to write to it — there is no delete
                         // to offer, and having read it is this device's business anyway.
-                        .swipeActions { row.string("id").map { readAction(for: $0) } }
+                        .swipeActions { item.row.string("id").map { readAction(for: $0) } }
                     }
                 } header: {
                     NodusSectionLabel("Published in the vault")
@@ -218,7 +194,10 @@ struct ResearchLibraryView: View {
 
     private var filterMenu: some View {
         Menu {
-            Picker("Filter reports", selection: $readFilter) {
+            Picker("Filter reports", selection: Binding(
+                get: { preferences.reportLibraryReadFilter },
+                set: { preferences.reportLibraryReadFilter = $0 }
+            )) {
                 Label("All", systemImage: "doc.text").tag(ReportLibraryReadFilter.all)
                 Label("Read", systemImage: "checkmark.circle.fill").tag(ReportLibraryReadFilter.read)
                 Label("Unread", systemImage: "circle").tag(ReportLibraryReadFilter.unread)
@@ -231,7 +210,10 @@ struct ResearchLibraryView: View {
 
     private var sortMenu: some View {
         Menu {
-            Picker("Sort", selection: $sortOrder) {
+            Picker("Sort", selection: Binding(
+                get: { preferences.reportLibrarySortOrder },
+                set: { preferences.reportLibrarySortOrder = $0 }
+            )) {
                 Label("Newest", systemImage: "arrow.down").tag(ReportLibrarySortOrder.newest)
                 Label("Oldest", systemImage: "arrow.up").tag(ReportLibrarySortOrder.oldest)
             }
@@ -361,7 +343,13 @@ struct ResearchLibraryView: View {
         defer { isLoading = false }
         local.reload()
         do {
-            published = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 100).items
+            let rows = try await session.client.deepResearchReports(
+                in: session.connection.spaceId,
+                limit: 100
+            ).items
+            published = rows.enumerated().map {
+                PublishedReportListItem(row: $0.element, fallbackIndex: $0.offset)
+            }
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             published = []

@@ -1,4 +1,5 @@
 import Foundation
+import NodusKit
 import Testing
 @testable import Nodus
 
@@ -33,6 +34,31 @@ struct ReportLibraryControlsTests {
             == ["first", "second"])
         #expect(ReportLibrarySortOrder.oldest.ordered(entries, date: \.date).map(\.id)
             == ["first", "second"])
+    }
+
+    @Test("published cover identity moves with its report when the order reverses")
+    func publishedCoverIdentityMovesWithReport() {
+        let older = PublishedReportListItem(row: Row([
+            "id": .string("older"),
+            "created_at": .string("2026-08-08T10:00:00.000Z"),
+            "image": .object(["hash": .string("cover-older")]),
+        ]), fallbackIndex: 0)
+        let newer = PublishedReportListItem(row: Row([
+            "id": .string("newer"),
+            "created_at": .string("2026-08-09T10:00:00.000Z"),
+            "image": .object(["hash": .string("cover-newer")]),
+        ]), fallbackIndex: 1)
+        let items = [older, newer]
+        let pair: (PublishedReportListItem) -> String = {
+            let hash = $0.row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue ?? ""
+            return "\($0.id):\(hash)"
+        }
+
+        let newest = ReportLibrarySortOrder.newest.ordered(items) { $0.row.date("created_at") }
+        let oldest = ReportLibrarySortOrder.oldest.ordered(items) { $0.row.date("created_at") }
+
+        #expect(newest.map(pair) == ["report:newer:cover-newer", "report:older:cover-older"])
+        #expect(oldest.map(pair) == ["report:older:cover-older", "report:newer:cover-newer"])
     }
 
     @Test("the reading filter includes all, read, or unread reports")

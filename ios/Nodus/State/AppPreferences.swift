@@ -2,13 +2,52 @@ import Foundation
 import Observation
 import SwiftUI
 
+/// The two ways a dated report library can be walked.
+///
+/// A missing date always goes last. Treating it as `.distantPast` would put an old published
+/// row first when the reader asks for the oldest report, even though its age is actually
+/// unknown. The original position breaks ties so changing the direction never makes equal-date
+/// rows jump around arbitrarily.
+enum ReportLibrarySortOrder: String, Hashable {
+    case newest
+    case oldest
+
+    func ordered<Element>(_ elements: [Element], date: (Element) -> Date?) -> [Element] {
+        elements.enumerated().sorted { lhs, rhs in
+            switch (date(lhs.element), date(rhs.element)) {
+            case let (left?, right?) where left != right:
+                return self == .newest ? left > right : left < right
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return lhs.offset < rhs.offset
+            }
+        }.map(\.element)
+    }
+}
+
+/// Which reading state is allowed into the report library.
+enum ReportLibraryReadFilter: String, Hashable {
+    case all
+    case read
+    case unread
+
+    func includes(id: String?, isRead: (String) -> Bool) -> Bool {
+        guard self != .all else { return true }
+        let read = id.map(isRead) ?? false
+        return self == .read ? read : !read
+    }
+}
+
 /// The handful of choices that belong to the person rather than to a space.
 ///
 /// Kept apart from `SpaceSession` on purpose: a preference set while reading one vault should
 /// hold when the next one is opened. Not the Keychain, because none of this is a secret — losing
 /// it costs a toggle, not access — and through `SyncedDefaults` rather than `UserDefaults`
 /// directly, because a choice that belongs to the person should follow them to their other
-/// device. These four are a few dozen bytes that change once a month; see that type for the
+/// device. These are a few dozen bytes that change rarely; see that type for the
 /// conflict rule and for what is deliberately left behind.
 @Observable
 @MainActor
@@ -28,6 +67,19 @@ final class AppPreferences {
     /// columns of mostly empty card to read the names.
     var homeLayout: HomeLayout {
         didSet { persist { store.set(homeLayout.rawValue, forKey: Key.homeLayout) } }
+    }
+
+    /// How reports are ordered, and which reading state the library shows.
+    ///
+    /// These belong to the library rather than to one visit to it. Keeping them in the same
+    /// durable preference store as Home's layout means returning to Reports, relaunching the
+    /// app, or installing an update never silently changes the list the reader chose.
+    var reportLibrarySortOrder: ReportLibrarySortOrder {
+        didSet { persist { store.set(reportLibrarySortOrder.rawValue, forKey: Key.reportLibrarySortOrder) } }
+    }
+
+    var reportLibraryReadFilter: ReportLibraryReadFilter {
+        didSet { persist { store.set(reportLibraryReadFilter.rawValue, forKey: Key.reportLibraryReadFilter) } }
     }
 
     enum HomeLayout: String, CaseIterable, Sendable {
@@ -109,10 +161,19 @@ final class AppPreferences {
     private enum Key {
         static let scrollToTop = "nodus.prefs.scrollToTop"
         static let homeLayout = "nodus.prefs.homeLayout"
+        static let reportLibrarySortOrder = "nodus.prefs.reportLibrarySortOrder"
+        static let reportLibraryReadFilter = "nodus.prefs.reportLibraryReadFilter"
         static let spaceOrder = "nodus.prefs.spaceOrder"
         static let readingScale = "nodus.prefs.readingScale"
 
-        static let all: Set<String> = [scrollToTop, homeLayout, spaceOrder, readingScale]
+        static let all: Set<String> = [
+            scrollToTop,
+            homeLayout,
+            reportLibrarySortOrder,
+            reportLibraryReadFilter,
+            spaceOrder,
+            readingScale,
+        ]
     }
 
     init(store: SyncedDefaults = .shared) {
@@ -122,6 +183,12 @@ final class AppPreferences {
         // everyone who never touched the switch.
         showsScrollToTop = store.bool(forKey: Key.scrollToTop) ?? true
         homeLayout = HomeLayout(rawValue: store.string(forKey: Key.homeLayout) ?? "") ?? .grid
+        reportLibrarySortOrder = ReportLibrarySortOrder(
+            rawValue: store.string(forKey: Key.reportLibrarySortOrder) ?? ""
+        ) ?? .newest
+        reportLibraryReadFilter = ReportLibraryReadFilter(
+            rawValue: store.string(forKey: Key.reportLibraryReadFilter) ?? ""
+        ) ?? .all
         spaceOrder = SpaceOrder(rawValue: store.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
         readingScale = store.double(forKey: Key.readingScale) ?? 1
         store.onExternalChange(of: Key.all) { [weak self] in self?.adoptRemote() }
@@ -145,6 +212,12 @@ final class AppPreferences {
         defer { isAdoptingRemote = false }
         showsScrollToTop = store.bool(forKey: Key.scrollToTop) ?? true
         homeLayout = HomeLayout(rawValue: store.string(forKey: Key.homeLayout) ?? "") ?? .grid
+        reportLibrarySortOrder = ReportLibrarySortOrder(
+            rawValue: store.string(forKey: Key.reportLibrarySortOrder) ?? ""
+        ) ?? .newest
+        reportLibraryReadFilter = ReportLibraryReadFilter(
+            rawValue: store.string(forKey: Key.reportLibraryReadFilter) ?? ""
+        ) ?? .all
         spaceOrder = SpaceOrder(rawValue: store.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
         readingScale = store.double(forKey: Key.readingScale) ?? 1
     }

@@ -813,13 +813,14 @@ struct AssetImage: View {
     let hash: String
 
     @State private var data: Data?
-    @State private var failed = false
+    @State private var loadedHash: String?
+    @State private var failedHash: String?
 
     var body: some View {
         Group {
-            if let data, let image = PlatformImage(data: data) {
+            if loadedHash == hash, let data, let image = PlatformImage(data: data) {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
-            } else if failed {
+            } else if failedHash == hash {
                 Image(systemName: "photo").font(.largeTitle).foregroundStyle(.tertiary)
             } else {
                 ProgressView().tint(session.accent)
@@ -831,12 +832,29 @@ struct AssetImage: View {
         // photograph on its way — the same reasoning `nodusFieldSurface` is written from.
         .background(session.accent.opacity(0.12))
         .clipped()
-        .task {
-            guard data == nil, !failed else { return }
+        .task(id: hash) {
+            // The same view can be reused for a different row while a List is diffing. Never
+            // leave the previous row's bytes on screen, and tie cancellation to the content
+            // hash so a late response cannot overwrite the cover that is now being requested.
+            let requestedHash = hash
+            guard loadedHash != requestedHash, failedHash != requestedHash else { return }
+            data = nil
+            loadedHash = nil
+            failedHash = nil
             do {
-                data = try await session.client.asset(hash: hash, in: session.connection.spaceId)
+                let loaded = try await session.client.asset(
+                    hash: requestedHash,
+                    in: session.connection.spaceId
+                )
+                try Task.checkCancellation()
+                guard requestedHash == hash else { return }
+                data = loaded
+                loadedHash = requestedHash
+            } catch is CancellationError {
+                // A row moved or disappeared. Its replacement owns the next request.
             } catch {
-                failed = true
+                guard requestedHash == hash else { return }
+                failedHash = requestedHash
             }
         }
     }

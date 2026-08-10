@@ -65,6 +65,25 @@ struct SyncedDefaultsTests {
         #expect(openedAgain.homeLayout == .grid)
     }
 
+    @Test("report ordering and reading filter survive a new app session")
+    func reportLibraryControlsAreDurable() {
+        let local = defaults("report-library")
+        let first = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+
+        first.reportLibrarySortOrder = .oldest
+        first.reportLibraryReadFilter = .unread
+
+        let reopened = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+        #expect(reopened.reportLibrarySortOrder == .oldest)
+        #expect(reopened.reportLibraryReadFilter == .unread)
+
+        reopened.reportLibrarySortOrder = .newest
+        reopened.reportLibraryReadFilter = .read
+        let openedAgain = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+        #expect(openedAgain.reportLibrarySortOrder == .newest)
+        #expect(openedAgain.reportLibraryReadFilter == .read)
+    }
+
     // The whole conflict rule in one test: the iPad chose later, so the iPad wins, even though
     // this device has a perfectly good local answer of its own.
     @Test("the later of the two writes is the one that is read")
