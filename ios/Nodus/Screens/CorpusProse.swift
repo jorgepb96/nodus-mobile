@@ -1436,7 +1436,8 @@ private struct DocumentProse: UIViewRepresentable {
                         textView.clearSelection()
                     }
                 }
-                highlight.accessibilityLabel = String(localized: "Highlight with \(colour.rawValue)")
+                highlight.accessibilityLabel = String(localized: "Highlight")
+                    + ": " + String(localized: colour.labelKey)
                 ours.append(highlight)
             }
 

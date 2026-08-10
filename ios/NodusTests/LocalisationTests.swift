@@ -105,6 +105,21 @@ struct LocalisationTests {
         _ = try translated("The reading bookmark")
     }
 
+    @Test("the highlight ribbon speaks Spanish")
+    func highlightRibbonStrings() throws {
+        _ = try translated("Add comment")
+        _ = try translated("Change highlight color")
+        _ = try translated("Delete highlight")
+        _ = try translated("Highlight")
+        _ = try translated("Quote in chat")
+        #expect(try translated("Yellow") == "Amarillo")
+        #expect(try translated("Rose") == "Rosa")
+        #expect(try translated("Blue") == "Azul")
+        #expect(try translated("Mint") == "Menta")
+        #expect(try translated("Lavender") == "Lavanda")
+        #expect(try translated("Peach") == "Melocotón")
+    }
+
     /// Leaving the app for another one is a thing to say plainly, and the sentence that explains
     /// why nothing happened is the only useful thing this control can offer when Zotero is not
     /// there. ("Zotero" itself is deliberately not asked for: it is a proper noun, and
