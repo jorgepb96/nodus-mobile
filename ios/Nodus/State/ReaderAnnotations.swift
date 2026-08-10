@@ -235,6 +235,16 @@ struct ReaderAnnotationDocument {
     }
 }
 
+/// The UTF-16 range covered by a highlighter stroke, in either drawing direction.
+/// Kept outside UIKit so the gesture and its persisted desktop-compatible anchor cannot disagree
+/// about whether the character under the tip belongs to the mark.
+enum ReaderHighlightStroke {
+    static func range(from anchor: Int, through index: Int) -> NSRange {
+        let lower = min(anchor, index)
+        return NSRange(location: lower, length: max(anchor, index) - lower + 1)
+    }
+}
+
 /// Server rows plus this device's persistent optimistic mutation overlay.
 @Observable
 @MainActor

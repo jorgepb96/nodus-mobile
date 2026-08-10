@@ -100,6 +100,13 @@ struct ReaderAnnotationsTests {
         #expect(annotations.selectedColor == .mint)
     }
 
+    @Test("a continuous highlighter includes both endpoints in either direction")
+    func continuousHighlightRange() {
+        #expect(ReaderHighlightStroke.range(from: 4, through: 9) == NSRange(location: 4, length: 6))
+        #expect(ReaderHighlightStroke.range(from: 9, through: 4) == NSRange(location: 4, length: 6))
+        #expect(ReaderHighlightStroke.range(from: 7, through: 7) == NSRange(location: 7, length: 1))
+    }
+
     @Test("the newest side wins while delivered mobile changes await cleanup")
     func optimisticOverlayConverges() throws {
         let old = Date(timeIntervalSince1970: 1_000)

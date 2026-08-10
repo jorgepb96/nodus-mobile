@@ -944,19 +944,24 @@ private struct DocumentProse: UIViewRepresentable {
         press.delegate = context.coordinator
         view.addGestureRecognizer(press)
 
-        // A Pencil stroke is a much more natural highlighter than dragging UIKit's selection
-        // handles. It is kept on its own recognizer and accepts only Pencil touches, so a finger
-        // still scrolls, selects and opens citations exactly as before.
-        let pencil = UIPanGestureRecognizer(
+        // When the toolbar highlighter is active, a stroke is ink: finger and Pencil both paint
+        // the range immediately as they move. The recognizer stays disabled in ordinary reading,
+        // so scrolling, selecting and opening citations are unchanged until the reader explicitly
+        // turns the tool on.
+        let stroke = UIPanGestureRecognizer(
             target: context.coordinator,
-            action: #selector(Coordinator.highlightedWithPencil(_:))
+            action: #selector(Coordinator.highlighted(_:))
         )
-        pencil.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
-        pencil.cancelsTouchesInView = true
-        pencil.delegate = context.coordinator
-        pencil.isEnabled = false
-        view.addGestureRecognizer(pencil)
-        context.coordinator.pencilHighlighter = pencil
+        stroke.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.pencil.rawValue),
+        ]
+        stroke.maximumNumberOfTouches = 1
+        stroke.cancelsTouchesInView = true
+        stroke.delegate = context.coordinator
+        stroke.isEnabled = false
+        view.addGestureRecognizer(stroke)
+        context.coordinator.strokeHighlighter = stroke
         return view
     }
 
@@ -971,7 +976,7 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.onOpenAnnotation = onOpenAnnotation
         context.coordinator.fixedHighlighter = fixedHighlighter
         context.coordinator.selectedHighlightColor = selectedHighlightColor
-        context.coordinator.pencilHighlighter?.isEnabled = fixedHighlighter != nil && onHighlight != nil
+        context.coordinator.strokeHighlighter?.isEnabled = fixedHighlighter != nil && onHighlight != nil
         context.coordinator.readerAnnotations = readerAnnotations
         context.coordinator.annotationRailWidth = annotationRailWidth
         context.coordinator.bookmark = bookmark?.range
@@ -1053,7 +1058,15 @@ private struct DocumentProse: UIViewRepresentable {
         if !context.coordinator.installedClearer {
             context.coordinator.installedClearer = true
             DispatchQueue.main.async {
-                if let scrollView = view.enclosingScrollView { ProseSelectionClearer.install(on: scrollView) }
+                if let scrollView = view.enclosingScrollView {
+                    ProseSelectionClearer.install(on: scrollView)
+                    // With the tool on, a finger drag belongs to the highlighter rather than the
+                    // enclosing page. When it is off this recognizer is disabled and fails
+                    // immediately, so the same relationship adds no delay to ordinary scrolling.
+                    if let stroke = context.coordinator.strokeHighlighter {
+                        scrollView.panGestureRecognizer.require(toFail: stroke)
+                    }
+                }
             }
         }
 
@@ -1273,10 +1286,9 @@ private struct DocumentProse: UIViewRepresentable {
         /// requests: closing the find bar must not scroll the page back to the bookmark.
         var aimedBookmark = 0
         var aimedSyncedBookmark = 0
-        private var fixedHighlightWork: DispatchWorkItem?
-        weak var pencilHighlighter: UIPanGestureRecognizer?
-        private var pencilAnchor: Int?
-        private var isHighlightingWithPencil = false
+        weak var strokeHighlighter: UIPanGestureRecognizer?
+        private var strokeAnchor: Int?
+        private var strokeBaseline: NSAttributedString?
         private var marginButtons: [UIButton] = []
         /// Whether this paragraph has already gone looking for its scroll view to hang the
         /// page's selection-clearing tap off. Once per paragraph, not once per update.
@@ -1399,23 +1411,21 @@ private struct DocumentProse: UIViewRepresentable {
         func textViewDidChangeSelection(_ textView: UITextView) {
             if let range = textView.selectedTextRange, !range.isEmpty {
                 ProseSelection.began(in: textView)
-                if !isHighlightingWithPencil { scheduleFixedHighlight(in: textView) }
             } else {
                 ProseSelection.ended(in: textView)
-                fixedHighlightWork?.cancel()
             }
         }
 
-        /// Dragging a Pencil across the report behaves like a physical highlighter. The live
-        /// selection is the preview; the annotation is written exactly once, when the Pencil
-        /// leaves the glass. Pausing halfway through a stroke therefore cannot create several
-        /// overlapping rows.
-        @objc func highlightedWithPencil(_ recognizer: UIPanGestureRecognizer) {
+        /// Dragging a finger or Pencil across the report behaves like a physical highlighter.
+        /// The pastel background is repainted on every movement, while the annotation itself is
+        /// written exactly once when the stroke ends. This makes the feedback immediate without
+        /// filling the sync ledger with every intermediate range.
+        @objc func highlighted(_ recognizer: UIPanGestureRecognizer) {
             guard let textView = recognizer.view as? UITextView,
                   let colour = fixedHighlighter,
                   let onHighlight
             else {
-                cancelPencilHighlight(in: recognizer.view as? UITextView)
+                cancelHighlightStroke(in: recognizer.view as? UITextView)
                 return
             }
 
@@ -1426,49 +1436,57 @@ private struct DocumentProse: UIViewRepresentable {
                     recognizer.isEnabled = true
                     return
                 }
-                fixedHighlightWork?.cancel()
-                isHighlightingWithPencil = true
-                pencilAnchor = index
-                textView.selectedRange = NSRange(location: index, length: 1)
+                ProseSelection.clear()
+                strokeAnchor = index
+                strokeBaseline = NSAttributedString(attributedString: textView.attributedText)
+                preview(ReaderHighlightStroke.range(from: index, through: index), colour: colour, in: textView)
 
             case .changed:
-                guard let anchor = pencilAnchor,
+                guard let anchor = strokeAnchor,
                       let index = Self.characterIndex(at: recognizer.location(in: textView), in: textView)
                 else { return }
-                textView.selectedRange = Self.pencilRange(from: anchor, through: index)
+                preview(ReaderHighlightStroke.range(from: anchor, through: index), colour: colour, in: textView)
 
             case .ended:
-                guard let anchor = pencilAnchor,
+                guard let anchor = strokeAnchor,
                       let index = Self.characterIndex(at: recognizer.location(in: textView), in: textView)
                 else {
-                    cancelPencilHighlight(in: textView)
+                    cancelHighlightStroke(in: textView)
                     return
                 }
-                let range = Self.pencilRange(from: anchor, through: index)
-                isHighlightingWithPencil = false
-                pencilAnchor = nil
+                let range = ReaderHighlightStroke.range(from: anchor, through: index)
+                preview(range, colour: colour, in: textView)
+                strokeAnchor = nil
+                strokeBaseline = nil
                 MainActor.assumeIsolated {
                     onHighlight(range, colour)
-                    textView.clearSelection()
                 }
 
             case .cancelled, .failed:
-                cancelPencilHighlight(in: textView)
+                cancelHighlightStroke(in: textView)
 
             default:
                 break
             }
         }
 
-        private func cancelPencilHighlight(in textView: UITextView?) {
-            isHighlightingWithPencil = false
-            pencilAnchor = nil
-            textView?.clearSelection()
+        /// Paint only the visual preview. The baseline already includes saved annotations and
+        /// search results, so moving backwards restores everything the temporary stroke crossed.
+        private func preview(_ range: NSRange, colour: ReaderAnnotationColor, in textView: UITextView) {
+            guard let strokeBaseline, NSMaxRange(range) <= strokeBaseline.length else { return }
+            let shown = NSMutableAttributedString(attributedString: strokeBaseline)
+            shown.addAttribute(
+                .backgroundColor,
+                value: UIColor(colour.color).withAlphaComponent(0.62),
+                range: range
+            )
+            textView.attributedText = shown
         }
 
-        private static func pencilRange(from anchor: Int, through index: Int) -> NSRange {
-            let lower = min(anchor, index)
-            return NSRange(location: lower, length: max(anchor, index) - lower + 1)
+        private func cancelHighlightStroke(in textView: UITextView?) {
+            if let textView, let strokeBaseline { textView.attributedText = strokeBaseline }
+            strokeAnchor = nil
+            strokeBaseline = nil
         }
 
         /// `closestPosition` returns a caret boundary. Prefer the glyph actually under the tip
@@ -1484,25 +1502,6 @@ private struct DocumentProse: UIViewRepresentable {
                 }
             }
             return min(max(0, offset), length - 1)
-        }
-
-        /// The fixed highlighter commits once the selection handles have been still
-        /// briefly. Every movement cancels the previous request, so dragging across a
-        /// sentence creates one highlight, not one row per intermediate range.
-        private func scheduleFixedHighlight(in textView: UITextView) {
-            fixedHighlightWork?.cancel()
-            guard let colour = fixedHighlighter, let onHighlight else { return }
-            let range = textView.selectedRange
-            guard range.length > 0 else { return }
-            let work = DispatchWorkItem { [weak textView] in
-                guard let textView, textView.selectedRange == range else { return }
-                MainActor.assumeIsolated {
-                    onHighlight(range, colour)
-                    textView.clearSelection()
-                }
-            }
-            fixedHighlightWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
         }
 
         /// A press inside the prose: on the marked words, or on a citation.
@@ -1647,8 +1646,10 @@ private struct DocumentProse: UIViewRepresentable {
         /// arbitration — and on the two things it does claim, the mark and a citation, it is the
         /// only one that wants them.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            if recognizer === pencilHighlighter {
-                return touch.type == .pencil && fixedHighlighter != nil && onHighlight != nil
+            if recognizer === strokeHighlighter {
+                return (touch.type == .direct || touch.type == .pencil)
+                    && fixedHighlighter != nil
+                    && onHighlight != nil
             }
             guard let view = recognizer.view as? UITextView else { return false }
             let point = touch.location(in: view)
@@ -1663,7 +1664,7 @@ private struct DocumentProse: UIViewRepresentable {
             _ recognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
         ) -> Bool {
-            if recognizer === pencilHighlighter || other === pencilHighlighter { return false }
+            if recognizer === strokeHighlighter || other === strokeHighlighter { return false }
             return true
         }
 
