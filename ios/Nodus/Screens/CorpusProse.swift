@@ -923,6 +923,20 @@ private struct DocumentProse: UIViewRepresentable {
         press.delaysTouchesEnded = false
         press.delegate = context.coordinator
         view.addGestureRecognizer(press)
+
+        // A Pencil stroke is a much more natural highlighter than dragging UIKit's selection
+        // handles. It is kept on its own recognizer and accepts only Pencil touches, so a finger
+        // still scrolls, selects and opens citations exactly as before.
+        let pencil = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.highlightedWithPencil(_:))
+        )
+        pencil.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        pencil.cancelsTouchesInView = true
+        pencil.delegate = context.coordinator
+        pencil.isEnabled = false
+        view.addGestureRecognizer(pencil)
+        context.coordinator.pencilHighlighter = pencil
         return view
     }
 
@@ -936,6 +950,7 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.onComment = onComment
         context.coordinator.onOpenAnnotation = onOpenAnnotation
         context.coordinator.fixedHighlighter = fixedHighlighter
+        context.coordinator.pencilHighlighter?.isEnabled = fixedHighlighter != nil && onHighlight != nil
         context.coordinator.readerAnnotations = readerAnnotations
         context.coordinator.bookmark = bookmark?.range
         context.coordinator.reportHasBookmark = reportHasBookmark
@@ -1233,6 +1248,9 @@ private struct DocumentProse: UIViewRepresentable {
         var aimedBookmark = 0
         var aimedSyncedBookmark = 0
         private var fixedHighlightWork: DispatchWorkItem?
+        weak var pencilHighlighter: UIPanGestureRecognizer?
+        private var pencilAnchor: Int?
+        private var isHighlightingWithPencil = false
         private var marginButtons: [UIButton] = []
         /// Whether this paragraph has already gone looking for its scroll view to hang the
         /// page's selection-clearing tap off. Once per paragraph, not once per update.
@@ -1358,11 +1376,91 @@ private struct DocumentProse: UIViewRepresentable {
         func textViewDidChangeSelection(_ textView: UITextView) {
             if let range = textView.selectedTextRange, !range.isEmpty {
                 ProseSelection.began(in: textView)
-                scheduleFixedHighlight(in: textView)
+                if !isHighlightingWithPencil { scheduleFixedHighlight(in: textView) }
             } else {
                 ProseSelection.ended(in: textView)
                 fixedHighlightWork?.cancel()
             }
+        }
+
+        /// Dragging a Pencil across the report behaves like a physical highlighter. The live
+        /// selection is the preview; the annotation is written exactly once, when the Pencil
+        /// leaves the glass. Pausing halfway through a stroke therefore cannot create several
+        /// overlapping rows.
+        @objc func highlightedWithPencil(_ recognizer: UIPanGestureRecognizer) {
+            guard let textView = recognizer.view as? UITextView,
+                  let colour = fixedHighlighter,
+                  let onHighlight
+            else {
+                cancelPencilHighlight(in: recognizer.view as? UITextView)
+                return
+            }
+
+            switch recognizer.state {
+            case .began:
+                guard let index = Self.characterIndex(at: recognizer.location(in: textView), in: textView) else {
+                    recognizer.isEnabled = false
+                    recognizer.isEnabled = true
+                    return
+                }
+                fixedHighlightWork?.cancel()
+                isHighlightingWithPencil = true
+                pencilAnchor = index
+                textView.selectedRange = NSRange(location: index, length: 1)
+
+            case .changed:
+                guard let anchor = pencilAnchor,
+                      let index = Self.characterIndex(at: recognizer.location(in: textView), in: textView)
+                else { return }
+                textView.selectedRange = Self.pencilRange(from: anchor, through: index)
+
+            case .ended:
+                guard let anchor = pencilAnchor,
+                      let index = Self.characterIndex(at: recognizer.location(in: textView), in: textView)
+                else {
+                    cancelPencilHighlight(in: textView)
+                    return
+                }
+                let range = Self.pencilRange(from: anchor, through: index)
+                isHighlightingWithPencil = false
+                pencilAnchor = nil
+                MainActor.assumeIsolated {
+                    onHighlight(range, colour)
+                    textView.clearSelection()
+                }
+
+            case .cancelled, .failed:
+                cancelPencilHighlight(in: textView)
+
+            default:
+                break
+            }
+        }
+
+        private func cancelPencilHighlight(in textView: UITextView?) {
+            isHighlightingWithPencil = false
+            pencilAnchor = nil
+            textView?.clearSelection()
+        }
+
+        private static func pencilRange(from anchor: Int, through index: Int) -> NSRange {
+            let lower = min(anchor, index)
+            return NSRange(location: lower, length: max(anchor, index) - lower + 1)
+        }
+
+        /// `closestPosition` returns a caret boundary. Prefer the glyph actually under the tip
+        /// and fall back to the closest valid character for the gaps between words and lines.
+        private static func characterIndex(at point: CGPoint, in textView: UITextView) -> Int? {
+            let length = textView.attributedText.length
+            guard length > 0, let position = textView.closestPosition(to: point) else { return nil }
+            let offset = textView.offset(from: textView.beginningOfDocument, to: position)
+            for index in [offset, offset - 1] where index >= 0 && index < length {
+                if let box = box(ofCharacterAt: index, in: textView),
+                   box.insetBy(dx: -2, dy: -2).contains(point) {
+                    return index
+                }
+            }
+            return min(max(0, offset), length - 1)
         }
 
         /// The fixed highlighter commits once the selection handles have been still
@@ -1523,6 +1621,9 @@ private struct DocumentProse: UIViewRepresentable {
         /// arbitration — and on the two things it does claim, the mark and a citation, it is the
         /// only one that wants them.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            if recognizer === pencilHighlighter {
+                return touch.type == .pencil && fixedHighlighter != nil && onHighlight != nil
+            }
             guard let view = recognizer.view as? UITextView else { return false }
             let point = touch.location(in: view)
             if onTapBookmark != nil, hitsBookmark(in: view, at: point) { return true }
@@ -1536,7 +1637,8 @@ private struct DocumentProse: UIViewRepresentable {
             _ recognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
         ) -> Bool {
-            true
+            if recognizer === pencilHighlighter || other === pencilHighlighter { return false }
+            return true
         }
 
         /// The two methods that answer for text items, and a citation is no longer one.
