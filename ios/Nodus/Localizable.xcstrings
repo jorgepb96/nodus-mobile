@@ -4250,6 +4250,17 @@
         }
       }
     },
+    "Look Up": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consultar"
+          }
+        }
+      }
+    },
     "Location": {
       "extractionState": "manual",
       "localizations": {

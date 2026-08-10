@@ -850,6 +850,16 @@ extension UIView {
         }
         return nil
     }
+
+    /// The view controller owning this view, used for UIKit's own reference-library sheet.
+    var enclosingViewController: UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UIViewController { return controller }
+            responder = current.next
+        }
+        return nil
+    }
 }
 
 /// One paragraph of a document.
@@ -1414,6 +1424,20 @@ private struct DocumentProse: UIViewRepresentable {
                 }
                 ask.accessibilityLabel = String(localized: "Ask about this")
                 ours.append(ask)
+
+                // Keep the system dictionary one tap away too. It follows the report-chat icon
+                // in the visible palette, matching the order in which a reader decides whether
+                // to ask the corpus or simply look up the selected words.
+                let lookUp = UIAction(title: "", image: UIImage(systemName: "book.pages")) { _ in
+                    MainActor.assumeIsolated {
+                        let term = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !term.isEmpty, let presenter = textView.enclosingViewController else { return }
+                        textView.clearSelection()
+                        presenter.present(UIReferenceLibraryViewController(term: term), animated: true)
+                    }
+                }
+                lookUp.accessibilityLabel = String(localized: "Look Up")
+                ours.append(lookUp)
             }
 
             let palette = UIMenu(title: "", options: .displayInline, preferredElementSize: .small, children: ours)

@@ -124,6 +124,7 @@ struct LocalisationTests {
         // The other door into it: a selection in the report, spoken beside the bookmark's glyph
         // in the same system menu, and the quotation it puts under the composer.
         #expect(try translated("Ask about this") == "Preguntar sobre esto")
+        #expect(try translated("Look Up") == "Consultar")
         _ = try translated("Remove the quotation")
         _ = try translated("Ask about what you are reading")
         _ = try translated("The conversation lasts as long as this report is open. Nothing is saved.")
