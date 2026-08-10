@@ -650,8 +650,11 @@ private struct ReaderAnnotationSheet: View {
             }
             .padding(NodusSpace.page)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { annotations.presentation = nil }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { annotations.presentation = nil } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Done")
                 }
             }
         }
@@ -704,23 +707,29 @@ private struct ReaderCommentEditor: View {
                     .frame(minHeight: 82)
                     .padding(8)
                     .nodusFieldSurface(accent: .secondary)
-                HStack {
-                    if annotation != nil {
-                        Button(role: .destructive) { confirmingDelete = true } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                    Spacer()
-                    Button("Save") {
-                        if let annotation { annotations.updateComment(annotation, body: bodyText) }
-                        else { annotations.saveNewComment(anchor, body: bodyText) }
-                    }
-                    .buttonStyle(NodusPrimaryButtonStyle(accent: .accentColor))
-                    .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
             } else {
                 Text(annotation?.comment ?? "")
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .toolbar {
+            if annotations.isWritable {
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    if annotation != nil {
+                        Button(role: .destructive) { confirmingDelete = true } label: {
+                            Image(systemName: "trash")
+                        }
+                        .accessibilityLabel("Delete")
+                    }
+                    Button {
+                        if let annotation { annotations.updateComment(annotation, body: bodyText) }
+                        else { annotations.saveNewComment(anchor, body: bodyText) }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    .accessibilityLabel("Save")
+                    .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
         }
         .confirmationDialog(
