@@ -2,6 +2,59 @@ import Foundation
 import Testing
 @testable import Nodus
 
+@Suite("Report library controls")
+struct ReportLibraryControlsTests {
+    private struct Entry: Equatable {
+        let id: String
+        let date: Date?
+    }
+
+    @Test("reports can run newest first or oldest first, with unknown dates last")
+    func dateOrder() {
+        let entries = [
+            Entry(id: "middle", date: Date(timeIntervalSince1970: 20)),
+            Entry(id: "unknown", date: nil),
+            Entry(id: "old", date: Date(timeIntervalSince1970: 10)),
+            Entry(id: "new", date: Date(timeIntervalSince1970: 30)),
+        ]
+
+        #expect(ReportLibrarySortOrder.newest.ordered(entries, date: \.date).map(\.id)
+            == ["new", "middle", "old", "unknown"])
+        #expect(ReportLibrarySortOrder.oldest.ordered(entries, date: \.date).map(\.id)
+            == ["old", "middle", "new", "unknown"])
+    }
+
+    @Test("equal dates keep their list order")
+    func stableOrder() {
+        let same = Date(timeIntervalSince1970: 20)
+        let entries = [Entry(id: "first", date: same), Entry(id: "second", date: same)]
+
+        #expect(ReportLibrarySortOrder.newest.ordered(entries, date: \.date).map(\.id)
+            == ["first", "second"])
+        #expect(ReportLibrarySortOrder.oldest.ordered(entries, date: \.date).map(\.id)
+            == ["first", "second"])
+    }
+
+    @Test("the reading filter includes all, read, or unread reports")
+    func readingFilter() {
+        let readIds: Set<String> = ["read"]
+        let isRead: (String) -> Bool = { readIds.contains($0) }
+
+        #expect(ReportLibraryReadFilter.all.includes(id: "read", isRead: isRead))
+        #expect(ReportLibraryReadFilter.all.includes(id: "unread", isRead: isRead))
+        #expect(ReportLibraryReadFilter.read.includes(id: "read", isRead: isRead))
+        #expect(!ReportLibraryReadFilter.read.includes(id: "unread", isRead: isRead))
+        #expect(ReportLibraryReadFilter.unread.includes(id: "unread", isRead: isRead))
+        #expect(!ReportLibraryReadFilter.unread.includes(id: "read", isRead: isRead))
+    }
+
+    @Test("a row without an id is unread because it cannot carry a read mark")
+    func missingIdIsUnread() {
+        #expect(!ReportLibraryReadFilter.read.includes(id: nil, isRead: { _ in true }))
+        #expect(ReportLibraryReadFilter.unread.includes(id: nil, isRead: { _ in true }))
+    }
+}
+
 /// What a reader's marks survive.
 ///
 /// The read mark is cheap to lose and the bookmark is not: it is the one thing on the phone that

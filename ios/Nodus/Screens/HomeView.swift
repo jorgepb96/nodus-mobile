@@ -72,11 +72,14 @@ struct HomeView: View {
                                 NavigationLink {
                                     CollectionListView(session: session, collection: collection)
                                 } label: {
+                                    let count = session.count(of: collection)
                                     SectionTile(
                                         title: LocalizedStringKey(collection.label),
                                         icon: collection.icon,
-                                        count: session.count(of: collection),
-                                        accent: session.accent
+                                        count: count,
+                                        accent: session.accent,
+                                        isCountLoading: count == nil
+                                            && (session.isLoading || session.loadFailure == nil)
                                     )
                                 }
                                 .buttonStyle(NodusCardButtonStyle())
@@ -382,6 +385,7 @@ struct SectionTile: View {
     let icon: String
     let count: Int?
     let accent: Color
+    var isCountLoading = false
 
     @Environment(AppPreferences.self) private var preferences
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -411,9 +415,7 @@ struct SectionTile: View {
                     .font(Self.glyph)
                     .foregroundStyle(accent.nodusReadable)
                 Spacer()
-                if let count {
-                    CountBadge(count: count, accent: accent.nodusReadable)
-                }
+                countAccessory
             }
             Text(title)
                 .font(.subheadline.weight(.medium))
@@ -450,9 +452,7 @@ struct SectionTile: View {
                 // after the first.
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            if let count {
-                CountBadge(count: count, accent: accent.nodusReadable)
-            }
+            countAccessory
             Image(systemName: "chevron.right")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
@@ -461,8 +461,47 @@ struct SectionTile: View {
         .frame(minHeight: 48)
     }
 
+    @ViewBuilder
+    private var countAccessory: some View {
+        if isCountLoading {
+            LoadingCountArrow(accent: accent.nodusReadable)
+        } else if let count {
+            CountBadge(count: count, accent: accent.nodusReadable)
+        }
+    }
+
     /// One size and one weight for a tile glyph. `.title3` grows to 26 points under Dynamic
     /// Type, which is what turned a 56-point row into an 80-point one and pushed the count off
     /// the end of it.
     private static let glyph: Font = .system(size: 19, weight: .regular)
+}
+
+/// Holds the count's place while the Home overview is in flight.
+///
+/// This is deliberately an arrow rather than an indeterminate `ProgressView`: the glyph says
+/// that this particular count is being refreshed, while a spinner inside every tile makes the
+/// entire board look busy and noisy. Its capsule has the same dimensions as a short count, so
+/// the title and chevron do not move when the number arrives.
+private struct LoadingCountArrow: View {
+    let accent: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isTurning = false
+
+    var body: some View {
+        Image(systemName: "arrow.clockwise")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(accent)
+            .rotationEffect(.degrees(isTurning && !reduceMotion ? 360 : 0))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(accent.opacity(0.16), in: Capsule())
+            .animation(
+                reduceMotion ? nil : .linear(duration: 0.85).repeatForever(autoreverses: false),
+                value: isTurning
+            )
+            .onAppear { isTurning = true }
+            .onDisappear { isTurning = false }
+            .accessibilityLabel("Loading…")
+    }
 }

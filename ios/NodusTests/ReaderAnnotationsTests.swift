@@ -100,11 +100,59 @@ struct ReaderAnnotationsTests {
         #expect(annotations.selectedColor == .mint)
     }
 
+    @Test("an existing highlight keeps its anchor when its colour changes")
+    func changesHighlightColor() throws {
+        let annotations = ReaderAnnotations(draftId: "r-1", isWritable: true)
+        let anchor = ReaderAnnotationAnchor(
+            startOffset: 4,
+            endOffset: 9,
+            selectedText: "texto",
+            prefix: "El ",
+            suffix: " sigue"
+        )
+        let original = ReaderAnnotation(
+            id: "h-1",
+            draftId: "r-1",
+            kind: .highlight,
+            color: .yellow,
+            anchor: anchor
+        )
+
+        annotations.updateHighlightColor(original, color: .blue)
+
+        let changed = try #require(annotations.items.first)
+        #expect(changed.id == original.id)
+        #expect(changed.anchor == anchor)
+        #expect(changed.color == .blue)
+    }
+
     @Test("a continuous highlighter includes both endpoints in either direction")
     func continuousHighlightRange() {
         #expect(ReaderHighlightStroke.range(from: 4, through: 9) == NSRange(location: 4, length: 6))
         #expect(ReaderHighlightStroke.range(from: 9, through: 4) == NSRange(location: 4, length: 6))
         #expect(ReaderHighlightStroke.range(from: 7, through: 7) == NSRange(location: 7, length: 1))
+    }
+
+    @Test("references split a highlight instead of receiving ink")
+    func highlightSkipsReferences() throws {
+        let text = NSMutableAttributedString(string: "Antes Idea después")
+        let reference = (text.string as NSString).range(of: "Idea")
+        text.addAttribute(
+            .nodusReference,
+            value: try #require(URL(string: "nodus://idea/i-1")),
+            range: reference
+        )
+
+        let ranges = ReaderHighlightSegments.ranges(
+            in: NSRange(location: 0, length: text.length),
+            excludingReferencesIn: text
+        )
+
+        #expect(ranges == [
+            NSRange(location: 0, length: reference.location),
+            NSRange(location: NSMaxRange(reference), length: text.length - NSMaxRange(reference)),
+        ])
+        #expect(ReaderHighlightSegments.ranges(in: reference, excludingReferencesIn: text).isEmpty)
     }
 
     @Test("the newest side wins while delivered mobile changes await cleanup")

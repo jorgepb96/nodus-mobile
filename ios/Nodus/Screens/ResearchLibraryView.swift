@@ -3,6 +3,45 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
+/// The two ways a dated report library can be walked.
+///
+/// A missing date always goes last. Treating it as `.distantPast` would put an old published
+/// row first when the reader asks for the oldest report, even though its age is actually
+/// unknown. The original position breaks ties so changing the direction never makes equal-date
+/// rows jump around arbitrarily.
+enum ReportLibrarySortOrder: Hashable {
+    case newest
+    case oldest
+
+    func ordered<Element>(_ elements: [Element], date: (Element) -> Date?) -> [Element] {
+        elements.enumerated().sorted { lhs, rhs in
+            switch (date(lhs.element), date(rhs.element)) {
+            case let (left?, right?) where left != right:
+                return self == .newest ? left > right : left < right
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return lhs.offset < rhs.offset
+            }
+        }.map(\.element)
+    }
+}
+
+/// Which reading state is allowed into the report library.
+enum ReportLibraryReadFilter: Hashable {
+    case all
+    case read
+    case unread
+
+    func includes(id: String?, isRead: (String) -> Bool) -> Bool {
+        guard self != .all else { return true }
+        let read = id.map(isRead) ?? false
+        return self == .read ? read : !read
+    }
+}
+
 /// Every report this space can show, wherever it was written.
 ///
 /// Two origins, one list: reports the owner published from the desktop, and reports generated
@@ -16,6 +55,8 @@ struct ResearchLibraryView: View {
     @State private var query = ""
     @State private var isLoading = true
     @State private var error: String?
+    @State private var sortOrder: ReportLibrarySortOrder = .newest
+    @State private var readFilter: ReportLibraryReadFilter = .all
 
     /// What this reader has done with these reports. One store for both sections, because
     /// "which have I read" is a question about the list rather than about where a report
@@ -24,17 +65,28 @@ struct ResearchLibraryView: View {
 
     private var matchingLocal: [LocalReportStore.Saved] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return local.reports }
-        return local.reports.filter {
-            $0.title.lowercased().contains(needle)
-                || $0.report.sections.contains { $0.title.lowercased().contains(needle) }
+        let searched = needle.isEmpty ? local.reports : local.reports.filter {
+            $0.title.lowercased().contains(needle) || $0.report.sections.contains {
+                $0.title.lowercased().contains(needle)
+            }
         }
+        let filtered = searched.filter {
+            readFilter.includes(id: $0.id, isRead: marks.isRead)
+        }
+        return sortOrder.ordered(filtered) { $0.createdAt }
     }
 
     private var matchingPublished: [Row] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return published }
-        return published.filter { $0.searchableText.lowercased().contains(needle) }
+        let searched = needle.isEmpty ? published : published.filter {
+            $0.searchableText.lowercased().contains(needle)
+        }
+        let filtered = searched.filter {
+            readFilter.includes(id: $0.string("id"), isRead: marks.isRead)
+        }
+        return sortOrder.ordered(filtered) {
+            $0.date("created_at") ?? $0.date("updated_at")
+        }
     }
 
     /// The run in flight, which belongs to the space and not to the screen that started it.
@@ -114,11 +166,9 @@ struct ResearchLibraryView: View {
 
             if matchingLocal.isEmpty, matchingPublished.isEmpty, !isLoading, !runner.isRunning {
                 ContentUnavailableView(
-                    query.isEmpty ? "No reports" : "No matches",
+                    emptyTitle,
                     systemImage: "doc.text.magnifyingglass",
-                    description: Text(query.isEmpty
-                        ? "Nothing published, and nothing generated here yet."
-                        : "No report contains “\(query)”.")
+                    description: Text(emptyDescription)
                 )
                 .listRowBackground(Color.clear)
             }
@@ -144,8 +194,51 @@ struct ResearchLibraryView: View {
         .safeAreaInset(edge: .top) {
             NodusSearchField(text: $query, prompt: "Search reports", accent: session.accent, isBusy: isLoading)
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                filterMenu
+                sortMenu
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
+    }
+
+    private var emptyTitle: LocalizedStringKey {
+        if !query.isEmpty { return "No matches" }
+        if readFilter != .all { return "No matching reports" }
+        return "No reports"
+    }
+
+    private var emptyDescription: LocalizedStringKey {
+        if !query.isEmpty { return "No report contains “\(query)”." }
+        if readFilter != .all { return "Change the read filter to show other reports." }
+        return "Nothing published, and nothing generated here yet."
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Picker("Filter reports", selection: $readFilter) {
+                Label("All", systemImage: "doc.text").tag(ReportLibraryReadFilter.all)
+                Label("Read", systemImage: "checkmark.circle.fill").tag(ReportLibraryReadFilter.read)
+                Label("Unread", systemImage: "circle").tag(ReportLibraryReadFilter.unread)
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+        }
+        .accessibilityLabel("Filter reports")
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort", selection: $sortOrder) {
+                Label("Newest", systemImage: "arrow.down").tag(ReportLibrarySortOrder.newest)
+                Label("Oldest", systemImage: "arrow.up").tag(ReportLibrarySortOrder.oldest)
+            }
+        } label: {
+            Image(systemName: sortOrder == .newest ? "arrow.down" : "arrow.up")
+        }
+        .accessibilityLabel("Sort")
     }
 
     /// The thumbnail every row in this list wears.
@@ -640,8 +733,6 @@ private struct ReaderAnnotationSheet: View {
         NavigationStack {
             Group {
                 switch presentation {
-                case .highlight(let annotation):
-                    actionSheet(annotation, title: "Highlight", icon: "highlighter")
                 case .bookmark(let annotation):
                     actionSheet(annotation, title: "Reading bookmark", icon: "bookmark.fill")
                 case .comment(let annotation):
@@ -652,8 +743,11 @@ private struct ReaderAnnotationSheet: View {
             }
             .padding(NodusSpace.page)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { annotations.presentation = nil }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { annotations.presentation = nil } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Done")
                 }
             }
         }
@@ -706,23 +800,29 @@ private struct ReaderCommentEditor: View {
                     .frame(minHeight: 82)
                     .padding(8)
                     .nodusFieldSurface(accent: .secondary)
-                HStack {
-                    if annotation != nil {
-                        Button(role: .destructive) { confirmingDelete = true } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                    Spacer()
-                    Button("Save") {
-                        if let annotation { annotations.updateComment(annotation, body: bodyText) }
-                        else { annotations.saveNewComment(anchor, body: bodyText) }
-                    }
-                    .buttonStyle(NodusPrimaryButtonStyle(accent: .accentColor))
-                    .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
             } else {
                 Text(annotation?.comment ?? "")
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .toolbar {
+            if annotations.isWritable {
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    if annotation != nil {
+                        Button(role: .destructive) { confirmingDelete = true } label: {
+                            Image(systemName: "trash")
+                        }
+                        .accessibilityLabel("Delete")
+                    }
+                    Button {
+                        if let annotation { annotations.updateComment(annotation, body: bodyText) }
+                        else { annotations.saveNewComment(anchor, body: bodyText) }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    .accessibilityLabel("Save")
+                    .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
         }
         .confirmationDialog(

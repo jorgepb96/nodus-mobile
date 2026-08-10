@@ -730,6 +730,17 @@
         }
       }
     },
+    "Add comment": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir comentario"
+          }
+        }
+      }
+    },
     "Add key": {
       "extractionState": "manual",
       "localizations": {
@@ -1368,6 +1379,17 @@
         }
       }
     },
+    "Blue": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azul"
+          }
+        }
+      }
+    },
     "Built from the works actually cited.": {
       "extractionState": "manual",
       "localizations": {
@@ -1452,6 +1474,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lote de cambios"
+          }
+        }
+      }
+    },
+    "Change highlight color": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiar el color del subrayado"
+          }
+        }
+      }
+    },
+    "Change the read filter to show other reports.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambia el filtro de lectura para mostrar otros informes."
           }
         }
       }
@@ -2442,6 +2486,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eliminar todo lo archivado"
+          }
+        }
+      }
+    },
+    "Delete highlight": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borrar subrayado"
           }
         }
       }
@@ -3546,6 +3601,17 @@
         }
       }
     },
+    "Highlight": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subrayar"
+          }
+        }
+      }
+    },
     "Hide": {
       "extractionState": "manual",
       "localizations": {
@@ -4151,6 +4217,17 @@
         }
       }
     },
+    "Lavender": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lavanda"
+          }
+        }
+      }
+    },
     "Last updated": {
       "extractionState": "manual",
       "localizations": {
@@ -4400,6 +4477,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Modo"
+          }
+        }
+      }
+    },
+    "Mint": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menta"
           }
         }
       }
@@ -4785,6 +4873,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sin coincidencias"
+          }
+        }
+      }
+    },
+    "No matching reports": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún informe coincide"
           }
         }
       }
@@ -5889,6 +5988,17 @@
         }
       }
     },
+    "Peach": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melocotón"
+          }
+        }
+      }
+    },
     "People": {
       "extractionState": "manual",
       "localizations": {
@@ -6270,6 +6380,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "En cola. Abre la cola de envío para enviarlo."
+          }
+        }
+      }
+    },
+    "Quote in chat": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Citar en el chat"
           }
         }
       }
@@ -6732,6 +6853,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Papel"
+          }
+        }
+      }
+    },
+    "Rose": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rosa"
           }
         }
       }
@@ -10066,6 +10198,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sí"
+          }
+        }
+      }
+    },
+    "Yellow": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Amarillo"
           }
         }
       }

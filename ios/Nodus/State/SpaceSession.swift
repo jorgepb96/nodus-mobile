@@ -277,16 +277,31 @@ final class SpaceSession {
     /// the goals — and offering the raw list beside it would be offering the worse of the two.
     private static let notBrowsedDirectly: Set<String> = ["passages", "study-calendar", "study-goals"]
 
-    /// The collections this space actually has rows for, in the order the menu shows them.
+    /// The collections the Home board can show, in the order the menu shows them.
+    ///
+    /// Before the overview arrives, use the vault type already saved with the connection to
+    /// keep the board structurally complete. The eventual overview replaces these candidates
+    /// with the collections the publication actually populated. Without that provisional list,
+    /// a slow first request made Home look half empty and then inserted a grid several seconds
+    /// later.
     var sections: [CollectionDescriptor] {
-        guard let overview else { return [] }
-        let populated = overview.populatedCollections.filter { !Self.notBrowsedDirectly.contains($0.path) }
-        guard let vaultType else { return populated }
+        let candidates: [CollectionDescriptor]
+        if let overview {
+            candidates = overview.populatedCollections.filter {
+                !Self.notBrowsedDirectly.contains($0.path)
+            }
+        } else if isPublished, let vaultType {
+            candidates = Self.anticipatedSections(for: vaultType)
+        } else {
+            return []
+        }
+
+        guard let vaultType else { return candidates }
         // Order by the vault's own families first; anything else it happens to have published
         // still appears, just after. Hiding a published table because the type did not predict
         // it would be a lie about the corpus.
         let families = vaultType.families
-        return populated.sorted { lhs, rhs in
+        return candidates.sorted { lhs, rhs in
             let left = lhs.families.isDisjoint(with: families) ? 1 : 0
             let right = rhs.families.isDisjoint(with: families) ? 1 : 0
             if left != right { return left < right }
@@ -294,12 +309,24 @@ final class SpaceSession {
         }
     }
 
+    /// The best complete board available before the server has supplied its row counts.
+    ///
+    /// Families are deliberately only a provisional signal. Once the overview arrives, its
+    /// populated tables win, including any the vault type did not predict.
+    static func anticipatedSections(for vaultType: VaultType) -> [CollectionDescriptor] {
+        Collections.all.filter {
+            !Self.notBrowsedDirectly.contains($0.path)
+                && !$0.families.isDisjoint(with: vaultType.families)
+        }
+    }
+
     private func indexOf(_ collection: CollectionDescriptor) -> Int {
         Collections.all.firstIndex(of: collection) ?? Int.max
     }
 
-    func count(of collection: CollectionDescriptor) -> Int {
-        overview?.count(of: collection) ?? 0
+    /// Nil means the server has not supplied this count yet; it must not be presented as zero.
+    func count(of collection: CollectionDescriptor) -> Int? {
+        overview?.count(of: collection)
     }
 
     /// Whether this space published anything the Debates screen could show. Debates are

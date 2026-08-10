@@ -107,6 +107,39 @@ struct CorpusReference: Identifiable, Hashable {
     }
 }
 
+/// The colour carried by a reference label in prose.
+///
+/// Ideas and authors keep the vault accent readers already associate with citations. A gap and
+/// a contradiction carry their own meaning, while every other reference remains on the familiar
+/// accent until it has an explicit semantic colour of its own.
+enum CorpusReferenceTone: Equatable {
+    case accent
+    case contradiction
+    case gap
+
+    init(_ url: URL) {
+        switch CorpusReference(url)?.kind {
+        case "contradiction": self = .contradiction
+        case "gap": self = .gap
+        default: self = .accent
+        }
+    }
+
+    @MainActor
+    func color(accent: Color) -> Color {
+        switch self {
+        case .accent:
+            return accent.nodusReadable
+        case .contradiction:
+            return .nodusDanger
+        case .gap:
+            // A true brown rather than caution orange. `nodusSemantic` darkens it for the pale
+            // reader and lightens it for the dark reader until it clears the text contrast bar.
+            return .nodusSemantic("#92400e")
+        }
+    }
+}
+
 /// Opens whatever a citation points at.
 ///
 /// Ideas and works have enriched handlers on the server, so they go through the same screens the
@@ -437,6 +470,16 @@ struct CorpusProse: View {
                                     annotations.addHighlight(anchor, color: color)
                                 }
                             },
+                            onChangeHighlightColor: readerAnnotations.flatMap { annotations in
+                                guard annotations.isWritable else { return nil }
+                                return { annotation, color in
+                                    annotations.updateHighlightColor(annotation, color: color)
+                                }
+                            },
+                            onDeleteHighlight: readerAnnotations.flatMap { annotations in
+                                guard annotations.isWritable else { return nil }
+                                return { annotation in annotations.delete(annotation) }
+                            },
                             onComment: readerAnnotations.flatMap { annotations in
                                 guard annotations.isWritable else { return nil }
                                 return { range in
@@ -604,17 +647,15 @@ struct CorpusProse: View {
             return AttributedString(source)
         }
         for run in parsed.runs where run.link != nil {
+            guard let link = run.link else { continue }
             // Kept live when there is somewhere for it to go, and struck back to plain accent
             // text when there is not: a link that looks live and goes nowhere is worse than one
             // that never claimed to. A citation needs a session to open a record against; a
             // numbered reference points at this very page and needs only a handler.
-            let isReference = run.link.map { PageChatReference.number(in: $0) != nil } ?? false
+            let isReference = PageChatReference.number(in: link) != nil
             let live = isReference ? onReference != nil : session != nil
             if !live { parsed[run.range].link = nil }
-            // A vault accent is a brand fill, not necessarily a readable text colour. Citations
-            // use its contrast-adjusted shade so a dark violet source cannot disappear into the
-            // report's dark glass (and a pale accent remains legible in light mode).
-            parsed[run.range].foregroundColor = accent.nodusReadable
+            parsed[run.range].foregroundColor = CorpusReferenceTone(link).color(accent: accent)
             parsed[run.range].font = reading.font(.callout, weight: .medium)
             parsed[run.range].underlineStyle = live ? .single : nil
         }
@@ -913,6 +954,8 @@ private struct DocumentProse: UIViewRepresentable {
     /// selection action uses this directly, so it never needs a second colour submenu.
     var selectedHighlightColor: ReaderAnnotationColor?
     var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
+    var onChangeHighlightColor: ((ReaderAnnotation, ReaderAnnotationColor) -> Void)?
+    var onDeleteHighlight: ((ReaderAnnotation) -> Void)?
     var onComment: ((NSRange) -> Void)?
     /// Called with the selected range and the words in it. Nil where the page keeps no
     /// bookmark, and that absence is what removes the menu item rather than dimming it.
@@ -957,6 +1000,13 @@ private struct DocumentProse: UIViewRepresentable {
         press.delegate = context.coordinator
         view.addGestureRecognizer(press)
 
+        // A saved highlight opens an edit-menu ribbon at the exact pressed point. UIKit keeps
+        // this source point inside the visible window, including beside screen and popover
+        // edges, which is the same positioning contract as the selection menu.
+        let editMenu = UIEditMenuInteraction(delegate: context.coordinator)
+        view.addInteraction(editMenu)
+        context.coordinator.highlightMenu = editMenu
+
         // When the toolbar highlighter is active, a stroke is ink: finger and Pencil both paint
         // the range immediately as they move. The recognizer stays disabled in ordinary reading,
         // so scrolling, selecting and opening citations are unchanged until the reader explicitly
@@ -985,6 +1035,8 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.onAsk = onAsk
         context.coordinator.onTapBookmark = onTapBookmark
         context.coordinator.onHighlight = onHighlight
+        context.coordinator.onChangeHighlightColor = onChangeHighlightColor
+        context.coordinator.onDeleteHighlight = onDeleteHighlight
         context.coordinator.onComment = onComment
         context.coordinator.onOpenAnnotation = onOpenAnnotation
         context.coordinator.fixedHighlighter = fixedHighlighter
@@ -1143,7 +1195,13 @@ private struct DocumentProse: UIViewRepresentable {
             switch placement.annotation.kind {
             case .highlight:
                 if let color = placement.annotation.color {
-                    output.addAttribute(.backgroundColor, value: UIColor(color.color).withAlphaComponent(0.62), range: range)
+                    for segment in ReaderHighlightSegments.ranges(in: range, excludingReferencesIn: base) {
+                        output.addAttribute(
+                            .backgroundColor,
+                            value: UIColor(color.color).withAlphaComponent(0.62),
+                            range: segment
+                        )
+                    }
                 }
             case .comment:
                 let style = NSUnderlineStyle.single.union(.patternDot).rawValue
@@ -1204,7 +1262,8 @@ private struct DocumentProse: UIViewRepresentable {
                 .foregroundColor: UIColor.label,
             ]
             if let link = run.link {
-                attributes[.foregroundColor] = UIColor(accent.nodusReadable)
+                attributes[.foregroundColor] = UIColor(CorpusReferenceTone(link).color(accent: accent))
+                if CorpusProse.claims(link) { attributes[.nodusReference] = link }
                 // A link that looks live and goes nowhere is worse than one that never
                 // claimed to, which is the same rule the SwiftUI path follows — and the same
                 // split between a citation, which needs a session, and a numbered reference,
@@ -1260,7 +1319,7 @@ private struct DocumentProse: UIViewRepresentable {
         return actions.isEmpty ? nil : actions
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate {
         var onOpen: (URL) -> Bool
         var linksLive: Bool
         /// Where a selection goes when the reader marks it. Nil where the page keeps no
@@ -1270,6 +1329,8 @@ private struct DocumentProse: UIViewRepresentable {
         /// separately: a page can have a bookmark and no conversation, or the other way round.
         var onAsk: ((String) -> Void)?
         var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
+        var onChangeHighlightColor: ((ReaderAnnotation, ReaderAnnotationColor) -> Void)?
+        var onDeleteHighlight: ((ReaderAnnotation) -> Void)?
         var onComment: ((NSRange) -> Void)?
         /// A press that landed inside the mark.
         var onTapBookmark: (() -> Void)?
@@ -1300,8 +1361,10 @@ private struct DocumentProse: UIViewRepresentable {
         var aimedBookmark = 0
         var aimedSyncedBookmark = 0
         weak var strokeHighlighter: UIPanGestureRecognizer?
+        weak var highlightMenu: UIEditMenuInteraction?
         private var strokeAnchor: Int?
         private var strokeBaseline: NSAttributedString?
+        private var activeHighlight: ReaderAnnotationDocument.Placement?
         private var marginButtons: [UIButton] = []
         /// Whether this paragraph has already gone looking for its scroll view to hang the
         /// page's selection-clearing tap off. Once per paragraph, not once per update.
@@ -1352,7 +1415,11 @@ private struct DocumentProse: UIViewRepresentable {
             copy.accessibilityLabel = String(localized: "Copy")
             ours.append(copy)
 
-            if let onHighlight, let colour = selectedHighlightColor {
+            let highlightable = ReaderHighlightSegments.ranges(
+                in: range,
+                excludingReferencesIn: textView.attributedText
+            )
+            if let onHighlight, let colour = selectedHighlightColor, !highlightable.isEmpty {
                 // Pastel ink is right on the page and almost invisible as a tiny glyph over the
                 // light edit-menu material. Keep the pen itself in the dynamic label colour and
                 // retain the chosen pastel as the symbol's secondary layer where SF Symbols
@@ -1365,11 +1432,12 @@ private struct DocumentProse: UIViewRepresentable {
                     .withRenderingMode(.alwaysOriginal)
                 let highlight = UIAction(title: "", image: image) { _ in
                     MainActor.assumeIsolated {
-                        onHighlight(range, colour)
+                        for segment in highlightable { onHighlight(segment, colour) }
                         textView.clearSelection()
                     }
                 }
-                highlight.accessibilityLabel = String(localized: "Highlight with \(colour.rawValue)")
+                highlight.accessibilityLabel = String(localized: "Highlight")
+                    + ": " + String(localized: colour.labelKey)
                 ours.append(highlight)
             }
 
@@ -1501,10 +1569,13 @@ private struct DocumentProse: UIViewRepresentable {
                 }
                 let range = ReaderHighlightStroke.range(from: anchor, through: index)
                 preview(range, colour: colour, in: textView)
+                let segments = strokeBaseline.map {
+                    ReaderHighlightSegments.ranges(in: range, excludingReferencesIn: $0)
+                } ?? []
                 strokeAnchor = nil
                 strokeBaseline = nil
                 MainActor.assumeIsolated {
-                    onHighlight(range, colour)
+                    for segment in segments { onHighlight(segment, colour) }
                 }
 
             case .cancelled, .failed:
@@ -1520,11 +1591,13 @@ private struct DocumentProse: UIViewRepresentable {
         private func preview(_ range: NSRange, colour: ReaderAnnotationColor, in textView: UITextView) {
             guard let strokeBaseline, NSMaxRange(range) <= strokeBaseline.length else { return }
             let shown = NSMutableAttributedString(attributedString: strokeBaseline)
-            shown.addAttribute(
-                .backgroundColor,
-                value: UIColor(colour.color).withAlphaComponent(0.62),
-                range: range
-            )
+            for segment in ReaderHighlightSegments.ranges(in: range, excludingReferencesIn: strokeBaseline) {
+                shown.addAttribute(
+                    .backgroundColor,
+                    value: UIColor(colour.color).withAlphaComponent(0.62),
+                    range: segment
+                )
+            }
             textView.attributedText = shown
         }
 
@@ -1566,11 +1639,108 @@ private struct DocumentProse: UIViewRepresentable {
                 return
             }
             if let annotation = annotation(at: point, in: view) {
-                MainActor.assumeIsolated { onOpenAnnotation?(annotation.annotation.id) }
+                if annotation.annotation.kind == .highlight {
+                    presentHighlightMenu(for: annotation, at: point)
+                } else {
+                    MainActor.assumeIsolated { onOpenAnnotation?(annotation.annotation.id) }
+                }
                 return
             }
             guard let url = Self.citation(at: point, in: view) else { return }
             MainActor.assumeIsolated { _ = onOpen(url) }
+        }
+
+        private func presentHighlightMenu(
+            for placement: ReaderAnnotationDocument.Placement,
+            at point: CGPoint
+        ) {
+            guard let highlightMenu else { return }
+            activeHighlight = placement
+            let configuration = UIEditMenuConfiguration(
+                identifier: placement.annotation.id as NSString,
+                sourcePoint: point
+            )
+            highlightMenu.presentEditMenu(with: configuration)
+        }
+
+        func editMenuInteraction(
+            _ interaction: UIEditMenuInteraction,
+            menuFor configuration: UIEditMenuConfiguration,
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            guard let placement = activeHighlight else { return nil }
+            let annotation = placement.annotation
+            var actions: [UIMenuElement] = []
+
+            if let onChangeHighlightColor {
+                let colors = ReaderAnnotationColor.allCases.map { colour in
+                    let symbol = UIImage.SymbolConfiguration(paletteColors: [UIColor(colour.color)])
+                    let image = UIImage(systemName: annotation.color == colour ? "checkmark.circle.fill" : "circle.fill", withConfiguration: symbol)?
+                        .withRenderingMode(.alwaysOriginal)
+                    let action = UIAction(title: String(localized: colour.labelKey), image: image) { _ in
+                        MainActor.assumeIsolated { onChangeHighlightColor(annotation, colour) }
+                    }
+                    action.accessibilityLabel = String(localized: "Change highlight color")
+                        + ": " + String(localized: colour.labelKey)
+                    return action
+                }
+                let colorMenu = UIMenu(
+                    title: "",
+                    image: UIImage(systemName: "paintpalette"),
+                    children: colors
+                )
+                colorMenu.accessibilityLabel = String(localized: "Change highlight color")
+                actions.append(colorMenu)
+            }
+
+            let copy = UIAction(title: "", image: UIImage(systemName: "doc.on.doc")) { _ in
+                MainActor.assumeIsolated { UIPasteboard.general.string = annotation.anchor.selectedText }
+            }
+            copy.accessibilityLabel = String(localized: "Copy")
+            actions.append(copy)
+
+            if let onAsk {
+                let ask = UIAction(title: "", image: UIImage(systemName: "quote.bubble")) { _ in
+                    MainActor.assumeIsolated { onAsk(annotation.anchor.selectedText) }
+                }
+                ask.accessibilityLabel = String(localized: "Quote in chat")
+                actions.append(ask)
+            }
+
+            if let onComment {
+                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
+                    MainActor.assumeIsolated { onComment(placement.range) }
+                }
+                comment.accessibilityLabel = String(localized: "Add comment")
+                actions.append(comment)
+            }
+
+            if let onDeleteHighlight {
+                let delete = UIAction(
+                    title: "",
+                    image: UIImage(systemName: "trash"),
+                    attributes: .destructive
+                ) { _ in
+                    MainActor.assumeIsolated { onDeleteHighlight(annotation) }
+                }
+                delete.accessibilityLabel = String(localized: "Delete highlight")
+                actions.append(delete)
+            }
+
+            return UIMenu(
+                title: "",
+                options: .displayInline,
+                preferredElementSize: .small,
+                children: actions
+            )
+        }
+
+        func editMenuInteraction(
+            _ interaction: UIEditMenuInteraction,
+            willDismissMenuFor configuration: UIEditMenuConfiguration,
+            animator: UIEditMenuInteractionAnimating
+        ) {
+            animator.addCompletion { [weak self] in self?.activeHighlight = nil }
         }
 
         /// The citation under this point, when the point really is on one.
@@ -1629,7 +1799,8 @@ private struct DocumentProse: UIViewRepresentable {
             // opening an annotation that merely happens to be the closest text.
             for index in [offset, offset - 1] where index >= 0 {
                 guard let box = Self.box(ofCharacterAt: index, in: view),
-                      box.insetBy(dx: -1, dy: 0).contains(point)
+                      box.insetBy(dx: -1, dy: 0).contains(point),
+                      view.attributedText.attribute(.nodusReference, at: index, effectiveRange: nil) == nil
                 else { continue }
                 if let placement = readerAnnotations
                     .filter({ $0.range.length > 0 && NSLocationInRange(index, $0.range) })
@@ -1752,6 +1923,9 @@ private struct DocumentProse: UIViewRepresentable {
 }
 
 extension NSAttributedString.Key {
+    /// Any reference label, live or not. Highlighter ink treats it as a gap in the prose.
+    static let nodusReference = NSAttributedString.Key("NodusReference")
+
     /// A citation into the corpus, drawn like a link and opened by this app rather than by UIKit.
     ///
     /// Deliberately not `.link`. UIKit treats a link as a *text item*: it tints it grey under the

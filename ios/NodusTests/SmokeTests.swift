@@ -14,6 +14,18 @@ struct AppWiringTests {
         #expect(SpecialResource.deepResearch.listKey == "reports")
     }
 
+    @Test("every known vault type can draw its Home sections before counts arrive")
+    @MainActor
+    func homeSectionsDoNotWaitForTheOverview() {
+        for vaultType in VaultType.allCases {
+            let sections = SpaceSession.anticipatedSections(for: vaultType)
+
+            #expect(!sections.isEmpty, "\(vaultType.rawValue) would open onto an empty Home board")
+            #expect(sections.allSatisfy { !$0.families.isDisjoint(with: vaultType.families) })
+            #expect(!sections.contains { ["passages", "study-calendar", "study-goals"].contains($0.path) })
+        }
+    }
+
     /// The primary key of every study and teaching table is `id`.
     ///
     /// The table used to declare `subject_id`, `card_id`, `exam_id` and six more — columns
