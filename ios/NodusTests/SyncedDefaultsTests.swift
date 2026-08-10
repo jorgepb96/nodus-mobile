@@ -45,6 +45,26 @@ struct SyncedDefaultsTests {
         #expect(cloud.contents["nodus.prefs.readingScale"] as? Double == 1.45)
     }
 
+    @Test("the Home layout survives returning to Home and reopening after an update")
+    func homeLayoutIsDurable() {
+        let local = defaults("home-layout")
+        let first = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+
+        first.homeLayout = .list
+        // Leaving Home can change unrelated preferences, but it must not reset its layout.
+        first.spaceOrder = .name
+        #expect(first.homeLayout == .list)
+
+        // A new preferences object reads the same persistent domain, as a fresh launch after
+        // replacing the app binary does. UserDefaults survives that replacement.
+        let reopened = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+        #expect(reopened.homeLayout == .list)
+
+        reopened.homeLayout = .grid
+        let openedAgain = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+        #expect(openedAgain.homeLayout == .grid)
+    }
+
     // The whole conflict rule in one test: the iPad chose later, so the iPad wins, even though
     // this device has a perfectly good local answer of its own.
     @Test("the later of the two writes is the one that is read")
