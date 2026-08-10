@@ -85,6 +85,21 @@ struct ReaderAnnotationsTests {
         ])
     }
 
+    @Test("the highlighter toggle preserves the independently selected colour")
+    func highlighterControls() {
+        let annotations = ReaderAnnotations(draftId: "r-1", isWritable: true)
+        #expect(annotations.selectedColor == .yellow)
+        #expect(annotations.fixedColor == nil)
+
+        annotations.selectedColor = .mint
+        annotations.toggleHighlighter()
+        #expect(annotations.fixedColor == .mint)
+
+        annotations.toggleHighlighter()
+        #expect(annotations.fixedColor == nil)
+        #expect(annotations.selectedColor == .mint)
+    }
+
     @Test("the newest side wins while delivered mobile changes await cleanup")
     func optimisticOverlayConverges() throws {
         let old = Date(timeIntervalSince1970: 1_000)

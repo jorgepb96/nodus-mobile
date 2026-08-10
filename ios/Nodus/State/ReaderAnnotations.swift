@@ -258,7 +258,12 @@ final class ReaderAnnotations {
     let isWritable: Bool
     private(set) var items: [ReaderAnnotation] = []
     private(set) var error: String?
-    var fixedColor: ReaderAnnotationColor?
+    /// The colour used by both the selection action and continuous highlighting.
+    /// Turning the highlighter off must not forget it: the toolbar's colour control is a
+    /// choice, while the highlighter button is only a mode toggle.
+    var selectedColor: ReaderAnnotationColor = .yellow
+    var highlighterEnabled = false
+    var fixedColor: ReaderAnnotationColor? { highlighterEnabled ? selectedColor : nil }
     var presentation: Presentation?
     private(set) var bookmarkAim = 0
 
@@ -279,6 +284,11 @@ final class ReaderAnnotations {
     }
 
     var bookmark: ReaderAnnotation? { items.first { $0.kind == .bookmark } }
+
+    func toggleHighlighter() {
+        guard isWritable else { return }
+        highlighterEnabled.toggle()
+    }
 
     func load(rows: [Row], session: SpaceSession) async {
         remote = rows.compactMap(ReaderAnnotation.init(row:)).filter { $0.draftId == draftId && $0.scope == scope }

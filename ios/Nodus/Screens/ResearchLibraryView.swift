@@ -521,7 +521,10 @@ struct SyncedReportReadingTools: ViewModifier {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { readButton }
                 if annotations.isWritable {
-                    ToolbarItem(placement: .topBarTrailing) { highlighterMenu }
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        highlighterButton
+                        highlightColorMenu
+                    }
                 }
                 if annotations.bookmark != nil || legacyBookmark.bookmark != nil {
                     ToolbarItem(placement: .topBarTrailing) { bookmarkMenu }
@@ -576,30 +579,35 @@ struct SyncedReportReadingTools: ViewModifier {
         .tint(read ? Color.nodusSuccess : session.accent)
     }
 
-    private var highlighterMenu: some View {
+    private var highlighterButton: some View {
+        Button {
+            annotations.toggleHighlighter()
+        } label: {
+            Image(systemName: "highlighter")
+        }
+        .tint(annotations.highlighterEnabled ? annotations.selectedColor.color : session.accent)
+        .accessibilityLabel(annotations.highlighterEnabled ? "Turn highlighter off" : "Turn highlighter on")
+        .accessibilityValue(annotations.highlighterEnabled ? "On" : "Off")
+    }
+
+    private var highlightColorMenu: some View {
         Menu {
-            Section("Keep highlighting") {
+            Section("Highlight color") {
                 ForEach(ReaderAnnotationColor.allCases) { colour in
                     Button {
-                        annotations.fixedColor = colour
+                        annotations.selectedColor = colour
                     } label: {
-                        Label(colour.label, systemImage: annotations.fixedColor == colour ? "checkmark.circle.fill" : "circle.fill")
+                        Label(colour.label, systemImage: annotations.selectedColor == colour ? "checkmark.circle.fill" : "circle.fill")
                     }
                     .tint(colour.color)
                 }
             }
-            if annotations.fixedColor != nil {
-                Button {
-                    annotations.fixedColor = nil
-                } label: {
-                    Label("Turn highlighter off", systemImage: "cursorarrow")
-                }
-            }
         } label: {
-            Image(systemName: annotations.fixedColor == nil ? "highlighter" : "highlighter")
+            Image(systemName: "circle.fill")
+                .foregroundStyle(annotations.selectedColor.color)
         }
-        .tint(annotations.fixedColor?.color ?? session.accent)
-        .accessibilityLabel(annotations.fixedColor == nil ? "Highlighter" : "Highlighter on")
+        .accessibilityLabel("Highlight color")
+        .accessibilityValue(Text(annotations.selectedColor.label))
     }
 
     private var bookmarkMenu: some View {
