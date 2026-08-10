@@ -419,6 +419,7 @@ struct CorpusProse: View {
                             // page knows that.
                             reportHasBookmark: readerAnnotations?.bookmark != nil || bookmarks?.bookmark != nil,
                             fixedHighlighter: readerAnnotations?.fixedColor,
+                            selectedHighlightColor: readerAnnotations?.selectedColor,
                             onHighlight: readerAnnotations.flatMap { annotations in
                                 guard annotations.isWritable else { return nil }
                                 return { range, color in
@@ -879,6 +880,9 @@ private struct DocumentProse: UIViewRepresentable {
     /// A colour chosen in the report toolbar. While present, a stable selection is
     /// committed as a highlight without turning the highlighter off.
     var fixedHighlighter: ReaderAnnotationColor?
+    /// The toolbar's current colour, whether continuous highlighting is on or off. The manual
+    /// selection action uses this directly, so it never needs a second colour submenu.
+    var selectedHighlightColor: ReaderAnnotationColor?
     var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
     var onComment: ((NSRange) -> Void)?
     /// Called with the selected range and the words in it. Nil where the page keeps no
@@ -950,6 +954,7 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.onComment = onComment
         context.coordinator.onOpenAnnotation = onOpenAnnotation
         context.coordinator.fixedHighlighter = fixedHighlighter
+        context.coordinator.selectedHighlightColor = selectedHighlightColor
         context.coordinator.pencilHighlighter?.isEnabled = fixedHighlighter != nil && onHighlight != nil
         context.coordinator.readerAnnotations = readerAnnotations
         context.coordinator.bookmark = bookmark?.range
@@ -1225,6 +1230,7 @@ private struct DocumentProse: UIViewRepresentable {
         var onTapBookmark: (() -> Void)?
         var onOpenAnnotation: ((String) -> Void)?
         var fixedHighlighter: ReaderAnnotationColor?
+        var selectedHighlightColor: ReaderAnnotationColor?
         var readerAnnotations: [ReaderAnnotationDocument.Placement] = []
         /// Where the mark sits in this paragraph, when it is in this one at all.
         var bookmark: NSRange?
@@ -1289,22 +1295,19 @@ private struct DocumentProse: UIViewRepresentable {
             let text = (textView.text as NSString).substring(with: range)
             var ours: [UIMenuElement] = []
 
-            if let onHighlight {
-                let colours = ReaderAnnotationColor.allCases.map { colour in
-                    let image = UIImage(systemName: "highlighter")?.withTintColor(
-                        UIColor(colour.color),
-                        renderingMode: .alwaysOriginal
-                    )
-                    let action = UIAction(title: String(localized: "\(colour.rawValue.capitalized)"), image: image) { _ in
-                        MainActor.assumeIsolated {
-                            onHighlight(range, colour)
-                            textView.clearSelection()
-                        }
+            if let onHighlight, let colour = selectedHighlightColor {
+                let image = UIImage(systemName: "highlighter")?.withTintColor(
+                    UIColor(colour.color),
+                    renderingMode: .alwaysOriginal
+                )
+                let highlight = UIAction(title: "", image: image) { _ in
+                    MainActor.assumeIsolated {
+                        onHighlight(range, colour)
+                        textView.clearSelection()
                     }
-                    action.accessibilityLabel = String(localized: "Highlight \(colour.rawValue)")
-                    return action
                 }
-                ours.append(UIMenu(title: String(localized: "Highlight"), image: UIImage(systemName: "highlighter"), children: colours))
+                highlight.accessibilityLabel = String(localized: "Highlight with \(colour.rawValue)")
+                ours.append(highlight)
             }
 
             if let onComment {
