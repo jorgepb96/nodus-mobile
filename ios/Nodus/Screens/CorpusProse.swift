@@ -1331,10 +1331,16 @@ private struct DocumentProse: UIViewRepresentable {
             var ours: [UIMenuElement] = []
 
             if let onHighlight, let colour = selectedHighlightColor {
-                let image = UIImage(systemName: "highlighter")?.withTintColor(
+                // Pastel ink is right on the page and almost invisible as a tiny glyph over the
+                // light edit-menu material. Keep the pen itself in the dynamic label colour and
+                // retain the chosen pastel as the symbol's secondary layer where SF Symbols
+                // provides one.
+                let symbol = UIImage.SymbolConfiguration(paletteColors: [
+                    UIColor.label,
                     UIColor(colour.color),
-                    renderingMode: .alwaysOriginal
-                )
+                ])
+                let image = UIImage(systemName: "highlighter", withConfiguration: symbol)?
+                    .withRenderingMode(.alwaysOriginal)
                 let highlight = UIAction(title: "", image: image) { _ in
                     MainActor.assumeIsolated {
                         onHighlight(range, colour)
