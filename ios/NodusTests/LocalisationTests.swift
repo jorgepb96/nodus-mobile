@@ -120,6 +120,19 @@ struct LocalisationTests {
         #expect(try translated("Peach") == "Melocotón")
     }
 
+    @Test("the report library controls speak Spanish")
+    func reportLibraryControlStrings() throws {
+        #expect(try translated("All") == "Todos")
+        #expect(try translated("Read") == "Leído")
+        #expect(try translated("Unread") == "Sin leer")
+        #expect(try translated("Newest") == "Más reciente")
+        #expect(try translated("Oldest") == "Más antiguo")
+        _ = try translated("Filter reports")
+        _ = try translated("Sort")
+        _ = try translated("No matching reports")
+        _ = try translated("Change the read filter to show other reports.")
+    }
+
     /// Leaving the app for another one is a thing to say plainly, and the sentence that explains
     /// why nothing happened is the only useful thing this control can offer when Zotero is not
     /// there. ("Zotero" itself is deliberately not asked for: it is a proper noun, and

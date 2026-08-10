@@ -1489,6 +1489,17 @@
         }
       }
     },
+    "Change the read filter to show other reports.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambia el filtro de lectura para mostrar otros informes."
+          }
+        }
+      }
+    },
     "Chapters": {
       "extractionState": "manual",
       "localizations": {
@@ -4862,6 +4873,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sin coincidencias"
+          }
+        }
+      }
+    },
+    "No matching reports": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún informe coincide"
           }
         }
       }
