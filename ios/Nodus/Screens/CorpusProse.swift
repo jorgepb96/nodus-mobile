@@ -611,7 +611,10 @@ struct CorpusProse: View {
             let isReference = run.link.map { PageChatReference.number(in: $0) != nil } ?? false
             let live = isReference ? onReference != nil : session != nil
             if !live { parsed[run.range].link = nil }
-            parsed[run.range].foregroundColor = accent
+            // A vault accent is a brand fill, not necessarily a readable text colour. Citations
+            // use its contrast-adjusted shade so a dark violet source cannot disappear into the
+            // report's dark glass (and a pale accent remains legible in light mode).
+            parsed[run.range].foregroundColor = accent.nodusReadable
             parsed[run.range].font = reading.font(.callout, weight: .medium)
             parsed[run.range].underlineStyle = live ? .single : nil
         }
@@ -1191,7 +1194,7 @@ private struct DocumentProse: UIViewRepresentable {
                 .foregroundColor: UIColor.label,
             ]
             if let link = run.link {
-                attributes[.foregroundColor] = UIColor(accent)
+                attributes[.foregroundColor] = UIColor(accent.nodusReadable)
                 // A link that looks live and goes nowhere is worse than one that never
                 // claimed to, which is the same rule the SwiftUI path follows — and the same
                 // split between a citation, which needs a session, and a numbered reference,
