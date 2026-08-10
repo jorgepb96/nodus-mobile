@@ -640,8 +640,6 @@ private struct ReaderAnnotationSheet: View {
         NavigationStack {
             Group {
                 switch presentation {
-                case .highlight(let annotation):
-                    actionSheet(annotation, title: "Highlight", icon: "highlighter")
                 case .bookmark(let annotation):
                     actionSheet(annotation, title: "Reading bookmark", icon: "bookmark.fill")
                 case .comment(let annotation):

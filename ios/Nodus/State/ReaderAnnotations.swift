@@ -20,6 +20,17 @@ enum ReaderAnnotationColor: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var labelKey: String.LocalizationValue {
+        switch self {
+        case .yellow: "Yellow"
+        case .rose: "Rose"
+        case .blue: "Blue"
+        case .mint: "Mint"
+        case .lavender: "Lavender"
+        case .peach: "Peach"
+        }
+    }
+
     var color: Color {
         switch self {
         case .yellow: Color(red: 0.99, green: 0.90, blue: 0.54)
@@ -250,14 +261,13 @@ enum ReaderHighlightStroke {
 @MainActor
 final class ReaderAnnotations {
     enum Presentation: Identifiable {
-        case highlight(ReaderAnnotation)
         case comment(ReaderAnnotation)
         case newComment(ReaderAnnotationAnchor)
         case bookmark(ReaderAnnotation)
 
         var id: String {
             switch self {
-            case .highlight(let item), .comment(let item), .bookmark(let item): item.id
+            case .comment(let item), .bookmark(let item): item.id
             case .newComment(let anchor): "new:\(anchor.startOffset):\(anchor.endOffset)"
             }
         }
@@ -329,6 +339,21 @@ final class ReaderAnnotations {
         upsert(item, title: String(localized: "Highlight in Deep Research"))
     }
 
+    func updateHighlightColor(_ annotation: ReaderAnnotation, color: ReaderAnnotationColor) {
+        guard isWritable, annotation.kind == .highlight, annotation.color != color else { return }
+        let item = ReaderAnnotation(
+            id: annotation.id,
+            draftId: annotation.draftId,
+            scope: annotation.scope,
+            kind: .highlight,
+            color: color,
+            anchor: annotation.anchor,
+            createdAt: annotation.createdAt,
+            updatedAt: Date()
+        )
+        upsert(item, title: String(localized: "Highlight in Deep Research"))
+    }
+
     func setBookmark(_ anchor: ReaderAnnotationAnchor) {
         guard isWritable else { return }
         let id = "reader-bookmark:\(draftId):\(scope)"
@@ -384,7 +409,8 @@ final class ReaderAnnotations {
     func open(_ id: String) {
         guard let item = items.first(where: { $0.id == id }) else { return }
         switch item.kind {
-        case .highlight: presentation = .highlight(item)
+        // A highlight is handled by the contextual ribbon anchored to the pressed words.
+        case .highlight: break
         case .comment: presentation = .comment(item)
         case .bookmark: presentation = .bookmark(item)
         }

@@ -100,6 +100,32 @@ struct ReaderAnnotationsTests {
         #expect(annotations.selectedColor == .mint)
     }
 
+    @Test("an existing highlight keeps its anchor when its colour changes")
+    func changesHighlightColor() throws {
+        let annotations = ReaderAnnotations(draftId: "r-1", isWritable: true)
+        let anchor = ReaderAnnotationAnchor(
+            startOffset: 4,
+            endOffset: 9,
+            selectedText: "texto",
+            prefix: "El ",
+            suffix: " sigue"
+        )
+        let original = ReaderAnnotation(
+            id: "h-1",
+            draftId: "r-1",
+            kind: .highlight,
+            color: .yellow,
+            anchor: anchor
+        )
+
+        annotations.updateHighlightColor(original, color: .blue)
+
+        let changed = try #require(annotations.items.first)
+        #expect(changed.id == original.id)
+        #expect(changed.anchor == anchor)
+        #expect(changed.color == .blue)
+    }
+
     @Test("a continuous highlighter includes both endpoints in either direction")
     func continuousHighlightRange() {
         #expect(ReaderHighlightStroke.range(from: 4, through: 9) == NSRange(location: 4, length: 6))

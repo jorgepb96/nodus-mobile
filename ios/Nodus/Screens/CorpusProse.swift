@@ -437,6 +437,16 @@ struct CorpusProse: View {
                                     annotations.addHighlight(anchor, color: color)
                                 }
                             },
+                            onChangeHighlightColor: readerAnnotations.flatMap { annotations in
+                                guard annotations.isWritable else { return nil }
+                                return { annotation, color in
+                                    annotations.updateHighlightColor(annotation, color: color)
+                                }
+                            },
+                            onDeleteHighlight: readerAnnotations.flatMap { annotations in
+                                guard annotations.isWritable else { return nil }
+                                return { annotation in annotations.delete(annotation) }
+                            },
                             onComment: readerAnnotations.flatMap { annotations in
                                 guard annotations.isWritable else { return nil }
                                 return { range in
@@ -913,6 +923,8 @@ private struct DocumentProse: UIViewRepresentable {
     /// selection action uses this directly, so it never needs a second colour submenu.
     var selectedHighlightColor: ReaderAnnotationColor?
     var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
+    var onChangeHighlightColor: ((ReaderAnnotation, ReaderAnnotationColor) -> Void)?
+    var onDeleteHighlight: ((ReaderAnnotation) -> Void)?
     var onComment: ((NSRange) -> Void)?
     /// Called with the selected range and the words in it. Nil where the page keeps no
     /// bookmark, and that absence is what removes the menu item rather than dimming it.
@@ -957,6 +969,13 @@ private struct DocumentProse: UIViewRepresentable {
         press.delegate = context.coordinator
         view.addGestureRecognizer(press)
 
+        // A saved highlight opens an edit-menu ribbon at the exact pressed point. UIKit keeps
+        // this source point inside the visible window, including beside screen and popover
+        // edges, which is the same positioning contract as the selection menu.
+        let editMenu = UIEditMenuInteraction(delegate: context.coordinator)
+        view.addInteraction(editMenu)
+        context.coordinator.highlightMenu = editMenu
+
         // When the toolbar highlighter is active, a stroke is ink: finger and Pencil both paint
         // the range immediately as they move. The recognizer stays disabled in ordinary reading,
         // so scrolling, selecting and opening citations are unchanged until the reader explicitly
@@ -985,6 +1004,8 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.onAsk = onAsk
         context.coordinator.onTapBookmark = onTapBookmark
         context.coordinator.onHighlight = onHighlight
+        context.coordinator.onChangeHighlightColor = onChangeHighlightColor
+        context.coordinator.onDeleteHighlight = onDeleteHighlight
         context.coordinator.onComment = onComment
         context.coordinator.onOpenAnnotation = onOpenAnnotation
         context.coordinator.fixedHighlighter = fixedHighlighter
@@ -1260,7 +1281,7 @@ private struct DocumentProse: UIViewRepresentable {
         return actions.isEmpty ? nil : actions
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate {
         var onOpen: (URL) -> Bool
         var linksLive: Bool
         /// Where a selection goes when the reader marks it. Nil where the page keeps no
@@ -1270,6 +1291,8 @@ private struct DocumentProse: UIViewRepresentable {
         /// separately: a page can have a bookmark and no conversation, or the other way round.
         var onAsk: ((String) -> Void)?
         var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
+        var onChangeHighlightColor: ((ReaderAnnotation, ReaderAnnotationColor) -> Void)?
+        var onDeleteHighlight: ((ReaderAnnotation) -> Void)?
         var onComment: ((NSRange) -> Void)?
         /// A press that landed inside the mark.
         var onTapBookmark: (() -> Void)?
@@ -1300,8 +1323,10 @@ private struct DocumentProse: UIViewRepresentable {
         var aimedBookmark = 0
         var aimedSyncedBookmark = 0
         weak var strokeHighlighter: UIPanGestureRecognizer?
+        weak var highlightMenu: UIEditMenuInteraction?
         private var strokeAnchor: Int?
         private var strokeBaseline: NSAttributedString?
+        private var activeHighlight: ReaderAnnotationDocument.Placement?
         private var marginButtons: [UIButton] = []
         /// Whether this paragraph has already gone looking for its scroll view to hang the
         /// page's selection-clearing tap off. Once per paragraph, not once per update.
@@ -1566,11 +1591,108 @@ private struct DocumentProse: UIViewRepresentable {
                 return
             }
             if let annotation = annotation(at: point, in: view) {
-                MainActor.assumeIsolated { onOpenAnnotation?(annotation.annotation.id) }
+                if annotation.annotation.kind == .highlight {
+                    presentHighlightMenu(for: annotation, at: point)
+                } else {
+                    MainActor.assumeIsolated { onOpenAnnotation?(annotation.annotation.id) }
+                }
                 return
             }
             guard let url = Self.citation(at: point, in: view) else { return }
             MainActor.assumeIsolated { _ = onOpen(url) }
+        }
+
+        private func presentHighlightMenu(
+            for placement: ReaderAnnotationDocument.Placement,
+            at point: CGPoint
+        ) {
+            guard let highlightMenu else { return }
+            activeHighlight = placement
+            let configuration = UIEditMenuConfiguration(
+                identifier: placement.annotation.id as NSString,
+                sourcePoint: point
+            )
+            highlightMenu.presentEditMenu(with: configuration)
+        }
+
+        func editMenuInteraction(
+            _ interaction: UIEditMenuInteraction,
+            menuFor configuration: UIEditMenuConfiguration,
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            guard let placement = activeHighlight else { return nil }
+            let annotation = placement.annotation
+            var actions: [UIMenuElement] = []
+
+            if let onChangeHighlightColor {
+                let colors = ReaderAnnotationColor.allCases.map { colour in
+                    let symbol = UIImage.SymbolConfiguration(paletteColors: [UIColor(colour.color)])
+                    let image = UIImage(systemName: annotation.color == colour ? "checkmark.circle.fill" : "circle.fill", withConfiguration: symbol)?
+                        .withRenderingMode(.alwaysOriginal)
+                    let action = UIAction(title: String(localized: colour.labelKey), image: image) { _ in
+                        MainActor.assumeIsolated { onChangeHighlightColor(annotation, colour) }
+                    }
+                    action.accessibilityLabel = String(localized: "Change highlight color")
+                        + ": " + String(localized: colour.labelKey)
+                    return action
+                }
+                let colorMenu = UIMenu(
+                    title: "",
+                    image: UIImage(systemName: "paintpalette"),
+                    children: colors
+                )
+                colorMenu.accessibilityLabel = String(localized: "Change highlight color")
+                actions.append(colorMenu)
+            }
+
+            let copy = UIAction(title: "", image: UIImage(systemName: "doc.on.doc")) { _ in
+                MainActor.assumeIsolated { UIPasteboard.general.string = annotation.anchor.selectedText }
+            }
+            copy.accessibilityLabel = String(localized: "Copy")
+            actions.append(copy)
+
+            if let onAsk {
+                let ask = UIAction(title: "", image: UIImage(systemName: "quote.bubble")) { _ in
+                    MainActor.assumeIsolated { onAsk(annotation.anchor.selectedText) }
+                }
+                ask.accessibilityLabel = String(localized: "Quote in chat")
+                actions.append(ask)
+            }
+
+            if let onComment {
+                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
+                    MainActor.assumeIsolated { onComment(placement.range) }
+                }
+                comment.accessibilityLabel = String(localized: "Add comment")
+                actions.append(comment)
+            }
+
+            if let onDeleteHighlight {
+                let delete = UIAction(
+                    title: "",
+                    image: UIImage(systemName: "trash"),
+                    attributes: .destructive
+                ) { _ in
+                    MainActor.assumeIsolated { onDeleteHighlight(annotation) }
+                }
+                delete.accessibilityLabel = String(localized: "Delete highlight")
+                actions.append(delete)
+            }
+
+            return UIMenu(
+                title: "",
+                options: .displayInline,
+                preferredElementSize: .small,
+                children: actions
+            )
+        }
+
+        func editMenuInteraction(
+            _ interaction: UIEditMenuInteraction,
+            willDismissMenuFor configuration: UIEditMenuConfiguration,
+            animator: UIEditMenuInteractionAnimating
+        ) {
+            animator.addCompletion { [weak self] in self?.activeHighlight = nil }
         }
 
         /// The citation under this point, when the point really is on one.
