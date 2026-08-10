@@ -107,6 +107,39 @@ struct CorpusReference: Identifiable, Hashable {
     }
 }
 
+/// The colour carried by a reference label in prose.
+///
+/// Ideas and authors keep the vault accent readers already associate with citations. A gap and
+/// a contradiction carry their own meaning, while every other reference remains on the familiar
+/// accent until it has an explicit semantic colour of its own.
+enum CorpusReferenceTone: Equatable {
+    case accent
+    case contradiction
+    case gap
+
+    init(_ url: URL) {
+        switch CorpusReference(url)?.kind {
+        case "contradiction": self = .contradiction
+        case "gap": self = .gap
+        default: self = .accent
+        }
+    }
+
+    @MainActor
+    func color(accent: Color) -> Color {
+        switch self {
+        case .accent:
+            return accent.nodusReadable
+        case .contradiction:
+            return .nodusDanger
+        case .gap:
+            // A true brown rather than caution orange. `nodusSemantic` darkens it for the pale
+            // reader and lightens it for the dark reader until it clears the text contrast bar.
+            return .nodusSemantic("#92400e")
+        }
+    }
+}
+
 /// Opens whatever a citation points at.
 ///
 /// Ideas and works have enriched handlers on the server, so they go through the same screens the
@@ -614,17 +647,15 @@ struct CorpusProse: View {
             return AttributedString(source)
         }
         for run in parsed.runs where run.link != nil {
+            guard let link = run.link else { continue }
             // Kept live when there is somewhere for it to go, and struck back to plain accent
             // text when there is not: a link that looks live and goes nowhere is worse than one
             // that never claimed to. A citation needs a session to open a record against; a
             // numbered reference points at this very page and needs only a handler.
-            let isReference = run.link.map { PageChatReference.number(in: $0) != nil } ?? false
+            let isReference = PageChatReference.number(in: link) != nil
             let live = isReference ? onReference != nil : session != nil
             if !live { parsed[run.range].link = nil }
-            // A vault accent is a brand fill, not necessarily a readable text colour. Citations
-            // use its contrast-adjusted shade so a dark violet source cannot disappear into the
-            // report's dark glass (and a pale accent remains legible in light mode).
-            parsed[run.range].foregroundColor = accent.nodusReadable
+            parsed[run.range].foregroundColor = CorpusReferenceTone(link).color(accent: accent)
             parsed[run.range].font = reading.font(.callout, weight: .medium)
             parsed[run.range].underlineStyle = live ? .single : nil
         }
@@ -1231,7 +1262,7 @@ private struct DocumentProse: UIViewRepresentable {
                 .foregroundColor: UIColor.label,
             ]
             if let link = run.link {
-                attributes[.foregroundColor] = UIColor(accent.nodusReadable)
+                attributes[.foregroundColor] = UIColor(CorpusReferenceTone(link).color(accent: accent))
                 if CorpusProse.claims(link) { attributes[.nodusReference] = link }
                 // A link that looks live and goes nowhere is worse than one that never
                 // claimed to, which is the same rule the SwiftUI path follows — and the same

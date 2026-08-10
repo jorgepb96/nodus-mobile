@@ -93,6 +93,15 @@ struct CorpusProseTests {
         #expect(plural.destination == .debate)
     }
 
+    @Test("reference kinds choose their requested semantic tones")
+    func referenceTones() throws {
+        #expect(CorpusReferenceTone(try #require(URL(string: "nodus://idea/i-1"))) == .accent)
+        #expect(CorpusReferenceTone(try #require(URL(string: "nodus://author/a-1"))) == .accent)
+        #expect(CorpusReferenceTone(try #require(URL(string: "nodus://contradiction/c-1"))) == .contradiction)
+        #expect(CorpusReferenceTone(try #require(URL(string: "nodus://gap/g-1"))) == .gap)
+        #expect(CorpusReferenceTone(try #require(URL(string: "nodus://gaps/g-2"))) == .gap)
+    }
+
     @Test("a published debate retains both positions and their evidence")
     func debateCitationKeepsSourceMaterial() {
         let row = Row([
