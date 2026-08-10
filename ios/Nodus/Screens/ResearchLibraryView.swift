@@ -873,7 +873,7 @@ struct LocalReportReader: View {
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
             }
             .padding(NodusSpace.page)
-            .frame(maxWidth: ReportLayout.measure)
+            .frame(maxWidth: ReportLayout.readerMeasure)
             .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
@@ -912,9 +912,16 @@ enum ReportLayout {
     /// a twenty-page report across 1 300 points, which is some twenty-five words to a line —
     /// past the point where the eye reliably finds the start of the next one.
     static let measure: CGFloat = 660
+    /// Empty space at either side of the prose on a regular-width device. The right rail holds
+    /// comment and bookmark controls; mirroring it on the left keeps the 660-point reading
+    /// column centred rather than nudging every paragraph sideways when it gains a note.
+    static let annotationRail: CGFloat = 44
     /// A little more than a card's own padding, because the one thing inside is prose and prose
     /// wants a margin of its own.
     static let sectionPadding: CGFloat = 19
+    /// The report card grows on iPad so the rails come from the device's lateral margins, not
+    /// from the central text block. On compact screens the surrounding frame simply contracts.
+    static let readerMeasure = measure + annotationRail * 2 + sectionPadding * 2
 }
 
 /// A report the owner published from the desktop.
@@ -987,7 +994,7 @@ struct PublishedReportReader: View {
                 }
             }
             .padding(NodusSpace.page)
-            .frame(maxWidth: ReportLayout.measure)
+            .frame(maxWidth: ReportLayout.readerMeasure)
             .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }

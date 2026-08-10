@@ -269,6 +269,7 @@ struct CorpusProse: View {
     /// in the middle of the dismissal, which is exactly the pause a reader saw.
     @State private var presenting = Presentation()
     @Environment(\.nodusReadingStyle) private var reading
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// The page's find bar, when there is one. Prose is the thing a reader searches, so this is
     /// where the words of a page are declared — after the Markdown and the citations have been
     /// resolved, because what is registered has to be what is on the screen.
@@ -382,6 +383,14 @@ struct CorpusProse: View {
     var body: some View {
         let displayedBlocks = blocks.map(displayed)
         let annotationDocument = ReaderAnnotationDocument(blocks: displayedBlocks)
+        // On iPad the report is deliberately wider than its prose. Those otherwise empty
+        // margins are annotation rails: the text keeps its readable measure while comments
+        // and bookmarks sit beside it instead of taking thirty points out of every marked
+        // paragraph. A compact-width reader keeps the old edge treatment because there is no
+        // spare column to spend.
+        let annotationRail = reading.document && horizontalSizeClass == .regular
+            ? ReportLayout.annotationRail
+            : 0
         // A document breathes; a chat bubble does not. Twenty points between paragraphs rather
         // than thirteen: on a phone the gap between paragraphs is the only cue a reader has that
         // one has ended, because the line lengths are too short for the last line's rag to say
@@ -409,6 +418,7 @@ struct CorpusProse: View {
                             referencesLive: onReference != nil,
                             highlights: search?.highlights(for: path),
                             readerAnnotations: placements,
+                            annotationRailWidth: annotationRail,
                             // A paragraph of a document is the only thing on the page that can
                             // be selected by the word, which is why the bookmark lives here and
                             // not on a heading or a bibliography entry.
@@ -554,6 +564,9 @@ struct CorpusProse: View {
             .tracking(isPart ? 0.7 : 0)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, reading.document && horizontalSizeClass == .regular
+                ? ReportLayout.annotationRail
+                : 0)
             // A heading belongs to what comes after it, so the space above it is what tells a
             // reader that the previous section has ended. Eight points more than the paragraph
             // gap below it is the least that reads as a break rather than as a wide line.
@@ -872,6 +885,9 @@ private struct DocumentProse: UIViewRepresentable {
     let highlights: PageSearch.Highlights?
     /// Persistent server-backed marks intersecting this paragraph.
     var readerAnnotations: [ReaderAnnotationDocument.Placement] = []
+    /// Spare space on each side of an iPad paragraph. The right-hand rail holds the controls;
+    /// the matching left rail keeps the text column centred at the same readable width.
+    var annotationRailWidth: CGFloat = 0
     /// The reading bookmark, when it sits in this paragraph.
     var bookmark: ReadingBookmarks.Placement?
     /// Whether the report has a bookmark anywhere, which is what decides whether marking a
@@ -957,15 +973,18 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.selectedHighlightColor = selectedHighlightColor
         context.coordinator.pencilHighlighter?.isEnabled = fixedHighlighter != nil && onHighlight != nil
         context.coordinator.readerAnnotations = readerAnnotations
+        context.coordinator.annotationRailWidth = annotationRailWidth
         context.coordinator.bookmark = bookmark?.range
         context.coordinator.reportHasBookmark = reportHasBookmark
 
         let hasMarginMarker = readerAnnotations.contains {
             $0.beginsHere && ($0.annotation.kind == .comment || $0.annotation.kind == .bookmark)
         }
-        let wantedInset = hasMarginMarker ? CGFloat(30) : 0
-        if view.textContainerInset.right != wantedInset {
-            view.textContainerInset.right = wantedInset
+        let wantedLeftInset = annotationRailWidth
+        let wantedRightInset = annotationRailWidth > 0 ? annotationRailWidth : (hasMarginMarker ? CGFloat(30) : 0)
+        if view.textContainerInset.left != wantedLeftInset || view.textContainerInset.right != wantedRightInset {
+            view.textContainerInset.left = wantedLeftInset
+            view.textContainerInset.right = wantedRightInset
             view.invalidateIntrinsicContentSize()
         }
 
@@ -1232,6 +1251,7 @@ private struct DocumentProse: UIViewRepresentable {
         var fixedHighlighter: ReaderAnnotationColor?
         var selectedHighlightColor: ReaderAnnotationColor?
         var readerAnnotations: [ReaderAnnotationDocument.Placement] = []
+        var annotationRailWidth: CGFloat = 0
         /// Where the mark sits in this paragraph, when it is in this one at all.
         var bookmark: NSRange?
         /// Whether the report has one anywhere. A paragraph that does not hold the mark still
@@ -1600,7 +1620,10 @@ private struct DocumentProse: UIViewRepresentable {
                 button.layer.cornerRadius = 10
                 let y = max(rect.midY - 10, lastY + 22)
                 lastY = y
-                button.frame = CGRect(x: max(0, view.bounds.width - 22), y: y, width: 20, height: 20)
+                let x = annotationRailWidth > 0
+                    ? view.bounds.width - annotationRailWidth + (annotationRailWidth - 20) / 2
+                    : view.bounds.width - 22
+                button.frame = CGRect(x: max(0, x), y: y, width: 20, height: 20)
                 button.accessibilityLabel = isBookmark
                     ? String(localized: "Reading bookmark")
                     : String(localized: "Open comment")
