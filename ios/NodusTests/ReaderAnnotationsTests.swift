@@ -133,6 +133,28 @@ struct ReaderAnnotationsTests {
         #expect(ReaderHighlightStroke.range(from: 7, through: 7) == NSRange(location: 7, length: 1))
     }
 
+    @Test("references split a highlight instead of receiving ink")
+    func highlightSkipsReferences() throws {
+        let text = NSMutableAttributedString(string: "Antes Idea después")
+        let reference = (text.string as NSString).range(of: "Idea")
+        text.addAttribute(
+            .nodusReference,
+            value: try #require(URL(string: "nodus://idea/i-1")),
+            range: reference
+        )
+
+        let ranges = ReaderHighlightSegments.ranges(
+            in: NSRange(location: 0, length: text.length),
+            excludingReferencesIn: text
+        )
+
+        #expect(ranges == [
+            NSRange(location: 0, length: reference.location),
+            NSRange(location: NSMaxRange(reference), length: text.length - NSMaxRange(reference)),
+        ])
+        #expect(ReaderHighlightSegments.ranges(in: reference, excludingReferencesIn: text).isEmpty)
+    }
+
     @Test("the newest side wins while delivered mobile changes await cleanup")
     func optimisticOverlayConverges() throws {
         let old = Date(timeIntervalSince1970: 1_000)

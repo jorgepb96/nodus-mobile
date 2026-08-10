@@ -256,6 +256,29 @@ enum ReaderHighlightStroke {
     }
 }
 
+/// The pieces of a requested highlight that are prose rather than a corpus reference.
+/// A single gesture may cross several citations, so it can produce several independently
+/// anchored highlights while the reference labels themselves remain untouched.
+enum ReaderHighlightSegments {
+    static func ranges(in proposed: NSRange, excludingReferencesIn text: NSAttributedString) -> [NSRange] {
+        let whole = NSRange(location: 0, length: text.length)
+        guard let proposed = proposed.intersection(whole), proposed.length > 0 else { return [] }
+
+        var ranges: [NSRange] = []
+        var cursor = proposed.location
+        let end = NSMaxRange(proposed)
+        text.enumerateAttribute(.nodusReference, in: proposed) { value, effective, _ in
+            guard value != nil, let excluded = effective.intersection(proposed) else { return }
+            if cursor < excluded.location {
+                ranges.append(NSRange(location: cursor, length: excluded.location - cursor))
+            }
+            cursor = max(cursor, NSMaxRange(excluded))
+        }
+        if cursor < end { ranges.append(NSRange(location: cursor, length: end - cursor)) }
+        return ranges.filter { $0.length > 0 }
+    }
+}
+
 /// Server rows plus this device's persistent optimistic mutation overlay.
 @Observable
 @MainActor

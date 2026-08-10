@@ -1164,7 +1164,13 @@ private struct DocumentProse: UIViewRepresentable {
             switch placement.annotation.kind {
             case .highlight:
                 if let color = placement.annotation.color {
-                    output.addAttribute(.backgroundColor, value: UIColor(color.color).withAlphaComponent(0.62), range: range)
+                    for segment in ReaderHighlightSegments.ranges(in: range, excludingReferencesIn: base) {
+                        output.addAttribute(
+                            .backgroundColor,
+                            value: UIColor(color.color).withAlphaComponent(0.62),
+                            range: segment
+                        )
+                    }
                 }
             case .comment:
                 let style = NSUnderlineStyle.single.union(.patternDot).rawValue
@@ -1226,6 +1232,7 @@ private struct DocumentProse: UIViewRepresentable {
             ]
             if let link = run.link {
                 attributes[.foregroundColor] = UIColor(accent.nodusReadable)
+                if CorpusProse.claims(link) { attributes[.nodusReference] = link }
                 // A link that looks live and goes nowhere is worse than one that never
                 // claimed to, which is the same rule the SwiftUI path follows — and the same
                 // split between a citation, which needs a session, and a numbered reference,
@@ -1377,7 +1384,11 @@ private struct DocumentProse: UIViewRepresentable {
             copy.accessibilityLabel = String(localized: "Copy")
             ours.append(copy)
 
-            if let onHighlight, let colour = selectedHighlightColor {
+            let highlightable = ReaderHighlightSegments.ranges(
+                in: range,
+                excludingReferencesIn: textView.attributedText
+            )
+            if let onHighlight, let colour = selectedHighlightColor, !highlightable.isEmpty {
                 // Pastel ink is right on the page and almost invisible as a tiny glyph over the
                 // light edit-menu material. Keep the pen itself in the dynamic label colour and
                 // retain the chosen pastel as the symbol's secondary layer where SF Symbols
@@ -1390,7 +1401,7 @@ private struct DocumentProse: UIViewRepresentable {
                     .withRenderingMode(.alwaysOriginal)
                 let highlight = UIAction(title: "", image: image) { _ in
                     MainActor.assumeIsolated {
-                        onHighlight(range, colour)
+                        for segment in highlightable { onHighlight(segment, colour) }
                         textView.clearSelection()
                     }
                 }
@@ -1526,10 +1537,13 @@ private struct DocumentProse: UIViewRepresentable {
                 }
                 let range = ReaderHighlightStroke.range(from: anchor, through: index)
                 preview(range, colour: colour, in: textView)
+                let segments = strokeBaseline.map {
+                    ReaderHighlightSegments.ranges(in: range, excludingReferencesIn: $0)
+                } ?? []
                 strokeAnchor = nil
                 strokeBaseline = nil
                 MainActor.assumeIsolated {
-                    onHighlight(range, colour)
+                    for segment in segments { onHighlight(segment, colour) }
                 }
 
             case .cancelled, .failed:
@@ -1545,11 +1559,13 @@ private struct DocumentProse: UIViewRepresentable {
         private func preview(_ range: NSRange, colour: ReaderAnnotationColor, in textView: UITextView) {
             guard let strokeBaseline, NSMaxRange(range) <= strokeBaseline.length else { return }
             let shown = NSMutableAttributedString(attributedString: strokeBaseline)
-            shown.addAttribute(
-                .backgroundColor,
-                value: UIColor(colour.color).withAlphaComponent(0.62),
-                range: range
-            )
+            for segment in ReaderHighlightSegments.ranges(in: range, excludingReferencesIn: strokeBaseline) {
+                shown.addAttribute(
+                    .backgroundColor,
+                    value: UIColor(colour.color).withAlphaComponent(0.62),
+                    range: segment
+                )
+            }
             textView.attributedText = shown
         }
 
@@ -1751,7 +1767,8 @@ private struct DocumentProse: UIViewRepresentable {
             // opening an annotation that merely happens to be the closest text.
             for index in [offset, offset - 1] where index >= 0 {
                 guard let box = Self.box(ofCharacterAt: index, in: view),
-                      box.insetBy(dx: -1, dy: 0).contains(point)
+                      box.insetBy(dx: -1, dy: 0).contains(point),
+                      view.attributedText.attribute(.nodusReference, at: index, effectiveRange: nil) == nil
                 else { continue }
                 if let placement = readerAnnotations
                     .filter({ $0.range.length > 0 && NSLocationInRange(index, $0.range) })
@@ -1874,6 +1891,9 @@ private struct DocumentProse: UIViewRepresentable {
 }
 
 extension NSAttributedString.Key {
+    /// Any reference label, live or not. Highlighter ink treats it as a gap in the prose.
+    static let nodusReference = NSAttributedString.Key("NodusReference")
+
     /// A citation into the corpus, drawn like a link and opened by this app rather than by UIKit.
     ///
     /// Deliberately not `.link`. UIKit treats a link as a *text item*: it tints it grey under the
