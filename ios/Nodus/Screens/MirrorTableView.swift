@@ -62,7 +62,10 @@ struct MirrorTableView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { sortMenu }
         }
-        .task { if rows.isEmpty { await reload() } }
+        // The publication revision changes before a potentially large mirror finishes
+        // importing. Keying this local read to the mirror's own revision prevents one reload
+        // from racing the import and then remaining on the old rows.
+        .task(id: session.mirrorSummary?.revision) { await reload() }
     }
 
     private var sortMenu: some View {

@@ -11,12 +11,19 @@ import SwiftUI
 struct RowDetailView: View {
     let session: SpaceSession
     let collection: CollectionDescriptor?
-    let row: Row
+    @State private var row: Row
     var title: String?
 
     @State private var enriched: Enriched?
     @State private var isLoading = false
     @State private var error: String?
+
+    init(session: SpaceSession, collection: CollectionDescriptor?, row: Row, title: String? = nil) {
+        self.session = session
+        self.collection = collection
+        self.title = title
+        _row = State(initialValue: row)
+    }
 
     enum Enriched {
         case idea(IdeaDetail)
@@ -131,7 +138,9 @@ struct RowDetailView: View {
         .navigationTitle(Text(LocalizedStringKey(collection?.label ?? title ?? "Detail")))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task { await enrich() }
+        // Keep an already-open dossier on the same publication as its parent list. The
+        // revision task preserves navigation and scroll position while replacing the record.
+        .task(id: session.publishedRevision) { await enrich() }
     }
 
     @ViewBuilder
@@ -783,21 +792,44 @@ struct RowDetailView: View {
     // MARK: Loading
 
     private func enrich() async {
-        guard let collection, enriched == nil, !isLoading else { return }
+        guard let collection else { return }
         guard let id = row.string(collection.idField) else { return }
         isLoading = true
         defer { isLoading = false }
         do {
             switch collection.path {
-            case "ideas": enriched = .idea(try await session.client.idea(id, in: session.connection.spaceId))
-            case "works": enriched = .work(try await session.client.work(id, in: session.connection.spaceId))
-            case "persons": enriched = .person(try await session.client.person(id, in: session.connection.spaceId))
-            case "authors": enriched = .author(try await session.client.author(id, in: session.connection.spaceId))
-            case "databases": enriched = .database(try await session.client.database(id, in: session.connection.spaceId, limit: 50))
-            case "teaching-exams": enriched = .exam(try await session.client.exam(id, in: session.connection.spaceId))
-            case "study-plans": enriched = .plan(try await session.client.studyPlan(id, in: session.connection.spaceId))
-            default: break
+            case "ideas":
+                let detail = try await session.client.idea(id, in: session.connection.spaceId)
+                row = detail.idea
+                enriched = .idea(detail)
+            case "works":
+                let detail = try await session.client.work(id, in: session.connection.spaceId)
+                row = detail.work
+                enriched = .work(detail)
+            case "persons":
+                let detail = try await session.client.person(id, in: session.connection.spaceId)
+                row = detail.person
+                enriched = .person(detail)
+            case "authors":
+                let detail = try await session.client.author(id, in: session.connection.spaceId)
+                row = detail.author
+                enriched = .author(detail)
+            case "databases":
+                let detail = try await session.client.database(id, in: session.connection.spaceId, limit: 50)
+                row = detail.database
+                enriched = .database(detail)
+            case "teaching-exams":
+                let detail = try await session.client.exam(id, in: session.connection.spaceId)
+                row = detail.exam
+                enriched = .exam(detail)
+            case "study-plans":
+                let detail = try await session.client.studyPlan(id, in: session.connection.spaceId)
+                row = detail.plan
+                enriched = .plan(detail)
+            default:
+                row = try await session.client.item(collection, id: id, in: session.connection.spaceId)
             }
+            error = nil
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {

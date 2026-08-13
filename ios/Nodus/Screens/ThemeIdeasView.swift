@@ -85,7 +85,7 @@ struct ThemeIdeasView: View {
                 }
             }
         }
-        .task { await load() }
+        .task(id: session.mirrorSummary?.revision) { await load() }
     }
 
     private func load() async {

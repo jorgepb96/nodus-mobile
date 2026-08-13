@@ -76,7 +76,7 @@ struct CollectionListView: View {
             NodusSearchField(text: $query, prompt: "Filter on any field", accent: session.accent, isBusy: isLoading)
         }
         .onChange(of: query) { _, _ in scheduleReload() }
-        .task { if rows.isEmpty { await reload() } }
+        .task(id: session.publishedRevision) { await reload() }
         .refreshable { await reload() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -325,12 +325,12 @@ struct SpecialListView: View {
         } message: {
             Text("Send it from the send queue. It joins the vault when its owner next opens Nodus desktop and republishes — until then this list still shows what was published.")
         }
-        .task {
+        .task(id: session.publishedRevision) {
             // The rows first, and the queue afterwards. The queue is a SQLite file being opened
             // and migrated, and opening it before the fetch meant Debates, Deep Research and
             // Immersion — none of which can write anything — all waited on a disk they were
             // never going to use.
-            if rows.isEmpty { await reload() }
+            await reload()
             if resource == .notes, outbox == nil {
                 outbox = await OutboxController.open(session: session)
             }

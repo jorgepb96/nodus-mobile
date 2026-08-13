@@ -42,7 +42,7 @@ struct DatabaseGridView: View {
         .navigationTitle(Text(verbatim: database.text("name") ?? String(localized: "Database")))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task { if detail == nil { await load(offset: 0) } }
+        .task(id: session.publishedRevision) { await load(offset: 0) }
     }
 
     private func grid(_ detail: DatabaseDetail) -> some View {

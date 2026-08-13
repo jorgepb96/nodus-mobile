@@ -91,6 +91,11 @@ struct SearchScreen: View {
             NodusSearchField(text: $query, prompt: prompt, accent: session.accent, isBusy: isSearching)
         }
         .onChange(of: query) { _, _ in schedule() }
+        .task(id: session.publishedRevision) {
+            let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard current.count >= 2 else { return }
+            await run(current)
+        }
         // A passage names its work by id and by nothing else, so without this every quotation
         // in the list is a paragraph from nowhere. One round of requests covers the page.
         .task(id: hits.map(\.id)) {

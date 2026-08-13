@@ -28,6 +28,12 @@ struct FamilyTreeView: View {
     @State private var error: String?
     @State private var history: [String] = []
 
+    /// REST rows become available as soon as the publication changes; portrait assets become
+    /// available after the optional mirror has finished importing that same revision.
+    private var loadID: String {
+        "\(session.publishedRevision ?? "unpublished"):\(session.mirrorSummary?.revision ?? "no-mirror")"
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
@@ -80,7 +86,7 @@ struct FamilyTreeView: View {
                 }
             }
         }
-        .task { await load() }
+        .task(id: loadID) { await load() }
     }
 
     // MARK: Pieces
@@ -194,6 +200,7 @@ struct FamilyTreeView: View {
     @State private var portraitHashes: [String: String] = [:]
 
     private func load() async {
+        let currentFocusId = focus?.string("person_id")
         isLoading = true
         defer { isLoading = false }
         do {
@@ -221,6 +228,7 @@ struct FamilyTreeView: View {
             }
             relationships = allRelationships
 
+            portraitHashes = [:]
             if let mirror = session.mirror {
                 let portraits = (try? await mirror.page(table: "person_portraits", limit: 500)) ?? Page(items: [], total: 0, limit: 0, offset: 0, hasMore: false, revision: "")
                 for row in portraits.items {
@@ -229,7 +237,8 @@ struct FamilyTreeView: View {
                 }
             }
 
-            let start = rootPersonId ?? mostConnectedPerson()
+            let preferred = currentFocusId ?? rootPersonId
+            let start = preferred.flatMap { people[$0] == nil ? nil : $0 } ?? mostConnectedPerson()
             if let start { refocus(on: start, remember: false) }
             error = nil
         } catch where error.isCancellation {

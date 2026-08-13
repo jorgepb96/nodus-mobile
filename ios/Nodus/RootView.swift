@@ -89,6 +89,11 @@ struct RootView: View {
                 // Coming back is also when another device may have written a report or a chat.
                 // Returns on the first line unless the user switched the iCloud copy on.
                 Task { await cloud.refresh() }
+                // Do not wait for the foreground polling interval after an edit was made on
+                // the desktop while this app was suspended.
+                if let session = model.session {
+                    Task { await session.refreshPublishedContent() }
+                }
             }
 
             guard phase == .background else { return }

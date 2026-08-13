@@ -50,7 +50,7 @@ struct ImmersionView: View {
         .navigationTitle("Immersion")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
     }
 
     // MARK: Pieces
@@ -207,7 +207,6 @@ struct ImmersionView: View {
     }
 
     private func load() async {
-        guard plan == nil else { return }
         do {
             let detail = try await session.client.immersionSession(sessionId, in: session.connection.spaceId)
             plan = ImmersionPlan(detail)

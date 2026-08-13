@@ -62,7 +62,7 @@ struct ScheduleView: View {
             await session.downloadMirror()
             await load()
         }
-        .task { await load() }
+        .task(id: session.mirrorSummary?.revision) { await load() }
     }
 
     /// Only days that actually have something in them: a timetable with an empty Saturday
@@ -219,7 +219,7 @@ struct FlashcardsView: View {
         .navigationTitle("Flashcards")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
     }
 
     private func card(_ row: Row) -> some View {
@@ -346,7 +346,7 @@ struct QuestionBankView: View {
         .safeAreaInset(edge: .top) {
             NodusSearchField(text: $query, prompt: "Filter questions", accent: session.accent)
         }
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
     }
 
     private func load() async {

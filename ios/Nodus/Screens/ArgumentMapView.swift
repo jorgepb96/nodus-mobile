@@ -60,7 +60,11 @@ struct ArgumentMapView: View {
                 }
             }
         }
-        .task {
+        .task(id: session.publishedRevision) {
+            if let chosen {
+                await build(chosen)
+                return
+            }
             guard map == nil, let seed, chosen == nil else { return }
             chosen = seed
             await build(seed)
@@ -293,7 +297,10 @@ private struct ArgumentSeedPicker: View {
             )
         }
         .onChange(of: query) { _, _ in schedule() }
-        .task { if rows.isEmpty { await load(nil) } }
+        .task(id: session.publishedRevision) {
+            let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            await load(current.isEmpty ? nil : current)
+        }
     }
 
     private func schedule() {

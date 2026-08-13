@@ -33,6 +33,7 @@ struct SpaceShell: View {
                 await session.loadMirror()
                 await session.probeEmbedding()
             }
+            .task { await session.monitorPublishedContent() }
             .nodusSheet(isPresented: $showingSettings) {
                 SpaceSettingsView(session: session)
                     .nodusModalClose(accent: session.accent)

@@ -23,6 +23,16 @@ final class SpaceSession {
     private(set) var loadFailure: ConnectionFailure?
     private(set) var isPublished = true
     private(set) var isLoading = false
+    /// The revision every server-backed screen is currently showing.
+    ///
+    /// A publication is immutable, so this one value invalidates every REST response derived
+    /// from it. Views key their loading task to it: when the desktop publishes a change, the
+    /// open list or document asks for the same route again and its ETag supplies the new body.
+    private(set) var publishedRevision: String?
+
+    /// Serialises the cheap HEAD probes from the foreground loop and the scene activation
+    /// hook. Returning to the app commonly fires both at once; asking twice adds no freshness.
+    private var isCheckingPublishedContent = false
 
     /// Told to `AppModel` so the space picker can say the same thing this screen says.
     private let onFailure: (ConnectionFailure) -> Void
@@ -221,7 +231,9 @@ final class SpaceSession {
             // discovered, and the session's own 30 s is half a minute of spinner to say so.
             // Later refreshes are against a server that has already answered, and keep it.
             let isFirstKnock = overview == nil
-            overview = try await client.space(connection.spaceId, timeout: isFirstKnock ? 4 : nil)
+            let loaded = try await client.space(connection.spaceId, timeout: isFirstKnock ? 4 : nil)
+            overview = loaded
+            publishedRevision = loaded.space.revision
             isPublished = overview?.hasBeenPublished ?? false
             loadFailure = nil
         } catch let error as APIError where error.isNotPublished {
@@ -247,6 +259,62 @@ final class SpaceSession {
             )
             loadFailure = failure
             if let failure { onFailure(failure) }
+        }
+    }
+
+    // MARK: - Live publication refresh
+
+    /// Checks whether the desktop has published a newer corpus and invalidates the open UI.
+    ///
+    /// The probe carries no snapshot body. A full mirror is downloaded only for somebody who
+    /// explicitly keeps one, because mirror-only worldbuilding tables have no REST route from
+    /// which they could otherwise refresh. Ordinary screens revalidate their own small route.
+    func refreshPublishedContent() async {
+        guard !isDemo, !isCheckingPublishedContent else { return }
+        isCheckingPublishedContent = true
+        defer { isCheckingPublishedContent = false }
+
+        do {
+            let revision = try await client.snapshotRevision(in: connection.spaceId)
+            let publicationChanged = revision != publishedRevision
+            let mirrorNeedsRefresh = mirror != nil && mirrorSummary?.revision != revision
+            guard publicationChanged || mirrorNeedsRefresh else { return }
+
+            // Publish the invalidation before the secondary reads. An open document can fetch
+            // its new rows in parallel with the overview and an optional offline mirror.
+            if publicationChanged { publishedRevision = revision }
+            async let overviewRefresh: Void = publicationChanged ? load() : ()
+            if mirrorNeedsRefresh {
+                async let mirrorRefresh: Void = downloadMirror()
+                _ = await (overviewRefresh, mirrorRefresh)
+            } else {
+                await overviewRefresh
+            }
+        } catch let error as APIError where error.isNotPublished {
+            // A cleared publication is also a state change. `load()` turns it into the shell's
+            // existing unpublished empty state rather than presenting it as a connection error.
+            if publishedRevision != nil {
+                publishedRevision = nil
+                await load()
+            }
+        } catch where error.isCancellation {
+            // The shell went away or the app was suspended. Nothing failed.
+        } catch {
+            // Live refresh is opportunistic. The last coherent publication remains readable,
+            // and the ordinary screen loaders still surface actionable connection failures.
+        }
+    }
+
+    /// Keeps an open space close to the desktop without moving snapshot bytes on every tick.
+    /// SwiftUI cancels this task when the shell closes; iOS suspends it with the app.
+    func monitorPublishedContent(every interval: Duration = .seconds(5)) async {
+        while !Task.isCancelled {
+            await refreshPublishedContent()
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                return
+            }
         }
     }
 

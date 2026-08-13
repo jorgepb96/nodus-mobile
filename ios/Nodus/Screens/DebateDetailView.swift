@@ -126,15 +126,17 @@ struct DebateByIdView: View {
         .navigationTitle("Cited source")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task {
-            guard row == nil, problem == nil else { return }
+        .task(id: session.publishedRevision) {
             do {
                 row = try await session.client.debate(edgeId, in: session.connection.spaceId)
+                problem = nil
             } catch let error as APIError where error.isNotFound {
+                row = nil
                 problem = .missing
             } catch where error.isCancellation {
                 // The sheet closed while the source was loading.
             } catch {
+                row = nil
                 problem = .failed
             }
         }

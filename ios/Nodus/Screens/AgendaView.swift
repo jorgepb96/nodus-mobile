@@ -42,6 +42,8 @@ struct AgendaView: View {
         }
     }
 
+    private var loadID: String { "\(window.rawValue):\(session.publishedRevision ?? "unpublished")" }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -82,7 +84,7 @@ struct AgendaView: View {
         .navigationTitle("Agenda")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: window) { await load() }
+        .task(id: loadID) { await load() }
         .refreshable { await load() }
     }
 
@@ -267,7 +269,7 @@ struct GoalsView: View {
         .navigationTitle("Goals")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task { if goals.isEmpty { await load() } }
+        .task(id: session.publishedRevision) { await load() }
         .refreshable { await load() }
     }
 

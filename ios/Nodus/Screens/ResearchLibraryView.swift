@@ -200,7 +200,7 @@ struct ResearchLibraryView: View {
                 sortMenu
             }
         }
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
         .refreshable { await load() }
     }
 
@@ -1118,7 +1118,7 @@ struct PublishedReportReader: View {
             id: row.string("id"),
             rows: detail?.annotations ?? []
         ))
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
     }
 
     private struct Prose { let heading: String?; let body: String }
