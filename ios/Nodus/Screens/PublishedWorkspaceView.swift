@@ -187,26 +187,51 @@ private struct PublishedWorkspaceItemView: View {
     let folderName: String?
     @State private var item: Row?
     @State private var error: String?
-    @State private var editing: EditableNote?
     @State private var queued = false
+    @State private var saving = false
+    @State private var draftTitle = ""
+    @State private var draftContent = ""
+
+    private var canEdit: Bool { session.connection.role.canSendChanges && item != nil }
+    private var hasChanges: Bool {
+        guard let item else { return false }
+        return draftTitle != (item.text("title") ?? "") || draftContent != (item.text("content") ?? "")
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 if let item {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(item.text("title") ?? String(localized: "Untitled")).font(.title3.weight(.semibold))
+                        if canEdit {
+                            TextField("Untitled", text: $draftTitle, axis: .vertical)
+                                .font(.title3.weight(.semibold)).textFieldStyle(.plain)
+                                .accessibilityLabel("Title")
+                        } else {
+                            Text(item.text("title") ?? String(localized: "Untitled")).font(.title3.weight(.semibold))
+                        }
                         HStack(spacing: 10) {
                             Label(item.string("kind") == "idea" ? "Idea" : "Note", systemImage: item.string("kind") == "idea" ? "lightbulb.fill" : "note.text")
                             if let folderName { Label(folderName, systemImage: "folder") }
                             if let updated = item.date("updated_at") { Text(updated, format: .relative(presentation: .named)) }
                         }.font(.caption).foregroundStyle(.secondary)
-                        Button { UIPasteboard.general.string = item.text("content") ?? "" } label: { Label("Copy", systemImage: "doc.on.doc") }
+                        Button { UIPasteboard.general.string = canEdit ? draftContent : item.text("content") ?? "" } label: { Label("Copy", systemImage: "doc.on.doc") }
                             .font(.caption.weight(.semibold)).tint(session.accent)
                     }.padding(NodusSpace.cardPadding).frame(maxWidth: .infinity, alignment: .leading).nodusGlass(NodusGlass(.regular, tint: session.accent))
-                    CorpusProse(item.text("content") ?? "", accent: session.accent, session: session)
-                        .padding(ReportLayout.sectionPadding).frame(maxWidth: .infinity, alignment: .leading)
-                        .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                    if canEdit {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Label("Editor", systemImage: "doc.richtext").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                Spacer()
+                                Label("Select text for writing tools", systemImage: "text.cursor").font(.caption2).foregroundStyle(.tertiary)
+                            }
+                            WorkspaceEditorSurface(text: $draftContent, accent: session.accent, minHeight: 360)
+                        }
+                    } else {
+                        CorpusProse(item.text("content") ?? "", accent: session.accent, session: session)
+                            .padding(ReportLayout.sectionPadding).frame(maxWidth: .infinity, alignment: .leading)
+                            .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                    }
                 } else if let error {
                     NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(error))
                 } else { ProgressView().tint(session.accent).frame(maxWidth: .infinity) }
@@ -215,15 +240,15 @@ private struct PublishedWorkspaceItemView: View {
         .navigationTitle(summary.string("kind") == "idea" ? "Idea" : "Note").navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent).nodusHidesBottomBar().nodusPageFunctions(accent: session.accent)
         .toolbar {
-            if session.connection.role.canSendChanges, let item {
-                ToolbarItem(placement: .topBarTrailing) { Button { editing = EditableNote(item) } label: { Image(systemName: "pencil") } }
-            }
-        }
-        .nodusSheet(item: $editing) { note in
-            NoteEditor(accent: session.accent, note: note) { title, body in
-                guard let outbox = await OutboxController.open(session: session) else { return }
-                await outbox.queueNote(id: note.id, title: title, body: body, folderId: note.folderId, createdAt: note.createdAt)
-                queued = true
+            if canEdit {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { Task { await save() } } label: {
+                        if saving { ProgressView().controlSize(.small) }
+                        else { Image(systemName: hasChanges ? "checkmark.circle.fill" : "checkmark.circle") }
+                    }
+                    .disabled(saving || !hasChanges)
+                    .accessibilityLabel("Save changes")
+                }
             }
         }
         .alert("Queued on this device", isPresented: $queued) { Button("OK", role: .cancel) {} }
@@ -232,7 +257,38 @@ private struct PublishedWorkspaceItemView: View {
 
     private func load() async {
         guard let id = summary.string("id") else { return }
-        do { item = try await session.client.note(id, in: session.connection.spaceId); error = nil }
+        do {
+            let loaded = try await session.client.note(id, in: session.connection.spaceId)
+            item = loaded
+            draftTitle = loaded.text("title") ?? ""
+            draftContent = loaded.text("content") ?? ""
+            error = nil
+        }
         catch { self.error = error.localizedDescription }
+    }
+
+    private func save() async {
+        guard let item, let note = EditableNote(item), hasChanges else { return }
+        saving = true; defer { saving = false }
+        guard let outbox = await OutboxController.open(session: session) else { return }
+        await outbox.queueNote(
+            id: note.id,
+            title: draftTitle,
+            body: draftContent,
+            folderId: note.folderId,
+            createdAt: note.createdAt
+        )
+        queued = true
+        // Keep the queued draft as the new local baseline. The published server copy changes
+        // only when the owner's desktop accepts the mutation, but the editor must not keep
+        // presenting a change it has already safely written to this device as unsaved.
+        self.item = rowReplacing(item, title: draftTitle, content: draftContent)
+    }
+
+    private func rowReplacing(_ row: Row, title: String, content: String) -> Row {
+        var columns = row.columns
+        columns["title"] = .string(title)
+        columns["content"] = .string(content)
+        return Row(columns)
     }
 }
