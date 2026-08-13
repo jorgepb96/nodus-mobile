@@ -369,9 +369,29 @@ public struct LocalCorpus: Sendable {
         let all = try await mirror.allRows(table: "notes")
         guard segments.count > 1 else {
             let folder = request.value(of: "folderId")
+            let kind = request.value(of: "kind")
             let needle = request.value(of: "q")?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let folders = try await mirror.allRows(table: "note_folders")
+            var folderIds: Set<String>?
+            if let folder, request.value(of: "recursive") == "1" {
+                var found: Set<String> = [folder]
+                var changed = true
+                while changed {
+                    changed = false
+                    for candidate in folders {
+                        guard let id = candidate.string("id"), let parent = candidate.string("parent_id"),
+                              found.contains(parent), !found.contains(id) else { continue }
+                        found.insert(id); changed = true
+                    }
+                }
+                folderIds = found
+            }
             let filtered = all
-                .filter { folder == nil || $0.string("folder_id") == folder }
+                .filter { note in
+                    guard let folder else { return true }
+                    return folderIds?.contains(note.string("folder_id") ?? "") ?? (note.string("folder_id") == folder)
+                }
+                .filter { kind == nil || ($0.string("kind") ?? "markdown") == kind }
                 .filter { needle == nil || needle!.isEmpty || $0.searchableText.lowercased().contains(needle!) }
                 // The list carries a 240-character snippet rather than whole bodies, which is
                 // what the cell shows and what keeps a corpus of long notes from arriving whole.
@@ -390,7 +410,11 @@ public struct LocalCorpus: Sendable {
                 offset: PageBounds.clampedOffset(request.number(of: "offset")),
                 revision: revision
             )
-            envelope["folders"] = .array(try await mirror.allRows(table: "note_folders").map { .object($0.columns) })
+            envelope["folders"] = .array(folders.map { .object($0.columns) })
+            envelope["counts"] = .object([
+                "notes": .int(Int64(all.filter { ($0.string("kind") ?? "markdown") != "idea" }.count)),
+                "ideas": .int(Int64(all.filter { $0.string("kind") == "idea" }.count)),
+            ])
             return envelope
         }
         guard let note = all.first(where: { $0.string("id") == segments[1] }) else { throw Self.notFound }

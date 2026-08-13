@@ -32,6 +32,7 @@ public struct PublishedLibraryAnnotation: Sendable, Hashable, Codable, Identifia
     public let prefix: String
     public let suffix: String
     public let comment: String?
+    public let target: PublishedLibraryAnnotationTarget?
     public let createdAt: Date
     public let updatedAt: Date
 
@@ -45,10 +46,23 @@ public struct PublishedLibraryAnnotation: Sendable, Hashable, Codable, Identifia
             "start_offset": .int(Int64(startOffset)), "end_offset": .int(Int64(endOffset)),
             "selected_text": .string(selectedText), "prefix": .string(prefix), "suffix": .string(suffix),
             "comment_text": comment.map(JSONValue.string) ?? .null,
+            "target_json": target.flatMap { try? JSONEncoder().encode($0) }
+                .flatMap { String(data: $0, encoding: .utf8) }.map(JSONValue.string) ?? .null,
             "created_at": .string(timestamp.string(from: createdAt)),
             "updated_at": .string(timestamp.string(from: updatedAt)),
         ])
     }
+}
+
+public struct PublishedLibraryAnnotationTarget: Sendable, Hashable, Codable {
+    public let type: String
+    public let attachmentId: String
+    public let page: Int?
+    public let chapterId: String?
+    public let x: Double?
+    public let y: Double?
+    public let width: Double?
+    public let height: Double?
 }
 
 public struct PublishedLibraryDocument: Sendable, Hashable, Codable, Identifiable {
@@ -62,8 +76,21 @@ public struct PublishedLibraryDocument: Sendable, Hashable, Codable, Identifiabl
     public let language: String?
     public let publisher: String?
     public let publicationTitle: String?
+    public let volume: String?
+    public let issue: String?
+    public let pages: String?
+    public let edition: String?
+    public let place: String?
+    public let rights: String?
     public let doi: String?
+    public let pmid: String?
+    public let pmcid: String?
+    public let arxiv: String?
+    public let isbn: [String]?
+    public let issn: [String]?
     public let url: String?
+    public let citationKey: String?
+    public let reference: String?
     public let tags: [String]
     public let collectionIds: [String]
     public let updatedAt: Date
@@ -75,6 +102,7 @@ public struct PublishedLibraryDocument: Sendable, Hashable, Codable, Identifiabl
     public let originalAvailable: Bool
     public let originalFileName: String?
     public let originalMimeType: String?
+    public let originalBytes: Int?
     public let annotations: [PublishedLibraryAnnotation]
 
     public var libraryDraftId: String { "nodus-library:\(id)" }
@@ -85,15 +113,18 @@ public struct PublishedLibraryDocument: Sendable, Hashable, Codable, Identifiabl
             .replacingOccurrences(of: "=", with: "")
         return "library-annotation:\(encoded):"
     }
-    public var annotationRows: [Row] {
-        annotations.map { annotation in
+    public func annotationRows(for source: String) -> [Row] {
+        let canonical = source == "library-original" ? "original" : "source"
+        return annotations.filter { $0.scope == canonical || (canonical == "source" && $0.scope == "library") }.map { annotation in
             var columns = annotation.row.columns
             columns["id"] = .string(libraryAnnotationRoutingPrefix + annotation.id)
             columns["draft_id"] = .string(libraryDraftId)
-            columns["scope"] = .string("library")
+            columns["scope"] = .string(source)
             return Row(columns)
         }
     }
+
+    public var annotationRows: [Row] { annotationRows(for: "library-clean") }
 }
 
 public struct PublishedLibraryDocumentPage: Sendable, Hashable, Codable {

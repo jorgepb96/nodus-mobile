@@ -5,8 +5,14 @@ import ZIPFoundation
 public actor PublishedLibraryStore {
     private static let maximumPackageBytes = 128 * 1024 * 1024
     private static let maximumExpandedBytes: UInt64 = 256 * 1024 * 1024
+    private static let maximumOriginalBytes: UInt64 = 96 * 1024 * 1024
     private static let maximumEntryCount = 2_048
     private static let allowedFigureExtensions = Set(["png", "jpg", "jpeg", "webp", "gif", "svg"])
+    private static let allowedOriginalExtensions = Set([
+        "pdf", "epub", "md", "markdown", "txt", "csv", "tsv", "xml", "jats", "html", "htm",
+        "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "tif", "tiff",
+        "docx", "odt", "rtf", "pptx", "odp", "xlsx", "ods",
+    ])
 
     public enum StoreError: LocalizedError, Equatable {
         case unavailable, corruptPackage, unsafeArchive, missingMarkdown
@@ -26,6 +32,12 @@ public actor PublishedLibraryStore {
         public let packageHash: String
         public let downloadedAt: Date
         public let bytes: Int
+    }
+
+    public struct PreparedContent: Sendable, Hashable {
+        public let markdown: String?
+        public let original: URL?
+        public let package: URL
     }
 
     private let spaceId: String
@@ -75,6 +87,11 @@ public actor PublishedLibraryStore {
         let value = directory(id).appendingPathComponent("package.zip")
         return FileManager.default.fileExists(atPath: value.path) ? value : nil
     }
+    public func originalURL(_ id: String) -> URL? {
+        let folder = directory(id).appendingPathComponent("original", isDirectory: true)
+        guard let values = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return nil }
+        return values.first { Self.allowedOriginalExtensions.contains($0.pathExtension.lowercased()) }
+    }
     public func figures(_ id: String) -> [URL] {
         let assets = directory(id).appendingPathComponent("assets", isDirectory: true)
         guard let enumerator = FileManager.default.enumerator(at: assets, includingPropertiesForKeys: nil) else { return [] }
@@ -85,17 +102,35 @@ public actor PublishedLibraryStore {
 
     @discardableResult
     public func download(_ document: PublishedLibraryDocument, using client: NodusClient) async throws -> String {
-        guard document.cleanAvailable, let hash = document.packageHash else { throw StoreError.unavailable }
-        if isDownloaded(document.id, packageHash: hash) { return try markdown(document.id) }
+        guard document.cleanAvailable else { throw StoreError.unavailable }
+        let content = try await prepare(document, using: client)
+        guard let markdown = content.markdown else { throw StoreError.missingMarkdown }
+        return markdown
+    }
+
+    public func prepare(_ document: PublishedLibraryDocument, using client: NodusClient) async throws -> PreparedContent {
+        guard document.cleanAvailable || document.originalAvailable, let hash = document.packageHash else { throw StoreError.unavailable }
+        if isDownloaded(document.id, packageHash: hash), let package = packageURL(document.id) {
+            return PreparedContent(
+                markdown: try? markdown(document.id),
+                original: originalURL(document.id),
+                package: package
+            )
+        }
         let bytes = try await client.publishedLibraryPackage(document.id, in: spaceId)
         guard bytes.count <= Self.maximumPackageBytes, Self.sha256(bytes) == hash else { throw StoreError.corruptPackage }
-        return try install(document, package: bytes)
+        return try installPackage(document, package: bytes)
     }
 
     /// Validate and atomically install one server package. Kept separate from the network call
     /// so the exact ZIP boundary is exercised by the package tests as well as by the UI.
     func install(_ document: PublishedLibraryDocument, package bytes: Data) throws -> String {
-        guard document.cleanAvailable, let hash = document.packageHash,
+        guard let markdown = try installPackage(document, package: bytes).markdown else { throw StoreError.missingMarkdown }
+        return markdown
+    }
+
+    private func installPackage(_ document: PublishedLibraryDocument, package bytes: Data) throws -> PreparedContent {
+        guard (document.cleanAvailable || document.originalAvailable), let hash = document.packageHash,
               bytes.count <= Self.maximumPackageBytes, Self.sha256(bytes) == hash else {
             throw StoreError.corruptPackage
         }
@@ -112,6 +147,7 @@ public actor PublishedLibraryStore {
         catch { throw StoreError.corruptPackage }
         var expandedBytes: UInt64 = 0
         var entryCount = 0
+        var originalEntries = 0
         for entry in archive {
             entryCount += 1
             expandedBytes += UInt64(entry.uncompressedSize)
@@ -128,7 +164,12 @@ public actor PublishedLibraryStore {
                 let isMarkdown = relative == "document.md"
                 let isFigure = relative.hasPrefix("assets/")
                     && Self.allowedFigureExtensions.contains(URL(fileURLWithPath: relative).pathExtension.lowercased())
-                guard isManifest || isMarkdown || isFigure else { throw StoreError.unsafeArchive }
+                let originalComponents = relative.split(separator: "/")
+                let isOriginal = originalComponents.count == 2 && originalComponents.first == "original"
+                    && Self.allowedOriginalExtensions.contains(URL(fileURLWithPath: relative).pathExtension.lowercased())
+                if isOriginal, UInt64(entry.uncompressedSize) > Self.maximumOriginalBytes { throw StoreError.unsafeArchive }
+                if isOriginal { originalEntries += 1 }
+                guard originalEntries <= 1, isManifest || isMarkdown || isFigure || isOriginal else { throw StoreError.unsafeArchive }
             } else if entry.type != .directory {
                 throw StoreError.unsafeArchive
             }
@@ -139,21 +180,43 @@ public actor PublishedLibraryStore {
             _ = try archive.extract(entry, to: target)
         }
         let extractedMarkdown = extracted.appendingPathComponent("document.md")
-        guard manager.fileExists(atPath: extractedMarkdown.path) else { throw StoreError.missingMarkdown }
-        guard let markdown = try? String(contentsOf: extractedMarkdown, encoding: .utf8) else {
-            throw StoreError.corruptPackage
+        let hasMarkdown = manager.fileExists(atPath: extractedMarkdown.path)
+        let markdown: String?
+        if hasMarkdown {
+            guard let value = try? String(contentsOf: extractedMarkdown, encoding: .utf8) else { throw StoreError.corruptPackage }
+            markdown = value
+        } else {
+            markdown = nil
         }
         struct PackageManifest: Decodable {
+            struct Original: Decodable { let path: String }
             let format: String
             let formatVersion: Int
             let documentId: String
+            let cleanMarkdown: Bool?
+            let original: Original?
         }
         let manifestURL = extracted.appendingPathComponent("manifest.json")
         guard let manifestData = try? Data(contentsOf: manifestURL),
               let manifest = try? JSONDecoder().decode(PackageManifest.self, from: manifestData),
-              manifest.format == "nodus.library-document-package", manifest.formatVersion == 1,
+              manifest.format == "nodus.library-document-package", [1, 2].contains(manifest.formatVersion),
               manifest.documentId == document.id else {
             throw StoreError.corruptPackage
+        }
+        let extractedOriginal = extracted.appendingPathComponent("original", isDirectory: true)
+        let original = (try? manager.contentsOfDirectory(at: extractedOriginal, includingPropertiesForKeys: nil))?.first
+        guard hasMarkdown || original != nil else { throw StoreError.corruptPackage }
+        if let original, original.pathExtension.lowercased() == "pdf" {
+            guard let bytes = try? Data(contentsOf: original, options: .mappedIfSafe), bytes.starts(with: Data("%PDF-".utf8)) else {
+                throw StoreError.corruptPackage
+            }
+        }
+        if manifest.formatVersion >= 2 {
+            guard manifest.cleanMarkdown == hasMarkdown,
+                  (manifest.original != nil) == (original != nil),
+                  !document.cleanAvailable || hasMarkdown,
+                  !document.originalAvailable || original != nil else { throw StoreError.corruptPackage }
+            if let original, manifest.original?.path != "original/\(original.lastPathComponent)" { throw StoreError.corruptPackage }
         }
 
         let destination = directory(document.id)
@@ -164,7 +227,8 @@ public actor PublishedLibraryStore {
         try manager.moveItem(at: replacement, to: destination)
         downloads[document.id] = Download(id: document.id, packageHash: hash, downloadedAt: Date(), bytes: bytes.count)
         persist()
-        return markdown
+        guard let package = packageURL(document.id) else { throw StoreError.corruptPackage }
+        return PreparedContent(markdown: markdown, original: originalURL(document.id), package: package)
     }
 
     public func remove(_ ids: Set<String>) {

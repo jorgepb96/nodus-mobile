@@ -206,12 +206,16 @@ public extension NodusClient {
         in spaceId: String,
         query: String? = nil,
         folderId: String? = nil,
+        recursive: Bool = false,
+        kind: String? = nil,
         limit: Int? = nil,
         offset: Int? = nil
     ) async throws -> NotesPage {
         var items = pagingItems(limit: limit, offset: offset)
         if let query, !query.isEmpty { items.append(URLQueryItem(name: "q", value: query)) }
         if let folderId { items.append(URLQueryItem(name: "folderId", value: folderId)) }
+        if recursive { items.append(URLQueryItem(name: "recursive", value: "1")) }
+        if let kind, !kind.isEmpty { items.append(URLQueryItem(name: "kind", value: kind)) }
 
         let response = try await perform(.init(
             path: address.spacePath(spaceId, "/notes"),
@@ -222,6 +226,8 @@ public extension NodusClient {
         return NotesPage(
             notes: rows(object[SpecialResource.notes.listKey]),
             folders: rows(object["folders"]),
+            noteCount: object["counts"]?.objectValue?["notes"]?.intValue ?? 0,
+            ideaCount: object["counts"]?.objectValue?["ideas"]?.intValue ?? 0,
             total: object["total"]?.intValue ?? 0,
             limit: object["limit"]?.intValue ?? PageBounds.defaultLimit,
             offset: object["offset"]?.intValue ?? 0,
@@ -516,6 +522,8 @@ public struct DeepResearchReportDetail: Sendable, Decodable {
 public struct NotesPage: Sendable {
     public let notes: [Row]
     public let folders: [Row]
+    public let noteCount: Int
+    public let ideaCount: Int
     public let total: Int
     public let limit: Int
     public let offset: Int

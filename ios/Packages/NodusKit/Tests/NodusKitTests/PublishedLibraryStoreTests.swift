@@ -60,7 +60,35 @@ struct PublishedLibraryStoreTests {
         #expect(await store.packageURL(published.id) == nil)
     }
 
-    @Test("the phone rejects originals, arbitrary files and packages relabelled as another document")
+    @Test("a version 2 package exposes both Clean Markdown and an original PDF")
+    func installsOriginalAlongsideMarkdown() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nodus-published-library-original-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pdf = Data("%PDF-1.4\n% mobile-readable original\n".utf8)
+        let bytes = try package([
+            "document.md": Data("# Clean version\n\nSelectable text.".utf8),
+            "original/document.pdf": pdf,
+            "manifest.json": try JSONSerialization.data(withJSONObject: [
+                "format": "nodus.library-document-package", "formatVersion": 2, "documentId": "document-original",
+                "cleanMarkdown": true,
+                "original": [
+                    "path": "original/document.pdf", "fileName": "source.pdf",
+                    "mimeType": "application/pdf", "bytes": pdf.count,
+                ],
+            ]),
+        ], at: root)
+        let published = try document(id: "document-original", package: bytes)
+        let store = PublishedLibraryStore(spaceId: "space-1", root: root)
+
+        let markdown = try await store.install(published, package: bytes)
+        #expect(markdown.contains("Selectable text"))
+        let original = await store.originalURL(published.id)
+        #expect(original?.lastPathComponent == "document.pdf")
+        if let original { #expect(try Data(contentsOf: original) == pdf) }
+    }
+
+    @Test("the phone rejects unsafe original placement, arbitrary files and packages relabelled as another document")
     func rejectsUnsafeOrMismatchedPackage() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nodus-published-library-reject-\(UUID().uuidString)", isDirectory: true)
@@ -75,7 +103,7 @@ struct PublishedLibraryStoreTests {
         let store = PublishedLibraryStore(spaceId: "space-1", root: root)
         do {
             _ = try await store.install(try document(id: "document-unsafe", package: unsafe), package: unsafe)
-            Issue.record("an original file was accepted")
+            Issue.record("an original outside its safe package folder was accepted")
         } catch let error as PublishedLibraryStore.StoreError {
             #expect(error == .unsafeArchive)
         }

@@ -139,10 +139,18 @@ struct HomeView: View {
                             SectionTile(title: "Nodi’s notes", icon: "sparkles", count: nil, accent: session.accent)
                         }
                         .buttonStyle(NodusCardButtonStyle())
+                        if session.hasNotes {
+                            NavigationLink {
+                                PublishedWorkspaceView(session: session)
+                            } label: {
+                                SectionTile(title: "Workspace", icon: "rectangle.stack", count: session.overview?.counts["notes"], accent: session.accent)
+                            }
+                            .buttonStyle(NodusCardButtonStyle())
+                        }
                     }
                 }
 
-                if session.hasDebates || session.hasNotes || session.hasDeepResearch || session.hasImmersion {
+                if session.hasDebates || session.hasDeepResearch || session.hasImmersion {
                     tileSection("Analyse") {
                         if session.hasDebates {
                             specialTile(.debates, "Debates", "bubble.left.and.bubble.right")
@@ -173,9 +181,6 @@ struct HomeView: View {
                         }
                         if session.hasImmersion {
                             specialTile(.immersion, "Immersion", "waveform")
-                        }
-                        if session.hasNotes {
-                            specialTile(.notes, "Notes", "note.text")
                         }
                     }
                 }

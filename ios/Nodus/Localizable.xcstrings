@@ -11204,6 +11204,102 @@
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Prueba otra búsqueda o colección." } } }
     },
+    "Workspace": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Espacio de trabajo" } } }
+    },
+    "Search notes and ideas": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Buscar en notas e ideas" } } }
+    },
+    "Could not load Workspace": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "No se pudo cargar el espacio de trabajo" } } }
+    },
+    "Try another search, collection or content type.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Prueba otra búsqueda, colección o tipo de contenido." } } }
+    },
+    "Content type": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Tipo de contenido" } } }
+    },
+    "All in %@": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Todo en %@" } } }
+    },
+    "Collection: %@": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Colección: %@" } } }
+    },
+    "View metadata": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Ver metadatos" } } }
+    },
+    "Copy reference": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Copiar referencia" } } }
+    },
+    "Bibliographic reference": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Referencia bibliográfica" } } }
+    },
+    "Volume": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Volumen" } } }
+    },
+    "Issue": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Número" } } }
+    },
+    "Pages": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Páginas" } } }
+    },
+    "Edition": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Edición" } } }
+    },
+    "Rights": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Derechos" } } }
+    },
+    "Open URL": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Abrir URL" } } }
+    },
+    "Reading format": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Formato de lectura" } } }
+    },
+    "Clean Markdown": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Markdown limpio" } } }
+    },
+    "Original": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Original" } } }
+    },
+    "Export": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Exportar" } } }
+    },
+    "Format unavailable": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Formato no disponible" } } }
+    },
+    "Select text in the PDF to highlight it": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Selecciona texto en el PDF para subrayarlo" } } }
+    },
+    "The highlight is waiting on this device": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "El subrayado está pendiente en este dispositivo" } } }
+    },
+    "Add PDF highlight": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Añadir subrayado al PDF" } } }
+    },
     "%lld documents": {
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "%lld documentos" } } }

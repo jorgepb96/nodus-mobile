@@ -1,5 +1,7 @@
 import NodusKit
 import NodusUI
+import PDFKit
+import QuickLook
 import SwiftUI
 import UIKit
 import WebKit
@@ -19,6 +21,7 @@ struct PublishedLibraryView: View {
     @State private var error: String?
     @State private var pendingDeletion: Deletion?
     @State private var showingDeletionConfirmation = false
+    @State private var metadataDocument: PublishedLibraryDocument?
 
     private enum Deletion {
         case documents(Set<String>)
@@ -33,12 +36,26 @@ struct PublishedLibraryView: View {
 
     private var visible: [PublishedLibraryDocument] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        let allowedCollections = selectedCollectionIds
         return documents.filter { document in
-            if let collectionId, !document.collectionIds.contains(collectionId) { return false }
+            if let allowedCollections, document.collectionIds.allSatisfy({ !allowedCollections.contains($0) }) { return false }
             guard !needle.isEmpty else { return true }
             return ([document.title, document.abstract ?? ""] + document.creators + document.tags)
                 .joined(separator: "\n").localizedLowercase.contains(needle)
         }
+    }
+
+    private var selectedCollectionIds: Set<String>? {
+        guard let collectionId else { return nil }
+        var result: Set<String> = [collectionId]
+        var changed = true
+        while changed {
+            changed = false
+            for collection in collections where collection.parentId.map(result.contains) == true && !result.contains(collection.id) {
+                result.insert(collection.id); changed = true
+            }
+        }
+        return result
     }
 
     var body: some View {
@@ -65,6 +82,22 @@ struct PublishedLibraryView: View {
         .nodusPageBackdrop(accent: session.accent)
         .nodusHidesBottomBar()
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Menu {
+                    Button { collectionId = nil } label: {
+                        if collectionId == nil { Label("All collections", systemImage: "checkmark") }
+                        else { Text("All collections") }
+                    }
+                    LibraryCollectionMenuItems(collections: collections, parentId: nil, selection: $collectionId)
+                } label: {
+                    VStack(spacing: 1) {
+                        Text("Library").font(.caption2).foregroundStyle(.secondary)
+                        Label(collectionName, systemImage: "folder")
+                            .font(.subheadline.weight(.semibold)).lineLimit(1)
+                    }
+                }
+                .accessibilityLabel("Collection: \(collectionName)")
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if selecting, !selection.isEmpty {
                     Button(role: .destructive) { requestDeletion(.documents(selection)) } label: { Image(systemName: "trash") }
@@ -77,6 +110,11 @@ struct PublishedLibraryView: View {
                     Button(role: .destructive) { requestDeletion(.everySpace) } label: { Label("Delete all library downloads", systemImage: "trash.slash") }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
+        }
+        .sheet(item: $metadataDocument) { document in
+            LibraryMetadataSheet(document: document, accent: session.accent)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .confirmationDialog("Delete downloaded copies?", isPresented: $showingDeletionConfirmation, titleVisibility: .visible) {
             Button(deletionButtonTitle, role: .destructive) { confirmDeletion() }
@@ -93,20 +131,7 @@ struct PublishedLibraryView: View {
             Label("\(visible.count) documents", systemImage: "books.vertical")
                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             Spacer()
-            Menu {
-                Button("All collections") { collectionId = nil }
-                ForEach(collections) { collection in
-                    Button { collectionId = collection.id } label: {
-                        if collectionId == collection.id { Label(collection.name, systemImage: "checkmark") }
-                        else { Text(collection.name) }
-                    }
-                }
-            } label: {
-                Label(collectionName, systemImage: "line.3.horizontal.decrease.circle")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 11).frame(minHeight: 38)
-                    .reportActionSurface(accent: session.accent)
-            }
+            Text(collectionName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 
@@ -132,6 +157,7 @@ struct PublishedLibraryView: View {
                 }
                 HStack(spacing: 10) {
                     if let year = document.year { Label("\(year)", systemImage: "calendar") }
+                    Text(document.itemType.replacingOccurrences(of: "-", with: " ")).textCase(.uppercase)
                     Label("\(document.wordCount.formatted()) words", systemImage: "text.word.spacing")
                     if document.figureCount > 0 { Label("\(document.figureCount)", systemImage: "photo") }
                 }.font(.caption2).foregroundStyle(.tertiary)
@@ -153,11 +179,17 @@ struct PublishedLibraryView: View {
             NavigationLink { PublishedLibraryReader(session: session, store: store, document: document) } label: { card }
                 .buttonStyle(NodusCardButtonStyle())
                 .contextMenu {
+                    Button { metadataDocument = document } label: { Label("View metadata", systemImage: "info.circle") }
+                    Button { copyReference(document) } label: { Label("Copy reference", systemImage: "doc.on.doc") }
                     if downloaded.contains(document.id) {
                         Button(role: .destructive) { requestDeletion(.documents(Set([document.id]))) } label: { Label("Delete download", systemImage: "trash") }
                     }
                 }
         }
+    }
+
+    private func copyReference(_ document: PublishedLibraryDocument) {
+        UIPasteboard.general.string = document.reference ?? document.title
     }
 
     private func toggle(_ id: String) { if !selection.insert(id).inserted { selection.remove(id) } }
@@ -219,88 +251,392 @@ struct PublishedLibraryView: View {
     }
 }
 
+private struct LibraryCollectionMenuItems: View {
+    let collections: [PublishedLibraryCollection]
+    let parentId: String?
+    @Binding var selection: String?
+
+    private var children: [PublishedLibraryCollection] {
+        collections.filter { $0.parentId == parentId }
+            .sorted { $0.position == $1.position ? $0.name < $1.name : $0.position < $1.position }
+    }
+
+    var body: some View {
+        ForEach(children) { collection in
+            let descendants = collections.filter { $0.parentId == collection.id }
+            if descendants.isEmpty {
+                Button { selection = collection.id } label: {
+                    if selection == collection.id { Label(collection.name, systemImage: "checkmark") }
+                    else { Label(collection.name, systemImage: "folder") }
+                }
+            } else {
+                Menu(collection.name, systemImage: "folder") {
+                    Button { selection = collection.id } label: {
+                        if selection == collection.id { Label("All in \(collection.name)", systemImage: "checkmark") }
+                        else { Text("All in \(collection.name)") }
+                    }
+                    LibraryCollectionMenuItems(collections: collections, parentId: collection.id, selection: $selection)
+                }
+            }
+        }
+    }
+}
+
+private struct LibraryMetadataSheet: View {
+    let document: PublishedLibraryDocument
+    let accent: Color
+    @Environment(\.dismiss) private var dismiss
+
+    private var fields: [(String, String?)] {
+        [
+            (String(localized: "Type"), document.itemType.replacingOccurrences(of: "-", with: " ")),
+            (String(localized: "Authors"), document.creators.isEmpty ? nil : document.creators.joined(separator: ", ")),
+            (String(localized: "Date"), document.date ?? document.year.map(String.init)),
+            (String(localized: "Publication"), document.publicationTitle),
+            (String(localized: "Publisher"), document.publisher),
+            (String(localized: "Volume"), document.volume),
+            (String(localized: "Issue"), document.issue),
+            (String(localized: "Pages"), document.pages),
+            (String(localized: "Edition"), document.edition),
+            (String(localized: "Place"), document.place),
+            ("DOI", document.doi), ("PMID", document.pmid), ("PMCID", document.pmcid), ("arXiv", document.arxiv),
+            ("ISBN", document.isbn?.joined(separator: ", ")), ("ISSN", document.issn?.joined(separator: ", ")),
+            (String(localized: "Language"), document.language),
+            (String(localized: "Citation key"), document.citationKey),
+            (String(localized: "Rights"), document.rights),
+        ]
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text(document.title).font(.headline)
+                    if let abstract = document.abstract, !abstract.isEmpty { Text(abstract).font(.subheadline).foregroundStyle(.secondary) }
+                }
+                Section("Bibliographic reference") {
+                    Text(document.reference ?? document.title).textSelection(.enabled)
+                    Button { UIPasteboard.general.string = document.reference ?? document.title } label: {
+                        Label("Copy reference", systemImage: "doc.on.doc")
+                    }.tint(accent)
+                }
+                Section("Metadata") {
+                    ForEach(fields.filter { $0.1?.isEmpty == false }, id: \.0) { label, value in
+                        LabeledContent(label) { Text(value ?? "").multilineTextAlignment(.trailing).textSelection(.enabled) }
+                    }
+                    if !document.tags.isEmpty { LabeledContent("Tags") { Text(document.tags.joined(separator: ", ")).multilineTextAlignment(.trailing) } }
+                    if let url = document.url, let destination = URL(string: url) { Link(destination: destination) { Label("Open URL", systemImage: "arrow.up.right.square") } }
+                }
+            }
+            .navigationTitle("Metadata")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
 private struct PublishedLibraryReader: View {
     let session: SpaceSession
     let store: PublishedLibraryStore
     let document: PublishedLibraryDocument
 
-    @Environment(AppPreferences.self) private var preferences
     @State private var markdown: String?
     @State private var figures: [URL] = []
+    @State private var originalURL: URL?
     @State private var packageURL: URL?
     @State private var failure: String?
+    @State private var source: ReadingSource
+    @State private var showingMetadata = false
+
+    private enum ReadingSource: String, CaseIterable, Identifiable {
+        case clean, original
+        var id: String { rawValue }
+    }
+
+    init(session: SpaceSession, store: PublishedLibraryStore, document: PublishedLibraryDocument) {
+        self.session = session; self.store = store; self.document = document
+        _source = State(initialValue: document.cleanAvailable ? .clean : .original)
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    PageText(document.title, order: 0).font(.title3.weight(.semibold))
-                    if !document.creators.isEmpty { Text(document.creators.joined(separator: ", ")).font(.subheadline).foregroundStyle(.secondary) }
-                    HStack(spacing: 12) {
-                        Label("\(document.wordCount.formatted()) words", systemImage: "text.alignleft")
-                        if document.figureCount > 0 { Label("\(document.figureCount) figures", systemImage: "photo") }
-                    }.font(.caption).foregroundStyle(.secondary)
-                    if let markdown { ReportActions(markdown: markdown, title: document.title, accent: session.accent) }
-                    if let packageURL { ShareLink(item: packageURL) { Label("Export package", systemImage: "square.and.arrow.up") } }
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(document.title).font(.headline).lineLimit(2)
+                        if !document.creators.isEmpty { Text(document.creators.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    }
+                    Spacer()
+                    Button { showingMetadata = true } label: { Image(systemName: "info.circle") }
                 }
-                .padding(NodusSpace.cardPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .nodusGlass(NodusGlass(.regular, tint: session.accent))
-                .nodusSearchOrder(0)
-
-                if let failure { NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(failure)) }
-                if let markdown {
-                    CorpusProse(markdown, accent: session.accent, session: session)
-                        .padding(ReportLayout.sectionPadding)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .nodusGlass(NodusGlass(.regular, tint: session.accent))
-                        .nodusSearchOrder(1)
-                } else if failure == nil { ProgressView().tint(session.accent).frame(maxWidth: .infinity) }
-
-                ForEach(Array(figures.enumerated()), id: \.element) { index, figure in
-                    LibraryFigure(url: figure)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .nodusSearchOrder(index + 2)
+                if markdown != nil && originalURL != nil {
+                    Picker("Reading format", selection: $source) {
+                        Label("Clean Markdown", systemImage: "text.alignleft").tag(ReadingSource.clean)
+                        Label("Original", systemImage: "doc.richtext").tag(ReadingSource.original)
+                    }.pickerStyle(.segmented)
                 }
-
-                if document.originalAvailable {
-                    Label {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(document.originalFileName ?? String(localized: "Original document")).font(.subheadline.weight(.semibold))
-                            Text("The original file will be available in a future version.").font(.caption).foregroundStyle(.secondary)
-                        }
-                    } icon: { Image(systemName: "lock.fill").foregroundStyle(.secondary) }
-                    .padding(NodusSpace.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
-                    .nodusGlass(NodusGlass(.thin, tint: session.accent))
-                }
+                HStack(spacing: 14) {
+                    Button { UIPasteboard.general.string = document.reference ?? document.title } label: { Label("Copy reference", systemImage: "doc.on.doc") }
+                    if let packageURL { ShareLink(item: packageURL) { Label("Export", systemImage: "square.and.arrow.up") } }
+                }.font(.caption.weight(.semibold)).tint(session.accent)
             }
-            .padding(NodusSpace.page)
-            .frame(maxWidth: ReportLayout.readerMeasure).frame(maxWidth: .infinity)
-            .nodusTopAnchor()
+            .padding(.horizontal, NodusSpace.page).padding(.vertical, 10)
+            .background(.ultraThinMaterial)
+
+            if let failure {
+                NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(failure)).padding(NodusSpace.page)
+                Spacer()
+            } else if markdown == nil && originalURL == nil {
+                ProgressView().tint(session.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if source == .clean, let markdown {
+                LibraryCleanReader(session: session, document: document, markdown: markdown, figures: figures)
+            } else if source == .original, let originalURL {
+                LibraryOriginalReader(session: session, document: document, url: originalURL)
+            } else {
+                ContentUnavailableView("Format unavailable", systemImage: "doc.badge.ellipsis")
+            }
         }
-        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
         .nodusPageFunctions(accent: session.accent, chat: PageChatSubject(id: document.libraryDraftId, title: document.title, session: session))
         .nodusHidesBottomBar()
         .navigationTitle("Document")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .modifier(SyncedReportReadingTools(
-            session: session,
-            id: document.libraryDraftId,
-            rows: document.annotationRows,
-            scope: "library",
-            annotationPrefix: document.libraryAnnotationRoutingPrefix
-        ))
+        .sheet(isPresented: $showingMetadata) {
+            LibraryMetadataSheet(document: document, accent: session.accent)
+                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
         .task { await open() }
     }
 
     private func open() async {
         do {
-            markdown = try await store.download(document, using: session.client)
+            let prepared = try await store.prepare(document, using: session.client)
+            markdown = prepared.markdown
+            originalURL = prepared.original
             figures = await store.figures(document.id)
-            packageURL = await store.packageURL(document.id)
+            packageURL = prepared.package
+            if source == .clean, markdown == nil { source = .original }
+            if source == .original, originalURL == nil { source = .clean }
         } catch { failure = error.localizedDescription }
     }
+}
+
+private struct LibraryCleanReader: View {
+    let session: SpaceSession
+    let document: PublishedLibraryDocument
+    let markdown: String
+    let figures: [URL]
+    @Environment(AppPreferences.self) private var preferences
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                ReportActions(markdown: markdown, title: document.title, accent: session.accent)
+                CorpusProse(markdown, accent: session.accent, session: session)
+                    .padding(ReportLayout.sectionPadding).frame(maxWidth: .infinity, alignment: .leading)
+                    .nodusGlass(NodusGlass(.regular, tint: session.accent)).nodusSearchOrder(1)
+                ForEach(Array(figures.enumerated()), id: \.element) { index, figure in
+                    LibraryFigure(url: figure).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).nodusSearchOrder(index + 2)
+                }
+            }
+            .padding(NodusSpace.page).frame(maxWidth: ReportLayout.readerMeasure).frame(maxWidth: .infinity).nodusTopAnchor()
+        }
+        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
+        .modifier(SyncedReportReadingTools(
+            session: session, id: document.libraryDraftId,
+            rows: document.annotationRows(for: "library-clean"), scope: "library-clean",
+            annotationPrefix: document.libraryAnnotationRoutingPrefix
+        ))
+    }
+}
+
+private struct LibraryOriginalReader: View {
+    let session: SpaceSession
+    let document: PublishedLibraryDocument
+    let url: URL
+    @State private var text: String?
+
+    private var extensionName: String { url.pathExtension.lowercased() }
+    private var isText: Bool { ["md", "markdown", "txt", "csv", "tsv", "xml", "jats", "html", "htm"].contains(extensionName) }
+
+    var body: some View {
+        Group {
+            if extensionName == "pdf" {
+                LibraryPDFOriginalReader(session: session, document: document, url: url)
+            } else if isText {
+                ScrollView {
+                    if let text {
+                        CorpusProse(text, accent: session.accent, session: session)
+                            .padding(ReportLayout.sectionPadding).frame(maxWidth: ReportLayout.readerMeasure).frame(maxWidth: .infinity)
+                            .nodusGlass(NodusGlass(.regular, tint: session.accent)).padding(NodusSpace.page)
+                    } else { ProgressView().tint(session.accent).padding() }
+                }
+                .modifier(SyncedReportReadingTools(
+                    session: session, id: document.libraryDraftId,
+                    rows: document.annotationRows(for: "library-original"), scope: "library-original",
+                    annotationPrefix: document.libraryAnnotationRoutingPrefix
+                ))
+                .task { text = try? String(contentsOf: url, encoding: .utf8) }
+            } else if ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "tif", "tiff"].contains(extensionName) {
+                ScrollView { LibraryFigure(url: url).padding(NodusSpace.page) }
+            } else {
+                LibraryQuickLookPreview(url: url)
+            }
+        }
+    }
+}
+
+private struct PDFOriginalHighlight: Sendable {
+    let id: String
+    let page: Int
+    let start: Int
+    let end: Int
+    let text: String
+}
+
+private struct LibraryPDFOriginalReader: View {
+    let session: SpaceSession
+    let document: PublishedLibraryDocument
+    let url: URL
+    @State private var hasSelection = false
+    @State private var highlightRequest = 0
+    @State private var syncMessage: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("Select text in the PDF to highlight it", systemImage: "text.cursor")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button { highlightRequest += 1 } label: { Label("Highlight", systemImage: "highlighter") }
+                    .buttonStyle(.borderedProminent).tint(session.accent).disabled(!hasSelection)
+            }
+            .padding(.horizontal, NodusSpace.page).padding(.vertical, 8).background(.thinMaterial)
+            LibraryPDFView(
+                url: url,
+                annotations: document.annotations.filter { $0.scope == "original" },
+                highlightRequest: highlightRequest,
+                onSelectionChanged: { hasSelection = $0 },
+                onHighlight: sync
+            )
+        }
+        .alert("The highlight is waiting on this device", isPresented: Binding(
+            get: { syncMessage != nil }, set: { if !$0 { syncMessage = nil } }
+        )) { Button("OK") { syncMessage = nil } } message: { Text(syncMessage ?? "") }
+    }
+
+    private func sync(_ highlight: PDFOriginalHighlight) {
+        let target = "{\"type\":\"text\",\"attachmentId\":\"original\",\"page\":\(highlight.page)}"
+        let timestamp = ISO8601DateFormatter.nodusFractional.string(from: Date())
+        let rowId = document.libraryAnnotationRoutingPrefix + highlight.id
+        let row: [String: JSONValue] = [
+            "id": .string(rowId), "draft_id": .string(document.libraryDraftId),
+            "scope": .string("library-original"), "kind": .string("highlight"), "color": .string("yellow"),
+            "start_offset": .int(Int64(highlight.start)), "end_offset": .int(Int64(highlight.end)),
+            "selected_text": .string(highlight.text), "prefix": .string(""), "suffix": .string(""),
+            "comment_text": .null, "target_json": .string(target),
+            "created_at": .string(timestamp), "updated_at": .string(timestamp),
+        ]
+        Task {
+            guard let outbox = await OutboxController.open(session: session) else {
+                syncMessage = String(localized: "Your access to this space is read only."); return
+            }
+            _ = await outbox.syncReaderAnnotation(kind: .upsert, rowId: rowId, row: row, title: String(localized: "Add PDF highlight"))
+            if let error = outbox.lastError { syncMessage = error }
+        }
+    }
+}
+
+private struct LibraryPDFView: UIViewRepresentable {
+    let url: URL
+    let annotations: [PublishedLibraryAnnotation]
+    let highlightRequest: Int
+    let onSelectionChanged: (Bool) -> Void
+    let onHighlight: (PDFOriginalHighlight) -> Void
+
+    final class Coordinator: NSObject {
+        var parent: LibraryPDFView
+        weak var view: PDFView?
+        var handledRequest = 0
+        var installed = Set<String>()
+
+        init(parent: LibraryPDFView) { self.parent = parent }
+
+        func attach(_ view: PDFView) {
+            self.view = view
+            NotificationCenter.default.addObserver(self, selector: #selector(selectionDidChange), name: .PDFViewSelectionChanged, object: view)
+        }
+
+        @objc private func selectionDidChange() {
+            parent.onSelectionChanged(!(view?.currentSelection?.string?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true))
+        }
+
+        func installPublished() {
+            guard let document = view?.document else { return }
+            for item in parent.annotations where item.kind == "highlight" && !installed.contains(item.id) {
+                guard let pageNumber = item.target?.page, pageNumber > 0, pageNumber <= document.pageCount,
+                      let page = document.page(at: pageNumber - 1), let source = page.string else { continue }
+                let text = source as NSString
+                let range = NSRange(location: item.startOffset, length: item.endOffset - item.startOffset)
+                guard range.location >= 0, range.length > 0, NSMaxRange(range) <= text.length,
+                      text.substring(with: range) == item.selectedText,
+                      let selection = page.selection(for: range) else { continue }
+                let annotation = PDFAnnotation(bounds: selection.bounds(for: page), forType: .highlight, withProperties: nil)
+                annotation.color = UIColor.systemYellow.withAlphaComponent(0.45)
+                annotation.userName = "nodus:\(item.id)"
+                page.addAnnotation(annotation); installed.insert(item.id)
+            }
+        }
+
+        func addHighlight() {
+            guard let view, let selection = view.currentSelection,
+                  let selected = selection.string?.trimmingCharacters(in: .whitespacesAndNewlines), !selected.isEmpty,
+                  let page = selection.pages.first, let document = view.document else { return }
+            let pageNumber = document.index(for: page) + 1
+            guard pageNumber > 0, let source = page.string else { return }
+            let pageText = source as NSString
+            let range = pageText.range(of: selected)
+            guard range.location != NSNotFound, range.length == (selected as NSString).length else { return }
+            let id = UUID().uuidString
+            let annotation = PDFAnnotation(bounds: selection.bounds(for: page), forType: .highlight, withProperties: nil)
+            annotation.color = UIColor.systemYellow.withAlphaComponent(0.45); annotation.userName = "nodus:\(id)"
+            page.addAnnotation(annotation); installed.insert(id)
+            _ = document.write(to: parent.url)
+            view.clearSelection()
+            parent.onSelectionChanged(false)
+            parent.onHighlight(.init(id: id, page: pageNumber, start: range.location, end: NSMaxRange(range), text: selected))
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical; view.displaysPageBreaks = true; view.backgroundColor = .secondarySystemBackground
+        view.document = PDFDocument(url: url); context.coordinator.attach(view); context.coordinator.installPublished()
+        return view
+    }
+    func updateUIView(_ view: PDFView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.installPublished()
+        if highlightRequest != context.coordinator.handledRequest {
+            context.coordinator.handledRequest = highlightRequest; context.coordinator.addHighlight()
+        }
+    }
+}
+
+private struct LibraryQuickLookPreview: UIViewControllerRepresentable {
+    let url: URL
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        let url: URL
+        init(url: URL) { self.url = url }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { url as NSURL }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController(); controller.dataSource = context.coordinator; return controller
+    }
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {}
 }
 
 private struct LibraryFigure: View {
