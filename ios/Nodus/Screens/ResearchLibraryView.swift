@@ -583,15 +583,19 @@ struct SyncedReportReadingTools: ViewModifier {
     let session: SpaceSession
     let id: String
     let rows: [Row]
+    let scope: String
+    let annotationPrefix: String
 
     private let marks: ReportMarks
     @State private var legacyBookmark: ReadingBookmarks
     @State private var annotations: ReaderAnnotations
 
-    init(session: SpaceSession, id: String, rows: [Row]) {
+    init(session: SpaceSession, id: String, rows: [Row], scope: String = "source", annotationPrefix: String = "") {
         self.session = session
         self.id = id
         self.rows = rows
+        self.scope = scope
+        self.annotationPrefix = annotationPrefix
         let store = ReportMarks.shared(for: session.connection.spaceId)
         marks = store
         _legacyBookmark = State(initialValue: ReadingBookmarks(bookmark: store.bookmark(for: id)) { next in
@@ -599,7 +603,9 @@ struct SyncedReportReadingTools: ViewModifier {
         })
         _annotations = State(initialValue: ReaderAnnotations(
             draftId: id,
-            isWritable: session.connection.role.canSendChanges
+            scope: scope,
+            isWritable: session.connection.role.canSendChanges,
+            idPrefix: annotationPrefix
         ))
     }
 

@@ -265,6 +265,26 @@ struct SpaceSettingsView: View {
                     Text("Keeps the whole publication on the device: works with no network, sorts instantly, and reaches the tables the API does not expose.")
                 }
 
+                Section {
+                    Button(role: .destructive) {
+                        Task {
+                            let library = PublishedLibraryStore(spaceId: session.connection.spaceId)
+                            await library.removeAll()
+                        }
+                    } label: {
+                        Label("Delete downloaded library documents", systemImage: "books.vertical.fill")
+                    }
+                    Button(role: .destructive) {
+                        Task { try? PublishedLibraryStore.removeAllSpaces() }
+                    } label: {
+                        Label("Delete library documents from every space", systemImage: "trash.slash")
+                    }
+                } header: {
+                    Text("Library downloads")
+                } footer: {
+                    Text("Only the copies stored on this device are removed. The catalogue, reading annotations and the server publication remain available.")
+                }
+
                 if let overview = session.overview, !overview.counts.isEmpty {
                     Section {
                         // A hundred table names is diagnostics, not settings. It stays

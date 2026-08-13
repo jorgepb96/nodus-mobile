@@ -299,6 +299,7 @@ final class ReaderAnnotations {
     let draftId: String
     let scope: String
     let isWritable: Bool
+    private let idPrefix: String
     private(set) var items: [ReaderAnnotation] = []
     private(set) var error: String?
     /// The colour used by both the selection action and continuous highlighting.
@@ -320,10 +321,11 @@ final class ReaderAnnotations {
     }
     private var waiting: [WaitingMutation] = []
 
-    init(draftId: String, scope: String = "source", isWritable: Bool) {
+    init(draftId: String, scope: String = "source", isWritable: Bool, idPrefix: String = "") {
         self.draftId = draftId
         self.scope = scope
         self.isWritable = isWritable
+        self.idPrefix = idPrefix
     }
 
     var bookmark: ReaderAnnotation? { items.first { $0.kind == .bookmark } }
@@ -352,7 +354,7 @@ final class ReaderAnnotations {
     func addHighlight(_ anchor: ReaderAnnotationAnchor, color: ReaderAnnotationColor) {
         guard isWritable else { return }
         let item = ReaderAnnotation(
-            id: UUID().uuidString,
+            id: idPrefix + UUID().uuidString,
             draftId: draftId,
             scope: scope,
             kind: .highlight,
@@ -379,7 +381,7 @@ final class ReaderAnnotations {
 
     func setBookmark(_ anchor: ReaderAnnotationAnchor) {
         guard isWritable else { return }
-        let id = "reader-bookmark:\(draftId):\(scope)"
+        let id = idPrefix + "reader-bookmark:\(draftId):\(scope)"
         let created = bookmark?.createdAt ?? Date()
         let item = ReaderAnnotation(
             id: id,
@@ -401,7 +403,7 @@ final class ReaderAnnotations {
         let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isWritable, !text.isEmpty else { return }
         let item = ReaderAnnotation(
-            id: UUID().uuidString,
+            id: idPrefix + UUID().uuidString,
             draftId: draftId,
             scope: scope,
             kind: .comment,

@@ -16,6 +16,7 @@ struct ResearchView: View {
     /// How many the vault itself has published, so the count beside "All reports" is the
     /// number of reports there are rather than the number this phone happens to have written.
     @State private var publishedReports = 0
+    @State private var publishedDocuments = 0
 
     var body: some View {
         Group {
@@ -26,6 +27,9 @@ struct ResearchView: View {
             publishedReports = (try? await session.client.deepResearchReports(
                 in: session.connection.spaceId,
                 limit: 1
+            ).total) ?? 0
+            publishedDocuments = (try? await session.client.publishedLibraryDocuments(
+                in: session.connection.spaceId, limit: 1
             ).total) ?? 0
         }
     }
@@ -81,6 +85,13 @@ struct ResearchView: View {
                             title: "All reports",
                             count: local.reports.count + publishedReports
                         )
+                    }
+                    .buttonStyle(NodusCardButtonStyle())
+
+                    NavigationLink {
+                        PublishedLibraryView(session: session)
+                    } label: {
+                        row(icon: "books.vertical.fill", title: "Library", count: publishedDocuments)
                     }
                     .buttonStyle(NodusCardButtonStyle())
                 }

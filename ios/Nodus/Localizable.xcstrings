@@ -11104,6 +11104,86 @@
         }
       }
     },
+    "All collections": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Todas las colecciones" } } }
+    },
+    "Collection": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Colección" } } }
+    },
+    "Could not update the library": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "No se pudo actualizar la biblioteca" } } }
+    },
+    "Delete all downloads in this space": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar todas las descargas de este espacio" } } }
+    },
+    "Delete all library downloads": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar todas las descargas de la biblioteca" } } }
+    },
+    "Delete download": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar descarga" } } }
+    },
+    "Delete downloaded library documents": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar documentos descargados de la biblioteca" } } }
+    },
+    "Delete library documents from every space": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar los documentos de biblioteca de todos los espacios" } } }
+    },
+    "Document": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Documento" } } }
+    },
+    "Export package": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Exportar paquete" } } }
+    },
+    "Library downloads": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Descargas de la biblioteca" } } }
+    },
+    "No documents": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "No hay documentos" } } }
+    },
+    "Only the copies stored on this device are removed. The catalogue, reading annotations and the server publication remain available.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Solo se eliminan las copias almacenadas en este dispositivo. El catálogo, las anotaciones de lectura y la publicación del servidor siguen disponibles." } } }
+    },
+    "Original document": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Documento original" } } }
+    },
+    "Search title, author or tag": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Buscar por título, autor o etiqueta" } } }
+    },
+    "Select": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Seleccionar" } } }
+    },
+    "The original file will be available in a future version.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "El archivo original estará disponible en una versión futura." } } }
+    },
+    "Try another search or collection.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Prueba otra búsqueda o colección." } } }
+    },
+    "%lld documents": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "%lld documentos" } } }
+    },
+    "%lld figures": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "%lld figuras" } } }
+    },
     "≈ \\(plan.target) sections · \\(pages.lowerBound)–\\(pages.upperBound) pages": {
       "extractionState": "manual",
       "localizations": {
