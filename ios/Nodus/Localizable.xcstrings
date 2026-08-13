@@ -11308,6 +11308,110 @@
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "%lld figuras" } } }
     },
+    "AI synonyms": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Sinónimos con IA" } } }
+    },
+    "Bold": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Negrita" } } }
+    },
+    "Choose a chat model under Providers to use AI writing tools.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Elige un modelo de chat en Proveedores para usar las herramientas de escritura con IA." } } }
+    },
+    "Clarify": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Aclarar" } } }
+    },
+    "Concise": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Conciso" } } }
+    },
+    "Could not improve the selection": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "No se ha podido mejorar la selección" } } }
+    },
+    "Default": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Predeterminado" } } }
+    },
+    "Editor": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Editor" } } }
+    },
+    "Formal": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Formal" } } }
+    },
+    "Formula": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Fórmula" } } }
+    },
+    "Heading level": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Nivel de encabezado" } } }
+    },
+    "Improving selection…": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Mejorando la selección…" } } }
+    },
+    "Inline code": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Código en línea" } } }
+    },
+    "Italic": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Cursiva" } } }
+    },
+    "Orange": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Naranja" } } }
+    },
+    "Paragraph": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Párrafo" } } }
+    },
+    "Purple": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Morado" } } }
+    },
+    "Red": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Rojo" } } }
+    },
+    "Regenerate alternatives": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Regenerar alternativas" } } }
+    },
+    "Save changes": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Guardar cambios" } } }
+    },
+    "Select text for writing tools": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Selecciona texto para ver las herramientas de escritura" } } }
+    },
+    "Strikethrough": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Tachado" } } }
+    },
+    "Synonyms and rephrasings": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Sinónimos y reformulaciones" } } }
+    },
+    "Teal": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Turquesa" } } }
+    },
+    "Text color": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Color del texto" } } }
+    },
+    "The model did not return a usable replacement.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "El modelo no devolvió un reemplazo válido." } } }
+    },
     "≈ \\(plan.target) sections · \\(pages.lowerBound)–\\(pages.upperBound) pages": {
       "extractionState": "manual",
       "localizations": {

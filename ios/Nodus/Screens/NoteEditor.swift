@@ -19,18 +19,32 @@ struct NoteEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Title") {
-                    TextField("Note title", text: $title)
+            ScrollView {
+                VStack(alignment: .leading, spacing: NodusSpace.block) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Label("Title", systemImage: "textformat")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        TextField("Note title", text: $title, axis: .vertical)
+                            .font(.title3.weight(.semibold)).textFieldStyle(.plain)
+                            .padding(.horizontal, 14).padding(.vertical, 12)
+                            .background(Color(uiColor: .secondarySystemBackground).opacity(0.72), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(accent.opacity(0.2), lineWidth: 1))
+                    }
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack {
+                            Label("Content", systemImage: "doc.richtext")
+                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Spacer()
+                            Label("Select text for writing tools", systemImage: "text.cursor")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        WorkspaceEditorSurface(text: $text, accent: accent, minHeight: 320)
+                    }
                 }
-                Section("Content") {
-                    TextEditor(text: $text)
-                        .frame(minHeight: 220)
-                }
+                .padding(NodusSpace.page)
             }
             .navigationTitle(note == nil ? "New note" : "Edit note")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden)
             .nodusPageBackdrop(accent: accent)
             .tint(accent)
             .nodusDismissesKeyboard()
