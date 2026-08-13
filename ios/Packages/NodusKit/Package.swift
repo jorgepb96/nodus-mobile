@@ -32,7 +32,11 @@ let package = Package(
         // Nothing else can prove that a queue already on somebody's phone survives an upgrade.
         .testTarget(
             name: "NodusKitTests",
-            dependencies: ["NodusKit", .product(name: "GRDB", package: "GRDB.swift")],
+            dependencies: [
+                "NodusKit",
+                .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]

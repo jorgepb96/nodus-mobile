@@ -1,5 +1,14 @@
 import Foundation
 
+public struct PublishedLibrarySummary: Sendable, Hashable, Codable {
+    public let published: Bool
+    public let generatedAt: Date?
+    public let collections: Int
+    public let documents: Int
+    public let downloadableDocuments: Int
+    public let packageBytes: Int
+}
+
 public struct PublishedLibraryCollection: Sendable, Hashable, Codable, Identifiable {
     public let id: String
     public let name: String
@@ -107,6 +116,11 @@ private struct PublishedLibraryDocumentEnvelope: Decodable {
 }
 
 public extension NodusClient {
+    func publishedLibrarySummary(in spaceId: String) async throws -> PublishedLibrarySummary {
+        let response = try await perform(.init(path: address.spacePath(spaceId, "/library"), cacheable: true))
+        return try decode(PublishedLibrarySummary.self, from: response)
+    }
+
     func publishedLibraryCollections(in spaceId: String) async throws -> [PublishedLibraryCollection] {
         let response = try await perform(.init(path: address.spacePath(spaceId, "/library/collections"), cacheable: true))
         return try decode(PublishedLibraryCollectionsEnvelope.self, from: response).collections

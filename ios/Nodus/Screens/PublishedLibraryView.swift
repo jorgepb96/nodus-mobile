@@ -2,6 +2,7 @@ import NodusKit
 import NodusUI
 import SwiftUI
 import UIKit
+import WebKit
 
 struct PublishedLibraryView: View {
     let session: SpaceSession
@@ -16,6 +17,14 @@ struct PublishedLibraryView: View {
     @State private var selection: Set<String> = []
     @State private var loading = true
     @State private var error: String?
+    @State private var pendingDeletion: Deletion?
+    @State private var showingDeletionConfirmation = false
+
+    private enum Deletion {
+        case documents(Set<String>)
+        case space
+        case everySpace
+    }
 
     init(session: SpaceSession) {
         self.session = session
@@ -58,16 +67,22 @@ struct PublishedLibraryView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if selecting, !selection.isEmpty {
-                    Button(role: .destructive) { removeSelection() } label: { Image(systemName: "trash") }
+                    Button(role: .destructive) { requestDeletion(.documents(selection)) } label: { Image(systemName: "trash") }
                 }
                 Button(selecting ? "Done" : "Select") {
                     selecting.toggle(); if !selecting { selection.removeAll() }
                 }
                 Menu {
-                    Button(role: .destructive) { removeAll() } label: { Label("Delete all downloads in this space", systemImage: "trash") }
-                    Button(role: .destructive) { removeAllSpaces() } label: { Label("Delete all library downloads", systemImage: "trash.slash") }
+                    Button(role: .destructive) { requestDeletion(.space) } label: { Label("Delete all downloads in this space", systemImage: "trash") }
+                    Button(role: .destructive) { requestDeletion(.everySpace) } label: { Label("Delete all library downloads", systemImage: "trash.slash") }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
+        }
+        .confirmationDialog("Delete downloaded copies?", isPresented: $showingDeletionConfirmation, titleVisibility: .visible) {
+            Button(deletionButtonTitle, role: .destructive) { confirmDeletion() }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text("Only files stored on this device will be removed. The catalogue, annotations and server publication are preserved.")
         }
         .refreshable { await load(remoteOnly: true) }
         .task(id: session.publishedRevision) { await load(remoteOnly: false) }
@@ -139,18 +154,39 @@ struct PublishedLibraryView: View {
                 .buttonStyle(NodusCardButtonStyle())
                 .contextMenu {
                     if downloaded.contains(document.id) {
-                        Button(role: .destructive) { remove(Set([document.id])) } label: { Label("Delete download", systemImage: "trash") }
+                        Button(role: .destructive) { requestDeletion(.documents(Set([document.id]))) } label: { Label("Delete download", systemImage: "trash") }
                     }
                 }
         }
     }
 
     private func toggle(_ id: String) { if !selection.insert(id).inserted { selection.remove(id) } }
-    private func removeSelection() { remove(selection); selection.removeAll(); selecting = false }
-    private func removeAll() { remove(downloaded) }
-    private func removeAllSpaces() {
-        try? PublishedLibraryStore.removeAllSpaces()
-        downloaded.removeAll()
+    private var deletionButtonTitle: String {
+        switch pendingDeletion {
+        case .documents(let ids): return ids.count == 1 ? String(localized: "Delete download") : String(localized: "Delete selected downloads")
+        case .space: return String(localized: "Delete all in this space")
+        case .everySpace: return String(localized: "Delete all library downloads")
+        case nil: return String(localized: "Delete")
+        }
+    }
+    private func requestDeletion(_ deletion: Deletion) {
+        pendingDeletion = deletion
+        showingDeletionConfirmation = true
+    }
+    private func confirmDeletion() {
+        switch pendingDeletion {
+        case .documents(let ids):
+            remove(ids); selection.subtract(ids)
+            if selection.isEmpty { selecting = false }
+        case .space:
+            remove(downloaded)
+        case .everySpace:
+            try? PublishedLibraryStore.removeAllSpaces()
+            downloaded.removeAll()
+        case nil:
+            break
+        }
+        pendingDeletion = nil
     }
     private func remove(_ ids: Set<String>) {
         Task { await store.remove(ids); downloaded.subtract(ids) }
@@ -270,11 +306,63 @@ private struct PublishedLibraryReader: View {
 private struct LibraryFigure: View {
     let url: URL
     var body: some View {
-        if let image = UIImage(contentsOfFile: url.path) {
+        if url.pathExtension.lowercased() == "svg", let source = try? String(contentsOf: url, encoding: .utf8) {
+            LibrarySVGFigure(source: source)
+                .aspectRatio(Self.aspectRatio(source), contentMode: .fit)
+                .frame(maxWidth: .infinity)
+        } else if let image = UIImage(contentsOfFile: url.path) {
             Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
         } else {
             Label(url.lastPathComponent, systemImage: "photo").padding().frame(maxWidth: .infinity)
                 .background(.thinMaterial)
         }
+    }
+
+    private static func aspectRatio(_ source: String) -> CGFloat {
+        guard let expression = try? NSRegularExpression(pattern: #"viewBox\s*=\s*[\"']\s*[-+\d.]+[ ,]+[-+\d.]+[ ,]+([-+\d.]+)[ ,]+([-+\d.]+)"#, options: .caseInsensitive),
+              let match = expression.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
+              let widthRange = Range(match.range(at: 1), in: source),
+              let heightRange = Range(match.range(at: 2), in: source),
+              let width = Double(source[widthRange]), let height = Double(source[heightRange]),
+              width > 0, height > 0 else { return 4 / 3 }
+        return CGFloat(width / height)
+    }
+}
+
+/// SVGs are displayed in an isolated, script-free web view. The CSP also blocks remote images,
+/// fonts and other resources, so an imported figure cannot turn reading a document into a
+/// network request.
+private struct LibrarySVGFigure: UIViewRepresentable {
+    let source: String
+
+    final class Coordinator {
+        var loadedSource: String?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.isScrollEnabled = false
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.loadedSource != source else { return }
+        context.coordinator.loadedSource = source
+        let html = """
+        <!doctype html><html><head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
+        <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}body{display:flex;align-items:center;justify-content:center}svg{display:block;max-width:100%;max-height:100%;width:100%;height:auto}</style>
+        </head><body>\(source)</body></html>
+        """
+        webView.loadHTMLString(html, baseURL: nil)
     }
 }

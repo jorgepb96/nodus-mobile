@@ -8,7 +8,7 @@ public actor PublishedLibraryStore {
     private static let maximumEntryCount = 2_048
     private static let allowedFigureExtensions = Set(["png", "jpg", "jpeg", "webp", "gif", "svg"])
 
-    public enum StoreError: LocalizedError {
+    public enum StoreError: LocalizedError, Equatable {
         case unavailable, corruptPackage, unsafeArchive, missingMarkdown
 
         public var errorDescription: String? {
@@ -77,9 +77,10 @@ public actor PublishedLibraryStore {
     }
     public func figures(_ id: String) -> [URL] {
         let assets = directory(id).appendingPathComponent("assets", isDirectory: true)
-        let allowed = Set(["png", "jpg", "jpeg", "webp", "gif", "svg"])
         guard let enumerator = FileManager.default.enumerator(at: assets, includingPropertiesForKeys: nil) else { return [] }
-        return enumerator.compactMap { $0 as? URL }.filter { allowed.contains($0.pathExtension.lowercased()) }.sorted { $0.path < $1.path }
+        return enumerator.compactMap { $0 as? URL }
+            .filter { Self.allowedFigureExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted { $0.path < $1.path }
     }
 
     @discardableResult
@@ -88,6 +89,16 @@ public actor PublishedLibraryStore {
         if isDownloaded(document.id, packageHash: hash) { return try markdown(document.id) }
         let bytes = try await client.publishedLibraryPackage(document.id, in: spaceId)
         guard bytes.count <= Self.maximumPackageBytes, Self.sha256(bytes) == hash else { throw StoreError.corruptPackage }
+        return try install(document, package: bytes)
+    }
+
+    /// Validate and atomically install one server package. Kept separate from the network call
+    /// so the exact ZIP boundary is exercised by the package tests as well as by the UI.
+    func install(_ document: PublishedLibraryDocument, package bytes: Data) throws -> String {
+        guard document.cleanAvailable, let hash = document.packageHash,
+              bytes.count <= Self.maximumPackageBytes, Self.sha256(bytes) == hash else {
+            throw StoreError.corruptPackage
+        }
 
         let manager = FileManager.default
         let temporaryRoot = manager.temporaryDirectory.appendingPathComponent("nodus-library-\(UUID().uuidString)", isDirectory: true)
@@ -127,7 +138,23 @@ public actor PublishedLibraryStore {
             try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             _ = try archive.extract(entry, to: target)
         }
-        guard manager.fileExists(atPath: extracted.appendingPathComponent("document.md").path) else { throw StoreError.missingMarkdown }
+        let extractedMarkdown = extracted.appendingPathComponent("document.md")
+        guard manager.fileExists(atPath: extractedMarkdown.path) else { throw StoreError.missingMarkdown }
+        guard let markdown = try? String(contentsOf: extractedMarkdown, encoding: .utf8) else {
+            throw StoreError.corruptPackage
+        }
+        struct PackageManifest: Decodable {
+            let format: String
+            let formatVersion: Int
+            let documentId: String
+        }
+        let manifestURL = extracted.appendingPathComponent("manifest.json")
+        guard let manifestData = try? Data(contentsOf: manifestURL),
+              let manifest = try? JSONDecoder().decode(PackageManifest.self, from: manifestData),
+              manifest.format == "nodus.library-document-package", manifest.formatVersion == 1,
+              manifest.documentId == document.id else {
+            throw StoreError.corruptPackage
+        }
 
         let destination = directory(document.id)
         let replacement = root.appendingPathComponent(".replacement-\(UUID().uuidString)", isDirectory: true)
@@ -137,7 +164,7 @@ public actor PublishedLibraryStore {
         try manager.moveItem(at: replacement, to: destination)
         downloads[document.id] = Download(id: document.id, packageHash: hash, downloadedAt: Date(), bytes: bytes.count)
         persist()
-        return try markdown(document.id)
+        return markdown
     }
 
     public func remove(_ ids: Set<String>) {

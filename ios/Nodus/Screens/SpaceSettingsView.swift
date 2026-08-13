@@ -14,6 +14,10 @@ struct SpaceSettingsView: View {
     @State private var health: ServerHealth?
     @State private var capabilities: ServerCapabilities?
     @State private var diagnosticFailure: ConnectionFailure?
+    @State private var libraryDeletion: LibraryDeletion?
+    @State private var showingLibraryDeletion = false
+
+    private enum LibraryDeletion: Equatable { case space, everySpace }
 
     var body: some View {
         NavigationStack {
@@ -267,15 +271,12 @@ struct SpaceSettingsView: View {
 
                 Section {
                     Button(role: .destructive) {
-                        Task {
-                            let library = PublishedLibraryStore(spaceId: session.connection.spaceId)
-                            await library.removeAll()
-                        }
+                        requestLibraryDeletion(.space)
                     } label: {
                         Label("Delete downloaded library documents", systemImage: "books.vertical.fill")
                     }
                     Button(role: .destructive) {
-                        Task { try? PublishedLibraryStore.removeAllSpaces() }
+                        requestLibraryDeletion(.everySpace)
                     } label: {
                         Label("Delete library documents from every space", systemImage: "trash.slash")
                     }
@@ -322,7 +323,35 @@ struct SpaceSettingsView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             .task { await diagnose() }
+            .confirmationDialog("Delete downloaded copies?", isPresented: $showingLibraryDeletion, titleVisibility: .visible) {
+                Button(libraryDeletion == .space ? "Delete in this space" : "Delete in every space", role: .destructive) {
+                    confirmLibraryDeletion()
+                }
+                Button("Cancel", role: .cancel) { libraryDeletion = nil }
+            } message: {
+                Text("Only files stored on this device will be removed. Catalogues, annotations and server publications are preserved.")
+            }
         }
+    }
+
+    private func requestLibraryDeletion(_ deletion: LibraryDeletion) {
+        libraryDeletion = deletion
+        showingLibraryDeletion = true
+    }
+
+    private func confirmLibraryDeletion() {
+        switch libraryDeletion {
+        case .space:
+            Task {
+                let library = PublishedLibraryStore(spaceId: session.connection.spaceId)
+                await library.removeAll()
+            }
+        case .everySpace:
+            try? PublishedLibraryStore.removeAllSpaces()
+        case nil:
+            break
+        }
+        libraryDeletion = nil
     }
 
     /// What the server says it is running. `capabilities` is the authority — `/healthz` is a

@@ -11124,9 +11124,17 @@
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar todas las descargas de la biblioteca" } } }
     },
+    "Delete all in this space": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar todo en este espacio" } } }
+    },
     "Delete download": {
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar descarga" } } }
+    },
+    "Delete downloaded copies?": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "¿Eliminar las copias descargadas?" } } }
     },
     "Delete downloaded library documents": {
       "extractionState": "manual",
@@ -11135,6 +11143,18 @@
     "Delete library documents from every space": {
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar los documentos de biblioteca de todos los espacios" } } }
+    },
+    "Delete in every space": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar en todos los espacios" } } }
+    },
+    "Delete in this space": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar en este espacio" } } }
+    },
+    "Delete selected downloads": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar las descargas seleccionadas" } } }
     },
     "Document": {
       "extractionState": "manual",
@@ -11155,6 +11175,14 @@
     "Only the copies stored on this device are removed. The catalogue, reading annotations and the server publication remain available.": {
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Solo se eliminan las copias almacenadas en este dispositivo. El catálogo, las anotaciones de lectura y la publicación del servidor siguen disponibles." } } }
+    },
+    "Only files stored on this device will be removed. Catalogues, annotations and server publications are preserved.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Solo se eliminarán los archivos almacenados en este dispositivo. Los catálogos, las anotaciones y las publicaciones del servidor se conservarán." } } }
+    },
+    "Only files stored on this device will be removed. The catalogue, annotations and server publication are preserved.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Solo se eliminarán los archivos almacenados en este dispositivo. El catálogo, las anotaciones y la publicación del servidor se conservarán." } } }
     },
     "Original document": {
       "extractionState": "manual",

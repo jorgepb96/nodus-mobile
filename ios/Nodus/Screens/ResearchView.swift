@@ -17,6 +17,7 @@ struct ResearchView: View {
     /// number of reports there are rather than the number this phone happens to have written.
     @State private var publishedReports = 0
     @State private var publishedDocuments = 0
+    @State private var publishedLibraryAvailable = false
 
     var body: some View {
         Group {
@@ -28,9 +29,18 @@ struct ResearchView: View {
                 in: session.connection.spaceId,
                 limit: 1
             ).total) ?? 0
-            publishedDocuments = (try? await session.client.publishedLibraryDocuments(
-                in: session.connection.spaceId, limit: 1
-            ).total) ?? 0
+            let libraryStore = PublishedLibraryStore(spaceId: session.connection.spaceId)
+            let cachedLibrary = await libraryStore.catalog()
+            do {
+                let summary = try await session.client.publishedLibrarySummary(in: session.connection.spaceId)
+                // A catalogue already saved on this phone remains useful without a network or
+                // after the owner stops publishing it; its downloaded documents still open.
+                publishedLibraryAvailable = summary.published || cachedLibrary != nil
+                publishedDocuments = summary.published ? summary.documents : cachedLibrary?.documents.count ?? 0
+            } catch {
+                publishedLibraryAvailable = cachedLibrary != nil
+                publishedDocuments = cachedLibrary?.documents.count ?? 0
+            }
         }
     }
 
@@ -88,12 +98,14 @@ struct ResearchView: View {
                     }
                     .buttonStyle(NodusCardButtonStyle())
 
-                    NavigationLink {
-                        PublishedLibraryView(session: session)
-                    } label: {
-                        row(icon: "books.vertical.fill", title: "Library", count: publishedDocuments)
+                    if publishedLibraryAvailable {
+                        NavigationLink {
+                            PublishedLibraryView(session: session)
+                        } label: {
+                            row(icon: "books.vertical.fill", title: "Library", count: publishedDocuments)
+                        }
+                        .buttonStyle(NodusCardButtonStyle())
                     }
-                    .buttonStyle(NodusCardButtonStyle())
                 }
 
                 if session.hasImmersion {
