@@ -133,6 +133,14 @@ struct LocalisationTests {
         _ = try translated("Change the read filter to show other reports.")
     }
 
+    @Test("published library failures speak Spanish")
+    func publishedLibraryFailureStrings() throws {
+        _ = try translated("This document has no Clean Markdown package.")
+        _ = try translated("The downloaded document did not match its published fingerprint.")
+        _ = try translated("The document package contains an unsafe path.")
+        _ = try translated("The document package does not contain Clean Markdown.")
+    }
+
     /// Leaving the app for another one is a thing to say plainly, and the sentence that explains
     /// why nothing happened is the only useful thing this control can offer when Zotero is not
     /// there. ("Zotero" itself is deliberately not asked for: it is a proper noun, and

@@ -41,7 +41,7 @@ struct PublishedLibraryStoreTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let bytes = try package([
             "document.md": Data("# Downloaded\n\nReadable without a network.".utf8),
-            "assets/diagram.svg": Data("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"10\"><rect width=\"20\" height=\"10\"/></svg>".utf8),
+            "assets/chapter:diagram.svg": Data("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"10\"><rect width=\"20\" height=\"10\"/></svg>".utf8),
             "manifest.json": try JSONSerialization.data(withJSONObject: [
                 "format": "nodus.library-document-package", "formatVersion": 1, "documentId": "document-1",
             ]),
@@ -52,7 +52,7 @@ struct PublishedLibraryStoreTests {
         let markdown = try await store.install(published, package: bytes)
         #expect(markdown.contains("Readable without a network"))
         #expect(await store.isDownloaded(published.id, packageHash: published.packageHash))
-        #expect(await store.figures(published.id).map(\.lastPathComponent) == ["diagram.svg"])
+        #expect(await store.figures(published.id).map(\.lastPathComponent) == ["chapter:diagram.svg"])
         #expect(await store.packageURL(published.id) != nil)
 
         await store.remove(Set([published.id]))
