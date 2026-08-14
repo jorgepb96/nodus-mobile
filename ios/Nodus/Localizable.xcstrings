@@ -11116,6 +11116,22 @@
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "No se pudo actualizar la biblioteca" } } }
     },
+    "The document package contains an unsafe path.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "El paquete del documento contiene una ruta no segura." } } }
+    },
+    "The document package does not contain Clean Markdown.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "El paquete del documento no contiene Markdown limpio." } } }
+    },
+    "The downloaded document did not match its published fingerprint.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "El documento descargado no coincide con su huella publicada." } } }
+    },
+    "This document has no Clean Markdown package.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Este documento no tiene ningún paquete de Markdown limpio." } } }
+    },
     "Delete all downloads in this space": {
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Eliminar todas las descargas de este espacio" } } }

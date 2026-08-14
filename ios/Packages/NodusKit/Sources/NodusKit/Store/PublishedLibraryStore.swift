@@ -156,7 +156,9 @@ public actor PublishedLibraryStore {
             }
             let relative = entry.path.replacingOccurrences(of: "\\", with: "/")
             let components = relative.split(separator: "/")
-            guard !relative.hasPrefix("/"), !relative.contains(":"), !components.contains("..") else {
+            // A colon is an ordinary filename character on iOS and is accepted by the server.
+            // Containment and traversal checks, rather than a Windows-only filename rule, keep extraction safe.
+            guard !relative.hasPrefix("/"), !components.contains("..") else {
                 throw StoreError.unsafeArchive
             }
             if entry.type == .file {
