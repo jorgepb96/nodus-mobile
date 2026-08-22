@@ -124,7 +124,7 @@ private struct NodusGlassModifier<S: InsettableShape>: ViewModifier {
 
 // MARK: - The system surface, and the height it cannot draw
 
-#if os(iOS)
+#if os(iOS) && compiler(>=6.2)
 /// `glassEffect`, with the one case where it draws nothing handed to the fallback instead.
 ///
 /// iOS 26 composes a glass surface through a single render target, and past roughly eight
@@ -417,7 +417,7 @@ public struct NodusGlassContainer<Content: View>: View {
     }
 
     public var body: some View {
-        #if os(iOS)
+        #if os(iOS) && compiler(>=6.2)
         if #available(iOS 26.0, *) {
             GlassEffectContainer(spacing: spacing) { content }
         } else {
@@ -448,7 +448,7 @@ public extension View {
     /// anything on the way.
     @ViewBuilder
     func nodusGlassLozenge(tint: Color) -> some View {
-        #if os(iOS)
+        #if os(iOS) && compiler(>=6.2)
         if #available(iOS 26.0, *) {
             // `interactive()` is what makes it feel picked up: the glass gives under the touch
             // that is dragging it and springs back when the finger lifts.
