@@ -36,6 +36,7 @@ struct AcademicMetalGraphSurface: UIViewRepresentable {
         view.setNeedsDisplay()
     }
 
+    @MainActor
     final class Coordinator: NSObject, MTKViewDelegate {
         private struct Vertex {
             /// `xy` is the clip-space position and `w` the point size. Two aligned
