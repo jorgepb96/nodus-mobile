@@ -374,7 +374,9 @@ public actor PrivateBridgeCache {
     public init(pairingId: String, directory: URL, keychain: KeychainStore = KeychainStore()) throws {
         folder = directory.appendingPathComponent("bridge-\(pairingId)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+#if os(iOS)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: folder.path)
+#endif
         BackupPolicy.apply(.excluded, to: folder)
         let keyName = KeychainStore.desktopBridgeCacheKey(pairingId: pairingId)
         if let encoded = keychain.value(for: keyName), let data = Data(base64Encoded: encoded), data.count == 32 {

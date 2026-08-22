@@ -60,10 +60,12 @@ public actor MutationOutbox {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent("outbox.sqlite")
         dbQueue = try DatabaseQueue(path: url.path)
+#if os(iOS)
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: url.path
         )
+#endif
         // Deliberately backed up, and said out loud rather than left to the default: a queued
         // note or an unsent report has not reached the ledger, so this file is the only copy
         // there is. See `BackupPolicy`.

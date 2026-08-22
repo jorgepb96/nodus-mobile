@@ -75,10 +75,12 @@ public actor AccountLibraryOutbox {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent("library-outbox.sqlite")
         dbQueue = try DatabaseQueue(path: url.path)
+#if os(iOS)
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: url.path
         )
+#endif
         // Until the server accepts an operation this database can be its only copy.
         BackupPolicy.apply(.backedUp, to: url)
         try migrate()
