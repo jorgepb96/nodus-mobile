@@ -16,3 +16,4 @@ ios/.lab/
 # Generated screenshots, result bundles, IPA staging and visual-diff artefacts are shared in
 # the task, never committed or shipped with the application.
 /artifacts/
+/.test-databases/

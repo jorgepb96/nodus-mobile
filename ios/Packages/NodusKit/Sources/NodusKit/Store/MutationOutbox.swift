@@ -59,7 +59,7 @@ public actor MutationOutbox {
         let folder = directory.appendingPathComponent(spaceId, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent("outbox.sqlite")
-        dbQueue = try SerializedDatabaseOpen.queue(path: url.path)
+        dbQueue = try DatabaseQueue(path: url.path)
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: url.path

@@ -6,7 +6,7 @@ import Testing
 struct AccountLibraryCatalogTests {
     @Test("local CRUD creates immutable history and recoverable tombstones")
     func localHistoryAndRecovery() async throws {
-        let root = temporaryDirectory()
+        let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let catalog = try await AccountLibraryCatalog.open(accountId: "owner-a", directory: root)
         var item = AccountLibraryItem(
@@ -30,7 +30,7 @@ struct AccountLibraryCatalogTests {
 
     @Test("accounts never share materialized rows or object paths")
     func accountIsolation() async throws {
-        let root = temporaryDirectory()
+        let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let first = try await AccountLibraryCatalog.open(accountId: "one@example.test", directory: root)
         let second = try await AccountLibraryCatalog.open(accountId: "two@example.test", directory: root)
@@ -44,9 +44,7 @@ struct AccountLibraryCatalogTests {
         #expect(try await second.objectURL(hash: hash) == nil)
     }
 
-    private func temporaryDirectory() -> URL {
-        let result = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try? FileManager.default.createDirectory(at: result, withIntermediateDirectories: true)
-        return result
+    private func temporaryDirectory() throws -> URL {
+        try testDatabaseDirectory(prefix: "nodus-account-library")
     }
 }

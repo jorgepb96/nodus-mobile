@@ -12,8 +12,7 @@ import Testing
 @Suite("Mutation outbox authorisation")
 struct MutationOutboxAuthorisationTests {
     private func makeOutbox(directory: URL? = nil) throws -> (MutationOutbox, URL) {
-        let folder = directory ?? FileManager.default.temporaryDirectory
-            .appendingPathComponent("nodus-outbox-\(UUID().uuidString)")
+        let folder = try directory ?? testDatabaseDirectory(prefix: "nodus-outbox")
         return (try MutationOutbox(spaceId: "space-under-test", directory: folder), folder)
     }
 
@@ -144,8 +143,8 @@ struct MutationOutboxAuthorisationTests {
     // not be the thing that gives it one.
     @Test("asking whether a queue exists does not create it")
     func existsDoesNotCreateTheDatabase() async throws {
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nodus-outbox-\(UUID().uuidString)")
+        let probeRoot = try testDatabaseDirectory(prefix: "nodus-outbox-probe")
+        let folder = probeRoot.appendingPathComponent("not-created", isDirectory: true)
 
         #expect(MutationOutbox.exists(spaceId: "space-under-test", directory: folder) == false)
         #expect(FileManager.default.fileExists(atPath: folder.path) == false,
@@ -189,8 +188,7 @@ struct MutationOutboxAuthorisationTests {
 @Suite("Mutation outbox delivery")
 struct MutationOutboxDeliveryTests {
     private func makeOutbox(directory: URL? = nil) throws -> (MutationOutbox, URL) {
-        let folder = directory ?? FileManager.default.temporaryDirectory
-            .appendingPathComponent("nodus-outbox-\(UUID().uuidString)")
+        let folder = try directory ?? testDatabaseDirectory(prefix: "nodus-outbox")
         return (try MutationOutbox(spaceId: "space-under-test", directory: folder), folder)
     }
 
@@ -343,7 +341,7 @@ struct MutationOutboxDeliveryTests {
     private func writeQueueFromTheLastRelease(at folder: URL) throws {
         let spaceFolder = folder.appendingPathComponent("space-under-test", isDirectory: true)
         try FileManager.default.createDirectory(at: spaceFolder, withIntermediateDirectories: true)
-        let queue = try SerializedDatabaseOpen.queue(path: spaceFolder.appendingPathComponent("outbox.sqlite").path)
+        let queue = try DatabaseQueue(path: spaceFolder.appendingPathComponent("outbox.sqlite").path)
         try queue.write { db in
             try db.execute(sql: """
                 CREATE TABLE outbox (
@@ -371,8 +369,7 @@ struct MutationOutboxDeliveryTests {
 
     @Test("a queue from the last release opens with everything in it")
     func migratingAnExistingQueueLosesNothing() async throws {
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nodus-outbox-\(UUID().uuidString)")
+        let folder = try testDatabaseDirectory(prefix: "nodus-outbox-legacy")
         try writeQueueFromTheLastRelease(at: folder)
 
         let (outbox, _) = try makeOutbox(directory: folder)

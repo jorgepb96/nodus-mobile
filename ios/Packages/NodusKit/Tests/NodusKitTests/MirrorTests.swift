@@ -5,8 +5,7 @@ import Testing
 @Suite("Mirror store")
 struct MirrorStoreTests {
     private func makeStore() throws -> (MirrorStore, URL) {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nodus-mirror-\(UUID().uuidString)")
+        let directory = try testDatabaseDirectory(prefix: "nodus-mirror")
         let store = try MirrorStore(spaceId: "space-under-test", directory: directory)
         return (store, directory)
     }
@@ -199,8 +198,7 @@ struct BrowsableTableTests {
     // Measuring beats a denylist, which stops working at the schema's next migration.
     @Test("a table whose rows have no titles is not offered as a section")
     func joinTablesAreNotBrowsable() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nodus-browsable-\(UUID().uuidString)")
+        let directory = try testDatabaseDirectory(prefix: "nodus-browsable")
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try MirrorStore(spaceId: "s", directory: directory)
 
@@ -238,8 +236,7 @@ struct BrowsableTableTests {
 @Suite("Mutation outbox")
 struct MutationOutboxTests {
     private func makeOutbox() throws -> (MutationOutbox, URL) {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nodus-outbox-\(UUID().uuidString)")
+        let directory = try testDatabaseDirectory(prefix: "nodus-outbox")
         return (try MutationOutbox(spaceId: "s", directory: directory), directory)
     }
 

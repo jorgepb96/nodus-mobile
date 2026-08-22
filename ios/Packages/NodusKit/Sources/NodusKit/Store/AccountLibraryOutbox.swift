@@ -74,7 +74,7 @@ public actor AccountLibraryOutbox {
         let folder = directory.appendingPathComponent("account-\(accountKey)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent("library-outbox.sqlite")
-        dbQueue = try SerializedDatabaseOpen.queue(path: url.path)
+        dbQueue = try DatabaseQueue(path: url.path)
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: url.path

@@ -5,9 +5,7 @@ import Testing
 @Suite("Account Library offline outbox")
 struct AccountLibraryOutboxTests {
     private func makeOutbox() throws -> (AccountLibraryOutbox, URL) {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try testDatabaseDirectory(prefix: "nodus-account-library-outbox")
         return (try AccountLibraryOutbox(accountId: "owner@example.test", directory: directory), directory)
     }
 

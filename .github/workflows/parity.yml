@@ -47,6 +47,8 @@ jobs:
       - name: Test portable contracts
         working-directory: nodus-mobile
         run: |
+          export NODUS_TEST_DATABASE_ROOT="$PWD/.test-databases"
+          mkdir -p "$NODUS_TEST_DATABASE_ROOT"
           swift test --package-path ios/Packages/NodusKit
           swift test --package-path ios/Packages/NodusAI
           swift test --package-path ios/Packages/NodusUI

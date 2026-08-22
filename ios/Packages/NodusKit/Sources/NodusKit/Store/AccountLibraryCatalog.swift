@@ -343,7 +343,7 @@ public actor AccountLibraryCatalog {
         objectDirectory = folder.appendingPathComponent("objects", isDirectory: true)
         try FileManager.default.createDirectory(at: objectDirectory, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent("library-catalog.sqlite")
-        dbQueue = try SerializedDatabaseOpen.queue(path: url.path)
+        dbQueue = try DatabaseQueue(path: url.path)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: url.path)
         BackupPolicy.apply(.backedUp, to: url)
         try migrate()
