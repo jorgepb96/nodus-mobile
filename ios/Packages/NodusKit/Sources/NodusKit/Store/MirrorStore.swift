@@ -46,7 +46,7 @@ public actor MirrorStore {
             // read — so a generous page cache pays for itself on every list.
             try db.execute(sql: "PRAGMA cache_size = -20000")
         }
-        dbQueue = try DatabaseQueue(path: fileURL.path, configuration: configuration)
+        dbQueue = try SerializedDatabaseOpen.queue(path: fileURL.path, configuration: configuration)
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: fileURL.path

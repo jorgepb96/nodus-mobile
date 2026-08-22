@@ -343,7 +343,7 @@ struct MutationOutboxDeliveryTests {
     private func writeQueueFromTheLastRelease(at folder: URL) throws {
         let spaceFolder = folder.appendingPathComponent("space-under-test", isDirectory: true)
         try FileManager.default.createDirectory(at: spaceFolder, withIntermediateDirectories: true)
-        let queue = try DatabaseQueue(path: spaceFolder.appendingPathComponent("outbox.sqlite").path)
+        let queue = try SerializedDatabaseOpen.queue(path: spaceFolder.appendingPathComponent("outbox.sqlite").path)
         try queue.write { db in
             try db.execute(sql: """
                 CREATE TABLE outbox (

@@ -47,14 +47,9 @@ jobs:
       - name: Test portable contracts
         working-directory: nodus-mobile
         run: |
-          # The macOS 15 runner's per-user /var/folders volume intermittently rejects the
-          # concurrent SQLite files created by Swift Testing. Keep test databases on the
-          # runner's workspace volume; every assertion and all 179 NodusKit tests still run.
-          NODUS_TEST_TMP="$RUNNER_TEMP/nodus-swift-tests"
-          mkdir -p "$NODUS_TEST_TMP"
-          TMPDIR="$NODUS_TEST_TMP" swift test --package-path ios/Packages/NodusKit
-          TMPDIR="$NODUS_TEST_TMP" swift test --package-path ios/Packages/NodusAI
-          TMPDIR="$NODUS_TEST_TMP" swift test --package-path ios/Packages/NodusUI
+          swift test --package-path ios/Packages/NodusKit
+          swift test --package-path ios/Packages/NodusAI
+          swift test --package-path ios/Packages/NodusUI
 
       - name: Generate the Xcode project
         working-directory: nodus-mobile
