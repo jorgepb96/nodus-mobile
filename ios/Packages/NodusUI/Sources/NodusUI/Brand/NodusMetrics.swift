@@ -13,11 +13,11 @@ import SwiftUI
 /// shape sits inside one of the two.
 public enum NodusRadius {
     /// Cards, sheets, notices, section bodies — anything that holds other things.
-    public static let panel: CGFloat = 20
+    public static let panel: CGFloat = 12
     /// Buttons, fields, thumbnails, chips that are not capsules.
-    public static let control: CGFloat = 14
+    public static let control: CGFloat = 8
     /// The one radius that is neither: the chrome's own bottom edge, which follows the screen.
-    public static let screenEdge: CGFloat = 26
+    public static let screenEdge: CGFloat = 12
 
     public static var panelShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: panel, style: .continuous)
@@ -35,15 +35,31 @@ public enum NodusRadius {
 /// 14, 16 and 18 all appear. A fixed grid is what lets a reader stop noticing the layout.
 public enum NodusSpace {
     /// The page's own side margin. Every screen, one number.
-    public static let page: CGFloat = 16
+    public static let page: CGFloat = 20
     /// Between two cards that belong to the same list.
-    public static let card: CGFloat = 12
+    public static let card: CGFloat = 10
     /// Between one conceptual block and the next — a heading and its grid, the passages and the
     /// metadata under them. Deliberately more than twice `card`, because that difference is the
     /// only thing telling a reader where one subject ends.
-    public static let block: CGFloat = 26
+    public static let block: CGFloat = 24
     /// What a card puts between its edge and its content.
-    public static let cardPadding: CGFloat = 15
+    public static let cardPadding: CGFloat = 14
+}
+
+/// Dimensions shared by the adaptive shell and the Desktop replica surfaces.
+///
+/// They are tokens rather than call-site numbers because the top bar and workspace tab strip
+/// form one continuous piece of chrome. A change in Desktop should produce one deliberate diff
+/// here, not a slightly different interpretation in every section.
+public enum NodusChromeMetrics {
+    /// Desktop's application bar is 44 px; SwiftUI points map one-to-one to that layout unit.
+    public static let topBar: CGFloat = 44
+    /// Desktop's document-tab strip is 2.25 rem at the app's 16 px root size.
+    public static let workspaceTabs: CGFloat = 36
+    /// Compact-width devices retain the same strip but enlarge it to Apple's touch target.
+    public static let compactWorkspaceTabs: CGFloat = 44
+    public static let collapsedSidebar: CGFloat = 64
+    public static let expandedSidebar: CGFloat = 176
 }
 
 /// One duration and one curve, so an expansion, a tab change and a card appearing all feel like

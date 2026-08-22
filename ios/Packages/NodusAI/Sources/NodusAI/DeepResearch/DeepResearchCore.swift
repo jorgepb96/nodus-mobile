@@ -49,6 +49,92 @@ public enum DeepResearchMode: String, Sendable, Codable, CaseIterable {
     }
 }
 
+/// The research method applied inside a report or teaching unit.
+///
+/// Raw values deliberately match `shared/deepResearchApproaches.ts` in Nodus Desktop. The
+/// approach is independent from ``DeepResearchMode``: one says how evidence is organised,
+/// while the other says who the resulting document is for.
+public enum DeepResearchApproach: String, Sendable, Codable, CaseIterable, Identifiable {
+    case general
+    case literatureReview = "literature_review"
+    case stateOfArt = "state_of_art"
+    case scholarlyDebate = "scholarly_debate"
+    case comparative
+    case chronological
+    case conceptual
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .general: return "General research"
+        case .literatureReview: return "Literature review"
+        case .stateOfArt: return "State of the art"
+        case .scholarlyDebate: return "Scholarly debate"
+        case .comparative: return "Comparative analysis"
+        case .chronological: return "Chronological analysis"
+        case .conceptual: return "Conceptual or theoretical synthesis"
+        }
+    }
+
+    public var explanation: String {
+        switch self {
+        case .general:
+            return "Uses the broad retrieval and structure of the original Deep Research workflow."
+        case .literatureReview:
+            return "Synthesises interpretations, methods, agreements and disagreements across works."
+        case .stateOfArt:
+            return "Separates established findings, contested claims, limitations and open questions."
+        case .scholarlyDebate:
+            return "Reconstructs real disagreements, their evidence, assumptions and intermediate positions."
+        case .comparative:
+            return "Compares cases, works or concepts using stable criteria and balanced evidence."
+        case .chronological:
+            return "Explains antecedents, phases, continuities, changes and documented turning points."
+        case .conceptual:
+            return "Reconstructs definitions, frameworks and relationships between concepts without conflating them."
+        }
+    }
+
+    /// Prompt adapter ported from Desktop's `electron/ai/deepResearchApproaches.ts`.
+    public var promptRules: String {
+        switch self {
+        case .general:
+            return ""
+        case .literatureReview:
+            return """
+            RESEARCH APPROACH: LITERATURE REVIEW
+            Retrieve diverse interpretations, frameworks, methods, agreements and disagreements. Organise by problems, schools or themes, never one section per author. Synthesize sources against one another and distinguish broad agreement from isolated claims. Never imply that the available Nodus corpus represents the entire academic field.
+            """
+        case .stateOfArt:
+            return """
+            RESEARCH APPROACH: STATE OF THE ART
+            Separate what is well established in the available corpus from what is weakly supported, disputed, unresolved or absent. Organise around established knowledge, convergence, controversies, evidentiary or methodological limits and open problems. Never turn missing retrieved evidence into a claim that the field has never studied something.
+            """
+        case .scholarlyDebate:
+            return """
+            RESEARCH APPROACH: SCHOLARLY DEBATE
+            Reconstruct genuine positions only when supported by the corpus. For each disagreement explain the claim, evidence, assumptions, stakes and possible intermediate positions. Do not manufacture a two-sided debate from nuance or silence.
+            """
+        case .comparative:
+            return """
+            RESEARCH APPROACH: COMPARATIVE ANALYSIS
+            Name the comparands and use stable, explicit axes across them. Give each case balanced evidentiary treatment, distinguish similarity from equivalence, and explain both meaningful parallels and consequential differences.
+            """
+        case .chronological:
+            return """
+            RESEARCH APPROACH: CHRONOLOGICAL ANALYSIS
+            Organise evidence into antecedents, phases, continuities, changes and documented turning points. Use dates only where the corpus supports them; do not infer causation merely from temporal succession.
+            """
+        case .conceptual:
+            return """
+            RESEARCH APPROACH: CONCEPTUAL OR THEORETICAL SYNTHESIS
+            Reconstruct definitions, assumptions, conceptual families and relations between frameworks. Preserve differences between near concepts, show tensions and compatibilities, and never collapse distinct vocabularies into false synonyms.
+            """
+        }
+    }
+}
+
 public struct DeepResearchRequest: Sendable, Codable, Hashable {
     public var objective: String
     public var language: String
@@ -56,6 +142,9 @@ public struct DeepResearchRequest: Sendable, Codable, Hashable {
     public var targetLength: DeepResearchLength
     public var sectionLimit: Int?
     public var mode: DeepResearchMode
+    /// Missing on reports created before approaches existed. Nil deliberately normalizes to
+    /// General, matching Desktop's backwards-compatibility contract.
+    public var approach: DeepResearchApproach?
     public var model: ModelRef
     /// Draw the report an illustration when it is finished, in this style.
     ///
@@ -63,6 +152,12 @@ public struct DeepResearchRequest: Sendable, Codable, Hashable {
     /// still produces the report the user asked for. Optional, so a checkpoint written before
     /// illustrations existed still decodes.
     public var illustration: DecorativeImageStyle?
+    /// Genealogy vaults can anchor the investigation on one known person. Optional keeps old
+    /// checkpoints and non-genealogy requests source compatible.
+    public var focusPerson: String?
+    /// A teacher may supply the intended unit order. The orchestrator treats it as guidance,
+    /// never as evidence; citations still have to come from the corpus.
+    public var teachingOutline: String?
 
     public init(
         objective: String,
@@ -75,8 +170,11 @@ public struct DeepResearchRequest: Sendable, Codable, Hashable {
         targetLength: DeepResearchLength = .adaptive,
         sectionLimit: Int? = nil,
         mode: DeepResearchMode = .research,
+        approach: DeepResearchApproach = .general,
         model: ModelRef,
-        illustration: DecorativeImageStyle? = nil
+        illustration: DecorativeImageStyle? = nil,
+        focusPerson: String? = nil,
+        teachingOutline: String? = nil
     ) {
         self.objective = objective
         self.language = language
@@ -84,16 +182,21 @@ public struct DeepResearchRequest: Sendable, Codable, Hashable {
         self.targetLength = targetLength
         self.sectionLimit = sectionLimit
         self.mode = mode
+        self.approach = approach
         self.model = model
         self.illustration = illustration
+        self.focusPerson = focusPerson
+        self.teachingOutline = teachingOutline
     }
+
+    public var resolvedApproach: DeepResearchApproach { approach ?? .general }
 }
 
 public enum DeepResearchPhase: String, Sendable, Codable {
     case queued, snapshot, planning, retrieving, writing, verifying, assembling, done
 }
 
-public struct DeepResearchProgress: Sendable {
+public struct DeepResearchProgress: Sendable, Codable, Hashable {
     public var phase: DeepResearchPhase
     public var message: String
     public var sectionIndex: Int?
@@ -307,6 +410,40 @@ public struct DeepResearchSection: Sendable, Codable, Hashable {
     }
 }
 
+public struct DeepResearchSupportCell: Sendable, Codable, Hashable, Identifiable {
+    public enum Status: String, Sendable, Codable, Hashable { case supported, partial, unavailable }
+
+    public let id: String
+    public let sectionTitle: String
+    public let citationToken: String
+    public let sourceLabel: String
+    public let claimPreview: String
+    public let status: Status
+
+    public init(id: String, sectionTitle: String, citationToken: String, sourceLabel: String, claimPreview: String, status: Status) {
+        self.id = id
+        self.sectionTitle = sectionTitle
+        self.citationToken = citationToken
+        self.sourceLabel = sourceLabel
+        self.claimPreview = claimPreview
+        self.status = status
+    }
+}
+
+public struct DeepResearchAudit: Sendable, Codable, Hashable {
+    public let citationsChecked: Int
+    public let citationsRejected: Int
+    public let citedSourceCount: Int
+    public let generatedAt: Date
+
+    public init(citationsChecked: Int, citationsRejected: Int, citedSourceCount: Int, generatedAt: Date = Date()) {
+        self.citationsChecked = citationsChecked
+        self.citationsRejected = citationsRejected
+        self.citedSourceCount = citedSourceCount
+        self.generatedAt = generatedAt
+    }
+}
+
 public struct DeepResearchReport: Sendable, Codable, Hashable {
     public init(
         objective: String,
@@ -316,7 +453,9 @@ public struct DeepResearchReport: Sendable, Codable, Hashable {
         pages: Double,
         citationsChecked: Int,
         citationsRejected: Int,
-        stoppedReason: String?
+        stoppedReason: String?,
+        supportMatrix: [DeepResearchSupportCell]? = nil,
+        audit: DeepResearchAudit? = nil
     ) {
         self.objective = objective
         self.sections = sections
@@ -326,6 +465,25 @@ public struct DeepResearchReport: Sendable, Codable, Hashable {
         self.citationsChecked = citationsChecked
         self.citationsRejected = citationsRejected
         self.stoppedReason = stoppedReason
+        let labels = Dictionary(uniqueKeysWithValues: references.map { ($0.token, $0.label) })
+        self.supportMatrix = supportMatrix ?? sections.flatMap { section in
+            let preview = section.prose.split(separator: ".", maxSplits: 1).first.map(String.init) ?? section.prose
+            return section.citations.enumerated().map { offset, token in
+                DeepResearchSupportCell(
+                    id: "\(section.title)-\(offset)-\(token)",
+                    sectionTitle: section.title,
+                    citationToken: token,
+                    sourceLabel: labels[token] ?? token,
+                    claimPreview: String(preview.prefix(220)),
+                    status: labels[token] == nil ? .unavailable : .supported
+                )
+            }
+        }
+        self.audit = audit ?? DeepResearchAudit(
+            citationsChecked: citationsChecked,
+            citationsRejected: citationsRejected,
+            citedSourceCount: references.count
+        )
     }
 
     public let objective: String
@@ -339,6 +497,14 @@ public struct DeepResearchReport: Sendable, Codable, Hashable {
     public let citationsRejected: Int
     /// Set when the run stopped short of its target and why.
     public let stoppedReason: String?
+    /// Claim-to-source traceability materialised with the report so every platform presents
+    /// the same support evidence without reverse engineering prose in the reader.
+    public let supportMatrix: [DeepResearchSupportCell]?
+    /// Verification facts and generation timestamp. Optional for reports created before the
+    /// full contract was introduced.
+    public let audit: DeepResearchAudit?
+
+    public var resolvedSupportMatrix: [DeepResearchSupportCell] { supportMatrix ?? [] }
 
     public var markdown: String {
         var output = "# \(objective)\n\n"

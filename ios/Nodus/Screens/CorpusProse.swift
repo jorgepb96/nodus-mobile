@@ -687,7 +687,7 @@ struct CorpusProse: View {
     /// Compiled once. `NSRegularExpression` is immutable and documented as safe to use from
     /// several threads, which is what `nonisolated(unsafe)` is asserting here — the alternative,
     /// building it per call, was a fifth of the cost of preparing a report's prose.
-    nonisolated(unsafe) private static let citation = try? NSRegularExpression(
+    nonisolated private static let citation = try? NSRegularExpression(
         pattern: #"(?<!\]\()\bnodus://[a-z_]+/[^\s)\]（）]+"#,
         options: [.caseInsensitive]
     )

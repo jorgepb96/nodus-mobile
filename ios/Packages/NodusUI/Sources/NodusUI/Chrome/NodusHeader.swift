@@ -169,7 +169,7 @@ public struct NodusHeader<Leading: View, Trailing: View>: View {
         NodusMark(style: .accent(accent), progress: markProgress, nodeReveal: markProgress)
             .frame(width: Self.markSize, height: Self.markSize)
             .accessibilityHidden(false)
-            .accessibilityLabel("Nodus")
+            .accessibilityLabel("Nodus Research")
             .frame(maxWidth: .infinity)
             .overlay(alignment: .leading) { accessory(Leading.self) { leading } }
             .overlay(alignment: .trailing) { accessory(Trailing.self) { trailing } }

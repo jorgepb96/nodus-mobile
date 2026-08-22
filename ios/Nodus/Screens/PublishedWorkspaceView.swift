@@ -51,31 +51,69 @@ struct PublishedWorkspaceView: View {
     }
 
     var body: some View {
-        List {
-            NodusTopAnchorRow()
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 9) {
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load Workspace", message: LocalizedStringKey(error))
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }
             ForEach(Array(visible.enumerated()), id: \.offset) { _, item in
                 NavigationLink { PublishedWorkspaceItemView(session: session, summary: item, folderName: folderName(item.string("folder_id"))) } label: {
                     WorkspaceItemCell(item: item, folderName: folderName(item.string("folder_id")), accent: session.accent)
-                }.listRowBackground(Color.clear)
+                        .desktopContentRow(accent: session.accent)
+                }
+                .buttonStyle(NodusCardButtonStyle())
             }
-            if loading, items.isEmpty { HStack { Spacer(); ProgressView().tint(session.accent); Spacer() }.listRowBackground(Color.clear) }
+            if loading, items.isEmpty { HStack { Spacer(); ProgressView().tint(session.accent); Spacer() }.padding() }
             if !loading, visible.isEmpty, error == nil {
                 ContentUnavailableView("Nothing here", systemImage: "rectangle.stack", description: Text("Try another search, collection or content type."))
-                    .listRowBackground(Color.clear)
+                    .padding(.vertical, 42)
             }
+            }
+            .padding(NodusSpace.page)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
+            .nodusTopAnchor()
         }
-        .listStyle(.plain).scrollContentBackground(.hidden).nodusDismissesKeyboard()
+        .nodusDismissesKeyboard()
         .safeAreaInset(edge: .top) {
             VStack(spacing: 8) {
+                DesktopPageHeader(
+                    title: "Workspace",
+                    subtitle: loading && items.isEmpty
+                        ? String(localized: "Loading notes and ideas…")
+                        : String(localized: "\(visible.count) items · \(selectedFolderName)"),
+                    systemImage: "rectangle.stack",
+                    accent: session.accent
+                )
+                .padding(.horizontal, NodusSpace.page)
+                HStack {
+                    Menu {
+                        Button { folderId = nil } label: {
+                            if folderId == nil { Label("All collections", systemImage: "checkmark") }
+                            else { Text("All collections") }
+                        }
+                        WorkspaceFolderMenuItems(folders: folders, parentId: nil, selection: $folderId)
+                    } label: {
+                        Label(selectedFolderName, systemImage: "folder")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    Spacer()
+                    Text("\(visible.count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, NodusSpace.page)
                 NodusSearchField(text: $query, prompt: "Search notes and ideas", accent: session.accent, isBusy: loading)
                 Picker("Content type", selection: $kind) {
                     ForEach(KindFilter.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).padding(.horizontal, NodusSpace.page)
-            }.padding(.bottom, 8).background(.ultraThinMaterial)
+            }
+            .padding(.bottom, 8)
+            .padding(.top, 10)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
+            .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
         .navigationTitle("Workspace").navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent).nodusHidesBottomBar()

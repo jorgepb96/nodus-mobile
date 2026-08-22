@@ -95,34 +95,30 @@ private struct NodusGlassModifier<S: InsettableShape>: ViewModifier {
     /// The pre-26 fallback always had this; the iOS 26 branch never did, so the bug arrived
     /// with the phone the app was designed for.
     func body(content: Content) -> some View {
-        if reduceTransparency {
-            // Not a degraded glass — a deliberate opaque surface with the same geometry and
-            // more contrast, which is what the setting is asking for.
-            content
-                .background(opaqueFill, in: shape)
-                .overlay(shape.strokeBorder(borderColor, lineWidth: 1))
-                .contentShape(shape)
-        } else {
-            #if os(iOS)
-            if #available(iOS 26.0, *) {
-                content.modifier(SystemGlass(glass: glass, shape: shape))
-            } else {
-                content.modifier(GlassFallback(glass: glass, shape: shape))
-            }
-            #else
-            content.modifier(GlassFallback(glass: glass, shape: shape))
-            #endif
-        }
+        content
+            .background(surfaceFill, in: shape)
+            .overlay(shape.strokeBorder(borderColor, lineWidth: 1))
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.10 : 0.035), radius: 2, y: 1)
+            .contentShape(shape)
+    }
+
+    /// Desktop Nodus uses opaque neutral panels. The tint is deliberately confined to
+    /// interactive/prominent surfaces so the active vault colours the hierarchy, not the room.
+    private var surfaceFill: Color {
+        let base = colorScheme == .dark ? Color(hex: "#18181b") : Color.white
+        guard let tint = glass.tint else { return base }
+        let amount: Double = glass.interactive || glass.weight == .prominent ? 0.08 : 0.025
+        return base.blended(with: tint, amount: amount)
     }
 
     private var opaqueFill: Color {
-        let base = colorScheme == .dark ? Color(hex: "#16141f") : Color(hex: "#f4f3f8")
+        let base = colorScheme == .dark ? Color(hex: "#18181b") : Color.white
         guard let tint = glass.tint else { return base }
         return base.blended(with: tint, amount: 0.12)
     }
 
     private var borderColor: Color {
-        colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.16)
+        colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.10)
     }
 }
 

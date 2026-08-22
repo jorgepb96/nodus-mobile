@@ -307,7 +307,7 @@ final class SpaceSession {
 
     /// Keeps an open space close to the desktop without moving snapshot bytes on every tick.
     /// SwiftUI cancels this task when the shell closes; iOS suspends it with the app.
-    func monitorPublishedContent(every interval: Duration = .seconds(5)) async {
+    func monitorPublishedContent(every interval: Duration = .seconds(2)) async {
         while !Task.isCancelled {
             await refreshPublishedContent()
             do {

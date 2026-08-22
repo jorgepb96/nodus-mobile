@@ -324,11 +324,23 @@ enum BackgroundJobs {
                         DeepResearchCheckpointStore.save(progress, spaceId: spaceId)
                     }
                 )
+                let queued = DeepResearchQueue.shared.jobs(in: spaceId).first {
+                    !$0.status.isFinished && $0.request == checkpoint.request
+                }
+                let reportId = queued?.id ?? UUID().uuidString
                 LocalReportStore.shared(for: spaceId).save(
                     report,
                     mode: checkpoint.request.mode,
-                    model: checkpoint.request.model
+                    model: checkpoint.request.model,
+                    id: reportId
                 )
+                if queued != nil {
+                    DeepResearchQueue.shared.completeRecovered(
+                        jobId: reportId,
+                        savedReportId: reportId,
+                        publicationNote: String(localized: "Saved locally; publication will resume when the space opens.")
+                    )
+                }
                 DeepResearchCheckpointStore.clear(spaceId: spaceId)
             } catch {
                 // The checkpoint stays exactly where it was, so the next attempt starts from the

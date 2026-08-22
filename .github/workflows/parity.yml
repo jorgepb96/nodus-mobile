@@ -1,0 +1,67 @@
+name: Desktop parity
+
+on:
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/parity.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/parity.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-swift:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Check out mobile
+        uses: actions/checkout@v4
+        with:
+          path: nodus-mobile
+
+      - name: Check out current Desktop contract
+        uses: actions/checkout@v4
+        with:
+          repository: Drakonis96/nodus
+          path: nodus
+          token: ${{ secrets.NODUS_DESKTOP_TOKEN || github.token }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Reject unclassified Desktop drift
+        working-directory: nodus-mobile
+        env:
+          NODUS_REPO: ${{ github.workspace }}/nodus
+        run: |
+          node ios/scripts/generate-parity-manifest.mjs
+          node ios/scripts/test-desktop-parity.mjs
+
+      - name: Test portable contracts
+        working-directory: nodus-mobile
+        run: |
+          swift test --package-path ios/Packages/NodusKit
+          swift test --package-path ios/Packages/NodusAI
+          swift test --package-path ios/Packages/NodusUI
+
+      - name: Generate the Xcode project
+        working-directory: nodus-mobile
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate
+
+      - name: Compile the shared iPhone and iPad app
+        working-directory: nodus-mobile
+        run: >-
+          xcodebuild -project ios/Nodus.xcodeproj -scheme Nodus
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath ios/.derivedData-ci
+          build CODE_SIGNING_ALLOWED=NO

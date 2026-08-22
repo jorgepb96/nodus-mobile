@@ -8,7 +8,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nodus usa Face ID para proteger tus claves de proveedor y las copias de tus vaults en este dispositivo."
+            "value" : "Nodus Research usa Face ID para proteger tus claves de proveedor y las copias de tus vaults en este dispositivo."
           }
         }
       }
@@ -20,7 +20,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nodus se conecta a un Nodus Server de tu red local cuando le indicas su dirección."
+            "value" : "Nodus Research se conecta a un Nodus Server de tu red local cuando le indicas su dirección."
           }
         }
       }

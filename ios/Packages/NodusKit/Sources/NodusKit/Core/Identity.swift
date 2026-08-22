@@ -249,13 +249,22 @@ public struct ServerCapabilities: Sendable, Hashable, Codable {
     public let server: ServerInfo
     public let snapshotVersions: [Int]
     public let assets: Bool
+    /// Rich documents from the published Global Library can be downloaded independently of
+    /// the snapshot. Optional so a pre-4.2 server keeps decoding.
+    public let libraryDocuments: Bool?
     public let mutations: Bool
+    /// The wire shape used for collaborative page updates.
+    public let documentUpdates: String?
+    /// Large binary payloads travel in resumable chunks rather than through mutations.
+    public let sharedBlobs: SharedBlobCapabilities?
     public let vectors: Bool
     public let resources: [String: String]
     public let maxAssetBytes: Int
     public let maxSpaceAssetBytes: Int
     public let maxSnapshotBytes: Int
     public let maxSnapshotJsonBytes: Int
+    public let maxLibraryPackageBytes: Int?
+    public let maxSpaceLibraryBytes: Int?
     public let maxMutationBatch: Int
     /// One change, one request full of them, and the queue a space may hold undelivered.
     ///
@@ -265,6 +274,16 @@ public struct ServerCapabilities: Sendable, Hashable, Codable {
     public let maxMutationBytes: Int?
     public let maxMutationBatchBytes: Int?
     public let maxLedgerBytes: Int?
+    /// `sse` on servers that can wake replicas as soon as the ledger changes.
+    public let mutationEvents: String?
+    public let presence: PresenceCapabilities?
+    /// Typed work that the owner Desktop may claim. Nil on older servers.
+    public let spaceActions: SpaceActionCapabilities?
+    /// Account-global immutable Library sync, deliberately separate from a space publication.
+    public let accountLibrarySync: AccountLibrarySyncCapabilities?
+    /// Discovery only. A cloud server must always publish `relay == false`; private data is
+    /// fetched from the Mac named by a local pairing, never through this origin.
+    public let desktopBridge: DesktopBridgeCapabilities?
 
     /// The OAuth protected-resource identifier for `/api/v1`.
     ///
@@ -285,6 +304,43 @@ public struct ServerCapabilities: Sendable, Hashable, Codable {
     public static let knownAPI = "v1"
 
     public var speaksAKnownAPI: Bool { api == Self.knownAPI }
+
+    public var supportsDocumentUpdates: Bool { documentUpdates == "content-addressed-binary" }
+    public var supportsSharedBlobs: Bool { sharedBlobs?.transport == "resumable-chunks" }
+    public var supportsMutationEvents: Bool { mutationEvents == "sse" }
+    public var supportsPresence: Bool { presence?.transport == "ephemeral-sse" }
+    public var supportsSpaceActions: Bool { spaceActions?.schemaVersion == 1 }
+    public var supportsAccountLibrarySync: Bool { accountLibrarySync?.schemaVersion == 1 }
+    public var guaranteesPrivateBridge: Bool { desktopBridge?.relay == false && desktopBridge?.transport == "private-tls" }
+}
+
+public struct SpaceActionCapabilities: Sendable, Hashable, Codable {
+    public let schemaVersion: Int
+    public let statuses: [String]
+}
+
+public struct AccountLibrarySyncCapabilities: Sendable, Hashable, Codable {
+    public let schemaVersion: Int
+    public let immutableVersions: Bool
+    public let objects: String
+    public let maxRecordBatch: Int
+}
+
+public struct DesktopBridgeCapabilities: Sendable, Hashable, Codable {
+    public let `protocol`: String
+    public let relay: Bool
+    public let transport: String
+}
+
+public struct SharedBlobCapabilities: Sendable, Hashable, Codable {
+    public let transport: String
+    public let chunkBytes: Int
+    public let maxBytes: Int
+}
+
+public struct PresenceCapabilities: Sendable, Hashable, Codable {
+    public let transport: String
+    public let ttlSeconds: Int
 }
 
 public enum SnapshotFormat {

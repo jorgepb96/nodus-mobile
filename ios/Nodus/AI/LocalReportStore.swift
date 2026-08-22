@@ -9,9 +9,9 @@ import Observation
 /// paying for it twice. They live in Application Support rather than Caches for the same
 /// reason the mirror does: the system may empty Caches whenever it likes.
 ///
-/// They stay on the device. Sending one to the server would need `write` access and would put
-/// it in the ledger as a draft, which is a different act with a different consequence; that is
-/// offered explicitly rather than done silently.
+/// The local copy is always written first. Deep Research then offers it to the vault through
+/// the authorised outbox when this account may write; a reader keeps the same durable local
+/// copy and gets an explicit explanation instead of losing an expensive result.
 @Observable
 @MainActor
 final class LocalReportStore {
@@ -124,9 +124,14 @@ final class LocalReportStore {
     }
 
     @discardableResult
-    func save(_ report: DeepResearchReport, mode: DeepResearchMode, model: ModelRef) -> Saved {
+    func save(
+        _ report: DeepResearchReport,
+        mode: DeepResearchMode,
+        model: ModelRef,
+        id: String = UUID().uuidString
+    ) -> Saved {
         let saved = Saved(
-            id: UUID().uuidString,
+            id: id,
             report: report,
             mode: mode,
             createdAt: Date(),
@@ -181,6 +186,14 @@ final class LocalReportStore {
         guard let name = saved.imageFile else { return nil }
         let url = directory.appendingPathComponent(name)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func removeImage(from id: String) {
+        guard var saved = reports.first(where: { $0.id == id }), let name = saved.imageFile else { return }
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        saved.imageFile = nil
+        write(saved)
+        reload()
     }
 
     func delete(_ id: String) {

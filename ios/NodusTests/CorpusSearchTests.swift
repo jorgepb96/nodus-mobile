@@ -86,6 +86,23 @@ struct CorpusSearchTests {
         #expect(outcome.hits.first?.score == 0.81)
     }
 
+    @Test("the Desktop text mode stays lexical even when semantic search is available")
+    func explicitTextMode() async throws {
+        let subject = search(
+            identity: identity,
+            embed: { _, _ in Issue.record("text mode must not spend an embedding call"); return [] },
+            semantic: { _, _, _, _, _ in
+                Issue.record("text mode must not reach the vector endpoint")
+                return .notIndexed(fallback: [], warning: "")
+            },
+            lexical: { _, _ in [lexicalHit("w-1", "Una obra")] }
+        )
+
+        let outcome = try await subject.run("hambre", preference: .lexical)
+        #expect(outcome.mode == .lexical)
+        #expect(outcome.hits.map(\.id) == ["work/w-1"])
+    }
+
     // The case this whole type exists for. Before it, a vault indexed with a provider the phone
     // could reach still searched lexically, and nothing on screen told the user that adding a
     // key would change that.

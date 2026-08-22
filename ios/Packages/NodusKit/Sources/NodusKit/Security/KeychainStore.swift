@@ -55,6 +55,16 @@ public struct KeychainStore: Sendable {
         "ai-key\u{1F}\(provider)"
     }
 
+    /// Private Bridge credentials are installation-specific and cannot be restored to a
+    /// different device. The pairing id is public metadata; the value behind this key is not.
+    public static func desktopBridgeKey(pairingId: String) -> String {
+        "desktop-bridge\u{1F}\(pairingId)"
+    }
+
+    public static func desktopBridgeCacheKey(pairingId: String) -> String {
+        "desktop-bridge-cache\u{1F}\(pairingId)"
+    }
+
     // MARK: - Operations
 
     public func set(_ value: String, for key: String) throws {

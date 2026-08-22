@@ -37,7 +37,7 @@ struct ProviderRoutingTests {
         let headers = AIProvider.openrouter.authHeaders(key: "sk-or-test")
         #expect(headers["Authorization"] == "Bearer sk-or-test")
         #expect(headers["HTTP-Referer"] == "https://github.com/Drakonis96/nodus")
-        #expect(headers["X-Title"] == "Nodus")
+        #expect(headers["X-Title"] == "Nodus Research")
     }
 
     @Test("only cloud embedding providers are offered, because a phone cannot be the desktop")

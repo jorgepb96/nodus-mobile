@@ -62,7 +62,7 @@ public enum AIProvider: String, Sendable, Hashable, Codable, CaseIterable {
             if self == .openrouter {
                 // Attribution, verbatim from electron/ai/providers.ts:174-177.
                 headers["HTTP-Referer"] = "https://github.com/Drakonis96/nodus"
-                headers["X-Title"] = "Nodus"
+                headers["X-Title"] = "Nodus Research"
             }
             return headers
         }

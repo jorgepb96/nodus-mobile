@@ -10,7 +10,7 @@
 		<string>es</string>
 	</array>
 	<key>CFBundleDisplayName</key>
-	<string>Nodus</string>
+	<string>Nodus Research</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -18,7 +18,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Nodus Research</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -113,9 +113,9 @@
 	     Spanish, which iOS substitutes by key at runtime — a plist string on its own is
 	     shown verbatim in every language, which is how both of these were Spanish-only. -->
 	<key>NSFaceIDUsageDescription</key>
-	<string>Nodus uses Face ID to protect your provider keys and the copies of your vaults on this device.</string>
+	<string>Nodus Research uses Face ID to protect your provider keys and the copies of your vaults on this device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Nodus connects to a Nodus Server on your local network when you give it the address.</string>
+	<string>Nodus Research connects to a Nodus Server on your local network when you give it the address.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleURLTypes</key>

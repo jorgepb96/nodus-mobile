@@ -14,6 +14,114 @@ struct AppWiringTests {
         #expect(SpecialResource.deepResearch.listKey == "reports")
     }
 
+    @Test("every desktop route is classified exactly once")
+    func desktopRoutesAreClassified() {
+        #expect(Set(NodusNavigationContract.items.map(\.route)) == Set(NodusRoute.allCases))
+        #expect(NodusNavigationContract.items.count == NodusRoute.allCases.count)
+    }
+
+    @Test("every vault has the universal pinned and tools routes")
+    func navigationHasUniversalRoutes() {
+        for vaultType in VaultType.allCases {
+            let visible = NodusNavigationContract.visibleItems(for: vaultType)
+            #expect(visible.first?.route == .home)
+            #expect(visible.last?.route == .settings)
+            #expect(visible.allSatisfy { $0.support.isVisible })
+            #expect([.library, .browser, .radar, .toolkit].allSatisfy { route in
+                visible.contains { $0.route == route }
+            })
+        }
+    }
+
+    @Test("academic sidebar matches the current Desktop hierarchy")
+    func academicSidebarMatchesDesktop() {
+        let visible = NodusNavigationContract.visibleItems(for: .academic).map(\.route)
+        #expect(visible == [
+            .home, .library,
+            .search, .ideas, .authors, .graph, .argument,
+            .research, .immersion, .deepResearch,
+            .workspace,
+            .browser, .radar, .toolkit,
+            .settings,
+        ])
+        #expect(NodusNavigationContract.groupedItems(for: .academic).map(\.0) == [.explore, .analyze, .create, .tools])
+        #expect(NodusNavigationContract.items.first(where: { $0.route == .deepResearch })?.systemImage == "megaphone")
+    }
+
+    @Test("dedicated vault sidebars use Desktop closed allow-lists")
+    func dedicatedSidebarAllowlists() {
+        let expected: [VaultType: Set<NodusRoute>] = [
+            .prosopography: [.prosopSearch, .prosopPopulation, .prosopPersons, .prosopSources, .prosopAnalysis, .prosopNetworks, .notes, .browser, .radar, .toolkit],
+            .primarySources: [.search, .archive, .persons, .timeline, .map, .relations, .notes, .browser, .radar, .toolkit],
+            .estudio: [.studyCourses, .studySchedule, .studyCalendar, .studySearch, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyQuestions, .studyReview, .studyDeepResearch, .browser, .radar, .toolkit],
+            .docencia: [.studyCourses, .teachingGroups, .studySchedule, .studyCalendar, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyQuestions, .teachingRubrics, .teachingExams, .teachingGrades, .teachingUnits, .browser, .radar, .toolkit],
+            .databases: [.pages, .dbSearch, .dbAnalysis, .dbChat, .notes, .browser, .radar, .toolkit],
+            .testimonios: [.search, .testimonyInterviews, .testimonyParticipants, .testimonyContrasts, .notes, .browser, .radar, .toolkit],
+            .worldbuilding: [.encyclopedia, .characters, .places, .factions, .cultures, .timeline, .map, .relations, .tree, .dynasties, .worldChat, .rules, .conflicts, .arcs, .continuity, .questions, .notes, .scenes, .manuscript, .browser, .radar, .toolkit],
+        ]
+        let pinned: Set<NodusRoute> = [.home, .library, .settings]
+        for (vaultType, routes) in expected {
+            #expect(Set(NodusNavigationContract.visibleItems(for: vaultType).map(\.route)) == routes.union(pinned))
+        }
+    }
+
+    @Test("every visible data-driven route has a concrete replica source")
+    func visibleRoutesHaveSources() {
+        for item in NodusNavigationContract.items where item.support.isVisible {
+            switch item.support {
+            case .collection(let path):
+                #expect(Collections[path] != nil, "\(item.route.rawValue) points at an unknown collection: \(path)")
+            case .mirror(let table, let field, let values):
+                #expect(!table.isEmpty)
+                #expect(field != nil || values.isEmpty)
+                #expect(field == nil || !values.isEmpty)
+            case .native:
+                break
+            default:
+                Issue.record("a hidden support kind was marked visible")
+            }
+        }
+
+        let studyIdeas = NodusNavigationContract.items.first { $0.route == .studyIdeas }
+        #expect(studyIdeas?.support == .collection(path: "ideas"))
+    }
+
+    @Test("Worldbuilding exposes its complete current Desktop workspace")
+    func worldbuildingContract() {
+        let visible = Set(NodusNavigationContract.visibleItems(for: .worldbuilding).map(\.route))
+        #expect(visible.isSuperset(of: [
+            .encyclopedia, .characters, .places, .factions, .cultures, .dynasties,
+            .rules, .conflicts, .arcs, .continuity, .questions, .worldChat,
+            .scenes, .manuscript, .notes,
+        ]))
+        #expect(!NodusNavigationContract.visibleItems(for: .academic).contains {
+            [.hypothesis, .reading, .writing, .projects].contains($0.route)
+        })
+    }
+
+    @Test("one breakpoint model drives iPhone, split view and iPad")
+    func adaptiveSidebarBreakpoints() {
+        let phone = SidebarPresentation(availableWidth: 430, isUserCollapsed: false)
+        #expect(!phone.isPersistent)
+
+        let split = SidebarPresentation(availableWidth: 640, isUserCollapsed: false)
+        #expect(split.isPersistent)
+        #expect(split.isCollapsed)
+        #expect(split.sidebarWidth == 64)
+
+        let ipad = SidebarPresentation(availableWidth: 1_024, isUserCollapsed: false)
+        #expect(ipad.isPersistent)
+        #expect(!ipad.isCollapsed)
+        #expect(ipad.sidebarWidth == 176)
+
+        let resized = SidebarPresentation(availableWidth: 1_024, isUserCollapsed: false, expandedWidth: 284)
+        #expect(resized.sidebarWidth == 284)
+        #expect(SidebarPresentation(availableWidth: 1_024, isUserCollapsed: false, expandedWidth: 500).sidebarWidth == 360)
+
+        let userCollapsed = SidebarPresentation(availableWidth: 1_024, isUserCollapsed: true)
+        #expect(userCollapsed.isCollapsed)
+    }
+
     @Test("every known vault type can draw its Home sections before counts arrive")
     @MainActor
     func homeSectionsDoNotWaitForTheOverview() {

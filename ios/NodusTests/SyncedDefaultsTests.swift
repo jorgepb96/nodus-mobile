@@ -65,6 +65,39 @@ struct SyncedDefaultsTests {
         #expect(openedAgain.homeLayout == .grid)
     }
 
+    @Test("Desktop sidebar customisation survives a relaunch")
+    func sidebarCustomisationIsDurable() {
+        let local = defaults("sidebar")
+        let first = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+
+        #expect(first.sidebarOrder.isEmpty)
+        #expect(first.sidebarHidden.isEmpty)
+        #expect(!first.sidebarCustomized)
+
+        first.sidebarOrder = ["ideas", "search", "authors"]
+        first.sidebarHidden = ["graph", "argument"]
+        first.sidebarCustomized = true
+        first.sidebarWidth = 284
+
+        let reopened = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+        #expect(reopened.sidebarOrder == ["ideas", "search", "authors"])
+        #expect(reopened.sidebarHidden == ["graph", "argument"])
+        #expect(reopened.sidebarCustomized)
+        #expect(reopened.sidebarWidth == 284)
+
+        // Resetting does not store a duplicate preset. The active vault type supplies
+        // Desktop's current defaults again, including future additions to that preset.
+        reopened.sidebarOrder = []
+        reopened.sidebarHidden = []
+        reopened.sidebarCustomized = false
+        reopened.sidebarWidth = 176
+        let reset = AppPreferences(store: SyncedDefaults(defaults: local, cloud: nil))
+        #expect(reset.sidebarOrder.isEmpty)
+        #expect(reset.sidebarHidden.isEmpty)
+        #expect(!reset.sidebarCustomized)
+        #expect(NodusNavigationContract.defaultHiddenRoutes(for: .academic) == ["hypothesis", "reading"])
+    }
+
     // The whole conflict rule in one test: the iPad chose later, so the iPad wins, even though
     // this device has a perfectly good local answer of its own.
     @Test("the later of the two writes is the one that is read")

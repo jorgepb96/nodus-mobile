@@ -461,7 +461,7 @@ struct LiveContractTests {
         #expect(MutableTable(rawValue: "works") == nil)
         #expect(MutableTable(rawValue: "ideas") == nil)
         #expect(MutableTable(rawValue: "study_grades") == nil)
-        #expect(MutableTable.allCases.count == 11)
+        #expect(MutableTable.allCases.count == 49)
     }
 
     // MARK: - Snapshot

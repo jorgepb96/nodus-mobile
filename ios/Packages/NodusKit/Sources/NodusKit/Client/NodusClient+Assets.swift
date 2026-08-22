@@ -3,10 +3,10 @@ import Foundation
 
 /// The image channel, and the only binary that ever moves over this API.
 ///
-/// Documents never reach the server: no PDFs, no audio, no recordings. Exactly two kinds of
-/// image do — the illustration attached to a Deep Research report, and a person's portrait.
-/// The server sniffs the bytes of every upload and refuses anything that is not PNG, JPEG,
-/// WEBP or GIF, including a WAV, which shares its first four bytes with WEBP.
+/// Documents never reach the server: no PDFs, no audio, no recordings. Only explicitly
+/// whitelisted image domains do — report illustrations, portraits, world galleries, maps and
+/// image-valued database attachments. The server sniffs every upload and refuses anything that
+/// is not PNG, JPEG, WEBP or GIF, including a WAV, which shares its first four bytes with WEBP.
 public extension NodusClient {
     /// `GET /api/v1/spaces/:id/assets/:sha256` — needs `read`.
     ///

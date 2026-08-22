@@ -1,11 +1,6 @@
 import SwiftUI
 
-/// The page behind the glass.
-///
-/// Glass needs something worth refracting. A flat fill gives the fallback nothing to work with
-/// and makes even the real `glassEffect` look like a grey card, so every screen sits on two
-/// accent-tinted blooms over a near-black base — slow-moving, low-contrast, and out of the way
-/// of the text.
+/// The desktop canvas: neutral, flat, and quiet enough for the vault accent to remain an accent.
 public struct NodusBackdrop: View {
     public var accent: Color
     /// Kept for source compatibility. Nothing here moves any more — see below.
@@ -18,38 +13,9 @@ public struct NodusBackdrop: View {
         self.animated = animated
     }
 
-    /// Two radial washes over a near-black base.
-    ///
-    /// This used to be two `Circle`s under `.blur(radius: 44)`, drifting on a `repeatForever`
-    /// animation. Both halves of that were expensive in a way nothing on screen justified: a
-    /// 44-point blur is a full-screen offscreen pass, the animation made the system redraw it
-    /// on *every frame for the life of the app*, and there were four of these alive at once —
-    /// one per tab. A radial gradient draws the same soft bloom in a single pass with no
-    /// offscreen buffer, and a background that holds still is a background nobody notices,
-    /// which is what a background is for.
-    /// One accent bloom and one slate one.
-    ///
-    /// Both used to be the accent — a lighter violet at the top and a darker violet at the
-    /// bottom — so the page was violet corner to corner and every glass panel on it was a violet
-    /// panel on violet. The accent stays where the eye enters the page and the far corner is
-    /// given to a cool grey, which is what lets the accent read as a colour rather than as the
-    /// light in the room.
     public var body: some View {
-        ZStack {
-            base
-            bloom(accent, centre: UnitPoint(x: 0.16, y: 0.12), scale: 0.7, strength: 1)
-            bloom(slate, centre: UnitPoint(x: 0.92, y: 0.8), scale: 0.66, strength: 0.8)
-        }
-        // The wash never changes and never reacts to a touch. Flattening it means the
-        // compositor can treat it as one static layer, and hit-testing skips it entirely.
-        .drawingGroup(opaque: false)
+        base
         .allowsHitTesting(false)
-        // Last, and that is the whole of it. `drawingGroup` rasterises the view into an
-        // offscreen image the size of its bounds, so an `ignoresSafeArea` *above* it is
-        // flattened away and the wash stops at the safe area: black bands under the status bar
-        // and over the home indicator. Every screen that reached for the backdrop through
-        // `nodusPageBackdrop` was fine only because that helper applies its own; the one screen
-        // that used this view directly — the space picker — showed the bands.
         .ignoresSafeArea()
     }
 
@@ -60,34 +26,7 @@ public struct NodusBackdrop: View {
     /// between these two values seen through it. A page and a card three points apart is a page
     /// with faint outlines on it.
     private var base: Color {
-        colorScheme == .dark ? Color(hex: "#0b0a11") : Color(hex: "#eceaf3")
-    }
-
-    /// The cool grey the far corner is washed with. Not black and not the accent: a blue-grey
-    /// with a trace of the vault in it, so the two blooms read as one lighting rather than as
-    /// two decisions.
-    private var slate: Color {
-        let grey = colorScheme == .dark ? Color(hex: "#39415c") : Color(hex: "#7b829b")
-        return grey.blended(with: accent, amount: 0.18)
-    }
-
-    private func bloom(_ color: Color, centre: UnitPoint, scale: CGFloat, strength: Double) -> some View {
-        GeometryReader { proxy in
-            let radius = max(proxy.size.width, proxy.size.height) * scale
-            // Weaker than it was — 0.5 of a saturated accent over half a phone screen is not a
-            // background, it is a colour the content has to survive.
-            let peak = (colorScheme == .dark ? 0.30 : 0.14) * strength
-            RadialGradient(
-                stops: [
-                    .init(color: color.opacity(peak), location: 0),
-                    .init(color: color.opacity(peak * 0.44), location: 0.45),
-                    .init(color: color.opacity(0), location: 1),
-                ],
-                center: centre,
-                startRadius: 0,
-                endRadius: radius
-            )
-        }
+        colorScheme == .dark ? Color(hex: "#09090b") : Color(hex: "#fafafa")
     }
 }
 

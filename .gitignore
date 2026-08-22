@@ -7,7 +7,12 @@ ios/*.xcworkspace/
 ios/**/.build/
 ios/**/*.xcuserdatad/
 ios/DerivedData/
+ios/.derivedData*/
 
 # The lab publishes COPIES of real vaults to a local server. Real corpora never enter a
 # repository, public or otherwise.
 ios/.lab/
+
+# Generated screenshots, result bundles, IPA staging and visual-diff artefacts are shared in
+# the task, never committed or shipped with the application.
+/artifacts/

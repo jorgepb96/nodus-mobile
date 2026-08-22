@@ -133,7 +133,7 @@ struct ResearchLibraryView: View {
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
-                            readAction(for: saved.id)
+                            readAction(for: saved.id, remoteId: saved.vaultRowId)
                         }
                     }
                 } header: {
@@ -157,7 +157,7 @@ struct ResearchLibraryView: View {
                         // Only the mark. A published report belongs to the vault and this
                         // account may not even be allowed to write to it — there is no delete
                         // to offer, and having read it is this device's business anyway.
-                        .swipeActions { row.string("id").map { readAction(for: $0) } }
+                        .swipeActions { row.string("id").map { readAction(for: $0, remoteId: $0) } }
                     }
                 } header: {
                     NodusSectionLabel("Published in the vault")
@@ -333,10 +333,14 @@ struct ResearchLibraryView: View {
     }
 
     /// Marking a report read from the list, which is where the question is usually asked.
-    private func readAction(for id: String) -> some View {
+    private func readAction(for id: String, remoteId: String? = nil) -> some View {
         let read = marks.isRead(id)
         return Button {
-            marks.setRead(id, !read)
+            if let remoteId {
+                marks.setReadSynced(localId: id, remoteId: remoteId, !read, session: session)
+            } else {
+                marks.setRead(id, !read)
+            }
         } label: {
             Label(
                 read ? "Unread" : "Read",
@@ -362,6 +366,7 @@ struct ResearchLibraryView: View {
         local.reload()
         do {
             published = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 100).items
+            reconcilePublishedReadState()
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             published = []
@@ -369,6 +374,16 @@ struct ResearchLibraryView: View {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    private func reconcilePublishedReadState() {
+        let byId = Dictionary(uniqueKeysWithValues: published.compactMap { row in
+            row.string("id").map { ($0, row.date("read_at")) }
+        })
+        for (remoteId, readAt) in byId {
+            let localId = local.reports.first(where: { $0.vaultRowId == remoteId })?.id ?? remoteId
+            marks.reconcileRead(localId: localId, remoteId: remoteId, readAt: readAt)
         }
     }
 }
@@ -556,6 +571,31 @@ extension View {
     }
 }
 
+/// Local reports use the same annotation contract once the account can publish them. A
+/// read-only local report still keeps its personal read flag and bookmark without pretending a
+/// server mutation can succeed.
+private struct LocalReportReadingTools: ViewModifier {
+    let session: SpaceSession
+    let localId: String
+    let remoteId: String?
+    let remoteReadAt: Date?
+    let rows: [Row]
+
+    func body(content: Content) -> some View {
+        if session.connection.role.canSendChanges, let remoteId {
+            content.modifier(SyncedReportReadingTools(
+                session: session,
+                id: remoteId,
+                localMarkId: localId,
+                remoteReadAt: remoteReadAt,
+                rows: rows
+            ))
+        } else {
+            content.nodusReadingMarks(spaceId: session.connection.spaceId, id: localId, accent: session.accent)
+        }
+    }
+}
+
 /// The same, for a report that may not have an id yet.
 ///
 /// A `ViewModifier` cannot be applied conditionally without changing the view's identity — and
@@ -582,6 +622,8 @@ struct OptionalReadingMarks: ViewModifier {
 struct SyncedReportReadingTools: ViewModifier {
     let session: SpaceSession
     let id: String
+    let localMarkId: String
+    let remoteReadAt: Date?
     let rows: [Row]
     let scope: String
     let annotationPrefix: String
@@ -590,16 +632,26 @@ struct SyncedReportReadingTools: ViewModifier {
     @State private var legacyBookmark: ReadingBookmarks
     @State private var annotations: ReaderAnnotations
 
-    init(session: SpaceSession, id: String, rows: [Row], scope: String = "source", annotationPrefix: String = "") {
+    init(
+        session: SpaceSession,
+        id: String,
+        localMarkId: String? = nil,
+        remoteReadAt: Date? = nil,
+        rows: [Row],
+        scope: String = "source",
+        annotationPrefix: String = ""
+    ) {
         self.session = session
         self.id = id
+        self.localMarkId = localMarkId ?? id
+        self.remoteReadAt = remoteReadAt
         self.rows = rows
         self.scope = scope
         self.annotationPrefix = annotationPrefix
         let store = ReportMarks.shared(for: session.connection.spaceId)
         marks = store
-        _legacyBookmark = State(initialValue: ReadingBookmarks(bookmark: store.bookmark(for: id)) { next in
-            store.setBookmark(next, for: id)
+        _legacyBookmark = State(initialValue: ReadingBookmarks(bookmark: store.bookmark(for: localMarkId ?? id)) { next in
+            store.setBookmark(next, for: localMarkId ?? id)
         })
         _annotations = State(initialValue: ReaderAnnotations(
             draftId: id,
@@ -610,7 +662,7 @@ struct SyncedReportReadingTools: ViewModifier {
     }
 
     private var rowStamp: String {
-        rows.map { "\($0.string("id") ?? ""):\($0.string("updated_at") ?? "")" }.joined(separator: "|")
+        "\(remoteReadAt?.timeIntervalSince1970 ?? -1)|" + rows.map { "\($0.string("id") ?? ""):\($0.string("updated_at") ?? "")" }.joined(separator: "|")
     }
 
     func body(content: Content) -> some View {
@@ -651,6 +703,7 @@ struct SyncedReportReadingTools: ViewModifier {
                 Text(annotations.error ?? "It will be retried from the send queue.")
             }
             .task(id: rowStamp) {
+                marks.reconcileRead(localId: localMarkId, remoteId: id, readAt: remoteReadAt)
                 await annotations.load(rows: rows, session: session)
                 guard annotations.bookmark != nil else { return }
                 // The document is still measuring on the first pass; the second aim lands
@@ -666,9 +719,9 @@ struct SyncedReportReadingTools: ViewModifier {
     }
 
     private var readButton: some View {
-        let read = marks.isRead(id)
+        let read = marks.isRead(localMarkId)
         return Button {
-            marks.setRead(id, !read)
+            marks.setReadSynced(localId: localMarkId, remoteId: id, !read, session: session)
         } label: {
             Label(
                 read ? "Mark as unread" : "Mark as read",
@@ -881,6 +934,7 @@ struct ReportBody: View {
                 // Where this section sits in the report, so find-in-page walks the matches
                 // down the document rather than in whatever order the paragraphs registered.
                 .nodusSearchOrder(index + 1)
+                .id("report-section-\(index)")
             }
 
             if !report.references.isEmpty {
@@ -913,9 +967,21 @@ struct LocalReportReader: View {
     @Environment(AppPreferences.self) private var preferences
     /// The report with its citations named, when the one on disk still had raw ids in it.
     @State private var repaired: DeepResearchReport?
+    @State private var liveDetail: DeepResearchReportDetail?
+    @State private var sheet: DeepResearchReaderSheet?
+    @State private var activeSection = 0
 
     private var report: DeepResearchReport { repaired ?? saved.report }
+    private var publishedMarkdown: String? {
+        guard let row = liveDetail?.report else { return nil }
+        let draft = (row.embeddedJSON("draft") ?? row["draft"])?.objectValue
+        if let markdown = draft?["draftMarkdown"]?.stringValue, !markdown.isEmpty { return markdown }
+        return row.text("content") ?? row.text("markdown")
+    }
+    private var liveMarkdown: String { publishedMarkdown ?? report.markdown }
+    private var liveTitle: String { liveDetail?.report.text("title") ?? saved.title }
     private var store: LocalReportStore { LocalReportStore.shared(for: session.connection.spaceId) }
+    private var currentSaved: LocalReportStore.Saved { local.reports.first(where: { $0.id == saved.id }) ?? saved }
 
     /// What the send control needs, or nothing at all when this access cannot send.
     private var sendContext: ReportSendContext? {
@@ -927,9 +993,15 @@ struct LocalReportReader: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let url = store.imageURL(for: saved) {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                if let hash = liveDetail?.image?.text("hash") {
+                    AssetImage(session: session, hash: hash)
+                        .frame(height: 200)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                } else if let url = store.imageURL(for: currentSaved) {
                     LocalReportImage(url: url)
                         .frame(height: 200)
                         .frame(maxWidth: .infinity)
@@ -937,7 +1009,7 @@ struct LocalReportReader: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    PageText(saved.title, order: 0).font(.title3.weight(.semibold))
+                    PageText(liveTitle, order: 0).font(.title3.weight(.semibold))
                     HStack(spacing: 12) {
                         Label("\(report.words.formatted()) words", systemImage: "text.alignleft")
                         Label(String(format: "%.1f pp.", report.pages), systemImage: "doc")
@@ -958,42 +1030,138 @@ struct LocalReportReader: View {
                     // whole gap: the control lived on the screen that generated the report and
                     // nowhere else, so a report from yesterday could only be shared as Markdown.
                     ReportActions(
-                        markdown: report.markdown,
+                        markdown: liveMarkdown,
                         title: nil,
                         send: sendContext,
                         accent: session.accent
                     )
                     .padding(.top, 4)
+                    DeepResearchSaveToNotesButton(
+                        reportId: saved.id,
+                        title: liveTitle,
+                        markdown: liveMarkdown,
+                        session: session
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(NodusSpace.cardPadding)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
                 .nodusSearchOrder(0)
 
-                ReportBody(report: report, session: session)
+                if let publishedMarkdown {
+                    CorpusProse(publishedMarkdown, accent: session.accent, session: session)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(ReportLayout.sectionPadding)
+                        .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                        .nodusSearchOrder(1)
+                } else {
+                    ReportBody(report: report, session: session)
+                }
 
-                ShareLink(item: report.markdown) {
+                ShareLink(item: liveMarkdown) {
                     Label("Share as Markdown", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                }
+                .padding(NodusSpace.page)
+                .frame(maxWidth: ReportLayout.readerMeasure)
+                .frame(maxWidth: .infinity)
+                .nodusTopAnchor()
             }
-            .padding(NodusSpace.page)
-            .frame(maxWidth: ReportLayout.readerMeasure)
-            .frame(maxWidth: .infinity)
-            .nodusTopAnchor()
+            .safeAreaInset(edge: .top) {
+                HStack(spacing: 10) {
+                    Text("\(min(activeSection + 1, max(1, report.sections.count))) / \(max(1, report.sections.count))")
+                        .font(.caption.monospacedDigit())
+                    ProgressView(value: Double(activeSection + 1), total: Double(max(1, report.sections.count)))
+                        .tint(session.accent)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 30)
+                .background(.ultraThinMaterial)
+            }
+            .onChange(of: activeSection) { _, section in
+                guard report.sections.indices.contains(section) else { return }
+                withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo("report-section-\(section)", anchor: .top) }
+                UserDefaults.standard.set(section, forKey: "deep-research.reader-section.\(saved.id)")
+            }
         }
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
         .nodusPageFunctions(
             accent: session.accent,
-            chat: PageChatSubject(id: saved.id, title: saved.title, session: session)
+            chat: PageChatSubject(id: saved.id, title: liveTitle, session: session)
         )
         .nodusHidesBottomBar()
         .navigationTitle(saved.mode.label)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .nodusReadingMarks(spaceId: session.connection.spaceId, id: saved.id, accent: session.accent)
-        .task { await nameTheSources() }
+        .modifier(LocalReportReadingTools(
+            session: session,
+            localId: saved.id,
+            remoteId: currentSaved.vaultRowId,
+            remoteReadAt: liveDetail?.report.date("read_at"),
+            rows: liveDetail?.annotations ?? []
+        ))
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { sheet = .outline } label: { Image(systemName: "list.bullet") }
+                    .accessibilityLabel("Report outline")
+                Button { sheet = .workspace } label: { Image(systemName: "rectangle.3.group") }
+                    .accessibilityLabel("Sources and citations")
+                Button { sheet = .translation } label: { Image(systemName: "character.book.closed") }
+                    .accessibilityLabel("Translations")
+                Button { sheet = .image } label: { Image(systemName: "photo") }
+                    .accessibilityLabel("Report image")
+            }
+        }
+        .sheet(item: $sheet) { destination in
+            switch destination {
+            case .outline:
+                DeepResearchOutlineSheet(report: report, activeSection: activeSection, accent: session.accent) { section in
+                    activeSection = section
+                    sheet = nil
+                }
+                .presentationDetents([.medium, .large])
+            case .workspace:
+                DeepResearchWorkspaceSheet(report: report, session: session)
+                    .presentationDetents([.large])
+            case .translation:
+                DeepResearchTranslationSheet(
+                    reportId: currentSaved.vaultRowId ?? saved.id,
+                    sourceMarkdown: liveMarkdown,
+                    session: session,
+                    remoteRows: liveDetail?.translations,
+                    syncEnabled: currentSaved.vaultRowId != nil
+                )
+                    .presentationDetents([.large])
+            case .image:
+                DeepResearchImageEditorSheet(saved: currentSaved, store: local, session: session)
+                    .presentationDetents([.large])
+            }
+        }
+        .task {
+            activeSection = min(
+                UserDefaults.standard.integer(forKey: "deep-research.reader-section.\(saved.id)"),
+                max(0, report.sections.count - 1)
+            )
+            await nameTheSources()
+        }
+        .task(id: session.publishedRevision) { await refreshPublishedCopy() }
+        .task(id: currentSaved.vaultRowId) { await refreshPublishedCopy() }
+    }
+
+    /// A sent local report and its published row are the same document under two identities.
+    /// Refresh the canonical server copy while this reader remains mounted so annotations,
+    /// read state, translations and image metadata converge without a navigation round-trip.
+    private func refreshPublishedCopy() async {
+        guard let id = currentSaved.vaultRowId else { return }
+        do {
+            liveDetail = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
+        } catch where error.isCancellation {
+        } catch {
+            // The durable local report remains readable while its first publication is still
+            // waiting for Desktop. The next revision probe tries again.
+        }
     }
 
     /// Ask the corpus what this report's citations point at, and keep the answer.
@@ -1038,6 +1206,8 @@ struct PublishedReportReader: View {
     @Environment(AppPreferences.self) private var preferences
     @State private var detail: DeepResearchReportDetail?
     @State private var error: String?
+    @State private var translationOpen = false
+    private var currentRow: Row { detail?.report ?? row }
 
     var body: some View {
         ScrollView {
@@ -1050,23 +1220,31 @@ struct PublishedReportReader: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    PageText(row.text("title") ?? String(localized: "Report"), order: 0)
+                    PageText(currentRow.text("title") ?? String(localized: "Report"), order: 0)
                         .font(.title3.weight(.semibold))
-                    if let objective = row.text("objective") {
+                    if let objective = currentRow.text("objective") {
                         PageText(objective, order: 1).font(.subheadline).foregroundStyle(.secondary)
                     }
                     if let document {
                         ReportActions(
                             markdown: document,
-                            title: row.text("title"),
+                            title: currentRow.text("title"),
                             // Beside the copy, because it is the other way to take the report
                             // with you — and the only one that keeps its layout.
-                            pdf: row.string("id").map {
-                                (session, $0, row.text("title") ?? String(localized: "Report"))
+                            pdf: currentRow.string("id").map {
+                                (session, $0, currentRow.text("title") ?? String(localized: "Report"))
                             },
                             accent: session.accent
                         )
                         .padding(.top, 6)
+                        if let reportId = currentRow.string("id") {
+                            DeepResearchSaveToNotesButton(
+                                reportId: reportId,
+                                title: currentRow.text("title") ?? String(localized: "Report"),
+                                markdown: document,
+                                session: session
+                            )
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1108,8 +1286,8 @@ struct PublishedReportReader: View {
         .nodusPageFunctions(
             accent: session.accent,
             chat: PageChatSubject(
-                id: row.string("id") ?? row.text("title") ?? "report",
-                title: row.text("title") ?? String(localized: "Report"),
+                id: currentRow.string("id") ?? currentRow.text("title") ?? "report",
+                title: currentRow.text("title") ?? String(localized: "Report"),
                 session: session
             )
         )
@@ -1121,9 +1299,28 @@ struct PublishedReportReader: View {
         // has no stable identity and therefore keeps the plain reader.
         .modifier(OptionalSyncedReportReadingTools(
             session: session,
-            id: row.string("id"),
+            id: currentRow.string("id"),
+            remoteReadAt: currentRow.date("read_at"),
             rows: detail?.annotations ?? []
         ))
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { translationOpen = true } label: { Image(systemName: "character.book.closed") }
+                    .accessibilityLabel("Translations")
+                    .disabled(document == nil)
+            }
+        }
+        .sheet(isPresented: $translationOpen) {
+            if let id = currentRow.string("id"), let document {
+                DeepResearchTranslationSheet(
+                    reportId: id,
+                    sourceMarkdown: document,
+                    session: session,
+                    remoteRows: detail?.translations
+                )
+                .presentationDetents([.large])
+            }
+        }
         .task(id: session.publishedRevision) { await load() }
     }
 
@@ -1181,7 +1378,9 @@ struct PublishedReportReader: View {
     private func load() async {
         guard let id = row.string("id") else { return }
         do {
-            detail = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
+            let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
+            detail = loaded
+            error = nil
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
@@ -1193,11 +1392,19 @@ struct PublishedReportReader: View {
 private struct OptionalSyncedReportReadingTools: ViewModifier {
     let session: SpaceSession
     let id: String?
+    var localMarkId: String? = nil
+    var remoteReadAt: Date? = nil
     let rows: [Row]
 
     func body(content: Content) -> some View {
         if let id {
-            content.modifier(SyncedReportReadingTools(session: session, id: id, rows: rows))
+            content.modifier(SyncedReportReadingTools(
+                session: session,
+                id: id,
+                localMarkId: localMarkId,
+                remoteReadAt: remoteReadAt,
+                rows: rows
+            ))
         } else {
             content
         }

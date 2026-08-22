@@ -17,6 +17,8 @@ struct SearchScreen: View {
     @State private var query = ""
     @State private var hits: [CorpusSearch.Hit] = []
     @State private var mode: CorpusSearch.Mode = .lexical
+    @State private var requestedMode: CorpusSearch.Mode = .lexical
+    @State private var selectedKinds: Set<String> = []
     @State private var semanticWarning: String?
     @State private var unavailability: EmbeddingService.Unavailability?
     @State private var isSearching = false
@@ -24,62 +26,75 @@ struct SearchScreen: View {
     @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
-        List {
-            NodusTopAnchorRow()
-            if let error {
-                NodusNotice(tone: .blocked, title: "Search failed", message: LocalizedStringKey(error))
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
-            }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                if let error {
+                    NodusNotice(tone: .blocked, title: "Search failed", message: LocalizedStringKey(error))
+                }
 
-            if let message = warningMessage {
-                NodusNotice(
-                    tone: .caution,
-                    title: "Lexical results",
-                    message: LocalizedStringKey(message),
-                    systemImage: "magnifyingglass"
-                )
-                .listRowBackground(Color.clear).listRowSeparator(.hidden)
-            }
+                if let message = warningMessage {
+                    NodusNotice(
+                        tone: .caution,
+                        title: "Lexical results",
+                        message: LocalizedStringKey(message),
+                        systemImage: "magnifyingglass"
+                    )
+                }
 
-            // Said once, at the top, and only when it is true. The distinction matters enough
-            // to state: one search ranks by meaning, the other by spelling.
-            if mode == .semantic, !hits.isEmpty {
-                Label("Ranked by meaning", systemImage: "sparkle.magnifyingglass")
-                    .font(.caption)
-                    .foregroundStyle(session.accent)
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
-            }
+                if mode == .semantic, !hits.isEmpty {
+                    Label("Ranked by meaning", systemImage: "sparkle.magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(session.accent)
+                }
 
-            // A search that finds a work and then does nothing when you tap it is half a
-            // search. A hit's id is already `kind/id`, which is the same shape a citation
-            // uses, so every result opens the record it named.
-            ForEach(Array(hits.enumerated()), id: \.offset) { _, hit in
-                if let reference = CorpusReference(hitId: hit.id) {
-                    NavigationLink {
-                        CorpusReferenceView(session: session, reference: reference)
-                    } label: {
-                        HitCell(hit: hit, source: source(of: hit), accent: session.accent)
+                if availableKinds.count > 1 {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 7) {
+                            kindFilterButton(nil, title: String(localized: "All"))
+                            ForEach(availableKinds, id: \.self) { kind in
+                                kindFilterButton(kind, title: kind.capitalized)
+                            }
+                        }
                     }
-                    .listRowBackground(Color.clear)
+                    .scrollIndicators(.hidden)
+                }
+
+                if query.isEmpty {
+                    idleState
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 54)
                 } else {
-                    HitCell(hit: hit, source: source(of: hit), accent: session.accent)
-                        .listRowBackground(Color.clear)
+                    ForEach(Array(visibleHits.enumerated()), id: \.offset) { _, hit in
+                        if let reference = CorpusReference(hitId: hit.id) {
+                            NavigationLink {
+                                CorpusReferenceView(session: session, reference: reference)
+                            } label: {
+                                HitCell(hit: hit, source: source(of: hit), accent: session.accent)
+                                    .desktopContentRow(accent: session.accent)
+                            }
+                            .buttonStyle(NodusCardButtonStyle())
+                        } else {
+                            HitCell(hit: hit, source: source(of: hit), accent: session.accent)
+                                .desktopContentRow(accent: session.accent)
+                        }
+                    }
+
+                    if hits.isEmpty, !isSearching, error == nil {
+                        ContentUnavailableView(
+                            "No results",
+                            systemImage: "magnifyingglass",
+                            description: Text(emptyDescription)
+                        )
+                        .padding(.vertical, 42)
+                    }
                 }
             }
-
-            if hits.isEmpty, !query.isEmpty, !isSearching, error == nil {
-                ContentUnavailableView(
-                    "No results",
-                    systemImage: "magnifyingglass",
-                    description: Text(emptyDescription)
-                )
-                .listRowBackground(Color.clear)
-            }
+            .padding(NodusSpace.page)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
+            .nodusTopAnchor()
         }
-        .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
-        .listStyle(.plain)
-        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .nodusPageFunctions(accent: session.accent)
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
@@ -88,9 +103,29 @@ struct SearchScreen: View {
         // own the top — which took the search drawer with it and left the Search tab with
         // nowhere to type.
         .safeAreaInset(edge: .top) {
-            NodusSearchField(text: $query, prompt: prompt, accent: session.accent, isBusy: isSearching)
+            VStack(spacing: 8) {
+                DesktopPageHeader(
+                    title: "Search",
+                    subtitle: hits.isEmpty ? String(localized: "Search every published surface") : String(localized: "\(visibleHits.count) results"),
+                    systemImage: "magnifyingglass",
+                    accent: session.accent
+                )
+                .padding(.horizontal, NodusSpace.page)
+                Picker("Search mode", selection: $requestedMode) {
+                    Text("Text").tag(CorpusSearch.Mode.lexical)
+                    Text("Semantic").tag(CorpusSearch.Mode.semantic)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, NodusSpace.page)
+                NodusSearchField(text: $query, prompt: prompt, accent: session.accent, isBusy: isSearching)
+            }
+            .padding(.bottom, 8)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
+            .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
         .onChange(of: query) { _, _ in schedule() }
+        .onChange(of: requestedMode) { _, _ in schedule(immediately: true) }
         .task(id: session.publishedRevision) {
             let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
             guard current.count >= 2 else { return }
@@ -102,9 +137,6 @@ struct SearchScreen: View {
             let works = hits.compactMap(\.workId)
             guard !works.isEmpty else { return }
             await session.names.resolve(workIds: works)
-        }
-        .overlay {
-            if query.isEmpty { idleState }
         }
     }
 
@@ -185,7 +217,31 @@ struct SearchScreen: View {
         .padding(30)
     }
 
-    private func schedule() {
+    private var visibleHits: [CorpusSearch.Hit] {
+        guard !selectedKinds.isEmpty else { return hits }
+        return hits.filter { selectedKinds.contains($0.type) }
+    }
+
+    private var availableKinds: [String] {
+        Array(Set(hits.map(\.type))).sorted { CorpusSearch.rank($0) < CorpusSearch.rank($1) }
+    }
+
+    private func kindFilterButton(_ kind: String?, title: String) -> some View {
+        let isSelected = kind.map { selectedKinds == Set([$0]) } ?? selectedKinds.isEmpty
+        return Button {
+            selectedKinds = kind.map { Set([$0]) } ?? []
+        } label: {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(isSelected ? session.accent : Color.secondary.opacity(0.09), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func schedule(immediately: Bool = false) {
         searchTask?.cancel()
         let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard current.count >= 2 else {
@@ -195,7 +251,7 @@ struct SearchScreen: View {
         searchTask = Task {
             // The semantic endpoint allows 30 requests a minute per IP; a search field
             // without a debounce finds that out within a few seconds of typing.
-            try? await Task.sleep(for: .milliseconds(380))
+            if !immediately { try? await Task.sleep(for: .milliseconds(380)) }
             guard !Task.isCancelled else { return }
             await run(current)
         }
@@ -205,7 +261,7 @@ struct SearchScreen: View {
         isSearching = true
         defer { isSearching = false }
         do {
-            let outcome = try await search.run(text, limit: 50)
+            let outcome = try await search.run(text, limit: 50, preference: requestedMode)
             guard !Task.isCancelled else { return }
             hits = outcome.hits
             mode = outcome.mode

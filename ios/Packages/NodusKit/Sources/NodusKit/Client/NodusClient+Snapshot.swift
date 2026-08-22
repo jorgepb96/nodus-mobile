@@ -33,9 +33,9 @@ public extension NodusClient {
 
 /// One image the publication carried, described by everything except its bytes.
 ///
-/// `kind` is `person_portrait` or `deep_research_image` — the only two kinds that ever travel.
-/// `key` holds the source row's key columns, so a portrait's key is `[person_id]` and a Deep
-/// Research illustration's is `[entity_kind, entity_id]`.
+/// `kind` identifies one explicitly publishable image domain: portraits, Deep Research,
+/// world galleries, maps or image-valued database attachments. `key` holds the source row's
+/// key columns, so a portrait's key is `[person_id]` and a world image's is `[image_id]`.
 public struct SnapshotAssetRef: Sendable, Hashable, Codable {
     public let hash: String
     public let thumbHash: String?

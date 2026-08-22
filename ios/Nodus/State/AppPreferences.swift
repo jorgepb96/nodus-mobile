@@ -91,6 +91,51 @@ final class AppPreferences {
         didSet { persist { store.set(readingScale, forKey: Key.readingScale) } }
     }
 
+    enum InterfaceStyle: String, CaseIterable, Sendable {
+        case system, light, dark
+
+        var colorScheme: ColorScheme? {
+            switch self {
+            case .system: return nil
+            case .light: return .light
+            case .dark: return .dark
+            }
+        }
+    }
+
+    var interfaceStyle: InterfaceStyle {
+        didSet { persist { store.set(interfaceStyle.rawValue, forKey: Key.interfaceStyle) } }
+    }
+
+    var sidebarCollapsed: Bool {
+        didSet { persist { store.set(sidebarCollapsed, forKey: Key.sidebarCollapsed) } }
+    }
+
+    /// Desktop keeps a 176 pt default and lets the reader resize it up to 360 pt.
+    /// The iPad shell uses the same bounds; iPhone presents this hierarchy as a drawer.
+    var sidebarWidth: Double {
+        didSet { persist { store.set(sidebarWidth, forKey: Key.sidebarWidth) } }
+    }
+
+    /// Mirrors Desktop's per-person sidebar customisation. An empty order keeps the canonical
+    /// Desktop order; once customised, hidden rows and ordering follow the person across iOS
+    /// and iPadOS without changing which routes can be opened from commands or deep links.
+    var sidebarOrder: [String] {
+        didSet { persist { store.set(Self.encode(sidebarOrder), forKey: Key.sidebarOrder) } }
+    }
+
+    var sidebarHidden: Set<String> {
+        didSet { persist { store.set(Self.encode(sidebarHidden.sorted()), forKey: Key.sidebarHidden) } }
+    }
+
+    var sidebarCustomized: Bool {
+        didSet { persist { store.set(sidebarCustomized, forKey: Key.sidebarCustomized) } }
+    }
+
+    func toggleInterfaceStyle(current scheme: ColorScheme) {
+        interfaceStyle = scheme == .dark ? .light : .dark
+    }
+
     static let minReadingScale = 0.85
     static let maxReadingScale = 1.8
     static let readingScaleStep = 0.15
@@ -111,8 +156,17 @@ final class AppPreferences {
         static let homeLayout = "nodus.prefs.homeLayout"
         static let spaceOrder = "nodus.prefs.spaceOrder"
         static let readingScale = "nodus.prefs.readingScale"
+        static let interfaceStyle = "nodus.prefs.interfaceStyle"
+        static let sidebarCollapsed = "nodus.prefs.sidebarCollapsed"
+        static let sidebarWidth = "nodus.prefs.sidebarWidth"
+        static let sidebarOrder = "nodus.prefs.sidebarOrder"
+        static let sidebarHidden = "nodus.prefs.sidebarHidden"
+        static let sidebarCustomized = "nodus.prefs.sidebarCustomized"
 
-        static let all: Set<String> = [scrollToTop, homeLayout, spaceOrder, readingScale]
+        static let all: Set<String> = [
+            scrollToTop, homeLayout, spaceOrder, readingScale, interfaceStyle,
+            sidebarCollapsed, sidebarWidth, sidebarOrder, sidebarHidden, sidebarCustomized,
+        ]
     }
 
     init(store: SyncedDefaults = .shared) {
@@ -124,6 +178,12 @@ final class AppPreferences {
         homeLayout = HomeLayout(rawValue: store.string(forKey: Key.homeLayout) ?? "") ?? .grid
         spaceOrder = SpaceOrder(rawValue: store.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
         readingScale = store.double(forKey: Key.readingScale) ?? 1
+        interfaceStyle = InterfaceStyle(rawValue: store.string(forKey: Key.interfaceStyle) ?? "") ?? .system
+        sidebarCollapsed = store.bool(forKey: Key.sidebarCollapsed) ?? false
+        sidebarWidth = store.double(forKey: Key.sidebarWidth) ?? 176
+        sidebarOrder = Self.decode(store.data(forKey: Key.sidebarOrder))
+        sidebarHidden = Set(Self.decode(store.data(forKey: Key.sidebarHidden)))
+        sidebarCustomized = store.bool(forKey: Key.sidebarCustomized) ?? false
         store.onExternalChange(of: Key.all) { [weak self] in self?.adoptRemote() }
     }
 
@@ -147,5 +207,20 @@ final class AppPreferences {
         homeLayout = HomeLayout(rawValue: store.string(forKey: Key.homeLayout) ?? "") ?? .grid
         spaceOrder = SpaceOrder(rawValue: store.string(forKey: Key.spaceOrder) ?? "") ?? .recentlyUsed
         readingScale = store.double(forKey: Key.readingScale) ?? 1
+        interfaceStyle = InterfaceStyle(rawValue: store.string(forKey: Key.interfaceStyle) ?? "") ?? .system
+        sidebarCollapsed = store.bool(forKey: Key.sidebarCollapsed) ?? false
+        sidebarWidth = store.double(forKey: Key.sidebarWidth) ?? 176
+        sidebarOrder = Self.decode(store.data(forKey: Key.sidebarOrder))
+        sidebarHidden = Set(Self.decode(store.data(forKey: Key.sidebarHidden)))
+        sidebarCustomized = store.bool(forKey: Key.sidebarCustomized) ?? false
+    }
+
+    private static func encode(_ values: [String]) -> Data {
+        (try? JSONEncoder().encode(values)) ?? Data("[]".utf8)
+    }
+
+    private static func decode(_ data: Data?) -> [String] {
+        guard let data else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
     }
 }

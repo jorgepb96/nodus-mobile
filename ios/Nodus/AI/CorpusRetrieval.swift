@@ -307,6 +307,10 @@ nonisolated enum Prompts {
         """
         \(request.mode == .teachingUnit ? "Unit topic" : "Report objective"): \(request.objective)
         \(request.audience.map { "Audience: \($0)" } ?? "")
+        \(request.focusPerson.map { "Genealogical focus person: \($0). Keep similarly named people distinct and do not infer identity." } ?? "")
+        \(request.teachingOutline.map { "Teacher's proposed outline (guidance, not evidence):\n\($0)" } ?? "")
+
+        \(request.resolvedApproach.promptRules)
 
         Propón entre \(max(1, target - 1)) y \(cap) partes que cubran el tema apoyándose en el \
         catálogo. \(request.mode == .teachingUnit
@@ -342,6 +346,10 @@ nonisolated enum Prompts {
         return """
         \(request.mode == .teachingUnit ? "Unidad" : "Report"): \(request.objective)
         Escribe la parte \(index + 1) de \(total): «\(title)».
+        \(request.focusPerson.map { "Persona focal: \($0). No confundas homónimos ni completes parentescos no documentados." } ?? "")
+        \(request.teachingOutline.map { "Esquema docente aportado como guía: \($0)" } ?? "")
+
+        \(request.resolvedApproach.promptRules)
 
         Extensión objetivo: unas \(wordTarget) palabras. \(shape) No repitas el título.
 
