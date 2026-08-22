@@ -84,6 +84,7 @@ struct NodusNavigationItem: Identifiable {
     }
 }
 
+@MainActor
 enum NodusNavigationContract {
     private static let academic: Set<VaultType> = [.academic]
     private static let records: Set<VaultType> = [.genealogy, .primarySources]
