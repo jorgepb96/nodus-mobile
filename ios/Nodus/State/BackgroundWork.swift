@@ -225,9 +225,10 @@ enum BackgroundJobs {
     static func confirmDeliveries() async -> Bool {
         let connections = connectionsWithQueues
         guard !connections.isEmpty else { return true }
+        let directory = spacesDirectory
 
         let outcome = await MutationDelivery.confirm(for: connections) { connection in
-            try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory)
+            try? MutationOutbox(spaceId: connection.spaceId, directory: directory)
         }
         // `mayAsk: false` — the prompt is only ever shown to an app that is on screen.
         await DeliveryNotice.announce(outcome.landings, mayAsk: false)

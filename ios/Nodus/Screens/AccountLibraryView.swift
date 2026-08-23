@@ -584,6 +584,7 @@ private enum LibrarySort: String, CaseIterable, Identifiable {
 
 private enum LibraryViewMode: String { case table, grid }
 
+@MainActor
 enum LibraryDeviceIdentity {
     static var current: String {
         let key = "nodus.account-library-device.v1"
