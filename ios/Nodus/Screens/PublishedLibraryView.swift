@@ -654,6 +654,7 @@ private struct LibraryPDFView: UIViewRepresentable {
     let onSelectionChanged: (Bool) -> Void
     let onHighlight: (PDFOriginalHighlight) -> Void
 
+    @MainActor
     final class Coordinator: NSObject {
         var parent: LibraryPDFView
         weak var view: PDFView?

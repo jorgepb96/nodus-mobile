@@ -968,6 +968,7 @@ private struct DatabaseAnalysisSurface: View {
     private func metric(_ title: LocalizedStringKey, _ value: Int, _ icon: String) -> some View { VStack(alignment: .leading, spacing: 7) { Image(systemName: icon).foregroundStyle(session.accent); Text("\(value)").font(.title.bold().monospacedDigit()); Text(title).font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }
 }
 
+@MainActor
 func databaseParityTables(_ session: SpaceSession, _ names: [String]) async throws -> [String: [Row]] {
     let fixture = debugDatabasesFixture()
     if let mirror = session.mirror {

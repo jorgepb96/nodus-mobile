@@ -349,6 +349,7 @@ private struct IsolatedBrowserWebView: UIViewRepresentable {
 }
 
 private enum BrowserLibraryCapture {
+    @MainActor
     static func capture(tab: BrowserTabRecord, session: SpaceSession) async throws {
         guard !session.isDemo else { return }
         let accountId = try await session.client.me().user.id
@@ -541,6 +542,7 @@ private struct RadarUpdateReader: View {
 }
 
 private enum RadarLibraryCapture {
+    @MainActor
     static func capture(update: RadarUpdateRecord, session: SpaceSession) async throws {
         guard !session.isDemo else { return }
         let accountId = try await session.client.me().user.id
@@ -765,6 +767,7 @@ private struct DesktopMacJobsCard: View {
 }
 
 private enum DesktopToolkitQueue {
+    @MainActor
     static func enqueue(url: URL, operation: ToolkitOperation, session: SpaceSession) async throws {
         guard let command = operation.desktopCommand else { return }
         let accountId = try await session.client.me().user.id
