@@ -407,6 +407,7 @@ struct SidebarPresentation: Equatable {
 
 /// Visual-QA only vault override, paired with `NODUS_START_ROUTE`. It changes no data source;
 /// it lets simulator captures verify every adaptive sidebar without fabricating user records.
+@MainActor
 private func displayedVaultType(for session: SpaceSession) -> VaultType? {
 #if DEBUG
     if let raw = ProcessInfo.processInfo.environment["NODUS_VAULT_TYPE_OVERRIDE"],

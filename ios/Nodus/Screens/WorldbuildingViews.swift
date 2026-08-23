@@ -973,6 +973,7 @@ struct WorldMapView: View {
     }
 }
 
+@MainActor
 func worldTables(_ session: SpaceSession, _ names: [String]) async throws -> [String: [Row]] {
     let fixture = debugWorldbuildingFixture()
     if let mirror = session.mirror {
