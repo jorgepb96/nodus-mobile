@@ -933,6 +933,7 @@ struct DeepResearchGalleryEntry: Identifiable {
     let citationCount: Int?
     let origin: Origin
 
+    @MainActor
     init(local saved: LocalReportStore.Saved, marks: ReportMarks) {
         id = "local:\(saved.id)"
         title = saved.title
@@ -945,6 +946,7 @@ struct DeepResearchGalleryEntry: Identifiable {
         origin = .local(saved)
     }
 
+    @MainActor
     init(published row: Row, marks: ReportMarks) {
         let rowId = row.string("id") ?? UUID().uuidString
         id = "published:\(rowId)"
