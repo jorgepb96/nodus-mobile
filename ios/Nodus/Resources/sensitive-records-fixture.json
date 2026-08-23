@@ -1,0 +1,153 @@
+{
+  "archive_repositories": [
+    {"repository_id":"repo-harbour","name":"Harbour Workers Archive","short_name":"HWA","identifier":"HWA","country_code":"GB","access_notes":"Reader registration required"}
+  ],
+  "archive_description_units": [
+    {"unit_id":"unit-fonds","repository_id":"repo-harbour","parent_unit_id":null,"level":"fonds","reference_code":"HWA/01","title":"Dockworkers' Mutual Aid Fonds","date_display":"1918–1964","scope_content":"Committee papers, correspondence and membership records","position":0},
+    {"unit_id":"unit-series","repository_id":"repo-harbour","parent_unit_id":"unit-fonds","level":"series","reference_code":"HWA/01/3","title":"Welfare and housing correspondence","date_display":"1923–1949","position":1}
+  ],
+  "archive_items": [
+    {"item_id":"archive-letter","title":"Letter on rent support","date_display":"14 March 1932","description":"A committee secretary requests emergency rent support for two households.","source":"Harbour Workers Archive, HWA/01/3/27","doc_type":"correspondence","created_at":"2026-08-01T09:00:00Z","updated_at":"2026-08-20T09:00:00Z"},
+    {"item_id":"archive-minutes","title":"Mutual aid committee minutes","date_display":"2 June 1936","description":"Minutes recording relief decisions and contested eligibility rules.","source":"Harbour Workers Archive, HWA/01/3/44","doc_type":"minutes","created_at":"2026-08-01T09:00:00Z","updated_at":"2026-08-20T09:00:00Z"}
+  ],
+  "archive_item_units": [
+    {"item_id":"archive-letter","unit_id":"unit-series","relation_kind":"describes","position":0},
+    {"item_id":"archive-minutes","unit_id":"unit-series","relation_kind":"describes","position":1}
+  ],
+  "archive_item_profiles": [
+    {"item_id":"archive-letter","access_status":"open","sensitivity":"normal","processing_status":"ready","description_status":"reviewed","analysis_status":"reviewed","citation_status":"ready"},
+    {"item_id":"archive-minutes","access_status":"open","sensitivity":"normal","processing_status":"ready","description_status":"reviewed","analysis_status":"in_review","citation_status":"ready"}
+  ],
+  "archive_item_files": [
+    {"file_id":"file-letter-master","item_id":"archive-letter","role":"master","version_no":1,"sequence_no":0,"page_label":"1","original_file_name":"HWA-01-3-27.tif","mime_type":"image/tiff","byte_size":18432000,"content_hash":"8ac7084c82e2fb8c36402c61dd4301b79b1809ee0ef9d02f5b8d31ef9b4ed010","hash_algorithm":"sha256","verification_status":"verified"},
+    {"file_id":"file-letter-access","item_id":"archive-letter","parent_file_id":"file-letter-master","role":"derivative","version_no":1,"sequence_no":0,"page_label":"1","original_file_name":"HWA-01-3-27.pdf","mime_type":"application/pdf","byte_size":923000,"content_hash":"c6ec91471a6493289187764884ac7c7a474683fe493ba7e70cf3a456f75bc948","hash_algorithm":"sha256","verification_status":"verified"},
+    {"file_id":"file-minutes-master","item_id":"archive-minutes","role":"master","version_no":1,"sequence_no":0,"page_label":"1–4","original_file_name":"HWA-01-3-44.pdf","mime_type":"application/pdf","byte_size":4821000,"content_hash":"c15e2b1eaf4f07036bed15d2ce2bab07f65248332a4174d454fc5e99dc25e7b4","hash_algorithm":"sha256","verification_status":"verified"}
+  ],
+  "archive_text_versions": [
+    {"text_version_id":"text-letter-literal","item_id":"archive-letter","file_id":"file-letter-access","kind":"literal","language_code":"en","content":"Dear Secretary, the rent arrears now threaten both households with eviction. I ask that the relief committee hear their cases separately.","status":"reviewed","confidence":0.97,"created_at":"2026-08-10T09:00:00Z","updated_at":"2026-08-20T09:00:00Z"},
+    {"text_version_id":"text-minutes-literal","item_id":"archive-minutes","file_id":"file-minutes-master","kind":"literal","language_code":"en","content":"The committee agreed that employment status alone could not decide eligibility. Two members dissented.","status":"reviewed","confidence":0.94,"created_at":"2026-08-10T09:00:00Z","updated_at":"2026-08-20T09:00:00Z"}
+  ],
+  "archive_text_segments": [
+    {"segment_id":"segment-letter-1","text_version_id":"text-letter-literal","file_id":"file-letter-access","sequence_no":0,"page_label":"1","content":"the rent arrears now threaten both households with eviction","confidence":0.98},
+    {"segment_id":"segment-minutes-1","text_version_id":"text-minutes-literal","file_id":"file-minutes-master","sequence_no":0,"page_label":"2","content":"employment status alone could not decide eligibility","confidence":0.96}
+  ],
+  "archive_excerpts": [
+    {"excerpt_id":"excerpt-letter","item_id":"archive-letter","file_id":"file-letter-access","text_version_id":"text-letter-literal","segment_id":"segment-letter-1","locator_display":"p. 1, lines 8–10","quoted_text":"the rent arrears now threaten both households with eviction","description":"Direct statement of urgency","review_status":"reviewed"},
+    {"excerpt_id":"excerpt-minutes","item_id":"archive-minutes","file_id":"file-minutes-master","text_version_id":"text-minutes-literal","segment_id":"segment-minutes-1","locator_display":"p. 2, item 4","quoted_text":"employment status alone could not decide eligibility","description":"Eligibility rule under debate","review_status":"reviewed"}
+  ],
+  "archive_source_analyses": [
+    {"analysis_id":"analysis-letter","item_id":"archive-letter","origin_notes":"Created by a committee secretary during an active relief case.","purpose_audience":"Internal request to the relief committee.","perspective_bias":"Administrative voice; affected households do not speak directly.","silences_limits":"No response or outcome survives with this item.","corroboration":"Compare with committee minutes HWA/01/3/44.","status":"reviewed"}
+  ],
+  "archive_integrity_checks": [
+    {"check_id":"check-letter","file_id":"file-letter-master","algorithm":"sha256","expected_hash":"8ac7084c82e2fb8c36402c61dd4301b79b1809ee0ef9d02f5b8d31ef9b4ed010","observed_hash":"8ac7084c82e2fb8c36402c61dd4301b79b1809ee0ef9d02f5b8d31ef9b4ed010","status":"verified","checked_at":"2026-08-20T09:00:00Z"}
+  ],
+
+  "prosop_studies": [
+    {"study_id":"study-dockworkers","title":"Mutual aid and port labour, 1918–1964","research_question":"How did occupational and neighbourhood ties shape access to relief?","unit_of_analysis":"person","temporal_scope":"1918–1964","geographic_scope":"North harbour district","population_definition":"Named applicants, committee members and witnesses in HWA/01.","expected_population":240,"known_biases":"Surviving files privilege committee voices.","living_people_policy":"exclude"}
+  ],
+  "prosop_population_criteria": [
+    {"criterion_id":"criterion-named","methodology_version_id":"method-v1","kind":"include","label":"Named in a reviewed source","description":"At least one literal name attestation in the selected fonds.","required":1,"position":0}
+  ],
+  "persons": [
+    {"person_id":"prosop-ada","given_names":"Ada","surnames":"Morris","display_name":"Ada Morris"},
+    {"person_id":"prosop-james","given_names":"James","surnames":"Okafor","display_name":"James Okafor"},
+    {"person_id":"prosop-zora","given_names":"Zora","surnames":"Reed","display_name":"Zora Reed"}
+  ],
+  "prosop_person_profiles": [
+    {"person_id":"prosop-ada","identity_status":"resolved","review_status":"reviewed","preferred_name_basis":"membership register","privacy_status":"ordinary","completeness_cache":0.82},
+    {"person_id":"prosop-james","identity_status":"resolved","review_status":"reviewed","preferred_name_basis":"committee minutes","privacy_status":"ordinary","completeness_cache":0.71},
+    {"person_id":"prosop-zora","identity_status":"provisional","review_status":"in_review","preferred_name_basis":"letter signature","privacy_status":"ordinary","completeness_cache":0.48}
+  ],
+  "prosop_sources": [
+    {"source_id":"prosop-source-register","title":"Dockworkers' membership register","source_kind":"register","citation":"HWA/01/1/2","repository":"Harbour Workers Archive","reference_code":"HWA/01/1/2","date_display":"1921–1940","description":"Annual membership entries and occupations.","reliability_notes":"Contemporary administrative record with uneven updates.","access_status":"open"},
+    {"source_id":"prosop-source-minutes","title":"Mutual aid committee minutes","source_kind":"minutes","citation":"HWA/01/3/44","repository":"Harbour Workers Archive","reference_code":"HWA/01/3/44","date_display":"2 June 1936","description":"Reviewed committee minutes.","access_status":"open"}
+  ],
+  "prosop_source_segments": [
+    {"segment_id":"prosop-segment-register","source_id":"prosop-source-register","locator_display":"fol. 17r","quoted_text":"Morris, Ada — checker — east quay","transcription_status":"reviewed","language":"en"}
+  ],
+  "prosop_factoids": [
+    {"factoid_id":"factoid-ada-job","source_id":"prosop-source-register","source_segment_id":"prosop-segment-register","factoid_kind":"occupation","summary":"Ada Morris was recorded as a checker.","status":"reviewed","extraction_certainty":"certain"},
+    {"factoid_id":"factoid-james-role","source_id":"prosop-source-minutes","source_segment_id":"prosop-segment-minutes","factoid_kind":"office","summary":"James Okafor chaired the relief discussion.","status":"reviewed","extraction_certainty":"probable"}
+  ],
+  "prosop_statements": [
+    {"statement_id":"statement-ada-job","factoid_id":"factoid-ada-job","statement_type":"occupation","value_kind":"text","literal_value":"checker","value_text":"checker","reading_certainty":"certain","status":"reviewed"},
+    {"statement_id":"statement-james-role","factoid_id":"factoid-james-role","statement_type":"office","value_kind":"text","literal_value":"chair","value_text":"committee chair","reading_certainty":"probable","status":"reviewed"}
+  ],
+  "prosop_statement_entities": [
+    {"id":"entity-ada-job","statement_id":"statement-ada-job","entity_kind":"person","entity_id":"prosop-ada","role":"subject","position":0},
+    {"id":"entity-james-role","statement_id":"statement-james-role","entity_kind":"person","entity_id":"prosop-james","role":"subject","position":0}
+  ],
+  "prosop_authority_ids": [
+    {"authority_id":"authority-ada-local","entity_kind":"person","entity_id":"prosop-ada","scheme":"HWA member","external_id":"HWA-M-0187","label_snapshot":"Ada Morris","status":"active"}
+  ],
+  "prosop_population_memberships": [
+    {"membership_id":"membership-ada","person_id":"prosop-ada","methodology_version_id":"method-v1","status":"included"},
+    {"membership_id":"membership-james","person_id":"prosop-james","methodology_version_id":"method-v1","status":"included"},
+    {"membership_id":"membership-zora","person_id":"prosop-zora","methodology_version_id":"method-v1","status":"uncertain"}
+  ],
+  "prosop_analysis_definitions": [
+    {"analysis_id":"analysis-occupation","study_id":"study-dockworkers","title":"Occupation by committee role","analysis_kind":"cross_tab","cohort_ids_json":"[]","projection_json":"{\"rows\":\"occupation\",\"columns\":\"office\"}","filter_json":"{}","questionnaire_version_id":"questionnaire-v1"}
+  ],
+  "prosop_analysis_runs": [
+    {"run_id":"run-occupation","analysis_id":"analysis-occupation","engine_version":"prosop-1","input_fingerprint":"fixture-v1","population_count":3,"included_count":2,"missing_summary_json":"{\"occupation\":1}","result_json":"{\"checker\":1,\"stevedore\":1}","warnings_json":"[]","created_at":"2026-08-20T09:00:00Z"}
+  ],
+  "prosop_network_layers": [
+    {"layer_id":"layer-committee","study_id":"study-dockworkers","name":"Committee and relief ties","kind":"affiliation","directionality":"undirected","weight_policy":"count","color":"#2563eb"}
+  ],
+  "prosop_network_edges": [
+    {"edge_id":"edge-ada-james","layer_id":"layer-committee","source_person_id":"prosop-ada","target_person_id":"prosop-james","weight":3,"origin":"explicit","status":"active"},
+    {"edge_id":"edge-james-zora","layer_id":"layer-committee","source_person_id":"prosop-james","target_person_id":"prosop-zora","weight":1,"origin":"derived","status":"active"}
+  ],
+  "prosop_audit_log": [
+    {"audit_id":"audit-ada","entity_kind":"person","entity_id":"prosop-ada","action":"identity_resolved","reason":"Membership number and address agree across two sources.","actor":"researcher","created_at":"2026-08-20T09:00:00Z"}
+  ],
+
+  "testimony_interviews": [
+    {"id":"interview-harbour","short_id":"INT-01","title":"Working the east quay","interview_kind":"life_history","workflow_status":"review","collection_label":"Harbour memories","conducted_at":"2026-05-14T10:00:00Z","location_text":"Community archive room","language":"en","objective":"Document changing work routines without treating recollection as automatic verification.","abstract":"A narrator reflects on apprenticeship, mutual aid and the closure of the east quay."},
+    {"id":"interview-housing","short_id":"INT-02","title":"Housing campaigns after the docks","interview_kind":"thematic","workflow_status":"transcription","collection_label":"Harbour memories","conducted_at":"2026-06-02T14:00:00Z","location_text":"Narrator's home","language":"en","objective":"Record community organising and its contested chronology."}
+  ],
+  "testimony_participant_profiles": [
+    {"person_id":"narrator-a","public_name":"Narrator A","identity_mode":"pseudonymous","biographical_note":"Retired quay worker; public biography intentionally minimal.","attribution_note":"Use the recorded pseudonym in every derivative."},
+    {"person_id":"narrator-b","public_name":"E. River","identity_mode":"public_name","biographical_note":"Community organiser and archive volunteer.","attribution_note":"Public name approved."}
+  ],
+  "testimony_interview_participants": [
+    {"interview_id":"interview-harbour","person_id":"narrator-a","role":"narrator","speaker_label":"Speaker 1","is_primary":1,"position":0},
+    {"interview_id":"interview-housing","person_id":"narrator-b","role":"narrator","speaker_label":"Speaker 1","is_primary":1,"position":0}
+  ],
+  "testimony_sessions": [
+    {"id":"session-harbour-1","short_id":"SES-01","interview_id":"interview-harbour","sequence_no":1,"title":"Apprenticeship and mutual aid","status":"completed","recorded_at":"2026-05-14T10:00:00Z","location_text":"Community archive room","mode":"in_person","language":"en","field_notes":"Narrator requested a pause before discussing the 1984 closure."},
+    {"id":"session-housing-1","short_id":"SES-02","interview_id":"interview-housing","sequence_no":1,"title":"Campaign chronology","status":"completed","recorded_at":"2026-06-02T14:00:00Z","location_text":"Narrator's home","mode":"in_person","language":"en"}
+  ],
+  "testimony_media": [
+    {"id":"media-harbour-master","short_id":"MED-01","session_id":"session-harbour-1","media_kind":"audio","role":"master","file_name":"INT-01-SES-01.wav","mime_type":"audio/wav","content_hash":"b8dd4c241776b3a0558d4940d94dbc34c704af379467e5fb82de21f5d12f1a63","duration_seconds":3124,"size_bytes":182440000,"immutable":1},
+    {"id":"media-housing-master","short_id":"MED-02","session_id":"session-housing-1","media_kind":"audio","role":"master","file_name":"INT-02-SES-01.wav","mime_type":"audio/wav","content_hash":"d0280b11224cb1e80e2c697242d840c6576e0ae686e6dc8a342b0ee2fc4e37c1","duration_seconds":2780,"size_bytes":161820000,"immutable":1}
+  ],
+  "testimony_transcripts": [
+    {"id":"transcript-harbour-literal","short_id":"TRN-01","media_id":"media-harbour-master","kind":"corrected","language":"en","content_markdown":"We called it mutual aid, but not everyone agreed who belonged. The committee minutes give one rule; what happened at the door could be different.","status":"approved","version_no":2,"source_transcript_id":"transcript-harbour-machine","approved_at":"2026-08-18T09:00:00Z"},
+    {"id":"transcript-housing-literal","short_id":"TRN-02","media_id":"media-housing-master","kind":"machine_literal","language":"en","content_markdown":"The campaign did not begin on one day. Different streets remember a different first meeting.","status":"review","version_no":1}
+  ],
+  "testimony_transcript_segments": [
+    {"id":"testimony-segment-1","short_id":"SEG-01","transcript_id":"transcript-harbour-literal","t_start":842,"t_end":859,"text":"The committee minutes give one rule; what happened at the door could be different.","speaker_person_id":"narrator-a","speaker_label":"Speaker 1","confidence":0.96,"position":0}
+  ],
+  "testimony_codes": [
+    {"id":"code-belonging","label":"Contested belonging","normalized_label":"contested belonging","kind":"code","description":"Disagreement about membership or eligibility.","color":"#8b5cf6"},
+    {"id":"code-memory","label":"Chronology in memory","normalized_label":"chronology in memory","kind":"code","description":"Explicit uncertainty or plurality in remembered sequence.","color":"#0ea5e9"}
+  ],
+  "testimony_annotations": [
+    {"id":"annotation-rule","short_id":"ANN-01","interview_id":"interview-harbour","transcript_id":"transcript-harbour-literal","segment_id":"testimony-segment-1","kind":"highlight","t_start":842,"t_end":859,"quote_snapshot":"The committee minutes give one rule; what happened at the door could be different.","memo":"Contrast formal policy with situated practice.","link_status":"valid"}
+  ],
+  "testimony_annotation_codes": [
+    {"annotation_id":"annotation-rule","code_id":"code-belonging"}
+  ],
+  "testimony_agreements": [
+    {"id":"agreement-harbour-v2","interview_id":"interview-harbour","version_no":2,"is_current":1,"status":"documented","documented_at":"2026-05-14","access_level":"restricted","attribution_mode":"pseudonym","allowed_uses_json":"[\"research\",\"teaching\"]","narrator_review_required":1,"narrator_review_status":"approved","restrictions_markdown":"Do not publish the working name or raw audio."},
+    {"id":"agreement-housing-v1","interview_id":"interview-housing","version_no":1,"is_current":1,"status":"documented","documented_at":"2026-06-02","access_level":"embargoed","embargo_until":"2028-06-02","attribution_mode":"public_name","allowed_uses_json":"[\"research\"]","narrator_review_required":0,"narrator_review_status":"not_required","restrictions_markdown":"Transcript excerpts remain embargoed until the stated date."}
+  ],
+  "testimony_contrasts": [
+    {"id":"contrast-belonging","short_id":"CON-01","title":"Formal eligibility and lived access","filters_json":"{\"codeIds\":[\"code-belonging\"]}","memo_markdown":"Keep disagreement visible; do not collapse narration into the committee record."}
+  ],
+  "testimony_contrast_items": [
+    {"contrast_id":"contrast-belonging","annotation_id":"annotation-rule","position":0,"note":"Directly contrasts written policy with remembered practice."}
+  ],
+  "testimony_note_links": []
+}

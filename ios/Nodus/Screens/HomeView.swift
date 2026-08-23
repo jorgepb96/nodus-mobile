@@ -20,6 +20,10 @@ struct HomeView: View {
             // separate subjects — what the vault publishes, what you write, what you analyse —
             // and 16 points made them one long run of cards with occasional words in it.
             VStack(alignment: .leading, spacing: NodusSpace.block) {
+                if isAcademicDashboard {
+                    academicDashboard
+                }
+
                 // Every vault type but academic is still being proved, and a reader should know
                 // that before they trust a screen with their work rather than after.
                 //
@@ -224,6 +228,146 @@ struct HomeView: View {
         .scrollIndicators(.hidden)
         .nodusPageFunctions(accent: session.accent)
         .refreshable { await session.load() }
+    }
+
+    /// Desktop's academic Home is an answer-first dashboard: identity and next action first,
+    /// then corpus, analysis and queue health. The underlying mobile publication exposes a
+    /// smaller snapshot, so every metric here is derived from the exact counts it does publish.
+    private var academicDashboard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 7) {
+                Label("Academic vault", systemImage: "book.closed")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(session.accent.nodusReadable)
+                    .textCase(.uppercase)
+                Text("Your research workspace")
+                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                Text("Organise your corpus, connect ideas and turn analysis into the next useful step from one local, private workspace.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 680, alignment: .leading)
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: [session.accent.opacity(0.18), session.accent.opacity(0.035)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: NodusRadius.panelShape
+            )
+            .overlay(NodusRadius.panelShape.stroke(session.accent.opacity(0.22), lineWidth: 1))
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("NEXT RECOMMENDED STEP")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(0.7)
+                        .foregroundStyle(.secondary)
+                    Text(recommendationTitle)
+                        .font(.headline)
+                    Text(recommendationBody)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Button {
+                    openResearch?()
+                } label: {
+                    Label("Deep Research", systemImage: "sparkles")
+                }
+                .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
+                .disabled(openResearch == nil)
+            }
+            .padding(14)
+            .nodusGlass(NodusGlass(.regular, tint: session.accent), in: NodusRadius.panelShape)
+
+            LazyVGrid(columns: dashboardColumns, spacing: 10) {
+                dashboardMetric(
+                    title: "Corpus",
+                    icon: "books.vertical",
+                    value: totalCorpusCount,
+                    detail: "published records",
+                    progress: nil
+                )
+                dashboardMetric(
+                    title: "Analysis",
+                    icon: "square.3.layers.3d",
+                    value: analysisCount,
+                    detail: "ideas and relations",
+                    progress: totalCorpusCount > 0 ? Double(analysisCount) / Double(max(1, totalCorpusCount)) : 0
+                )
+                dashboardMetric(
+                    title: "Send queue",
+                    icon: tray.outbox.pending > 0 ? "arrow.triangle.2.circlepath" : "checkmark.circle",
+                    value: tray.outbox.pending,
+                    detail: tray.outbox.pending == 0 ? "nothing pending" : "changes pending",
+                    progress: tray.outbox.pending == 0 ? 1 : nil
+                )
+            }
+        }
+    }
+
+    private func dashboardMetric(
+        title: LocalizedStringKey,
+        icon: String,
+        value: Int,
+        detail: LocalizedStringKey,
+        progress: Double?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            Text(value.formatted())
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if let progress {
+                ProgressView(value: min(max(progress, 0), 1))
+                    .tint(session.accent)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+        .nodusGlass(NodusGlass(.regular, tint: session.accent), in: NodusRadius.panelShape)
+    }
+
+    private var dashboardColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 170), spacing: 10)]
+    }
+
+    private var isAcademicDashboard: Bool {
+        session.vaultType == .academic || session.vaultType == .primarySources
+    }
+
+    private var totalCorpusCount: Int {
+        let counts = session.overview?.counts ?? [:]
+        let preferred = ["works", "library_items", "documents", "ideas"]
+        let selected = preferred.compactMap { counts[$0] }
+        return selected.isEmpty ? counts.values.reduce(0, +) : selected.reduce(0, +)
+    }
+
+    private var analysisCount: Int {
+        let counts = session.overview?.counts ?? [:]
+        return (counts["ideas"] ?? 0) + (counts["edges"] ?? 0) + (counts["gaps"] ?? 0)
+    }
+
+    private var recommendationTitle: LocalizedStringKey {
+        if totalCorpusCount == 0 { return "Add works to the corpus" }
+        if analysisCount == 0 { return "Analyse the published corpus" }
+        return "Turn the evidence into a cited report"
+    }
+
+    private var recommendationBody: LocalizedStringKey {
+        if totalCorpusCount == 0 { return "Publish a library from Nodus Desktop to begin." }
+        if analysisCount == 0 { return "Run analysis on Desktop, then publish the resulting ideas and relations." }
+        return "Choose a research approach and generate a report whose citations are checked against this corpus."
     }
 
     /// A headed section whose contents sit in the one grid this screen uses.

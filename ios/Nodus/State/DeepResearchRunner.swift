@@ -4,13 +4,11 @@ import Observation
 import SwiftUI
 import UIKit
 
-/// The one Deep Research run a space can have going, wherever the user happens to be looking.
+/// The executor a space contributes to the app-wide sequential Deep Research queue.
 ///
 /// It used to live in `@State` on the screen that started it. That made the run a property of a
-/// view: pop the navigation stack and the progress was gone, even though the model calls carried
-/// on being paid for in the background with nothing left to show them. A run is a job the *space*
-/// is doing, so it is held here — outside every view, one per space, for as long as the process
-/// lives — and any screen can ask what it is doing.
+/// view: pop the navigation stack and the progress was gone. Jobs now belong to
+/// ``DeepResearchQueue``; this object supplies the live session dependencies for one space.
 ///
 /// Leaving the app is handled in two layers, because iOS gives no single one:
 ///
@@ -34,9 +32,14 @@ final class DeepResearchRunner {
 
     let spaceId: String
 
-    /// The run in flight, or nil.
-    private(set) var request: DeepResearchRequest?
-    private(set) var progress: DeepResearchProgress?
+    private var queue: DeepResearchQueue { .shared }
+
+    private var currentJob: DeepResearchQueueJob? {
+        queue.jobs(in: spaceId).first { !$0.status.isFinished }
+    }
+
+    var request: DeepResearchRequest? { currentJob?.request }
+    var progress: DeepResearchProgress? { currentJob?.progress }
     /// The report is written and saved; what is left is drawing its illustration.
     private(set) var isIllustrating = false
     /// The last report this runner finished, so the screen that started it can show it.
@@ -47,11 +50,10 @@ final class DeepResearchRunner {
     /// the picture costs money too.
     private(set) var illustrationFailure: String?
 
-    private var task: Task<Void, Never>?
     private var activity: LiveActivityController?
     private var assertion: UIBackgroundTaskIdentifier = .invalid
 
-    var isRunning: Bool { task != nil }
+    var isRunning: Bool { currentJob != nil }
 
     private init(spaceId: String) {
         self.spaceId = spaceId
@@ -70,18 +72,59 @@ final class DeepResearchRunner {
         session: SpaceSession,
         ai: AISettings
     ) {
-        guard !isRunning else { return }
-
-        self.request = request
         finished = nil
         failure = nil
         illustrationFailure = nil
         isIllustrating = false
-        progress = DeepResearchProgress(
-            phase: .queued,
-            message: checkpoint == nil ? String(localized: "Queued") : String(localized: "Resuming"),
-            wordsSoFar: checkpoint?.words ?? 0
-        )
+
+        let jobId = UUID().uuidString
+        queue.enqueue(
+            id: jobId,
+            spaceId: spaceId,
+            spaceName: session.connection.spaceName,
+            request: request
+        ) { [weak self] in
+            guard let self else { throw CancellationError() }
+            return try await self.execute(
+                jobId: jobId,
+                request: request,
+                resuming: checkpoint,
+                session: session,
+                ai: ai
+            )
+        }
+    }
+
+    /// Reattach every persisted queued request for this space after a relaunch.
+    ///
+    /// Only the matching request consumes the checkpoint. A second request that had never
+    /// started must not inherit the first report's already-written sections.
+    func attachPending(session: SpaceSession, ai: AISettings) {
+        let checkpoint = DeepResearchCheckpointStore.load(spaceId: spaceId)
+        for job in queue.jobs(in: spaceId) where job.status == .queued {
+            let resume = checkpoint.flatMap { $0.request == job.request ? $0 : nil }
+            queue.attach(jobId: job.id) { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.execute(
+                    jobId: job.id,
+                    request: job.request,
+                    resuming: resume,
+                    session: session,
+                    ai: ai
+                )
+            }
+        }
+    }
+
+    private func execute(
+        jobId: String,
+        request: DeepResearchRequest,
+        resuming checkpoint: DeepResearchCheckpoint?,
+        session: SpaceSession,
+        ai: AISettings
+    ) async throws -> DeepResearchQueueResult {
+        failure = nil
+        illustrationFailure = nil
 
         let spaceId = self.spaceId
         let store = LocalReportStore.shared(for: spaceId)
@@ -115,13 +158,14 @@ final class DeepResearchRunner {
         self.activity = activity
         beginAssertion()
 
-        // Captured strongly, deliberately. The cycle it makes — runner holds task, task holds
-        // runner — lasts exactly as long as the run, because `settle()` drops the task at the
-        // end of every path through this closure. A weak capture would buy nothing: this object
-        // is one per space and lives as long as the process does.
-        task = Task {
-            do {
-                let report = try await orchestrator.run(
+        defer {
+            self.activity = nil
+            self.isIllustrating = false
+            self.endAssertion()
+        }
+
+        do {
+            let report = try await orchestrator.run(
                     request,
                     resuming: checkpoint,
                     // Written after every section, on whichever thread finished it. This is the
@@ -132,7 +176,7 @@ final class DeepResearchRunner {
                     },
                     onProgress: { update in
                         Task { @MainActor in
-                            self.progress = update
+                            DeepResearchQueue.shared.update(jobId: jobId, progress: update)
                             activity.update(
                                 phase: update.phase.rawValue,
                                 detail: update.sectionTitle ?? update.message,
@@ -142,61 +186,58 @@ final class DeepResearchRunner {
                             )
                         }
                     }
-                )
+            )
                 // Saved before anything else can go wrong. A run is one model call per section
                 // and losing it to a dismissed screen means paying for it twice.
                 //
                 // The whole `ModelRef`, not just its name: sending the report to the vault needs
                 // the provider too, and a record that kept only the label could never be turned
                 // back into a sendable row.
-                let saved = store.save(report, mode: request.mode, model: request.model)
-                DeepResearchCheckpointStore.clear(spaceId: spaceId)
-                self.finished = saved
-                self.progress = nil
+            let saved = store.save(report, mode: request.mode, model: request.model, id: jobId)
+            DeepResearchCheckpointStore.clear(spaceId: spaceId)
+            self.finished = saved
 
-                if let style = request.illustration {
-                    await self.illustrate(
-                        saved,
-                        style: style,
-                        with: imageModel,
-                        describedBy: request.model,
-                        keyProvider: keyProvider,
-                        into: store
-                    )
-                }
-                activity.finish()
-            } catch is CancellationError {
+            let publicationNote = await self.publishIfAllowed(
+                saved,
+                request: request,
+                session: session,
+                store: store
+            )
+
+            if let style = request.illustration {
+                await self.illustrate(
+                    saved,
+                    style: style,
+                    with: imageModel,
+                    describedBy: request.model,
+                    keyProvider: keyProvider,
+                    into: store
+                )
+            }
+            activity.finish()
+            return DeepResearchQueueResult(savedReportId: saved.id, publicationNote: publicationNote)
+        } catch is CancellationError {
                 // Deliberately kept: cancelling stops the spending, it does not throw away the
                 // sections already written. The screen offers to carry on from here.
                 self.stopped(with: String(localized: "Cancelled."), activity: activity, note: "Cancelled")
-            } catch DeepResearchError.cancelled {
-                self.stopped(with: String(localized: "Cancelled."), activity: activity, note: "Cancelled")
-            } catch DeepResearchError.emptyCorpus {
-                DeepResearchCheckpointStore.clear(spaceId: spaceId)
-                self.stopped(
-                    with: String(localized: "Nothing citable was found for that objective in this space."),
-                    activity: activity,
-                    note: "No citable material"
-                )
-            } catch {
-                self.stopped(with: error.localizedDescription, activity: activity, note: error.localizedDescription)
-            }
-            self.settle()
+            throw CancellationError()
+        } catch DeepResearchError.cancelled {
+            self.stopped(with: String(localized: "Cancelled."), activity: activity, note: "Cancelled")
+            throw CancellationError()
+        } catch DeepResearchError.emptyCorpus {
+            DeepResearchCheckpointStore.clear(spaceId: spaceId)
+            let message = String(localized: "Nothing citable was found for that objective in this space.")
+            self.stopped(with: message, activity: activity, note: "No citable material")
+            throw DeepResearchRunFailure(message: message)
+        } catch {
+            self.stopped(with: error.localizedDescription, activity: activity, note: error.localizedDescription)
+            throw error
         }
     }
 
     private func stopped(with message: String, activity: LiveActivityController, note: String) {
-        progress = nil
         failure = message
         activity.finish(failure: note)
-    }
-
-    private func settle() {
-        task = nil
-        activity = nil
-        request = nil
-        isIllustrating = false
-        endAssertion()
     }
 
     // MARK: - Cancelling
@@ -204,7 +245,33 @@ final class DeepResearchRunner {
     /// Stop paying for sections. Everything already written stays on disk as a checkpoint, and
     /// the screen offers to carry on from there.
     func cancel() {
-        task?.cancel()
+        guard let id = currentJob?.id else { return }
+        queue.cancel(id)
+    }
+
+    private func publishIfAllowed(
+        _ saved: LocalReportStore.Saved,
+        request: DeepResearchRequest,
+        session: SpaceSession,
+        store: LocalReportStore
+    ) async -> String {
+        guard session.connection.role.canSendChanges else {
+            return String(localized: "Kept locally: this access is read only.")
+        }
+        guard let controller = await OutboxController.open(session: session) else {
+            return String(localized: "Kept locally: the vault outbox is unavailable.")
+        }
+        guard let sent = await controller.sendReport(
+            saved.report,
+            mode: saved.mode,
+            model: request.model,
+            language: request.language,
+            rowId: saved.vaultRowId ?? saved.id
+        ) else {
+            return controller.lastError ?? String(localized: "Kept locally and waiting for publication.")
+        }
+        store.markSent(saved.id, outboxId: sent.outboxId, vaultRowId: sent.rowId)
+        return String(localized: "Saved locally and queued for the vault.")
     }
 
     /// Forget the report this runner is holding, so the screen it started on goes back to its
@@ -281,4 +348,9 @@ final class DeepResearchRunner {
         guard case .published(let identity) = session.embedding, session.embedding.isReachableFromPhone else { return nil }
         return identity
     }
+}
+
+private struct DeepResearchRunFailure: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }

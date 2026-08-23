@@ -7,6 +7,8 @@ import UIKit
 import WebKit
 
 struct PublishedLibraryView: View {
+    @Environment(WorkspaceTabs.self) private var workspaceTabs
+
     let session: SpaceSession
 
     @State private var store: PublishedLibraryStore
@@ -59,9 +61,46 @@ struct PublishedLibraryView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            WorkspaceTabStrip(
+                section: "library",
+                catalogueTitle: "Library",
+                catalogueImage: "books.vertical",
+                accent: session.accent
+            )
+            ZStack {
+                catalogue
+                    .opacity(workspaceTabs.activeTabId(in: "library") == nil ? 1 : 0)
+                    .allowsHitTesting(workspaceTabs.activeTabId(in: "library") == nil)
+                    .accessibilityHidden(workspaceTabs.activeTabId(in: "library") != nil)
+
+                ForEach(workspaceTabs.tabs(in: "library")) { tab in
+                    if case .libraryDocument(let document) = tab.payload {
+                        PublishedLibraryReader(session: session, store: store, document: document)
+                            .opacity(workspaceTabs.activeTabId(in: "library") == tab.id ? 1 : 0)
+                            .allowsHitTesting(workspaceTabs.activeTabId(in: "library") == tab.id)
+                            .accessibilityHidden(workspaceTabs.activeTabId(in: "library") != tab.id)
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("workspace-library")
+    }
+
+    private var catalogue: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                filterBar
+                DesktopPageHeader(
+                    title: "Library",
+                    subtitle: loading && documents.isEmpty
+                        ? String(localized: "Loading published catalogue…")
+                        : String(localized: "\(visible.count) documents · \(collectionName)"),
+                    systemImage: "books.vertical",
+                    accent: session.accent
+                )
+                NodusSearchField(text: $query, prompt: "Search title, author or tag", accent: session.accent, isBusy: loading)
+                    .padding(.horizontal, -NodusSpace.page)
+                libraryControlBar
                 if loading, documents.isEmpty { ProgressView().tint(session.accent).frame(maxWidth: .infinity) }
                 if let error, documents.isEmpty {
                     NodusNotice(tone: .caution, title: "Could not update the library", message: LocalizedStringKey(error))
@@ -72,11 +111,10 @@ struct PublishedLibraryView: View {
                 }
             }
             .padding(NodusSpace.page)
-            .frame(maxWidth: 760)
+            .frame(maxWidth: 1040)
             .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
-        .searchable(text: $query, prompt: "Search title, author or tag")
         .navigationTitle("Library")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
@@ -135,6 +173,44 @@ struct PublishedLibraryView: View {
         }
     }
 
+    private var libraryControlBar: some View {
+        HStack(spacing: 10) {
+            Menu {
+                Button { collectionId = nil } label: {
+                    if collectionId == nil { Label("All collections", systemImage: "checkmark") }
+                    else { Text("All collections") }
+                }
+                LibraryCollectionMenuItems(collections: collections, parentId: nil, selection: $collectionId)
+            } label: {
+                Label(collectionName, systemImage: "folder")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+
+            Spacer(minLength: 8)
+
+            if selecting, !selection.isEmpty {
+                Button(role: .destructive) { requestDeletion(.documents(selection)) } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(NodusGlassButtonStyle(accent: .red))
+            }
+            Button(selecting ? "Done" : "Select") {
+                selecting.toggle(); if !selecting { selection.removeAll() }
+            }
+            .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+
+            Menu {
+                Button(role: .destructive) { requestDeletion(.space) } label: { Label("Delete all downloads in this space", systemImage: "trash") }
+                Button(role: .destructive) { requestDeletion(.everySpace) } label: { Label("Delete all library downloads", systemImage: "trash.slash") }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+        }
+    }
+
     private var collectionName: String {
         guard let collectionId else { return String(localized: "All collections") }
         return collections.first { $0.id == collectionId }?.name ?? String(localized: "Collection")
@@ -176,8 +252,9 @@ struct PublishedLibraryView: View {
         if selecting {
             Button { toggle(document.id) } label: { card }.buttonStyle(.plain)
         } else {
-            NavigationLink { PublishedLibraryReader(session: session, store: store, document: document) } label: { card }
+            Button { open(document) } label: { card }
                 .buttonStyle(NodusCardButtonStyle())
+                .accessibilityIdentifier("workspace-open-library-\(safeIdentifier(document.id))")
                 .contextMenu {
                     Button { metadataDocument = document } label: { Label("View metadata", systemImage: "info.circle") }
                     Button { copyReference(document) } label: { Label("Copy reference", systemImage: "doc.on.doc") }
@@ -186,6 +263,23 @@ struct PublishedLibraryView: View {
                     }
                 }
         }
+    }
+
+    private func open(_ document: PublishedLibraryDocument) {
+        workspaceTabs.open(
+            WorkspaceTab(
+                id: "library:\(document.id)",
+                title: document.title,
+                systemImage: "doc.text",
+                kind: .document,
+                payload: .libraryDocument(document)
+            ),
+            in: "library"
+        )
+    }
+
+    private func safeIdentifier(_ value: String) -> String {
+        value.replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "-", options: .regularExpression)
     }
 
     private func copyReference(_ document: PublishedLibraryDocument) {
@@ -244,6 +338,12 @@ struct PublishedLibraryView: View {
             documents = all
             await store.saveCatalog(collections: collections, documents: documents)
             error = nil
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1",
+               workspaceTabs.tabs(in: "library").isEmpty {
+                for document in documents.prefix(2) { open(document) }
+            }
+#endif
         } catch {
             self.error = error.localizedDescription
         }
@@ -554,6 +654,7 @@ private struct LibraryPDFView: UIViewRepresentable {
     let onSelectionChanged: (Bool) -> Void
     let onHighlight: (PDFOriginalHighlight) -> Void
 
+    @MainActor
     final class Coordinator: NSObject {
         var parent: LibraryPDFView
         weak var view: PDFView?

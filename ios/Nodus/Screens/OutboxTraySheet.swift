@@ -43,7 +43,7 @@ struct OutboxTraySheet: View {
     var body: some View {
         NavigationStack {
             list
-                .navigationTitle("Send queue")
+                .navigationTitle("Sync Center")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -56,7 +56,7 @@ struct OutboxTraySheet: View {
 
     private var list: some View {
         List {
-            Section { relayExplanation }
+            Section { channelOverview }
 
             if outbox.pending > 0 {
                 Section {
@@ -110,6 +110,23 @@ struct OutboxTraySheet: View {
                     }
                 } header: {
                     NodusSectionLabel("Queue")
+                }
+            }
+
+
+            if !outbox.actions.isEmpty {
+                Section {
+                    ForEach(outbox.actions) { entry in remoteActionRow(entry) }
+                } header: {
+                    NodusSectionLabel("Desktop actions")
+                }
+            }
+
+            if !outbox.libraryCommands.isEmpty {
+                Section {
+                    ForEach(outbox.libraryCommands) { entry in libraryCommandRow(entry) }
+                } header: {
+                    NodusSectionLabel("Global Library")
                 }
             }
         }
@@ -169,15 +186,81 @@ struct OutboxTraySheet: View {
         }
     }
 
-    private var relayExplanation: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("How this reaches the vault", systemImage: "arrow.triangle.branch")
-                .font(.footnote.weight(.medium))
-            Text("The server keeps your changes in a ledger. They join the vault when its owner opens Nodus desktop and republishes. Until then nobody sees them, you included.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private var channelOverview: some View {
+        VStack(spacing: 0) {
+            channel("This device", icon: "iphone", value: outbox.pending, detail: "local and protected")
+            Divider()
+            channel("Cloud ledger", icon: "cloud", value: outbox.accepted, detail: "waiting for Desktop")
+            Divider()
+            channel("Desktop actions", icon: "desktopcomputer", value: outbox.actions.filter { !$0.action.status.isTerminal }.count, detail: "typed commands only")
+            Divider()
+            channel("Global Library", icon: "books.vertical", value: outbox.libraryCommands.filter { !$0.command.status.isTerminal }.count, detail: "account-scoped")
+            Divider()
+            HStack(spacing: 10) {
+                Image(systemName: "lock.shield").foregroundStyle(Color.nodusSuccess).frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Private Bridge").font(.footnote.weight(.medium))
+                    Text("Direct TLS to your Mac · never relayed through Cloudflare")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 9)
         }
-        .padding(.vertical, 4)
+    }
+
+    private func channel(_ title: LocalizedStringKey, icon: String, value: Int, detail: LocalizedStringKey) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).foregroundStyle(.secondary).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.footnote.weight(.medium))
+                Text(detail).font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(value, format: .number)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(value == 0 ? Color.secondary : Color.nodusCaution)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func remoteActionRow(_ entry: GlobalOutbox.ActionEntry) -> some View {
+        remoteRow(
+            title: entry.action.kind.rawValue,
+            subtitle: entry.connection.spaceName,
+            status: entry.action.status,
+            cancel: entry.action.status == .queued || entry.action.status == .claimed
+                ? { Task { await outbox.cancel(entry) } } : nil
+        )
+    }
+
+    private func libraryCommandRow(_ entry: GlobalOutbox.LibraryCommandEntry) -> some View {
+        remoteRow(
+            title: entry.command.kind.rawValue,
+            subtitle: entry.connection.serverName,
+            status: entry.command.status,
+            cancel: entry.command.status == .queued || entry.command.status == .claimed
+                ? { Task { await outbox.cancel(entry) } } : nil
+        )
+    }
+
+    private func remoteRow(
+        title: String,
+        subtitle: String,
+        status: RemoteWorkStatus,
+        cancel: (() -> Void)?
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: status.isTerminal ? "checkmark.circle" : "clock.arrow.circlepath")
+                .foregroundStyle(status == .failed || status == .refused ? Color.nodusDanger : Color.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout).lineLimit(1)
+                Text("\(subtitle) · \(status.rawValue)").font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let cancel { Button("Cancel", role: .destructive, action: cancel).font(.caption) }
+        }
+        .padding(.vertical, 3)
     }
 
     private func row(_ entry: GlobalOutbox.Entry) -> some View {

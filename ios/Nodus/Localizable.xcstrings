@@ -3414,6 +3414,94 @@
         }
       }
     },
+    "Contrasts": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contrastes"
+          }
+        }
+      }
+    },
+    "Interviews": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrevistas"
+          }
+        }
+      }
+    },
+    "Networks": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redes"
+          }
+        }
+      }
+    },
+    "Participants": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Participantes"
+          }
+        }
+      }
+    },
+    "Population": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Población"
+          }
+        }
+      }
+    },
+    "Grades": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calificaciones"
+          }
+        }
+      }
+    },
+    "Graph": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grafo"
+          }
+        }
+      }
+    },
+    "Groups": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grupos"
+          }
+        }
+      }
+    },
     "GPT and embeddings. The usual choice for indexing a vault.": {
       "extractionState": "manual",
       "localizations": {
@@ -3652,6 +3740,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ocultar la clave"
+          }
+        }
+      }
+    },
+    "Hypothesis": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hipótesis"
           }
         }
       }
@@ -5163,13 +5262,46 @@
         }
       }
     },
-    "Nodus": {
+    "Nodus Research": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nodus"
+            "value": "Nodus Research"
+          }
+        }
+      }
+    },
+    "Nodus Browser": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nodus Browser"
+          }
+        }
+      }
+    },
+    "Nodus Radar": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nodus Radar"
+          }
+        }
+      }
+    },
+    "Nodus Tools": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramientas de Nodus"
           }
         }
       }
@@ -6457,6 +6589,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Acceso de lectura"
+          }
+        }
+      }
+    },
+    "Reading path": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ruta de lectura"
           }
         }
       }
@@ -7887,6 +8030,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Estudiar"
+          }
+        }
+      }
+    },
+    "Study graph": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grafo de estudio"
           }
         }
       }
@@ -9663,6 +9817,17 @@
         }
       }
     },
+    "Unit design": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diseño de unidades"
+          }
+        }
+      }
+    },
     "Unit topic": {
       "extractionState": "manual",
       "localizations": {
@@ -9934,6 +10099,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Semanal"
+          }
+        }
+      }
+    },
+    "Writing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escritura"
           }
         }
       }
@@ -11408,6 +11584,234 @@
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Selecciona texto para ver las herramientas de escritura" } } }
     },
+    "Academic vault": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Bóveda académica" } } }
+    },
+    "Your research workspace": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Tu espacio de investigación" } } }
+    },
+    "Organise your corpus, connect ideas and turn analysis into the next useful step from one local, private workspace.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Organiza tu corpus, conecta ideas y convierte el análisis en el siguiente paso útil desde un único espacio local y privado." } } }
+    },
+    "NEXT RECOMMENDED STEP": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "SIGUIENTE PASO RECOMENDADO" } } }
+    },
+    "published records": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "registros publicados" } } }
+    },
+    "ideas and relations": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "ideas y relaciones" } } }
+    },
+    "nothing pending": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "nada pendiente" } } }
+    },
+    "changes pending": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "cambios pendientes" } } }
+    },
+    "Add works to the corpus": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Añade obras al corpus" } } }
+    },
+    "Analyse the published corpus": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Analiza el corpus publicado" } } }
+    },
+    "Turn the evidence into a cited report": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Convierte la evidencia en un informe con citas" } } }
+    },
+    "Publish a library from Nodus Desktop to begin.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Publica una biblioteca desde Nodus Desktop para empezar." } } }
+    },
+    "Run analysis on Desktop, then publish the resulting ideas and relations.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Ejecuta el análisis en Desktop y publica después las ideas y relaciones resultantes." } } }
+    },
+    "Choose a research approach and generate a report whose citations are checked against this corpus.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Elige un enfoque de investigación y genera un informe cuyas citas se comprueben con este corpus." } } }
+    },
+    "Research approach": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Enfoque de investigación" } } }
+    },
+    "General research": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Investigación general" } } }
+    },
+    "Literature review": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Revisión de la literatura" } } }
+    },
+    "State of the art": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Estado de la cuestión" } } }
+    },
+    "Scholarly debate": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Debate académico" } } }
+    },
+    "Comparative analysis": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Análisis comparativo" } } }
+    },
+    "Chronological analysis": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Análisis cronológico" } } }
+    },
+    "Conceptual or theoretical synthesis": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Síntesis conceptual o teórica" } } }
+    },
+    "Uses the broad retrieval and structure of the original Deep Research workflow.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Usa la recuperación amplia y la estructura del flujo original de Deep Research." } } }
+    },
+    "Synthesises interpretations, methods, agreements and disagreements across works.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Sintetiza interpretaciones, métodos, acuerdos y desacuerdos entre obras." } } }
+    },
+    "Separates established findings, contested claims, limitations and open questions.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Separa los hallazgos establecidos, las afirmaciones discutidas, las limitaciones y las preguntas abiertas." } } }
+    },
+    "Reconstructs real disagreements, their evidence, assumptions and intermediate positions.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Reconstruye desacuerdos reales, su evidencia, sus supuestos y las posiciones intermedias." } } }
+    },
+    "Compares cases, works or concepts using stable criteria and balanced evidence.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Compara casos, obras o conceptos con criterios estables y evidencia equilibrada." } } }
+    },
+    "Explains antecedents, phases, continuities, changes and documented turning points.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Explica antecedentes, fases, continuidades, cambios y puntos de inflexión documentados." } } }
+    },
+    "Reconstructs definitions, frameworks and relationships between concepts without conflating them.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Reconstruye definiciones, marcos y relaciones entre conceptos sin confundirlos." } } }
+    },
+    "Search every published surface": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Busca en todas las superficies publicadas" } } }
+    },
+    "Semantic": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Semántica" } } }
+    },
+    "Coverage, gaps and disagreements in the published corpus": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Cobertura, lagunas y desacuerdos en el corpus publicado" } } }
+    },
+    "No research analysis published": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "No hay ningún análisis de investigación publicado" } } }
+    },
+    "Run corpus analysis in Nodus Desktop and publish the vault to see its coverage here.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Ejecuta el análisis del corpus en Nodus Desktop y publica la bóveda para ver aquí su cobertura." } } }
+    },
+    "Keep an offline copy to open this section": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Guarda una copia sin conexión para abrir esta sección" } } }
+    },
+    "Desktop publishes this workspace inside the snapshot rather than as a public collection. The downloaded copy stays on this device and refreshes with the vault.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Desktop publica este espacio dentro de la instantánea, no como colección pública. La copia descargada permanece en este dispositivo y se actualiza con la bóveda." } } }
+    },
+    "Keep offline copy": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Guardar copia sin conexión" } } }
+    },
+    "Offline snapshot required": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Se necesita una instantánea sin conexión" } } }
+    },
+    "Explore": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Explorar" } } }
+    },
+    "Analyze": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Analizar" } } }
+    },
+    "Analysis": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Análisis" } } }
+    },
+    "State of research": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Estado de la investigación" } } }
+    },
+    "Social relations": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Relaciones sociales" } } }
+    },
+    "Map": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Mapa" } } }
+    },
+    "Conflicts": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Conflictos" } } }
+    },
+    "World chat": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Chat del mundo" } } }
+    },
+    "Data chat": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Chat de datos" } } }
+    },
+    "Courses and subjects": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Cursos y asignaturas" } } }
+    },
+    "Schedule": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Horario" } } }
+    },
+    "Study search": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Búsqueda de estudio" } } }
+    },
+    "Study materials": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Materiales de estudio" } } }
+    },
+    "Study chat": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Chat de estudio" } } }
+    },
+    "Study ideas": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Ideas de estudio" } } }
+    },
+    "Review": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Repaso" } } }
+    },
+    "Study research": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Investigación de estudio" } } }
+    },
+    "Continuous academic prose arguing a thesis grounded in the corpus.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Prosa académica continua que defiende una tesis fundamentada en el corpus." } } }
+    },
+    "Parts sequenced by concept dependency, written for whoever gives the class: what is taught, with which materials, common mistakes, and how to check understanding.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Partes ordenadas por dependencia conceptual y escritas para quien imparte la clase: qué se enseña, con qué materiales, errores comunes y cómo comprobar la comprensión." } } }
+    },
     "Strikethrough": {
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Tachado" } } }
@@ -11427,6 +11831,26 @@
     "The model did not return a usable replacement.": {
       "extractionState": "manual",
       "localizations": { "es": { "stringUnit": { "state": "translated", "value": "El modelo no devolvió un reemplazo válido." } } }
+    },
+    "Continuity": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Continuidad" } } }
+    },
+    "Manuscript": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Manuscrito" } } }
+    },
+    "Sidebar": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Barra lateral" } } }
+    },
+    "Restore Desktop defaults": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Restaurar valores de Desktop" } } }
+    },
+    "Home and Library stay pinned. A hidden section is still available from Commands and deep links.": {
+      "extractionState": "manual",
+      "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Inicio y Biblioteca permanecen fijos. Las secciones ocultas siguen disponibles desde Comandos y enlaces directos." } } }
     },
     "≈ \\(plan.target) sections · \\(pages.lowerBound)–\\(pages.upperBound) pages": {
       "extractionState": "manual",

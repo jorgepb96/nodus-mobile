@@ -187,6 +187,69 @@ final class OutboxController {
         (try? await outbox.retainedMutations(table: .writingDraftAnnotations)) ?? []
     }
 
+    /// Persist one row from a typed mobile workspace and relay it when possible.
+    ///
+    /// Worldbuilding, Pages and Databases all use the same generated table contract. Keeping
+    /// this operation table-agnostic means a new surface cannot accidentally invent a second
+    /// conflict or retry policy: the mutation is durable before the request, authorised only
+    /// after it is durable, and a failed request remains in the ordinary device outbox.
+    @discardableResult
+    func syncMutation(
+        kind: Mutation.Kind,
+        table: MutableTable,
+        key: [String],
+        row: [String: JSONValue]? = nil,
+        assets: [Mutation.AssetReference] = [],
+        title: String
+    ) async -> Bool {
+        let mutation = Mutation(
+            clientId: clientId,
+            kind: kind,
+            table: table,
+            key: key,
+            row: row,
+            assets: assets,
+            schemaVersion: schemaVersion
+        )
+        if let refusal = refusal(for: mutation) {
+            lastError = refusal
+            await refresh()
+            return false
+        }
+
+        do {
+            try await outbox.enqueue(mutation, title: title)
+            try await outbox.authorise(ids: [mutation.id])
+        } catch {
+            lastError = error.localizedDescription
+            await refresh()
+            return false
+        }
+
+        do {
+            let receipt = try await client.send(mutations: [mutation], in: spaceId)
+            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
+            try await outbox.markRejected(receipt.rejected.map {
+                (id: $0.id, reason: $0.reason, detail: $0.errorDescription)
+            })
+            if let rejection = receipt.rejected.first(where: { $0.id == mutation.id }) {
+                lastError = rejection.errorDescription ?? rejection.reason
+            } else {
+                lastError = nil
+            }
+        } catch let error as APIError where error.isForbidden {
+            lastError = error.requiredNeed == .write
+                ? "Your access to this space is read only."
+                : error.localizedDescription
+        } catch {
+            // A network failure is not data loss: this exact idempotent mutation stays
+            // authorised in the device outbox and is retried by the normal sync path.
+            lastError = error.localizedDescription
+        }
+        await refresh()
+        return true
+    }
+
     /// Send a finished Deep Research report to the vault as a saved draft, now.
     ///
     /// Until this existed a report generated on the phone could only leave it as shared

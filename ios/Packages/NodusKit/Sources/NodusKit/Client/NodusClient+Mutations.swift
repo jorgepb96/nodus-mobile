@@ -55,28 +55,6 @@ public struct Mutation: Sendable, Hashable, Codable {
     }
 }
 
-/// The tables a client is allowed to write, from `server/lib/core/mutations.mjs:27-39`.
-///
-/// Modelled as an enum rather than a string so an unwritable table cannot be named at all.
-/// Everything derived — works, ideas, edges, passages, themes, gaps — is absent because it is
-/// the product of an analysis that only the desktop can run; and everything about students is
-/// absent because it is never published in the first place.
-public enum MutableTable: String, Sendable, Codable, CaseIterable {
-    case notes
-    case noteFolders = "note_folders"
-    case noteLinks = "note_links"
-    case writingSavedDrafts = "writing_saved_drafts"
-    case writingDraftAnnotations = "writing_draft_annotations"
-    /// Only rows whose `entity_kind` is `deep_research`. Any other kind is rejected.
-    case decorativeImages = "decorative_images"
-    case immersionSessions = "immersion_sessions"
-    case savedSearches = "saved_searches"
-    case researchQuestions = "research_questions"
-    case researchSubquestions = "research_subquestions"
-    case researchCoverageLinks = "research_coverage_links"
-    case edgeFeedback = "edge_feedback"
-}
-
 public struct MutationReceipt: Sendable, Decodable {
     public struct Rejection: Sendable, Decodable {
         public let id: String

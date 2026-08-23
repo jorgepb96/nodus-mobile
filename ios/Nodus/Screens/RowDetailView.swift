@@ -13,15 +13,25 @@ struct RowDetailView: View {
     let collection: CollectionDescriptor?
     @State private var row: Row
     var title: String?
+    /// Root workspaces use this to keep related records in sibling tabs. Nested dossiers that
+    /// are not tabbed leave it nil and retain ordinary NavigationStack pushes.
+    var onOpenRelated: ((CollectionDescriptor, Row) -> Void)?
 
     @State private var enriched: Enriched?
     @State private var isLoading = false
     @State private var error: String?
 
-    init(session: SpaceSession, collection: CollectionDescriptor?, row: Row, title: String? = nil) {
+    init(
+        session: SpaceSession,
+        collection: CollectionDescriptor?,
+        row: Row,
+        title: String? = nil,
+        onOpenRelated: ((CollectionDescriptor, Row) -> Void)? = nil
+    ) {
         self.session = session
         self.collection = collection
         self.title = title
+        self.onOpenRelated = onOpenRelated
         _row = State(initialValue: row)
     }
 
@@ -653,19 +663,33 @@ struct RowDetailView: View {
                     VStack(spacing: 0) {
                         ForEach(Array(rows.prefix(60).enumerated()), id: \.offset) { index, row in
                             if let collection, row.string(collection.idField) != nil {
-                                NavigationLink {
-                                    RowDetailView(session: session, collection: collection, row: row)
-                                } label: {
-                                    HStack {
-                                        RowCell(row: row, presenter: RowPresenter.forTable(table), accent: session.accent)
-                                        Spacer(minLength: 6)
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption2).foregroundStyle(.tertiary)
+                                if let onOpenRelated {
+                                    Button { onOpenRelated(collection, row) } label: {
+                                        HStack {
+                                            RowCell(row: row, presenter: RowPresenter.forTable(table), accent: session.accent)
+                                            Spacer(minLength: 6)
+                                            Image(systemName: "plus.rectangle.on.rectangle")
+                                                .font(.caption2).foregroundStyle(.tertiary)
+                                        }
+                                        .contentShape(Rectangle())
                                     }
-                                    .contentShape(Rectangle())
+                                    .buttonStyle(NodusCardButtonStyle())
+                                    .padding(.vertical, 4)
+                                } else {
+                                    NavigationLink {
+                                        RowDetailView(session: session, collection: collection, row: row)
+                                    } label: {
+                                        HStack {
+                                            RowCell(row: row, presenter: RowPresenter.forTable(table), accent: session.accent)
+                                            Spacer(minLength: 6)
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption2).foregroundStyle(.tertiary)
+                                        }
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(NodusCardButtonStyle())
+                                    .padding(.vertical, 4)
                                 }
-                                .buttonStyle(NodusCardButtonStyle())
-                                .padding(.vertical, 4)
                             } else {
                                 RowCell(row: row, presenter: RowPresenter.forTable(table), accent: session.accent)
                                     .padding(.vertical, 4)

@@ -1,0 +1,86 @@
+{
+  "world_articles": [
+    {"article_id":"article-aether","title":"The Aether Accord","title_key":"the aether accord","category":"magic","summary":"The treaty that limits memory magic across the Seven Houses.","body":"The Accord forbids binding a living memory without a witness. [[House Veyra]] guards the original seal.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"article_id":"article-lanterns","title":"Festival of Returning Lanterns","title_key":"festival of returning lanterns","category":"religion","summary":"A river rite marking the end of the long winter.","body":"Each lantern carries the name of one person who did not return.","created_at":"2026-01-02T12:00:00.000Z","updated_at":"2026-08-02T12:00:00.000Z"},
+    {"article_id":"article-glass","title":"Whisperglass","title_key":"whisperglass","category":"artifact","summary":"A mineral that stores the last sentence spoken near it.","body":"Mining is controlled by the Cartographers' Guild.","created_at":"2026-01-03T12:00:00.000Z","updated_at":"2026-08-03T12:00:00.000Z"}
+  ],
+  "persons": [
+    {"person_id":"char-lyra","display_name":"Lyra Veyra","sex":"unknown","birth_date":"18 Rain, 1201 TE","biography":"Archivist of forbidden memories and reluctant heir to House Veyra.","notes":"Keeps a shard of whisperglass hidden in her sleeve.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"person_id":"char-orren","display_name":"Orren Vale","sex":"unknown","birth_date":"3 Ember, 1197 TE","biography":"Cartographer commissioned to redraw a border that moves at night.","notes":"Distrusts dynastic magic.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"person_id":"char-maelis","display_name":"Maelis Thorn","sex":"unknown","birth_date":"1209 TE","biography":"Young diplomat who can hear the memories stored in stone.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "character_profiles": [
+    {"person_id":"char-lyra","species":"human","gender":"woman","pronouns":"she/her","life_status":"alive","narrative_role":"protagonist","appearance":"Ink-dark hair, silver archive coat.","personality":"Precise, guarded, unexpectedly kind.","backstory":"Raised inside the treaty archive.","arc_want":"Protect the Accord","arc_need":"Trust testimony over records","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"person_id":"char-orren","species":"human","gender":"man","pronouns":"he/him","life_status":"alive","narrative_role":"secondary","appearance":"Weathered field coat and brass compass.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"person_id":"char-maelis","species":"human","gender":"nonbinary","pronouns":"they/them","life_status":"alive","narrative_role":"antagonist","appearance":"White ceremonial braid and glass ear cuffs.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "places": [
+    {"place_id":"place-capital","name":"Veyra-on-Rain","kind":"city","latitude":42.2,"longitude":-3.1,"notes":"Capital built around a flooded archive.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"place_id":"place-archive","name":"The Drowned Archive","parent_id":"place-capital","kind":"building","notes":"Its lower stacks are accessible only at new moon.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"place_id":"place-pass","name":"Hollowglass Pass","kind":"region","notes":"The border shifts after every storm.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "world_groups": [
+    {"group_id":"group-veyra","kind":"house","name":"House Veyra","summary":"Custodians of the Accord and the drowned records.","status":"active","seat_place_id":"place-capital","founded_year":601,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"group_id":"group-cartographers","kind":"faction","name":"Cartographers' Guild","summary":"Neutral surveyors who certify borders and routes.","status":"active","seat_place_id":"place-pass","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"group_id":"group-riverfolk","kind":"culture","name":"Riverfolk of Lume","summary":"A culture whose law and memory travel through song.","status":"active","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "character_affiliations": [
+    {"affiliation_id":"aff-lyra","person_id":"char-lyra","group_id":"group-veyra","rank":"heir","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"affiliation_id":"aff-orren","person_id":"char-orren","group_id":"group-cartographers","rank":"surveyor","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "relationships": [
+    {"rel_id":"rel-lyra-maelis","from_person":"char-lyra","to_person":"char-maelis","type":"sibling","provenance":"user_asserted","notes":"Estranged after the archive fire.","created_at":"2026-01-01T12:00:00.000Z"},
+    {"rel_id":"rel-orren-lyra","from_person":"char-orren","to_person":"char-lyra","type":"ally","provenance":"user_asserted","created_at":"2026-01-01T12:00:00.000Z"}
+  ],
+  "world_scenes": [
+    {"scene_id":"scene-arrival","title":"Arrival at the flooded gate","summary":"Lyra returns as the archive opens for the first time in twelve years.","place_id":"place-capital","world_year":1228,"world_day":448100,"status":"written","narrative_order":0,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"scene_id":"scene-map","title":"The map that moved","summary":"Orren proves that the northern border has shifted overnight.","place_id":"place-pass","world_year":1228,"world_day":448104,"status":"draft","narrative_order":1,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"scene_id":"scene-fire","title":"Memory of the archive fire","summary":"A flashback reveals what the official record erased.","place_id":"place-archive","world_year":1216,"world_day":443720,"status":"draft","narrative_order":2,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"scene_id":"scene-hearing","title":"Hearing before the Seven Houses","summary":"Maelis challenges the legitimacy of the Accord.","place_id":"place-capital","world_year":1228,"world_day":448110,"status":"outline","narrative_order":3,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "scene_characters": [
+    {"id":"sc-1","scene_id":"scene-arrival","person_id":"char-lyra","role":"viewpoint"},
+    {"id":"sc-2","scene_id":"scene-map","person_id":"char-orren","role":"viewpoint"},
+    {"id":"sc-3","scene_id":"scene-fire","person_id":"char-lyra","role":"viewpoint"},
+    {"id":"sc-4","scene_id":"scene-hearing","person_id":"char-maelis","role":"opponent"}
+  ],
+  "world_threads": [
+    {"thread_id":"thread-border","kind":"conflict","title":"The moving border","title_key":"the moving border","pitch":"The Guild and House Veyra dispute who may define a border that physically moves.","stakes":"War between the river cities.","scope":"external","status":"open","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"thread_id":"thread-lyra","kind":"arc","title":"Lyra trusts the living","title_key":"lyra trusts the living","pitch":"An archivist learns that testimony can be truer than a sealed record.","scope":"external","status":"open","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "world_beats": [
+    {"thread_kind":"conflict","thread_id":"thread-border","scene_id":"scene-map","mark":"rise","text":"Orren presents the impossible survey.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "world_rules": [
+    {"rule_id":"rule-witness","title":"Every bound memory needs a witness","title_key":"every bound memory needs a witness","statement":"No living memory may be sealed without a second person who can name its source.","cost":"The witness permanently loses one detail of the event.","limits":"A witness cannot attest their own memory.","hardness":"physical","scope_kind":"world","status":"canon","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"rule_id":"rule-glass","title":"Whisperglass must be paid","title_key":"whisperglass must be paid","statement":"Listening twice to the same shard has a price.","hardness":"costly","scope_kind":"world","status":"canon","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "world_questions": [
+    {"question_id":"question-seal","question":"Who broke the original seal on the Accord?","anchor_kind":"article","anchor_id":"article-aether","status":"open","origin":"author","blocking":1,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"question_id":"question-border","question":"Does the moving border follow water or memory?","status":"open","origin":"author","blocking":0,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "world_question_options": [],
+  "world_scene_text": [
+    {"scene_id":"scene-arrival","text":"At dawn the flooded gate rose one black iron tooth at a time. Lyra waited until the bells stopped before stepping into the archive she had sworn never to enter again.","word_count":31,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"scene_id":"scene-map","text":"Orren laid three maps on the table. Each was correct. None described the same country.","word_count":15,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"scene_id":"scene-fire","text":"Smoke moved through the lower stacks like a reader searching for one forbidden name.","word_count":14,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "world_chapter_breaks": [
+    {"scene_id":"scene-arrival","title":"The Gate Opens","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"scene_id":"scene-fire","title":"What the Records Burned","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "world_manuscript_starts": [
+    {"scene_id":"scene-arrival","title":"The Cartography of Memory","subtitle":"Book One of the Rain Archive","target_words":90000,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "events": [],
+  "event_world_dates": [],
+  "world_maps": [
+    {"map_id":"map-north","name":"The Northern River Cities","kind":"region","projection":"flat","width_px":2400,"height_px":1600,"created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "map_markers": [
+    {"marker_id":"marker-capital","map_id":"map-north","place_id":"place-capital","label":"Veyra-on-Rain","geometry_kind":"point","x":0.34,"y":0.58,"icon":"building.columns.fill","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"marker_id":"marker-pass","map_id":"map-north","place_id":"place-pass","label":"Hollowglass Pass","geometry_kind":"point","x":0.72,"y":0.27,"icon":"mountain.2.fill","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
+  ],
+  "world_notice_mutes": [],
+  "world_images": []
+}

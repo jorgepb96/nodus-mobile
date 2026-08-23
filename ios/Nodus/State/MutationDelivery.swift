@@ -55,7 +55,7 @@ enum MutationDelivery {
     ///     operations per space on every return to the foreground.
     static func confirm(
         for connections: [AppModel.Connection],
-        opening outbox: (AppModel.Connection) async -> MutationOutbox?
+        opening outbox: @Sendable (AppModel.Connection) async -> MutationOutbox?
     ) async -> Outcome {
         var outcome = Outcome()
 

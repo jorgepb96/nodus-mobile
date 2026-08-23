@@ -1,308 +1,677 @@
+import NodusAI
 import NodusKit
 import NodusUI
 import SwiftUI
 
-/// The shell around an open space.
-///
-/// iPhone and iPad share the same bottom navigation, header, and screens. Keeping one shell
-/// across form factors makes moving between sections predictable wherever the space is opened.
+/// One adaptive shell for iPhone and iPad. Width changes the sidebar presentation, never the
+/// hierarchy or the destination set.
 struct SpaceShell: View {
     @Environment(AppModel.self) private var model
     @Environment(AppPreferences.self) private var preferences
     @Environment(OutboxTrayModel.self) private var tray
+    @Environment(\.colorScheme) private var colorScheme
 
     let session: SpaceSession
 
-    @State private var tab: Tab = .home
-    /// Which tabs have ever been opened.
-    ///
-    /// The four pages are held side by side rather than swapped, so each keeps its navigation
-    /// stack and its scroll position — but a page nobody has opened should not be loading a
-    /// corpus in the background, which is the one thing `TabView` was doing for free.
-    @State private var visited: Set<Tab> = [.home]
+    @State private var route: NodusRoute
+    /// Resident sections replace `.id(route)`, which rebuilt the selected hierarchy and lost
+    /// filters, scroll position and document tabs every time the sidebar changed destination.
+    @State private var residentRoutes: [NodusRoute]
+    @State private var workspaceTabs = WorkspaceTabs()
+    @State private var showingDrawer = false
     @State private var showingSettings = false
+    @State private var showingAssistant = false
+    @State private var showingCommands = false
     @State private var chrome = NodusChrome()
+    @State private var sidebarResizeOrigin: Double?
 
-    enum Tab: Hashable, CaseIterable { case home, search, research, chat }
+    init(session: SpaceSession) {
+        self.session = session
+        var initial: NodusRoute = .home
+#if DEBUG
+        // Deterministic visual-QA entry point. `simctl` can set this without persisting a
+        // different navigation state for real users, which lets every phase capture the exact
+        // same native screen on iPhone and iPad.
+        if let raw = ProcessInfo.processInfo.environment["NODUS_START_ROUTE"],
+           let requested = NodusRoute(rawValue: raw) {
+            initial = requested
+        }
+#endif
+        _route = State(initialValue: initial)
+        _residentRoutes = State(initialValue: [initial])
+    }
 
     var body: some View {
-        tabView
-            .environment(chrome)
-            .task {
-                await session.load()
-                await session.loadMirror()
-                await session.probeEmbedding()
-            }
-            .task { await session.monitorPublishedContent() }
-            .nodusSheet(isPresented: $showingSettings) {
-                SpaceSettingsView(session: session)
-                    .nodusModalClose(accent: session.accent)
-            }
-    }
+        GeometryReader { proxy in
+            let presentation = SidebarPresentation(
+                availableWidth: proxy.size.width,
+                isUserCollapsed: preferences.sidebarCollapsed,
+                expandedWidth: CGFloat(preferences.sidebarWidth)
+            )
 
-    // MARK: Navigation
+            ZStack(alignment: .leading) {
+                VStack(spacing: 0) {
+                    DesktopTopBar(
+                        session: session,
+                        presentation: presentation,
+                        queueCount: tray.outbox.pending,
+                        onToggleNavigation: { toggleNavigation(presentation) },
+                        onSwitchSpace: { model.closeSession() },
+                        onCommands: { showingCommands = true },
+                        onAssistant: { showingAssistant = true },
+                        onQueue: { tray.open() },
+                        onRefresh: { Task { await session.refreshPublishedContent() } },
+                        onTheme: { preferences.toggleInterfaceStyle(current: colorScheme) },
+                        onSettings: { showingSettings = true }
+                    )
 
-    /// The four tabs and the bar under them, both drawn here.
-    ///
-    /// Not a `TabView`. Its bar cannot be shortened, its selected tab cannot be given a quieter
-    /// state than the large translucent capsule iOS 26 puts there, and it cannot be hidden for
-    /// the screens that are documents — see `NodusTabBar`. What a `TabView` was actually buying
-    /// is that each tab keeps its own navigation stack and scroll position while the others stay
-    /// loaded, and a `ZStack` of pages that have been visited buys the same thing: the identity
-    /// of each page is stable, so its state is too.
-    private var tabView: some View {
-        ZStack {
-            // Four tabs, not five. "Browse" showed the same sections as Home in a list instead
-            // of a grid, so it cost a tab to say nothing new.
-            ForEach(Tab.allCases, id: \.self) { candidate in
-                if visited.contains(candidate) {
-                    page { content(for: candidate) }
-                        .opacity(tab == candidate ? 1 : 0)
-                        // Both are needed and they are not the same thing: a transparent view
-                        // still takes touches, and VoiceOver still reads it.
-                        .allowsHitTesting(tab == candidate)
-                        .accessibilityHidden(tab != candidate)
-                        .zIndex(tab == candidate ? 1 : 0)
+                    HStack(spacing: 0) {
+                        if presentation.isPersistent {
+                            sidebar(collapsed: presentation.isCollapsed)
+                                .frame(width: presentation.sidebarWidth)
+                                .overlay(alignment: .trailing) {
+                                    if !presentation.isCollapsed {
+                                        sidebarResizeHandle
+                                    }
+                                }
+                        }
+                        routeContainer
+                    }
+                }
+
+                if !presentation.isPersistent, showingDrawer {
+                    Color.black.opacity(0.28)
+                        .ignoresSafeArea()
+                        .onTapGesture { withAnimation(NodusMotion.standard) { showingDrawer = false } }
+                        .transition(.opacity)
+
+                    sidebar(collapsed: false)
+                        .frame(width: min(320, proxy.size.width * 0.86))
+                        .shadow(color: .black.opacity(0.28), radius: 24, x: 8)
+                        .transition(.move(edge: .leading))
                 }
             }
+            .animation(NodusMotion.standard, value: showingDrawer)
+            .animation(NodusMotion.standard, value: presentation.sidebarWidth)
         }
-        .tint(session.accent)
-        // Everything inside a tab, pushed screens included: the bar floats over the bottom of
-        // every one of these screens unless a screen has asked it not to.
-        .environment(\.nodusHasTabBar, !chrome.hidesBottomBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !chrome.hidesBottomBar {
-                NodusTabBar(selection: $tab, accent: session.accent, items: tabItems)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+        .environment(chrome)
+        .environment(workspaceTabs)
+        .environment(\.nodusHasTabBar, false)
+        .accessibilityIdentifier("nodus-space-shell")
+        .task {
+            await session.load()
+            await session.loadMirror()
+            await session.probeEmbedding()
+        }
+        .task { await session.monitorPublishedContent() }
+        .nodusSheet(isPresented: $showingSettings) {
+            SpaceSettingsView(session: session).nodusModalClose(accent: session.accent)
+        }
+        .nodusSheet(isPresented: $showingAssistant) {
+            NavigationStack { ChatTab(session: session) }.nodusModalClose(accent: session.accent)
+        }
+        .sheet(isPresented: $showingCommands) {
+            CommandPalette(session: session, selection: route) { selected in
+                showingCommands = false
+                select(selected)
             }
-        }
-        .animation(NodusMotion.standard, value: chrome.hidesBottomBar)
-        .onChange(of: tab) { _, opened in
-            visited.insert(opened)
-            // A new page starts at the top, so the header does not arrive already collapsed.
-            chrome.setScrolled(false)
-            // The page you just left is still in the hierarchy — that is how it keeps its
-            // scroll position — so a field focused on it stays first responder and its keyboard
-            // stays up over the tab you switched to, belonging to a screen you can no longer
-            // touch. Leaving a tab is leaving the field on it.
-            Keyboard.dismiss()
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 
-    private var tabItems: [NodusTabBar<Tab>.Item] {
-        [
-            .init(tab: .home, title: "Home", systemImage: "house"),
-            .init(tab: .search, title: "Search", systemImage: "magnifyingglass"),
-            .init(tab: .research, title: "Research", systemImage: "doc.text.magnifyingglass"),
-            .init(tab: .chat, title: "Chat", systemImage: "bubble.left.and.text.bubble.right"),
-        ]
+    private func sidebar(collapsed: Bool) -> some View {
+        DesktopSidebar(
+            session: session,
+            selection: route,
+            collapsed: collapsed,
+            onSelect: select,
+            onSettings: { showingSettings = true }
+        )
+    }
+
+    private var sidebarResizeHandle: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 12)
+            .contentShape(Rectangle())
+            .hoverEffect(.highlight)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let origin = sidebarResizeOrigin ?? preferences.sidebarWidth
+                        if sidebarResizeOrigin == nil { sidebarResizeOrigin = origin }
+                        preferences.sidebarWidth = SidebarPresentation.clampedWidth(origin + value.translation.width)
+                    }
+                    .onEnded { _ in sidebarResizeOrigin = nil }
+            )
+            .accessibilityElement()
+            .accessibilityLabel("Resize sidebar")
+            .accessibilityValue(Text(Int(preferences.sidebarWidth), format: .number))
+            .accessibilityAdjustableAction { direction in
+                let delta = direction == .increment ? 16.0 : -16.0
+                preferences.sidebarWidth = SidebarPresentation.clampedWidth(preferences.sidebarWidth + delta)
+            }
+    }
+
+    private var routeContainer: some View {
+        ZStack {
+            ForEach(residentRoutes) { resident in
+                NavigationStack {
+                    routeView(resident).toolbar(.hidden, for: .navigationBar)
+                }
+                .opacity(resident == route ? 1 : 0)
+                .allowsHitTesting(resident == route)
+                .accessibilityHidden(resident != route)
+                .zIndex(resident == route ? 1 : 0)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { NodusBackdrop(accent: session.accent) }
+        .clipped()
+    }
+
+    private func toggleNavigation(_ presentation: SidebarPresentation) {
+        if presentation.isPersistent {
+            preferences.sidebarCollapsed.toggle()
+        } else {
+            withAnimation(NodusMotion.standard) { showingDrawer.toggle() }
+        }
+    }
+
+    private func select(_ selected: NodusRoute) {
+        if selected == .settings {
+            showingSettings = true
+            showingDrawer = false
+            return
+        }
+        guard selected != route else {
+            showingDrawer = false
+            return
+        }
+
+        let previous = route
+        if !residentRoutes.contains(selected) { residentRoutes.append(selected) }
+        route = selected
+        workspaceTabs.leave(previous.rawValue)
+        if !retainsRouteState(previous) { residentRoutes.removeAll { $0 == previous } }
+        chrome.setScrolled(false)
+        showingDrawer = false
+        Keyboard.dismiss()
+    }
+
+    /// Most Desktop sections are workspaces and keep their local state for the session. The
+    /// map renderers are deliberately transient: revisiting a generated graph must not revive
+    /// an expensive operation that the user left behind.
+    private func retainsRouteState(_ route: NodusRoute) -> Bool {
+        switch route {
+        case .argument, .graph, .studyGraph, .map, .tree:
+            return false
+        default:
+            return true
+        }
     }
 
     @ViewBuilder
-    private func content(for tab: Tab) -> some View {
-        switch tab {
-        case .home: HomeView(session: session, openResearch: { self.tab = .research })
-        case .search: SearchScreen(session: session)
-        case .research: ResearchView(session: session)
-        case .chat: ChatTab(session: session)
+    private func routeView(_ route: NodusRoute) -> some View {
+        switch route {
+        case .home:
+            HomeView(session: session, openResearch: { select(.deepResearch) })
+        case .search, .studySearch:
+            SearchScreen(session: session)
+        case .library:
+            AccountLibraryView(session: session)
+        case .argument:
+            ArgumentMapView(session: session)
+        case .ideas:
+            IdeasWorkspaceView(session: session, onOpenArgument: openArgument)
+        case .authors:
+            AuthorsWorkspaceView(session: session, onOpenIdea: openIdea, onOpenArgument: openArgument)
+        case .deepResearch, .studyDeepResearch:
+            DeepResearchRouteView(session: session)
+        case .research:
+            ResearchStateView(session: session)
+        case .gaps:
+            collection("gaps", route: .gaps)
+        case .debate:
+            SpecialListView(session: session, resource: .debates)
+        case .graph:
+            AcademicGraphView(session: session)
+        case .hypothesis:
+            HypothesisLabMobileView(session: session)
+        case .reading:
+            ReadingPathMobileView(session: session)
+        case .immersion:
+            SpecialListView(session: session, resource: .immersion)
+        case .workspace, .notes:
+            PublishedWorkspaceView(session: session)
+        case .writing:
+            WritingWorkshopMobileView(session: session)
+        case .projects:
+            ProjectsMobileView(session: session)
+        case .persons:
+            collection("persons")
+        case .archive:
+            SensitiveRecordsWorkspaceView(session: session, mode: .archive)
+        case .prosopSearch:
+            SensitiveRecordsWorkspaceView(session: session, mode: .prosopSearch)
+        case .prosopPopulation:
+            SensitiveRecordsWorkspaceView(session: session, mode: .prosopPopulation)
+        case .prosopPersons:
+            SensitiveRecordsWorkspaceView(session: session, mode: .prosopPersons)
+        case .prosopSources:
+            SensitiveRecordsWorkspaceView(session: session, mode: .prosopSources)
+        case .prosopAnalysis:
+            SensitiveRecordsWorkspaceView(session: session, mode: .prosopAnalysis)
+        case .prosopNetworks:
+            SensitiveRecordsWorkspaceView(session: session, mode: .prosopNetworks)
+        case .testimonyInterviews:
+            SensitiveRecordsWorkspaceView(session: session, mode: .testimonyInterviews)
+        case .testimonyParticipants:
+            SensitiveRecordsWorkspaceView(session: session, mode: .testimonyParticipants)
+        case .testimonyContrasts:
+            SensitiveRecordsWorkspaceView(session: session, mode: .testimonyContrasts)
+        case .timeline:
+            if displayedVaultType(for: session) == .worldbuilding { WorldTimelineView(session: session) }
+            else { collection("events") }
+        case .relations:
+            if displayedVaultType(for: session) == .worldbuilding { WorldRelationsView(session: session) }
+            else { collection("relationships") }
+        case .map:
+            if displayedVaultType(for: session) == .worldbuilding { WorldMapView(session: session) }
+            else { collection("places") }
+        case .tree:
+            if displayedVaultType(for: session) == .worldbuilding { WorldHierarchyView(session: session) }
+            else { FamilyTreeView(session: session) }
+        case .encyclopedia, .characters, .places, .factions, .cultures, .dynasties,
+             .rules, .conflicts, .arcs, .questions, .scenes:
+            WorldEntityWorkspaceView(session: session, route: route)
+        case .continuity:
+            WorldContinuityView(session: session)
+        case .manuscript:
+            WorldManuscriptView(session: session)
+        case .pages:
+            PagesWorkspaceView(session: session)
+        case .databases:
+            DatabasesWorkspaceView(session: session)
+        case .dbSearch:
+            DatabasesWorkspaceView(session: session, mode: .search)
+        case .dbAnalysis:
+            DatabasesWorkspaceView(session: session, mode: .analysis)
+        case .studyCourses:
+            StudyTeachingWorkspaceView(session: session, mode: .courses)
+        case .studyLibrary:
+            StudyTeachingWorkspaceView(session: session, mode: .materials)
+        case .studyIdeas:
+            collection("ideas", route: .studyIdeas)
+        case .studySchedule:
+            StudyTeachingWorkspaceView(session: session, mode: .schedule)
+        case .studyCalendar:
+            StudyTeachingWorkspaceView(session: session, mode: .calendar)
+        case .studyRecordings:
+            StudyTeachingWorkspaceView(session: session, mode: .recordings)
+        case .studyGraph:
+            StudyTeachingWorkspaceView(session: session, mode: .graph)
+        case .studyQuestions:
+            QuestionBankView(session: session)
+        case .studyReview:
+            FlashcardsView(session: session)
+        case .teachingExams:
+            StudyTeachingWorkspaceView(session: session, mode: .exams)
+        case .teachingRubrics:
+            StudyTeachingWorkspaceView(session: session, mode: .rubrics)
+        case .teachingGroups:
+            StudyTeachingWorkspaceView(session: session, mode: .groups)
+        case .teachingGrades:
+            StudyTeachingWorkspaceView(session: session, mode: .grades)
+        case .teachingUnits:
+            StudyTeachingWorkspaceView(session: session, mode: .units)
+        case .worldChat, .studyChat, .dbChat:
+            ChatTab(session: session)
+        case .browser, .radar, .toolkit:
+            PlatformToolsWorkspaceView(session: session, route: route)
+        case .settings:
+            Color.clear
         }
     }
 
-    /// Each tab is its own navigation stack.
-    ///
-    /// The header belongs to the *root* of the stack, not above the whole stack. Floating it
-    /// over the TabView meant hiding the navigation bar everywhere to stop the two colliding —
-    /// which also took the back button with it, and left a pushed list with no way out.
-    /// Pushed screens keep the ordinary bar; only the root wears the mark.
-    ///
-    /// The backdrop goes inside each page rather than once behind the `TabView`: a TabView
-    /// draws its own opaque page background over anything behind it, so a single shared
-    /// backdrop showed up as plain black the moment a tab was selected.
-    ///
-    /// Room for the bar comes from the backdrop, and it is the same backdrop every screen in the
-    /// app asks for. The bar is added with `safeAreaInset` on the stack of pages, *outside* these
-    /// navigation stacks, and a `NavigationStack` does not pass an outer inset on to what it
-    /// shows: measured, a page in a tab reports 34 points of bottom safe area, which is the home
-    /// indicator and nothing else. So the last fifty points of every tab were drawn behind the
-    /// bar — the chat's composer, which was therefore not on screen at all, and the last card of
-    /// Home, which you could scroll to and still not see.
-    ///
-    /// This wrapper used to reserve those points itself, which fixed the four roots and left
-    /// every screen *pushed* from one still drawing its last row under the bar. The reservation
-    /// belongs to whatever is inside the stack rather than to the stack, so it went to
-    /// `nodusPageBackdrop` — where the root gets it from the call below, and a pushed screen gets
-    /// it from its own.
-    private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        NavigationStack {
-            content()
-                .safeAreaInset(edge: .top) { header }
-                .toolbar(.hidden, for: .navigationBar)
-                .nodusPageBackdrop(accent: session.accent)
+    private func openIdea(_ row: Row) {
+        guard let id = row.string("global_id") else { return }
+        workspaceTabs.open(WorkspaceTab(
+            id: "ideas:\(id)", title: row.text("label") ?? id, systemImage: "lightbulb",
+            kind: .idea, payload: .row(row)
+        ), in: NodusRoute.ideas.rawValue)
+        select(.ideas)
+    }
+
+    private func openArgument(_ seed: ArgumentSeed) {
+        workspaceTabs.open(WorkspaceTab(
+            id: "argument:\(seed.id)", title: seed.label, systemImage: "arrow.triangle.branch",
+            kind: .argumentMap, payload: .argumentSeed(id: seed.id, label: seed.label)
+        ), in: NodusRoute.argument.rawValue)
+        select(.argument)
+    }
+
+    @ViewBuilder
+    private func collection(_ path: String, route: NodusRoute? = nil) -> some View {
+        if let descriptor = Collections[path] {
+            CollectionListView(session: session, collection: descriptor, workspaceRoute: route)
+        } else {
+            ContentUnavailableView("Unavailable collection", systemImage: "tray")
         }
     }
+}
 
-    // MARK: Chrome
+/// A shell route is a destination, not a shortcut to a hub. This small loader gives Deep
+/// Research the same direct route it has on Desktop while retaining the shared per-space store.
+private struct DeepResearchRouteView: View {
+    @Environment(AISettings.self) private var ai
+    let session: SpaceSession
+    @State private var store: LocalReportStore?
 
-    private var header: some View {
-        NodusHeader(
-            title: session.connection.spaceName,
-            subtitle: subtitle,
-            accent: session.accent,
-            activity: session.isLoading ? 1 : 0,
-            collapsed: chrome.isScrolled
-        ) {
-            // Never more than two a side: the mark is centred by reserving 92 points at each
-            // end, and a third 44-point control would meet the vault's name in the middle.
-            HStack(spacing: 2) {
-                headerButton("rectangle.stack", label: "Switch space") { model.closeSession() }
-                if let chat = chatControls { historyButton(chat) }
-            }
-        } trailing: {
-            // Each glyph in its own 44-point box, not the pair in one.
-            //
-            // The accessory slot sizes what it is handed, so handing it an `HStack` gave the
-            // *cluster* the 44 points and left each button as wide as its own drawing — two
-            // 17-point targets sitting eight points apart, which reads as one control that has
-            // been drawn twice and misses half the taps aimed at either.
-            HStack(spacing: 2) {
-                if let chat = chatControls { layersMenu(chat) }
-                if showsLayoutToggle { layoutToggle }
-                // In the chrome, and present in every vault including a read-only one: the queue
-                // spans the device, so a change queued in another space is still this device's
-                // unfinished business. Hidden only when nothing on this device could ever queue
-                // anything at all.
-                if canQueueAnywhere { queueButton }
-                headerButton("gearshape", label: "Settings") { showingSettings = true }
+    var body: some View {
+        Group {
+            if let store {
+                DeepResearchScreen(session: session, local: store)
+                    .environment(ai)
+            } else {
+                ProgressView().tint(session.accent)
             }
         }
+        .task {
+            if store == nil { store = LocalReportStore.shared(for: session.connection.spaceId) }
+        }
+    }
+}
+
+struct SidebarPresentation: Equatable {
+    let availableWidth: CGFloat
+    let isUserCollapsed: Bool
+    var expandedWidth: CGFloat = NodusChromeMetrics.expandedSidebar
+
+    static let minimumExpandedWidth = 176.0
+    static let maximumExpandedWidth = 360.0
+
+    static func clampedWidth(_ width: Double) -> Double {
+        min(maximumExpandedWidth, max(minimumExpandedWidth, width))
     }
 
-    /// Whether any space this device holds could put something in the queue.
-    ///
-    /// Read from the model's own list rather than from `storedConnections()`, which re-parses
-    /// `UserDefaults` — and this is in a view body.
-    private var canQueueAnywhere: Bool {
-        model.connections.contains { $0.role.canSendChanges }
+    var isPersistent: Bool { availableWidth >= 600 }
+    var isCollapsed: Bool { availableWidth < 720 || isUserCollapsed }
+    var sidebarWidth: CGFloat {
+        isCollapsed
+            ? NodusChromeMetrics.collapsedSidebar
+            : CGFloat(Self.clampedWidth(Double(expandedWidth)))
     }
+}
 
-    /// The queue, with a dot when it is holding something.
-    ///
-    /// A dot rather than a number: at 44 points beside two other glyphs there is no room for a
-    /// legible count, and the question this answers from here is "is there anything?" — the
-    /// tray itself is where "how much, and what" is answered.
-    private var queueButton: some View {
-        headerButton("tray.and.arrow.up", label: "Send queue") { tray.open() }
-            .overlay(alignment: .topTrailing) {
-                if tray.outbox.pending > 0 {
-                    Circle()
-                        .fill(Color.nodusCaution)
-                        .frame(width: 8, height: 8)
-                        .padding(.top, 9).padding(.trailing, 9)
-                        .allowsHitTesting(false)
-                }
-            }
-            .animation(NodusMotion.quick, value: tray.outbox.pending)
+/// Visual-QA only vault override, paired with `NODUS_START_ROUTE`. It changes no data source;
+/// it lets simulator captures verify every adaptive sidebar without fabricating user records.
+@MainActor
+private func displayedVaultType(for session: SpaceSession) -> VaultType? {
+#if DEBUG
+    if let raw = ProcessInfo.processInfo.environment["NODUS_VAULT_TYPE_OVERRIDE"],
+       let type = VaultType(rawValue: raw) {
+        return type
     }
+#endif
+    return session.vaultType
+}
 
-    /// The chat's controls, but only while the chat is the screen you are looking at.
-    ///
-    /// The four tabs are held side by side rather than swapped, so the chat page does not
-    /// disappear when you leave it and cannot be relied on to take its controls with it. What
-    /// decides whether they are on the header is the same thing that decides which page is
-    /// visible: the shell's own selection.
-    private var chatControls: ChatControls? {
-        tab == .chat ? chrome.chat : nil
-    }
+private struct DesktopTopBar: View {
+    @Environment(\.colorScheme) private var colorScheme
 
-    private func historyButton(_ chat: ChatControls) -> some View {
-        headerButton("clock.arrow.circlepath", label: "History") { chat.openHistory() }
-    }
+    let session: SpaceSession
+    let presentation: SidebarPresentation
+    let queueCount: Int
+    let onToggleNavigation: () -> Void
+    let onSwitchSpace: () -> Void
+    let onCommands: () -> Void
+    let onAssistant: () -> Void
+    let onQueue: () -> Void
+    let onRefresh: () -> Void
+    let onTheme: () -> Void
+    let onSettings: () -> Void
 
-    /// Which layers of the corpus a question is answered from.
-    ///
-    /// Read straight off the chat's own state rather than from a copy, so a layer switched off
-    /// here is switched off in the payload the next question builds.
-    private func layersMenu(_ chat: ChatControls) -> some View {
-        Menu {
-            ForEach(ContextSectionKind.allCases, id: \.self) { kind in
-                Button {
-                    if chat.include.contains(kind) {
-                        chat.include.remove(kind)
-                    } else {
-                        chat.include.insert(kind)
+    var body: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Button(action: onToggleNavigation) {
+                        Image(systemName: presentation.isPersistent && !presentation.isCollapsed ? "sidebar.leading" : "line.3.horizontal")
+                            .frame(width: 44, height: 44)
                     }
-                } label: {
-                    // `LocalizedStringKey(_:)` around the name, because the section's label is a
-                    // computed `String` and `Label(_:systemImage:)` handed one of those renders
-                    // it verbatim — which is how a menu of English layer names survived in a
-                    // Spanish app.
-                    Label(
-                        LocalizedStringKey(CorpusRetrieval.MaterialSection(kind: kind, rows: []).label),
-                        systemImage: chat.include.contains(kind) ? "checkmark" : ""
-                    )
+                    .accessibilityLabel("Navigation")
+
+                    if presentation.availableWidth >= 720 {
+                        NodusMark(style: .accent(session.accent)).frame(width: 24, height: 24)
+                        Text("Nodus Research").font(.headline.weight(.semibold))
+                    }
                 }
+                .frame(width: presentation.isPersistent ? presentation.sidebarWidth : nil, alignment: .leading)
+                .padding(.leading, presentation.isPersistent ? 8 : 4)
+
+                Spacer(minLength: 8)
+                actionRail
             }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+
+            Button(action: onSwitchSpace) {
+                HStack(spacing: 7) {
+                    Circle().fill(session.accent).frame(width: 7, height: 7)
+                    Text(session.connection.spaceName).font(.caption.weight(.semibold)).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                }
+                .foregroundStyle(session.accent.nodusReadable)
+                .padding(.horizontal, 11)
+                .frame(height: 28)
+                .background(session.accent.opacity(colorScheme == .dark ? 0.12 : 0.06), in: Capsule())
+                .overlay(Capsule().stroke(session.accent.opacity(0.38), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: presentation.availableWidth < 500 ? 156 : 260)
+            .accessibilityLabel("Switch space")
         }
-        .tint(session.accent)
-        .accessibilityLabel("Corpus layers")
+        .frame(height: NodusChromeMetrics.topBar)
+        // The desktop chrome has a fixed 44-point row. Keep its labels readable inside that
+        // row while the actual page content continues to honour the full accessibility scale.
+        .dynamicTypeSize(.small ... .large)
+        .background(colorScheme == .dark ? Color(hex: "#111113") : Color.white)
+        .overlay(alignment: .bottom) { Divider() }
+        .zIndex(20)
     }
 
-    /// The shape every control in the header wears: the glyph, centred in a 44-point square.
-    private func headerButton(
-        _ systemImage: String,
+    private var actionRail: some View {
+        HStack(spacing: 0) {
+            if presentation.availableWidth >= 620 {
+                topButton("command", label: "Commands", action: onCommands)
+                topButton("sparkles", label: "Nodi", action: onAssistant)
+                topButton("arrow.clockwise", label: "Refresh", action: onRefresh)
+                if queueCount > 0 { topButton("tray.and.arrow.up", label: "Send queue", badge: queueCount, action: onQueue) }
+                topButton(colorScheme == .dark ? "sun.max" : "moon", label: "Theme", action: onTheme)
+                topButton("gearshape", label: "Settings", action: onSettings)
+            } else {
+                topButton("sparkles", label: "Nodi", action: onAssistant)
+                Menu {
+                    Button("Commands", systemImage: "command", action: onCommands)
+                    Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
+                    if queueCount > 0 { Button("Send queue", systemImage: "tray.and.arrow.up", action: onQueue) }
+                    Button("Theme", systemImage: colorScheme == .dark ? "sun.max" : "moon", action: onTheme)
+                    Button("Settings", systemImage: "gearshape", action: onSettings)
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("More actions")
+            }
+        }
+        .padding(.trailing, 4)
+    }
+
+    private func topButton(
+        _ image: String,
         label: LocalizedStringKey,
+        badge: Int? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
+            Image(systemName: image)
+                .font(.system(size: 14, weight: .medium))
                 .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                .overlay(alignment: .topTrailing) {
+                    if let badge {
+                        Text(badge, format: .number)
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 14, minHeight: 14)
+                            .background(session.accent, in: Capsule())
+                            .offset(x: 1, y: 2)
+                    }
+                }
         }
-        .tint(session.accent)
+        .buttonStyle(.plain)
         .accessibilityLabel(label)
     }
+}
 
-    /// Board or list, in the chrome rather than on the page.
-    ///
-    /// It used to be a row of its own above Home's first section: a single 38-point circle
-    /// pinned right, with sixty points of nothing beside it and another twenty-six under it
-    /// before the content began. That is a lot of screen for one control, and it is the kind of
-    /// control the chrome is for — it changes the shape of the screen rather than being part of
-    /// what the screen says.
-    private var layoutToggle: some View {
-        Button {
-            withAnimation(NodusMotion.standard) {
-                preferences.homeLayout = preferences.homeLayout.toggled
+private struct DesktopSidebar: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(AppPreferences.self) private var preferences
+    @State private var collapsedGroups: Set<NodusNavigationGroup> = []
+
+    let session: SpaceSession
+    let selection: NodusRoute
+    let collapsed: Bool
+    let onSelect: (NodusRoute) -> Void
+    let onSettings: () -> Void
+
+    private var visible: [NodusNavigationItem] {
+        NodusNavigationContract.visibleItems(
+            for: displayedVaultType(for: session),
+            order: preferences.sidebarOrder,
+            hidden: preferences.sidebarCustomized ? preferences.sidebarHidden : nil
+        )
+    }
+
+    private var groups: [(NodusNavigationGroup, [NodusNavigationItem])] {
+        NodusNavigationContract.groupedItems(
+            for: displayedVaultType(for: session),
+            order: preferences.sidebarOrder,
+            hidden: preferences.sidebarCustomized ? preferences.sidebarHidden : nil
+        )
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    if let home = visible.first(where: { $0.route == .home }) { item(home) }
+                    if let library = visible.first(where: { $0.route == .library }) { item(library) }
+                    ForEach(groups, id: \.0.id) { group, items in
+                        if !collapsed {
+                            Button {
+                                if collapsedGroups.contains(group) { collapsedGroups.remove(group) }
+                                else { collapsedGroups.insert(group) }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 8, weight: .semibold))
+                                        .rotationEffect(.degrees(collapsedGroups.contains(group) ? 0 : 90))
+                                    Text(group.title)
+                                        .font(.system(size: 9, weight: .bold)).tracking(0.7)
+                                        .textCase(.uppercase)
+                                    Spacer(minLength: 0)
+                                }
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, 14).padding(.horizontal, 10).padding(.bottom, 3)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("nodus-nav-group-\(group.rawValue)")
+                        } else {
+                            Divider().padding(.vertical, 6).padding(.horizontal, 12)
+                        }
+                        if collapsed || !collapsedGroups.contains(group) {
+                            ForEach(items) { item($0) }
+                        }
+                    }
+                }
+                .padding(8)
             }
-        } label: {
-            Image(systemName: preferences.homeLayout.toggled.systemImage)
-                // No glass circle any more: beside the gear it has to be the same kind of
-                // object as the gear, in the same 44-point square.
-                .contentTransition(.symbolEffect(.replace))
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+
+            Divider()
+            if let settings = visible.first(where: { $0.route == .settings }) {
+                item(settings).padding(8)
+            }
         }
-        .tint(session.accent)
-        .accessibilityLabel(preferences.homeLayout == .grid ? "Show as a list" : "Show as a grid")
+        .background(colorScheme == .dark ? Color(hex: "#111113") : Color(hex: "#f7f7f8"))
+        .overlay(alignment: .trailing) { Divider() }
     }
 
-    /// Only where it does something. On the other three tabs it would be a control that changes
-    /// a screen you are not looking at.
-    private var showsLayoutToggle: Bool {
-        tab == .home
+    private func item(_ nav: NodusNavigationItem) -> some View {
+        Button {
+            nav.route == .settings ? onSettings() : onSelect(nav.route)
+        } label: {
+            HStack(spacing: collapsed ? 0 : 6) {
+                Image(systemName: nav.systemImage)
+                    .font(.system(size: 14, weight: selection == nav.route ? .semibold : .regular))
+                    .frame(width: 44, height: 44, alignment: .center)
+                if !collapsed {
+                    Text(nav.label)
+                        .font(.system(size: 12, weight: selection == nav.route ? .semibold : .regular))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+            }
+            .foregroundStyle(selection == nav.route ? session.accent.nodusReadable : Color.primary.opacity(0.78))
+            .padding(.horizontal, collapsed ? 0 : 4)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: collapsed ? .center : .leading)
+            .background(selection == nav.route ? session.accent.opacity(0.11) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+            .overlay(alignment: .leading) {
+                if selection == nav.route { Capsule().fill(session.accent).frame(width: 2, height: 18).offset(x: -1) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(nav.labelKey)
+        .accessibilityLabel(nav.label)
+        .accessibilityIdentifier("nodus-nav-\(nav.route.rawValue)")
+        .accessibilityAddTraits(selection == nav.route ? .isSelected : [])
+    }
+}
+
+private struct CommandPalette: View {
+    @Environment(\.dismiss) private var dismiss
+    let session: SpaceSession
+    let selection: NodusRoute
+    let onSelect: (NodusRoute) -> Void
+    @State private var query = ""
+
+    private var items: [NodusNavigationItem] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        return NodusNavigationContract.scopedItems(for: displayedVaultType(for: session)).filter {
+            needle.isEmpty || $0.labelKey.localizedLowercase.contains(needle)
+        }
     }
 
-    private var subtitle: String? {
-        // `String(localized:)` rather than a bare literal: this is a computed value handed to a
-        // header that renders it as data, and a literal would ship in one language only.
-        if !session.isPublished { return String(localized: "Not published") }
-        guard let overview = session.overview else { return nil }
-        let rows = overview.counts.values.reduce(0, +)
-        guard rows > 0 else { return nil }
-        return String(localized: "\(rows.formatted()) records")
+    var body: some View {
+        NavigationStack {
+            List(items) { nav in
+                Button { onSelect(nav.route) } label: {
+                    Label {
+                        HStack {
+                            Text(nav.label)
+                            Spacer()
+                            if nav.route == selection { Image(systemName: "checkmark").foregroundStyle(session.accent) }
+                        }
+                    } icon: {
+                        Image(systemName: nav.systemImage).foregroundStyle(session.accent)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .searchable(text: $query, prompt: "Go to a section")
+            .navigationTitle("Commands")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import NodusKit
 import Observation
 import SwiftUI
 
@@ -12,11 +13,10 @@ import SwiftUI
 /// so the answer cannot live in either half. It lives here, keyed by whichever id the library
 /// already uses for the row.
 ///
-/// It stays on the device. A reading mark is not a fact about the vault and nobody else's copy
-/// of the report should acquire one because somebody read it on a phone; there is nothing to
-/// send and no permission to ask for. It is deliberately outside `CloudBackup` for the same
-/// reason the mirror is: nothing here is irreplaceable, and a report costs a model call per
-/// section while a mark costs one press.
+/// The local copy makes the interaction immediate and restores the reading position offline.
+/// For a published report its read timestamp is also relayed through the typed mutation ledger,
+/// so Desktop, iPad and iPhone converge without making bookmarks or private reading position
+/// part of the shared vault record.
 @Observable
 @MainActor
 final class ReportMarks {
@@ -109,6 +109,54 @@ final class ReportMarks {
     @discardableResult
     func setRead(_ id: String, _ read: Bool, at when: Date = Date()) -> Mark {
         update(id) { $0.readAt = read ? when : nil }
+    }
+
+    /// Apply a read change locally first and relay the same fact through the typed mutation
+    /// ledger. `localId` is the UUID of a report kept on this device; `remoteId` is the
+    /// `writing_saved_drafts` identity shared with Desktop. They are often equal for published
+    /// reports and deliberately different for a report generated before it was sent.
+    @discardableResult
+    func setReadSynced(
+        localId: String,
+        remoteId: String,
+        _ read: Bool,
+        session: SpaceSession,
+        at when: Date = Date()
+    ) -> Mark {
+        let value = setRead(localId, read, at: when)
+        if remoteId != localId { _ = setRead(remoteId, read, at: when) }
+        Task {
+            guard let controller = await OutboxController.open(session: session) else { return }
+            let timestamp = ISO8601DateFormatter.nodusFractional.string(from: when)
+            _ = await controller.syncMutation(
+                kind: read ? .upsert : .delete,
+                table: .writingDraftReads,
+                key: [remoteId],
+                row: read ? [
+                    "draft_id": .string(remoteId),
+                    "updated_at": .string(timestamp),
+                ] : nil,
+                title: read ? String(localized: "Mark Deep Research as read") : String(localized: "Mark Deep Research as unread")
+            )
+        }
+        return value
+    }
+
+    /// Merge the canonical server value without emitting another mutation. This is invoked by
+    /// list and open-reader refreshes, including a deletion (unread), so a Desktop change
+    /// cannot be resurrected by a stale device-local flag.
+    func reconcileRead(localId: String, remoteId: String, readAt: Date?) {
+        let ids = localId == remoteId ? [localId] : [localId, remoteId]
+        var changed = false
+        for id in ids {
+            var mark = marks[id] ?? Mark()
+            guard mark.readAt != readAt else { continue }
+            mark.readAt = readAt
+            if mark.isEmpty { marks.removeValue(forKey: id) }
+            else { marks[id] = mark }
+            changed = true
+        }
+        if changed { write() }
     }
 
     @discardableResult

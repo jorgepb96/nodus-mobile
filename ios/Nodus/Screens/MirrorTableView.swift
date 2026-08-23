@@ -8,9 +8,20 @@ import SwiftUI
 /// articles, factions, cultures, threads, rules and character profiles, and the REST surface
 /// projects none of them. Without the mirror the app could search a world and never list it.
 struct MirrorTableView: View {
+    struct Filter: Hashable {
+        let field: String
+        let values: [String]
+
+        func includes(_ row: Row) -> Bool {
+            guard let value = row.string(field) else { return false }
+            return values.contains(value)
+        }
+    }
+
     let session: SpaceSession
     let table: String
     let title: String
+    var filter: Filter? = nil
 
     @State private var rows: [Row] = []
     @State private var total = 0
@@ -18,50 +29,99 @@ struct MirrorTableView: View {
     @State private var sort: MirrorStore.SortOrder = .published
     @State private var error: String?
     @State private var searchTask: Task<Void, Never>?
+    @State private var isDownloading = false
 
     private var presenter: RowPresenter { RowPresenter.forTable(table) }
 
     var body: some View {
-        List {
-            if let error {
-                NodusNotice(tone: .blocked, title: "Could not read the mirror", message: LocalizedStringKey(error))
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
-            }
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                NavigationLink {
-                    RowDetailView(session: session, collection: nil, row: row, title: title)
-                } label: {
-                    RowCell(row: row, presenter: presenter, accent: session.accent)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 9) {
+                if session.mirror == nil {
+                    VStack(spacing: 14) {
+                        Image(systemName: "internaldrive")
+                            .font(.system(size: 34))
+                            .foregroundStyle(session.accent)
+                        Text("Keep an offline copy to open this section")
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                        Text("Desktop publishes this workspace inside the snapshot rather than as a public collection. The downloaded copy stays on this device and refreshes with the vault.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 520)
+                        Button {
+                            Task {
+                                isDownloading = true
+                                await session.downloadMirror()
+                                isDownloading = false
+                                await reload()
+                            }
+                        } label: {
+                            Label(isDownloading ? "Downloading…" : "Keep offline copy", systemImage: "arrow.down.circle")
+                        }
+                        .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
+                        .disabled(isDownloading)
+                    }
+                    .padding(.vertical, 64)
+                    .frame(maxWidth: .infinity)
+                } else {
+                    if let error {
+                        NodusNotice(tone: .blocked, title: "Could not read the mirror", message: LocalizedStringKey(error))
+                    }
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        NavigationLink {
+                            RowDetailView(session: session, collection: nil, row: row, title: title)
+                        } label: {
+                            RowCell(row: row, presenter: presenter, accent: session.accent)
+                                .desktopContentRow(accent: session.accent)
+                        }
+                        .buttonStyle(NodusCardButtonStyle())
+                    }
+                    if rows.count < total, filter == nil {
+                        HStack { Spacer(); ProgressView().tint(session.accent); Spacer() }
+                            .padding()
+                            .task { await loadMore() }
+                    }
+                    if rows.isEmpty, error == nil {
+                        ContentUnavailableView(
+                            query.isEmpty ? "Nothing here" : "No matches",
+                            systemImage: presenter.icon
+                        )
+                        .padding(.vertical, 42)
+                    }
                 }
-                .listRowBackground(Color.clear)
             }
-            if rows.count < total {
-                HStack { Spacer(); ProgressView().tint(session.accent); Spacer() }
-                    .listRowBackground(Color.clear)
-                    .task { await loadMore() }
-            }
-            if rows.isEmpty, error == nil {
-                ContentUnavailableView(
-                    query.isEmpty ? "Nothing here" : "No matches",
-                    systemImage: presenter.icon
-                )
-                .listRowBackground(Color.clear)
-            }
+            .padding(NodusSpace.page)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
+            .nodusTopAnchor()
         }
-        .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
-        .listStyle(.plain)
-        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .navigationTitle(Text(LocalizedStringKey(title)))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) {
-            NodusSearchField(text: $query, prompt: "Filter on any field", accent: session.accent)
+            VStack(spacing: 7) {
+                HStack(spacing: 10) {
+                    DesktopPageHeader(
+                        title: LocalizedStringKey(title),
+                        subtitle: session.mirror == nil ? String(localized: "Offline snapshot required") : String(localized: "\(total) published records"),
+                        systemImage: presenter.icon,
+                        accent: session.accent
+                    )
+                    if session.mirror != nil { sortMenu }
+                }
+                .padding(.horizontal, NodusSpace.page)
+                if session.mirror != nil {
+                    NodusSearchField(text: $query, prompt: "Filter on any field", accent: session.accent)
+                }
+            }
+            .padding(.top, 10)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
+            .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
         .onChange(of: query) { _, _ in schedule() }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { sortMenu }
-        }
         // The publication revision changes before a potentially large mirror finishes
         // importing. Keying this local read to the mirror's own revision prevents one reload
         // from racing the import and then remaining on the old rows.
@@ -97,15 +157,34 @@ struct MirrorTableView: View {
     private func reload() async {
         guard let mirror = session.mirror else { return }
         do {
-            let page = try await mirror.page(
-                table: table,
-                query: query.isEmpty ? nil : query,
-                sort: sort,
-                limit: 80,
-                offset: 0
-            )
-            rows = page.items
-            total = page.total
+            if let filter {
+                var matching: [Row] = []
+                var offset = 0
+                while true {
+                    let page = try await mirror.page(
+                        table: table,
+                        query: query.isEmpty ? nil : query,
+                        sort: sort,
+                        limit: 500,
+                        offset: offset
+                    )
+                    matching.append(contentsOf: page.items.filter(filter.includes))
+                    offset += page.items.count
+                    if !page.hasMore || offset >= 10_000 { break }
+                }
+                rows = matching
+                total = matching.count
+            } else {
+                let page = try await mirror.page(
+                    table: table,
+                    query: query.isEmpty ? nil : query,
+                    sort: sort,
+                    limit: 80,
+                    offset: 0
+                )
+                rows = page.items
+                total = page.total
+            }
             error = nil
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
@@ -115,7 +194,7 @@ struct MirrorTableView: View {
     }
 
     private func loadMore() async {
-        guard let mirror = session.mirror, rows.count < total else { return }
+        guard filter == nil, let mirror = session.mirror, rows.count < total else { return }
         do {
             let page = try await mirror.page(
                 table: table,

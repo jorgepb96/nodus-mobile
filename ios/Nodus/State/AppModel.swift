@@ -12,7 +12,7 @@ import SwiftUI
 @MainActor
 final class AppModel {
     /// A space this device has a token for.
-    struct Connection: Codable, Identifiable, Hashable {
+    struct Connection: Codable, Identifiable, Hashable, Sendable {
         var origin: String
         var spaceId: String
         var spaceName: String

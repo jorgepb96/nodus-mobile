@@ -2,6 +2,63 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
+/// The Argument Map catalogue and its closeable maps use the same workspace contract as
+/// Desktop. Selecting another seed opens beside the current tree instead of destroying it.
+struct ArgumentMapView: View {
+    @Environment(WorkspaceTabs.self) private var workspaceTabs
+
+    let session: SpaceSession
+    /// Set when the workspace was opened from a specific idea rather than its catalogue.
+    var seed: ArgumentSeed?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            WorkspaceTabStrip(
+                section: "argument",
+                catalogueTitle: "Argument Map",
+                catalogueImage: "arrow.triangle.branch",
+                accent: session.accent
+            )
+            ZStack {
+                ArgumentSeedPicker(session: session, onPick: open)
+                    .opacity(workspaceTabs.activeTabId(in: "argument") == nil ? 1 : 0)
+                    .allowsHitTesting(workspaceTabs.activeTabId(in: "argument") == nil)
+                    .accessibilityHidden(workspaceTabs.activeTabId(in: "argument") != nil)
+
+                ForEach(workspaceTabs.tabs(in: "argument")) { tab in
+                    if case .argumentSeed(let id, let label) = tab.payload {
+                        ArgumentMapDocumentView(
+                            session: session,
+                            seed: ArgumentSeed(id: id, label: label),
+                            onBackToCatalogue: { workspaceTabs.activateCatalog(in: "argument") }
+                        )
+                        .opacity(workspaceTabs.activeTabId(in: "argument") == tab.id ? 1 : 0)
+                        .allowsHitTesting(workspaceTabs.activeTabId(in: "argument") == tab.id)
+                        .accessibilityHidden(workspaceTabs.activeTabId(in: "argument") != tab.id)
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("workspace-argument")
+        .task(id: seed?.id) {
+            if let seed { open(seed) }
+        }
+    }
+
+    private func open(_ seed: ArgumentSeed) {
+        workspaceTabs.open(
+            WorkspaceTab(
+                id: "argument:\(seed.id)",
+                title: seed.label,
+                systemImage: "arrow.triangle.branch",
+                kind: .argumentMap,
+                payload: .argumentSeed(id: seed.id, label: seed.label)
+            ),
+            in: "argument"
+        )
+    }
+}
+
 /// The argument map: one idea, and the argument that grows out of it.
 ///
 /// The desktop offers two modes — an AI trace and a structural one built from the real edges.
@@ -9,18 +66,20 @@ import SwiftUI
 /// already serves the ego graph, and the tree is arithmetic over it
 /// (`ArgumentMapBuilder.structural`). What the model would add is a gloss, and a gloss is the
 /// part a phone can most easily do without.
-struct ArgumentMapView: View {
+private struct ArgumentMapDocumentView: View {
     let session: SpaceSession
-    /// Set when the map was opened from a specific idea rather than from the seed picker.
-    var seed: ArgumentSeed?
+    let seed: ArgumentSeed
+    let onBackToCatalogue: () -> Void
 
-    @State private var chosen: ArgumentSeed?
     @State private var map: ArgumentMap?
     @State private var expanded: Set<String> = []
     @State private var levels: [[String]] = []
     @State private var revealedLevels = 1
     @State private var isLoading = false
     @State private var error: String?
+    @State private var mapTextSize = 1
+    @State private var mapWidth: CGFloat = 860
+    @State private var remoteState: String?
 
     var body: some View {
         Group {
@@ -35,10 +94,7 @@ struct ArgumentMapView: View {
                     Text(error)
                 }
             } else {
-                ArgumentSeedPicker(session: session) { picked in
-                    chosen = picked
-                    Task { await build(picked) }
-                }
+                ProgressView().tint(session.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .navigationTitle("Argument map")
@@ -48,10 +104,7 @@ struct ArgumentMapView: View {
             if map != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        map = nil
-                        chosen = nil
-                        expanded = []
-                        revealedLevels = 1
+                        onBackToCatalogue()
                     } label: {
                         Image(systemName: "arrow.triangle.branch")
                     }
@@ -61,12 +114,6 @@ struct ArgumentMapView: View {
             }
         }
         .task(id: session.publishedRevision) {
-            if let chosen {
-                await build(chosen)
-                return
-            }
-            guard map == nil, let seed, chosen == nil else { return }
-            chosen = seed
             await build(seed)
         }
     }
@@ -77,7 +124,8 @@ struct ArgumentMapView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 header(map)
-                if !levels.isEmpty { controls }
+                displayControls
+                if !levels.isEmpty { branchControls }
                 ArgumentBlockTree(
                     block: map.root,
                     depth: 0,
@@ -87,6 +135,9 @@ struct ArgumentMapView: View {
                 )
             }
             .padding(NodusSpace.page)
+            .frame(maxWidth: mapWidth)
+            .frame(maxWidth: .infinity)
+            .environment(\.dynamicTypeSize, mapTextSize == 0 ? .small : (mapTextSize == 2 ? .large : .medium))
         }
         // A map is a document too, and the four tabs under it are four ways to lose your place
         // in a tree you have just spent six taps unfolding.
@@ -119,6 +170,7 @@ struct ArgumentMapView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            if let remoteState { Text(remoteState).font(.caption2).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(NodusSpace.cardPadding)
@@ -132,7 +184,7 @@ struct ArgumentMapView: View {
     /// about the map rather than as the only two things on the screen you can do to it. Out on
     /// the page, filled and outlined in the accent, they are unmistakably controls — and the two
     /// of them are now the only accent-filled objects on this screen, which is the point.
-    private var controls: some View {
+    private var branchControls: some View {
         HStack(spacing: NodusSpace.card) {
             Button {
                 revealLevel()
@@ -154,6 +206,25 @@ struct ArgumentMapView: View {
             }
             .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
             .disabled(expanded.isEmpty)
+        }
+    }
+
+    private var displayControls: some View {
+        HStack(spacing: NodusSpace.card) {
+            HStack(spacing: 0) {
+                Button { mapTextSize = max(0, mapTextSize - 1) } label: { Image(systemName: "textformat.size.smaller").frame(width: 44, height: 44) }
+                Divider().frame(height: 24)
+                Button { mapTextSize = min(2, mapTextSize + 1) } label: { Image(systemName: "textformat.size.larger").frame(width: 44, height: 44) }
+            }.reportActionSurface(accent: session.accent)
+            HStack(spacing: 0) {
+                Button { mapWidth = max(560, mapWidth - 100) } label: { Image(systemName: "arrow.left.and.line.vertical.and.arrow.right").frame(width: 44, height: 44) }
+                Divider().frame(height: 24)
+                Button { mapWidth = min(1180, mapWidth + 100) } label: { Image(systemName: "arrow.right.and.line.vertical.and.arrow.left").frame(width: 44, height: 44) }
+            }.reportActionSurface(accent: session.accent)
+            Button { Task { await generateAI() } } label: { Label("AI trace", systemImage: "wand.and.stars") }
+                .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                .disabled(session.isDemo || !session.connection.role.canSendChanges)
+            Spacer(minLength: 0)
         }
     }
 
@@ -196,6 +267,19 @@ struct ArgumentMapView: View {
             self.error = error.localizedDescription
         }
     }
+
+    private func generateAI() async {
+        do {
+            let result = try await session.client.createSpaceAction(
+                idempotencyKey: "ios:argument-ai:\(session.connection.spaceId):\(seed.id):\(session.publishedRevision ?? "local")",
+                kind: .argumentMapGenerate,
+                payload: ["request": .object(["seedIdeaId": .string(seed.id), "mode": .string("ai")])],
+                inputRevision: session.publishedRevision,
+                in: session.connection.spaceId
+            )
+            remoteState = result.duplicate ? "The AI trace is already queued." : "AI trace queued for Desktop; its state is visible in Sync Center."
+        } catch { remoteState = error.localizedDescription }
+    }
 }
 
 /// The idea a map grows from.
@@ -215,27 +299,49 @@ struct ArgumentSeed: Identifiable, Hashable {
     }
 }
 
-/// Choosing where the argument starts.
-///
-/// The desktop ranks hubs by connectivity over the whole graph; a phone holds no such index, so
-/// this asks the corpus instead — the same search the Ideas section uses — and says plainly
-/// that it is a search rather than a ranking.
+/// Desktop's ranked catalogue of grounded hubs. Search, the connection floor and the debate
+/// bonus are local views over the server's canonical route projection, not a second ranking
+/// assembled from a truncated Ideas page.
 private struct ArgumentSeedPicker: View {
     let session: SpaceSession
     let onPick: (ArgumentSeed) -> Void
 
     @State private var query = ""
-    @State private var rows: [Row] = []
+    @State private var routes: [ArgumentRouteSuggestion] = []
+    @State private var minimumConnections = 2
+    @State private var debateBonus = true
+    @State private var order: RouteOrder = .recommended
     @State private var isLoading = false
     @State private var error: String?
-    @State private var searchTask: Task<Void, Never>?
+
+    private enum RouteOrder: String, CaseIterable {
+        case recommended, connections, debates, confidence, label
+    }
+
+    private var visible: [ArgumentRouteSuggestion] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return routes.filter { route in
+            route.degree >= minimumConnections && (needle.isEmpty || "\(route.label)\n\(route.statement)".lowercased().contains(needle))
+        }.sorted { left, right in
+            switch order {
+            case .connections:
+                return left.degree == right.degree ? left.label.localizedCaseInsensitiveCompare(right.label) == .orderedAscending : left.degree > right.degree
+            case .debates:
+                return left.debateCount == right.debateCount ? left.degree > right.degree : left.debateCount > right.debateCount
+            case .confidence:
+                return left.avgConfidence == right.avgConfidence ? left.degree > right.degree : left.avgConfidence > right.avgConfidence
+            case .label:
+                return left.label.localizedCaseInsensitiveCompare(right.label) == .orderedAscending
+            case .recommended:
+                guard !debateBonus else { return routes.firstIndex(of: left)! < routes.firstIndex(of: right)! }
+                return left.degree == right.degree ? left.avgConfidence > right.avgConfidence : left.degree > right.degree
+            }
+        }
+    }
 
     var body: some View {
         List {
-            // An ordinary row rather than a section footer: a footer keeps the list's own
-            // opaque backing, which over the accent backdrop drew as a black band across the
-            // one sentence this screen most wants read.
-            Text("The map grows from one idea, following the relations the analysis found: what supports it, what refines it, and what argues against it.")
+            Text("Ranked from the real idea graph. Rejected links are excluded before connectivity and debate scores are calculated.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .listRowBackground(Color.clear)
@@ -246,13 +352,10 @@ private struct ArgumentSeedPicker: View {
                     .listRowBackground(Color.clear)
             }
 
-            // A screen whose only content is a sentence about what the map does, held for as
-            // long as a corpus of ten thousand ideas takes to answer, reads as a screen that
-            // has failed. It is fetching; it should say so.
-            if isLoading, rows.isEmpty {
+            if isLoading, routes.isEmpty {
                 HStack(spacing: 10) {
                     ProgressView().tint(session.accent)
-                    Text("Reading the ideas in this space…")
+                    Text("Ranking grounded hubs…")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -261,26 +364,32 @@ private struct ArgumentSeedPicker: View {
                 .listRowSeparator(.hidden)
             }
 
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                if let seed = ArgumentSeed(row) {
-                    Button {
-                        onPick(seed)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(seed.label).font(.subheadline.weight(.medium))
-                                .foregroundStyle(.primary)
-                            if let statement = row.text("statement"), statement != seed.label {
-                                Text(statement).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }
+            ForEach(visible) { route in
+                Button { onPick(ArgumentSeed(id: route.ideaId, label: route.label)) } label: {
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(route.label).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
+                            Spacer()
+                            if route.debateCount > 0 { NodusChip("\(route.debateCount) debates", tint: .nodusCaution, capitalises: false) }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(route.statement).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        HStack(spacing: 12) {
+                            Label("\(route.degree)", systemImage: "link")
+                            Text(route.avgConfidence, format: .percent.precision(.fractionLength(0)))
+                            ForEach(route.topRelations.prefix(2)) { NodusChip(RowDetailView.relationLabel($0.type), tint: session.accent.nodusReadable) }
+                        }.font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        if !route.neighborLabels.isEmpty {
+                            Text(route.neighborLabels.joined(separator: " · ")).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                        }
                     }
-                    .listRowBackground(Color.clear)
+                    .padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }
+                .buttonStyle(.plain).listRowBackground(Color.clear)
+                .accessibilityIdentifier("argument-route-\(route.ideaId)")
             }
 
-            if rows.isEmpty, !isLoading, error == nil {
-                ContentUnavailableView("No ideas", systemImage: "lightbulb")
+            if visible.isEmpty, !isLoading, error == nil {
+                ContentUnavailableView("No grounded hubs", systemImage: "arrow.triangle.branch", description: Text("Lower the connection floor or change the search."))
                     .listRowBackground(Color.clear)
             }
         }
@@ -289,46 +398,39 @@ private struct ArgumentSeedPicker: View {
         .listStyle(.plain)
         .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .safeAreaInset(edge: .top) {
-            NodusSearchField(
-                text: $query,
-                prompt: "Find the idea to start from",
-                accent: session.accent,
-                isBusy: isLoading
-            )
+            VStack(spacing: 8) {
+                NodusSearchField(text: $query, prompt: "Search ranked hubs", accent: session.accent, isBusy: isLoading)
+                HStack(spacing: 8) {
+                    Stepper("Minimum \(minimumConnections) links", value: $minimumConnections, in: 0...20)
+                        .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                    Toggle("Debate bonus", isOn: $debateBonus).font(.caption).fixedSize()
+                    Menu {
+                        Picker("Order", selection: $order) {
+                            Text("Recommended").tag(RouteOrder.recommended); Text("Connections").tag(RouteOrder.connections)
+                            Text("Debates").tag(RouteOrder.debates); Text("Confidence").tag(RouteOrder.confidence); Text("Label").tag(RouteOrder.label)
+                        }
+                    } label: { Image(systemName: "arrow.up.arrow.down") }
+                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel("Order argument routes")
+                }
+            }.padding(.horizontal, NodusSpace.page).padding(.vertical, 8).background(Color(uiColor: .systemBackground).opacity(0.97))
         }
-        .onChange(of: query) { _, _ in schedule() }
-        .task(id: session.publishedRevision) {
-            let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            await load(current.isEmpty ? nil : current)
-        }
+        .task(id: session.publishedRevision) { await load() }
     }
 
-    private func schedule() {
-        searchTask?.cancel()
-        let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(320))
-            guard !Task.isCancelled else { return }
-            await load(current.isEmpty ? nil : current)
-        }
-    }
-
-    private func load(_ text: String?) async {
-        guard let ideas = Collections["ideas"] else { return }
+    private func load() async {
         isLoading = true
         defer { isLoading = false }
         do {
-            let page = try await session.client.list(ideas, in: session.connection.spaceId, query: text, limit: 60)
+            let loaded = try await session.client.argumentRoutes(in: session.connection.spaceId)
             guard !Task.isCancelled else { return }
-            rows = page.items
+            routes = loaded
             error = nil
-        } catch is CancellationError {
-            // Superseded.
-        } catch where error.isCancellation {
-            // Superseded or let go of. Nothing failed, so nothing is reported.
-        } catch {
-            self.error = error.localizedDescription
-        }
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1" {
+                for route in loaded.prefix(2) { onPick(ArgumentSeed(id: route.ideaId, label: route.label)) }
+            }
+#endif
+        } catch where error.isCancellation {} catch { self.error = error.localizedDescription }
     }
 }
 

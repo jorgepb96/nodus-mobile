@@ -80,7 +80,12 @@ struct CorpusSearch: Sendable {
         var unavailability: EmbeddingService.Unavailability?
     }
 
-    func run(_ query: String, limit: Int = 50) async throws -> Outcome {
+    func run(_ query: String, limit: Int = 50, preference: Mode? = nil) async throws -> Outcome {
+        // Desktop exposes the strategy as a real control and defaults to literal text search.
+        // Nil keeps the historical mobile "best available" behaviour for background callers.
+        if preference == .lexical {
+            return Outcome(hits: try await lexicalHits(query, limit), mode: .lexical, warning: nil)
+        }
         guard let identity else {
             // No vectors at all. Not a fault, and the idle state already explains it.
             return Outcome(hits: try await lexicalHits(query, limit), mode: .lexical, warning: nil)

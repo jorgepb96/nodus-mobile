@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "id": "academic-parity-v1",
+  "locale": "es",
+  "purpose": "Deterministic semantic fixture contract shared by Desktop E2E and iOS UI tests.",
+  "requiredEntities": {
+    "works": 4,
+    "authors": 4,
+    "ideas": 8,
+    "relations": 6,
+    "deepResearchReports": 1
+  },
+  "stableScenarios": [
+    "open-two-idea-tabs",
+    "open-two-author-tabs",
+    "open-two-argument-maps",
+    "open-two-library-documents",
+    "restore-deep-research-reading-anchor"
+  ],
+  "privacy": "Public-domain synthetic/demo content only. Production vaults are forbidden."
+}

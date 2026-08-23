@@ -13,83 +13,448 @@ struct DeepResearchScreen: View {
     @State private var length: DeepResearchLength = .concise
     @State private var sections: DeepResearchSectionChoice = .automatic
     @State private var mode: DeepResearchMode?
+    @State private var approach: DeepResearchApproach = .general
     @State private var wantsIllustration = false
     @State private var imageStyle: DecorativeImageStyle = .fallback
+    @State private var language = Prompts.interfaceLanguage
+    @State private var audience = ""
+    @State private var focusPerson = ""
+    @State private var teachingOutline = ""
+    @State private var selectedModel: ModelRef?
     /// A run that stopped before its last section. Kept so the sections already paid for are
     /// not thrown away by a screen that was dismissed or a phone that ran out of patience.
     @State private var unfinished: DeepResearchCheckpoint?
     @Environment(AppPreferences.self) private var preferences
+    @State private var published: [Row] = []
+    @State private var publishedError: String?
+    @State private var query = ""
+    @State private var showingComposer = false
+    @State private var selecting = false
+    @State private var selection = Set<String>()
+    @State private var exportURL: URL?
+    @State private var exportError: String?
+    @State private var isExporting = false
+    @AppStorage("deep-research.gallery-view") private var galleryView = "grid"
+    @AppStorage("deep-research.gallery-sort") private var gallerySort = "newest"
+    @AppStorage("deep-research.gallery-read") private var galleryRead = "all"
 
     /// The run itself, which belongs to the space rather than to this screen: leaving here does
     /// not stop it, and coming back finds it exactly where it got to.
     private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
 
-    private var report: DeepResearchReport? { runner.finished?.report }
+    private var report: DeepResearchReport? { nil }
+    private var queue: DeepResearchQueue { .shared }
+    private var marks: ReportMarks { .shared(for: session.connection.spaceId) }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: NodusSpace.block) {
-                if let saved = runner.finished {
-                    reportView(saved)
-                } else if let progress = runner.progress {
-                    DeepResearchProgressCard(
-                        objective: runner.request?.objective ?? objective,
-                        progress: progress,
-                        isIllustrating: runner.isIllustrating,
-                        accent: session.accent,
-                        onCancel: { runner.cancel() }
-                    )
-                } else {
-                    if let unfinished { resumeNotice(unfinished) }
-                    form
-                }
+            VStack(alignment: .leading, spacing: 16) {
+                workspaceHeader
+                queueStrip
 
-                if let failure = runner.failure {
-                    NodusNotice(tone: .blocked, title: "The report failed", message: LocalizedStringKey(failure))
+                if let unfinished { resumeNotice(unfinished) }
+                if let publishedError {
+                    NodusNotice(tone: .caution, title: "Published reports are unavailable", message: LocalizedStringKey(publishedError))
                 }
-                if let note = runner.illustrationFailure {
-                    NodusNotice(
-                        tone: .caution,
-                        title: "The report has no illustration",
-                        message: LocalizedStringKey(note),
-                        systemImage: "photo"
-                    )
-                }
+                galleryControls
+                gallery
             }
             .padding(NodusSpace.page)
-            .frame(maxWidth: ReportLayout.measure)
+            .frame(maxWidth: 1180)
             .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
-        // A finished report is a document and is set as one; the form that starts it is not.
-        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: report != nil))
-        .nodusPageFunctions(accent: session.accent, chat: chatSubject)
+        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: false))
         .nodusDismissesKeyboard()
         .navigationTitle("Deep Research")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .task {
-            guard !runner.isRunning, runner.finished == nil else { return }
+            runner.attachPending(session: session, ai: ai)
             readCheckpoint()
+            seedVisualFixtureIfNeeded()
         }
-        // A run that has just stopped is the moment the offer to carry on matters most, and the
-        // run no longer belongs to this screen — so the checkpoint is re-read when it ends
-        // rather than only when the screen is opened.
+        .task(id: session.publishedRevision) { await loadPublished() }
         .onChange(of: runner.isRunning) { _, running in
             if !running, runner.finished == nil { readCheckpoint() }
         }
         .toolbar {
-            if let finished = runner.finished {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("New") {
-                        // The conversation was about *that* report. Starting another one is
-                        // exactly the moment it stops meaning anything.
-                        PageChatStore.forget(finished.id)
-                        runner.clearFinished()
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingComposer = true } label: { Label("New research", systemImage: "plus") }
+            }
+        }
+        .sheet(isPresented: $showingComposer) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if let unfinished { resumeNotice(unfinished) }
+                        form
+                    }
+                    .padding(NodusSpace.page)
+                    .frame(maxWidth: 680)
+                    .frame(maxWidth: .infinity)
+                }
+                .navigationTitle("New research")
+                .navigationBarTitleDisplayMode(.inline)
+                .nodusPageBackdrop(accent: session.accent)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { showingComposer = false }
                     }
                 }
             }
+            .presentationDetents([.large])
         }
+        .alert(
+            "Could not export the reports",
+            isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })
+        ) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(LocalizedStringKey(exportError ?? ""))
+        }
+    }
+
+    // MARK: Workspace
+
+    private var workspaceHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Deep Research").font(.title2.weight(.semibold))
+                Text("Reports grounded in the current corpus")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { showingComposer = true } label: {
+                Label("New research", systemImage: "sparkles")
+            }
+            .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
+            .accessibilityIdentifier("deep-research-new")
+        }
+    }
+
+    @ViewBuilder
+    private var queueStrip: some View {
+        let jobs = queue.jobs(in: session.connection.spaceId)
+        if !jobs.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    NodusSectionLabel("Research queue")
+                    Spacer()
+                    if jobs.contains(where: { $0.status.isFinished }) {
+                        Button("Clear finished") { queue.clearFinished() }
+                            .font(.caption)
+                    }
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(jobs) { job in
+                            DeepResearchQueueCard(
+                                job: job,
+                                accent: session.accent,
+                                cancel: { queue.cancel(job.id) },
+                                retry: {
+                                    queue.retry(job.id)
+                                    runner.attachPending(session: session, ai: ai)
+                                },
+                                remove: { queue.remove(job.id) }
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .nodusGlass(NodusGlass(.regular, tint: session.accent))
+            .accessibilityIdentifier("deep-research-queue")
+        }
+    }
+
+    private var galleryControls: some View {
+        VStack(spacing: 10) {
+            NodusSearchField(text: $query, prompt: "Search reports", accent: session.accent)
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    Menu {
+                        Picker("Reading state", selection: $galleryRead) {
+                            Label("All", systemImage: "doc.text").tag("all")
+                            Label("Unread", systemImage: "circle").tag("unread")
+                            Label("Read", systemImage: "checkmark.circle.fill").tag("read")
+                        }
+                    } label: {
+                        Label(readFilterLabel, systemImage: "line.3.horizontal.decrease.circle")
+                    }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .fixedSize()
+
+                    Menu {
+                        Picker("Sort reports", selection: $gallerySort) {
+                            Text("Newest").tag("newest")
+                            Text("Oldest").tag("oldest")
+                            Text("Title").tag("title")
+                        }
+                    } label: {
+                        Label(sortLabel, systemImage: "arrow.up.arrow.down")
+                    }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .fixedSize()
+
+                    Picker("View", selection: $galleryView) {
+                        Image(systemName: "square.grid.2x2").tag("grid")
+                        Image(systemName: "list.bullet").tag("list")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 92)
+
+                    Button(selecting ? "Done" : "Select") {
+                        selecting.toggle()
+                        if !selecting { selection.removeAll() }
+                    }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .fixedSize()
+                }
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if selecting, !selection.isEmpty {
+                HStack {
+                    Text("\(selection.count) selected")
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                    Menu {
+                        Button { export(.markdown) } label: { Label("Markdown ZIP", systemImage: "doc.text") }
+                        Button { export(.pdf) } label: { Label("PDF ZIP", systemImage: "doc.richtext") }
+                        Button { export(.both) } label: { Label("Markdown + PDF ZIP", systemImage: "archivebox") }
+                    } label: {
+                        if isExporting { ProgressView().controlSize(.small) }
+                        else { Label("Export", systemImage: "square.and.arrow.up") }
+                    }
+                    .disabled(isExporting)
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    if let exportURL {
+                        ShareLink(item: exportURL) {
+                            Label("Share ZIP", systemImage: "paperplane")
+                        }
+                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    }
+                    Button(role: .destructive) { deleteSelection() } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .buttonStyle(NodusGlassButtonStyle(accent: Color.nodusDanger))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var gallery: some View {
+        let entries = galleryEntries
+        if entries.isEmpty {
+            ContentUnavailableView(
+                query.isEmpty ? "No reports" : "No matches",
+                systemImage: "doc.text.magnifyingglass",
+                description: Text(query.isEmpty ? "Start a research job to create the first report." : "Change the search or reading filter.")
+            )
+            .frame(maxWidth: .infinity, minHeight: 300)
+        } else if galleryView == "grid" {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12)], spacing: 12) {
+                ForEach(entries) { entry in galleryCell(entry, grid: true) }
+            }
+        } else {
+            LazyVStack(spacing: 8) {
+                ForEach(entries) { entry in galleryCell(entry, grid: false) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func galleryCell(_ entry: DeepResearchGalleryEntry, grid: Bool) -> some View {
+        if selecting {
+            Button { toggle(entry.id) } label: {
+                DeepResearchGalleryCard(entry: entry, selected: selection.contains(entry.id), grid: grid, accent: session.accent)
+            }
+            .buttonStyle(.plain)
+        } else {
+            NavigationLink {
+                switch entry.origin {
+                case .local(let saved): LocalReportReader(session: session, local: local, saved: saved)
+                case .published(let row): PublishedReportReader(session: session, row: row)
+                }
+            } label: {
+                DeepResearchGalleryCard(entry: entry, selected: false, grid: grid, accent: session.accent)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var galleryEntries: [DeepResearchGalleryEntry] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var entries = local.reports.map { DeepResearchGalleryEntry(local: $0, marks: marks) }
+        entries += published.map { DeepResearchGalleryEntry(published: $0, marks: marks) }
+        entries = entries.filter {
+            (needle.isEmpty || $0.searchText.contains(needle)) &&
+            (galleryRead == "all" || (galleryRead == "read") == $0.isRead)
+        }
+        switch gallerySort {
+        case "oldest": entries.sort { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
+        case "title": entries.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        default: entries.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        }
+        return entries
+    }
+
+    private var readFilterLabel: String {
+        switch galleryRead { case "read": "Read"; case "unread": "Unread"; default: "All" }
+    }
+
+    private var sortLabel: String {
+        switch gallerySort { case "oldest": "Oldest"; case "title": "Title"; default: "Newest" }
+    }
+
+    private func toggle(_ id: String) {
+        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+    }
+
+    private func deleteSelection() {
+        for entry in galleryEntries where selection.contains(entry.id) {
+            guard case .local(let saved) = entry.origin else { continue }
+            marks.forget(saved.id)
+            local.delete(saved.id)
+        }
+        selection.removeAll()
+        selecting = false
+    }
+
+    private func export(_ format: DeepResearchBulkExportFormat) {
+        guard !isExporting else { return }
+        isExporting = true
+        exportURL = nil
+        Task {
+            do {
+                var archiveEntries: [ZIPArchiveBuilder.Entry] = []
+                for entry in galleryEntries where selection.contains(entry.id) {
+                    let document = try await exportDocument(for: entry)
+                    let stem = exportFilename(entry.title)
+                    if format != .pdf {
+                        archiveEntries.append(.init(filename: "\(stem).md", data: Data(document.markdown.utf8)))
+                    }
+                    if format != .markdown {
+                        let pdf = try await ReportDocument.pdf(from: document.html)
+                        archiveEntries.append(.init(filename: "\(stem).pdf", data: pdf))
+                    }
+                }
+                let directory = URL.cachesDirectory.appendingPathComponent("deep-research-exports", isDirectory: true)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let output = directory.appendingPathComponent("Nodus Deep Research.zip")
+                try ZIPArchiveBuilder.build(entries: archiveEntries, at: output)
+                exportURL = output
+            } catch {
+                exportError = error.localizedDescription
+            }
+            isExporting = false
+        }
+    }
+
+    private func exportDocument(for entry: DeepResearchGalleryEntry) async throws -> (markdown: String, html: String) {
+        switch entry.origin {
+        case .local(let saved):
+            let markdown = saved.report.markdown
+            return (markdown, printableHTML(title: saved.title, markdown: markdown))
+        case .published(let row):
+            guard let id = row.string("id") else { throw DeepResearchExportFailure.missingReport }
+            async let detail = session.client.deepResearchReport(id, in: session.connection.spaceId)
+            async let html = session.client.deepResearchDocument(id, in: session.connection.spaceId)
+            let resolved = try await detail
+            guard let markdown = publishedMarkdown(resolved.report) else { throw DeepResearchExportFailure.missingReport }
+            let resolvedHTML = try await html
+            return (markdown, resolvedHTML)
+        }
+    }
+
+    private func publishedMarkdown(_ row: Row) -> String? {
+        let draft = (row.embeddedJSON("draft") ?? row["draft"])?.objectValue
+        if let markdown = draft?["draftMarkdown"]?.stringValue, !markdown.isEmpty { return markdown }
+        if let sections = draft?["sections"]?.arrayValue {
+            let markdown = sections.compactMap { entry -> String? in
+                guard let object = entry.objectValue,
+                      let body = object["markdown"]?.stringValue ?? object["body"]?.stringValue ?? object["prose"]?.stringValue
+                else { return nil }
+                return object["title"]?.stringValue.map { "## \($0)\n\n\(body)" } ?? body
+            }.joined(separator: "\n\n")
+            if !markdown.isEmpty { return markdown }
+        }
+        return row.text("content") ?? row.text("markdown")
+    }
+
+    private func printableHTML(title: String, markdown: String) -> String {
+        let escapedTitle = title.htmlEscaped
+        let escapedBody = markdown.htmlEscaped
+        return """
+        <!doctype html><html><head><meta charset="utf-8"><style>
+        @page { size: A4; margin: 20mm; } body { color:#171717; font: 11pt -apple-system, sans-serif; line-height:1.55; }
+        h1 { font: 700 25pt Georgia, serif; margin-bottom:24pt; } pre { font: 11pt Georgia, serif; white-space:pre-wrap; }
+        </style></head><body><h1>\(escapedTitle)</h1><pre>\(escapedBody)</pre></body></html>
+        """
+    }
+
+    private func exportFilename(_ title: String) -> String {
+        title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+    }
+
+    private func loadPublished() async {
+        do {
+            published = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 100).items
+            for row in published {
+                guard let remoteId = row.string("id") else { continue }
+                let localId = local.reports.first(where: { $0.vaultRowId == remoteId })?.id ?? remoteId
+                marks.reconcileRead(localId: localId, remoteId: remoteId, readAt: row.date("read_at"))
+            }
+            publishedError = nil
+        } catch let apiError as APIError where apiError.isNotPublished {
+            published = []
+        } catch where error.isCancellation {
+        } catch {
+            publishedError = error.localizedDescription
+        }
+    }
+
+    private func seedVisualFixtureIfNeeded() {
+#if DEBUG
+        guard ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1" else { return }
+        if queue.jobs(in: session.connection.spaceId).isEmpty {
+            let queuedRequest = DeepResearchRequest(
+                objective: "Contested meanings of sovereignty",
+                targetLength: .standard,
+                approach: .scholarlyDebate,
+                model: ModelRef(provider: .openai, model: "gpt-5")
+            )
+            queue.enqueue(
+                id: "visual-deep-research-complete",
+                spaceId: session.connection.spaceId,
+                spaceName: session.connection.spaceName,
+                request: queuedRequest
+            ) {
+                DeepResearchQueueResult(
+                    savedReportId: "visual-deep-research-complete",
+                    publicationNote: String(localized: "Saved locally and queued for the vault.")
+                )
+            }
+        }
+        guard local.reports.isEmpty else { return }
+        let model = ModelRef(provider: .openai, model: "gpt-5")
+        let samples = [
+            ("Networks of correspondence in the early modern Atlantic", "Evidence and method", "Correspondence networks reveal how trust, credit and political information travelled between ports. The report distinguishes documented links from inferred proximity."),
+            ("Genealogy of the public sphere", "Conceptual lineages", "The corpus supports several competing definitions of publicity. Their differences matter more than a single linear origin story.")
+        ]
+        for sample in samples {
+            let section = DeepResearchSection(title: sample.1, prose: sample.2, citations: [], rejectedCitations: [])
+            _ = local.save(
+                DeepResearchReport(objective: sample.0, sections: [section], references: [], words: section.wordCount, pages: 1.0, citationsChecked: 12, citationsRejected: 0, stoppedReason: nil),
+                mode: .research,
+                model: model
+            )
+        }
+#endif
     }
 
     /// What the hub's third seat opens onto, once there is a report to ask about.
@@ -170,30 +535,119 @@ struct DeepResearchScreen: View {
             }
             .pickerStyle(.segmented)
 
-            Text((mode ?? defaultMode).explanation)
+            Text(LocalizedStringKey((mode ?? defaultMode).explanation))
                 .font(.caption).foregroundStyle(.secondary)
 
-            Picker("Length", selection: $length) {
-                ForEach(DeepResearchLength.allCases, id: \.self) { option in
-                    Text(LocalizedStringKey(option.label)).tag(option)
+            HStack(alignment: .top, spacing: 10) {
+                adaptiveMenu("Language", value: LocalizedStringKey(DeepResearchPromptLanguage.label(for: language))) {
+                    ForEach(DeepResearchPromptLanguage.options, id: \.code) { option in
+                        Button {
+                            language = option.code
+                        } label: {
+                            if language == option.code { Label(option.label, systemImage: "checkmark") }
+                            else { Text(option.label) }
+                        }
+                    }
+                }
+                adaptiveMenu("Model", value: LocalizedStringKey(chosenModel?.model ?? String(localized: "Not chosen"))) {
+                    ForEach(modelChoices, id: \.self) { model in
+                        Button {
+                            selectedModel = model
+                        } label: {
+                            if model == chosenModel { Label(model.model, systemImage: "checkmark") }
+                            else { Text("\(model.provider.label) · \(model.model)") }
+                        }
+                    }
                 }
             }
-            .pickerStyle(.menu)
-            .tint(session.accent)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Audience").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                TextField("Academic readers, students, general public…", text: $audience)
+                    .textFieldStyle(.plain)
+                    .padding(12)
+                    .nodusFieldSurface(accent: session.accent)
+            }
+
+            adaptiveMenu("Research approach", value: LocalizedStringKey(approach.label)) {
+                ForEach(DeepResearchApproach.allCases) { option in
+                    Button {
+                        approach = option
+                    } label: {
+                        if option == approach {
+                            Label(LocalizedStringKey(option.label), systemImage: "checkmark")
+                        } else {
+                            Text(LocalizedStringKey(option.label))
+                        }
+                    }
+                }
+            }
+
+            Text(LocalizedStringKey(approach.explanation))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+                .padding(.top, -7)
+
+            adaptiveMenu("Length", value: LocalizedStringKey(length.label)) {
+                ForEach(DeepResearchLength.allCases, id: \.self) { option in
+                    Button {
+                        length = option
+                    } label: {
+                        if option == length {
+                            Label(LocalizedStringKey(option.label), systemImage: "checkmark")
+                        } else {
+                            Text(LocalizedStringKey(option.label))
+                        }
+                    }
+                }
+            }
 
             // The desktop's own second control beside the length (`DeepResearchView.tsx:59-66`).
             // Length says how many pages; this says how they are divided, and the two are not
             // the same question — eight pages in four sections is a different document from
             // eight pages in ten.
-            Picker("Sections", selection: $sections) {
+            adaptiveMenu("Sections", value: LocalizedStringKey(sections.label)) {
                 ForEach(DeepResearchSectionChoice.allCases) { option in
-                    Text(option.label).tag(option)
+                    Button {
+                        sections = option
+                    } label: {
+                        if option == sections {
+                            Label(LocalizedStringKey(option.label), systemImage: "checkmark")
+                        } else {
+                            Text(LocalizedStringKey(option.label))
+                        }
+                    }
                 }
             }
-            .pickerStyle(.menu)
-            .tint(session.accent)
 
             illustrationControls
+
+            if session.vaultType == .genealogy {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Focus person").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    TextField("Name or person identifier", text: $focusPerson)
+                        .textFieldStyle(.plain)
+                        .padding(12)
+                        .nodusFieldSurface(accent: session.accent)
+                    Text("The focus narrows retrieval; every claim still requires a corpus citation.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            if (mode ?? defaultMode) == .teachingUnit {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Teaching outline").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    TextField("One intended part per line", text: $teachingOutline, axis: .vertical)
+                        .lineLimit(3...8)
+                        .textFieldStyle(.plain)
+                        .padding(12)
+                        .nodusFieldSurface(accent: session.accent)
+                    Text("Optional: the corpus remains the only source of evidence.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
 
             // A run is one model call per section plus planning. Saying so before the button
             // is pressed is the difference between a cost and a surprise.
@@ -220,10 +674,42 @@ struct DeepResearchScreen: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-            .disabled(objective.trimmingCharacters(in: .whitespaces).count < 8 || ai.model(for: .deepResearch) == nil)
+            .disabled(objective.trimmingCharacters(in: .whitespaces).count < 8 || chosenModel == nil)
         }
         .padding(16)
         .nodusGlass(NodusGlass(.regular, tint: session.accent))
+    }
+
+    /// A desktop-style menu field whose selected value may wrap. The stock menu picker assumes
+    /// one line and clipped the value at accessibility text sizes on a narrow iPhone.
+    private func adaptiveMenu<Content: View>(
+        _ title: LocalizedStringKey,
+        value: LocalizedStringKey,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Menu {
+                content()
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(value)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .tint(session.accent)
+        }
+        .padding(12)
+        .nodusFieldSurface(accent: session.accent)
     }
 
     /// The cover, and only the questions that follow from wanting one.
@@ -269,6 +755,14 @@ struct DeepResearchScreen: View {
         let plan = DeepResearchLimits.sectionPlan(pages: pages, requested: sections.limit)
         return "≈ \(plan.target) sections · \(pages.lowerBound)–\(pages.upperBound) pages"
     }
+
+    private var modelChoices: [ModelRef] {
+        var choices = ai.pinnedModels
+        if let current = ai.model(for: .deepResearch), !choices.contains(current) { choices.insert(current, at: 0) }
+        return choices
+    }
+
+    private var chosenModel: ModelRef? { selectedModel ?? ai.model(for: .deepResearch) }
 
     // MARK: Report
 
@@ -356,13 +850,20 @@ struct DeepResearchScreen: View {
         objective = checkpoint.request.objective
         length = checkpoint.request.targetLength
         mode = checkpoint.request.mode
+        approach = checkpoint.request.resolvedApproach
+        language = checkpoint.request.language
+        audience = checkpoint.request.audience ?? ""
+        selectedModel = checkpoint.request.model
+        focusPerson = checkpoint.request.focusPerson ?? ""
+        teachingOutline = checkpoint.request.teachingOutline ?? ""
         sections = DeepResearchSectionChoice(limit: checkpoint.request.sectionLimit)
         unfinished = nil
         runner.start(checkpoint.request, resuming: checkpoint, session: session, ai: ai)
+        showingComposer = false
     }
 
     private func start() {
-        guard let model = ai.model(for: .deepResearch) else { return }
+        guard let model = chosenModel else { return }
         unfinished = nil
         // No `sentReportId` to clear: whether a report has been sent is now a fact on the saved
         // record rather than a piece of this screen's memory, which is what lets the library
@@ -370,16 +871,211 @@ struct DeepResearchScreen: View {
         runner.start(
             DeepResearchRequest(
                 objective: objective.trimmingCharacters(in: .whitespacesAndNewlines),
-                language: Prompts.interfaceLanguage,
+                language: language,
+                audience: audience.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
                 targetLength: length,
                 sectionLimit: sections.limit,
                 mode: mode ?? defaultMode,
+                approach: approach,
                 model: model,
-                illustration: wantsIllustration && ai.model(for: .image) != nil ? imageStyle : nil
+                illustration: wantsIllustration && ai.model(for: .image) != nil ? imageStyle : nil,
+                focusPerson: focusPerson.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                teachingOutline: teachingOutline.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             ),
             session: session,
             ai: ai
         )
+        showingComposer = false
+    }
+}
+
+private enum DeepResearchPromptLanguage {
+    static let options: [(code: String, label: String)] = [
+        ("es", "Español"), ("en", "English"), ("fr", "Français"), ("tr", "Türkçe"),
+        ("de", "Deutsch"), ("pt", "Português"), ("pt-BR", "Português (Brasil)"), ("it", "Italiano")
+    ]
+
+    static func label(for code: String) -> String {
+        options.first(where: { $0.code == code })?.label ?? code
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+    var htmlEscaped: String {
+        replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+}
+
+private enum DeepResearchBulkExportFormat { case markdown, pdf, both }
+
+private enum DeepResearchExportFailure: LocalizedError {
+    case missingReport
+    var errorDescription: String? { String(localized: "The full report is unavailable.") }
+}
+
+struct DeepResearchGalleryEntry: Identifiable {
+    enum Origin {
+        case local(LocalReportStore.Saved)
+        case published(Row)
+    }
+
+    let id: String
+    let title: String
+    let subtitle: String
+    let searchText: String
+    let date: Date?
+    let isRead: Bool
+    let wordCount: Int?
+    let citationCount: Int?
+    let origin: Origin
+
+    @MainActor
+    init(local saved: LocalReportStore.Saved, marks: ReportMarks) {
+        id = "local:\(saved.id)"
+        title = saved.title
+        subtitle = saved.mode.label
+        searchText = ([saved.title] + saved.report.sections.map(\.title)).joined(separator: " ").lowercased()
+        date = saved.createdAt
+        isRead = marks.isRead(saved.id)
+        wordCount = saved.report.words
+        citationCount = saved.report.citationsChecked - saved.report.citationsRejected
+        origin = .local(saved)
+    }
+
+    @MainActor
+    init(published row: Row, marks: ReportMarks) {
+        let rowId = row.string("id") ?? UUID().uuidString
+        id = "published:\(rowId)"
+        title = row.text("title") ?? String(localized: "Report")
+        subtitle = String(localized: "Published in the vault")
+        searchText = [title, row.text("objective") ?? ""].joined(separator: " ").lowercased()
+        date = row.date("created_at") ?? row.date("updated_at")
+        isRead = marks.isRead(rowId)
+        wordCount = row.int("word_count")
+        citationCount = row.int("citations_checked")
+        origin = .published(row)
+    }
+}
+
+private struct DeepResearchGalleryCard: View {
+    let entry: DeepResearchGalleryEntry
+    let selected: Bool
+    let grid: Bool
+    let accent: Color
+
+    var body: some View {
+        HStack(alignment: grid ? .top : .center, spacing: 12) {
+            Image(systemName: entry.isRead ? "doc.text.fill" : "doc.text")
+                .font(.title3)
+                .foregroundStyle(accent.nodusReadable)
+                .frame(width: 44, height: 44)
+                .background(accent.opacity(0.14), in: NodusRadius.controlShape)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(entry.title)
+                        .font(.subheadline.weight(entry.isRead ? .regular : .semibold))
+                        .foregroundStyle(entry.isRead ? Color.nodusSecondaryText : Color.primary)
+                        .lineLimit(grid ? 3 : 2)
+                    Spacer(minLength: 4)
+                    if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(accent) }
+                }
+                Text(entry.subtitle).font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    if let words = entry.wordCount {
+                        Label(words.formatted(), systemImage: "text.alignleft")
+                    }
+                    if let citations = entry.citationCount {
+                        Label(citations.formatted(), systemImage: "quote.opening")
+                    }
+                    if let date = entry.date {
+                        Text(date.formatted(date: .abbreviated, time: .omitted))
+                    }
+                }
+                .font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: grid ? 116 : 64, alignment: .topLeading)
+        .padding(14)
+        .nodusGlass(NodusGlass(selected ? .prominent : .regular, tint: accent))
+        .contentShape(Rectangle())
+    }
+}
+
+private struct DeepResearchQueueCard: View {
+    let job: DeepResearchQueueJob
+    let accent: Color
+    let cancel: () -> Void
+    let retry: () -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(statusLabel, systemImage: statusIcon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(statusColor)
+                Spacer()
+                Menu {
+                    if !job.status.isFinished {
+                        Button(role: .destructive, action: cancel) { Label("Cancel", systemImage: "xmark") }
+                    } else if job.status != .completed {
+                        Button(action: retry) { Label("Retry", systemImage: "arrow.clockwise") }
+                    }
+                    if job.status.isFinished {
+                        Button(role: .destructive, action: remove) { Label("Remove", systemImage: "trash") }
+                    }
+                } label: { Image(systemName: "ellipsis") }
+                    .buttonStyle(.plain)
+            }
+            Text(job.title).font(.subheadline.weight(.medium)).lineLimit(2)
+            if let progress = job.progress, !job.status.isFinished {
+                ProgressView(value: progress.fraction).tint(accent)
+                Text(progress.sectionTitle ?? progress.message)
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            } else if let note = job.publicationNote {
+                Text(note).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            } else if let error = job.errorMessage {
+                Text(error).font(.caption2).foregroundStyle(Color.nodusDanger).lineLimit(2)
+            }
+        }
+        .padding(12)
+        .frame(width: 260, alignment: .topLeading)
+        .frame(minHeight: 112, alignment: .topLeading)
+        .background(Color.primary.opacity(0.035), in: NodusRadius.controlShape)
+        .overlay(NodusRadius.controlShape.stroke(Color.primary.opacity(0.09), lineWidth: 1))
+    }
+
+    private var statusLabel: String {
+        switch job.status {
+        case .queued: "Queued"
+        case .running: "Running"
+        case .completed: "Completed"
+        case .failed: "Failed"
+        case .cancelled: "Cancelled"
+        }
+    }
+
+    private var statusIcon: String {
+        switch job.status {
+        case .queued: "clock"
+        case .running: "sparkles"
+        case .completed: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .cancelled: "xmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch job.status {
+        case .completed: Color.nodusSuccess
+        case .failed: Color.nodusDanger
+        case .cancelled: Color.nodusCaution
+        default: accent.nodusReadable
+        }
     }
 }
 

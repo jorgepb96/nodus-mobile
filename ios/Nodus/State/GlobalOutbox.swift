@@ -30,11 +30,25 @@ final class GlobalOutbox {
         }
     }
 
+    struct ActionEntry: Identifiable, Hashable {
+        let connection: AppModel.Connection
+        let action: SpaceAction
+        var id: String { "\(connection.id)|action|\(action.id)" }
+    }
+
+    struct LibraryCommandEntry: Identifiable, Hashable {
+        let connection: AppModel.Connection
+        let command: LibraryCommand
+        var id: String { "\(connection.origin)|library|\(command.id)" }
+    }
+
     private(set) var entries: [Entry] = []
     private(set) var pending = 0
     private(set) var accepted = 0
     private(set) var rejected = 0
     private(set) var delivered = 0
+    private(set) var actions: [ActionEntry] = []
+    private(set) var libraryCommands: [LibraryCommandEntry] = []
     private(set) var isRefreshing = false
     private(set) var isSending = false
     /// Set per space rather than globally: five vaults are five separate journeys, and one
@@ -93,6 +107,39 @@ final class GlobalOutbox {
         accepted = counts.accepted
         rejected = counts.rejected
         delivered = counts.delivered
+        await refreshRemoteWork()
+    }
+
+    private func refreshRemoteWork() async {
+        var nextActions: [ActionEntry] = []
+        var nextCommands: [LibraryCommandEntry] = []
+        var queriedLibraryOrigins = Set<String>()
+        for connection in AppModel.syncableConnections() {
+            guard let client = ConnectionClient.make(for: connection) else { continue }
+            if let page = try? await client.spaceActions(in: connection.spaceId, limit: 100) {
+                nextActions.append(contentsOf: page.actions.map { ActionEntry(connection: connection, action: $0) })
+            }
+            // The Library is account-global. One credential per server is enough to read its
+            // account queue; querying it once per vault would draw the same command repeatedly.
+            if queriedLibraryOrigins.insert(connection.origin).inserted,
+               let page = try? await client.libraryCommands(limit: 100) {
+                nextCommands.append(contentsOf: page.commands.map { LibraryCommandEntry(connection: connection, command: $0) })
+            }
+        }
+        actions = nextActions.sorted { $0.action.updatedAt > $1.action.updatedAt }
+        libraryCommands = nextCommands.sorted { $0.command.updatedAt > $1.command.updatedAt }
+    }
+
+    func cancel(_ entry: ActionEntry) async {
+        guard let client = ConnectionClient.make(for: entry.connection) else { return }
+        _ = try? await client.cancelSpaceAction(id: entry.action.id, in: entry.connection.spaceId)
+        await refreshRemoteWork()
+    }
+
+    func cancel(_ entry: LibraryCommandEntry) async {
+        guard let client = ConnectionClient.make(for: entry.connection) else { return }
+        _ = try? await client.cancelLibraryCommand(id: entry.command.id)
+        await refreshRemoteWork()
     }
 
     /// Ask every space whether its owner has collected what this device sent, then refresh.

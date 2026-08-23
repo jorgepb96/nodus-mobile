@@ -65,6 +65,7 @@ extension View {
 /// keyboard was still up over Home, belonging to a field on Search that no longer takes touches,
 /// and nothing on screen could put it away. Sending `resignFirstResponder` to `nil` walks the
 /// responder chain and ends it, whichever page it was left on.
+@MainActor
 enum Keyboard {
     static func dismiss() {
         UIApplication.shared.sendAction(

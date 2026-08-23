@@ -177,6 +177,12 @@ struct SpaceSettingsView: View {
                         Label("Back-to-top button", systemImage: "chevron.up.circle")
                     }
                     .tint(session.accent)
+
+                    NavigationLink {
+                        SidebarSettingsView(vaultType: session.vaultType, accent: session.accent)
+                    } label: {
+                        Label("Sidebar", systemImage: "sidebar.left")
+                    }
                 } header: {
                     Text("This device")
                 } footer: {
@@ -413,6 +419,90 @@ struct SpaceSettingsView: View {
                 appVersion: NodusVersion.current
             )
         }
+    }
+}
+
+/// Desktop-compatible navigation customisation. Hidden destinations remain available through
+/// Commands and deep links; this only controls the rows rendered in the shared sidebar/drawer.
+private struct SidebarSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+    let vaultType: VaultType?
+    let accent: Color
+
+    private var effectiveHidden: Set<String> {
+        preferences.sidebarCustomized
+            ? preferences.sidebarHidden
+            : NodusNavigationContract.defaultHiddenRoutes(for: vaultType)
+    }
+
+    private var ordered: [NodusNavigationItem] {
+        NodusNavigationContract.visibleItems(
+            for: vaultType,
+            order: preferences.sidebarOrder,
+            hidden: Set<String>()
+        ).filter { $0.group != nil && $0.route != .library }
+    }
+
+    private var groups: [(NodusNavigationGroup, [NodusNavigationItem])] {
+        NodusNavigationGroup.allCases.compactMap { group in
+            let rows = ordered.filter { $0.group == group }
+            return rows.isEmpty ? nil : (group, rows)
+        }
+    }
+
+    var body: some View {
+        List {
+            ForEach(groups, id: \.0.id) { group, rows in
+                Section(group.title) {
+                    ForEach(rows) { row in
+                        Toggle(isOn: Binding(
+                            get: { !effectiveHidden.contains(row.route.rawValue) },
+                            set: { set(row.route, shown: $0) }
+                        )) {
+                            Label(row.label, systemImage: row.systemImage)
+                        }
+                        .tint(accent)
+                    }
+                    .onMove { offsets, destination in move(group: group, offsets: offsets, destination: destination) }
+                }
+            }
+
+            Section {
+                Button("Restore Desktop defaults", systemImage: "arrow.counterclockwise") {
+                    preferences.sidebarWidth = 176
+                    preferences.sidebarOrder = []
+                    preferences.sidebarHidden = []
+                    preferences.sidebarCustomized = false
+                }
+            } footer: {
+                Text("Home and Library stay pinned. A hidden section is still available from Commands and deep links.")
+            }
+        }
+        .navigationTitle("Sidebar")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { EditButton() }
+        .scrollContentBackground(.hidden)
+        .nodusPageBackdrop(accent: accent)
+    }
+
+    private func set(_ route: NodusRoute, shown: Bool) {
+        var hidden = effectiveHidden
+        if shown { hidden.remove(route.rawValue) } else { hidden.insert(route.rawValue) }
+        preferences.sidebarHidden = hidden
+        preferences.sidebarCustomized = true
+    }
+
+    private func move(group: NodusNavigationGroup, offsets: IndexSet, destination: Int) {
+        var groupOrder = ordered.filter { $0.group == group }.map { $0.route.rawValue }
+        groupOrder.move(fromOffsets: offsets, toOffset: destination)
+        let members = Set(groupOrder)
+        var replacement = groupOrder.makeIterator()
+        var all = ordered.map { $0.route.rawValue }
+        for index in all.indices where members.contains(all[index]) {
+            if let next = replacement.next() { all[index] = next }
+        }
+        preferences.sidebarOrder = all
+        preferences.sidebarCustomized = true
     }
 }
 

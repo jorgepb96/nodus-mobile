@@ -208,6 +208,30 @@ public struct LocalCorpus: Sendable {
         revision: String
     ) async throws -> [String: JSONValue] {
         guard segments.count > 1 else {
+            if request.value(of: "surface") == "workspace", descriptor.path == "ideas" {
+                let page = AcademicWorkspaceProjection.ideaPage(
+                    in: try await academicTables(),
+                    query: request.value(of: "q") ?? "",
+                    type: request.value(of: "type") ?? "",
+                    sort: IdeaWorkspaceSort(rawValue: request.value(of: "sort") ?? "") ?? .label,
+                    limit: PageBounds.clampedLimit(request.number(of: "limit"), max: 200, fallback: 80),
+                    offset: PageBounds.clampedOffset(request.number(of: "offset")),
+                    revision: revision
+                )
+                return try Self.encodedObject(page)
+            }
+            if request.value(of: "surface") == "workspace", descriptor.path == "authors" {
+                let page = AcademicWorkspaceProjection.authorPage(
+                    in: try await academicTables(),
+                    query: request.value(of: "q") ?? "",
+                    sort: AuthorWorkspaceSort(rawValue: request.value(of: "sort") ?? "") ?? .surname,
+                    synthesis: AuthorSynthesisFilter(rawValue: request.value(of: "synthesis") ?? "") ?? .all,
+                    limit: PageBounds.clampedLimit(request.number(of: "limit"), max: 100, fallback: 80),
+                    offset: PageBounds.clampedOffset(request.number(of: "offset")),
+                    revision: revision
+                )
+                return try Self.encodedObject(page)
+            }
             // The mirror's own `LIKE` over every string in the row, which is the same scan the
             // server's `?q=` performs — that equivalence is why `searchable` is stored at all.
             let page = try await mirror.page(
@@ -227,6 +251,20 @@ public struct LocalCorpus: Sendable {
         }
 
         let wanted = segments[1]
+        if descriptor.path == "ideas", wanted == "routes", segments.count == 2 {
+            return [
+                "routes": .array(try await AcademicWorkspaceProjection.argumentRoutes(in: academicTables()).map {
+                    try Self.encodedValue($0)
+                }),
+                "revision": .string(revision),
+            ]
+        }
+        if descriptor.path == "authors", wanted == "matrix", segments.count == 2 {
+            return [
+                "matrix": try await Self.encodedValue(AcademicWorkspaceProjection.synthesisMatrix(in: academicTables())),
+                "revision": .string(revision),
+            ]
+        }
         guard let row = try await find(wanted, in: descriptor) else { throw Self.notFound }
 
         switch descriptor.path {
@@ -246,11 +284,25 @@ public struct LocalCorpus: Sendable {
         case "works":
             return try await work(row, id: wanted, revision: revision)
         case "authors":
+            if segments.count == 3, segments[2] == "dossier" {
+                guard let dossier = try await AcademicWorkspaceProjection.authorDossier(in: academicTables(), authorId: wanted) else {
+                    throw Self.notFound
+                }
+                return ["dossier": try Self.encodedValue(dossier), "revision": .string(revision)]
+            }
             return try await author(row, id: wanted, revision: revision)
         default:
             guard segments.count == 2 else { throw Self.notFound }
             return [descriptor.detailKey: .object(row.columns), "revision": .string(revision)]
         }
+    }
+
+    private func academicTables() async throws -> [String: [Row]] {
+        var tables: [String: [Row]] = [:]
+        for table in AcademicWorkspaceProjection.tableNames {
+            tables[table] = try await mirror.allRows(table: table)
+        }
+        return tables
     }
 
     /// The server matches on the declared key and falls back to `id`; so does this, or a row
@@ -625,6 +677,18 @@ public struct LocalCorpus: Sendable {
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return clean.count <= 240 ? clean : "\(clean.prefix(239))…"
+    }
+
+    private static func encodedValue<T: Encodable>(_ value: T) throws -> JSONValue {
+        let data = try JSONEncoder().encode(value)
+        return try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+
+    private static func encodedObject<T: Encodable>(_ value: T) throws -> [String: JSONValue] {
+        guard case .object(let object) = try encodedValue(value) else {
+            throw APIError(status: 500, code: "local_projection_encoding")
+        }
+        return object
     }
 
     private func json(_ value: [String: JSONValue]) throws -> NodusClient.Response {

@@ -47,10 +47,12 @@ public actor MirrorStore {
             try db.execute(sql: "PRAGMA cache_size = -20000")
         }
         dbQueue = try DatabaseQueue(path: fileURL.path, configuration: configuration)
+#if os(iOS)
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUnlessOpen],
             ofItemAtPath: fileURL.path
         )
+#endif
         // Kept out of the device backup, and marked here because this is the one line every
         // process that touches a mirror goes through — including the ones that opened it before
         // this rule existed. See `BackupPolicy`: a mirror is somebody else's publication and one

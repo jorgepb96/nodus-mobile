@@ -59,11 +59,13 @@ public struct NodusSearchField: View {
                 .textInputAutocapitalization(.never)
                 .submitLabel(.search)
                 .focused($focused)
+                .accessibilityIdentifier("nodus-search-field")
             #else
             TextField("", text: $text, prompt: placeholder)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 .focused($focused)
+                .accessibilityIdentifier("nodus-search-field")
             #endif
 
             if !text.isEmpty {

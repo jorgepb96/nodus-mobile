@@ -9,8 +9,13 @@ import SwiftUI
 /// `?q=`, which is a substring match across every string column of the row — not a field
 /// search, and the placeholder is worded accordingly.
 struct CollectionListView: View {
+    @Environment(WorkspaceTabs.self) private var workspaceTabs
+
     let session: SpaceSession
     let collection: CollectionDescriptor
+    /// Present only when this collection is the root of a Desktop-style workspace. Nested
+    /// collections retain ordinary NavigationStack pushes instead of creating tabs in a parent.
+    var workspaceRoute: NodusRoute? = nil
 
     @State private var rows: [Row] = []
     @State private var revision: String?
@@ -22,25 +27,45 @@ struct CollectionListView: View {
     @State private var loadTask: Task<Void, Never>?
 
     var body: some View {
-        List {
-            NodusTopAnchorRow()
+        if let workspaceRoute {
+            VStack(spacing: 0) {
+                WorkspaceTabStrip(
+                    section: workspaceRoute.rawValue,
+                    catalogueTitle: collection.label,
+                    catalogueImage: collection.icon,
+                    accent: session.accent
+                )
+                ZStack {
+                    catalogue
+                        .opacity(workspaceTabs.activeTabId(in: workspaceRoute.rawValue) == nil ? 1 : 0)
+                        .allowsHitTesting(workspaceTabs.activeTabId(in: workspaceRoute.rawValue) == nil)
+                        .accessibilityHidden(workspaceTabs.activeTabId(in: workspaceRoute.rawValue) != nil)
+
+                    ForEach(workspaceTabs.tabs(in: workspaceRoute.rawValue)) { tab in
+                        if case .row(let row) = tab.payload {
+                            rowDetail(row)
+                                .opacity(workspaceTabs.activeTabId(in: workspaceRoute.rawValue) == tab.id ? 1 : 0)
+                                .allowsHitTesting(workspaceTabs.activeTabId(in: workspaceRoute.rawValue) == tab.id)
+                                .accessibilityHidden(workspaceTabs.activeTabId(in: workspaceRoute.rawValue) != tab.id)
+                        }
+                    }
+                }
+            }
+            .accessibilityIdentifier("workspace-\(workspaceRoute.rawValue)")
+        } else {
+            catalogue
+        }
+    }
+
+    private var catalogue: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 9) {
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load", message: LocalizedStringKey(error))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
             }
 
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                NavigationLink {
-                    if collection.path == "databases" {
-                        DatabaseGridView(session: session, database: row)
-                    } else {
-                        RowDetailView(session: session, collection: collection, row: row)
-                    }
-                } label: {
-                    RowCell(row: row, presenter: collection.presenter, accent: session.accent)
-                }
-                .listRowBackground(Color.clear)
+                rowLink(row)
             }
 
             if hasMore {
@@ -49,7 +74,7 @@ struct CollectionListView: View {
                     ProgressView().tint(session.accent)
                     Spacer()
                 }
-                .listRowBackground(Color.clear)
+                .padding()
                 .task { await loadMore() }
             }
 
@@ -61,19 +86,36 @@ struct CollectionListView: View {
                         ? "This publication carries nothing under \(collection.label.lowercased())."
                         : "No row contains “\(query)”.")
                 )
-                .listRowBackground(Color.clear)
+                .padding(.vertical, 42)
             }
+            }
+            .padding(NodusSpace.page)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
+            .nodusTopAnchor()
         }
-        .scrollContentBackground(.hidden)
         .nodusDismissesKeyboard()
-        .listStyle(.plain)
-        .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .nodusPageFunctions(accent: session.accent)
         .navigationTitle(Text(LocalizedStringKey(collection.label)))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) {
-            NodusSearchField(text: $query, prompt: "Filter on any field", accent: session.accent, isBusy: isLoading)
+            VStack(spacing: 7) {
+                DesktopPageHeader(
+                    title: LocalizedStringKey(collection.label),
+                    subtitle: isLoading && rows.isEmpty
+                        ? String(localized: "Loading publication…")
+                        : String(localized: "\(total.formatted()) published records"),
+                    systemImage: collection.icon,
+                    accent: session.accent
+                )
+                .padding(.horizontal, NodusSpace.page)
+                NodusSearchField(text: $query, prompt: "Filter on any field", accent: session.accent, isBusy: isLoading)
+            }
+            .padding(.top, 10)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
+            .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
         .onChange(of: query) { _, _ in scheduleReload() }
         .task(id: session.publishedRevision) { await reload() }
@@ -87,6 +129,60 @@ struct CollectionListView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func rowLink(_ row: Row) -> some View {
+        if let workspaceRoute {
+            Button { open(row, in: workspaceRoute) } label: { rowLabel(row) }
+                .buttonStyle(NodusCardButtonStyle())
+                .accessibilityIdentifier("workspace-open-\(workspaceRoute.rawValue)-\(safeIdentifier(rowId(row)))")
+        } else {
+            NavigationLink { rowDetail(row) } label: { rowLabel(row) }
+                .buttonStyle(NodusCardButtonStyle())
+        }
+    }
+
+    private func rowLabel(_ row: Row) -> some View {
+        RowCell(row: row, presenter: collection.presenter, accent: session.accent)
+            .desktopContentRow(accent: session.accent)
+    }
+
+    @ViewBuilder
+    private func rowDetail(_ row: Row) -> some View {
+        if collection.path == "databases" {
+            DatabaseGridView(session: session, database: row)
+        } else {
+            RowDetailView(session: session, collection: collection, row: row)
+        }
+    }
+
+    private func open(_ row: Row, in route: NodusRoute) {
+        let kind: WorkspaceTabKind = switch collection.path {
+        case "ideas": .idea
+        case "authors": .author
+        default: .document
+        }
+        workspaceTabs.open(
+            WorkspaceTab(
+                id: "\(route.rawValue):\(rowId(row))",
+                title: collection.presenter.title(row),
+                systemImage: collection.icon,
+                kind: kind,
+                payload: .row(row)
+            ),
+            in: route.rawValue
+        )
+    }
+
+    private func rowId(_ row: Row) -> String {
+        row.string(collection.idField)
+            ?? row.string("global_id")
+            ?? "\(collection.path):\(collection.presenter.title(row))"
+    }
+
+    private func safeIdentifier(_ value: String) -> String {
+        value.replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "-", options: .regularExpression)
     }
 
     /// The server's `?q=` is rate-free but the round trip is not, and a keystroke-per-request
@@ -116,6 +212,13 @@ struct CollectionListView: View {
             hasMore = page.hasMore
             revision = page.revision
             error = nil
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1",
+               let route = workspaceRoute,
+               workspaceTabs.tabs(in: route.rawValue).isEmpty {
+                for row in rows.prefix(2) { open(row, in: route) }
+            }
+#endif
         } catch let apiError as APIError where apiError.isNotPublished {
             rows = []; total = 0; hasMore = false; error = nil
         } catch is CancellationError {

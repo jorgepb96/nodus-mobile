@@ -1,0 +1,109 @@
+{
+  "study_courses": [
+    {"id":"course-history","short_id":"CUR-HIS","name":"Historical research","description":"Shared programme for archive, argument and public history work.","color":"indigo","icon":"graduationcap","favorite":1,"position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"course-methods","short_id":"CUR-MET","name":"Research methods","description":"Evidence design and scholarly communication.","color":"blue","icon":"books.vertical","favorite":0,"position":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_subjects": [
+    {"id":"subject-archives","short_id":"SUB-ARC","course_id":"course-history","name":"Archives and evidence","description":"Source criticism and triangulation.","color":"indigo","icon":"archivebox","position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"subject-writing","short_id":"SUB-WRI","course_id":"course-history","name":"Historical writing","description":"Argument, structure and citation.","color":"purple","icon":"square.and.pencil","position":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"subject-methods","short_id":"SUB-MET","course_id":"course-methods","name":"Methods lab","description":"Qualitative and quantitative design.","color":"blue","icon":"flask","position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_topics": [
+    {"id":"topic-provenance","short_id":"TOP-PRO","subject_id":"subject-archives","parent_id":null,"name":"Provenance","position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"topic-contradiction","short_id":"TOP-CON","subject_id":"subject-archives","parent_id":null,"name":"Contradictory testimony","position":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"topic-thesis","short_id":"TOP-THE","subject_id":"subject-writing","parent_id":null,"name":"Thesis and support","position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_docs": [
+    {"id":"doc-source-protocol","short_id":"DOC-001","title":"Source protocol","kind":"apunte","content_markdown":"# Source protocol\n\nRecord provenance, custody and every transformation before interpretation.\n\n## Triangulation\n\nCompare independent witnesses and explain disagreements.","description":"Working protocol for archive sessions.","favorite":1,"pinned":1,"position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"doc-unit","short_id":"DOC-UNIT","title":"Unit 4 · Contested evidence","kind":"unit","content_markdown":"# Inquiry\n\nHow should historians reason when witnesses disagree?\n\n## Learning sequence\n\n1. Model provenance.\n2. Contrast accounts.\n3. Publish an evidence-backed claim.","description":"Four-session unit with formative checkpoints.","favorite":0,"pinned":0,"position":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-21T09:00:00.000Z"}
+  ],
+  "study_placements": [
+    {"id":"placement-protocol","short_id":"PLC-1","document_id":"doc-source-protocol","course_id":"course-history","subject_id":"subject-archives","topic_id":"topic-provenance","position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"placement-unit","short_id":"PLC-2","document_id":"doc-unit","course_id":"course-history","subject_id":"subject-writing","topic_id":"topic-thesis","position":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_materials": [
+    {"id":"material-letter","short_id":"MAT-001","title":"Letter from the eastern archive","original_name":"eastern-letter.pdf","extension":"pdf","mime_type":"application/pdf","bytes":482110,"read_state":"reviewed","preview_kind":"pdf","index_status":"indexed","description":"Primary source with custody notes.","position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"material-ledger","short_id":"MAT-002","title":"Port customs ledger","original_name":"customs-ledger.pdf","extension":"pdf","mime_type":"application/pdf","bytes":921005,"read_state":"reading","preview_kind":"pdf","index_status":"indexed","description":"Quantitative comparison source.","position":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_schedule_periods": [
+    {"id":"period-1","section":"morning","position":0,"order_idx":0,"start_time":"09:00","end_time":"10:00"},
+    {"id":"period-2","section":"morning","position":1,"order_idx":1,"start_time":"10:15","end_time":"11:15"}
+  ],
+  "study_schedule_cells": [
+    {"id":"cell-1","weekday":0,"period_index":0,"subject_id":"subject-archives","room":"Archive lab","note":"Seminar"},
+    {"id":"cell-2","weekday":2,"period_index":1,"subject_id":"subject-writing","room":"Room 204","note":"Workshop"},
+    {"id":"cell-3","weekday":4,"period_index":0,"subject_id":"subject-methods","room":"Methods lab","note":"Practical"}
+  ],
+  "study_calendar_events": [
+    {"id":"event-review","short_id":"EV-1","title":"Evidence review","type":"session","starts_at":"2026-08-24T09:00:00.000Z","ends_at":"2026-08-24T10:00:00.000Z","subject_id":"subject-archives","completed":0,"notes":"Resolve blocked provenance fields."},
+    {"id":"event-essay","short_id":"EV-2","title":"Research brief due","type":"assignment","starts_at":"2026-08-27T17:00:00.000Z","subject_id":"subject-writing","completed":0,"notes":"Export with bibliography."}
+  ],
+  "study_plans": [
+    {"id":"plan-brief","short_id":"PLAN-1","title":"Research brief sprint","description":"Three focused sessions before submission.","course_id":"course-history","subject_id":"subject-writing","exam_at":"2026-08-27T17:00:00.000Z","available_minutes":180,"enabled":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_plan_blocks": [
+    {"id":"block-sources","short_id":"BLK-1","plan_id":"plan-brief","title":"Verify sources","type":"review","subject_id":"subject-archives","topic_id":"topic-provenance","starts_at":"2026-08-24T09:00:00.000Z","duration_minutes":45,"status":"completed","priority":3,"notes":"Done"},
+    {"id":"block-outline","short_id":"BLK-2","plan_id":"plan-brief","title":"Build argument outline","type":"writing","subject_id":"subject-writing","topic_id":"topic-thesis","starts_at":"2026-08-25T10:00:00.000Z","duration_minutes":60,"status":"planned","priority":2,"notes":"Use support matrix"}
+  ],
+  "study_goals": [
+    {"id":"goal-week","short_id":"GOAL-1","title":"Three focused sessions","period":"weekly","target_value":3,"current_value":1,"unit":"sessions","starts_at":"2026-08-17T00:00:00.000Z","subject_id":"subject-writing","completed":0}
+  ],
+  "study_questions": [
+    {"id":"question-provenance","short_id":"QUE-1","prompt":"What distinguishes provenance from custody?","kind":"short_answer","difficulty":"medium","answer":"Provenance records origin; custody records the chain of possession.","explanation":"Both are needed to audit authenticity.","subject_id":"subject-archives","topic_id":"topic-provenance","position":0},
+    {"id":"question-triangulation","short_id":"QUE-2","prompt":"When does a contradiction strengthen an argument?","kind":"essay","difficulty":"advanced","answer":"When its causes are explained and the disagreement bounds the claim.","explanation":"Do not erase disagreement; model it.","subject_id":"subject-archives","topic_id":"topic-contradiction","position":1}
+  ],
+  "study_flashcards": [
+    {"id":"flash-provenance","short_id":"FLA-1","front":"Provenance","back":"The documented origin and context of a source.","subject_id":"subject-archives","topic_id":"topic-provenance","position":0},
+    {"id":"flash-triangulation","short_id":"FLA-2","front":"Triangulation","back":"Testing a claim with independent forms of evidence.","subject_id":"subject-archives","topic_id":"topic-contradiction","position":1}
+  ],
+  "study_performance": [
+    {"id":"performance-archives","subject_id":"subject-archives","label":"Archives and evidence","correct":18,"incorrect":4,"omitted":2,"study_seconds":5400,"reviews":16,"lapses":1},
+    {"id":"performance-writing","subject_id":"subject-writing","label":"Historical writing","correct":7,"incorrect":5,"omitted":1,"study_seconds":2700,"reviews":8,"lapses":2}
+  ],
+  "teaching_exams": [
+    {"id":"exam-evidence","short_id":"EX-001","title":"Evidence and argument","subject_id":"subject-archives","course_id":"course-history","language":"en","target_question_count":3,"position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "teaching_exam_questions": [
+    {"id":"exam-q1","short_id":"EXQ-1","exam_id":"exam-evidence","position":0,"type":"short_answer","prompt":"Define provenance and explain why it matters.","points":3,"solution":"Origin and context allow authenticity and bias to be evaluated.","generated_by":"manual"},
+    {"id":"exam-q2","short_id":"EXQ-2","exam_id":"exam-evidence","position":1,"type":"multiple_choice","prompt":"Which source is independent corroboration?","points":2,"options_json":"[{\"text\":\"A copy of the same letter\",\"correct\":false},{\"text\":\"A separately kept customs ledger\",\"correct\":true}]","solution":"A separately kept customs ledger.","generated_by":"manual"}
+  ],
+  "teaching_rubrics": [
+    {"id":"rubric-brief","short_id":"RUB-001","title":"Research brief","description":"Analytic rubric for claim, evidence and reasoning.","subject_id":"subject-writing","course_id":"course-history","language":"en","scale_max":5,"weighted":1,"levels_json":"[{\"id\":\"excellent\",\"label\":\"Excellent\",\"score\":5},{\"id\":\"secure\",\"label\":\"Secure\",\"score\":4},{\"id\":\"developing\",\"label\":\"Developing\",\"score\":3},{\"id\":\"beginning\",\"label\":\"Beginning\",\"score\":1}]","criteria_json":"[{\"id\":\"claim\",\"label\":\"Claim\",\"weight\":2,\"descriptors\":{\"excellent\":\"Precise, contestable and bounded\",\"secure\":\"Clear and supportable\",\"developing\":\"Broad or partly implicit\",\"beginning\":\"Descriptive only\"}},{\"id\":\"evidence\",\"label\":\"Evidence\",\"weight\":3,\"descriptors\":{\"excellent\":\"Triangulated with provenance\",\"secure\":\"Relevant and attributed\",\"developing\":\"Partial support\",\"beginning\":\"Unsupported\"}}]","position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "teaching_groups": [
+    {"id":"group-history","short_id":"GRP-1","name":"History seminar A","subject_id":"subject-archives","expected_size":3,"position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "teaching_students": [
+    {"id":"student-ada","group_id":"group-history","given_names":"Ada","surnames":"Lovelace","comments":"Prefers written feedback.","pseudonym_code":"STU_A7K2","position":0,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"student-james","group_id":"group-history","given_names":"James","surnames":"Baldwin","comments":"Conference follow-up planned.","pseudonym_code":"STU_B4M8","position":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"student-zora","group_id":"group-history","given_names":"Zora","surnames":"Hurston","comments":"Archive project extension agreed.","pseudonym_code":"STU_C9P1","position":2,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "teaching_assessment_plans": [
+    {"id":"assessment-plan","short_id":"ASP-1","name":"Semester assessment","subject_id":"subject-archives","profile":"libre","rules_json":"{\"scale\":10,\"passMark\":5,\"rounding\":2}","published_at":"2026-08-10T09:00:00.000Z","version":1,"created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "teaching_assessment_items": [
+    {"id":"item-brief","plan_id":"assessment-plan","parent_id":null,"name":"Research brief","kind":"activity","position":0,"weight":60,"weight_alt":50,"max_points":10,"is_mandatory":1,"is_recoverable":1,"source_rubric_id":"rubric-brief","created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"item-exam","plan_id":"assessment-plan","parent_id":null,"name":"Evidence exam","kind":"activity","position":1,"weight":40,"weight_alt":50,"max_points":10,"is_mandatory":0,"is_recoverable":1,"source_exam_id":"exam-evidence","created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "teaching_grade_entries": [
+    {"id":"grade-a-brief","student_id":"student-ada","item_id":"item-brief","convocatoria":"ordinaria","raw_value":9,"status":"assessed","note":"Excellent provenance trail.","created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"grade-a-exam","student_id":"student-ada","item_id":"item-exam","convocatoria":"ordinaria","raw_value":8,"status":"assessed","note":"","created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"grade-b-brief","student_id":"student-james","item_id":"item-brief","convocatoria":"ordinaria","raw_value":7,"status":"assessed","note":"","created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"grade-b-exam","student_id":"student-james","item_id":"item-exam","convocatoria":"ordinaria","raw_value":6,"status":"assessed","note":"","created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"grade-c-brief","student_id":"student-zora","item_id":"item-brief","convocatoria":"ordinaria","raw_value":8,"status":"assessed","note":"Strong evidence selection.","created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"},
+    {"id":"grade-c-exam","student_id":"student-zora","item_id":"item-exam","convocatoria":"ordinaria","raw_value":null,"status":"not_assessed","note":"","created_at":"2026-08-01T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_recordings": [
+    {"id":"recording-seminar","short_id":"REC-1","title":"Seminar · conflicting witnesses","course_id":"course-history","subject_id":"subject-archives","duration_seconds":2715,"recorded_at":"2026-08-19T09:00:00.000Z","processing_status":"ready","file_name":"seminar.m4a","mime_type":"audio/mp4","bytes":4382100,"created_at":"2026-08-19T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_transcripts": [
+    {"id":"transcript-seminar","recording_id":"recording-seminar","kind":"corrected","language":"en","content_markdown":"# Conflicting witnesses\n\nWe model disagreement instead of averaging it away. The custody history determines which claims can be compared.","status":"ready","created_at":"2026-08-19T09:00:00.000Z","updated_at":"2026-08-20T09:00:00.000Z"}
+  ],
+  "study_transcript_segments": [
+    {"id":"segment-1","transcript_id":"transcript-seminar","t_start":0,"t_end":38,"speaker":"Speaker 1","text":"We model disagreement instead of averaging it away.","position":0},
+    {"id":"segment-2","transcript_id":"transcript-seminar","t_start":38,"t_end":76,"speaker":"Speaker 2","text":"The custody history determines which claims can be compared.","position":1}
+  ],
+  "study_audio_markers": [
+    {"id":"marker-1","recording_id":"recording-seminar","seconds":38,"label":"Custody and comparability","color":"indigo","position":0}
+  ]
+}

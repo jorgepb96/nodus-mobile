@@ -194,6 +194,7 @@ enum ReportDocument {
 /// and there is no job here — the destination is a file. Both are declared `open` precisely so
 /// a renderer can state its own page box, which is how the A4 sheet is set without touching a
 /// private API.
+#if compiler(>=6.2)
 nonisolated final class FixedPageRenderer: UIPrintPageRenderer {
     private let paper: CGRect
     private let printable: CGRect
@@ -207,6 +208,21 @@ nonisolated final class FixedPageRenderer: UIPrintPageRenderer {
     override var paperRect: CGRect { paper }
     override var printableRect: CGRect { printable }
 }
+#else
+@MainActor final class FixedPageRenderer: UIPrintPageRenderer {
+    private let paper: CGRect
+    private let printable: CGRect
+
+    init(paper: CGRect, printable: CGRect) {
+        self.paper = paper
+        self.printable = printable
+        super.init()
+    }
+
+    override var paperRect: CGRect { paper }
+    override var printableRect: CGRect { printable }
+}
+#endif
 
 /// The third button beside the two copies: the report as the desktop prints it.
 struct ReportPDFButton: View {

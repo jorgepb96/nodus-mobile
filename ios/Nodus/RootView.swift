@@ -43,6 +43,7 @@ struct RootView: View {
         .environment(preferences)
         .environment(tray)
         .environment(cloud)
+        .preferredColorScheme(preferences.interfaceStyle.colorScheme)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
         // Once, here, for every field in the app — including the ones inside sheets, which are
@@ -61,6 +62,30 @@ struct RootView: View {
                 .nodusModalClose(accent: model.session?.accent ?? Color(hex: VaultType.academic.accentHex))
         }
         .task {
+#if DEBUG
+            // UI and visual-parity tests always start from the bundled public-domain fixture.
+            // This bypasses persisted connections without adding any test credential or
+            // production-data path to the app.
+            if ProcessInfo.processInfo.environment["NODUS_UI_TEST_DEMO"] == "1" {
+                // Sidebar state is deliberately durable in production. Visual tests need the
+                // opposite guarantee: a previous test tapping the collapse control must not
+                // turn the next Desktop comparison into an icon-only sidebar.
+                preferences.sidebarCollapsed = false
+                preferences.sidebarWidth = 176
+                preferences.sidebarOrder = []
+                preferences.sidebarHidden = []
+                preferences.sidebarCustomized = false
+                if let rawStyle = ProcessInfo.processInfo.environment["NODUS_INTERFACE_STYLE"],
+                   let style = AppPreferences.InterfaceStyle(rawValue: rawStyle) {
+                    preferences.interfaceStyle = style
+                }
+                await model.openDemo()
+                if ProcessInfo.processInfo.environment["NODUS_SHOW_SYNC_CENTER"] == "1" {
+                    tray.open()
+                }
+                return
+            }
+#endif
             // Reopen where the user left off, but only if the credential is still there — a
             // revoked token should land on the picker, not on a broken shell.
             if model.session == nil, let recent = model.mostRecent {
@@ -272,7 +297,7 @@ struct SpacePickerView: View {
         VStack(spacing: model.hasAnyConnection ? 6 : 12) {
             NodusMark(style: .brand)
                 .frame(width: model.hasAnyConnection ? 54 : 84, height: model.hasAnyConnection ? 54 : 84)
-            Text("Nodus")
+            Text("Nodus Research")
                 .font(model.hasAnyConnection ? .title2.weight(.semibold) : .largeTitle.weight(.semibold))
             Text("Your vaults, wherever you are.")
                 .font(model.hasAnyConnection ? .caption : .subheadline)

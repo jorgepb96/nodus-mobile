@@ -246,6 +246,24 @@ private final class PhaseRecorder: @unchecked Sendable {
 
 @Suite("Research modes")
 struct DeepResearchModeTests {
+    @Test("all Desktop research approaches keep their stable identifiers")
+    func approachesMatchDesktop() throws {
+        #expect(DeepResearchApproach.allCases.map(\.rawValue) == [
+            "general", "literature_review", "state_of_art", "scholarly_debate",
+            "comparative", "chronological", "conceptual",
+        ])
+        for approach in DeepResearchApproach.allCases {
+            #expect(!approach.label.isEmpty)
+            #expect(!approach.explanation.isEmpty)
+        }
+
+        let legacy = """
+        {"objective":"Legacy report","language":"en","targetLength":"concise","mode":"research","model":{"provider":"gemini","model":"gemini-2.5-flash-lite"}}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(DeepResearchRequest.self, from: legacy)
+        #expect(decoded.resolvedApproach == .general)
+    }
+
     // The desktop keeps two prompt packs rather than one with a flag, because a teaching unit
     // and a research report want contradictory things: one sequences by concept dependency and
     // names classroom activities, the other argues a thesis. Asking for both gets neither.

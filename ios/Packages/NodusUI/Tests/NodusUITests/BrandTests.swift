@@ -53,6 +53,7 @@ struct NodusMarkTests {
     }
 
     @Test("the stroke starts bottom-left and ends top-right, as `M18 48 V16 L46 48 V16` does")
+    @MainActor
     func strokeFollowsTheSVGPath() {
         let bounds = NodusMark.strokePath.boundingRect
         #expect(bounds.minX == 18)
