@@ -71,6 +71,46 @@ final class ReaderHighlightGestureRecognizer: UILongPressGestureRecognizer {
     }
 }
 
+/// Resolve UIKit's caret boundary to the character whose rendered box is under the tip.
+/// `closestPosition(to:)` can name either side of a glyph. The tolerance around neighbouring
+/// boxes must therefore be considered only after exact hits; otherwise the next glyph's expanded
+/// box can overlap the touched glyph and move the beginning of a stroke forward by one character.
+enum ReaderCharacterHitTesting {
+    static func index(
+        caretOffset: Int,
+        textLength: Int,
+        point: CGPoint,
+        characterBoxes: [Int: CGRect],
+        requiresGlyphHit: Bool
+    ) -> Int? {
+        guard textLength > 0 else { return nil }
+        let candidates = [caretOffset - 1, caretOffset].filter { $0 >= 0 && $0 < textLength }
+
+        if let exact = candidates.first(where: { characterBoxes[$0]?.contains(point) == true }) {
+            return exact
+        }
+
+        let tolerant = candidates.compactMap { candidate -> (Int, CGFloat)? in
+            guard let box = characterBoxes[candidate],
+                  box.insetBy(dx: -2, dy: -2).contains(point)
+            else { return nil }
+            return (candidate, squaredDistance(from: point, to: box))
+        }
+        if let nearest = tolerant.min(by: { $0.1 < $1.1 }) {
+            return nearest.0
+        }
+
+        if requiresGlyphHit { return nil }
+        return min(max(0, caretOffset), textLength - 1)
+    }
+
+    private static func squaredDistance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return dx * dx + dy * dy
+    }
+}
+
 /// A citation pointing into the corpus: `nodus://idea/g-8969`.
 ///
 /// The desktop writes these into every piece of generated prose — immersion stations, Deep
@@ -1764,14 +1804,21 @@ private struct DocumentProse: UIViewRepresentable {
             let length = textView.attributedText.length
             guard length > 0, let position = textView.closestPosition(to: point) else { return nil }
             let offset = textView.offset(from: textView.beginningOfDocument, to: position)
-            for index in [offset, offset - 1] where index >= 0 && index < length {
-                if let box = box(ofCharacterAt: index, in: textView),
-                   box.insetBy(dx: -2, dy: -2).contains(point) {
-                    return index
+            let boxes: [Int: CGRect] = Dictionary(
+                uniqueKeysWithValues: [offset - 1, offset].compactMap { index -> (Int, CGRect)? in
+                    guard index >= 0, index < length,
+                          let box = box(ofCharacterAt: index, in: textView)
+                    else { return nil }
+                    return (index, box)
                 }
-            }
-            if requiresGlyphHit { return nil }
-            return min(max(0, offset), length - 1)
+            )
+            return ReaderCharacterHitTesting.index(
+                caretOffset: offset,
+                textLength: length,
+                point: point,
+                characterBoxes: boxes,
+                requiresGlyphHit: requiresGlyphHit
+            )
         }
 
         private static func isWhitespace(at index: Int, in textView: UITextView) -> Bool {
