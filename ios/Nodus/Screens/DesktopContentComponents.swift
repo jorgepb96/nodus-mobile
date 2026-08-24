@@ -54,8 +54,7 @@ struct DesktopPageHeader: View {
 
     private var titleBlock: some View {
         HStack(alignment: .center, spacing: 11) {
-            Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .medium))
+            NodusIcon(name: systemImage, size: 17, weight: .medium)
                 .foregroundStyle(accent.nodusReadable)
                 .frame(width: 36, height: 36)
                 .background(accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))

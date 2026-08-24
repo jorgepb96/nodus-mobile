@@ -22,6 +22,12 @@ struct ScheduleView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                DesktopPageHeader(
+                    title: "Timetables",
+                    subtitle: "Weekly periods, subjects and rooms",
+                    systemImage: "calendar",
+                    accent: session.accent
+                )
                 if needsMirror {
                     NodusNotice(
                         tone: .info,
@@ -52,7 +58,7 @@ struct ScheduleView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(NodusSpace.page)
         }
         .navigationTitle("Timetables")
         .navigationBarTitleDisplayMode(.inline)
@@ -179,12 +185,22 @@ struct FlashcardsView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            DesktopPageHeader(
+                title: "Flashcards",
+                subtitle: "Review the cards published from Desktop",
+                systemImage: "rectangle.on.rectangle",
+                accent: session.accent
+            )
+
             if isLoading {
                 ProgressView().tint(session.accent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error {
                 NodusNotice(tone: .blocked, title: "Could not load", message: LocalizedStringKey(error))
+                    .frame(maxHeight: .infinity, alignment: .top)
             } else if cards.isEmpty {
                 ContentUnavailableView("No flashcards", systemImage: "rectangle.on.rectangle")
+                    .frame(maxHeight: .infinity)
             } else {
                 Text("\(index + 1) of \(cards.count)")
                     .font(.caption.monospacedDigit())
@@ -221,9 +237,11 @@ struct FlashcardsView: View {
                 Text("Nodus desktop keeps the review schedule; here you can review, not reschedule.")
                     .font(.caption2).foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
+
+                Spacer(minLength: 0)
             }
         }
-        .padding(20)
+        .padding(NodusSpace.page)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Flashcards")
         .navigationBarTitleDisplayMode(.inline)
@@ -364,7 +382,18 @@ struct QuestionBankView: View {
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) {
-            NodusSearchField(text: $query, prompt: "Filter questions", accent: session.accent)
+            VStack(spacing: 9) {
+                DesktopPageHeader(
+                    title: "Question bank",
+                    subtitle: "Published questions, answers and explanations",
+                    systemImage: "checklist",
+                    accent: session.accent
+                )
+                NodusSearchField(text: $query, prompt: "Filter questions", accent: session.accent)
+            }
+            .padding(.horizontal, NodusSpace.page)
+            .padding(.vertical, 9)
+            .background(Color(uiColor: .systemBackground).opacity(0.97))
         }
         .task(id: session.publishedRevision) { await load() }
     }

@@ -103,16 +103,19 @@ struct AppWiringTests {
     func adaptiveSidebarBreakpoints() {
         let phone = SidebarPresentation(availableWidth: 430, isUserCollapsed: false)
         #expect(!phone.isPersistent)
+        #expect(phone.residentRouteSize(in: CGSize(width: 430, height: 932)) == CGSize(width: 430, height: 888))
 
         let split = SidebarPresentation(availableWidth: 640, isUserCollapsed: false)
         #expect(split.isPersistent)
         #expect(split.isCollapsed)
         #expect(split.sidebarWidth == 64)
+        #expect(split.residentRouteSize(in: CGSize(width: 640, height: 900)) == CGSize(width: 280, height: 856))
 
         let ipad = SidebarPresentation(availableWidth: 1_024, isUserCollapsed: false)
         #expect(ipad.isPersistent)
         #expect(!ipad.isCollapsed)
         #expect(ipad.sidebarWidth == 176)
+        #expect(ipad.residentRouteSize(in: CGSize(width: 1_024, height: 1_366)) == CGSize(width: 664, height: 1_322))
 
         let resized = SidebarPresentation(availableWidth: 1_024, isUserCollapsed: false, expandedWidth: 284)
         #expect(resized.sidebarWidth == 284)
@@ -120,6 +123,13 @@ struct AppWiringTests {
 
         let userCollapsed = SidebarPresentation(availableWidth: 1_024, isUserCollapsed: true)
         #expect(userCollapsed.isCollapsed)
+    }
+
+    @Test("Library falls back to the space's published works on older servers")
+    func libraryRouteFollowsServerCapabilities() {
+        #expect(LibraryRouteSource.resolve(isDemo: false, supportsAccountSync: false) == .publishedWorks)
+        #expect(LibraryRouteSource.resolve(isDemo: false, supportsAccountSync: true) == .account)
+        #expect(LibraryRouteSource.resolve(isDemo: true, supportsAccountSync: false) == .account)
     }
 
     @Test("every known vault type can draw its Home sections before counts arrive")

@@ -120,7 +120,10 @@ struct SearchScreen: View {
                 NodusSearchField(text: $query, prompt: prompt, accent: session.accent, isBusy: isSearching)
                     .padding(.horizontal, NodusSpace.page)
             }
-            .padding(.bottom, 8)
+            // Match the fixed catalogue headers used by Ideas and Authors. Without a top
+            // inset the Search glyph and title touched the shell chrome while every other
+            // root workspace began on the shared page grid.
+            .padding(.vertical, 9)
             .frame(maxWidth: 980)
             .frame(maxWidth: .infinity)
             .background(Color(uiColor: .systemBackground).opacity(0.98))

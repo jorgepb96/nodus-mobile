@@ -389,9 +389,18 @@ struct SpecialListView: View {
         .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .nodusPageFunctions(accent: session.accent)
         .safeAreaInset(edge: .top) {
-            NodusSearchField(text: $query, prompt: filterPrompt, accent: session.accent, isBusy: isLoading)
-                .padding(.horizontal, NodusSpace.page)
-                .padding(.vertical, 8)
+            VStack(spacing: 9) {
+                DesktopPageHeader(
+                    title: LocalizedStringKey(title),
+                    subtitle: specialSubtitle,
+                    systemImage: icon,
+                    accent: session.accent
+                )
+                NodusSearchField(text: $query, prompt: filterPrompt, accent: session.accent, isBusy: isLoading)
+            }
+            .padding(.horizontal, NodusSpace.page)
+            .padding(.vertical, 9)
+            .background(Color(uiColor: .systemBackground).opacity(0.97))
         }
         .navigationTitle(Text(LocalizedStringKey(title)))
         .navigationBarTitleDisplayMode(.inline)
@@ -470,6 +479,15 @@ struct SpecialListView: View {
         case .notes: return "Filter notes"
         case .deepResearch: return "Filter reports"
         case .immersion: return "Filter sessions"
+        }
+    }
+
+    private var specialSubtitle: LocalizedStringKey {
+        switch resource {
+        case .debates: return "Published tensions and their grounded evidence"
+        case .notes: return "Published notes from the current workspace"
+        case .deepResearch: return "Reports grounded in the current corpus"
+        case .immersion: return "Guided paths grounded in the current corpus"
         }
     }
 
