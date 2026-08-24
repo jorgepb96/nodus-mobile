@@ -1280,6 +1280,18 @@
       ]
     },
     {
+      "id": "AcademicApi.cancelDocumentIndexJob",
+      "interface": "AcademicApi",
+      "method": "cancelDocumentIndexJob",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.cancelLibraryReaderChat",
       "interface": "AcademicApi",
       "method": "cancelLibraryReaderChat",
@@ -1952,6 +1964,18 @@
       ]
     },
     {
+      "id": "AcademicApi.deleteDocumentProfileOverride",
+      "interface": "AcademicApi",
+      "method": "deleteDocumentProfileOverride",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.deleteIdea",
       "interface": "AcademicApi",
       "method": "deleteIdea",
@@ -2480,6 +2504,18 @@
       ]
     },
     {
+      "id": "AcademicApi.enqueueDocumentProfile",
+      "interface": "AcademicApi",
+      "method": "enqueueDocumentProfile",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.exportAnnotatedStudyMaterial",
       "interface": "AcademicApi",
       "method": "exportAnnotatedStudyMaterial",
@@ -2951,6 +2987,42 @@
       "id": "AcademicApi.getDictionaryEntry",
       "interface": "AcademicApi",
       "method": "getDictionaryEntry",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.getDocumentIndexProgress",
+      "interface": "AcademicApi",
+      "method": "getDocumentIndexProgress",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.getDocumentProfile",
+      "interface": "AcademicApi",
+      "method": "getDocumentProfile",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.getDocumentProfileStatuses",
+      "interface": "AcademicApi",
+      "method": "getDocumentProfileStatuses",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "implemented",
@@ -4640,6 +4712,18 @@
       ]
     },
     {
+      "id": "AcademicApi.onDocumentIndexProgress",
+      "interface": "AcademicApi",
+      "method": "onDocumentIndexProgress",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.onEmbeddingProgress",
       "interface": "AcademicApi",
       "method": "onEmbeddingProgress",
@@ -5396,6 +5480,18 @@
       ]
     },
     {
+      "id": "AcademicApi.saveDocumentProfileOverride",
+      "interface": "AcademicApi",
+      "method": "saveDocumentProfileOverride",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.saveManualIdea",
       "interface": "AcademicApi",
       "method": "saveManualIdea",
@@ -5672,6 +5768,18 @@
       ]
     },
     {
+      "id": "AcademicApi.setDocumentIndexCampaignStatus",
+      "interface": "AcademicApi",
+      "method": "setDocumentIndexCampaignStatus",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.setEdgeFeedback",
       "interface": "AcademicApi",
       "method": "setEdgeFeedback",
@@ -5903,6 +6011,18 @@
       "id": "AcademicApi.startDictionaryGeneration",
       "interface": "AcademicApi",
       "method": "startDictionaryGeneration",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.startDocumentIndexCampaign",
+      "interface": "AcademicApi",
+      "method": "startDocumentIndexCampaign",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "implemented",
