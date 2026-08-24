@@ -318,19 +318,19 @@ struct ReadingPathMobileView: View {
 
 private extension AcademicHypothesisMode {
     var title: String {
-        switch self { case .exploratory: "Exploratory"; case .causal: "Causal"; case .comparative: "Comparative"; case .methodological: "Methodological"; case .intervention: "Intervention" }
+        switch self { case .exploratory: String(localized: "Exploratory"); case .causal: String(localized: "Causal"); case .comparative: String(localized: "Comparative"); case .methodological: String(localized: "Methodological"); case .intervention: String(localized: "Intervention") }
     }
 }
 
 private extension AcademicReadingStrategy {
     var title: String {
         switch self {
-        case .researchRelevance: "Research relevance"
-        case .gaps: "Research gaps"
-        case .foundational: "Foundational"
-        case .recent: "Recent"
-        case .connectedAuthors: "Connected authors"
-        case .bridges: "Conceptual bridges"
+        case .researchRelevance: String(localized: "Research relevance")
+        case .gaps: String(localized: "Research gaps")
+        case .foundational: String(localized: "Foundational")
+        case .recent: String(localized: "Recent")
+        case .connectedAuthors: String(localized: "Connected authors")
+        case .bridges: String(localized: "Conceptual bridges")
         }
     }
 }

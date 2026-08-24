@@ -8,8 +8,9 @@ import SwiftUI
 /// row. Same gesture, three appearances, and two of them out of place on a screen whose whole
 /// chrome is glass over an accent backdrop.
 ///
-/// It goes in a `safeAreaInset(edge: .top)` so it stays put while the list scrolls under it,
-/// which is what `.searchable` does and what a filter should do.
+/// The field deliberately owns no page margin. Some screens place it in a page column while
+/// others put it beside compact controls; making the shared field add another page inset made
+/// those layouts cramped and, in a few cases, wider than the phone.
 public struct NodusSearchField: View {
     @Binding private var text: String
     private let prompt: LocalizedStringKey
@@ -90,7 +91,5 @@ public struct NodusSearchField: View {
         // lights up: with the lit edge on it, its bright accent outline was the strongest line
         // on a screen whose subject is the list underneath.
         .nodusGlass(NodusGlass(.regular, tint: accent), in: Capsule())
-        .padding(.horizontal, NodusSpace.page)
-        .padding(.bottom, 8)
     }
 }

@@ -141,11 +141,21 @@ struct AccountLibraryView: View {
             if loading, items.isEmpty {
                 ProgressView("Opening the account Library…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if filtered.isEmpty {
-                ContentUnavailableView(
-                    showingTrash ? "Trash is empty" : "No references",
-                    systemImage: showingTrash ? "trash" : "books.vertical",
-                    description: Text(error ?? "Import a file, create a reference or change the filters.")
-                )
+                Group {
+                    if let error {
+                        ContentUnavailableView(
+                            showingTrash ? "Trash is empty" : "No references",
+                            systemImage: showingTrash ? "trash" : "books.vertical",
+                            description: Text(error)
+                        )
+                    } else {
+                        ContentUnavailableView(
+                            showingTrash ? "Trash is empty" : "No references",
+                            systemImage: showingTrash ? "trash" : "books.vertical",
+                            description: Text("Import a file, create a reference or change the filters.")
+                        )
+                    }
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if horizontalSizeClass == .regular, viewMode == .table {
                 libraryTable
@@ -157,27 +167,34 @@ struct AccountLibraryView: View {
     }
 
     private var libraryHeader: some View {
-        HStack(spacing: 12) {
-            DesktopPageHeader(
-                title: showingTrash ? "Library Trash" : "Library",
-                subtitle: "\(filtered.count) of \(items.filter { $0.deletedAt == nil }.count) references · account-global",
-                systemImage: showingTrash ? "trash" : "books.vertical",
-                accent: session.accent
-            )
-            if syncing { ProgressView().controlSize(.small) }
-            Button { Task { await sync() } } label: { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
-                .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(syncing || session.isDemo)
-            Menu {
-                Button { creatingItem = true } label: { Label("New reference", systemImage: "plus") }
-                Button { showingImporter = true } label: { Label("Import files", systemImage: "square.and.arrow.down") }
-                Button { newCollectionName = ""; showingCollectionEditor = true } label: { Label("New collection", systemImage: "folder.badge.plus") }
-                Divider()
-                Button { enqueueCommand(.zoteroSync, title: "Zotero sync", payload: [:]) } label: { Label("Sync Zotero on Mac", systemImage: "desktopcomputer") }
-                Button { enqueueCommand(.extract, title: "Prepare selected files", payload: ["itemIds": .array(selection.map(JSONValue.string))]) } label: { Label("Prepare on Mac", systemImage: "text.viewfinder") }
-            } label: { Image(systemName: "plus").frame(width: 24, height: 24) }
-            .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-            .disabled(session.isDemo)
-        }
+        DesktopPageHeader(
+            title: showingTrash ? "Library Trash" : "Library",
+            subtitle: "\(filtered.count) of \(items.filter { $0.deletedAt == nil }.count) references · account-global",
+            systemImage: showingTrash ? "trash" : "books.vertical",
+            accent: session.accent,
+            trailing: {
+                HStack(spacing: 6) {
+                    if syncing { ProgressView().controlSize(.small).frame(width: 28, height: 44) }
+                    Button { Task { await sync() } } label: {
+                        libraryControlIcon("arrow.triangle.2.circlepath", active: syncing)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(syncing || session.isDemo)
+                    .accessibilityLabel("Sync")
+                    Menu {
+                        Button { creatingItem = true } label: { Label("New reference", systemImage: "plus") }
+                        Button { showingImporter = true } label: { Label("Import files", systemImage: "square.and.arrow.down") }
+                        Button { newCollectionName = ""; showingCollectionEditor = true } label: { Label("New collection", systemImage: "folder.badge.plus") }
+                        Divider()
+                        Button { enqueueCommand(.zoteroSync, title: "Zotero sync", payload: [:]) } label: { Label("Sync Zotero on Mac", systemImage: "desktopcomputer") }
+                        Button { enqueueCommand(.extract, title: "Prepare selected files", payload: ["itemIds": .array(selection.map(JSONValue.string))]) } label: { Label("Prepare on Mac", systemImage: "text.viewfinder") }
+                    } label: { libraryControlIcon("plus") }
+                    .buttonStyle(.plain)
+                    .disabled(session.isDemo)
+                    .accessibilityLabel("Add to Library")
+                }
+            }
+        )
         .padding(.horizontal, NodusSpace.page)
         .padding(.top, NodusSpace.page)
     }
@@ -185,50 +202,65 @@ struct AccountLibraryView: View {
     private var libraryControls: some View {
         VStack(spacing: 8) {
             NodusSearchField(text: $query, prompt: "Search title, creator, tag or citation key", accent: session.accent, isBusy: syncing)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    Menu {
+            HStack(spacing: 8) {
+                Menu {
+                    Section("Collection") {
                         Button("All collections") { collectionId = nil }
                         ForEach(collections) { collection in Button(collection.name) { collectionId = collection.id } }
-                    } label: { Label(collections.first { $0.id == collectionId }?.name ?? "Collections", systemImage: "folder") }
-                    Menu {
+                    }
+                    Section("Type") {
                         Button("All types") { itemType = nil }
                         ForEach(Set(items.map(\.metadata.itemType)).sorted(), id: \.self) { type in Button(type) { itemType = type } }
-                    } label: { Label(itemType ?? "Type", systemImage: "doc") }
-                    Menu {
-                        ForEach(LibrarySort.allCases) { value in Button(value.title) { sort = value } }
-                    } label: { Label(sort.title, systemImage: "arrow.up.arrow.down") }
-                    Button { duplicatesOnly.toggle() } label: { Label("Duplicates \(duplicateGroups.count)", systemImage: duplicatesOnly ? "checkmark.circle.fill" : "square.on.square") }
-                    Button { showingTrash.toggle(); selection.removeAll() } label: { Label(showingTrash ? "Library" : "Trash", systemImage: showingTrash ? "books.vertical" : "trash") }
+                    }
+                } label: {
+                    libraryControlIcon(collectionId != nil || itemType != nil ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
+                }
+                .accessibilityLabel("Filter Library")
+
+                Menu {
+                    ForEach(LibrarySort.allCases) { value in
+                        Button { sort = value } label: { Text(LocalizedStringKey(value.title)) }
+                    }
+                } label: { libraryControlIcon("arrow.up.arrow.down", active: sort != .updated) }
+                .accessibilityLabel("Sort Library")
+
+                Button { duplicatesOnly.toggle() } label: {
+                    libraryControlIcon(duplicatesOnly ? "square.on.square.fill" : "square.on.square", active: duplicatesOnly)
+                }
+                .accessibilityLabel("Duplicates \(duplicateGroups.count)")
+
+                Button { showingTrash.toggle(); selection.removeAll() } label: {
+                    libraryControlIcon(showingTrash ? "books.vertical" : "trash", active: showingTrash)
+                }
+                .accessibilityLabel(showingTrash ? "Library" : "Trash")
+
+                Menu {
+                    ForEach(savedSearches) { search in Button(search.name) { apply(search) } }
+                } label: { libraryControlIcon("bookmark.fill") }
+                .disabled(savedSearches.isEmpty)
+                .accessibilityLabel("Saved searches")
+
+                Button { selecting.toggle(); if !selecting { selection.removeAll() } } label: {
+                    libraryControlIcon(selecting ? "checkmark.circle.fill" : "checkmark.circle", active: selecting)
+                }
+                .accessibilityLabel(selecting ? "Done" : "Select")
+
+                Menu {
                     if !query.isEmpty || collectionId != nil || itemType != nil {
                         Button { savedSearchName = query.isEmpty ? "Filtered Library" : query; showingSavedSearchEditor = true } label: { Label("Save search", systemImage: "bookmark") }
                     }
-                    Menu {
-                        ForEach(savedSearches) { search in Button(search.name) { apply(search) } }
-                    } label: { Label("Saved", systemImage: "bookmark.fill") }.disabled(savedSearches.isEmpty)
-                    Divider().frame(height: 20)
-                    Button(selecting ? "Done" : "Select") { selecting.toggle(); if !selecting { selection.removeAll() } }
                     if selecting, !selection.isEmpty {
                         Button(showingTrash ? "Recover" : "Trash") { setSelectionDeleted(!showingTrash) }
                         Button("Export") { export(items.filter { selection.contains($0.id) }) }
                         if selection.count > 1 { Button("Merge") { enqueueMerge() } }
                     }
-                    if horizontalSizeClass == .regular {
-                        Picker("View", selection: $viewMode) {
-                            Image(systemName: "list.bullet.rectangle").tag(LibraryViewMode.table)
-                            Image(systemName: "square.grid.2x2").tag(LibraryViewMode.grid)
-                        }.pickerStyle(.segmented).frame(width: 86)
-                    }
                     if !conflicts.isEmpty {
-                        Menu {
-                            ForEach(conflicts.prefix(20)) { conflict in
-                                Label(conflict.recordId, systemImage: conflict.winnerVersionId == conflict.versionId ? "checkmark.seal" : "arrow.triangle.branch")
-                            }
-                        } label: { Label("Conflicts \(conflicts.count)", systemImage: "exclamationmark.triangle.fill") }
-                        .accessibilityIdentifier("library-conflicts")
+                        Section("Conflicts") {
+                            ForEach(conflicts.prefix(20)) { conflict in Label(conflict.recordId, systemImage: conflict.winnerVersionId == conflict.versionId ? "checkmark.seal" : "arrow.triangle.branch") }
+                        }
                     }
                     if !commands.isEmpty {
-                        Menu {
+                        Section("Mac jobs") {
                             ForEach(commands.suffix(20).reversed()) { command in
                                 Button {
                                     if !command.status.isTerminal { cancel(command) }
@@ -237,15 +269,36 @@ struct AccountLibraryView: View {
                                 }
                                 .disabled(command.status.isTerminal)
                             }
-                        } label: { Label("Mac jobs", systemImage: "desktopcomputer") }
-                        .accessibilityIdentifier("library-mac-jobs")
+                        }
                     }
+                } label: { libraryControlIcon("ellipsis") }
+                .accessibilityLabel("More Library actions")
+                .accessibilityIdentifier("library-more-actions")
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if horizontalSizeClass == .regular {
+                Picker("View", selection: $viewMode) {
+                    Image(systemName: "list.bullet.rectangle").tag(LibraryViewMode.table)
+                    Image(systemName: "square.grid.2x2").tag(LibraryViewMode.grid)
                 }
-                .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                .pickerStyle(.segmented)
+                .frame(width: 92)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .padding(.horizontal, NodusSpace.page)
         .padding(.bottom, 10)
+    }
+
+    private func libraryControlIcon(_ systemImage: String, active: Bool = false) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(active ? session.accent.nodusReadable : Color.primary)
+            .frame(width: 44, height: 44)
+            .nodusGlass(NodusGlass(.regular, tint: active ? session.accent : .clear), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
     }
 
     private var libraryTable: some View {
@@ -579,7 +632,7 @@ struct AccountLibraryView: View {
 private enum LibrarySort: String, CaseIterable, Identifiable {
     case updated, title, creator, year
     var id: String { rawValue }
-    var title: String { switch self { case .updated: "Updated"; case .title: "Title"; case .creator: "Creator"; case .year: "Year" } }
+    var title: String { switch self { case .updated: String(localized: "Updated"); case .title: String(localized: "Title"); case .creator: String(localized: "Creator"); case .year: String(localized: "Year") } }
 }
 
 private enum LibraryViewMode: String { case table, grid }
@@ -741,7 +794,11 @@ private struct AccountLibraryReader: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .quickLookPreview($previewURL)
-        .task(id: pane) { if pane == .history, let catalog { history = (try? await catalog.history(recordId: item.id)) ?? [] } }
+        .task(id: pane) {
+            guard pane == .history, let catalog else { return }
+            do { history = try await catalog.history(recordId: item.id); error = nil }
+            catch { history = []; self.error = error.localizedDescription }
+        }
     }
 
     private func paneButton(_ candidate: Pane) -> some View {

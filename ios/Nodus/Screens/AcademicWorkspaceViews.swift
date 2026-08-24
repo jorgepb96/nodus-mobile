@@ -112,8 +112,10 @@ struct IdeasWorkspaceView: View {
                         Text("Methods").tag("method")
                         Text("Frameworks").tag("framework")
                     }
-                } label: { Image(systemName: type.isEmpty ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill") }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                } label: {
+                    ideasControlIcon(type.isEmpty ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                }
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
                     .accessibilityLabel("Filter idea type")
                 Menu {
                     Picker("Sort", selection: $sort) {
@@ -123,8 +125,8 @@ struct IdeasWorkspaceView: View {
                         Text("Connections").tag(IdeaWorkspaceSort.connections)
                         Text("Confidence").tag(IdeaWorkspaceSort.confidence)
                     }
-                } label: { Image(systemName: "arrow.up.arrow.down") }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                } label: { ideasControlIcon("arrow.up.arrow.down") }
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
                     .accessibilityLabel("Sort ideas")
             }
         }
@@ -133,6 +135,10 @@ struct IdeasWorkspaceView: View {
         .frame(maxWidth: 1160)
         .frame(maxWidth: .infinity)
         .background(Color(uiColor: .systemBackground).opacity(0.97))
+    }
+
+    private func ideasControlIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
     }
 
     private var ideaTableHeader: some View {
@@ -281,21 +287,28 @@ private struct IdeaWorkspaceDocument: View {
 
     private var workspaceActionBar: some View {
         VStack(spacing: 5) {
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    Button { onOpenArgument(ArgumentSeed(id: id, label: label)) } label: { Label("Argument map", systemImage: "arrow.triangle.branch") }
-                    Button { showingAssistant = true } label: { Label("Assistant", systemImage: "sparkles") }
-                    Button { Task { await run(.ideaSaveToNotes) } } label: { Label("Save to Notes", systemImage: "note.text.badge.plus") }.disabled(!canAct || isActing)
-                    Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete", systemImage: "trash") }.disabled(!canAct || isActing)
-                }
-                .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                .padding(.horizontal, NodusSpace.page).padding(.vertical, 8)
-            }.scrollIndicators(.hidden)
+            HStack(spacing: 8) {
+                actionButton("Argument map", image: "arrow.triangle.branch") { onOpenArgument(ArgumentSeed(id: id, label: label)) }
+                actionButton("Assistant", image: "sparkles") { showingAssistant = true }
+                actionButton("Save to Notes", image: "note.text.badge.plus", disabled: !canAct || isActing) { Task { await run(.ideaSaveToNotes) } }
+                actionButton("Delete", image: "trash", tint: .red, disabled: !canAct || isActing) { confirmingDelete = true }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, NodusSpace.page).padding(.vertical, 8)
             if let actionState { Text(actionState).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).frame(maxWidth: .infinity, alignment: .leading) }
             else if !canAct { Text("Vault-changing actions require a writable space connected to Desktop.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).frame(maxWidth: .infinity, alignment: .leading) }
         }
         .background(Color(uiColor: .systemBackground).opacity(0.96))
         .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func actionButton(_ title: LocalizedStringKey, image: String, tint: Color? = nil, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: image)
+        }
+        .buttonStyle(NodusGlassIconButtonStyle(accent: tint ?? session.accent))
+        .disabled(disabled)
+        .accessibilityLabel(title)
     }
 
     private func run(_ kind: SpaceActionKind) async {
@@ -308,7 +321,7 @@ private struct IdeaWorkspaceDocument: View {
                 kind: kind, payload: ["ideaId": .string(id)], inputRevision: session.publishedRevision,
                 in: session.connection.spaceId
             )
-            actionState = result.duplicate ? "This action was already queued." : "Queued for Desktop · \(result.action.status.rawValue)"
+            actionState = result.duplicate ? String(localized: "This action was already queued.") : String(localized: "Queued for Desktop · \(result.action.status.rawValue)")
             if kind == .ideaDelete { workspaceTabs.close(tabId, in: NodusRoute.ideas.rawValue) }
         } catch { actionState = error.localizedDescription }
     }
@@ -412,14 +425,14 @@ struct AuthorsWorkspaceView: View {
                         Text("Surname").tag(AuthorWorkspaceSort.surname); Text("Name").tag(AuthorWorkspaceSort.name); Text("Works").tag(AuthorWorkspaceSort.works); Text("Ideas").tag(AuthorWorkspaceSort.ideas); Text("Connections").tag(AuthorWorkspaceSort.connections)
                     }
                 } label: { Image(systemName: "line.3.horizontal.decrease") }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
                 Button { savedOnly.toggle() } label: { Image(systemName: savedOnly ? "bookmark.fill" : "bookmark") }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel("Saved authors only")
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Saved authors only")
                 Button { openMatrix() } label: { Image(systemName: "square.grid.3x3") }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel("Synthesis matrix")
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Synthesis matrix")
                 if !selected.isEmpty {
                     ShareLink(item: selectedMarkdown) { Image(systemName: "square.and.arrow.up") }
-                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel("Export selected authors")
+                        .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Export selected authors")
                 }
             }
         }
@@ -534,6 +547,7 @@ private struct AuthorWorkspaceRow: View {
             }.buttonStyle(.plain).frame(maxWidth: .infinity)
             Button(action: onSave) { Image(systemName: saved ? "bookmark.fill" : "bookmark").frame(width: 34, height: 44) }
                 .buttonStyle(.plain).foregroundStyle(saved ? accent : Color.secondary).accessibilityLabel(saved ? "Remove saved author" : "Save author")
+                .accessibilityIdentifier("workspace-author-save-\(saved ? "saved" : "unsaved")-\(safeIdentifier(item.authorId))")
         }
         .padding(.horizontal, 10).padding(.vertical, dense ? 3 : 8)
         .background(Color(uiColor: .secondarySystemBackground).opacity(0.62), in: RoundedRectangle(cornerRadius: dense ? 6 : 12))
@@ -581,7 +595,7 @@ private struct AuthorWorkspaceDocument: View {
                 FlowLayout(spacing: 8) {
                     Button(action: onToggleSaved) { Label(isSaved ? "Saved" : "Save", systemImage: isSaved ? "bookmark.fill" : "bookmark") }
                     Button { showingAssistant = true } label: { Label("Assistant", systemImage: "sparkles") }
-                    if let idea = dossier.ideas.first { Button { onOpenArgument(ArgumentSeed(id: idea.globalId, label: idea.label)) } label: { Label("Graph", systemImage: "point.3.connected.trianglepath.dotted") } }
+                    if let idea = dossier.ideas.first { Button { onOpenArgument(ArgumentSeed(id: idea.globalId, label: idea.label)) } label: { Label("Argument map", systemImage: "point.3.connected.trianglepath.dotted") } }
                     Button { Task { await generateSynthesis() } } label: { Label(dossier.synthesis == nil ? "Generate synthesis" : "Regenerate synthesis", systemImage: "wand.and.stars") }.disabled(!canAct)
                 }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                 if let actionState { Text(actionState).font(.caption).foregroundStyle(.secondary) }
@@ -634,7 +648,7 @@ private struct AuthorWorkspaceDocument: View {
                 kind: .authorSynthesisGenerate, payload: ["authorId": .string(id)], inputRevision: session.publishedRevision,
                 in: session.connection.spaceId
             )
-            actionState = result.duplicate ? "This synthesis is already queued." : "Synthesis queued for Desktop."
+            actionState = result.duplicate ? String(localized: "This synthesis is already queued.") : String(localized: "Synthesis queued for Desktop.")
         } catch { actionState = error.localizedDescription }
     }
 }

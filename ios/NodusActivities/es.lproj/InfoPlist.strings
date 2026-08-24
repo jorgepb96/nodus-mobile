@@ -1,0 +1,5 @@
+/* Bundle display name */
+"CFBundleDisplayName" = "Nodus Research";
+
+/* Bundle name */
+"CFBundleName" = "NodusActivities";

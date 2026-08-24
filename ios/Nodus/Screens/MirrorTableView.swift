@@ -105,7 +105,7 @@ struct MirrorTableView: View {
                 HStack(spacing: 10) {
                     DesktopPageHeader(
                         title: LocalizedStringKey(title),
-                        subtitle: session.mirror == nil ? String(localized: "Offline snapshot required") : String(localized: "\(total) published records"),
+                        subtitle: session.mirror == nil ? "Offline snapshot required" : "\(total) published records",
                         systemImage: presenter.icon,
                         accent: session.accent
                     )
@@ -114,6 +114,8 @@ struct MirrorTableView: View {
                 .padding(.horizontal, NodusSpace.page)
                 if session.mirror != nil {
                     NodusSearchField(text: $query, prompt: "Filter on any field", accent: session.accent)
+                        .padding(.horizontal, NodusSpace.page)
+                        .padding(.bottom, 8)
                 }
             }
             .padding(.top, 10)

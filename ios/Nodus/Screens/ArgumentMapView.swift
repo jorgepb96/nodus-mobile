@@ -15,7 +15,7 @@ struct ArgumentMapView: View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(
                 section: "argument",
-                catalogueTitle: "Argument Map",
+                catalogueTitle: "Argument map",
                 catalogueImage: "arrow.triangle.branch",
                 accent: session.accent
             )
@@ -277,7 +277,7 @@ private struct ArgumentMapDocumentView: View {
                 inputRevision: session.publishedRevision,
                 in: session.connection.spaceId
             )
-            remoteState = result.duplicate ? "The AI trace is already queued." : "AI trace queued for Desktop; its state is visible in Sync Center."
+            remoteState = result.duplicate ? String(localized: "The AI trace is already queued.") : String(localized: "AI trace queued for Desktop; its state is visible in Sync Center.")
         } catch { remoteState = error.localizedDescription }
     }
 }
@@ -320,23 +320,40 @@ private struct ArgumentSeedPicker: View {
 
     private var visible: [ArgumentRouteSuggestion] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return routes.filter { route in
+        let filtered = routes.enumerated().filter { _, route in
             route.degree >= minimumConnections && (needle.isEmpty || "\(route.label)\n\(route.statement)".lowercased().contains(needle))
-        }.sorted { left, right in
+        }
+
+        // The server already returns the canonical recommended ranking. Keeping that order
+        // avoids an expensive search for every comparison when a vault has thousands of hubs.
+        if order == .recommended, debateBonus {
+            return filtered.map(\.element)
+        }
+
+        return filtered.sorted { left, right in
+            let lhs = left.element
+            let rhs = right.element
+
             switch order {
             case .connections:
-                return left.degree == right.degree ? left.label.localizedCaseInsensitiveCompare(right.label) == .orderedAscending : left.degree > right.degree
+                if lhs.degree != rhs.degree { return lhs.degree > rhs.degree }
             case .debates:
-                return left.debateCount == right.debateCount ? left.degree > right.degree : left.debateCount > right.debateCount
+                if lhs.debateCount != rhs.debateCount { return lhs.debateCount > rhs.debateCount }
+                if lhs.degree != rhs.degree { return lhs.degree > rhs.degree }
             case .confidence:
-                return left.avgConfidence == right.avgConfidence ? left.degree > right.degree : left.avgConfidence > right.avgConfidence
+                if lhs.avgConfidence != rhs.avgConfidence { return lhs.avgConfidence > rhs.avgConfidence }
+                if lhs.degree != rhs.degree { return lhs.degree > rhs.degree }
             case .label:
-                return left.label.localizedCaseInsensitiveCompare(right.label) == .orderedAscending
+                let comparison = lhs.label.localizedCaseInsensitiveCompare(rhs.label)
+                if comparison != .orderedSame { return comparison == .orderedAscending }
             case .recommended:
-                guard !debateBonus else { return routes.firstIndex(of: left)! < routes.firstIndex(of: right)! }
-                return left.degree == right.degree ? left.avgConfidence > right.avgConfidence : left.degree > right.degree
+                if lhs.degree != rhs.degree { return lhs.degree > rhs.degree }
+                if lhs.avgConfidence != rhs.avgConfidence { return lhs.avgConfidence > rhs.avgConfidence }
             }
+
+            return left.offset < right.offset
         }
+        .map(\.element)
     }
 
     var body: some View {
@@ -400,21 +417,53 @@ private struct ArgumentSeedPicker: View {
         .safeAreaInset(edge: .top) {
             VStack(spacing: 8) {
                 NodusSearchField(text: $query, prompt: "Search ranked hubs", accent: session.accent, isBusy: isLoading)
-                HStack(spacing: 8) {
-                    Stepper("Minimum \(minimumConnections) links", value: $minimumConnections, in: 0...20)
-                        .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
-                    Toggle("Debate bonus", isOn: $debateBonus).font(.caption).fixedSize()
-                    Menu {
-                        Picker("Order", selection: $order) {
-                            Text("Recommended").tag(RouteOrder.recommended); Text("Connections").tag(RouteOrder.connections)
-                            Text("Debates").tag(RouteOrder.debates); Text("Confidence").tag(RouteOrder.confidence); Text("Label").tag(RouteOrder.label)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        connectionFloor.fixedSize(horizontal: true, vertical: false)
+                        Spacer(minLength: 8)
+                        debateToggle
+                        orderMenu
+                    }
+                    VStack(spacing: 8) {
+                        connectionFloor
+                        HStack(spacing: 8) {
+                            debateToggle
+                            Spacer(minLength: 8)
+                            orderMenu
                         }
-                    } label: { Image(systemName: "arrow.up.arrow.down") }
-                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel("Order argument routes")
+                    }
                 }
             }.padding(.horizontal, NodusSpace.page).padding(.vertical, 8).background(Color(uiColor: .systemBackground).opacity(0.97))
         }
         .task(id: session.publishedRevision) { await load() }
+    }
+
+    private var connectionFloor: some View {
+        Stepper("Minimum \(minimumConnections) links", value: $minimumConnections, in: 0...20)
+            .font(.caption)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var debateToggle: some View {
+        Toggle("Debate bonus", isOn: $debateBonus)
+            .font(.caption)
+            .fixedSize()
+    }
+
+    private var orderMenu: some View {
+        Menu {
+            Picker("Order", selection: $order) {
+                Text("Recommended").tag(RouteOrder.recommended)
+                Text("Connections").tag(RouteOrder.connections)
+                Text("Debates").tag(RouteOrder.debates)
+                Text("Confidence").tag(RouteOrder.confidence)
+                Text("Label").tag(RouteOrder.label)
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+        .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
+        .accessibilityLabel("Order argument routes")
     }
 
     private func load() async {
@@ -587,29 +636,29 @@ private struct ArgumentBlockTree: View {
 enum ArgumentLabels {
     static func relation(_ relation: ArgumentRelation) -> String {
         switch relation {
-        case .root: return "seed"
-        case .supports: return "supports"
-        case .refutes: return "refutes"
-        case .contradicts: return "contradicts"
-        case .extends: return "extends"
-        case .refines: return "refines"
-        case .appliesTo: return "applies to"
-        case .sharesMethod: return "shares method"
-        case .preconditionOf: return "precondition of"
-        case .measuresSame: return "measures the same"
-        case .variantOf: return "variant of"
-        case .related: return "related"
+        case .root: return String(localized: "seed")
+        case .supports: return String(localized: "supports")
+        case .refutes: return String(localized: "refutes")
+        case .contradicts: return String(localized: "contradicts")
+        case .extends: return String(localized: "extends")
+        case .refines: return String(localized: "refines")
+        case .appliesTo: return String(localized: "applies to")
+        case .sharesMethod: return String(localized: "shares method")
+        case .preconditionOf: return String(localized: "precondition of")
+        case .measuresSame: return String(localized: "measures the same")
+        case .variantOf: return String(localized: "variant of")
+        case .related: return String(localized: "related")
         }
     }
 
     static func type(_ type: String) -> String {
         switch type {
-        case "theme": return "theme"
-        case "claim": return "claim"
-        case "finding": return "finding"
-        case "construct": return "construct"
-        case "method": return "method"
-        case "framework": return "framework"
+        case "theme": return String(localized: "theme")
+        case "claim": return String(localized: "claim")
+        case "finding": return String(localized: "finding")
+        case "construct": return String(localized: "construct")
+        case "method": return String(localized: "method")
+        case "framework": return String(localized: "framework")
         default: return type
         }
     }

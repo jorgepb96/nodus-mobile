@@ -209,6 +209,7 @@ private struct PageDocumentWorkspace: View {
     @State private var comment = ""
     @State private var saving = false
     @State private var compactInspector = false
+    @State private var actionError: String?
 
     private var blocks: [PagesDatabasesParity.Block] { PagesDatabasesParity.blocks(pageId: page.id, in: tables) }
     private var backlinks: [PagesDatabasesParity.Backlink] { PagesDatabasesParity.backlinks(pageId: page.id, in: tables) }
@@ -220,6 +221,7 @@ private struct PageDocumentWorkspace: View {
         VStack(spacing: 0) {
             documentHeader.padding(NodusSpace.page)
             Divider()
+            if let actionError { NodusNotice(tone: .blocked, title: "Page action failed", message: LocalizedStringKey(actionError)).padding(.horizontal, NodusSpace.page).padding(.top, 8) }
             if sizeClass == .regular {
                 HStack(spacing: 0) { editor; Divider(); inspectorRail.frame(width: 320) }
             } else {
@@ -236,7 +238,7 @@ private struct PageDocumentWorkspace: View {
             HStack(spacing: 7) {
                 if sizeClass == .compact {
                     Button { compactInspector.toggle() } label: { Image(systemName: compactInspector ? "doc.text" : "sidebar.right") }
-                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel(compactInspector ? "Show document" : "Show page details")
+                        .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel(compactInspector ? "Show document" : "Show page details")
                 }
                 Menu {
                     Button { Task { await addBlock(type: "paragraph") } } label: { Label("Paragraph", systemImage: "text.alignleft") }
@@ -408,7 +410,10 @@ private struct PageDocumentWorkspace: View {
 
     private func restoreRevision(_ row: Row) async {
         guard let revision = row.int("revision") else { return }
-        _ = try? await session.client.createSpaceAction(idempotencyKey: "page-restore:\(page.id):\(revision)", kind: .pageRestoreRevision, payload: ["pageId": .string(page.id), "revision": .int(Int64(revision))], inputRevision: session.publishedRevision, in: session.connection.spaceId)
+        do {
+            _ = try await session.client.createSpaceAction(idempotencyKey: "page-restore:\(page.id):\(revision)", kind: .pageRestoreRevision, payload: ["pageId": .string(page.id), "revision": .int(Int64(revision))], inputRevision: session.publishedRevision, in: session.connection.spaceId)
+            actionError = nil
+        } catch { actionError = error.localizedDescription }
     }
 }
 
@@ -621,7 +626,7 @@ private struct DatabaseDetailWorkspace: View {
             Menu {
                 Picker("Sort property", selection: $sortColumnId) { Text("Manual order").tag(String?.none); ForEach(columns) { Text($0.name).tag(Optional($0.id)) } }
                 Picker("Direction", selection: $sortDirection) { Text("Ascending").tag(PagesDatabasesParity.SortDirection.ascending); Text("Descending").tag(PagesDatabasesParity.SortDirection.descending) }
-            } label: { Image(systemName: "arrow.up.arrow.down") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel("Sort rows")
+            } label: { Image(systemName: "arrow.up.arrow.down") }.buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Sort rows")
         }.padding(.horizontal, 10).frame(minHeight: 44).background(Color(uiColor: .secondarySystemBackground).opacity(0.4))
     }
 

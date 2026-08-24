@@ -15,10 +15,21 @@ struct DeepResearchSaveToNotesButton: View {
 
     var body: some View {
         Button { save() } label: {
-            if sending { ProgressView().controlSize(.small) }
-            else { Label(queued ? "Queued for Notes" : "Save to Notes", systemImage: queued ? "checkmark.circle" : "note.text.badge.plus") }
+            HStack(spacing: 7) {
+                if sending {
+                    ProgressView().controlSize(.small).tint(session.accent)
+                } else {
+                    Image(systemName: queued ? "checkmark.circle" : "note.text.badge.plus")
+                }
+                Text(queued ? "Queued for Notes" : "Save to Notes")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(session.accent.nodusReadable)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .reportActionSurface(accent: session.accent)
         }
-        .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+        .buttonStyle(.plain)
         .disabled(sending || !session.connection.role.canSendChanges || queued)
         .accessibilityHint("The owner desktop creates the vault note through a typed action.")
         .alert("Couldn’t save to Notes", isPresented: Binding(
@@ -231,6 +242,7 @@ struct DeepResearchOutlineSheet: View {
             .navigationTitle("Report outline")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .accessibilityIdentifier("report-outline-sheet")
     }
 }
 
@@ -239,13 +251,13 @@ private enum ResearchWorkspaceTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .support: "Support matrix"
-        case .ideas: "Ideas"
-        case .works: "Works"
-        case .authors: "Authors"
-        case .passages: "Passages"
-        case .gaps: "Gaps"
-        case .contradictions: "Contradictions"
+        case .support: String(localized: "Support matrix")
+        case .ideas: String(localized: "Ideas")
+        case .works: String(localized: "Works")
+        case .authors: String(localized: "Authors")
+        case .passages: String(localized: "Passages")
+        case .gaps: String(localized: "Gaps")
+        case .contradictions: String(localized: "Contradictions")
         }
     }
     var icon: String {

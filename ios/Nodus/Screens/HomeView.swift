@@ -175,7 +175,7 @@ struct HomeView: View {
                             } label: {
                                 SectionTile(
                                     title: "Deep Research",
-                                    icon: "doc.text.magnifyingglass",
+                                    icon: "telescope",
                                     count: nil,
                                     accent: session.accent
                                 )
@@ -275,7 +275,10 @@ struct HomeView: View {
                 Button {
                     openResearch?()
                 } label: {
-                    Label("Deep Research", systemImage: "sparkles")
+                    HStack(spacing: 7) {
+                        NodusIcon(name: "telescope", size: 16, weight: .semibold)
+                        Text("Deep Research")
+                    }
                 }
                 .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
                 .disabled(openResearch == nil)
@@ -560,8 +563,7 @@ struct SectionTile: View {
     private var square: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Image(systemName: icon)
-                    .font(Self.glyph)
+                NodusIcon(name: icon, size: 18, weight: .medium)
                     .foregroundStyle(accent.nodusReadable)
                 Spacer()
                 countAccessory
@@ -586,8 +588,7 @@ struct SectionTile: View {
     /// screens of them. 48 is still well past the 44-point minimum and fits two more in a view.
     private var row: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(Self.glyph)
+            NodusIcon(name: icon, size: 18, weight: .medium)
                 .foregroundStyle(accent.nodusReadable)
                 .frame(width: 24)
             Text(title)

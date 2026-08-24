@@ -271,7 +271,7 @@ Desktop transport/security tests cover the allowlist, hash validation and privat
 
 The academic hierarchy is intentionally the current product hierarchy rather than an earlier
 roadmap menu. Home and the account-global Library are pinned. Explore contains Search, Ideas,
-Authors, Graph and Argument map; Analyze contains only State of the art, Immersion and Deep
+Authors and Argument map; Analyze contains only State of the art, Immersion and Deep
 Research; Write contains Workspace; Tools contains Nodus Browser, Nodus Radar and Nodus Tools;
 Settings is pinned last. Group headers collapse independently. iPad keeps Desktop's persistent,
 pointer-draggable 176–360 point width, keyboard/VoiceOver adjustable action and saved order,
@@ -279,9 +279,10 @@ visibility and width. iPhone opens the same hierarchy as a vertical drawer.
 
 Dedicated vault modes are guarded by the same closed allow-lists as Desktop, so academic routes
 cannot leak into Prosopography, Primary Sources, Study, Teaching, Databases, Testimonies or
-Worldbuilding. Hidden routes remain executable through typed deep links and Commands. The
-versioned manifest closes at 73 routes, 1,595 actions and 91 mutable tables with implementation
-evidence for every entry; Deep Research audio remains its sole explicit exclusion. CI regenerates
+Worldbuilding. Hidden routes remain executable through typed deep links and Commands. Graph and
+Study Graph are the deliberate exception: the product decision suspends them completely on mobile,
+so they have no menu item, enum case, deep link or placeholder screen. The versioned manifest keeps
+those Desktop routes as explicit exclusions alongside Deep Research audio. CI regenerates
 this manifest against a fresh Desktop checkout and rejects any unclassified route, action, table,
 fallback destination or missing evidence file.
 

@@ -235,9 +235,9 @@ struct ProviderSettingsView: View {
 
     private func reason(_ reason: UnreachableProvider.Reason) -> String {
         switch reason {
-        case .runsOnTheDesktopMachine: return "A local server on the computer running Nodus."
-        case .noPhoneRuntime: return "Models Nodus runs inside its own process."
-        case .desktopSubscriptionSession: return "Authenticated through a desktop subscription session."
+        case .runsOnTheDesktopMachine: return String(localized: "A local server on the computer running Nodus.")
+        case .noPhoneRuntime: return String(localized: "Models Nodus runs inside its own process.")
+        case .desktopSubscriptionSession: return String(localized: "Authenticated through a desktop subscription session.")
         }
     }
 }

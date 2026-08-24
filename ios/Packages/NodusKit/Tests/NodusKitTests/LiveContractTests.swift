@@ -218,6 +218,33 @@ struct LiveContractTests {
         #expect(past.total == first.total)
     }
 
+    @Test("academic workspaces decode real Ideas, Authors and Argument Map data")
+    func academicWorkspaces() async throws {
+        let (client, _) = try await lab.signIn(lab.reader)
+
+        let ideas = try await client.workspaceIdeas(in: lab.spaceId, limit: 3)
+        #expect(ideas.total > 0)
+        #expect(!ideas.items.isEmpty)
+        #expect(!ideas.items[0].id.isEmpty)
+        #expect(!ideas.items[0].label.isEmpty)
+
+        let authors = try await client.workspaceAuthors(in: lab.spaceId, limit: 3)
+        #expect(authors.total > 0)
+        #expect(!authors.items.isEmpty)
+        #expect(!authors.items[0].authorId.isEmpty)
+        #expect(!authors.items[0].fullName.isEmpty)
+
+        let dossier = try await client.authorWorkspaceDossier(authors.items[0].authorId, in: lab.spaceId)
+        #expect(!dossier.fullName.isEmpty)
+
+        let matrix = try await client.synthesisMatrix(in: lab.spaceId)
+        #expect(!matrix.authors.isEmpty)
+
+        let routes = try await client.argumentRoutes(in: lab.spaceId)
+        #expect(!routes.isEmpty)
+        #expect(routes.allSatisfy { !$0.ideaId.isEmpty && !$0.label.isEmpty })
+    }
+
     @Test("an ETag turns the second read of a list into a 304")
     func etagRevalidation() async throws {
         let (client, _) = try await lab.signIn(lab.reader)

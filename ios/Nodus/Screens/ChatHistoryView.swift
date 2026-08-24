@@ -107,6 +107,8 @@ struct ChatHistoryView: View {
             .listStyle(.plain)
             .safeAreaInset(edge: .top) {
                 NodusSearchField(text: $query, prompt: "Filter conversations", accent: accent)
+                    .padding(.horizontal, NodusSpace.page)
+                    .padding(.bottom, 8)
             }
             .navigationTitle("History")
             .navigationBarTitleDisplayMode(.inline)

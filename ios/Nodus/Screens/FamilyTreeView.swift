@@ -287,7 +287,7 @@ struct FamilyTreeView: View {
                 parent = from; child = to; partners = nil
             case "child", "hijo", "hija":
                 parent = to; child = from; partners = nil
-            case "spouse", "partner", "conyuge", "spouse", "pareja":
+            case "spouse", "partner", "conyuge", "pareja":
                 parent = nil; child = nil; partners = (from, to)
             default:
                 return nil

@@ -27,6 +27,10 @@ struct PlatformToolsWorkspaceView: View {
 
 // MARK: - Browser
 
+enum NodusBrowserDefaults {
+    static let homeURL = URL(string: "https://nodusresearch.com/research-atlas/")!
+}
+
 private struct BrowserTabRecord: Codable, Hashable, Identifiable {
     let id: String
     var title: String
@@ -71,7 +75,7 @@ private final class BrowserWorkspaceStore {
         bookmarks = Self.decode([BrowserBookmarkRecord].self, defaults.data(forKey: "\(prefix).bookmarks")) ?? []
         history = Self.decode([BrowserHistoryRecord].self, defaults.data(forKey: "\(prefix).history")) ?? []
         activeId = defaults.string(forKey: "\(prefix).active")
-        if tabs.isEmpty { open(URL(string: "https://www.google.com")!) }
+        if tabs.isEmpty { open(NodusBrowserDefaults.homeURL) }
         if !tabs.contains(where: { $0.id == activeId }) { activeId = tabs.first?.id }
     }
 
@@ -80,9 +84,12 @@ private final class BrowserWorkspaceStore {
 
     func open(_ url: URL, activate: Bool = true) {
         guard NodusWebURLPolicy.isAllowedBrowserURL(url), tabs.count < 24 else {
-            blockedMessage = tabs.count >= 24 ? "The browser supports up to 24 open tabs." : "Nodus blocked a local or unsafe address."
+            blockedMessage = tabs.count >= 24
+                ? String(localized: "The browser supports up to 24 open tabs.")
+                : String(localized: "Nodus blocked a local or unsafe address.")
             return
         }
+        blockedMessage = nil
         let tab = BrowserTabRecord(id: UUID().uuidString, title: url.host ?? "New tab", url: url, command: 1)
         tabs.append(tab)
         if activate { activeId = tab.id }
@@ -91,9 +98,10 @@ private final class BrowserWorkspaceStore {
     func navigate(_ input: String) {
         guard let id = activeId, let index = tabs.firstIndex(where: { $0.id == id }),
               let destination = NodusWebURLPolicy.browserDestination(for: input) else {
-            blockedMessage = "That address is not available in the isolated browser."
+            blockedMessage = String(localized: "That address is not available in the isolated browser.")
             return
         }
+        blockedMessage = nil
         tabs[index].url = destination; tabs[index].command += 1; tabs[index].error = nil
     }
 
@@ -101,7 +109,7 @@ private final class BrowserWorkspaceStore {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let wasActive = id == activeId
         tabs.remove(at: index)
-        if tabs.isEmpty { open(URL(string: "https://www.google.com")!); return }
+        if tabs.isEmpty { open(NodusBrowserDefaults.homeURL); return }
         if wasActive { activeId = tabs[min(index, tabs.count - 1)].id }
     }
 
@@ -130,6 +138,7 @@ private final class BrowserWorkspaceStore {
     }
 
     func addDownload(_ url: URL) { downloads.insert(url, at: 0) }
+    func clearBlockedMessage() { blockedMessage = nil }
     private func persistTabs() { defaults.set(try? JSONEncoder().encode(tabs), forKey: "\(prefix).tabs"); defaults.set(activeId, forKey: "\(prefix).active") }
     private func persistBookmarks() { defaults.set(try? JSONEncoder().encode(bookmarks), forKey: "\(prefix).bookmarks") }
     private func persistHistory() { defaults.set(try? JSONEncoder().encode(history), forKey: "\(prefix).history") }
@@ -205,37 +214,95 @@ private struct NodusBrowserMobileView: View {
                     }
                 }
             }.scrollIndicators(.hidden)
-            Button { store.open(URL(string: "https://www.google.com")!) } label: { Image(systemName: "plus").frame(width: 44, height: 36) }
+            Button { store.open(NodusBrowserDefaults.homeURL) } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
                 .buttonStyle(.plain).accessibilityIdentifier("browser-new-tab")
         }
-        .frame(height: 36).background(Color(uiColor: .secondarySystemBackground)).overlay(alignment: .bottom) { Divider() }
+        .frame(height: 44).background(Color(uiColor: .secondarySystemBackground)).overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser-tab-strip")
     }
 
     private var browserToolbar: some View {
-        HStack(spacing: 5) {
-            Button { browserCommand(.back) } label: { Image(systemName: "chevron.left") }.disabled(store.active?.canGoBack != true)
-            Button { browserCommand(.forward) } label: { Image(systemName: "chevron.right") }.disabled(store.active?.canGoForward != true)
-            Button { browserCommand(.reload) } label: { Image(systemName: store.active?.isLoading == true ? "xmark" : "arrow.clockwise") }
-            HStack(spacing: 6) {
-                Image(systemName: store.active?.url.scheme == "https" ? "lock.fill" : "exclamationmark.triangle.fill").font(.caption2)
-                TextField("Search or enter address", text: $omnibox).textInputAutocapitalization(.never).keyboardType(.URL)
-                    .onSubmit { store.navigate(omnibox) }.accessibilityIdentifier("browser-omnibox")
-                Button { store.toggleBookmark() } label: { Image(systemName: store.bookmarks.contains(where: { $0.url == store.active?.url }) ? "star.fill" : "star") }
-                    .accessibilityIdentifier("browser-add-bookmark")
-            }.padding(.horizontal, 9).frame(height: 32).background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 8)).overlay { RoundedRectangle(cornerRadius: 8).stroke(.separator) }
-            Menu {
-                Button("Find in page", systemImage: "text.magnifyingglass") { showingFind.toggle() }
-                Button("Bookmarks", systemImage: "star") { showingBookmarks = true }
-                Button("History", systemImage: "clock") { showingHistory = true }
-                Button("Downloads", systemImage: "arrow.down.circle") { showingDownloads = true }
-                Button("Capture to Library", systemImage: "books.vertical") { captureCurrentPage() }
-                if let url = store.active?.url { ShareLink(item: url) { Label("Share", systemImage: "square.and.arrow.up") } }
-            } label: { Image(systemName: "ellipsis.circle").frame(width: 34, height: 32) }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
+                navigationButtons
+                omniboxField
+                browserMenu
+            }
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    navigationButtons
+                    Spacer(minLength: 4)
+                    browserMenu
+                }
+                omniboxField
+            }
         }
-        .buttonStyle(.borderless).padding(.horizontal, 8).padding(.vertical, 5)
+        .buttonStyle(.borderless).padding(.horizontal, 8).padding(.vertical, 6)
         .background(Color(uiColor: .secondarySystemBackground)).overlay(alignment: .bottom) { Divider() }
+    }
+
+    private var navigationButtons: some View {
+        HStack(spacing: 2) {
+            browserIcon("chevron.left", label: "Back") { browserCommand(.back) }
+                .disabled(store.active?.canGoBack != true)
+            browserIcon("chevron.right", label: "Forward") { browserCommand(.forward) }
+                .disabled(store.active?.canGoForward != true)
+            browserIcon(store.active?.isLoading == true ? "xmark" : "arrow.clockwise", label: store.active?.isLoading == true ? "Stop" : "Reload") {
+                browserCommand(.reload)
+            }
+            browserIcon("house.fill", label: "Nodus Atlas") {
+                let home = NodusBrowserDefaults.homeURL.absoluteString
+                omnibox = home
+                store.navigate(home)
+            }
+            .accessibilityIdentifier("browser-home")
+        }
+        .fixedSize()
+    }
+
+    private var omniboxField: some View {
+        HStack(spacing: 7) {
+            Image(systemName: store.active?.url.scheme == "https" ? "lock.fill" : "exclamationmark.triangle.fill")
+                .font(.caption2)
+            TextField("Search or enter address", text: $omnibox)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .onSubmit { store.navigate(omnibox) }
+                .accessibilityIdentifier("browser-omnibox")
+            Button { store.toggleBookmark() } label: {
+                Image(systemName: store.bookmarks.contains(where: { $0.url == store.active?.url }) ? "star.fill" : "star")
+                    .frame(width: 34, height: 34)
+            }
+            .accessibilityLabel("Bookmark")
+            .accessibilityIdentifier("browser-add-bookmark")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 3)
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 9))
+        .overlay { RoundedRectangle(cornerRadius: 9).stroke(.separator) }
+    }
+
+    private var browserMenu: some View {
+        Menu {
+            Button("Find in page", systemImage: "text.magnifyingglass") { showingFind.toggle() }
+            Button("Bookmarks", systemImage: "star") { showingBookmarks = true }
+            Button("History", systemImage: "clock") { showingHistory = true }
+            Button("Downloads", systemImage: "arrow.down.circle") { showingDownloads = true }
+            Button("Capture to Library", systemImage: "books.vertical") { captureCurrentPage() }
+            if let url = store.active?.url { ShareLink(item: url) { Label("Share", systemImage: "square.and.arrow.up") } }
+        } label: {
+            Image(systemName: "ellipsis.circle").font(.system(size: 18, weight: .medium)).frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("Browser menu")
+    }
+
+    private func browserIcon(_ image: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: image).font(.system(size: 18, weight: .semibold)).frame(width: 44, height: 44)
+        }
+        .accessibilityLabel(Text(label))
     }
 
     private var findBar: some View {
@@ -263,7 +330,7 @@ private struct NodusBrowserMobileView: View {
     private func captureCurrentPage() {
         guard let tab = store.active else { return }
         Task {
-            do { try await BrowserLibraryCapture.capture(tab: tab, session: session); captureStatus = "Saved to your global Library." }
+            do { try await BrowserLibraryCapture.capture(tab: tab, session: session); captureStatus = String(localized: "Saved to your global Library.") }
             catch { captureStatus = error.localizedDescription }
         }
     }
@@ -293,6 +360,11 @@ private struct IsolatedBrowserWebView: UIViewRepresentable {
     func updateUIView(_ web: WKWebView, context: Context) {
         guard let tab = store.tabs.first(where: { $0.id == tabId }), context.coordinator.appliedCommand != tab.command else { return }
         context.coordinator.appliedCommand = tab.command
+#if DEBUG
+        // UI parity tests exercise browser chrome and navigation state. Avoid letting a remote,
+        // script-heavy page make those deterministic tests wait for WebKit network quiescence.
+        if ProcessInfo.processInfo.environment["NODUS_UI_TEST_DEMO"] == "1" { return }
+#endif
         web.load(URLRequest(url: tab.url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 30))
     }
 
@@ -323,15 +395,21 @@ private struct IsolatedBrowserWebView: UIViewRepresentable {
             })
         }
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-            guard let url = action.request.url, NodusWebURLPolicy.isAllowedBrowserURL(url) else {
-                store.blockedMessage = "Nodus blocked a local address or unsupported scheme."
+            guard let url = action.request.url else { return .cancel }
+            guard NodusWebURLPolicy.isAllowedBrowserURL(url) else {
+                let isVisibleNavigation = action.targetFrame?.isMainFrame == true
+                    || (action.targetFrame == nil && action.navigationType != .other)
+                if isVisibleNavigation {
+                    store.blockedMessage = String(localized: "Nodus blocked a local address or unsupported scheme.")
+                }
                 return .cancel
             }
             if action.targetFrame == nil { store.open(url); return .cancel }
+            if action.targetFrame?.isMainFrame == true { store.clearBlockedMessage() }
             return .allow
         }
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { store.update(tabId, loading: true, canBack: webView.canGoBack, canForward: webView.canGoForward) }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { store.update(tabId, url: webView.url, title: webView.title, loading: false, canBack: webView.canGoBack, canForward: webView.canGoForward); store.recordVisit(tabId: tabId) }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { store.clearBlockedMessage(); store.update(tabId, url: webView.url, title: webView.title, loading: false, canBack: webView.canGoBack, canForward: webView.canGoForward); store.recordVisit(tabId: tabId) }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { store.update(tabId, loading: false, error: error.localizedDescription) }
         func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
             response.canShowMIMEType ? .allow : .download
@@ -407,7 +485,7 @@ private final class RadarWorkspaceStore {
         guard !checking else { return }
         checking = true; defer { checking = false }
         if demo {
-            lastCheckedAt = Date(); message = "All sources are up to date."
+            lastCheckedAt = Date(); message = String(localized: "All sources are up to date.")
             return
         }
         var fetched: [RadarUpdateRecord] = []
@@ -417,7 +495,7 @@ private final class RadarWorkspaceStore {
         }
         updates = RadarProjection.merge(updates, incoming: fetched)
         lastCheckedAt = Date()
-        if fetched.isEmpty, message == nil { message = "No new updates were detected." }
+        if fetched.isEmpty, message == nil { message = String(localized: "No new updates were detected.") }
     }
 
     private func save() { defaults.set(try? JSONEncoder().encode(Snapshot(follows: follows, updates: updates, lastCheckedAt: lastCheckedAt)), forKey: key) }
@@ -518,7 +596,7 @@ private struct NodusRadarMobileView: View {
     private func sourceRow(_ name: String, _ detail: String, _ available: Bool) -> some View { HStack { Image(systemName: available ? "checkmark.circle.fill" : "desktopcomputer").foregroundStyle(available ? Color.nodusSuccess : session.accent); VStack(alignment: .leading) { Text(name); Text(detail).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(available ? "Ready" : "On Mac").font(.caption2).foregroundStyle(.secondary) } }
     private func saveToLibrary(_ update: RadarUpdateRecord) {
         guard !saving else { return }; saving = true
-        Task { defer { saving = false }; do { try await RadarLibraryCapture.capture(update: update, session: session); store.markSaved(update.id); store.message = "Saved to your global Library." } catch { store.message = error.localizedDescription } }
+        Task { defer { saving = false }; do { try await RadarLibraryCapture.capture(update: update, session: session); store.markSaved(update.id); store.message = String(localized: "Saved to your global Library.") } catch { store.message = error.localizedDescription } }
     }
     private func radarIcon(_ type: RadarFollowType) -> String { switch type { case .topic: "lightbulb"; case .search: "magnifyingglass"; case .author: "person"; case .journal: "book"; case .paper: "quote.opening"; case .rss: "dot.radiowaves.up.forward"; case .website: "globe" } }
 }
@@ -561,9 +639,9 @@ private enum RadarLibraryCapture {
 private enum ToolkitPage: String, CaseIterable, Identifiable {
     case home, apps, convert, protect, translate, presenter, ocr
     var id: String { rawValue }
-    var title: String { switch self { case .home: "Tools"; case .apps: "Apps"; case .convert: "Convert"; case .protect: "Protect"; case .translate: "Translate"; case .presenter: "Presenter"; case .ocr: "OCR" } }
+    var title: String { switch self { case .home: String(localized: "Tools"); case .apps: String(localized: "Apps"); case .convert: String(localized: "Convert"); case .protect: String(localized: "Protect"); case .translate: String(localized: "Translate"); case .presenter: String(localized: "Presenter"); case .ocr: "OCR" } }
     var icon: String { switch self { case .home: "wrench.and.screwdriver"; case .apps: "square.grid.2x2"; case .convert: "arrow.triangle.2.circlepath"; case .protect: "lock.shield"; case .translate: "character.bubble"; case .presenter: "play.rectangle"; case .ocr: "doc.text.viewfinder" } }
-    var detail: String { switch self { case .home: ""; case .apps: "Focused local utilities in an isolated runtime."; case .convert: "Merge PDFs, build PDFs from images, extract text and create checksums."; case .protect: "Encrypt a PDF locally with an owner and reader password."; case .translate: "Translate text with the provider configured on this device."; case .presenter: "Present PDFs fullscreen with page controls and AirPlay mirroring."; case .ocr: "Recognize text in images and PDFs using Apple Vision." } }
+    var detail: String { switch self { case .home: ""; case .apps: String(localized: "Focused local utilities in an isolated runtime."); case .convert: String(localized: "Merge PDFs, build PDFs from images, extract text and create checksums."); case .protect: String(localized: "Encrypt a PDF locally with an owner and reader password."); case .translate: String(localized: "Translate text with the provider configured on this device."); case .presenter: String(localized: "Present PDFs fullscreen with page controls and AirPlay mirroring."); case .ocr: String(localized: "Recognize text in images and PDFs using Apple Vision.") } }
 }
 
 private struct NodusToolkitMobileView: View {
@@ -612,7 +690,7 @@ private struct NodusToolkitMobileView: View {
 
 private struct ToolkitPageHeader: View {
     let page: ToolkitPage; let accent: Color; let onBack: () -> Void
-    var body: some View { HStack(spacing: 11) { Button(action: onBack) { Image(systemName: "chevron.left").frame(width: 36, height: 36).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8)) }.buttonStyle(.plain).accessibilityLabel("Back to Tools"); DesktopPageHeader(title: LocalizedStringKey(page.title), subtitle: page.detail, systemImage: page.icon, accent: accent) }.padding(16).background(Color(uiColor: .systemBackground).opacity(0.85)).overlay(alignment: .bottom) { Divider() } }
+    var body: some View { HStack(spacing: 11) { Button(action: onBack) { Image(systemName: "chevron.left").frame(width: 36, height: 36).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8)) }.buttonStyle(.plain).accessibilityLabel("Back to Tools"); DesktopPageHeader(title: LocalizedStringKey(page.title), subtitle: LocalizedStringKey(page.detail), systemImage: page.icon, accent: accent) }.padding(16).background(Color(uiColor: .systemBackground).opacity(0.85)).overlay(alignment: .bottom) { Divider() } }
 }
 
 private struct ToolkitAppsMobileView: View {
@@ -674,14 +752,14 @@ private struct ToolkitConvertMobileView: View {
     @State private var output: URL?
     @State private var message: String?
     var body: some View { VStack(spacing: 0) { ToolkitPageHeader(page: .convert, accent: session.accent, onBack: onBack); Form { Picker("Operation", selection: $operation) { Text("Merge PDFs").tag(ToolkitOperation.mergePDF); Text("Images to PDF").tag(ToolkitOperation.imagesToPDF); Text("Extract PDF text").tag(ToolkitOperation.extractPDFText); Text("SHA-256 checksum").tag(ToolkitOperation.checksum) }.accessibilityIdentifier("toolkit-op-picker"); Section("Files") { Button { importing = true } label: { Label("Choose files", systemImage: "plus") }; ForEach(inputs, id: \.self) { Label($0.lastPathComponent, systemImage: "doc") }; if !inputs.isEmpty { Button("Clear", role: .destructive) { inputs.removeAll(); output = nil } } }; Section { Button { run() } label: { if working { ProgressView() } else { Label("Run locally", systemImage: "play.fill") } }.disabled(inputs.isEmpty || working).accessibilityIdentifier("toolkit-run"); if let output { ShareLink(item: output) { Label("Share \(output.lastPathComponent)", systemImage: "square.and.arrow.up") } }; if let message { Text(message).font(.caption).foregroundStyle(.secondary) } } } }.fileImporter(isPresented: $importing, allowedContentTypes: [.pdf, .image, .plainText, .data], allowsMultipleSelection: true) { if case .success(let urls) = $0 { inputs = urls } }.accessibilityIdentifier("toolkit-convert-page") }
-    private func run() { working = true; Task { defer { working = false }; do { output = try await ToolkitNativeRunner.run(operation, urls: inputs); message = "Processed completely on this device." } catch { message = error.localizedDescription } } }
+    private func run() { working = true; Task { defer { working = false }; do { output = try await ToolkitNativeRunner.run(operation, urls: inputs); message = String(localized: "Processed completely on this device.") } catch { message = error.localizedDescription } } }
 }
 
 private struct ToolkitProtectMobileView: View {
     let session: SpaceSession; let onBack: () -> Void
     @State private var input: URL?; @State private var importing = false; @State private var ownerPassword = ""; @State private var userPassword = ""; @State private var output: URL?; @State private var message: String?
     var body: some View { VStack(spacing: 0) { ToolkitPageHeader(page: .protect, accent: session.accent, onBack: onBack); Form { Section("PDF") { Button { importing = true } label: { Label(input?.lastPathComponent ?? "Choose PDF", systemImage: "doc") } }; Section("Encryption") { SecureField("Owner password", text: $ownerPassword); SecureField("Reader password (optional)", text: $userPassword); Text("Passwords never leave this device and are not stored.").font(.caption).foregroundStyle(.secondary) }; Button("Create protected copy") { protect() }.disabled(input == nil || ownerPassword.isEmpty); if let output { ShareLink(item: output) { Label("Share protected PDF", systemImage: "square.and.arrow.up") } }; if let message { Text(message).font(.caption).foregroundStyle(.secondary) } } }.fileImporter(isPresented: $importing, allowedContentTypes: [.pdf]) { if case .success(let url) = $0 { input = url } }.accessibilityIdentifier("toolkit-protect-page") }
-    private func protect() { guard let input else { return }; Task { do { output = try ToolkitNativeRunner.protectPDF(input, owner: ownerPassword, user: userPassword); ownerPassword = ""; userPassword = ""; message = "Encrypted locally." } catch { message = error.localizedDescription } } }
+    private func protect() { guard let input else { return }; Task { do { output = try ToolkitNativeRunner.protectPDF(input, owner: ownerPassword, user: userPassword); ownerPassword = ""; userPassword = ""; message = String(localized: "Encrypted locally.") } catch { message = error.localizedDescription } } }
 }
 
 private struct ToolkitTranslateMobileView: View {
@@ -689,7 +767,7 @@ private struct ToolkitTranslateMobileView: View {
     @State private var source = ""; @State private var targetLanguage = "English"; @State private var result = ""; @State private var working = false; @State private var message: String?
     private let languages = ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Catalan", "Dutch", "Polish", "Greek", "Turkish", "Arabic", "Hebrew", "Persian", "Hindi", "Chinese", "Japanese", "Korean"]
     var body: some View { VStack(spacing: 0) { ToolkitPageHeader(page: .translate, accent: session.accent, onBack: onBack); ScrollView { VStack(alignment: .leading, spacing: 12) { Picker("Target language", selection: $targetLanguage) { ForEach(languages, id: \.self, content: Text.init) }.pickerStyle(.menu); TextEditor(text: $source).frame(minHeight: 180).padding(8).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10)); Button { translate() } label: { if working { ProgressView() } else { Label("Translate", systemImage: "character.bubble") } }.buttonStyle(.borderedProminent).tint(session.accent).disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working); if !result.isEmpty { Text("Translation").font(.headline); Text(result).textSelection(.enabled).padding(14).desktopContentRow(accent: session.accent); ShareLink(item: result) { Label("Share translation", systemImage: "square.and.arrow.up") } }; if let message { Text(message).font(.caption).foregroundStyle(Color.nodusCaution) } }.frame(maxWidth: 820, alignment: .leading).padding(20) } }.accessibilityIdentifier("toolkit-translate-page") }
-    private func translate() { guard let model = ai.model(for: .chat) else { message = "Choose a chat model in Settings first."; return }; working = true; Task { defer { working = false }; do { result = try await ProviderClient(keyProvider: ai.keyProvider).complete(ChatRequest(model: model, messages: [.init(role: .system, content: "Translate faithfully into \(targetLanguage). Preserve paragraphs, citations and Markdown. Return only the translation."), .init(role: .user, content: source)], temperature: 0.1, maxTokens: 4_000)); message = nil } catch { message = error.localizedDescription } } }
+    private func translate() { guard let model = ai.model(for: .chat) else { message = String(localized: "Choose a chat model in Settings first."); return }; working = true; Task { defer { working = false }; do { result = try await ProviderClient(keyProvider: ai.keyProvider).complete(ChatRequest(model: model, messages: [.init(role: .system, content: "Translate faithfully into \(targetLanguage). Preserve paragraphs, citations and Markdown. Return only the translation."), .init(role: .user, content: source)], temperature: 0.1, maxTokens: 4_000)); message = nil } catch { message = error.localizedDescription } } }
 }
 
 private struct ToolkitPresenterMobileView: View {
@@ -702,7 +780,7 @@ private struct ToolkitOCRMobileView: View {
     let session: SpaceSession; let onBack: () -> Void
     @State private var inputs: [URL] = []; @State private var importing = false; @State private var working = false; @State private var output = ""; @State private var message: String?
     var body: some View { VStack(spacing: 0) { ToolkitPageHeader(page: .ocr, accent: session.accent, onBack: onBack); ScrollView { VStack(alignment: .leading, spacing: 14) { Button { importing = true } label: { Label(inputs.isEmpty ? "Choose images or PDF" : "\(inputs.count) file(s) selected", systemImage: "doc.viewfinder") }.buttonStyle(.bordered); Button { recognize() } label: { if working { ProgressView() } else { Label("Recognize locally", systemImage: "text.viewfinder") } }.buttonStyle(.borderedProminent).tint(session.accent).disabled(inputs.isEmpty || working); if !output.isEmpty { TextEditor(text: $output).frame(minHeight: 360).padding(8).background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 10)); ShareLink(item: output) { Label("Share recognized text", systemImage: "square.and.arrow.up") } }; if let message { Text(message).font(.caption).foregroundStyle(.secondary) } }.frame(maxWidth: 900, alignment: .leading).padding(20) } }.fileImporter(isPresented: $importing, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { if case .success(let urls) = $0 { inputs = urls } }.accessibilityIdentifier("toolkit-ocr-page") }
-    private func recognize() { working = true; Task { defer { working = false }; do { output = try await ToolkitNativeRunner.recognize(urls: inputs); message = "Recognition ran with Apple Vision on this device." } catch { message = error.localizedDescription } } }
+    private func recognize() { working = true; Task { defer { working = false }; do { output = try await ToolkitNativeRunner.recognize(urls: inputs); message = String(localized: "Recognition ran with Apple Vision on this device.") } catch { message = error.localizedDescription } } }
 }
 
 private struct PDFKitView: UIViewRepresentable {
@@ -763,7 +841,7 @@ private struct DesktopMacJobsCard: View {
     @State private var selected: ToolkitOperation = .officeToPDF
     @State private var importing = false
     @State private var message: String?
-    var body: some View { VStack(alignment: .leading, spacing: 10) { Label("Mac-dependent jobs", systemImage: "desktopcomputer").font(.headline); Text("Word conversion and searchable-PDF OCR use a typed job. The file first becomes an encrypted, account-scoped Library object; no device path or arbitrary command is sent.").font(.caption).foregroundStyle(.secondary); Picker("Job", selection: $selected) { Text("Word to Markdown").tag(ToolkitOperation.officeToPDF); Text("Scanned to searchable PDF").tag(ToolkitOperation.repairDamagedPDF) }.pickerStyle(.segmented); Button { importing = true } label: { Label("Run on the Mac", systemImage: "desktopcomputer.and.arrow.down") }.buttonStyle(.bordered).disabled(session.isDemo); if let message { Text(message).font(.caption).foregroundStyle(.secondary) } }.padding(18).desktopContentRow(accent: session.accent).fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { if case .success(let url) = $0 { Task { do { try await DesktopToolkitQueue.enqueue(url: url, operation: selected, session: session); message = "Queued once for the owner Mac." } catch { message = error.localizedDescription } } } }.accessibilityIdentifier("toolkit-run-on-mac") }
+    var body: some View { VStack(alignment: .leading, spacing: 10) { Label("Mac-dependent jobs", systemImage: "desktopcomputer").font(.headline); Text("Word conversion and searchable-PDF OCR use a typed job. The file first becomes an encrypted, account-scoped Library object; no device path or arbitrary command is sent.").font(.caption).foregroundStyle(.secondary); Picker("Job", selection: $selected) { Text("Word to Markdown").tag(ToolkitOperation.officeToPDF); Text("Scanned to searchable PDF").tag(ToolkitOperation.repairDamagedPDF) }.pickerStyle(.segmented); Button { importing = true } label: { Label("Run on the Mac", systemImage: "desktopcomputer.and.arrow.down") }.buttonStyle(.bordered).disabled(session.isDemo); if let message { Text(message).font(.caption).foregroundStyle(.secondary) } }.padding(18).desktopContentRow(accent: session.accent).fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { if case .success(let url) = $0 { Task { do { try await DesktopToolkitQueue.enqueue(url: url, operation: selected, session: session); message = String(localized: "Queued once for the owner Mac.") } catch { message = error.localizedDescription } } } }.accessibilityIdentifier("toolkit-run-on-mac") }
 }
 
 private enum DesktopToolkitQueue {

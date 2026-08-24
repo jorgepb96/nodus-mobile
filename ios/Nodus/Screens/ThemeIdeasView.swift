@@ -16,6 +16,7 @@ struct ThemeIdeasView: View {
     @State private var query = ""
     @State private var isLoading = true
     @State private var needsMirror = false
+    @State private var error: String?
 
     private var themeId: String? { theme.string("theme_id") }
     private var label: String { theme.text("label") ?? "Theme" }
@@ -49,6 +50,16 @@ struct ThemeIdeasView: View {
                 }
             }
 
+            if isLoading {
+                HStack { Spacer(); ProgressView("Loading ideas…"); Spacer() }
+                    .listRowBackground(Color.clear)
+            }
+
+            if let error {
+                NodusNotice(tone: .blocked, title: "Could not load theme ideas", message: LocalizedStringKey(error))
+                    .listRowBackground(Color.clear)
+            }
+
             ForEach(Array(filtered.enumerated()), id: \.offset) { _, idea in
                 NavigationLink {
                     RowDetailView(session: session, collection: Collections["ideas"], row: idea)
@@ -58,7 +69,7 @@ struct ThemeIdeasView: View {
                 .listRowBackground(Color.clear)
             }
 
-            if !isLoading, ideas.isEmpty, !needsMirror {
+            if !isLoading, ideas.isEmpty, !needsMirror, error == nil {
                 ContentUnavailableView(
                     "No ideas",
                     systemImage: "lightbulb",
@@ -76,6 +87,8 @@ struct ThemeIdeasView: View {
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) {
             NodusSearchField(text: $query, prompt: "Filter ideas under this theme", accent: session.accent)
+                .padding(.horizontal, NodusSpace.page)
+                .padding(.bottom, 8)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -97,8 +110,14 @@ struct ThemeIdeasView: View {
             return
         }
         needsMirror = false
-        let links = (try? await mirror.rows(table: "idea_theme_links", where: "theme_id", equals: themeId)) ?? []
-        let ids = links.compactMap { $0.string("global_id") }
-        ideas = (try? await mirror.rows(table: "ideas", ids: Array(Set(ids)))) ?? []
+        do {
+            let links = try await mirror.rows(table: "idea_theme_links", where: "theme_id", equals: themeId)
+            let ids = links.compactMap { $0.string("global_id") }
+            ideas = try await mirror.rows(table: "ideas", ids: Array(Set(ids)))
+            error = nil
+        } catch {
+            ideas = []
+            self.error = error.localizedDescription
+        }
     }
 }

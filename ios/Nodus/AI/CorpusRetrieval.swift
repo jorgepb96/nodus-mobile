@@ -46,11 +46,11 @@ struct CorpusRetrieval: Sendable {
 
         var label: String {
             switch kind {
-            case .ideas: return "Ideas"
-            case .themes: return "Themes"
-            case .gaps: return "Gaps"
-            case .works: return "Works"
-            case .passages: return "Passages"
+            case .ideas: return String(localized: "Ideas")
+            case .themes: return String(localized: "Themes")
+            case .gaps: return String(localized: "Gaps")
+            case .works: return String(localized: "Works")
+            case .passages: return String(localized: "Passages")
             }
         }
 

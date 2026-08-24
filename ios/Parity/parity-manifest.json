@@ -133,12 +133,11 @@
       "label": "Grafo",
       "icon": "network",
       "group": "explore",
-      "delivery": "portableAlgorithm",
-      "mobileState": "implemented",
+      "delivery": "explicitExclusion",
+      "mobileState": "excluded",
+      "reason": "Product decision: the Graph view is suspended in the mobile app.",
       "evidence": [
-        "ios/NodusUITests/NodusParityUITests.swift#testAcademicGraphReadingHypothesisWritingAndProjectsAreNativeRoutes",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/AcademicParityTests.swift",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/ArgumentMapTests.swift"
+        "ios/DESIGN_PARITY.md#phase-13-visual-evidence-and-closure"
       ]
     },
     {
@@ -668,12 +667,11 @@
       "label": "Grafo de estudio",
       "icon": "network",
       "group": "analyze",
-      "delivery": "portableAlgorithm",
-      "mobileState": "implemented",
+      "delivery": "explicitExclusion",
+      "mobileState": "excluded",
+      "reason": "Product decision: the Graph view is suspended in the mobile app.",
       "evidence": [
-        "ios/NodusUITests/NodusParityUITests.swift#testStudyTeachingParityKeepsTabsGradesAndPrivateRecordings",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/AcademicParityTests.swift",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/ArgumentMapTests.swift"
+        "ios/DESIGN_PARITY.md#phase-13-visual-evidence-and-closure"
       ]
     },
     {
@@ -7498,6 +7496,20 @@
       "id": "BrowserApi.onBrowserStateChanged",
       "interface": "BrowserApi",
       "method": "onBrowserStateChanged",
+      "source": "shared/types.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "BrowserApi.openBrowserHistoryNeighbourTab",
+      "interface": "BrowserApi",
+      "method": "openBrowserHistoryNeighbourTab",
       "source": "shared/types.ts",
       "delivery": "platformEquivalent",
       "mobileState": "implemented",

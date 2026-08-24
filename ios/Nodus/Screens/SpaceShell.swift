@@ -3,6 +3,27 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
+/// Renders the original Nodus icon when SF Symbols has no semantic equivalent. The telescope
+/// path comes from the desktop icon set; all other names continue to use native SF Symbols.
+struct NodusIcon: View {
+    let name: String
+    var size: CGFloat = 16
+    var weight: Font.Weight = .regular
+
+    var body: some View {
+        if name == "telescope" {
+            Image("NodusTelescope")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: name)
+                .font(.system(size: size, weight: weight))
+        }
+    }
+}
+
 /// One adaptive shell for iPhone and iPad. Width changes the sidebar presentation, never the
 /// hierarchy or the destination set.
 struct SpaceShell: View {
@@ -19,7 +40,6 @@ struct SpaceShell: View {
     @State private var residentRoutes: [NodusRoute]
     @State private var workspaceTabs = WorkspaceTabs()
     @State private var showingDrawer = false
-    @State private var showingSettings = false
     @State private var showingAssistant = false
     @State private var showingCommands = false
     @State private var chrome = NodusChrome()
@@ -62,7 +82,7 @@ struct SpaceShell: View {
                         onQueue: { tray.open() },
                         onRefresh: { Task { await session.refreshPublishedContent() } },
                         onTheme: { preferences.toggleInterfaceStyle(current: colorScheme) },
-                        onSettings: { showingSettings = true }
+                        onSettings: { select(.settings) }
                     )
 
                     HStack(spacing: 0) {
@@ -90,23 +110,44 @@ struct SpaceShell: View {
                         .shadow(color: .black.opacity(0.28), radius: 24, x: 8)
                         .transition(.move(edge: .leading))
                 }
+
+                // WKWebView and other UIKit-backed views can consume a drag before a SwiftUI
+                // ancestor sees it. Keep a narrow, dedicated edge band above route content so
+                // the standard drawer gesture works consistently without affecting horizontal
+                // scrolling elsewhere on the screen.
+                if !presentation.isPersistent, !showingDrawer {
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: 52).allowsHitTesting(false)
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .gesture(edgeOpenGesture(presentation: presentation, width: proxy.size.width))
+                    }
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                    .zIndex(20)
+                }
             }
             .animation(NodusMotion.standard, value: showingDrawer)
             .animation(NodusMotion.standard, value: presentation.sidebarWidth)
+            .simultaneousGesture(edgeOpenGesture(presentation: presentation, width: proxy.size.width))
         }
         .environment(chrome)
         .environment(workspaceTabs)
         .environment(\.nodusHasTabBar, false)
-        .accessibilityIdentifier("nodus-space-shell")
+        .overlay(alignment: .topLeading) {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement()
+                .accessibilityLabel("Nodus")
+                .accessibilityIdentifier("nodus-space-shell")
+                .allowsHitTesting(false)
+        }
         .task {
             await session.load()
             await session.loadMirror()
             await session.probeEmbedding()
         }
         .task { await session.monitorPublishedContent() }
-        .nodusSheet(isPresented: $showingSettings) {
-            SpaceSettingsView(session: session).nodusModalClose(accent: session.accent)
-        }
         .nodusSheet(isPresented: $showingAssistant) {
             NavigationStack { ChatTab(session: session) }.nodusModalClose(accent: session.accent)
         }
@@ -126,7 +167,7 @@ struct SpaceShell: View {
             selection: route,
             collapsed: collapsed,
             onSelect: select,
-            onSettings: { showingSettings = true }
+            onSettings: { select(.settings) }
         )
     }
 
@@ -180,11 +221,6 @@ struct SpaceShell: View {
     }
 
     private func select(_ selected: NodusRoute) {
-        if selected == .settings {
-            showingSettings = true
-            showingDrawer = false
-            return
-        }
         guard selected != route else {
             showingDrawer = false
             return
@@ -205,7 +241,7 @@ struct SpaceShell: View {
     /// an expensive operation that the user left behind.
     private func retainsRouteState(_ route: NodusRoute) -> Bool {
         switch route {
-        case .argument, .graph, .studyGraph, .map, .tree:
+        case .argument, .map, .tree:
             return false
         default:
             return true
@@ -235,14 +271,12 @@ struct SpaceShell: View {
             collection("gaps", route: .gaps)
         case .debate:
             SpecialListView(session: session, resource: .debates)
-        case .graph:
-            AcademicGraphView(session: session)
         case .hypothesis:
             HypothesisLabMobileView(session: session)
         case .reading:
             ReadingPathMobileView(session: session)
         case .immersion:
-            SpecialListView(session: session, resource: .immersion)
+            ImmersionLibraryView(session: session)
         case .workspace, .notes:
             PublishedWorkspaceView(session: session)
         case .writing:
@@ -310,8 +344,6 @@ struct SpaceShell: View {
             StudyTeachingWorkspaceView(session: session, mode: .calendar)
         case .studyRecordings:
             StudyTeachingWorkspaceView(session: session, mode: .recordings)
-        case .studyGraph:
-            StudyTeachingWorkspaceView(session: session, mode: .graph)
         case .studyQuestions:
             QuestionBankView(session: session)
         case .studyReview:
@@ -331,8 +363,23 @@ struct SpaceShell: View {
         case .browser, .radar, .toolkit:
             PlatformToolsWorkspaceView(session: session, route: route)
         case .settings:
-            Color.clear
+            SpaceSettingsView(session: session)
         }
+    }
+
+    /// A drawer gesture begins only in the system-like edge band and commits only after a
+    /// decisive horizontal movement. Using a simultaneous gesture preserves carousels,
+    /// browser history swipes and horizontally scrolling workspaces away from the edge.
+    private func edgeOpenGesture(presentation: SidebarPresentation, width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onEnded { value in
+                guard !presentation.isPersistent, !showingDrawer else { return }
+                let beganAtEdge = value.startLocation.x <= min(28, width * 0.08)
+                let horizontal = value.translation.width >= 64
+                    && abs(value.translation.width) > abs(value.translation.height) * 1.25
+                guard beganAtEdge, horizontal else { return }
+                withAnimation(NodusMotion.standard) { showingDrawer = true }
+            }
     }
 
     private func openIdea(_ row: Row) {
@@ -442,10 +489,14 @@ private struct DesktopTopBar: View {
                             .frame(width: 44, height: 44)
                     }
                     .accessibilityLabel("Navigation")
+                    .accessibilityIdentifier("nodus-navigation-toggle")
 
                     if presentation.availableWidth >= 720 {
                         NodusMark(style: .accent(session.accent)).frame(width: 24, height: 24)
-                        Text("Nodus Research").font(.headline.weight(.semibold))
+                        Text(verbatim: "Nodus")
+                            .font(.headline.weight(.semibold))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
                 .frame(width: presentation.isPersistent ? presentation.sidebarWidth : nil, alignment: .leading)
@@ -611,8 +662,11 @@ private struct DesktopSidebar: View {
             nav.route == .settings ? onSettings() : onSelect(nav.route)
         } label: {
             HStack(spacing: collapsed ? 0 : 6) {
-                Image(systemName: nav.systemImage)
-                    .font(.system(size: 14, weight: selection == nav.route ? .semibold : .regular))
+                NodusIcon(
+                    name: nav.systemImage,
+                    size: 14,
+                    weight: selection == nav.route ? .semibold : .regular
+                )
                     .frame(width: 44, height: 44, alignment: .center)
                 if !collapsed {
                     Text(nav.label)
@@ -663,7 +717,7 @@ private struct CommandPalette: View {
                             if nav.route == selection { Image(systemName: "checkmark").foregroundStyle(session.accent) }
                         }
                     } icon: {
-                        Image(systemName: nav.systemImage).foregroundStyle(session.accent)
+                        NodusIcon(name: nav.systemImage, size: 16).foregroundStyle(session.accent)
                     }
                 }
                 .buttonStyle(.plain)

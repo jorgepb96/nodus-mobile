@@ -93,13 +93,12 @@ struct PublishedLibraryView: View {
                 DesktopPageHeader(
                     title: "Library",
                     subtitle: loading && documents.isEmpty
-                        ? String(localized: "Loading published catalogue…")
-                        : String(localized: "\(visible.count) documents · \(collectionName)"),
+                        ? "Loading published catalogue…"
+                        : "\(visible.count) documents · \(collectionName)",
                     systemImage: "books.vertical",
                     accent: session.accent
                 )
                 NodusSearchField(text: $query, prompt: "Search title, author or tag", accent: session.accent, isBusy: loading)
-                    .padding(.horizontal, -NodusSpace.page)
                 libraryControlBar
                 if loading, documents.isEmpty { ProgressView().tint(session.accent).frame(maxWidth: .infinity) }
                 if let error, documents.isEmpty {
@@ -205,9 +204,8 @@ struct PublishedLibraryView: View {
                 Button(role: .destructive) { requestDeletion(.everySpace) } label: { Label("Delete all library downloads", systemImage: "trash.slash") }
             } label: {
                 Image(systemName: "ellipsis")
-                    .frame(width: 24, height: 24)
             }
-            .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+            .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
         }
     }
 

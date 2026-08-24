@@ -264,10 +264,10 @@ struct RowPresenter {
 
     private static func gapKindLabel(_ kind: String) -> String {
         switch kind {
-        case "future_work": return "Future work"
-        case "limitation": return "Limitation"
-        case "open_question": return "Open question"
-        case "unresolved_contradiction": return "Unresolved contradiction"
+        case "future_work": return String(localized: "Future work")
+        case "limitation": return String(localized: "Limitation")
+        case "open_question": return String(localized: "Open question")
+        case "unresolved_contradiction": return String(localized: "Unresolved contradiction")
         default: return kind
         }
     }
@@ -279,29 +279,29 @@ extension CollectionDescriptor {
     /// The menu label. Spanish, matching the desktop's own vocabulary.
     var label: String {
         switch path {
-        case "works": return "Library"
-        case "ideas": return "Ideas"
-        case "themes": return "Themes"
-        case "gaps": return "Gaps"
-        case "authors": return "Authors"
-        case "passages": return "Passages"
-        case "persons": return "People"
-        case "places": return "Places"
-        case "events": return "Timeline"
-        case "relationships": return "Relationships"
-        case "study-subjects": return "Subjects"
-        case "study-courses": return "Courses"
-        case "study-topics": return "Study topics"
-        case "study-docs": return "Documents"
-        case "study-materials": return "Materials"
-        case "study-flashcards": return "Flashcards"
-        case "study-questions": return "Question bank"
-        case "study-plans": return "Study plans"
-        case "study-goals": return "Goals"
-        case "study-calendar": return "Calendar"
-        case "teaching-exams": return "Exams"
-        case "teaching-rubrics": return "Rubrics"
-        case "databases": return "Databases"
+        case "works": return String(localized: "Library")
+        case "ideas": return String(localized: "Ideas")
+        case "themes": return String(localized: "Themes")
+        case "gaps": return String(localized: "Gaps")
+        case "authors": return String(localized: "Authors")
+        case "passages": return String(localized: "Passages")
+        case "persons": return String(localized: "People")
+        case "places": return String(localized: "Places")
+        case "events": return String(localized: "Timeline")
+        case "relationships": return String(localized: "Relationships")
+        case "study-subjects": return String(localized: "Subjects")
+        case "study-courses": return String(localized: "Courses")
+        case "study-topics": return String(localized: "Study topics")
+        case "study-docs": return String(localized: "Documents")
+        case "study-materials": return String(localized: "Materials")
+        case "study-flashcards": return String(localized: "Flashcards")
+        case "study-questions": return String(localized: "Question bank")
+        case "study-plans": return String(localized: "Study plans")
+        case "study-goals": return String(localized: "Goals")
+        case "study-calendar": return String(localized: "Calendar")
+        case "teaching-exams": return String(localized: "Exams")
+        case "teaching-rubrics": return String(localized: "Rubrics")
+        case "databases": return String(localized: "Databases")
         default: return path.capitalized
         }
     }

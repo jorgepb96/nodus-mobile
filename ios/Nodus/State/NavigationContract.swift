@@ -8,13 +8,13 @@ import SwiftUI
 /// Adding a route on Desktop without classifying it here fails the parity audit.
 enum NodusRoute: String, CaseIterable, Codable, Hashable, Identifiable {
     case home, search, testimonyInterviews, testimonyParticipants, testimonyContrasts
-    case library, graph, argument, ideas, authors, persons
+    case library, argument, ideas, authors, persons
     case prosopSearch, prosopPopulation, prosopPersons, prosopSources, prosopAnalysis, prosopNetworks
     case encyclopedia, continuity, conflicts, arcs, rules, questions, worldChat, manuscript
     case characters, places, factions, cultures, dynasties, scenes, timeline, tree, relations, map, archive
     case pages, databases, dbSearch, dbAnalysis, dbChat
     case studyCourses, studySchedule, studyCalendar, studySearch, studyLibrary, studyRecordings
-    case studyChat, studyIdeas, studyGraph, studyQuestions, studyReview, studyDeepResearch
+    case studyChat, studyIdeas, studyQuestions, studyReview, studyDeepResearch
     case teachingGroups, teachingGrades, teachingExams, teachingRubrics, teachingUnits
     case immersion, gaps, debate, research, hypothesis, reading, writing, deepResearch, projects, notes, workspace
     case browser, radar, toolkit, settings
@@ -103,11 +103,10 @@ enum NodusNavigationContract {
         .init(.search, "Search", "magnifyingglass", group: .explore, support: .native),
         .init(.ideas, "Ideas", "lightbulb", group: .explore, support: .collection(path: "ideas")),
         .init(.authors, "Authors", "graduationcap", group: .explore, support: .collection(path: "authors")),
-        .init(.graph, "Graph", "point.3.connected.trianglepath.dotted", group: .explore, support: .native),
         .init(.argument, "Argument map", "square.3.layers.3d", group: .explore, support: .native),
         .init(.research, "State of the art", "safari", group: .analyze, support: .native),
         .init(.immersion, "Immersion", "scope", group: .analyze, support: .native),
-        .init(.deepResearch, "Deep Research", "megaphone", group: .analyze, support: .native),
+        .init(.deepResearch, "Deep Research", "telescope", group: .analyze, support: .native),
         .init(.hypothesis, "Hypothesis", "flask", group: .analyze, support: .native),
         .init(.reading, "Reading path", "point.topleft.down.to.point.bottomright.curvepath", group: .analyze, support: .native),
         .init(.gaps, "Research gaps", "circle.dashed", support: .nested),
@@ -163,7 +162,6 @@ enum NodusNavigationContract {
         .init(.studyRecordings, "Recordings", "mic", group: .explore, vaultTypes: study.union(teaching), support: .native),
         .init(.studyChat, "Study chat", "bubble.left.and.text.bubble.right", group: .analyze, vaultTypes: study.union(teaching), support: .native),
         .init(.studyIdeas, "Study ideas", "lightbulb", group: .analyze, vaultTypes: study.union(teaching), support: .collection(path: "ideas")),
-        .init(.studyGraph, "Study graph", "point.3.connected.trianglepath.dotted", group: .analyze, vaultTypes: study.union(teaching), support: .native),
         .init(.studyQuestions, "Question bank", "questionmark.circle", group: .analyze, vaultTypes: study.union(teaching), support: .native),
         .init(.studyReview, "Review", "rectangle.on.rectangle.angled", group: .analyze, vaultTypes: study.union(teaching), support: .native),
         .init(.studyDeepResearch, "Study research", "telescope", group: .analyze, vaultTypes: study.union(teaching), support: .native),
@@ -186,7 +184,7 @@ enum NodusNavigationContract {
         switch vaultType ?? .academic {
         case .academic: ["hypothesis", "reading"]
         case .genealogy: [
-            "argument", "debate", "ideas", "authors", "graph", "immersion",
+            "argument", "debate", "ideas", "authors", "immersion",
             "hypothesis", "reading", "research", "gaps", "writing", "projects",
         ]
         default: []
@@ -208,13 +206,13 @@ enum NodusNavigationContract {
         case .estudio:
             dedicated = [
                 .studyCourses, .studySchedule, .studyCalendar, .studySearch, .studyLibrary,
-                .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyQuestions,
+                .studyRecordings, .studyChat, .studyIdeas, .studyQuestions,
                 .studyReview, .studyDeepResearch, .browser, .radar, .toolkit,
             ]
         case .docencia:
             dedicated = [
                 .studyCourses, .teachingGroups, .studySchedule, .studyCalendar, .studyLibrary,
-                .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyQuestions,
+                .studyRecordings, .studyChat, .studyIdeas, .studyQuestions,
                 .teachingRubrics, .teachingExams, .teachingGrades, .teachingUnits,
                 .browser, .radar, .toolkit,
             ]

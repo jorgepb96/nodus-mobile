@@ -13,7 +13,7 @@ struct ResearchStateView: View {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 DesktopPageHeader(
                     title: "State of research",
-                    subtitle: String(localized: "Coverage, gaps and disagreements in the published corpus"),
+                    subtitle: "Coverage, gaps and disagreements in the published corpus",
                     systemImage: "safari",
                     accent: session.accent
                 )

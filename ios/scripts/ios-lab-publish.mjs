@@ -20,12 +20,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
-import { installRuntimeHooks } from './lib/tsRuntimeHooks.mjs';
 import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
 
+// Runtime hooks belong to the Desktop repository whose TypeScript modules they resolve. The
+// mobile worktree intentionally does not duplicate them; resolving this import from `ios/`
+// made the safe-copy lab fail before it could even list a vault.
+const { installRuntimeHooks } = await import(pathToFileURL(path.join(nodusRepo(), 'scripts/lib/tsRuntimeHooks.mjs')).href);
+
 const repoRoot = mobileRoot;
-const require = createRequire(import.meta.url);
+// Native dependencies (notably better-sqlite3) are installed and ABI-matched in Desktop.
+// Resolve from that package rather than from the mobile script's directory.
+const require = createRequire(path.join(nodusRepo(), 'package.json'));
 
 // better-sqlite3 in this repo is built against Electron's ABI, not the system Node's, so
 // reading a vault from plain `node` fails with a NODE_MODULE_VERSION mismatch.

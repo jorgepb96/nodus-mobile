@@ -7,12 +7,12 @@ struct DesktopPageHeader: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let title: LocalizedStringKey
-    let subtitle: String
+    let subtitle: LocalizedStringKey
     let systemImage: String
     let accent: Color
     private let trailing: AnyView?
 
-    init(title: LocalizedStringKey, subtitle: String, systemImage: String, accent: Color) {
+    init(title: LocalizedStringKey, subtitle: LocalizedStringKey, systemImage: String, accent: Color) {
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
@@ -21,7 +21,7 @@ struct DesktopPageHeader: View {
     }
 
     init<Trailing: View>(
-        title: LocalizedStringKey, subtitle: String, systemImage: String, accent: Color,
+        title: LocalizedStringKey, subtitle: LocalizedStringKey, systemImage: String, accent: Color,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.title = title

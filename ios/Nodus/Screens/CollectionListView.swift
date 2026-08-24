@@ -104,13 +104,15 @@ struct CollectionListView: View {
                 DesktopPageHeader(
                     title: LocalizedStringKey(collection.label),
                     subtitle: isLoading && rows.isEmpty
-                        ? String(localized: "Loading publication…")
-                        : String(localized: "\(total.formatted()) published records"),
+                        ? "Loading publication…"
+                        : "\(total.formatted()) published records",
                     systemImage: collection.icon,
                     accent: session.accent
                 )
                 .padding(.horizontal, NodusSpace.page)
                 NodusSearchField(text: $query, prompt: "Filter on any field", accent: session.accent, isBusy: isLoading)
+                    .padding(.horizontal, NodusSpace.page)
+                    .padding(.bottom, 8)
             }
             .padding(.top, 10)
             .frame(maxWidth: 980)
@@ -264,8 +266,7 @@ struct RowCell: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
-            Image(systemName: presenter.icon)
-                .font(.system(size: 14, weight: .regular))
+            NodusIcon(name: presenter.icon, size: 14)
                 .foregroundStyle(accent.nodusReadable)
                 .frame(width: 22, height: 22)
                 .padding(.top, 2)
@@ -389,6 +390,8 @@ struct SpecialListView: View {
         .nodusPageFunctions(accent: session.accent)
         .safeAreaInset(edge: .top) {
             NodusSearchField(text: $query, prompt: filterPrompt, accent: session.accent, isBusy: isLoading)
+                .padding(.horizontal, NodusSpace.page)
+                .padding(.vertical, 8)
         }
         .navigationTitle(Text(LocalizedStringKey(title)))
         .navigationBarTitleDisplayMode(.inline)
@@ -454,10 +457,10 @@ struct SpecialListView: View {
 
     private var title: String {
         switch resource {
-        case .debates: return "Debates"
-        case .notes: return "Notes"
-        case .deepResearch: return "Deep Research"
-        case .immersion: return "Immersion"
+        case .debates: return String(localized: "Debates")
+        case .notes: return String(localized: "Notes")
+        case .deepResearch: return String(localized: "Deep Research")
+        case .immersion: return String(localized: "Immersion")
         }
     }
 
@@ -474,7 +477,7 @@ struct SpecialListView: View {
         switch resource {
         case .debates: return "bubble.left.and.bubble.right"
         case .notes: return "note.text"
-        case .deepResearch: return "doc.text.magnifyingglass"
+        case .deepResearch: return "telescope"
         case .immersion: return "waveform"
         }
     }
@@ -484,15 +487,15 @@ struct SpecialListView: View {
         case .notes: return RowPresenter.forTable("notes")
         case .debates:
             return RowPresenter(collection: "debates", icon: icon) { row in
-                row.text("relation").map(relationLabel) ?? "Debate"
+                row.text("relation").map(relationLabel) ?? String(localized: "Debate")
             } subtitle: { row in
                 row.text("tension")
             } detail: { row in
-                row.int("clusterSize").map { "\($0) ideas" }
+                row.int("clusterSize").map { String(localized: "\($0) ideas") }
             }
         case .deepResearch:
             return RowPresenter(collection: "reports", icon: icon) { row in
-                row.text("title") ?? "Report"
+                row.text("title") ?? String(localized: "Report")
             } subtitle: { row in
                 row.text("objective")
             } detail: { row in
@@ -500,11 +503,11 @@ struct SpecialListView: View {
             }
         case .immersion:
             return RowPresenter(collection: "sessions", icon: icon) { row in
-                row.text("title") ?? row.text("topic") ?? "Session"
+                row.text("title") ?? row.text("topic") ?? String(localized: "Session")
             } subtitle: { row in
                 row.text("topic")
             } detail: { row in
-                row.int("minutes").map { "\($0) min" }
+                row.int("minutes").map { String(localized: "\($0) min") }
             }
         }
     }

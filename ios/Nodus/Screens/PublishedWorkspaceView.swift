@@ -80,8 +80,8 @@ struct PublishedWorkspaceView: View {
                 DesktopPageHeader(
                     title: "Workspace",
                     subtitle: loading && items.isEmpty
-                        ? String(localized: "Loading notes and ideas…")
-                        : String(localized: "\(visible.count) items · \(selectedFolderName)"),
+                        ? "Loading notes and ideas…"
+                        : "\(visible.count) items · \(selectedFolderName)",
                     systemImage: "rectangle.stack",
                     accent: session.accent
                 )
@@ -105,6 +105,7 @@ struct PublishedWorkspaceView: View {
                 }
                 .padding(.horizontal, NodusSpace.page)
                 NodusSearchField(text: $query, prompt: "Search notes and ideas", accent: session.accent, isBusy: loading)
+                    .padding(.horizontal, NodusSpace.page)
                 Picker("Content type", selection: $kind) {
                     ForEach(KindFilter.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).padding(.horizontal, NodusSpace.page)
