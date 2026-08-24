@@ -205,6 +205,55 @@ struct ReaderAnnotationsTests {
         #expect(ReaderHighlightStroke.range(from: 7, through: 7) == NSRange(location: 7, length: 1))
     }
 
+    @Test("an exact hit on the first letter wins over the next letter's tolerance")
+    func pencilHitKeepsInitialCharacter() {
+        let boxes = [
+            4: CGRect(x: 0, y: 0, width: 10, height: 20),
+            5: CGRect(x: 10, y: 0, width: 10, height: 20),
+        ]
+
+        let index = ReaderCharacterHitTesting.index(
+            caretOffset: 5,
+            textLength: 10,
+            point: CGPoint(x: 9, y: 10),
+            characterBoxes: boxes,
+            requiresGlyphHit: true
+        )
+
+        #expect(index == 4)
+    }
+
+    @Test("the second letter still wins when the tip is inside its box")
+    func pencilHitAdvancesInsideNextCharacter() {
+        let boxes = [
+            4: CGRect(x: 0, y: 0, width: 10, height: 20),
+            5: CGRect(x: 10, y: 0, width: 10, height: 20),
+        ]
+
+        let index = ReaderCharacterHitTesting.index(
+            caretOffset: 5,
+            textLength: 10,
+            point: CGPoint(x: 11, y: 10),
+            characterBoxes: boxes,
+            requiresGlyphHit: true
+        )
+
+        #expect(index == 5)
+    }
+
+    @Test("hover requires the Pencil to remain close to a rendered glyph")
+    func pencilHoverRejectsWhitespaceBeyondTolerance() {
+        let index = ReaderCharacterHitTesting.index(
+            caretOffset: 5,
+            textLength: 10,
+            point: CGPoint(x: 30, y: 10),
+            characterBoxes: [4: CGRect(x: 0, y: 0, width: 10, height: 20)],
+            requiresGlyphHit: true
+        )
+
+        #expect(index == nil)
+    }
+
     @Test("references split a highlight instead of receiving ink")
     func highlightSkipsReferences() throws {
         let text = NSMutableAttributedString(string: "Antes Idea después")
