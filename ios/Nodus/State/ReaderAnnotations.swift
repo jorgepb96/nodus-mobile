@@ -283,6 +283,8 @@ enum ReaderHighlightSegments {
 @Observable
 @MainActor
 final class ReaderAnnotations {
+    private static let highlightUndoLimit = 20
+
     enum Presentation: Identifiable {
         case comment(ReaderAnnotation)
         case newComment(ReaderAnnotationAnchor)
@@ -311,6 +313,11 @@ final class ReaderAnnotations {
     var presentation: Presentation?
     private(set) var bookmarkAim = 0
 
+    /// Highlight creation is the only reader action with a session undo stack. Keeping the
+    /// generated ids (rather than copies of server rows) makes undo a normal synced deletion,
+    /// while the in-memory array naturally disappears with the reader.
+    private var highlightUndoHistory: [[String]] = []
+
     private var remote: [ReaderAnnotation] = []
     private var outbox: OutboxController?
     private struct WaitingMutation {
@@ -329,6 +336,11 @@ final class ReaderAnnotations {
     }
 
     var bookmark: ReaderAnnotation? { items.first { $0.kind == .bookmark } }
+    var canUndoLastHighlight: Bool {
+        highlightUndoHistory.contains { step in
+            step.contains { id in items.contains { $0.id == id && $0.kind == .highlight } }
+        }
+    }
 
     func toggleHighlighter() {
         guard isWritable else { return }
@@ -352,16 +364,44 @@ final class ReaderAnnotations {
     }
 
     func addHighlight(_ anchor: ReaderAnnotationAnchor, color: ReaderAnnotationColor) {
+        addHighlights([anchor], color: color)
+    }
+
+    /// One selection or Pencil stroke can be split around citations. Those fragments are one
+    /// user action, so the toolbar removes all of them with a single undo.
+    func addHighlights(_ anchors: [ReaderAnnotationAnchor], color: ReaderAnnotationColor) {
+        guard isWritable, !anchors.isEmpty else { return }
+        let items = anchors.map { anchor in
+            ReaderAnnotation(
+                id: idPrefix + UUID().uuidString,
+                draftId: draftId,
+                scope: scope,
+                kind: .highlight,
+                color: color,
+                anchor: anchor
+            )
+        }
+        for item in items {
+            upsert(item, title: String(localized: "Highlight in Deep Research"))
+        }
+        highlightUndoHistory.append(items.map(\.id))
+        if highlightUndoHistory.count > Self.highlightUndoLimit {
+            highlightUndoHistory.removeFirst(highlightUndoHistory.count - Self.highlightUndoLimit)
+        }
+    }
+
+    func undoLastHighlight() {
         guard isWritable else { return }
-        let item = ReaderAnnotation(
-            id: idPrefix + UUID().uuidString,
-            draftId: draftId,
-            scope: scope,
-            kind: .highlight,
-            color: color,
-            anchor: anchor
-        )
-        upsert(item, title: String(localized: "Highlight in Deep Research"))
+        while let ids = highlightUndoHistory.popLast() {
+            let highlights = items.filter { ids.contains($0.id) && $0.kind == .highlight }
+            guard !highlights.isEmpty else { continue }
+            for highlight in highlights { deleteWithoutChangingHistory(highlight) }
+            return
+        }
+    }
+
+    func clearHighlightUndoHistory() {
+        highlightUndoHistory.removeAll(keepingCapacity: false)
     }
 
     func updateHighlightColor(_ annotation: ReaderAnnotation, color: ReaderAnnotationColor) {
@@ -443,6 +483,16 @@ final class ReaderAnnotations {
 
     func delete(_ annotation: ReaderAnnotation) {
         guard isWritable else { return }
+        if annotation.kind == .highlight {
+            highlightUndoHistory = highlightUndoHistory.compactMap { step in
+                let remaining = step.filter { $0 != annotation.id }
+                return remaining.isEmpty ? nil : remaining
+            }
+        }
+        deleteWithoutChangingHistory(annotation)
+    }
+
+    private func deleteWithoutChangingHistory(_ annotation: ReaderAnnotation) {
         items.removeAll { $0.id == annotation.id }
         presentation = nil
         let title: String

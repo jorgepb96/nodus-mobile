@@ -95,7 +95,7 @@ struct SpaceShell: View {
                                     }
                                 }
                         }
-                        routeContainer
+                        routeContainer(frozenSize: proxy.size)
                     }
                 }
 
@@ -195,12 +195,21 @@ struct SpaceShell: View {
             }
     }
 
-    private var routeContainer: some View {
+    /// Resident workspaces keep their navigation and editing state, but an invisible workspace
+    /// must not be re-laid out for every intermediate sidebar width. Fixing only the inactive
+    /// stacks to the window size leaves the selected route adaptive while taking hidden browser,
+    /// report and database trees out of the 60 fps animation path. They receive the current
+    /// proposal again as soon as they become selected.
+    private func routeContainer(frozenSize: CGSize) -> some View {
         ZStack {
             ForEach(residentRoutes) { resident in
                 NavigationStack {
                     routeView(resident).toolbar(.hidden, for: .navigationBar)
                 }
+                .frame(
+                    width: resident == route ? nil : frozenSize.width,
+                    height: resident == route ? nil : frozenSize.height
+                )
                 .opacity(resident == route ? 1 : 0)
                 .allowsHitTesting(resident == route)
                 .accessibilityHidden(resident != route)

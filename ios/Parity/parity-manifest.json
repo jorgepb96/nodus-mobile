@@ -166,6 +166,18 @@
       ]
     },
     {
+      "id": "dictionary",
+      "label": "Dictionary",
+      "icon": "thesaurus",
+      "group": "analyze",
+      "delivery": "explicitExclusion",
+      "mobileState": "excluded",
+      "reason": "Product decision: the standalone Dictionary workspace is currently Desktop-only; mobile keeps contextual dictionary lookup in the reader.",
+      "evidence": [
+        "ios/DESIGN_PARITY.md#phase-13-visual-evidence-and-closure"
+      ]
+    },
+    {
       "id": "authors",
       "label": "Autores",
       "icon": "graduation",
@@ -980,6 +992,30 @@
       ]
     },
     {
+      "id": "AcademicApi.acceptDictionaryVersion",
+      "interface": "AcademicApi",
+      "method": "acceptDictionaryVersion",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.addDictionaryRelation",
+      "interface": "AcademicApi",
+      "method": "addDictionaryRelation",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.addManualTheme",
       "interface": "AcademicApi",
       "method": "addManualTheme",
@@ -1460,6 +1496,18 @@
       ]
     },
     {
+      "id": "AcademicApi.createDictionaryEntry",
+      "interface": "AcademicApi",
+      "method": "createDictionaryEntry",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.createLibraryReaderAnnotation",
       "interface": "AcademicApi",
       "method": "createLibraryReaderAnnotation",
@@ -1892,6 +1940,18 @@
       ]
     },
     {
+      "id": "AcademicApi.deleteDictionaryEntries",
+      "interface": "AcademicApi",
+      "method": "deleteDictionaryEntries",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.deleteIdea",
       "interface": "AcademicApi",
       "method": "deleteIdea",
@@ -2279,6 +2339,18 @@
       "id": "AcademicApi.deleteWritingWorkshopDraft",
       "interface": "AcademicApi",
       "method": "deleteWritingWorkshopDraft",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.detectDictionaryDuplicates",
+      "interface": "AcademicApi",
+      "method": "detectDictionaryDuplicates",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "implemented",
@@ -2696,6 +2768,18 @@
       ]
     },
     {
+      "id": "AcademicApi.generateDictionaryEntry",
+      "interface": "AcademicApi",
+      "method": "generateDictionaryEntry",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.generateHypothesisLab",
       "interface": "AcademicApi",
       "method": "generateHypothesisLab",
@@ -2855,6 +2939,18 @@
       "id": "AcademicApi.getDebates",
       "interface": "AcademicApi",
       "method": "getDebates",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.getDictionaryEntry",
+      "interface": "AcademicApi",
+      "method": "getDictionaryEntry",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "implemented",
@@ -3800,6 +3896,54 @@
       ]
     },
     {
+      "id": "AcademicApi.listDictionaryEntries",
+      "interface": "AcademicApi",
+      "method": "listDictionaryEntries",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.listDictionaryEvidence",
+      "interface": "AcademicApi",
+      "method": "listDictionaryEvidence",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.listDictionaryFacets",
+      "interface": "AcademicApi",
+      "method": "listDictionaryFacets",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.listDictionaryVersions",
+      "interface": "AcademicApi",
+      "method": "listDictionaryVersions",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.listDuplicateIdeas",
       "interface": "AcademicApi",
       "method": "listDuplicateIdeas",
@@ -4472,6 +4616,30 @@
       ]
     },
     {
+      "id": "AcademicApi.onDictionaryChanged",
+      "interface": "AcademicApi",
+      "method": "onDictionaryChanged",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.onDictionaryProgress",
+      "interface": "AcademicApi",
+      "method": "onDictionaryProgress",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.onEmbeddingProgress",
       "interface": "AcademicApi",
       "method": "onEmbeddingProgress",
@@ -5036,6 +5204,18 @@
       ]
     },
     {
+      "id": "AcademicApi.restoreDictionaryVersion",
+      "interface": "AcademicApi",
+      "method": "restoreDictionaryVersion",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.restoreNotes",
       "interface": "AcademicApi",
       "method": "restoreNotes",
@@ -5168,6 +5348,18 @@
       ]
     },
     {
+      "id": "AcademicApi.retrieveDictionaryEvidence",
+      "interface": "AcademicApi",
+      "method": "retrieveDictionaryEvidence",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.retryFailed",
       "interface": "AcademicApi",
       "method": "retryFailed",
@@ -5291,6 +5483,30 @@
       "id": "AcademicApi.saveWritingWorkshopDraft",
       "interface": "AcademicApi",
       "method": "saveWritingWorkshopDraft",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.scanChangedDictionaryEntries",
+      "interface": "AcademicApi",
+      "method": "scanChangedDictionaryEntries",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.scanDictionaryNewEvidence",
+      "interface": "AcademicApi",
+      "method": "scanDictionaryNewEvidence",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "implemented",
@@ -5435,6 +5651,18 @@
       "id": "AcademicApi.setAuthorSaved",
       "interface": "AcademicApi",
       "method": "setAuthorSaved",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.setDictionaryEvidenceDecision",
+      "interface": "AcademicApi",
+      "method": "setDictionaryEvidenceDecision",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "implemented",
@@ -5663,6 +5891,18 @@
       "id": "AcademicApi.setWritingWorkshopDraftRead",
       "interface": "AcademicApi",
       "method": "setWritingWorkshopDraftRead",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.startDictionaryGeneration",
+      "interface": "AcademicApi",
+      "method": "startDictionaryGeneration",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "implemented",
@@ -5975,6 +6215,18 @@
       "id": "AcademicApi.uninstallWhisperCpp",
       "interface": "AcademicApi",
       "method": "uninstallWhisperCpp",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.updateDictionaryEntry",
+      "interface": "AcademicApi",
+      "method": "updateDictionaryEntry",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "implemented",
@@ -21931,6 +22183,46 @@
     },
     {
       "name": "research_coverage_links",
+      "delivery": "cloudMutation",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#generatedRegistry",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/OutboxTests.swift",
+        "../nodus/scripts/test-cloudflare-contract.mjs"
+      ]
+    },
+    {
+      "name": "dictionary_entries",
+      "delivery": "cloudMutation",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#generatedRegistry",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/OutboxTests.swift",
+        "../nodus/scripts/test-cloudflare-contract.mjs"
+      ]
+    },
+    {
+      "name": "dictionary_evidence",
+      "delivery": "cloudMutation",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#generatedRegistry",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/OutboxTests.swift",
+        "../nodus/scripts/test-cloudflare-contract.mjs"
+      ]
+    },
+    {
+      "name": "dictionary_versions",
+      "delivery": "cloudMutation",
+      "mobileState": "implemented",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#generatedRegistry",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/OutboxTests.swift",
+        "../nodus/scripts/test-cloudflare-contract.mjs"
+      ]
+    },
+    {
+      "name": "dictionary_relations",
       "delivery": "cloudMutation",
       "mobileState": "implemented",
       "evidence": [

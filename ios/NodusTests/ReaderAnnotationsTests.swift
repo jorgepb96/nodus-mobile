@@ -1,6 +1,7 @@
 import Foundation
 import NodusKit
 import Testing
+import UIKit
 @testable import Nodus
 
 @Suite("Reader annotation anchors")
@@ -85,6 +86,30 @@ struct ReaderAnnotationsTests {
         ])
     }
 
+    @Test("the contextual highlight menu preserves every swatch colour")
+    func contextualPaletteSwatches() throws {
+        let images = try ReaderAnnotationColor.allCases.map { colour in
+            try #require(ReaderHighlightMenuSwatch.image(for: colour, selected: false))
+        }
+
+        #expect(images.allSatisfy { $0.renderingMode == .alwaysOriginal })
+        let encoded = try images.map { try #require($0.pngData()) }
+        #expect(Set(encoded).count == ReaderAnnotationColor.allCases.count)
+    }
+
+    @Test("the direct highlighter begins on contact without pan hysteresis")
+    func directHighlighterGesture() {
+        let gesture = ReaderHighlightGestureRecognizer(target: nil, action: nil)
+
+        #expect(gesture.minimumPressDuration == 0)
+        #expect(gesture.allowableMovement > 10_000)
+        #expect(gesture.numberOfTouchesRequired == 1)
+        #expect(Set(gesture.allowedTouchTypes.map(\.intValue)) == Set([
+            UITouch.TouchType.direct.rawValue,
+            UITouch.TouchType.pencil.rawValue,
+        ]))
+    }
+
     @Test("the highlighter toggle preserves the independently selected colour")
     func highlighterControls() {
         let annotations = ReaderAnnotations(draftId: "r-1", isWritable: true)
@@ -124,6 +149,53 @@ struct ReaderAnnotationsTests {
         #expect(changed.id == original.id)
         #expect(changed.anchor == anchor)
         #expect(changed.color == .blue)
+    }
+
+    @Test("highlight undo is grouped by reader action and stays session-local")
+    func undoesHighlightActions() throws {
+        let annotations = ReaderAnnotations(draftId: "r-1", isWritable: true)
+        let first = ReaderAnnotationAnchor(
+            startOffset: 0,
+            endOffset: 5,
+            selectedText: "Antes",
+            prefix: "",
+            suffix: " Idea"
+        )
+        let splitAroundReference = [
+            ReaderAnnotationAnchor(
+                startOffset: 11,
+                endOffset: 18,
+                selectedText: "después",
+                prefix: "Idea ",
+                suffix: ""
+            ),
+            ReaderAnnotationAnchor(
+                startOffset: 19,
+                endOffset: 24,
+                selectedText: "luego",
+                prefix: "después ",
+                suffix: ""
+            ),
+        ]
+
+        annotations.addHighlight(first, color: .yellow)
+        annotations.addHighlights(splitAroundReference, color: .mint)
+        #expect(annotations.items.count == 3)
+        #expect(annotations.canUndoLastHighlight)
+
+        annotations.undoLastHighlight()
+        #expect(annotations.items.map(\.anchor) == [first])
+        #expect(annotations.canUndoLastHighlight)
+
+        annotations.undoLastHighlight()
+        #expect(annotations.items.isEmpty)
+        #expect(!annotations.canUndoLastHighlight)
+
+        annotations.addHighlight(first, color: .yellow)
+        annotations.clearHighlightUndoHistory()
+        #expect(!annotations.canUndoLastHighlight)
+        annotations.undoLastHighlight()
+        #expect(annotations.items.map(\.anchor) == [first])
     }
 
     @Test("a continuous highlighter includes both endpoints in either direction")
