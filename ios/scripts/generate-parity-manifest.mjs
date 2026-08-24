@@ -11,6 +11,7 @@ export const PARITY_MANIFEST_VERSION = 1;
 const EXCLUDED_ROUTES = new Map([
   ['graph', 'Product decision: the Graph view is suspended in the mobile app.'],
   ['studyGraph', 'Product decision: the Graph view is suspended in the mobile app.'],
+  ['dictionary', 'Product decision: the standalone Dictionary workspace is currently Desktop-only; mobile keeps contextual dictionary lookup in the reader.'],
 ]);
 
 const ROUTE_DELIVERY = {
