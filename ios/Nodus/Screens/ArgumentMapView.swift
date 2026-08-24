@@ -415,7 +415,13 @@ private struct ArgumentSeedPicker: View {
         .listStyle(.plain)
         .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
         .safeAreaInset(edge: .top) {
-            VStack(spacing: 8) {
+            VStack(spacing: 9) {
+                DesktopPageHeader(
+                    title: "Argument map",
+                    subtitle: "Grounded hubs ranked by connections and debate",
+                    systemImage: "square.3.layers.3d",
+                    accent: session.accent
+                )
                 NodusSearchField(text: $query, prompt: "Search ranked hubs", accent: session.accent, isBusy: isLoading)
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) {
@@ -433,7 +439,10 @@ private struct ArgumentSeedPicker: View {
                         }
                     }
                 }
-            }.padding(.horizontal, NodusSpace.page).padding(.vertical, 8).background(Color(uiColor: .systemBackground).opacity(0.97))
+            }
+            .padding(.horizontal, NodusSpace.page)
+            .padding(.vertical, 9)
+            .background(Color(uiColor: .systemBackground).opacity(0.97))
         }
         .task(id: session.publishedRevision) { await load() }
     }

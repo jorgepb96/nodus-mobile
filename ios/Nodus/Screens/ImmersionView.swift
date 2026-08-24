@@ -64,13 +64,12 @@ struct ImmersionLibraryView: View {
     }
 
     private var workspaceHeader: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Immersion").font(.title2.weight(.semibold))
-            Text("Guided paths grounded in the current corpus")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        DesktopPageHeader(
+            title: "Immersion",
+            subtitle: "Guided paths grounded in the current corpus",
+            systemImage: "scope",
+            accent: session.accent
+        )
     }
 
     private var galleryControls: some View {

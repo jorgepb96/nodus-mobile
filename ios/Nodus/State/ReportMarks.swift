@@ -45,11 +45,17 @@ final class ReportMarks {
 
     struct Mark: Codable, Hashable {
         var readAt: Date?
+        /// The read value this device has queued but the published snapshot has not confirmed.
+        ///
+        /// Optional, rather than a second date: `false` is meaningful here. It is the pending
+        /// deletion that must stop an older non-nil server timestamp from marking the report
+        /// read again while the owner's desktop is still applying the mutation.
+        var pendingRead: Bool?
         /// One, never a list. A reading bookmark answers "where was I", and a second one makes
         /// that question ambiguous — so setting a new one moves it rather than adding to it.
         var bookmark: Bookmark?
 
-        var isEmpty: Bool { readAt == nil && bookmark == nil }
+        var isEmpty: Bool { readAt == nil && pendingRead == nil && bookmark == nil }
     }
 
     private(set) var marks: [String: Mark] = [:]
@@ -108,7 +114,10 @@ final class ReportMarks {
     /// Mark a report read, or take the mark back. Returns what the report now stands at.
     @discardableResult
     func setRead(_ id: String, _ read: Bool, at when: Date = Date()) -> Mark {
-        update(id) { $0.readAt = read ? when : nil }
+        update(id) {
+            $0.readAt = read ? when : nil
+            $0.pendingRead = nil
+        }
     }
 
     /// Apply a read change locally first and relay the same fact through the typed mutation
@@ -123,8 +132,12 @@ final class ReportMarks {
         session: SpaceSession,
         at when: Date = Date()
     ) -> Mark {
-        let value = setRead(localId, read, at: when)
-        if remoteId != localId { _ = setRead(remoteId, read, at: when) }
+        let value = setReadAwaitingSync(
+            localId: localId,
+            remoteId: remoteId,
+            read,
+            at: when
+        )
         Task {
             guard let controller = await OutboxController.open(session: session) else { return }
             let timestamp = ISO8601DateFormatter.nodusFractional.string(from: when)
@@ -142,6 +155,29 @@ final class ReportMarks {
         return value
     }
 
+    /// Apply the optimistic half of a synced read change.
+    ///
+    /// Kept as a separate operation so the race can be tested without constructing a network
+    /// session. Both identities carry the pending value: the local library row and the
+    /// published row must agree even before the server republishes its snapshot.
+    @discardableResult
+    func setReadAwaitingSync(
+        localId: String,
+        remoteId: String,
+        _ read: Bool,
+        at when: Date = Date()
+    ) -> Mark {
+        let ids = localId == remoteId ? [localId] : [localId, remoteId]
+        for id in ids {
+            var mark = marks[id] ?? Mark()
+            mark.readAt = read ? when : nil
+            mark.pendingRead = read
+            marks[id] = mark
+        }
+        write()
+        return marks[localId] ?? Mark()
+    }
+
     /// Merge the canonical server value without emitting another mutation. This is invoked by
     /// list and open-reader refreshes, including a deletion (unread), so a Desktop change
     /// cannot be resurrected by a stale device-local flag.
@@ -150,7 +186,14 @@ final class ReportMarks {
         var changed = false
         for id in ids {
             var mark = marks[id] ?? Mark()
-            guard mark.readAt != readAt else { continue }
+            if let pending = mark.pendingRead {
+                // A matching server value acknowledges this device's queued change. A
+                // mismatching value is the older snapshot that triggered the original bug;
+                // keep the optimistic value until publication catches up.
+                guard pending == (readAt != nil) else { continue }
+                mark.pendingRead = nil
+            }
+            guard mark.readAt != readAt || marks[id]?.pendingRead != mark.pendingRead else { continue }
             mark.readAt = readAt
             if mark.isEmpty { marks.removeValue(forKey: id) }
             else { marks[id] = mark }

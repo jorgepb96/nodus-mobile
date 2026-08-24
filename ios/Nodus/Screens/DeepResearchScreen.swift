@@ -118,13 +118,12 @@ struct DeepResearchScreen: View {
     // MARK: Workspace
 
     private var workspaceHeader: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Deep Research").font(.title2.weight(.semibold))
-                Text("Reports grounded in the current corpus")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
+        DesktopPageHeader(
+            title: "Deep Research",
+            subtitle: "Reports grounded in the current corpus",
+            systemImage: "telescope",
+            accent: session.accent
+        ) {
             Button { showingComposer = true } label: {
                 Label("New research", systemImage: "sparkles")
             }

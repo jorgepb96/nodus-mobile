@@ -4,6 +4,72 @@
     "" : {
 
     },
+    "Grounded hubs ranked by connections and debate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nodos centrales ordenados por conexiones y debate"
+          }
+        }
+      }
+    },
+    "Published notes from the current workspace" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas publicadas del espacio de trabajo actual"
+          }
+        }
+      }
+    },
+    "Published questions, answers and explanations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preguntas, respuestas y explicaciones publicadas"
+          }
+        }
+      }
+    },
+    "Published tensions and their grounded evidence" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tensiones publicadas y sus evidencias fundamentadas"
+          }
+        }
+      }
+    },
+    "Review the cards published from Desktop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repasa las tarjetas publicadas desde Desktop"
+          }
+        }
+      }
+    },
+    "Weekly periods, subjects and rooms" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Periodos semanales, asignaturas y aulas"
+          }
+        }
+      }
+    },
     "Change the search or sort order." : {
       "extractionState" : "manual",
       "localizations" : {

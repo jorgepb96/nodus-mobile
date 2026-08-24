@@ -92,6 +92,55 @@ struct ReportMarksTests {
         #expect(reopened.isRead("r-2") == false, "one report's mark is not another's")
     }
 
+    @Test("a stale published snapshot cannot undo a queued read change")
+    func pendingReadWinsUntilConfirmed() {
+        let root = temporaryRoot()
+        let store = ReportMarks(spaceId: "space-pending-read", root: root)
+        let local = Date(timeIntervalSince1970: 20)
+        let published = Date(timeIntervalSince1970: 30)
+
+        store.setReadAwaitingSync(localId: "local", remoteId: "remote", true, at: local)
+        store.reconcileRead(localId: "local", remoteId: "remote", readAt: nil)
+
+        #expect(store.isRead("local"))
+        #expect(store.isRead("remote"))
+        #expect(store.marks["local"]?.pendingRead == true)
+        ReportMarks.settle()
+        let reopened = ReportMarks(spaceId: "space-pending-read", root: root)
+        #expect(reopened.isRead("local"))
+        #expect(reopened.marks["local"]?.pendingRead == true)
+
+        reopened.reconcileRead(localId: "local", remoteId: "remote", readAt: published)
+
+        #expect(reopened.marks["local"]?.readAt == published)
+        #expect(reopened.marks["local"]?.pendingRead == nil)
+        #expect(reopened.marks["remote"]?.pendingRead == nil)
+    }
+
+    @Test("a stale published snapshot cannot undo a queued unread change")
+    func pendingUnreadWinsUntilConfirmed() {
+        let root = temporaryRoot()
+        let store = ReportMarks(spaceId: "space-pending-unread", root: root)
+        let published = Date(timeIntervalSince1970: 30)
+        store.reconcileRead(localId: "local", remoteId: "remote", readAt: published)
+
+        store.setReadAwaitingSync(localId: "local", remoteId: "remote", false)
+        store.reconcileRead(localId: "local", remoteId: "remote", readAt: published)
+
+        #expect(!store.isRead("local"))
+        #expect(!store.isRead("remote"))
+        #expect(store.marks["local"]?.pendingRead == false)
+        ReportMarks.settle()
+        let reopened = ReportMarks(spaceId: "space-pending-unread", root: root)
+        #expect(!reopened.isRead("local"))
+        #expect(reopened.marks["local"]?.pendingRead == false)
+
+        reopened.reconcileRead(localId: "local", remoteId: "remote", readAt: nil)
+
+        #expect(reopened.marks["local"] == nil)
+        #expect(reopened.marks["remote"] == nil)
+    }
+
     // A mark taken back must not leave `{readAt: null}` behind: the file would otherwise grow by
     // an entry for every report ever opened and unmarked again.
     @Test("taking a mark back leaves nothing on disk")

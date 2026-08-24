@@ -68,6 +68,12 @@ struct SpaceShell: View {
                 isUserCollapsed: preferences.sidebarCollapsed,
                 expandedWidth: CGFloat(preferences.sidebarWidth)
             )
+            // Resident routes sit below the top bar and, on a regular-width device, beside
+            // the persistent sidebar. Freezing an inactive route to the whole window made
+            // that hidden route dictate the ZStack's minimum size: one top bar too tall and
+            // one sidebar too wide. The visible workspace was consequently clipped at the
+            // bottom and trailing edge on iPad in both orientations.
+            let residentRouteSize = presentation.residentRouteSize(in: proxy.size)
 
             ZStack(alignment: .leading) {
                 VStack(spacing: 0) {
@@ -95,7 +101,7 @@ struct SpaceShell: View {
                                     }
                                 }
                         }
-                        routeContainer(frozenSize: proxy.size)
+                        routeContainer(frozenSize: residentRouteSize)
                     }
                 }
 
@@ -265,7 +271,7 @@ struct SpaceShell: View {
         case .search, .studySearch:
             SearchScreen(session: session)
         case .library:
-            AccountLibraryView(session: session)
+            LibraryRouteView(session: session)
         case .argument:
             ArgumentMapView(session: session)
         case .ideas:
@@ -440,6 +446,54 @@ private struct DeepResearchRouteView: View {
     }
 }
 
+/// Opens the account-global Library only when the connected server advertises that contract.
+///
+/// Older servers have no `/api/v1/library/changes` route. Sending the sidebar there produced
+/// an empty "No references" screen whose underlying error was `not_found`, even though the
+/// same space's published works were available from Home. The fallback deliberately uses the
+/// exact `works` collection Home uses, so both doors show the same references on those servers.
+private struct LibraryRouteView: View {
+    let session: SpaceSession
+    @State private var supportsAccountSync: Bool?
+
+    var body: some View {
+        Group {
+            if session.isDemo {
+                AccountLibraryView(session: session)
+            } else if let supportsAccountSync {
+                switch LibraryRouteSource.resolve(
+                    isDemo: false,
+                    supportsAccountSync: supportsAccountSync
+                ) {
+                case .account:
+                    AccountLibraryView(session: session)
+                case .publishedWorks:
+                    if let works = Collections.byPath["works"] {
+                        CollectionListView(session: session, collection: works, workspaceRoute: .library)
+                    } else {
+                        ContentUnavailableView("Library unavailable", systemImage: "books.vertical")
+                    }
+                }
+            } else {
+                ProgressView().tint(session.accent)
+            }
+        }
+        .task {
+            guard !session.isDemo, supportsAccountSync == nil else { return }
+            supportsAccountSync = (try? await session.client.capabilities().supportsAccountLibrarySync) ?? false
+        }
+    }
+}
+
+enum LibraryRouteSource: Equatable {
+    case account
+    case publishedWorks
+
+    static func resolve(isDemo: Bool, supportsAccountSync: Bool) -> Self {
+        isDemo || supportsAccountSync ? .account : .publishedWorks
+    }
+}
+
 struct SidebarPresentation: Equatable {
     let availableWidth: CGFloat
     let isUserCollapsed: Bool
@@ -458,6 +512,19 @@ struct SidebarPresentation: Equatable {
         isCollapsed
             ? NodusChromeMetrics.collapsedSidebar
             : CGFloat(Self.clampedWidth(Double(expandedWidth)))
+    }
+
+    /// A safe, stable proposal for a route that is resident but not visible.
+    ///
+    /// The width reserves the largest sidebar the user can choose, rather than today's width.
+    /// It therefore remains constant through collapse and resize animations while never being
+    /// large enough to make the route container overflow. The selected route has no fixed
+    /// proposal and continues to use every point that is actually available.
+    func residentRouteSize(in window: CGSize) -> CGSize {
+        CGSize(
+            width: max(0, window.width - (isPersistent ? Self.maximumExpandedWidth : 0)),
+            height: max(0, window.height - NodusChromeMetrics.topBar)
+        )
     }
 }
 
