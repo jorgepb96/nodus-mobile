@@ -36,6 +36,11 @@ final class SyncedDefaults {
     /// entitlement. Everything then falls back to `UserDefaults` and the app behaves as it did
     /// before any of this existed.
     private let cloud: (any KeyValueSyncing)?
+    /// `synchronize()` may enter the iCloud daemon synchronously. Calling it from a preference
+    /// setter used by an animated control (notably the sidebar) stalls the main actor before
+    /// Core Animation can commit its first frame. Coalesce the upload hint until the interaction
+    /// has settled; the values themselves are still written to both stores immediately.
+    private var cloudSynchronizationTask: Task<Void, Never>?
 
     private var handlers: [(keys: Set<String>, run: @MainActor () -> Void)] = []
 
@@ -107,10 +112,20 @@ final class SyncedDefaults {
         }
         cloud?.set(value, forKey: key)
         cloud?.set(stamp, forKey: Self.stampKey(key))
-        // Not required — iCloud uploads on its own schedule — but it is what turns "eventually"
-        // into seconds, and the whole point of this is that a model set on the iPad is already
-        // set when the phone is picked up.
-        cloud?.synchronize()
+        scheduleCloudSynchronization()
+    }
+
+    /// Upload soon, but never inside the tap/drag transaction that changed the preference.
+    /// Repeated sidebar-width updates collapse to one hint instead of synchronously contacting
+    /// iCloud for every point crossed by the resize handle.
+    private func scheduleCloudSynchronization() {
+        guard cloud != nil else { return }
+        cloudSynchronizationTask?.cancel()
+        cloudSynchronizationTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            _ = self?.cloud?.synchronize()
+        }
     }
 
     /// Take a value that came from iCloud, keeping the stamp it arrived with.

@@ -675,6 +675,7 @@ struct SyncedReportReadingTools: ViewModifier {
                 ToolbarItem(placement: .topBarTrailing) { readButton }
                 if annotations.isWritable {
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        undoHighlightButton
                         highlighterButton
                         highlightColorMenu
                     }
@@ -718,6 +719,10 @@ struct SyncedReportReadingTools: ViewModifier {
             .onChange(of: annotations.bookmark?.id) { _, synced in
                 if synced != nil, legacyBookmark.bookmark != nil { legacyBookmark.clear() }
             }
+            .onDisappear {
+                // Undo belongs to this reading session; synced highlights themselves remain.
+                annotations.clearHighlightUndoHistory()
+            }
     }
 
     private var readButton: some View {
@@ -742,6 +747,18 @@ struct SyncedReportReadingTools: ViewModifier {
         .tint(annotations.highlighterEnabled ? annotations.selectedColor.color : session.accent)
         .accessibilityLabel(annotations.highlighterEnabled ? "Turn highlighter off" : "Turn highlighter on")
         .accessibilityValue(annotations.highlighterEnabled ? "On" : "Off")
+    }
+
+    private var undoHighlightButton: some View {
+        Button {
+            annotations.undoLastHighlight()
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+        }
+        .disabled(!annotations.canUndoLastHighlight)
+        .tint(session.accent)
+        .accessibilityLabel("Undo last highlight")
+        .accessibilityIdentifier("reader-undo-highlight")
     }
 
     private var highlightColorMenu: some View {

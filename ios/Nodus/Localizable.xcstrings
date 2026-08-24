@@ -18911,6 +18911,16 @@
         }
       }
     },
+    "Undo last highlight" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deshacer el último subrayado"
+          }
+        }
+      }
+    },
     "Unexpected answer from the embedding provider (\\(detail))." : {
       "extractionState" : "manual",
       "localizations" : {

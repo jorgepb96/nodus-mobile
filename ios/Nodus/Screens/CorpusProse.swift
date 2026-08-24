@@ -2,6 +2,75 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
+/// UIKit recolours SF Symbols used by nested edit-menu actions as monochrome template images,
+/// even when they arrive with a palette configuration. Flatten the swatch into an original-mode
+/// bitmap first so every highlight colour survives the menu's own rendering pass.
+enum ReaderHighlightMenuSwatch {
+    static func image(for colour: ReaderAnnotationColor, selected: Bool) -> UIImage? {
+        let side: CGFloat = 20
+        guard let symbol = UIImage(
+            systemName: selected ? "checkmark.circle.fill" : "circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: side, weight: .regular)
+        )?.withTintColor(UIColor(colour.color), renderingMode: .alwaysOriginal)
+        else { return nil }
+
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
+            .image { _ in
+                symbol.draw(in: CGRect(origin: .zero, size: CGSize(width: side, height: side)))
+            }
+            .withRenderingMode(.alwaysOriginal)
+    }
+}
+
+/// A zero-delay press tracks a highlighter from the instant it touches the page. A pan gesture
+/// waits for UIKit's movement threshold before it begins, by which time a left-to-right stroke
+/// can already have crossed the first letter. Retaining the latest precise sample also gives
+/// Apple Pencil the drawing-specific location Apple recommends instead of the generic gesture
+/// centroid.
+final class ReaderHighlightGestureRecognizer: UILongPressGestureRecognizer {
+    private var latestPreciseLocation: CGPoint?
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        minimumPressDuration = 0
+        allowableMovement = .greatestFiniteMagnitude
+        numberOfTouchesRequired = 1
+        allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.pencil.rawValue),
+        ]
+        cancelsTouchesInView = true
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        captureLatestSample(in: touches, event: event)
+        super.touchesBegan(touches, with: event)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        captureLatestSample(in: touches, event: event)
+        super.touchesMoved(touches, with: event)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        captureLatestSample(in: touches, event: event)
+        super.touchesEnded(touches, with: event)
+    }
+
+    func highlighterLocation(in target: UIView) -> CGPoint {
+        guard let source = view, let latestPreciseLocation else { return location(in: target) }
+        return source.convert(latestPreciseLocation, to: target)
+    }
+
+    private func captureLatestSample(in touches: Set<UITouch>, event: UIEvent) {
+        guard let source = view, let touch = touches.first else { return }
+        let latest = event.coalescedTouches(for: touch)?.last ?? touch
+        latestPreciseLocation = latest.preciseLocation(in: source)
+    }
+}
+
 /// A citation pointing into the corpus: `nodus://idea/g-8969`.
 ///
 /// The desktop writes these into every piece of generated prose — immersion stations, Deep
@@ -465,9 +534,11 @@ struct CorpusProse: View {
                             selectedHighlightColor: readerAnnotations?.selectedColor,
                             onHighlight: readerAnnotations.flatMap { annotations in
                                 guard annotations.isWritable else { return nil }
-                                return { range, color in
-                                    guard let anchor = annotationDocument.anchor(block: block.id, range: range) else { return }
-                                    annotations.addHighlight(anchor, color: color)
+                                return { ranges, color in
+                                    let anchors = ranges.compactMap {
+                                        annotationDocument.anchor(block: block.id, range: $0)
+                                    }
+                                    annotations.addHighlights(anchors, color: color)
                                 }
                             },
                             onChangeHighlightColor: readerAnnotations.flatMap { annotations in
@@ -953,7 +1024,7 @@ private struct DocumentProse: UIViewRepresentable {
     /// The toolbar's current colour, whether continuous highlighting is on or off. The manual
     /// selection action uses this directly, so it never needs a second colour submenu.
     var selectedHighlightColor: ReaderAnnotationColor?
-    var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
+    var onHighlight: (([NSRange], ReaderAnnotationColor) -> Void)?
     var onChangeHighlightColor: ((ReaderAnnotation, ReaderAnnotationColor) -> Void)?
     var onDeleteHighlight: ((ReaderAnnotation) -> Void)?
     var onComment: ((NSRange) -> Void)?
@@ -1011,20 +1082,35 @@ private struct DocumentProse: UIViewRepresentable {
         // the range immediately as they move. The recognizer stays disabled in ordinary reading,
         // so scrolling, selecting and opening citations are unchanged until the reader explicitly
         // turns the tool on.
-        let stroke = UIPanGestureRecognizer(
+        let stroke = ReaderHighlightGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.highlighted(_:))
         )
-        stroke.allowedTouchTypes = [
-            NSNumber(value: UITouch.TouchType.direct.rawValue),
-            NSNumber(value: UITouch.TouchType.pencil.rawValue),
-        ]
-        stroke.maximumNumberOfTouches = 1
-        stroke.cancelsTouchesInView = true
         stroke.delegate = context.coordinator
         stroke.isEnabled = false
         view.addGestureRecognizer(stroke)
         context.coordinator.strokeHighlighter = stroke
+
+        // Supported iPads report Pencil hover through the ordinary hover recognizer. Restrict it
+        // to Pencil so a trackpad pointer does not masquerade as a drawing tool, and preview only
+        // the mark that touching down would make — hover itself never changes the document.
+        let hoverMarker = UIView()
+        hoverMarker.isHidden = true
+        hoverMarker.isUserInteractionEnabled = false
+        hoverMarker.layer.cornerRadius = 3
+        hoverMarker.accessibilityElementsHidden = true
+        view.addSubview(hoverMarker)
+        context.coordinator.pencilHoverMarker = hoverMarker
+
+        let pencilHover = UIHoverGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.pencilHovered(_:))
+        )
+        pencilHover.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        pencilHover.cancelsTouchesInView = false
+        pencilHover.isEnabled = false
+        view.addGestureRecognizer(pencilHover)
+        context.coordinator.pencilHover = pencilHover
         return view
     }
 
@@ -1041,7 +1127,12 @@ private struct DocumentProse: UIViewRepresentable {
         context.coordinator.onOpenAnnotation = onOpenAnnotation
         context.coordinator.fixedHighlighter = fixedHighlighter
         context.coordinator.selectedHighlightColor = selectedHighlightColor
-        context.coordinator.strokeHighlighter?.isEnabled = fixedHighlighter != nil && onHighlight != nil
+        let highlighterEnabled = fixedHighlighter != nil && onHighlight != nil
+        context.coordinator.strokeHighlighter?.isEnabled = highlighterEnabled
+        context.coordinator.pencilHover?.isEnabled = highlighterEnabled
+        if !highlighterEnabled {
+            context.coordinator.hidePencilHoverPreview()
+        }
         context.coordinator.readerAnnotations = readerAnnotations
         context.coordinator.annotationRailWidth = annotationRailWidth
         context.coordinator.bookmark = bookmark?.range
@@ -1328,7 +1419,7 @@ private struct DocumentProse: UIViewRepresentable {
         /// Where a selection goes when the reader asks about it. Nil for the same reason, and
         /// separately: a page can have a bookmark and no conversation, or the other way round.
         var onAsk: ((String) -> Void)?
-        var onHighlight: ((NSRange, ReaderAnnotationColor) -> Void)?
+        var onHighlight: (([NSRange], ReaderAnnotationColor) -> Void)?
         var onChangeHighlightColor: ((ReaderAnnotation, ReaderAnnotationColor) -> Void)?
         var onDeleteHighlight: ((ReaderAnnotation) -> Void)?
         var onComment: ((NSRange) -> Void)?
@@ -1360,7 +1451,9 @@ private struct DocumentProse: UIViewRepresentable {
         /// requests: closing the find bar must not scroll the page back to the bookmark.
         var aimedBookmark = 0
         var aimedSyncedBookmark = 0
-        weak var strokeHighlighter: UIPanGestureRecognizer?
+        weak var strokeHighlighter: ReaderHighlightGestureRecognizer?
+        weak var pencilHover: UIHoverGestureRecognizer?
+        weak var pencilHoverMarker: UIView?
         weak var highlightMenu: UIEditMenuInteraction?
         private var strokeAnchor: Int?
         private var strokeBaseline: NSAttributedString?
@@ -1432,7 +1525,7 @@ private struct DocumentProse: UIViewRepresentable {
                     .withRenderingMode(.alwaysOriginal)
                 let highlight = UIAction(title: "", image: image) { _ in
                     MainActor.assumeIsolated {
-                        for segment in highlightable { onHighlight(segment, colour) }
+                        onHighlight(highlightable, colour)
                         textView.clearSelection()
                     }
                 }
@@ -1533,7 +1626,7 @@ private struct DocumentProse: UIViewRepresentable {
         /// The pastel background is repainted on every movement, while the annotation itself is
         /// written exactly once when the stroke ends. This makes the feedback immediate without
         /// filling the sync ledger with every intermediate range.
-        @objc func highlighted(_ recognizer: UIPanGestureRecognizer) {
+        @objc func highlighted(_ recognizer: ReaderHighlightGestureRecognizer) {
             guard let textView = recognizer.view as? UITextView,
                   let colour = fixedHighlighter,
                   let onHighlight
@@ -1544,7 +1637,11 @@ private struct DocumentProse: UIViewRepresentable {
 
             switch recognizer.state {
             case .began:
-                guard let index = Self.characterIndex(at: recognizer.location(in: textView), in: textView) else {
+                hidePencilHoverPreview()
+                guard let index = Self.characterIndex(
+                    at: recognizer.highlighterLocation(in: textView),
+                    in: textView
+                ) else {
                     recognizer.isEnabled = false
                     recognizer.isEnabled = true
                     return
@@ -1556,13 +1653,19 @@ private struct DocumentProse: UIViewRepresentable {
 
             case .changed:
                 guard let anchor = strokeAnchor,
-                      let index = Self.characterIndex(at: recognizer.location(in: textView), in: textView)
+                      let index = Self.characterIndex(
+                          at: recognizer.highlighterLocation(in: textView),
+                          in: textView
+                      )
                 else { return }
                 preview(ReaderHighlightStroke.range(from: anchor, through: index), colour: colour, in: textView)
 
             case .ended:
                 guard let anchor = strokeAnchor,
-                      let index = Self.characterIndex(at: recognizer.location(in: textView), in: textView)
+                      let index = Self.characterIndex(
+                          at: recognizer.highlighterLocation(in: textView),
+                          in: textView
+                      )
                 else {
                     cancelHighlightStroke(in: textView)
                     return
@@ -1575,7 +1678,7 @@ private struct DocumentProse: UIViewRepresentable {
                 strokeAnchor = nil
                 strokeBaseline = nil
                 MainActor.assumeIsolated {
-                    for segment in segments { onHighlight(segment, colour) }
+                    onHighlight(segments, colour)
                 }
 
             case .cancelled, .failed:
@@ -1584,6 +1687,50 @@ private struct DocumentProse: UIViewRepresentable {
             default:
                 break
             }
+        }
+
+        /// Show the colour and exact glyph that a supported Apple Pencil will mark on contact.
+        /// The system preference is available from iPadOS 17.5; older supported releases show
+        /// the preview because they offer no per-user switch to consult.
+        @objc func pencilHovered(_ recognizer: UIHoverGestureRecognizer) {
+            guard let textView = recognizer.view as? UITextView,
+                  let marker = pencilHoverMarker,
+                  let colour = fixedHighlighter,
+                  onHighlight != nil
+            else {
+                hidePencilHoverPreview()
+                return
+            }
+            if #available(iOS 17.5, *), !UIPencilInteraction.prefersHoverToolPreview {
+                hidePencilHoverPreview()
+                return
+            }
+
+            switch recognizer.state {
+            case .began, .changed:
+                let point = recognizer.location(in: textView)
+                guard let index = Self.characterIndex(at: point, in: textView, requiresGlyphHit: true),
+                      !Self.isWhitespace(at: index, in: textView),
+                      let glyph = Self.box(ofCharacterAt: index, in: textView)
+                else {
+                    hidePencilHoverPreview()
+                    return
+                }
+                marker.backgroundColor = UIColor(colour.color).withAlphaComponent(0.48)
+                marker.frame = glyph.insetBy(dx: -1.5, dy: 1.5)
+                marker.isHidden = false
+                textView.bringSubviewToFront(marker)
+
+            case .ended, .cancelled, .failed:
+                hidePencilHoverPreview()
+
+            default:
+                break
+            }
+        }
+
+        func hidePencilHoverPreview() {
+            pencilHoverMarker?.isHidden = true
         }
 
         /// Paint only the visual preview. The baseline already includes saved annotations and
@@ -1609,7 +1756,11 @@ private struct DocumentProse: UIViewRepresentable {
 
         /// `closestPosition` returns a caret boundary. Prefer the glyph actually under the tip
         /// and fall back to the closest valid character for the gaps between words and lines.
-        private static func characterIndex(at point: CGPoint, in textView: UITextView) -> Int? {
+        private static func characterIndex(
+            at point: CGPoint,
+            in textView: UITextView,
+            requiresGlyphHit: Bool = false
+        ) -> Int? {
             let length = textView.attributedText.length
             guard length > 0, let position = textView.closestPosition(to: point) else { return nil }
             let offset = textView.offset(from: textView.beginningOfDocument, to: position)
@@ -1619,7 +1770,14 @@ private struct DocumentProse: UIViewRepresentable {
                     return index
                 }
             }
+            if requiresGlyphHit { return nil }
             return min(max(0, offset), length - 1)
+        }
+
+        private static func isWhitespace(at index: Int, in textView: UITextView) -> Bool {
+            guard index >= 0, index < textView.attributedText.length else { return true }
+            let value = (textView.attributedText.string as NSString).substring(with: NSRange(location: index, length: 1))
+            return value.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
         }
 
         /// A press inside the prose: on the marked words, or on a citation.
@@ -1674,9 +1832,10 @@ private struct DocumentProse: UIViewRepresentable {
 
             if let onChangeHighlightColor {
                 let colors = ReaderAnnotationColor.allCases.map { colour in
-                    let symbol = UIImage.SymbolConfiguration(paletteColors: [UIColor(colour.color)])
-                    let image = UIImage(systemName: annotation.color == colour ? "checkmark.circle.fill" : "circle.fill", withConfiguration: symbol)?
-                        .withRenderingMode(.alwaysOriginal)
+                    let image = ReaderHighlightMenuSwatch.image(
+                        for: colour,
+                        selected: annotation.color == colour
+                    )
                     let action = UIAction(title: colour.localizedLabel, image: image) { _ in
                         MainActor.assumeIsolated { onChangeHighlightColor(annotation, colour) }
                     }

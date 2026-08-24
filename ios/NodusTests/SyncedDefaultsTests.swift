@@ -16,6 +16,7 @@ struct SyncedDefaultsTests {
     private nonisolated final class FakeCloud: KeyValueSyncing {
         var contents: [String: Any] = [:]
         private(set) var writes = 0
+        private(set) var synchronizations = 0
 
         func object(forKey key: String) -> Any? { contents[key] }
 
@@ -24,7 +25,10 @@ struct SyncedDefaultsTests {
             contents[key] = value
         }
 
-        func synchronize() -> Bool { true }
+        func synchronize() -> Bool {
+            synchronizations += 1
+            return true
+        }
     }
 
     private func defaults(_ name: String) -> UserDefaults {
@@ -43,6 +47,20 @@ struct SyncedDefaultsTests {
 
         #expect(store.double(forKey: "nodus.prefs.readingScale") == 1.45)
         #expect(cloud.contents["nodus.prefs.readingScale"] as? Double == 1.45)
+    }
+
+    @Test("cloud upload hints are coalesced outside the animated preference setter")
+    func synchronizationIsDeferred() async throws {
+        let cloud = FakeCloud()
+        let store = SyncedDefaults(defaults: defaults("deferred-sync"), cloud: cloud)
+        let afterLaunch = cloud.synchronizations
+
+        store.set(true, forKey: "nodus.prefs.sidebarCollapsed")
+        store.set(284.0, forKey: "nodus.prefs.sidebarWidth")
+
+        #expect(cloud.synchronizations == afterLaunch)
+        try await Task.sleep(for: .milliseconds(450))
+        #expect(cloud.synchronizations == afterLaunch + 1)
     }
 
     @Test("the Home layout survives returning to Home and reopening after an update")
