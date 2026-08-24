@@ -311,7 +311,7 @@ struct ChatScreen: View {
 
     private func ask() {
         guard let model = ai.model(for: .chat) else {
-            error = "Choose a chat model under Providers."
+            error = String(localized: "Choose a chat model under Providers.")
             return
         }
         let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)

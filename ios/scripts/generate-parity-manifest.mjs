@@ -5,6 +5,14 @@ import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
 
 export const PARITY_MANIFEST_VERSION = 1;
 
+// These Desktop routes are intentionally absent from the mobile product. Keep them in the
+// generated inventory so a removal is auditable without leaving a dead enum case, deep link or
+// placeholder screen in the app.
+const EXCLUDED_ROUTES = new Map([
+  ['graph', 'Product decision: the Graph view is suspended in the mobile app.'],
+  ['studyGraph', 'Product decision: the Graph view is suspended in the mobile app.'],
+]);
+
 const ROUTE_DELIVERY = {
   accountSync: new Set(['library', 'radar']),
   portableAlgorithm: new Set(['graph', 'argument', 'hypothesis', 'reading', 'dbAnalysis', 'studyGraph']),
@@ -95,6 +103,14 @@ function quoted(source) {
   return [...source.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 }
 
+function evidenceExists(entry) {
+  const relative = entry.split('#')[0];
+  if (relative.startsWith('../nodus/')) {
+    return fs.existsSync(path.join(nodusRepo(), relative.slice('../nodus/'.length)));
+  }
+  return fs.existsSync(path.resolve(mobileRoot, relative));
+}
+
 function interfaceBody(source, name) {
   const marker = `export interface ${name}`;
   const start = source.indexOf(marker);
@@ -119,6 +135,7 @@ function interfaceMethods(source, name) {
 }
 
 function routeDelivery(route) {
+  if (EXCLUDED_ROUTES.has(route)) return 'explicitExclusion';
   for (const [delivery, routes] of Object.entries(ROUTE_DELIVERY)) {
     if (routes.has(route)) return delivery;
   }
@@ -126,6 +143,7 @@ function routeDelivery(route) {
 }
 
 function mobileRouteState(swift, route) {
+  if (EXCLUDED_ROUTES.has(route)) return 'excluded';
   const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const line = swift.match(new RegExp(`\\.init\\(\\.${escaped},[^\\n]+`))?.[0] ?? '';
   if (/support: \.(?:native|collection|mirror|nested)/.test(line)) return 'implemented';
@@ -133,6 +151,7 @@ function mobileRouteState(swift, route) {
 }
 
 function routeEvidence(route, delivery) {
+  if (delivery === 'explicitExclusion') return ['ios/DESIGN_PARITY.md#phase-13-visual-evidence-and-closure'];
   const specific = ROUTE_PHASE_EVIDENCE.find(([routes]) => routes.has(route))?.[1];
   return [...new Set([...(specific ? [specific] : []), ...(DELIVERY_EVIDENCE[delivery] ?? [])])];
 }
@@ -154,6 +173,7 @@ export function buildParityManifest() {
       ...navMetadata(navigation, id),
       delivery,
       mobileState: mobileRouteState(swiftNavigation, id),
+      ...(EXCLUDED_ROUTES.has(id) ? { reason: EXCLUDED_ROUTES.get(id) } : {}),
       evidence: routeEvidence(id, delivery),
     };
   });
@@ -233,14 +253,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const all = [...manifest.routes, ...manifest.apiActions, ...manifest.mutableTables, ...manifest.explicitExclusions];
     const unknown = all.filter((item) => !deliveries.has(item.delivery));
     const implemented = [...manifest.routes, ...manifest.apiActions, ...manifest.mutableTables];
-    const incomplete = implemented.filter((item) => item.mobileState !== 'implemented');
     const unsupportedClaims = implemented
+      .filter((item) => item.mobileState === 'implemented')
       .filter((item) => !item.evidence || item.evidence.length === 0);
+    const invalidStates = implemented
+      .filter((item) => !['implemented', 'excluded'].includes(item.mobileState));
     const missingEvidence = implemented.flatMap((item) => item.evidence ?? [])
       .filter((entry, index, entries) => entries.indexOf(entry) === index)
-      .filter((entry) => !fs.existsSync(path.resolve(mobileRoot, entry.split('#')[0])));
+      .filter((entry) => !evidenceExists(entry));
     if (unknown.length) throw new Error(`Unclassified parity entries: ${unknown.map((item) => item.id ?? item.name).join(', ')}`);
-    if (incomplete.length) throw new Error(`Incomplete parity entries: ${incomplete.map((item) => item.id ?? item.name).join(', ')}`);
+    if (invalidStates.length) throw new Error(`Incomplete parity entries: ${invalidStates.map((item) => item.id ?? item.name).join(', ')}`);
     if (unsupportedClaims.length) throw new Error(`Parity claimed without evidence: ${unsupportedClaims.map((item) => item.id).join(', ')}`);
     if (missingEvidence.length) throw new Error(`Parity evidence does not exist: ${missingEvidence.join(', ')}`);
     console.log(`Parity manifest is 100% current: ${manifest.routes.length} routes, ${manifest.apiActions.length} actions, ${manifest.mutableTables.length} mutable tables; every entry is classified, implemented and evidenced.`);

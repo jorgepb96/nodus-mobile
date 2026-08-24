@@ -92,6 +92,8 @@ struct NodiNotesView: View {
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) {
             NodusSearchField(text: $query, prompt: "Filter notes", accent: session.accent, isBusy: isLoading)
+                .padding(.horizontal, NodusSpace.page)
+                .padding(.bottom, 8)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

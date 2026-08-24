@@ -20,14 +20,14 @@ enum ReaderAnnotationColor: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var labelKey: String.LocalizationValue {
+    var localizedLabel: String {
         switch self {
-        case .yellow: "Yellow"
-        case .rose: "Rose"
-        case .blue: "Blue"
-        case .mint: "Mint"
-        case .lavender: "Lavender"
-        case .peach: "Peach"
+        case .yellow: String(localized: "Yellow")
+        case .rose: String(localized: "Rose")
+        case .blue: String(localized: "Blue")
+        case .mint: String(localized: "Mint")
+        case .lavender: String(localized: "Lavender")
+        case .peach: String(localized: "Peach")
         }
     }
 

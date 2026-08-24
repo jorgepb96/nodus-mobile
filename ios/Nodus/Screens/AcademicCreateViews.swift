@@ -96,9 +96,9 @@ private struct WritingDraftReader: View {
                 }
                 Spacer()
                 ShareLink(item: draft.markdown) { Image(systemName: "square.and.arrow.up") }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel("Share Markdown")
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Share Markdown")
                 Button { UIPasteboard.general.string = draft.markdown } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).accessibilityLabel("Copy Markdown")
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Copy Markdown")
             }
             if !draft.abstract.isEmpty {
                 Text(draft.abstract).font(.callout).foregroundStyle(.secondary).padding(12)
@@ -289,7 +289,7 @@ struct ProjectsMobileView: View {
                     Button { importing = true } label: { Label("Import Markdown or text", systemImage: "doc.badge.plus") }
                     ShareLink(item: projectMarkdown(project)) { Label("Export Markdown", systemImage: "square.and.arrow.up") }
                 } label: { Image(systemName: "ellipsis.circle") }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
             }
             if let target = project.targetWords { Label("Target: \(target.formatted()) words", systemImage: "text.word.spacing").font(.caption).foregroundStyle(.secondary) }
             Text("Sections").font(.headline)
@@ -351,7 +351,7 @@ struct ProjectsMobileView: View {
                 payload: ["id": .string(section.id), "status": .string(status)], inputRevision: session.publishedRevision,
                 in: session.connection.spaceId
             )
-            message = "Section update queued once for Desktop."
+            message = String(localized: "Section update queued once for Desktop.")
         } catch { self.error = error.localizedDescription }
     }
 
@@ -372,7 +372,7 @@ struct ProjectsMobileView: View {
                     "sourceFormat": .string(url.pathExtension.lowercased() == "md" ? "markdown" : "txt"), "text": .string(text),
                 ], inputRevision: session.publishedRevision, in: session.connection.spaceId
             )
-            message = "Chapter import queued once. Desktop will version it and link it to the manuscript."
+            message = String(localized: "Chapter import queued once. Desktop will version it and link it to the manuscript.")
         } catch { self.error = error.localizedDescription }
     }
 

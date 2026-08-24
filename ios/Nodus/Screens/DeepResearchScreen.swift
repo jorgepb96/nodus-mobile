@@ -34,7 +34,7 @@ struct DeepResearchScreen: View {
     @State private var exportURL: URL?
     @State private var exportError: String?
     @State private var isExporting = false
-    @AppStorage("deep-research.gallery-view") private var galleryView = "grid"
+    @AppStorage("deep-research.gallery-view") private var galleryView = "list"
     @AppStorage("deep-research.gallery-sort") private var gallerySort = "newest"
     @AppStorage("deep-research.gallery-read") private var galleryRead = "all"
 
@@ -172,49 +172,48 @@ struct DeepResearchScreen: View {
     private var galleryControls: some View {
         VStack(spacing: 10) {
             NodusSearchField(text: $query, prompt: "Search reports", accent: session.accent)
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    Menu {
-                        Picker("Reading state", selection: $galleryRead) {
-                            Label("All", systemImage: "doc.text").tag("all")
-                            Label("Unread", systemImage: "circle").tag("unread")
-                            Label("Read", systemImage: "checkmark.circle.fill").tag("read")
-                        }
-                    } label: {
-                        Label(readFilterLabel, systemImage: "line.3.horizontal.decrease.circle")
+            HStack(spacing: 8) {
+                Menu {
+                    Picker("Reading state", selection: $galleryRead) {
+                        Label("All", systemImage: "doc.text").tag("all")
+                        Label("Unread", systemImage: "circle").tag("unread")
+                        Label("Read", systemImage: "checkmark.circle.fill").tag("read")
                     }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                    .fixedSize()
-
-                    Menu {
-                        Picker("Sort reports", selection: $gallerySort) {
-                            Text("Newest").tag("newest")
-                            Text("Oldest").tag("oldest")
-                            Text("Title").tag("title")
-                        }
-                    } label: {
-                        Label(sortLabel, systemImage: "arrow.up.arrow.down")
-                    }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                    .fixedSize()
-
-                    Picker("View", selection: $galleryView) {
-                        Image(systemName: "square.grid.2x2").tag("grid")
-                        Image(systemName: "list.bullet").tag("list")
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 92)
-
-                    Button(selecting ? "Done" : "Select") {
-                        selecting.toggle()
-                        if !selecting { selection.removeAll() }
-                    }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                    .fixedSize()
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
                 }
+                .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
+                .accessibilityLabel(readFilterLabel)
+
+                Menu {
+                    Picker("Sort reports", selection: $gallerySort) {
+                        Text("Newest").tag("newest")
+                        Text("Oldest").tag("oldest")
+                        Text("Title").tag("title")
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
+                .accessibilityLabel(sortLabel)
+
+                Picker("View", selection: $galleryView) {
+                    Image(systemName: "square.grid.2x2").tag("grid")
+                    Image(systemName: "list.bullet").tag("list")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 92, height: 44)
+
+                Button {
+                    selecting.toggle()
+                    if !selecting { selection.removeAll() }
+                } label: {
+                    Image(systemName: selecting ? "checkmark" : "checkmark.circle")
+                }
+                .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
+                .accessibilityLabel(selecting ? "Done" : "Select")
+                Spacer(minLength: 0)
             }
-            .scrollIndicators(.hidden)
-            .frame(maxWidth: .infinity, alignment: .leading)
 
             if selecting, !selection.isEmpty {
                 HStack {
@@ -271,7 +270,7 @@ struct DeepResearchScreen: View {
     private func galleryCell(_ entry: DeepResearchGalleryEntry, grid: Bool) -> some View {
         if selecting {
             Button { toggle(entry.id) } label: {
-                DeepResearchGalleryCard(entry: entry, selected: selection.contains(entry.id), grid: grid, accent: session.accent)
+                DeepResearchGalleryCard(entry: entry, selected: selection.contains(entry.id), grid: grid, session: session)
             }
             .buttonStyle(.plain)
         } else {
@@ -281,7 +280,7 @@ struct DeepResearchScreen: View {
                 case .published(let row): PublishedReportReader(session: session, row: row)
                 }
             } label: {
-                DeepResearchGalleryCard(entry: entry, selected: false, grid: grid, accent: session.accent)
+                DeepResearchGalleryCard(entry: entry, selected: false, grid: grid, session: session)
             }
             .buttonStyle(.plain)
         }
@@ -289,7 +288,7 @@ struct DeepResearchScreen: View {
 
     private var galleryEntries: [DeepResearchGalleryEntry] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        var entries = local.reports.map { DeepResearchGalleryEntry(local: $0, marks: marks) }
+        var entries = local.reports.map { DeepResearchGalleryEntry(local: $0, imageURL: local.imageURL(for: $0), marks: marks) }
         entries += published.map { DeepResearchGalleryEntry(published: $0, marks: marks) }
         entries = entries.filter {
             (needle.isEmpty || $0.searchText.contains(needle)) &&
@@ -304,11 +303,11 @@ struct DeepResearchScreen: View {
     }
 
     private var readFilterLabel: String {
-        switch galleryRead { case "read": "Read"; case "unread": "Unread"; default: "All" }
+        switch galleryRead { case "read": String(localized: "Read"); case "unread": String(localized: "Unread"); default: String(localized: "All") }
     }
 
     private var sortLabel: String {
-        switch gallerySort { case "oldest": "Oldest"; case "title": "Title"; default: "Newest" }
+        switch gallerySort { case "oldest": String(localized: "Oldest"); case "title": String(localized: "Title"); default: String(localized: "Newest") }
     }
 
     private func toggle(_ id: String) {
@@ -923,6 +922,11 @@ struct DeepResearchGalleryEntry: Identifiable {
         case published(Row)
     }
 
+    enum Cover {
+        case local(URL)
+        case published(hash: String)
+    }
+
     let id: String
     let title: String
     let subtitle: String
@@ -931,10 +935,11 @@ struct DeepResearchGalleryEntry: Identifiable {
     let isRead: Bool
     let wordCount: Int?
     let citationCount: Int?
+    let cover: Cover?
     let origin: Origin
 
     @MainActor
-    init(local saved: LocalReportStore.Saved, marks: ReportMarks) {
+    init(local saved: LocalReportStore.Saved, imageURL: URL?, marks: ReportMarks) {
         id = "local:\(saved.id)"
         title = saved.title
         subtitle = saved.mode.label
@@ -943,6 +948,7 @@ struct DeepResearchGalleryEntry: Identifiable {
         isRead = marks.isRead(saved.id)
         wordCount = saved.report.words
         citationCount = saved.report.citationsChecked - saved.report.citationsRejected
+        cover = imageURL.map(Cover.local)
         origin = .local(saved)
     }
 
@@ -957,6 +963,7 @@ struct DeepResearchGalleryEntry: Identifiable {
         isRead = marks.isRead(rowId)
         wordCount = row.int("word_count")
         citationCount = row.int("citations_checked")
+        cover = row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue.map { Cover.published(hash: $0) }
         origin = .published(row)
     }
 }
@@ -965,43 +972,81 @@ private struct DeepResearchGalleryCard: View {
     let entry: DeepResearchGalleryEntry
     let selected: Bool
     let grid: Bool
-    let accent: Color
+    let session: SpaceSession
+
+    private var accent: Color { session.accent }
 
     var body: some View {
-        HStack(alignment: grid ? .top : .center, spacing: 12) {
-            Image(systemName: entry.isRead ? "doc.text.fill" : "doc.text")
-                .font(.title3)
-                .foregroundStyle(accent.nodusReadable)
-                .frame(width: 44, height: 44)
-                .background(accent.opacity(0.14), in: NodusRadius.controlShape)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(entry.title)
-                        .font(.subheadline.weight(entry.isRead ? .regular : .semibold))
-                        .foregroundStyle(entry.isRead ? Color.nodusSecondaryText : Color.primary)
-                        .lineLimit(grid ? 3 : 2)
-                    Spacer(minLength: 4)
-                    if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(accent) }
+        Group {
+            if grid {
+                VStack(alignment: .leading, spacing: 0) {
+                    cover
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 142)
+                        .clipped()
+                    details.padding(14)
                 }
-                Text(entry.subtitle).font(.caption2).foregroundStyle(.secondary)
-                HStack(spacing: 10) {
-                    if let words = entry.wordCount {
-                        Label(words.formatted(), systemImage: "text.alignleft")
-                    }
-                    if let citations = entry.citationCount {
-                        Label(citations.formatted(), systemImage: "quote.opening")
-                    }
-                    if let date = entry.date {
-                        Text(date.formatted(date: .abbreviated, time: .omitted))
-                    }
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    cover
+                        .frame(width: 96, height: 58)
+                        .clipped()
+                    details
+                    Spacer(minLength: 0)
                 }
-                .font(.caption2).foregroundStyle(.tertiary)
+                .padding(10)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: grid ? 116 : 64, alignment: .topLeading)
-        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: grid ? 224 : 78, alignment: .topLeading)
         .nodusGlass(NodusGlass(selected ? .prominent : .regular, tint: accent))
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var cover: some View {
+        ZStack {
+            LinearGradient(
+                colors: [accent.opacity(0.2), accent.opacity(0.06)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            NodusIcon(name: "telescope", size: grid ? 30 : 20, weight: .medium)
+                .foregroundStyle(accent.opacity(0.7))
+            switch entry.cover {
+            case .local(let url):
+                LocalReportImage(url: url)
+            case .published(let hash):
+                AssetImage(session: session, hash: hash)
+            case nil:
+                EmptyView()
+            }
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white, accent)
+                    .padding(7)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: grid ? 16 : 9, style: .continuous))
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(entry.title)
+                .font(.subheadline.weight(entry.isRead ? .regular : .semibold))
+                .foregroundStyle(entry.isRead ? Color.nodusSecondaryText : Color.primary)
+                .lineLimit(grid ? 3 : 2)
+            Text(entry.subtitle).font(.caption2).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                if let words = entry.wordCount { Label(words.formatted(), systemImage: "text.alignleft") }
+                if let citations = entry.citationCount { Label(citations.formatted(), systemImage: "quote.opening") }
+                if let date = entry.date { Text(date.formatted(date: .abbreviated, time: .omitted)) }
+            }
+            .font(.caption2).foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1051,11 +1096,11 @@ private struct DeepResearchQueueCard: View {
 
     private var statusLabel: String {
         switch job.status {
-        case .queued: "Queued"
-        case .running: "Running"
-        case .completed: "Completed"
-        case .failed: "Failed"
-        case .cancelled: "Cancelled"
+        case .queued: String(localized: "Queued")
+        case .running: String(localized: "Running")
+        case .completed: String(localized: "Completed")
+        case .failed: String(localized: "Failed")
+        case .cancelled: String(localized: "Cancelled")
         }
     }
 

@@ -282,6 +282,7 @@ struct WorldEntityWorkspaceView: View {
                 )
                 NodusSearchField(text: $query, prompt: "Search this section", accent: session.accent)
             }
+            .padding(.horizontal, NodusSpace.page)
             .padding(.top, 10)
             .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
@@ -321,7 +322,8 @@ struct WorldEntityWorkspaceView: View {
                     "world_scene_snapshots", "world_images",
                 ]
                 var loaded: [String: [Row]] = [:]
-                for name in names { loaded[name] = (try? await mirror.allRows(table: name)) ?? [] }
+                loaded[definition.table.rawValue] = try await mirror.allRows(table: definition.table.rawValue)
+                for name in names where name != definition.table.rawValue { loaded[name] = (try? await mirror.allRows(table: name)) ?? [] }
                 var refs: [SnapshotAssetRef] = []
                 for row in loaded["world_images"] ?? [] {
                     if let id = row.string("image_id"), let ref = try? await mirror.asset(table: "world_images", key: [id]) { refs.append(ref) }
@@ -408,7 +410,7 @@ struct WorldEntityWorkspaceView: View {
                 // Older/offline servers cannot queue the typed repository operation. The
                 // generated mutation lane below is durable and mirrors every owned child,
                 // so the edit still works without silently leaking polymorphic records.
-                self.error = "Canonical Desktop delete is unavailable; queued the offline-safe equivalent. \(error.localizedDescription)"
+                self.error = String(localized: "Canonical Desktop delete is unavailable; queued the offline-safe equivalent. \(error.localizedDescription)")
             }
         }
 
@@ -688,7 +690,7 @@ private struct WorldEntityDossier: View {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 DesktopPageHeader(
                     title: LocalizedStringKey(definition.title(of: row)),
-                    subtitle: definition.title,
+                    subtitle: LocalizedStringKey(definition.title),
                     systemImage: definition.icon,
                     accent: session.accent,
                     trailing: {
@@ -696,7 +698,7 @@ private struct WorldEntityDossier: View {
                             Button(action: onEdit) { Label("Edit", systemImage: "pencil") }
                                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                             Button(role: .destructive) { confirmingDelete = true } label: { Image(systemName: "trash") }
-                                .buttonStyle(NodusGlassButtonStyle(accent: .red))
+                                .buttonStyle(NodusGlassIconButtonStyle(accent: .red))
                         }
                         .disabled(!session.connection.role.canSendChanges || session.isDemo)
                     }
@@ -859,11 +861,15 @@ struct WorldTimelineView: View {
 struct WorldHierarchyView: View {
     let session: SpaceSession
     @State private var nodes: [WorldbuildingParity.HierarchyNode] = []
+    @State private var loading = true
+    @State private var error: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 DesktopPageHeader(title: "World hierarchy", subtitle: "Dynasties, cultures, factions and nested places", systemImage: "arrow.triangle.branch", accent: session.accent)
+                if loading { ProgressView("Loading hierarchy…").frame(maxWidth: .infinity).padding(.vertical, 32) }
+                if let error { NodusNotice(tone: .blocked, title: "Could not load hierarchy", message: LocalizedStringKey(error)) }
                 ForEach(Array(flattened.enumerated()), id: \.element.0.id) { _, item in
                     let node = item.0
                     HStack {
@@ -875,6 +881,7 @@ struct WorldHierarchyView: View {
                     .desktopContentRow(accent: session.accent)
                     .padding(.leading, CGFloat(item.1) * 22)
                 }
+                if nodes.isEmpty, !loading, error == nil { ContentUnavailableView("No hierarchy", systemImage: "arrow.triangle.branch", description: Text("World groups and nested places will appear here.")) }
             }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor()
         }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
     }
@@ -894,8 +901,12 @@ struct WorldHierarchyView: View {
         return result
     }
     private func load() async {
-        guard let tables = try? await worldTables(session, ["world_groups", "places"]) else { return }
-        nodes = WorldbuildingParity.hierarchy(groups: tables["world_groups"] ?? [], places: tables["places"] ?? [])
+        loading = true; defer { loading = false }
+        do {
+            let tables = try await worldTables(session, ["world_groups", "places"])
+            nodes = WorldbuildingParity.hierarchy(groups: tables["world_groups"] ?? [], places: tables["places"] ?? [])
+            error = nil
+        } catch { nodes = []; self.error = error.localizedDescription }
     }
 }
 
@@ -904,17 +915,22 @@ struct WorldRelationsView: View {
     @State private var people: [String: String] = [:]
     @State private var relations: [Row] = []
     @State private var affiliations: [Row] = []
+    @State private var loading = true
+    @State private var error: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 DesktopPageHeader(title: "Relations", subtitle: "Kinship, social bonds and affiliations", systemImage: "link", accent: session.accent)
+                if loading { ProgressView("Loading relations…").frame(maxWidth: .infinity).padding(.vertical, 32) }
+                if let error { NodusNotice(tone: .blocked, title: "Could not load relations", message: LocalizedStringKey(error)) }
                 ForEach(relations, id: \.columns) { row in
                     relationCard(from: people[row.string("from_person") ?? ""] ?? "Unknown", to: people[row.string("to_person") ?? ""] ?? "Unknown", label: row.text("type") ?? "relation")
                 }
                 ForEach(affiliations, id: \.columns) { row in
                     relationCard(from: people[row.string("person_id") ?? ""] ?? "Unknown", to: row.text("group_id") ?? "Group", label: row.text("rank") ?? "member")
                 }
+                if relations.isEmpty, affiliations.isEmpty, !loading, error == nil { ContentUnavailableView("No relations", systemImage: "link", description: Text("Relationships and affiliations will appear here.")) }
             }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor()
         }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
     }
@@ -922,11 +938,15 @@ struct WorldRelationsView: View {
         HStack { Text(from).font(.headline); Spacer(); VStack { Text(label.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary); Image(systemName: "arrow.right").foregroundStyle(session.accent) }; Spacer(); Text(to).font(.headline) }.desktopContentRow(accent: session.accent)
     }
     private func load() async {
-        guard let tables = try? await worldTables(session, ["persons", "relationships", "character_affiliations", "world_groups"]) else { return }
-        people = Dictionary(uniqueKeysWithValues: (tables["persons"] ?? []).compactMap { row in row.string("person_id").map { ($0, row.text("display_name") ?? $0) } })
-        let groups = Dictionary(uniqueKeysWithValues: (tables["world_groups"] ?? []).compactMap { row in row.string("group_id").map { ($0, row.text("name") ?? $0) } })
-        relations = tables["relationships"] ?? []
-        affiliations = (tables["character_affiliations"] ?? []).map { row in var value = row.columns; if let id = row.string("group_id") { value["group_id"] = .string(groups[id] ?? id) }; return Row(value) }
+        loading = true; defer { loading = false }
+        do {
+            let tables = try await worldTables(session, ["persons", "relationships", "character_affiliations", "world_groups"])
+            people = Dictionary(uniqueKeysWithValues: (tables["persons"] ?? []).compactMap { row in (row.string("person_id") ?? row.string("id")).map { ($0, row.text("display_name") ?? $0) } })
+            let groups = Dictionary(uniqueKeysWithValues: (tables["world_groups"] ?? []).compactMap { row in (row.string("group_id") ?? row.string("id")).map { ($0, row.text("name") ?? $0) } })
+            relations = tables["relationships"] ?? []
+            affiliations = (tables["character_affiliations"] ?? []).map { row in var value = row.columns; if let id = row.string("group_id") { value["group_id"] = .string(groups[id] ?? id) }; return Row(value) }
+            error = nil
+        } catch { people = [:]; relations = []; affiliations = []; self.error = error.localizedDescription }
     }
 }
 
@@ -935,6 +955,8 @@ struct WorldMapView: View {
     @State private var maps: [Row] = []
     @State private var markers: [Row] = []
     @State private var selectedId: String?
+    @State private var loading = true
+    @State private var error: String?
 
     private var selected: Row? { maps.first { $0.string("map_id") == selectedId } ?? maps.first }
     private var visibleMarkers: [Row] { guard let id = selected?.string("map_id") else { return [] }; return markers.filter { $0.string("map_id") == id } }
@@ -945,6 +967,8 @@ struct WorldMapView: View {
                 DesktopPageHeader(title: "Maps", subtitle: "Layered maps with normalized markers", systemImage: "map", accent: session.accent, trailing: {
                     if !maps.isEmpty { Picker("Map", selection: Binding(get: { selected?.string("map_id") ?? "" }, set: { selectedId = $0 })) { ForEach(maps, id: \.columns) { Text($0.text("name") ?? "Map").tag($0.string("map_id") ?? "") } }.frame(width: 220) }
                 })
+                if loading { ProgressView("Loading maps…").frame(maxWidth: .infinity).padding(.vertical, 32) }
+                if let error { NodusNotice(tone: .blocked, title: "Could not load maps", message: LocalizedStringKey(error)) }
                 if let selected {
                     GeometryReader { proxy in
                         ZStack {
@@ -962,14 +986,18 @@ struct WorldMapView: View {
                             }
                         }
                     }.frame(minHeight: 440).overlay(alignment: .topLeading) { Text(selected.text("name") ?? "Map").font(.title2.weight(.semibold)).padding(18) }
-                } else { ContentUnavailableView("No maps", systemImage: "map", description: Text("Maps created on Desktop will keep their layers and markers here.")) }
+                } else if !loading, error == nil { ContentUnavailableView("No maps", systemImage: "map", description: Text("Maps created on Desktop will keep their layers and markers here.")) }
             }.padding(NodusSpace.page).frame(maxWidth: 1120).frame(maxWidth: .infinity).nodusTopAnchor()
         }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
     }
     private func load() async {
-        guard let tables = try? await worldTables(session, ["world_maps", "map_markers"]) else { return }
-        maps = tables["world_maps"] ?? []; markers = tables["map_markers"] ?? []
-        if selectedId == nil { selectedId = maps.first?.string("map_id") }
+        loading = true; defer { loading = false }
+        do {
+            let tables = try await worldTables(session, ["world_maps", "map_markers"])
+            maps = tables["world_maps"] ?? []; markers = tables["map_markers"] ?? []
+            if selectedId == nil { selectedId = maps.first?.string("map_id") ?? maps.first?.string("id") }
+            error = nil
+        } catch { maps = []; markers = []; self.error = error.localizedDescription }
     }
 }
 

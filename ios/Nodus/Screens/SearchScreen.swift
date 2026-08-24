@@ -52,7 +52,7 @@ struct SearchScreen: View {
                         HStack(spacing: 7) {
                             kindFilterButton(nil, title: String(localized: "All"))
                             ForEach(availableKinds, id: \.self) { kind in
-                                kindFilterButton(kind, title: kind.capitalized)
+                                kindFilterButton(kind, title: Bundle.main.localizedString(forKey: kind, value: kind, table: nil).localizedCapitalized)
                             }
                         }
                     }
@@ -106,7 +106,7 @@ struct SearchScreen: View {
             VStack(spacing: 8) {
                 DesktopPageHeader(
                     title: "Search",
-                    subtitle: hits.isEmpty ? String(localized: "Search every published surface") : String(localized: "\(visibleHits.count) results"),
+                    subtitle: hits.isEmpty ? "Search every published surface" : "\(visibleHits.count) results",
                     systemImage: "magnifyingglass",
                     accent: session.accent
                 )
@@ -118,6 +118,7 @@ struct SearchScreen: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal, NodusSpace.page)
                 NodusSearchField(text: $query, prompt: prompt, accent: session.accent, isBusy: isSearching)
+                    .padding(.horizontal, NodusSpace.page)
             }
             .padding(.bottom, 8)
             .frame(maxWidth: 980)
@@ -371,15 +372,15 @@ private struct HitCell: View {
     /// that no catalogue can translate.
     private var typeLabel: String {
         switch hit.type {
-        case "work", "works": return "Work"
-        case "idea", "ideas": return "Idea"
-        case "theme", "themes": return "Theme"
-        case "gap", "gaps": return "Gap"
-        case "note", "notes": return "Note"
-        case "passage", "passages": return "Passage"
-        case "person", "persons": return "Person"
-        case "place", "places": return "Place"
-        case "event", "events": return "Event"
+        case "work", "works": return String(localized: "Work")
+        case "idea", "ideas": return String(localized: "Idea")
+        case "theme", "themes": return String(localized: "Theme")
+        case "gap", "gaps": return String(localized: "Gap")
+        case "note", "notes": return String(localized: "Note")
+        case "passage", "passages": return String(localized: "Passage")
+        case "person", "persons": return String(localized: "Person")
+        case "place", "places": return String(localized: "Place")
+        case "event", "events": return String(localized: "Event")
         default: return hit.type.capitalized
         }
     }

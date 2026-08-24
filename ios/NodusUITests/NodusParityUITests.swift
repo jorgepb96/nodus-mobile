@@ -22,7 +22,7 @@ final class NodusParityUITests: XCTestCase {
     @MainActor
     func testEveryVisibleDestinationUsesTheSharedShell() throws {
         let routes = [
-            "home", "search", "library", "graph", "argument", "ideas", "authors", "research",
+            "home", "search", "library", "argument", "ideas", "authors", "research",
             "hypothesis", "reading", "deepResearch", "workspace", "writing", "projects",
         ]
         for route in routes {
@@ -46,11 +46,11 @@ final class NodusParityUITests: XCTestCase {
         app.launch()
 
         let search = app.buttons["nodus-nav-search"]
-        if !search.waitForExistence(timeout: 10) { app.buttons["Navigation"].tap() }
+        if !search.waitForExistence(timeout: 10) { app.buttons["nodus-navigation-toggle"].tap() }
         XCTAssertTrue(search.waitForExistence(timeout: 5))
 
         let orderedRoutes = [
-            "home", "library", "search", "ideas", "authors", "graph", "argument",
+            "home", "library", "search", "ideas", "authors", "argument",
             "research", "immersion", "deepResearch", "workspace", "browser", "radar", "toolkit",
         ]
         for route in orderedRoutes {
@@ -157,14 +157,15 @@ final class NodusParityUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.buttons["workspace-catalogue-authors"].waitForExistence(timeout: 20))
-        let save = app.buttons.matching(NSPredicate(format: "label == 'Save author'")).firstMatch
+        let save = app.buttons.matching(NSPredicate(format: "label == 'Save author' OR label == 'Guardar autor'" )).firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 10))
         save.tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == 'Remove saved author'")).firstMatch.waitForExistence(timeout: 5))
+        let saved = app.buttons.matching(NSPredicate(format: "label == 'Remove saved author' OR label == 'Quitar autor guardado'" )).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 5))
 
         openRoute("ideas", in: app)
         openRoute("authors", in: app)
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == 'Remove saved author'")).firstMatch.exists,
+        XCTAssertTrue(saved.exists,
                       "Saved authors must survive section changes without entering the cloud record")
     }
 
@@ -185,7 +186,7 @@ final class NodusParityUITests: XCTestCase {
         closers.element(boundBy: 1).tap()
         XCTAssertTrue(readers.element(boundBy: 0).isSelected, "Closing the active reader should select its neighbour")
         app.buttons["workspace-catalogue-library"].tap()
-        XCTAssertTrue(app.textFields["Search title, creator, tag or citation key"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["nodus-search-field"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -245,14 +246,14 @@ final class NodusParityUITests: XCTestCase {
         attachScreenshot(named: "deep-research-gallery")
 
         app.staticTexts["Networks of correspondence in the early modern Atlantic"].tap()
-        XCTAssertTrue(app.buttons["Report outline"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Sources and citations"].exists)
-        XCTAssertTrue(app.buttons["Translations"].exists)
-        XCTAssertTrue(app.buttons["Report image"].exists)
+        XCTAssertTrue(app.buttons["report-tool-outline"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["report-tool-sources"].exists)
+        XCTAssertTrue(app.buttons["report-tool-translations"].exists)
+        XCTAssertTrue(app.buttons["report-tool-image"].exists)
         attachScreenshot(named: "deep-research-reader")
 
-        app.buttons["Report outline"].tap()
-        XCTAssertTrue(app.navigationBars["Report outline"].waitForExistence(timeout: 5))
+        app.buttons["report-tool-outline"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["report-outline-sheet"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Evidence and method"].exists)
     }
 
@@ -297,10 +298,6 @@ final class NodusParityUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["workspace-authors"].waitForExistence(timeout: 15))
         attachScreenshot(named: "\(device)-academic-05-authors")
 
-        openRoute("graph", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["academic-graph"].waitForExistence(timeout: 15))
-        attachScreenshot(named: "\(device)-academic-06-graph")
-
         openRoute("argument", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["workspace-argument"].waitForExistence(timeout: 15))
         attachScreenshot(named: "\(device)-academic-07-argument-map")
@@ -338,9 +335,8 @@ final class NodusParityUITests: XCTestCase {
     }
 
     @MainActor
-    func testAcademicGraphReadingHypothesisWritingAndProjectsAreNativeRoutes() throws {
+    func testAcademicReadingHypothesisWritingAndProjectsAreNativeRoutes() throws {
         let expectations = [
-            ("graph", "academic-graph"),
             ("hypothesis", "academic-hypothesis"),
             ("reading", "academic-reading-path"),
             ("writing", "academic-writing"),
@@ -353,7 +349,6 @@ final class NodusParityUITests: XCTestCase {
             app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
             app.launch()
             XCTAssertTrue(app.descendants(matching: .any)[identifier].waitForExistence(timeout: 20), "Missing native academic route \(route)")
-            if route == "graph" { attachScreenshot(named: "academic-graph") }
             app.terminate()
         }
     }
@@ -550,11 +545,25 @@ final class NodusParityUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.descendants(matching: .any)["browser-workspace"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.descendants(matching: .any)["browser-omnibox"].waitForExistence(timeout: 5))
+        let omnibox = app.descendants(matching: .any)["browser-omnibox"]
+        XCTAssertTrue(omnibox.waitForExistence(timeout: 5))
+        let browserHome = app.descendants(matching: .any)["browser-home"]
+        XCTAssertTrue(browserHome.waitForExistence(timeout: 5))
+        browserHome.tap()
+        let atlasLoaded = NSPredicate(format: "value CONTAINS[c] %@", "nodusresearch.com/research-atlas")
+        expectation(for: atlasLoaded, evaluatedWith: omnibox)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.staticTexts["Nodus blocked a local address or unsupported scheme."].exists)
         let tabs = app.buttons.matching(identifier: "browser-tab")
         let before = tabs.count
         app.buttons["browser-new-tab"].tap()
         XCTAssertEqual(tabs.count, before + 1, "Browser must keep simultaneous isolated tabs")
+
+        let window = app.windows.firstMatch
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.55))
+            .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.68, dy: 0.55)))
+        XCTAssertTrue(app.buttons["nodus-nav-home"].waitForExistence(timeout: 5), "The sidebar must open from a left-edge swipe without stealing ordinary page gestures")
+        app.buttons["nodus-nav-browser"].tap()
         attachScreenshot(named: "platform-browser")
 
         openRoute("radar", in: app)
@@ -575,6 +584,9 @@ final class NodusParityUITests: XCTestCase {
         app.buttons["toolkit-card-convert"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["toolkit-convert-page"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["toolkit-run"].exists)
+
+        openRoute("settings", in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["settings-workspace"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -589,7 +601,7 @@ final class NodusParityUITests: XCTestCase {
     private func openRoute(_ route: String, in app: XCUIApplication) {
         let destination = app.buttons["nodus-nav-\(route)"]
         if !destination.exists {
-            app.buttons["Navigation"].tap()
+            app.buttons["nodus-navigation-toggle"].tap()
         }
         XCTAssertTrue(destination.waitForExistence(timeout: 5), "Missing route \(route)")
         destination.tap()

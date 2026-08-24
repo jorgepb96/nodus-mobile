@@ -4,7 +4,6 @@ import SwiftUI
 
 struct SpaceSettingsView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
     let session: SpaceSession
 
     @Environment(AISettings.self) private var ai
@@ -21,7 +20,18 @@ struct SpaceSettingsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            VStack(spacing: 0) {
+                DesktopPageHeader(
+                    title: "Settings",
+                    subtitle: "Space, connection, privacy and device preferences",
+                    systemImage: "gearshape",
+                    accent: session.accent
+                )
+                .padding(.horizontal, NodusSpace.page)
+                .padding(.top, NodusSpace.page)
+                .padding(.bottom, 10)
+
+                List {
                 Section("Space") {
                     labelled("Name", session.connection.spaceName)
                     labelled("Vault", session.connection.vaultName ?? "—")
@@ -312,22 +322,19 @@ struct SpaceSettingsView: View {
                 Section {
                     Button(role: .destructive) {
                         model.forget(session.connection)
-                        dismiss()
                     } label: {
                         Label("Forget this space", systemImage: "trash")
                     }
                 } footer: {
                     Text("The credential is deleted from this device. Nothing changes on the server.")
                 }
+                }
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
             }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden)
+            .toolbar(.hidden, for: .navigationBar)
             .nodusPageBackdrop(accent: session.accent)
             .tint(session.accent)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
             .task { await diagnose() }
             .confirmationDialog("Delete downloaded copies?", isPresented: $showingLibraryDeletion, titleVisibility: .visible) {
                 Button(libraryDeletion == .space ? "Delete in this space" : "Delete in every space", role: .destructive) {
@@ -338,6 +345,7 @@ struct SpaceSettingsView: View {
                 Text("Only files stored on this device will be removed. Catalogues, annotations and server publications are preserved.")
             }
         }
+        .accessibilityIdentifier("settings-workspace")
     }
 
     private func requestLibraryDeletion(_ deletion: LibraryDeletion) {

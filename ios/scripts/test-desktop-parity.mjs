@@ -21,6 +21,14 @@ function difference(left, right) {
   return [...new Set(left)].filter((value) => !known.has(value)).sort();
 }
 
+function evidenceExists(entry, desktop) {
+  const relative = entry.split('#')[0];
+  if (relative.startsWith('../nodus/')) {
+    return fs.existsSync(path.join(desktop, relative.slice('../nodus/'.length)));
+  }
+  return fs.existsSync(path.resolve(mobileRoot, relative));
+}
+
 const desktop = nodusRepo();
 const navigation = fs.readFileSync(path.join(desktop, 'src/navigation.ts'), 'utf8');
 const swiftNavigation = fs.readFileSync(path.join(mobileRoot, 'ios/Nodus/State/NavigationContract.swift'), 'utf8');
@@ -41,6 +49,7 @@ const swiftTables = [...mutableEnum.matchAll(/^\s*case\s+\w+(?:\s*=\s*"([^"]+)")
 });
 
 const problems = [];
+let excludedRouteIds = new Set();
 
 const manifestPath = path.join(mobileRoot, 'ios/Parity/parity-manifest.json');
 if (!fs.existsSync(manifestPath)) {
@@ -48,6 +57,10 @@ if (!fs.existsSync(manifestPath)) {
 } else {
   const committed = fs.readFileSync(manifestPath, 'utf8');
   const expected = manifestText();
+  const expectedManifest = JSON.parse(expected);
+  excludedRouteIds = new Set(expectedManifest.routes
+    .filter((item) => item.mobileState === 'excluded')
+    .map((item) => item.id));
   if (committed !== expected) {
     problems.push('parity manifest:\n  Desktop changed; classify the change and regenerate it with generate-parity-manifest.mjs --write');
   } else {
@@ -64,10 +77,10 @@ if (!fs.existsSync(manifestPath)) {
     const unsupportedClaims = [...manifest.routes, ...manifest.apiActions]
       .filter((item) => item.mobileState === 'implemented' && (!item.evidence || item.evidence.length === 0));
     const implemented = [...manifest.routes, ...manifest.apiActions, ...manifest.mutableTables];
-    const incomplete = implemented.filter((item) => item.mobileState !== 'implemented');
+    const incomplete = implemented.filter((item) => !['implemented', 'excluded'].includes(item.mobileState));
     const missingEvidence = implemented.flatMap((item) => item.evidence ?? [])
       .filter((entry, index, entries) => entries.indexOf(entry) === index)
-      .filter((entry) => !fs.existsSync(path.resolve(mobileRoot, entry.split('#')[0])));
+      .filter((entry) => !evidenceExists(entry, desktop));
     if (incomplete.length) {
       problems.push(`parity manifest:\n  incomplete: ${incomplete.map((item) => item.id ?? item.name).join(', ')}`);
     }
@@ -80,7 +93,7 @@ if (!fs.existsSync(manifestPath)) {
   }
 }
 for (const [name, expected, actual] of [
-  ['desktop routes', desktopRoutes, classifiedRoutes],
+  ['desktop routes', desktopRoutes.filter((route) => !excludedRouteIds.has(route)), classifiedRoutes],
   ['mutable tables', desktopTables, swiftTables],
 ]) {
   const missing = difference(expected, actual);
@@ -92,7 +105,8 @@ for (const [name, expected, actual] of [
 
 const shell = fs.readFileSync(path.join(mobileRoot, 'ios/Nodus/Screens/SpaceShell.swift'), 'utf8');
 const routeSwitch = valuesBetween(shell, 'private func routeView(_ route: NodusRoute)', '\n    private func openIdea');
-const unrouted = desktopRoutes.filter((route) => !new RegExp(`\\.${route}\\b`).test(routeSwitch));
+const executableDesktopRoutes = desktopRoutes.filter((route) => !excludedRouteIds.has(route));
+const unrouted = executableDesktopRoutes.filter((route) => !new RegExp(`\\.${route}\\b`).test(routeSwitch));
 if (unrouted.length) problems.push(`executable routes:\n  no native/deep-link destination: ${unrouted.join(', ')}`);
 if (/\bdefault\s*:/.test(routeSwitch)) {
   problems.push('executable routes:\n  routeView has a default fallback; keep the switch exhaustive so new routes cannot become placeholders');

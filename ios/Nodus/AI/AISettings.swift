@@ -137,9 +137,9 @@ final class AISettings {
 
         var label: String {
             switch self {
-            case .chat: return "Chat"
-            case .deepResearch: return "Deep Research"
-            case .image: return "Images"
+            case .chat: return String(localized: "Chat")
+            case .deepResearch: return String(localized: "Deep Research")
+            case .image: return String(localized: "Images")
             }
         }
     }

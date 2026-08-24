@@ -25,30 +25,31 @@ struct WorkspaceTabStrip: View {
     }
     private var catalogueWidth: CGFloat { horizontalSizeClass == .compact ? 150 : 168 }
     private var documentWidth: CGFloat { horizontalSizeClass == .compact ? 218 : 260 }
-    private var catalogueId: String { "workspace-catalogue-scroll-\(section)" }
+    private var localizedCatalogueTitle: String {
+        Bundle.main.localizedString(forKey: catalogueTitle, value: catalogueTitle, table: nil)
+    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 0) {
-                    catalogueTab
-                        .frame(width: catalogueWidth)
-                        .id(catalogueId)
-                    Divider().frame(height: 22)
+        HStack(spacing: 0) {
+            catalogueTab.frame(width: catalogueWidth)
+            Divider().frame(height: 22)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
                     ForEach(tabs) { tab in
                         documentTab(tab)
                             .frame(width: documentWidth)
                             .id(tab.id)
                     }
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
                 }
-                .fixedSize(horizontal: true, vertical: false)
-            }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            .accessibilityIdentifier("workspace-tabs-\(section)")
-            .onChange(of: activeId, initial: true) { _, id in
-                withAnimation(NodusMotion.quick) {
-                    proxy.scrollTo(id ?? catalogueId, anchor: id == nil ? .leading : .center)
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                .accessibilityIdentifier("workspace-tabs-\(section)")
+                .onChange(of: activeId, initial: true) { _, id in
+                    guard let id else { return }
+                    withAnimation(NodusMotion.quick) { proxy.scrollTo(id, anchor: .center) }
                 }
             }
         }
@@ -63,7 +64,7 @@ struct WorkspaceTabStrip: View {
         Button { workspaceTabs.activateCatalog(in: section) } label: {
             HStack(spacing: 7) {
                 Image(systemName: catalogueImage).font(.system(size: 12, weight: .semibold))
-                Text(catalogueTitle).font(.caption.weight(.medium)).lineLimit(1)
+                Text(localizedCatalogueTitle).font(.caption.weight(.medium)).lineLimit(1)
             }
             .foregroundStyle(activeId == nil ? Color.primary : Color.nodusSecondaryText)
             .padding(.horizontal, 13)
@@ -74,7 +75,7 @@ struct WorkspaceTabStrip: View {
         }
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
-        .accessibilityLabel("\(catalogueTitle), catalogue")
+        .accessibilityLabel(Text("\(localizedCatalogueTitle), \(String(localized: "catalogue"))"))
         .accessibilityAddTraits(activeId == nil ? .isSelected : [])
         .accessibilityIdentifier("workspace-catalogue-\(section)")
     }

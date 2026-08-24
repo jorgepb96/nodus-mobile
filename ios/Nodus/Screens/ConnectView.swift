@@ -373,9 +373,9 @@ private struct SpaceRow: View {
 
     private func roleLabel(_ role: SpaceRole) -> String {
         switch role {
-        case .reader: return "Read only"
-        case .writer: return "Can send changes"
-        case .owner: return "Owner"
+        case .reader: return String(localized: "Read only")
+        case .writer: return String(localized: "Can send changes")
+        case .owner: return String(localized: "Owner")
         }
     }
 }

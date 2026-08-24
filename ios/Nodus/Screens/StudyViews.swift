@@ -15,8 +15,9 @@ struct ScheduleView: View {
     @State private var subjects: [String: Row] = [:]
     @State private var isLoading = true
     @State private var needsMirror = false
+    @State private var error: String?
 
-    private let days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    private let days = [String(localized: "Monday"), String(localized: "Tuesday"), String(localized: "Wednesday"), String(localized: "Thursday"), String(localized: "Friday"), String(localized: "Saturday"), String(localized: "Sunday")]
 
     var body: some View {
         ScrollView {
@@ -37,6 +38,8 @@ struct ScheduleView: View {
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
                 } else if isLoading {
                     ProgressView().tint(session.accent).frame(maxWidth: .infinity).padding(.top, 50)
+                } else if let error {
+                    NodusNotice(tone: .blocked, title: "Could not load the timetable", message: LocalizedStringKey(error))
                 } else if periods.isEmpty {
                     ContentUnavailableView(
                         "No timetable",
@@ -139,17 +142,23 @@ struct ScheduleView: View {
             return
         }
         needsMirror = false
-        periods = ((try? await mirror.page(table: "study_schedule_periods", limit: 60))?.items) ?? []
-        cells = ((try? await mirror.page(table: "study_schedule_cells", limit: 500))?.items) ?? []
-        let subjectRows = ((try? await mirror.page(table: "study_subjects", limit: 200))?.items) ?? []
+        do {
+            periods = try await mirror.page(table: "study_schedule_periods", limit: 60).items
+            cells = try await mirror.page(table: "study_schedule_cells", limit: 500).items
+            let subjectRows = try await mirror.page(table: "study_subjects", limit: 200).items
         // `id`, not `subject_id`. Every study and teaching table names its primary key `id`
         // (migrations.ts:1573 onwards) — the same mistake that once made nine collections
         // unopenable, still alive here: the dictionary was always empty, so every cell in
         // every timetable said "Unassigned" over a subject the publication carried.
         // `subject_id` is kept as a fallback for a row that really does name itself that way.
-        subjects = Dictionary(subjectRows.compactMap { row in
-            (row.string("id") ?? row.string("subject_id")).map { ($0, row) }
-        }, uniquingKeysWith: { first, _ in first })
+            subjects = Dictionary(subjectRows.compactMap { row in
+                (row.string("id") ?? row.string("subject_id")).map { ($0, row) }
+            }, uniquingKeysWith: { first, _ in first })
+            error = nil
+        } catch {
+            periods = []; cells = []; subjects = [:]
+            self.error = error.localizedDescription
+        }
     }
 }
 
@@ -188,9 +197,9 @@ struct FlashcardsView: View {
                     Button {
                         move(by: -1)
                     } label: {
-                        Image(systemName: "chevron.left").frame(maxWidth: .infinity)
+                        Image(systemName: "chevron.left")
                     }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
                     .disabled(index == 0)
 
                     Button {
@@ -203,9 +212,9 @@ struct FlashcardsView: View {
                     Button {
                         move(by: 1)
                     } label: {
-                        Image(systemName: "chevron.right").frame(maxWidth: .infinity)
+                        Image(systemName: "chevron.right")
                     }
-                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
                     .disabled(index >= cards.count - 1)
                 }
 
@@ -286,6 +295,7 @@ struct QuestionBankView: View {
     @State private var query = ""
     @State private var revealed: Set<Int> = []
     @State private var isLoading = true
+    @State private var error: String?
 
     private var filtered: [(offset: Int, row: Row)] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -298,7 +308,7 @@ struct QuestionBankView: View {
         List {
             ForEach(filtered, id: \.offset) { entry in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(entry.row.text("prompt") ?? entry.row.text("title") ?? "Pregunta")
+                    Text(entry.row.text("prompt") ?? entry.row.text("title") ?? String(localized: "Question"))
                         .font(.callout.weight(.medium))
 
                     HStack(spacing: 8) {
@@ -331,7 +341,17 @@ struct QuestionBankView: View {
                 .listRowBackground(Color.clear)
             }
 
-            if questions.isEmpty, !isLoading {
+            if isLoading {
+                HStack { Spacer(); ProgressView("Loading questions…"); Spacer() }
+                    .listRowBackground(Color.clear)
+            }
+
+            if let error {
+                NodusNotice(tone: .blocked, title: "Could not load questions", message: LocalizedStringKey(error))
+                    .listRowBackground(Color.clear)
+            }
+
+            if questions.isEmpty, !isLoading, error == nil {
                 ContentUnavailableView("No questions", systemImage: "checklist")
                     .listRowBackground(Color.clear)
             }
@@ -353,6 +373,12 @@ struct QuestionBankView: View {
         isLoading = true
         defer { isLoading = false }
         guard let collection = Collections["study-questions"] else { return }
-        questions = ((try? await session.client.list(collection, in: session.connection.spaceId, limit: 200))?.items) ?? []
+        do {
+            questions = try await session.client.list(collection, in: session.connection.spaceId, limit: 200).items
+            error = nil
+        } catch {
+            questions = []
+            self.error = error.localizedDescription
+        }
     }
 }

@@ -193,6 +193,8 @@ struct ResearchLibraryView: View {
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) {
             NodusSearchField(text: $query, prompt: "Search reports", accent: session.accent, isBusy: isLoading)
+                .padding(.horizontal, NodusSpace.page)
+                .padding(.bottom, 8)
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -1033,15 +1035,10 @@ struct LocalReportReader: View {
                         markdown: liveMarkdown,
                         title: nil,
                         send: sendContext,
+                        saveToNotes: (saved.id, liveTitle, liveMarkdown, session),
                         accent: session.accent
                     )
                     .padding(.top, 4)
-                    DeepResearchSaveToNotesButton(
-                        reportId: saved.id,
-                        title: liveTitle,
-                        markdown: liveMarkdown,
-                        session: session
-                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(NodusSpace.cardPadding)
@@ -1106,12 +1103,16 @@ struct LocalReportReader: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { sheet = .outline } label: { Image(systemName: "list.bullet") }
                     .accessibilityLabel("Report outline")
+                    .accessibilityIdentifier("report-tool-outline")
                 Button { sheet = .workspace } label: { Image(systemName: "rectangle.3.group") }
                     .accessibilityLabel("Sources and citations")
+                    .accessibilityIdentifier("report-tool-sources")
                 Button { sheet = .translation } label: { Image(systemName: "character.book.closed") }
                     .accessibilityLabel("Translations")
+                    .accessibilityIdentifier("report-tool-translations")
                 Button { sheet = .image } label: { Image(systemName: "photo") }
                     .accessibilityLabel("Report image")
+                    .accessibilityIdentifier("report-tool-image")
             }
         }
         .sheet(item: $sheet) { destination in
@@ -1234,17 +1235,12 @@ struct PublishedReportReader: View {
                             pdf: currentRow.string("id").map {
                                 (session, $0, currentRow.text("title") ?? String(localized: "Report"))
                             },
+                            saveToNotes: currentRow.string("id").map {
+                                ($0, currentRow.text("title") ?? String(localized: "Report"), document, session)
+                            },
                             accent: session.accent
                         )
                         .padding(.top, 6)
-                        if let reportId = currentRow.string("id") {
-                            DeepResearchSaveToNotesButton(
-                                reportId: reportId,
-                                title: currentRow.text("title") ?? String(localized: "Report"),
-                                markdown: document,
-                                session: session
-                            )
-                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -1437,7 +1437,7 @@ private struct DocumentProse: UIViewRepresentable {
                     }
                 }
                 highlight.accessibilityLabel = String(localized: "Highlight")
-                    + ": " + String(localized: colour.labelKey)
+                    + ": " + colour.localizedLabel
                 ours.append(highlight)
             }
 
@@ -1677,11 +1677,11 @@ private struct DocumentProse: UIViewRepresentable {
                     let symbol = UIImage.SymbolConfiguration(paletteColors: [UIColor(colour.color)])
                     let image = UIImage(systemName: annotation.color == colour ? "checkmark.circle.fill" : "circle.fill", withConfiguration: symbol)?
                         .withRenderingMode(.alwaysOriginal)
-                    let action = UIAction(title: String(localized: colour.labelKey), image: image) { _ in
+                    let action = UIAction(title: colour.localizedLabel, image: image) { _ in
                         MainActor.assumeIsolated { onChangeHighlightColor(annotation, colour) }
                     }
                     action.accessibilityLabel = String(localized: "Change highlight color")
-                        + ": " + String(localized: colour.labelKey)
+                        + ": " + colour.localizedLabel
                     return action
                 }
                 let colorMenu = UIMenu(

@@ -183,6 +183,37 @@ public struct NodusGlassButtonStyle: ButtonStyle {
     }
 }
 
+/// A compact, square glass control for actions represented by a familiar icon.
+///
+/// Unlike `NodusGlassButtonStyle`, this style does not add text-button padding around an
+/// already-sized label. The complete control is 44 points square: visually restrained while
+/// preserving the recommended mobile tap target.
+public struct NodusGlassIconButtonStyle: ButtonStyle {
+    public var accent: Color
+    @Environment(\.isEnabled) private var isEnabled
+
+    public init(accent: Color) { self.accent = accent }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(accent)
+            .frame(width: 44, height: 44)
+            .nodusGlass(
+                NodusGlass(.regular, tint: accent, interactive: true),
+                in: NodusRadius.controlShape
+            )
+            .overlay {
+                NodusRadius.controlShape
+                    .strokeBorder(accent.opacity(0.32), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .opacity(isEnabled ? 1 : 0.4)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(NodusMotion.press, value: configuration.isPressed)
+    }
+}
+
 /// The name of a group of things, and the one style it is set in.
 ///
 /// "Write" and "Analyse" on Home, "Passages that support it" and "Relationships" on a dossier,

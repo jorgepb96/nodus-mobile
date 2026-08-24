@@ -33,19 +33,19 @@ struct AppWiringTests {
         }
     }
 
-    @Test("academic sidebar matches the current Desktop hierarchy")
-    func academicSidebarMatchesDesktop() {
+    @Test("academic sidebar matches the mobile hierarchy without the suspended Graph view")
+    func academicSidebarMatchesMobile() {
         let visible = NodusNavigationContract.visibleItems(for: .academic).map(\.route)
         #expect(visible == [
             .home, .library,
-            .search, .ideas, .authors, .graph, .argument,
+            .search, .ideas, .authors, .argument,
             .research, .immersion, .deepResearch,
             .workspace,
             .browser, .radar, .toolkit,
             .settings,
         ])
         #expect(NodusNavigationContract.groupedItems(for: .academic).map(\.0) == [.explore, .analyze, .create, .tools])
-        #expect(NodusNavigationContract.items.first(where: { $0.route == .deepResearch })?.systemImage == "megaphone")
+        #expect(NodusNavigationContract.items.first(where: { $0.route == .deepResearch })?.systemImage == "telescope")
     }
 
     @Test("dedicated vault sidebars use Desktop closed allow-lists")
@@ -53,8 +53,8 @@ struct AppWiringTests {
         let expected: [VaultType: Set<NodusRoute>] = [
             .prosopography: [.prosopSearch, .prosopPopulation, .prosopPersons, .prosopSources, .prosopAnalysis, .prosopNetworks, .notes, .browser, .radar, .toolkit],
             .primarySources: [.search, .archive, .persons, .timeline, .map, .relations, .notes, .browser, .radar, .toolkit],
-            .estudio: [.studyCourses, .studySchedule, .studyCalendar, .studySearch, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyQuestions, .studyReview, .studyDeepResearch, .browser, .radar, .toolkit],
-            .docencia: [.studyCourses, .teachingGroups, .studySchedule, .studyCalendar, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyQuestions, .teachingRubrics, .teachingExams, .teachingGrades, .teachingUnits, .browser, .radar, .toolkit],
+            .estudio: [.studyCourses, .studySchedule, .studyCalendar, .studySearch, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyQuestions, .studyReview, .studyDeepResearch, .browser, .radar, .toolkit],
+            .docencia: [.studyCourses, .teachingGroups, .studySchedule, .studyCalendar, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyQuestions, .teachingRubrics, .teachingExams, .teachingGrades, .teachingUnits, .browser, .radar, .toolkit],
             .databases: [.pages, .dbSearch, .dbAnalysis, .dbChat, .notes, .browser, .radar, .toolkit],
             .testimonios: [.search, .testimonyInterviews, .testimonyParticipants, .testimonyContrasts, .notes, .browser, .radar, .toolkit],
             .worldbuilding: [.encyclopedia, .characters, .places, .factions, .cultures, .timeline, .map, .relations, .tree, .dynasties, .worldChat, .rules, .conflicts, .arcs, .continuity, .questions, .notes, .scenes, .manuscript, .browser, .radar, .toolkit],

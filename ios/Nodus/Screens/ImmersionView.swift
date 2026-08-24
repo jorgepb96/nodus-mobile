@@ -2,6 +2,250 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
+/// The published Immersion catalogue uses the same gallery grammar as Deep Research: a clear
+/// workspace heading, one search-and-sort row, and equivalent list/grid cards. The sessions
+/// remain read-only because the publication intentionally omits device-local progress.
+struct ImmersionLibraryView: View {
+    let session: SpaceSession
+
+    @State private var rows: [Row] = []
+    @State private var isLoading = false
+    @State private var error: String?
+    @State private var query = ""
+    @AppStorage("immersion.gallery-view") private var galleryView = "list"
+    @AppStorage("immersion.gallery-sort") private var gallerySort = "newest"
+
+    private var visible: [Row] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var result = rows.filter { row in
+            guard !needle.isEmpty else { return true }
+            return [row.text("title"), row.text("topic"), row.text("language")]
+                .compactMap { $0?.lowercased() }
+                .contains { $0.contains(needle) }
+        }
+        switch gallerySort {
+        case "oldest":
+            result.sort { immersionDate($0) < immersionDate($1) }
+        case "title":
+            result.sort {
+                immersionTitle($0).localizedCaseInsensitiveCompare(immersionTitle($1)) == .orderedAscending
+            }
+        default:
+            result.sort { immersionDate($0) > immersionDate($1) }
+        }
+        return result
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                workspaceHeader
+                if let error {
+                    NodusNotice(
+                        tone: .caution,
+                        title: "Immersion sessions are unavailable",
+                        message: LocalizedStringKey(error)
+                    )
+                }
+                galleryControls
+                gallery
+            }
+            .padding(NodusSpace.page)
+            .frame(maxWidth: 1180)
+            .frame(maxWidth: .infinity)
+            .nodusTopAnchor()
+        }
+        .nodusDismissesKeyboard()
+        .navigationTitle("Immersion")
+        .navigationBarTitleDisplayMode(.inline)
+        .nodusPageBackdrop(accent: session.accent)
+        .task(id: session.publishedRevision) { await load() }
+        .refreshable { await load() }
+    }
+
+    private var workspaceHeader: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Immersion").font(.title2.weight(.semibold))
+            Text("Guided paths grounded in the current corpus")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var galleryControls: some View {
+        VStack(spacing: 10) {
+            NodusSearchField(text: $query, prompt: "Filter sessions", accent: session.accent, isBusy: isLoading)
+            HStack(spacing: 8) {
+                Menu {
+                    Picker("Sort sessions", selection: $gallerySort) {
+                        Text("Newest").tag("newest")
+                        Text("Oldest").tag("oldest")
+                        Text("Title").tag("title")
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
+                .accessibilityLabel(sortLabel)
+
+                Picker("View", selection: $galleryView) {
+                    Image(systemName: "square.grid.2x2").tag("grid")
+                    Image(systemName: "list.bullet").tag("list")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 92, height: 44)
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var gallery: some View {
+        if isLoading, rows.isEmpty {
+            ProgressView("Loading sessions…")
+                .tint(session.accent)
+                .frame(maxWidth: .infinity, minHeight: 300)
+        } else if visible.isEmpty {
+            ContentUnavailableView(
+                query.isEmpty ? "No sessions" : "No matches",
+                systemImage: "scope",
+                description: Text(query.isEmpty ? "Published immersion sessions will appear here." : "Change the search or sort order.")
+            )
+            .frame(maxWidth: .infinity, minHeight: 300)
+        } else if galleryView == "grid" {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12)], spacing: 12) {
+                ForEach(visible, id: \.columns) { row in galleryCell(row, grid: true) }
+            }
+        } else {
+            LazyVStack(spacing: 8) {
+                ForEach(visible, id: \.columns) { row in galleryCell(row, grid: false) }
+            }
+        }
+    }
+
+    private func galleryCell(_ row: Row, grid: Bool) -> some View {
+        NavigationLink {
+            ImmersionView(
+                session: session,
+                sessionId: row.string("id") ?? "",
+                title: immersionTitle(row)
+            )
+        } label: {
+            ImmersionGalleryCard(row: row, grid: grid, session: session)
+        }
+        .buttonStyle(.plain)
+        .disabled(row.string("id") == nil)
+    }
+
+    private var sortLabel: String {
+        switch gallerySort {
+        case "oldest": String(localized: "Oldest")
+        case "title": String(localized: "Title")
+        default: String(localized: "Newest")
+        }
+    }
+
+    private func immersionTitle(_ row: Row) -> String {
+        row.text("title") ?? row.text("topic") ?? String(localized: "Session")
+    }
+
+    private func immersionDate(_ row: Row) -> Date {
+        row.date("updated_at") ?? row.date("created_at") ?? .distantPast
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            rows = try await session.client.immersionSessions(
+                in: session.connection.spaceId,
+                limit: 100
+            ).items
+            error = nil
+        } catch let apiError as APIError where apiError.isNotPublished {
+            rows = []
+            error = nil
+        } catch where error.isCancellation {
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+private struct ImmersionGalleryCard: View {
+    let row: Row
+    let grid: Bool
+    let session: SpaceSession
+
+    private var accent: Color { session.accent }
+    private var stats: [String: JSONValue] {
+        ((row.embeddedJSON("stats") ?? row["stats"])?.objectValue) ?? [:]
+    }
+
+    var body: some View {
+        Group {
+            if grid {
+                VStack(alignment: .leading, spacing: 0) {
+                    cover.frame(maxWidth: .infinity).frame(height: 142).clipped()
+                    details.padding(14)
+                }
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    cover.frame(width: 96, height: 58).clipped()
+                    details
+                    Spacer(minLength: 0)
+                }
+                .padding(10)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: grid ? 224 : 78, alignment: .topLeading)
+        .nodusGlass(NodusGlass(.regular, tint: accent))
+        .contentShape(Rectangle())
+    }
+
+    private var cover: some View {
+        ZStack {
+            LinearGradient(
+                colors: [accent.opacity(0.2), accent.opacity(0.06)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            NodusIcon(name: "scope", size: grid ? 30 : 20, weight: .medium)
+                .foregroundStyle(accent.opacity(0.7))
+            if let hash = (row.embeddedJSON("image") ?? row["image"])?.objectValue?["hash"]?.stringValue {
+                AssetImage(session: session, hash: hash)
+            }
+        }
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: grid ? 16 : 9, style: .continuous))
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(row.text("title") ?? row.text("topic") ?? String(localized: "Session"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(grid ? 3 : 2)
+            if let topic = row.text("topic"), topic != row.text("title") {
+                Text(topic).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }
+            HStack(spacing: 10) {
+                if let stations = stats["stations"]?.intValue { Label(stations.formatted(), systemImage: "flag") }
+                if let works = stats["works"]?.intValue { Label(works.formatted(), systemImage: "books.vertical") }
+                if let minutes = row.int("minutes") { Label("\(minutes) min", systemImage: "clock") }
+                if let date = row.date("updated_at") ?? row.date("created_at") {
+                    Text(date.formatted(date: .abbreviated, time: .omitted))
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// An immersion session, read as the study route it is.
 ///
 /// The published plan is a whole itinerary — an overview, stations with prose and quizzes,

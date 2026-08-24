@@ -26,10 +26,13 @@ struct ReportActions: View {
     /// Optional rather than a flag the caller flips, so "a report already in the vault has no
     /// send control" is structural: `PublishedReportReader` simply has nothing to pass.
     var send: ReportSendContext?
+    /// Set when this report can be queued as a note in the connected vault. Keeping it in this
+    /// component makes every report action participate in the same adaptive row.
+    var saveToNotes: (reportId: String, title: String, markdown: String, session: SpaceSession)?
     let accent: Color
 
     var body: some View {
-        // Wrapping rather than a fixed row: at the larger text sizes three labelled controls do
+        // Wrapping rather than a fixed row: at the larger text sizes the labelled controls do
         // not fit across a phone, and a row that overflows is worse than one that wraps.
         FlowLayout(spacing: NodusSpace.card) {
             // First, because it is the act this screen is now about and the first chip is the
@@ -46,13 +49,21 @@ struct ReportActions: View {
                     accent: accent
                 )
             }
+            if let saveToNotes {
+                DeepResearchSaveToNotesButton(
+                    reportId: saveToNotes.reportId,
+                    title: saveToNotes.title,
+                    markdown: saveToNotes.markdown,
+                    session: saveToNotes.session
+                )
+            }
             ReadingSizeButtons(accent: accent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// The shape all three of them wear: a 44-point-tall bordered group in the accent.
+/// The shape every report action wears: a 44-point-tall bordered group in the accent.
 ///
 /// It is deliberately the same geometry as `NodusGlassButtonStyle` without being that style —
 /// a `Menu` and a `ShareLink` cannot take a `ButtonStyle` and still look like one, and a

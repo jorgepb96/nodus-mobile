@@ -3,7 +3,7 @@ import NodusUI
 import SwiftUI
 
 enum StudyTeachingWorkspaceMode: String {
-    case courses, materials, schedule, calendar, recordings, graph
+    case courses, materials, schedule, calendar, recordings
     case groups, grades, exams, rubrics, units
 }
 
@@ -18,7 +18,6 @@ struct StudyTeachingWorkspaceView: View {
         case .schedule: StudyPlannerWorkspace(session: session, calendarOnly: false)
         case .calendar: StudyPlannerWorkspace(session: session, calendarOnly: true)
         case .recordings: StudyRecordingsWorkspace(session: session)
-        case .graph: StudyProgressWorkspace(session: session)
         case .groups: TeachingGroupsWorkspace(session: session)
         case .grades: TeachingGradebookWorkspace(session: session)
         case .exams: TeachingExamsWorkspace(session: session)
@@ -155,6 +154,8 @@ private struct StudyMaterialsWorkspace: View {
     let session: SpaceSession
     @State private var tables: [String: [Row]] = [:]
     @State private var query = ""
+    @State private var loading = true
+    @State private var issue: String?
     private let section = "studyLibrary"
     private var materials: [Row] { (tables["study_materials"] ?? []).filter { query.isEmpty || $0.searchableText.localizedCaseInsensitiveContains(query) } }
     private var active: Row? { (tables["study_materials"] ?? []).first { $0.string("id") == tabs.activeTabId(in: section) } }
@@ -162,33 +163,30 @@ private struct StudyMaterialsWorkspace: View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Materials", catalogueImage: "books.vertical", accent: session.accent)
             if let active { materialReader(active) } else { catalogue }
-        }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { tables = (try? await loadStudyTeachingTables(session, studyPublicTables)) ?? [:] }.accessibilityIdentifier("study-materials-workspace")
+        }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }.accessibilityIdentifier("study-materials-workspace")
     }
-    private var catalogue: some View { ScrollView { VStack(alignment: .leading, spacing: 12) { DesktopPageHeader(title: "Study materials", subtitle: "Documents, reading state and grounded search", systemImage: "books.vertical", accent: session.accent); NodusSearchField(text: $query, prompt: "Search materials", accent: session.accent); ForEach(materials, id: \.columns) { row in Button { open(row) } label: { HStack { Image(systemName: previewIcon(row.text("preview_kind"))).font(.title2).foregroundStyle(session.accent); VStack(alignment: .leading) { Text(row.text("title") ?? "Material").font(.headline); Text("\(row.text("read_state") ?? "pending") · \(row.text("index_status") ?? "pending")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }.buttonStyle(NodusCardButtonStyle()) } }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor() } }
+    private var catalogue: some View { ScrollView { VStack(alignment: .leading, spacing: 12) { DesktopPageHeader(title: "Study materials", subtitle: "Documents, reading state and grounded search", systemImage: "books.vertical", accent: session.accent); NodusSearchField(text: $query, prompt: "Search materials", accent: session.accent); if loading { ProgressView("Loading materials…").frame(maxWidth: .infinity).padding(.vertical, 32) }; if let issue { NodusNotice(tone: .blocked, title: "Could not load materials", message: LocalizedStringKey(issue)) }; ForEach(materials, id: \.columns) { row in Button { open(row) } label: { HStack { Image(systemName: previewIcon(row.text("preview_kind"))).font(.title2).foregroundStyle(session.accent); VStack(alignment: .leading) { Text(row.text("title") ?? "Material").font(.headline); Text("\(row.text("read_state") ?? "pending") · \(row.text("index_status") ?? "pending")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }.buttonStyle(NodusCardButtonStyle()) }; if materials.isEmpty, !loading, issue == nil { ContentUnavailableView("No materials", systemImage: "books.vertical", description: Text("Published study materials will appear here.")) } }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor() } }
     private func materialReader(_ row: Row) -> some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: LocalizedStringKey(row.text("title") ?? "Material"), subtitle: "\(row.text("original_name") ?? "") · \(row.text("read_state") ?? "pending")", systemImage: previewIcon(row.text("preview_kind")), accent: session.accent); NodusNotice(tone: .info, title: "File on demand", message: "Metadata and annotations stay available offline. The primary file downloads through its authenticated object route when requested.", systemImage: "arrow.down.doc"); Text(row.text("description") ?? "No description").font(.body); HStack { Button { } label: { Label("Open preview", systemImage: "doc.text.magnifyingglass") }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)); ShareLink(item: row.text("title") ?? "Material") { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent)) } }.padding(NodusSpace.page).frame(maxWidth: 900).frame(maxWidth: .infinity).nodusTopAnchor() }.accessibilityIdentifier("study-material-reader") }
     private func open(_ row: Row) { guard let id = row.string("id") else { return }; tabs.open(.init(id: id, title: row.text("title") ?? id, systemImage: previewIcon(row.text("preview_kind")), kind: .document, payload: .row(row)), in: section) }
     private func previewIcon(_ kind: String?) -> String { ["pdf":"doc.richtext", "audio":"waveform", "image":"photo", "presentation":"rectangle.on.rectangle" ][kind ?? ""] ?? "doc.text" }
+    private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil } catch { tables = [:]; issue = error.localizedDescription } }
 }
 
 private struct StudyPlannerWorkspace: View {
     let session: SpaceSession
     let calendarOnly: Bool
     @State private var tables: [String: [Row]] = [:]
-    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: calendarOnly ? "Calendar" : "Study plan", subtitle: calendarOnly ? "Assignments, exams and focused sessions" : "Weekly timetable, goals and plan blocks", systemImage: calendarOnly ? "calendar" : "clock", accent: session.accent); if !calendarOnly { timetable; goals }; events }.padding(NodusSpace.page).frame(maxWidth: 1080).frame(maxWidth: .infinity).nodusTopAnchor() }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { tables = (try? await loadStudyTeachingTables(session, studyPublicTables)) ?? [:] }.accessibilityIdentifier(calendarOnly ? "study-calendar-workspace" : "study-schedule-workspace") }
+    @State private var loading = true
+    @State private var issue: String?
+    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: calendarOnly ? "Calendar" : "Study plan", subtitle: calendarOnly ? "Assignments, exams and focused sessions" : "Weekly timetable, goals and plan blocks", systemImage: calendarOnly ? "calendar" : "clock", accent: session.accent); if loading { ProgressView("Loading study plan…").frame(maxWidth: .infinity).padding(.vertical, 32) }; if let issue { NodusNotice(tone: .blocked, title: "Could not load the study plan", message: LocalizedStringKey(issue)) }; if !calendarOnly { timetable; goals }; events; if tables.values.allSatisfy(\.isEmpty), !loading, issue == nil { ContentUnavailableView("No scheduled study", systemImage: "calendar", description: Text("Plans, goals and calendar events will appear here.")) } }.padding(NodusSpace.page).frame(maxWidth: 1080).frame(maxWidth: .infinity).nodusTopAnchor() }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }.accessibilityIdentifier(calendarOnly ? "study-calendar-workspace" : "study-schedule-workspace") }
     private var timetable: some View { VStack(alignment: .leading, spacing: 8) { DesktopSectionHeader(title: "Week", subtitle: "Same period grid as Desktop", systemImage: "calendar.day.timeline.left", accent: session.accent); ForEach(tables["study_schedule_cells"] ?? [], id: \.columns) { cell in HStack { Text(weekday(cell.int("weekday") ?? 0)).font(.caption.weight(.semibold)).frame(width: 75, alignment: .leading); Text(period(cell)); Divider(); Text(subject(cell.string("subject_id"))).font(.callout.weight(.medium)); Spacer(); Text(cell.text("room") ?? "").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) } } }
     private var goals: some View { VStack(alignment: .leading, spacing: 8) { DesktopSectionHeader(title: "Goals", subtitle: "Progress without silent rescheduling", systemImage: "target", accent: session.accent); ForEach(tables["study_goals"] ?? [], id: \.columns) { goal in VStack(alignment: .leading, spacing: 6) { HStack { Text(goal.text("title") ?? "Goal").font(.callout.weight(.medium)); Spacer(); Text("\(goal.int("current_value") ?? 0)/\(goal.int("target_value") ?? 0) \(goal.text("unit") ?? "")").font(.caption.monospacedDigit()) }; ProgressView(value: Double(goal.int("current_value") ?? 0), total: Double(max(1, goal.int("target_value") ?? 1))).tint(session.accent) }.desktopContentRow(accent: session.accent) } } }
     private var events: some View { VStack(alignment: .leading, spacing: 8) { DesktopSectionHeader(title: "Upcoming", subtitle: "Plans and calendar events", systemImage: "calendar.badge.clock", accent: session.accent); ForEach((tables["study_calendar_events"] ?? []).sorted { ($0.text("starts_at") ?? "") < ($1.text("starts_at") ?? "") }, id: \.columns) { event in HStack { VStack(alignment: .leading) { Text(event.text("title") ?? "Event").font(.callout.weight(.medium)); Text(event.text("notes") ?? event.text("type") ?? "").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(shortDate(event.text("starts_at"))).font(.caption.monospacedDigit()).foregroundStyle(session.accent) }.desktopContentRow(accent: session.accent) } } }
-    private func subject(_ id: String?) -> String { (tables["study_subjects"] ?? []).first { $0.string("id") == id }?.text("name") ?? "Unassigned" }
+    private func subject(_ id: String?) -> String { (tables["study_subjects"] ?? []).first { $0.string("id") == id }?.text("name") ?? String(localized: "Unassigned") }
     private func period(_ cell: Row) -> String { let row = (tables["study_schedule_periods"] ?? []).first { $0.int("order_idx") == cell.int("period_index") }; return "\(row?.text("start_time") ?? "—")–\(row?.text("end_time") ?? "—")" }
-    private func weekday(_ value: Int) -> String { ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][min(6,max(0,value))] }
+    private func weekday(_ value: Int) -> String { [String(localized: "Monday"), String(localized: "Tuesday"), String(localized: "Wednesday"), String(localized: "Thursday"), String(localized: "Friday"), String(localized: "Saturday"), String(localized: "Sunday")][min(6,max(0,value))] }
     private func shortDate(_ value: String?) -> String { guard let value else { return "" }; return String(value.prefix(10)) }
-}
-
-private struct StudyProgressWorkspace: View {
-    let session: SpaceSession
-    @State private var tables: [String: [Row]] = [:]
-    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: "Learning graph", subtitle: "Subjects, topics and evidence-backed progress", systemImage: "point.3.connected.trianglepath.dotted", accent: session.accent); ForEach(tables["study_performance"] ?? [], id: \.columns) { row in let summary = StudyTeachingParity.summarize(.init(correct: row.int("correct") ?? 0, incorrect: row.int("incorrect") ?? 0, omitted: row.int("omitted") ?? 0, studySeconds: row.int("study_seconds") ?? 0, reviews: row.int("reviews") ?? 0, lapses: row.int("lapses") ?? 0)); VStack(alignment: .leading, spacing: 8) { HStack { Text(row.text("label") ?? "Subject").font(.headline); Spacer(); NodusChip(key: summary.status, tint: tone(summary.mastery)) }; ProgressView(value: summary.mastery).tint(tone(summary.mastery)); HStack { Label("\(summary.attempts) attempts", systemImage: "checklist"); Spacer(); Text(summary.accuracy.map { "\(Int($0 * 100))% accuracy" } ?? "No attempts") }.font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: tone(summary.mastery)) } }.padding(NodusSpace.page).frame(maxWidth: 900).frame(maxWidth: .infinity).nodusTopAnchor() }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { tables = (try? await loadStudyTeachingTables(session, studyPublicTables + ["study_performance"])) ?? [:] }.accessibilityIdentifier("study-progress-workspace") }
-    private func tone(_ mastery: Double) -> Color { mastery >= 0.85 ? .green : mastery >= 0.65 ? session.accent : mastery >= 0.35 ? .orange : .red }
+    private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil } catch { tables = [:]; issue = error.localizedDescription } }
 }
 
 // MARK: - Private Teaching and recordings
@@ -284,7 +282,7 @@ private struct StudyRecordingsWorkspace: View {
     private var active:Row?{(tables["study_recordings"] ?? []).first{$0.string("id")==tabs.activeTabId(in:section)}}
     var body:some View { VStack(spacing:0){WorkspaceTabStrip(section:section,catalogueTitle:"Recordings",catalogueImage:"waveform",accent:session.accent); if let active{reader(active)}else{catalogue}}.nodusPageBackdrop(accent:session.accent).task{await load()}.nodusSheet(isPresented:$pairing){DesktopBridgePairingSheet(accent:session.accent){Task{await load()}}}.accessibilityIdentifier("study-recordings-workspace") }
     private var catalogue:some View { ScrollView{VStack(alignment:.leading,spacing:12){DesktopPageHeader(title:"Recordings",subtitle:"Private audio, transcripts and markers",systemImage:"waveform",accent:session.accent); if let issue{NodusNotice(tone:.info,title:"Direct Mac connection required",message:LocalizedStringKey(issue),systemImage:"lock.shield");Button("Pair Desktop Bridge"){pairing=true}.buttonStyle(NodusPrimaryButtonStyle(accent:session.accent))};ForEach(tables["study_recordings"] ?? [],id:\.columns){row in Button{open(row)}label:{HStack{Image(systemName:"waveform.circle.fill").font(.title2).foregroundStyle(session.accent);VStack(alignment:.leading){Text(row.text("title") ?? "Recording").font(.headline);Text("\(duration(row.int("duration_seconds") ?? 0)) · \(row.text("processing_status") ?? "pending")").font(.caption).foregroundStyle(.secondary)};Spacer();Image(systemName:"chevron.right").foregroundStyle(.secondary)}.desktopContentRow(accent:session.accent)}.buttonStyle(NodusCardButtonStyle())}}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()} }
-    private func reader(_ recording:Row)->some View { let transcript=(tables["study_transcripts"] ?? []).first{$0.string("recording_id")==recording.string("id")};let markers=(tables["study_audio_markers"] ?? []).filter{$0.string("recording_id")==recording.string("id")};return ScrollView{VStack(alignment:.leading,spacing:14){DesktopPageHeader(title:LocalizedStringKey(recording.text("title") ?? "Recording"),subtitle:"\(duration(recording.int("duration_seconds") ?? 0)) · private",systemImage:"waveform",accent:session.accent);NodusNotice(tone:.info,title:"End-to-end private route",message:"Audio metadata and transcript were read from the paired Mac. Nothing is relayed through the Nodus cloud.",systemImage:"lock.shield.fill");ForEach(markers,id:\.columns){marker in HStack{Text(duration(Int(marker.double("seconds") ?? 0))).font(.caption.monospacedDigit()).foregroundStyle(session.accent);Text(marker.text("label") ?? "Marker");Spacer()}.desktopContentRow(accent:session.accent)};DesktopSectionHeader(title:"Transcript",subtitle:transcript?.text("kind") ?? "Not available",systemImage:"text.quote",accent:session.accent);Text(transcript?.text("content_markdown") ?? "No transcript").font(.body).textSelection(.enabled)}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()} }
+    private func reader(_ recording:Row)->some View { let transcript=(tables["study_transcripts"] ?? []).first{$0.string("recording_id")==recording.string("id")};let markers=(tables["study_audio_markers"] ?? []).filter{$0.string("recording_id")==recording.string("id")};return ScrollView{VStack(alignment:.leading,spacing:14){DesktopPageHeader(title:LocalizedStringKey(recording.text("title") ?? "Recording"),subtitle:"\(duration(recording.int("duration_seconds") ?? 0)) · private",systemImage:"waveform",accent:session.accent);NodusNotice(tone:.info,title:"End-to-end private route",message:"Audio metadata and transcript were read from the paired Mac. Nothing is relayed through the Nodus cloud.",systemImage:"lock.shield.fill");ForEach(markers,id:\.columns){marker in HStack{Text(duration(Int(marker.double("seconds") ?? 0))).font(.caption.monospacedDigit()).foregroundStyle(session.accent);Text(marker.text("label") ?? "Marker");Spacer()}.desktopContentRow(accent:session.accent)};DesktopSectionHeader(title:"Transcript",subtitle:LocalizedStringKey(transcript?.text("kind") ?? "Not available"),systemImage:"text.quote",accent:session.accent);Text(transcript?.text("content_markdown") ?? "No transcript").font(.body).textSelection(.enabled)}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()} }
     private func open(_ row:Row){guard let id=row.string("id")else{return};tabs.open(.init(id:id,title:row.text("title") ?? id,systemImage:"waveform",kind:.document,payload:.row(row)),in:section)}
     private func duration(_ seconds:Int)->String{"\(seconds/60):\(String(format:"%02d",seconds%60))"}
     private func load()async{do{tables=try await loadPrivateStudyTables(session,domain:.studyRecordings,names:["study_recordings","study_transcripts","study_transcript_segments","study_audio_markers"]);issue=nil}catch{tables=[:];issue=error.localizedDescription}}
@@ -292,22 +290,151 @@ private struct StudyRecordingsWorkspace: View {
 
 // MARK: - Published Teaching authoring
 
-private struct TeachingExamsWorkspace:View{
-    @Environment(WorkspaceTabs.self)private var tabs;let session:SpaceSession;@State private var tables:[String:[Row]]=[:];private let section="teachingExams";private var active:Row?{(tables["teaching_exams"] ?? []).first{$0.string("id")==tabs.activeTabId(in:section)}}
-    var body:some View{VStack(spacing:0){WorkspaceTabStrip(section:section,catalogueTitle:"Exams",catalogueImage:"note.text",accent:session.accent);if let active{exam(active)}else{catalogue}}.nodusPageBackdrop(accent:session.accent).task(id:session.publishedRevision){tables=(try? await loadStudyTeachingTables(session,studyPublicTables)) ?? [:]}.accessibilityIdentifier("teaching-exams-workspace")}
-    private var catalogue:some View{ScrollView{VStack(alignment:.leading,spacing:12){DesktopPageHeader(title:"Exams",subtitle:"Papers, sections, questions and answer keys",systemImage:"note.text",accent:session.accent);ForEach(tables["teaching_exams"] ?? [],id:\.columns){row in Button{open(row)}label:{HStack{Image(systemName:"doc.text").font(.title2).foregroundStyle(session.accent);VStack(alignment:.leading){Text(row.text("title") ?? "Exam").font(.headline);Text("\(questions(row).count) questions · \(points(row),specifier:"%.0f") points").font(.caption).foregroundStyle(.secondary)};Spacer();Image(systemName:"chevron.right").foregroundStyle(.secondary)}.desktopContentRow(accent:session.accent)}.buttonStyle(NodusCardButtonStyle())}}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()}}
-    private func exam(_ row:Row)->some View{ScrollView{VStack(alignment:.leading,spacing:12){DesktopPageHeader(title:LocalizedStringKey(row.text("title") ?? "Exam"),subtitle:"\(questions(row).count) questions · answer key available",systemImage:"doc.text",accent:session.accent);ForEach(Array(questions(row).enumerated()),id:\.element.columns){index,q in VStack(alignment:.leading,spacing:7){HStack(alignment:.top){Text("\(index+1).").font(.headline.monospacedDigit()).foregroundStyle(session.accent);Text(q.text("prompt") ?? "Question").font(.headline);Spacer();Text("\(q.double("points") ?? 0,specifier:"%.0f") pt").font(.caption).foregroundStyle(.secondary)};if let solution=q.text("solution"){VStack(alignment:.leading){Label("Answer key",systemImage:"key").font(.caption.weight(.semibold)).foregroundStyle(session.accent);Text(solution).font(.callout)}.padding(9).background(session.accent.opacity(0.08),in:RoundedRectangle(cornerRadius:8))}}.desktopContentRow(accent:session.accent)}}.padding(NodusSpace.page).frame(maxWidth:940).frame(maxWidth:.infinity).nodusTopAnchor()}}
-    private func questions(_ exam:Row)->[Row]{(tables["teaching_exam_questions"] ?? []).filter{$0.string("exam_id")==exam.string("id")}.sorted{($0.int("position") ?? 0)<($1.int("position") ?? 0)}};private func points(_ exam:Row)->Double{questions(exam).reduce(0){$0+($1.double("points") ?? 0)}};private func open(_ row:Row){guard let id=row.string("id")else{return};tabs.open(.init(id:id,title:row.text("title") ?? id,systemImage:"doc.text",kind:.document,payload:.row(row)),in:section)}
+private struct TeachingExamsWorkspace: View {
+    @Environment(WorkspaceTabs.self) private var tabs
+    let session: SpaceSession
+    @State private var tables: [String: [Row]] = [:]
+    @State private var loading = true
+    @State private var issue: String?
+    private let section = "teachingExams"
+    private var exams: [Row] { tables["teaching_exams"] ?? [] }
+    private var active: Row? { exams.first { $0.string("id") == tabs.activeTabId(in: section) } }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            WorkspaceTabStrip(section: section, catalogueTitle: "Exams", catalogueImage: "note.text", accent: session.accent)
+            if let active { exam(active) } else { catalogue }
+        }
+        .nodusPageBackdrop(accent: session.accent)
+        .task(id: session.publishedRevision) { await load() }
+        .accessibilityIdentifier("teaching-exams-workspace")
+    }
+
+    private var catalogue: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                DesktopPageHeader(title: "Exams", subtitle: "Papers, sections, questions and answer keys", systemImage: "note.text", accent: session.accent)
+                if loading { ProgressView("Loading exams…").frame(maxWidth: .infinity).padding(.vertical, 32) }
+                if let issue { NodusNotice(tone: .blocked, title: "Could not load exams", message: LocalizedStringKey(issue)) }
+                ForEach(exams, id: \.columns) { row in
+                    Button { open(row) } label: {
+                        HStack {
+                            Image(systemName: "doc.text").font(.title2).foregroundStyle(session.accent)
+                            VStack(alignment: .leading) {
+                                Text(row.text("title") ?? String(localized: "Exam")).font(.headline)
+                                Text("\(questions(row).count) questions · \(points(row), specifier: "%.0f") points").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                        }.desktopContentRow(accent: session.accent)
+                    }.buttonStyle(NodusCardButtonStyle())
+                }
+                if exams.isEmpty, !loading, issue == nil {
+                    ContentUnavailableView("No exams", systemImage: "note.text", description: Text("Published exams will appear here."))
+                }
+            }.padding(NodusSpace.page).frame(maxWidth: 900).frame(maxWidth: .infinity).nodusTopAnchor()
+        }
+    }
+
+    private func exam(_ row: Row) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                DesktopPageHeader(title: LocalizedStringKey(row.text("title") ?? "Exam"), subtitle: "\(questions(row).count) questions · answer key available", systemImage: "doc.text", accent: session.accent)
+                ForEach(Array(questions(row).enumerated()), id: \.element.columns) { index, question in
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(alignment: .top) {
+                            Text("\(index + 1).").font(.headline.monospacedDigit()).foregroundStyle(session.accent)
+                            Text(question.text("prompt") ?? String(localized: "Question")).font(.headline)
+                            Spacer()
+                            Text("\(question.double("points") ?? 0, specifier: "%.0f") pt").font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let solution = question.text("solution") {
+                            VStack(alignment: .leading) {
+                                Label("Answer key", systemImage: "key").font(.caption.weight(.semibold)).foregroundStyle(session.accent)
+                                Text(solution).font(.callout)
+                            }.padding(9).background(session.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                    }.desktopContentRow(accent: session.accent)
+                }
+            }.padding(NodusSpace.page).frame(maxWidth: 940).frame(maxWidth: .infinity).nodusTopAnchor()
+        }
+    }
+
+    private func questions(_ exam: Row) -> [Row] { (tables["teaching_exam_questions"] ?? []).filter { $0.string("exam_id") == exam.string("id") }.sorted { ($0.int("position") ?? 0) < ($1.int("position") ?? 0) } }
+    private func points(_ exam: Row) -> Double { questions(exam).reduce(0) { $0 + ($1.double("points") ?? 0) } }
+    private func open(_ row: Row) { guard let id = row.string("id") else { return }; tabs.open(.init(id: id, title: row.text("title") ?? id, systemImage: "doc.text", kind: .document, payload: .row(row)), in: section) }
+    private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil } catch { tables = [:]; issue = error.localizedDescription } }
 }
 
-private struct TeachingRubricsWorkspace:View{let session:SpaceSession;@State private var tables:[String:[Row]]=[:];@State private var selected:String?;private var rubrics:[StudyTeachingParity.Rubric]{StudyTeachingParity.rubrics(in:tables["teaching_rubrics"] ?? [])};private var active:StudyTeachingParity.Rubric?{rubrics.first{$0.id==(selected ?? rubrics.first?.id)}}
-    var body:some View{HStack(spacing:0){VStack(alignment:.leading,spacing:8){Text("RUBRICS").font(.caption2.bold()).foregroundStyle(.secondary).padding(12);ForEach(rubrics){rubric in Button{selected=rubric.id}label:{Text(rubric.title).font(.caption).frame(maxWidth:.infinity,alignment:.leading).padding(9).background(rubric.id==active?.id ? session.accent.opacity(0.14):.clear,in:RoundedRectangle(cornerRadius:8))}.buttonStyle(.plain)}}.frame(width:260).background(Color(uiColor:.secondarySystemBackground).opacity(0.48));Divider();if let active{rubric(active)}else{ContentUnavailableView("No rubrics",systemImage:"tablecells")}}.nodusPageBackdrop(accent:session.accent).task(id:session.publishedRevision){tables=(try? await loadStudyTeachingTables(session,studyPublicTables)) ?? [:]}.accessibilityIdentifier("teaching-rubrics-workspace")}
-    private func rubric(_ rubric:StudyTeachingParity.Rubric)->some View{ScrollView([.horizontal,.vertical]){VStack(alignment:.leading,spacing:12){DesktopPageHeader(title:LocalizedStringKey(rubric.title),subtitle:"\(rubric.criteria.count) criteria · scale \(String(format: "%.0f", rubric.scaleMax))",systemImage:"tablecells",accent:session.accent);Text(rubric.description).font(.callout).foregroundStyle(.secondary);VStack(spacing:0){HStack(spacing:0){Text("Criterion").frame(width:200,alignment:.leading);ForEach(rubric.levels){Text($0.label).frame(width:190,alignment:.leading)}}.font(.caption.bold()).padding(9).background(Color(uiColor:.secondarySystemBackground));ForEach(rubric.criteria){criterion in HStack(spacing:0){VStack(alignment:.leading){Text(criterion.label).font(.caption.weight(.semibold));Text("Weight \(criterion.weight,specifier:"%.0f")").font(.caption2).foregroundStyle(.secondary)}.frame(width:200,alignment:.leading);ForEach(rubric.levels){level in Text(criterion.descriptors[level.id] ?? "—").font(.caption).frame(width:190,alignment:.leading)}}.padding(9).overlay(alignment:.bottom){Divider()}}}}.padding(NodusSpace.page).nodusTopAnchor()}}
+private struct TeachingRubricsWorkspace: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    let session: SpaceSession
+    @State private var tables: [String: [Row]] = [:]
+    @State private var selected: String?
+    @State private var loading = true
+    @State private var issue: String?
+    private var rubrics: [StudyTeachingParity.Rubric] { StudyTeachingParity.rubrics(in: tables["teaching_rubrics"] ?? []) }
+    private var active: StudyTeachingParity.Rubric? { rubrics.first { $0.id == selected } }
+
+    var body: some View {
+        Group {
+            if sizeClass == .compact {
+                if let active { rubric(active, showsBackButton: true) } else { rubricList }
+            } else {
+                HStack(spacing: 0) { rubricList.frame(width: 260); Divider(); if let active { rubric(active) } else { emptyDetail } }
+            }
+        }
+        .nodusPageBackdrop(accent: session.accent)
+        .task(id: session.publishedRevision) { await load() }
+        .accessibilityIdentifier("teaching-rubrics-workspace")
+    }
+
+    private var rubricList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                if sizeClass == .compact { DesktopPageHeader(title: "Rubrics", subtitle: "Criteria, levels and descriptors", systemImage: "tablecells", accent: session.accent) }
+                else { Text("RUBRICS").font(.caption2.bold()).foregroundStyle(.secondary) }
+                if loading { ProgressView("Loading rubrics…").frame(maxWidth: .infinity).padding(.vertical, 32) }
+                if let issue { NodusNotice(tone: .blocked, title: "Could not load rubrics", message: LocalizedStringKey(issue)) }
+                ForEach(rubrics) { rubric in
+                    Button { selected = rubric.id } label: {
+                        HStack { Text(rubric.title).font(.callout); Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary) }
+                            .desktopContentRow(accent: session.accent)
+                    }.buttonStyle(NodusCardButtonStyle())
+                }
+                if rubrics.isEmpty, !loading, issue == nil { ContentUnavailableView("No rubrics", systemImage: "tablecells") }
+            }.padding(sizeClass == .compact ? NodusSpace.page : 12).nodusTopAnchor()
+        }.background(Color(uiColor: .secondarySystemBackground).opacity(0.48))
+    }
+
+    private var emptyDetail: some View { ContentUnavailableView("Select a rubric", systemImage: "tablecells", description: Text("Choose a rubric to inspect its criteria.")) }
+
+    private func rubric(_ rubric: StudyTeachingParity.Rubric, showsBackButton: Bool = false) -> some View {
+        ScrollView([.horizontal, .vertical]) {
+            VStack(alignment: .leading, spacing: 12) {
+                if showsBackButton { Button { selected = nil } label: { Label("Rubrics", systemImage: "chevron.left") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent)) }
+                DesktopPageHeader(title: LocalizedStringKey(rubric.title), subtitle: "\(rubric.criteria.count) criteria · scale \(String(format: "%.0f", rubric.scaleMax))", systemImage: "tablecells", accent: session.accent)
+                Text(rubric.description).font(.callout).foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) { Text("Criterion").frame(width: 200, alignment: .leading); ForEach(rubric.levels) { Text($0.label).frame(width: 190, alignment: .leading) } }
+                        .font(.caption.bold()).padding(9).background(Color(uiColor: .secondarySystemBackground))
+                    ForEach(rubric.criteria) { criterion in
+                        HStack(spacing: 0) {
+                            VStack(alignment: .leading) { Text(criterion.label).font(.caption.weight(.semibold)); Text("Weight \(criterion.weight, specifier: "%.0f")").font(.caption2).foregroundStyle(.secondary) }.frame(width: 200, alignment: .leading)
+                            ForEach(rubric.levels) { level in Text(criterion.descriptors[level.id] ?? "—").font(.caption).frame(width: 190, alignment: .leading) }
+                        }.padding(9).overlay(alignment: .bottom) { Divider() }
+                    }
+                }
+            }.padding(NodusSpace.page).nodusTopAnchor()
+        }
+    }
+
+    private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil; if sizeClass != .compact { selected = selected ?? rubrics.first?.id } } catch { tables = [:]; issue = error.localizedDescription } }
 }
 
 private struct DesktopSectionHeader: View {
     let title: LocalizedStringKey
-    let subtitle: String
+    let subtitle: LocalizedStringKey
     let systemImage: String
     let accent: Color
 
@@ -326,7 +453,35 @@ private struct DesktopSectionHeader: View {
     }
 }
 
-private struct TeachingUnitsWorkspace:View{let session:SpaceSession;@State private var tables:[String:[Row]]=[:];var body:some View{ScrollView{VStack(alignment:.leading,spacing:14){DesktopPageHeader(title:"Unit design",subtitle:"Inquiry, learning sequence, assessment and materials",systemImage:"safari",accent:session.accent);ForEach((tables["study_docs"] ?? []).filter{$0.text("kind")=="unit"},id:\.columns){unit in VStack(alignment:.leading,spacing:10){Text(unit.text("title") ?? "Unit").font(.title2.bold());Text(unit.text("description") ?? "").font(.callout).foregroundStyle(.secondary);Text(unit.text("content_markdown") ?? "").font(.body).textSelection(.enabled);HStack{Label("Learning sequence",systemImage:"list.number");Spacer();Label("Assessment linked",systemImage:"checkmark.seal")}.font(.caption).foregroundStyle(session.accent)}.desktopContentRow(accent:session.accent)}}.padding(NodusSpace.page).frame(maxWidth:940).frame(maxWidth:.infinity).nodusTopAnchor()}.nodusPageBackdrop(accent:session.accent).task(id:session.publishedRevision){tables=(try? await loadStudyTeachingTables(session,studyPublicTables)) ?? [:]}.accessibilityIdentifier("teaching-units-workspace")}}
+private struct TeachingUnitsWorkspace: View {
+    let session: SpaceSession
+    @State private var tables: [String: [Row]] = [:]
+    @State private var loading = true
+    @State private var issue: String?
+    private var units: [Row] { (tables["study_docs"] ?? []).filter { $0.text("kind") == "unit" } }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                DesktopPageHeader(title: "Unit design", subtitle: "Inquiry, learning sequence, assessment and materials", systemImage: "safari", accent: session.accent)
+                if loading { ProgressView("Loading units…").frame(maxWidth: .infinity).padding(.vertical, 32) }
+                if let issue { NodusNotice(tone: .blocked, title: "Could not load units", message: LocalizedStringKey(issue)) }
+                ForEach(units, id: \.columns) { unit in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(unit.text("title") ?? String(localized: "Unit")).font(.title2.bold())
+                        Text(unit.text("description") ?? "").font(.callout).foregroundStyle(.secondary)
+                        Text(unit.text("content_markdown") ?? "").font(.body).textSelection(.enabled)
+                        HStack { Label("Learning sequence", systemImage: "list.number"); Spacer(); Label("Assessment linked", systemImage: "checkmark.seal") }.font(.caption).foregroundStyle(session.accent)
+                    }.desktopContentRow(accent: session.accent)
+                }
+                if units.isEmpty, !loading, issue == nil { ContentUnavailableView("No units", systemImage: "safari", description: Text("Published teaching units will appear here.")) }
+            }.padding(NodusSpace.page).frame(maxWidth: 940).frame(maxWidth: .infinity).nodusTopAnchor()
+        }
+        .nodusPageBackdrop(accent: session.accent)
+        .task(id: session.publishedRevision) { await load() }
+        .accessibilityIdentifier("teaching-units-workspace")
+    }
+    private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil } catch { tables = [:]; issue = error.localizedDescription } }
+}
 
 // MARK: - Bridge pairing and loaders
 

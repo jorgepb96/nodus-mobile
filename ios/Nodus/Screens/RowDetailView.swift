@@ -584,17 +584,17 @@ struct RowDetailView: View {
     /// The edge vocabulary, in the desktop's words.
     static func relationLabel(_ relation: String) -> String {
         switch relation {
-        case "supports": return "Supports"
-        case "contradicts": return "Contradicts"
-        case "refutes": return "Refutes"
-        case "refines": return "Refines"
-        case "extends": return "Extends"
-        case "variant_of": return "Variant of"
-        case "depends_on": return "Depends on"
-        case "exemplifies": return "Exemplifies"
-        case "applies": return "Applies"
-        case "compares": return "Compares"
-        case "responds_to": return "Responds to"
+        case "supports": return String(localized: "Supports")
+        case "contradicts": return String(localized: "Contradicts")
+        case "refutes": return String(localized: "Refutes")
+        case "refines": return String(localized: "Refines")
+        case "extends": return String(localized: "Extends")
+        case "variant_of": return String(localized: "Variant of")
+        case "depends_on": return String(localized: "Depends on")
+        case "exemplifies": return String(localized: "Exemplifies")
+        case "applies": return String(localized: "Applies")
+        case "compares": return String(localized: "Compares")
+        case "responds_to": return String(localized: "Responds to")
         default: return relation
         }
     }

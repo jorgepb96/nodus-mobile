@@ -351,11 +351,11 @@ private struct WorkspaceSelectionTextView: UIViewRepresentable {
                 options: .displayInline,
                 preferredElementSize: .small,
                 children: [
-                    wrapAction("Bold", "bold", prefix: "**", suffix: "**", range: range, in: textView),
-                    wrapAction("Italic", "italic", prefix: "*", suffix: "*", range: range, in: textView),
-                    wrapAction("Strikethrough", "strikethrough", prefix: "~~", suffix: "~~", range: range, in: textView),
-                    wrapAction("Inline code", "chevron.left.forwardslash.chevron.right", prefix: "`", suffix: "`", range: range, in: textView),
-                    wrapAction("Formula", "sum", prefix: "$", suffix: "$", range: range, in: textView),
+                    wrapAction(String(localized: "Bold"), "bold", prefix: "**", suffix: "**", range: range, in: textView),
+                    wrapAction(String(localized: "Italic"), "italic", prefix: "*", suffix: "*", range: range, in: textView),
+                    wrapAction(String(localized: "Strikethrough"), "strikethrough", prefix: "~~", suffix: "~~", range: range, in: textView),
+                    wrapAction(String(localized: "Inline code"), "chevron.left.forwardslash.chevron.right", prefix: "`", suffix: "`", range: range, in: textView),
+                    wrapAction(String(localized: "Formula"), "sum", prefix: "$", suffix: "$", range: range, in: textView),
                     linkAction(range: range, in: textView),
                 ]
             )
@@ -406,7 +406,7 @@ private struct WorkspaceSelectionTextView: UIViewRepresentable {
         }
 
         private func wrapAction(
-            _ title: String.LocalizationValue,
+            _ title: String,
             _ image: String,
             prefix: String,
             suffix: String,
@@ -423,7 +423,7 @@ private struct WorkspaceSelectionTextView: UIViewRepresentable {
                     in: textView
                 )
             }
-            action.accessibilityLabel = String(localized: title)
+            action.accessibilityLabel = title
             return action
         }
 
@@ -444,17 +444,17 @@ private struct WorkspaceSelectionTextView: UIViewRepresentable {
         }
 
         private func colourActions(range: NSRange, in textView: UITextView) -> [UIAction] {
-            let colours: [(String.LocalizationValue, String, UIColor)] = [
-                ("Default", "inherit", .label),
-                ("Teal", "#0f766e", .systemTeal),
-                ("Blue", "#2563eb", .systemBlue),
-                ("Purple", "#7c3aed", .systemPurple),
-                ("Red", "#dc2626", .systemRed),
-                ("Orange", "#ea580c", .systemOrange),
+            let colours: [(String, String, UIColor)] = [
+                (String(localized: "Default"), "inherit", .label),
+                (String(localized: "Teal"), "#0f766e", .systemTeal),
+                (String(localized: "Blue"), "#2563eb", .systemBlue),
+                (String(localized: "Purple"), "#7c3aed", .systemPurple),
+                (String(localized: "Red"), "#dc2626", .systemRed),
+                (String(localized: "Orange"), "#ea580c", .systemOrange),
             ]
             return colours.map { label, value, colour in
                 let image = UIImage(systemName: "circle.fill")?.withTintColor(colour, renderingMode: .alwaysOriginal)
-                return UIAction(title: String(localized: label), image: image) { [weak self, weak textView] _ in
+                return UIAction(title: label, image: image) { [weak self, weak textView] _ in
                     guard let self, let textView else { return }
                     let source = (textView.text as NSString).substring(with: range)
                     let replacement = value == "inherit" ? source : "<span style=\"color: \(value)\">\(source)</span>"

@@ -364,7 +364,7 @@ struct WorldManuscriptView: View {
         ]
         textRows[scene.id] = Row(row); rebuild()
         _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Save scene \(scene.title)")
-        message = outbox.lastError == nil ? "Saved to the sync outbox." : "Saved locally; sync will retry."
+        message = outbox.lastError == nil ? String(localized: "Saved to the sync outbox.") : String(localized: "Saved locally; sync will retry.")
     }
 
     private func snapshot(scene: WorldbuildingParity.ManuscriptScene, text: String, reason: String, outbox: OutboxController) async {
