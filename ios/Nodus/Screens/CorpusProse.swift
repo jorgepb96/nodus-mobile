@@ -1527,6 +1527,22 @@ private struct DocumentProse: UIViewRepresentable {
         /// chat bubble, an immersion station — keeps the plain menu it always had. Returning
         /// `nil` would mean "no menu at all", so that case hands the suggested actions back
         /// untouched.
+        @available(iOS 26.0, *)
+        func textView(
+            _ textView: UITextView,
+            editMenuForTextInRanges ranges: [NSValue],
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            guard let range = ranges.first?.rangeValue else {
+                return UIMenu(children: suggestedActions)
+            }
+            return self.textView(
+                textView,
+                editMenuForTextIn: range,
+                suggestedActions: suggestedActions
+            )
+        }
+
         func textView(
             _ textView: UITextView,
             editMenuForTextIn range: NSRange,
@@ -1546,6 +1562,7 @@ private struct DocumentProse: UIViewRepresentable {
                 }
             }
             copy.accessibilityLabel = String(localized: "Copy")
+            copy.accessibilityIdentifier = "nodus-selection-copy"
             ours.append(copy)
 
             let highlightable = ReaderHighlightSegments.ranges(
@@ -1873,6 +1890,20 @@ private struct DocumentProse: UIViewRepresentable {
             menuFor configuration: UIEditMenuConfiguration,
             suggestedActions: [UIMenuElement]
         ) -> UIMenu? {
+            // A trackpad secondary click presents the edit menu through the interaction we
+            // install for saved highlights, rather than through UITextViewDelegate's
+            // `textView(_:editMenuForTextIn:suggestedActions:)`. Reuse the selection ribbon
+            // here so mouse selection and touch/Pencil selection expose the same Nodus actions.
+            if activeHighlight == nil,
+               let textView = interaction.view as? UITextView,
+               textView.selectedRange.length > 0 {
+                return self.textView(
+                    textView,
+                    editMenuForTextIn: textView.selectedRange,
+                    suggestedActions: suggestedActions
+                )
+            }
+
             guard let placement = activeHighlight else { return nil }
             let annotation = placement.annotation
             var actions: [UIMenuElement] = []

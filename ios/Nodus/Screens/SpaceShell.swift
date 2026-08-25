@@ -155,7 +155,7 @@ struct SpaceShell: View {
         }
         .task { await session.monitorPublishedContent() }
         .nodusSheet(isPresented: $showingAssistant) {
-            NavigationStack { ChatTab(session: session) }.nodusModalClose(accent: session.accent)
+            NavigationStack { ChatTab(session: session, showsModalDone: true) }
         }
         .sheet(isPresented: $showingCommands) {
             CommandPalette(session: session, selection: route) { selected in
@@ -202,10 +202,10 @@ struct SpaceShell: View {
     }
 
     /// Resident workspaces keep their navigation and editing state, but an invisible workspace
-    /// must not be re-laid out for every intermediate sidebar width. Fixing only the inactive
-    /// stacks to the window size leaves the selected route adaptive while taking hidden browser,
-    /// report and database trees out of the 60 fps animation path. They receive the current
-    /// proposal again as soon as they become selected.
+    /// must not be re-laid out for every intermediate sidebar width. Fixing inactive stacks to
+    /// the current content area keeps hidden browser, report and database trees out of the 60 fps
+    /// animation path without letting one of them widen the selected route beyond the device.
+    /// They receive the current proposal again as soon as they become selected.
     private func routeContainer(frozenSize: CGSize) -> some View {
         ZStack {
             ForEach(residentRoutes) { resident in

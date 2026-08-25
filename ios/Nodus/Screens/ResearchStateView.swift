@@ -25,7 +25,7 @@ struct ResearchStateView: View {
                         }
                     }
                     if let gaps = Collections["gaps"] {
-                        destination("Research gaps", "questionmark.diamond", count: session.count(of: gaps)) {
+                        destination("Gaps", "questionmark.diamond", count: session.count(of: gaps)) {
                             CollectionListView(session: session, collection: gaps)
                         }
                     }
@@ -78,6 +78,10 @@ struct ResearchStateView: View {
                 Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
             }
             .desktopContentRow(accent: session.accent)
+            // Keep the four destinations a single visual row. “Gaps” is intentionally short;
+            // the fixed height also prevents a longer translated title from making one card
+            // taller than its neighbours.
+            .frame(height: 64)
         }
         .buttonStyle(NodusCardButtonStyle())
     }

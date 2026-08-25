@@ -120,6 +120,36 @@ public struct LocalCorpus: Sendable {
             guard segments.count == 1 else { throw Self.notFound }
             return try json(Self.page("reports", [], limit: 100, offset: 0, revision: revision))
 
+        case "actions" where request.method == "POST" && segments.count == 1:
+            // UI-test transport only: the bundled corpus has no Desktop to execute work, but
+            // this response keeps the action decoder and the author workflow covered without
+            // making the demo pretend that it can change its own publication.
+            let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
+            return try json([
+                "action": .object([
+                    "id": .string("demo-action"),
+                    "sequence": .int(1),
+                    "spaceId": .string(space.id),
+                    "idempotencyKey": .string("demo-action"),
+                    "kind": .string("author.synthesis.generate"),
+                    "schemaVersion": .int(1),
+                    "payload": .object(["authorId": .string("demo-a-darwin")]),
+                    "actorUserId": .string("demo-user"),
+                    "createdByDevice": .null,
+                    "inputRevision": .string(revision),
+                    "inputFingerprint": .null,
+                    "status": .string("queued"),
+                    "claimedByDevice": .null,
+                    "result": .null,
+                    "errorCode": .null,
+                    "createdAt": .string(now),
+                    "updatedAt": .string(now),
+                    "claimedAt": .null,
+                    "finishedAt": .null,
+                ]),
+                "duplicate": .bool(false),
+            ])
+
         case "immersion":
             guard segments.count == 1 else { throw Self.notFound }
             return try json(Self.page("sessions", [], limit: 100, offset: 0, revision: revision))

@@ -278,7 +278,7 @@ private struct IdeaWorkspaceDocument: View {
                 }
             )
         }
-        .nodusSheet(isPresented: $showingAssistant) { NavigationStack { ChatTab(session: session) }.nodusModalClose(accent: session.accent) }
+        .nodusSheet(isPresented: $showingAssistant) { NavigationStack { ChatTab(session: session, showsModalDone: true) } }
         .confirmationDialog("Delete this idea in Desktop?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Task { await run(.ideaDelete) } }
             Button("Cancel", role: .cancel) {}
@@ -394,7 +394,6 @@ struct AuthorsWorkspaceView: View {
                         onSelect: { toggleSelection(item.authorId) }, onSave: { toggleSaved(item.authorId) },
                         onOpen: { open(item) }
                     )
-                    .accessibilityIdentifier("workspace-open-authors-\(safeIdentifier(item.authorId))")
                 }
                 if visible.isEmpty, !isLoading, error == nil {
                     ContentUnavailableView(savedOnly ? "No saved authors" : (query.isEmpty ? "No authors" : "No matches"), systemImage: "person.2")
@@ -544,7 +543,10 @@ private struct AuthorWorkspaceRow: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }.contentShape(Rectangle())
-            }.buttonStyle(.plain).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("workspace-open-author-row-\(safeIdentifier(item.authorId))")
             Button(action: onSave) { Image(systemName: saved ? "bookmark.fill" : "bookmark").frame(width: 34, height: 44) }
                 .buttonStyle(.plain).foregroundStyle(saved ? accent : Color.secondary).accessibilityLabel(saved ? "Remove saved author" : "Save author")
                 .accessibilityIdentifier("workspace-author-save-\(saved ? "saved" : "unsaved")-\(safeIdentifier(item.authorId))")
@@ -569,7 +571,12 @@ private struct AuthorWorkspaceDocument: View {
     @State private var showingAssistant = false
 
     private var id: String { row.string("author_id") ?? "" }
-    private var canAct: Bool { !session.isDemo && session.connection.role.canSendChanges }
+    private var canAct: Bool {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["NODUS_UI_TEST_ACTIONS"] == "1" { return true }
+#endif
+        return !session.isDemo && session.connection.role.canSendChanges
+    }
 
     var body: some View {
         Group {
@@ -580,7 +587,7 @@ private struct AuthorWorkspaceDocument: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .task(id: session.publishedRevision) { await load() }
-        .nodusSheet(isPresented: $showingAssistant) { NavigationStack { ChatTab(session: session) }.nodusModalClose(accent: session.accent) }
+        .nodusSheet(isPresented: $showingAssistant) { NavigationStack { ChatTab(session: session, showsModalDone: true) } }
     }
 
     private func dossierBody(_ dossier: AuthorWorkspaceDossier) -> some View {
