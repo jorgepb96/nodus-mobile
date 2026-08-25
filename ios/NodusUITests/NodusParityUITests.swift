@@ -103,6 +103,25 @@ final class NodusParityUITests: XCTestCase {
     }
 
     @MainActor
+    func testWorkspaceCatalogueSelectionFillsTheTabInBothAppearanceModes() throws {
+        for (style, screenshotName) in [("light", "workspace-tab-selection-light"), ("dark", "workspace-tab-selection-dark")] {
+            let app = XCUIApplication()
+            app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+            app.launchEnvironment["NODUS_START_ROUTE"] = "ideas"
+            app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
+            app.launchEnvironment["NODUS_INTERFACE_STYLE"] = style
+            app.launch()
+
+            let catalogue = app.buttons["workspace-catalogue-ideas"]
+            XCTAssertTrue(catalogue.waitForExistence(timeout: 20))
+            XCTAssertTrue(catalogue.isSelected)
+            XCTAssertGreaterThan(catalogue.frame.width, 150)
+            attachScreenshot(named: screenshotName)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testWorkspaceTabsRemainReachableAfterRotation() throws {
         let app = XCUIApplication()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
@@ -257,6 +276,92 @@ final class NodusParityUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Evidence and method"].exists)
     }
 
+    @MainActor
+    func testResearchStateUsesCompactEqualDestinationCards() throws {
+        for style in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+            app.launchEnvironment["NODUS_START_ROUTE"] = "research"
+            app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
+            app.launchEnvironment["NODUS_INTERFACE_STYLE"] = style
+            app.launch()
+
+            let gaps = app.buttons.matching(
+                NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "Huecos", "Gaps")
+            ).firstMatch
+            XCTAssertTrue(gaps.waitForExistence(timeout: 20))
+            XCTAssertFalse(gaps.label.contains("investigación"))
+            XCTAssertGreaterThan(gaps.frame.height, 40)
+
+            let themes = app.buttons.matching(
+                NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "Temas", "Themes")
+            ).firstMatch
+            XCTAssertTrue(themes.waitForExistence(timeout: 5))
+            // SwiftUI reports the accessibility frame with small style-dependent rounding;
+            // the card itself uses the fixed height declared by ResearchStateView.
+            XCTAssertEqual(themes.frame.height, gaps.frame.height, accuracy: 5)
+            attachScreenshot(named: "research-state-destination-cards-\(style)")
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testChatModalUsesTopDoneInEnglishAndSpanish() throws {
+        for (language, locale, expectedLabel) in [("en", "en_US", "Done"), ("es", "es_ES", "Listo")] {
+            let app = XCUIApplication()
+            app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+            app.launchEnvironment["NODUS_START_ROUTE"] = "authors"
+            app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
+            app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", locale]
+            app.launch()
+
+            let author = app.buttons.matching(
+                NSPredicate(format: "identifier == %@", "workspace-open-author-row-demo-a-darwin")
+            ).firstMatch
+            XCTAssertTrue(author.waitForExistence(timeout: 20))
+            author.tap()
+
+            let assistant = app.buttons.matching(
+                NSPredicate(format: "label == %@", language == "es" ? "Asistente" : "Assistant")
+            ).firstMatch
+            XCTAssertTrue(assistant.waitForExistence(timeout: 20))
+            assistant.tap()
+
+            XCTAssertTrue(app.buttons[expectedLabel].waitForExistence(timeout: 5))
+            XCTAssertFalse(app.buttons["Close"].exists)
+            attachScreenshot(named: "chat-modal-top-done-\(language)")
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testAuthorSynthesisQueuesInsteadOfReturningMethodNotAllowed() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "authors"
+        app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
+        app.launchEnvironment["NODUS_UI_TEST_ACTIONS"] = "1"
+        app.launchArguments += ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        app.launch()
+
+        let author = app.buttons.matching(
+            NSPredicate(format: "identifier == %@", "workspace-open-author-row-demo-a-darwin")
+        ).firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 20))
+        author.tap()
+
+        let generate = app.buttons.matching(
+            NSPredicate(format: "label == %@ OR label == %@", "Generar síntesis", "Regenerar síntesis")
+        ).firstMatch
+        XCTAssertTrue(generate.waitForExistence(timeout: 20))
+        generate.tap()
+
+        let queued = app.staticTexts["La síntesis se ha puesto en cola para Desktop."]
+        XCTAssertTrue(queued.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["method_not_allowed"].exists)
+        attachScreenshot(named: "author-synthesis-queued")
+    }
+
     /// A deterministic review atlas for the complete academic sidebar on both size classes.
     /// The same test runs on iPad and iPhone so every image is backed by the same fixture and
     /// navigation sequence instead of two hand-built mock states drifting apart.
@@ -332,6 +437,50 @@ final class NodusParityUITests: XCTestCase {
         openRoute("workspace", in: app)
         XCTAssertTrue(app.otherElements["nodus-space-shell"].waitForExistence(timeout: 5))
         attachScreenshot(named: "\(device)-academic-13-workspace")
+    }
+
+    @MainActor
+    func testResidentRoutesAndSidebarToggleStayWithinTheDeviceBounds() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "home"
+        app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
+        app.launchEnvironment["NODUS_INTERFACE_STYLE"] = "light"
+        app.launch()
+
+        XCTAssertTrue(app.otherElements["nodus-space-shell"].waitForExistence(timeout: 20))
+        XCUIDevice.shared.orientation = .portrait
+
+        // Populate the resident-route stack: this is the sequence that used to give an
+        // inactive route the whole window width, pushing the selected route off-screen.
+        for route in ["library", "ideas", "authors", "research", "deepResearch"] {
+            openRoute(route, in: app)
+        }
+
+        let window = app.windows.firstMatch
+        let research = app.buttons["deep-research-new"]
+        XCTAssertTrue(research.waitForExistence(timeout: 15))
+
+        func assertContentFits(_ phase: String) {
+            XCTAssertGreaterThanOrEqual(research.frame.minX, window.frame.minX - 2, phase)
+            XCTAssertLessThanOrEqual(research.frame.maxX, window.frame.maxX + 2, phase)
+        }
+
+        assertContentFits("Deep Research must fit before the sidebar toggle")
+        let navigation = app.buttons["nodus-navigation-toggle"]
+        XCTAssertTrue(navigation.waitForExistence(timeout: 5))
+        navigation.tap()
+        assertContentFits("Deep Research must fit with the sidebar collapsed")
+        navigation.tap()
+        assertContentFits("Deep Research must fit after the sidebar reopens")
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(research.waitForExistence(timeout: 8))
+        assertContentFits("Deep Research must fit after rotating to landscape")
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(research.waitForExistence(timeout: 8))
+        assertContentFits("Deep Research must fit after rotating back to portrait")
+        attachScreenshot(named: "sidebar-toggle-adaptive-layout")
     }
 
     @MainActor
@@ -587,6 +736,34 @@ final class NodusParityUITests: XCTestCase {
 
         openRoute("settings", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["settings-workspace"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testReportSelectionMenuUsesNodusRibbonForPointerSecondaryClick() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "deepResearch"
+        app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
+        app.launchEnvironment["NODUS_SHOW_TAB_DEMO"] = "1"
+        app.launch()
+
+        let report = app.staticTexts["Networks of correspondence in the early modern Atlantic"]
+        XCTAssertTrue(report.waitForExistence(timeout: 20))
+        report.tap()
+
+        let prose = app.textViews.firstMatch
+        XCTAssertTrue(prose.waitForExistence(timeout: 10))
+
+        let start = prose.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
+        let end = prose.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.75))
+        start.click(forDuration: 0.1, thenDragTo: end)
+        end.rightClick()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["nodus-selection-copy"].waitForExistence(timeout: 5),
+            "The pointer menu must expose the Nodus ribbon"
+        )
+        attachScreenshot(named: "report-selection-pointer-nodus-ribbon")
     }
 
     @MainActor

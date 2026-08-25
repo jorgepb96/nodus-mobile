@@ -199,9 +199,16 @@ struct ResearchView: View {
 /// The Chat tab. Wraps `ChatScreen` with the key shortcut and the first-run prompt.
 struct ChatTab: View {
     @Environment(AISettings.self) private var ai
+    @Environment(\.dismiss) private var dismiss
     let session: SpaceSession
+    let showsModalDone: Bool
 
     @State private var showingProviders = false
+
+    init(session: SpaceSession, showsModalDone: Bool = false) {
+        self.session = session
+        self.showsModalDone = showsModalDone
+    }
 
     var body: some View {
         Group {
@@ -217,6 +224,12 @@ struct ChatTab: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingProviders = true } label: { Image(systemName: "key") }
                     .tint(session.accent)
+            }
+            if showsModalDone {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .tint(session.accent.nodusReadable)
+                }
             }
         }
         .nodusSheet(isPresented: $showingProviders) {

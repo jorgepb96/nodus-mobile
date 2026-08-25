@@ -31,16 +31,14 @@ struct WorkspaceTabStrip: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            catalogueTab.frame(width: catalogueWidth)
+            catalogueTab
             Divider().frame(height: 22)
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     HStack(spacing: 0) {
-                    ForEach(tabs) { tab in
-                        documentTab(tab)
-                            .frame(width: documentWidth)
-                            .id(tab.id)
-                    }
+                        ForEach(tabs) { tab in
+                            documentTab(tab).id(tab.id)
+                        }
                     }
                     .fixedSize(horizontal: true, vertical: false)
                 }
@@ -68,12 +66,14 @@ struct WorkspaceTabStrip: View {
             }
             .foregroundStyle(activeId == nil ? Color.primary : Color.nodusSecondaryText)
             .padding(.horizontal, 13)
-            .frame(height: height)
-            .background(tabBackground(active: activeId == nil))
-            .overlay(alignment: .bottom) { selectionLine(active: activeId == nil) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(width: catalogueWidth, height: height)
+        .background(tabBackground(active: activeId == nil))
+        .overlay(alignment: .bottom) { selectionLine(active: activeId == nil) }
+        .contentShape(Rectangle())
         .hoverEffect(.highlight)
         .accessibilityLabel(Text("\(localizedCatalogueTitle), \(String(localized: "catalogue"))"))
         .accessibilityAddTraits(activeId == nil ? .isSelected : [])
@@ -113,7 +113,7 @@ struct WorkspaceTabStrip: View {
             .accessibilityIdentifier("workspace-close-\(section)-\(safeIdentifier(tab.id))")
         }
         .padding(.leading, 11)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: documentWidth, height: height)
         .background(tabBackground(active: isActive))
         .overlay(alignment: .bottom) { selectionLine(active: isActive) }
         .overlay(alignment: .trailing) { Divider().frame(height: 18) }
