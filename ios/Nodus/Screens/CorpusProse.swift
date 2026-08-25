@@ -1498,6 +1498,7 @@ private struct DocumentProse: UIViewRepresentable {
         private var strokeAnchor: Int?
         private var strokeBaseline: NSAttributedString?
         private var activeHighlight: ReaderAnnotationDocument.Placement?
+        private var expandsNextPointerSelectionMenu = false
         private var marginButtons: [UIButton] = []
         /// Whether this paragraph has already gone looking for its scroll view to hang the
         /// page's selection-clearing tap off. Once per paragraph, not once per update.
@@ -1588,6 +1589,7 @@ private struct DocumentProse: UIViewRepresentable {
                 }
                 highlight.accessibilityLabel = String(localized: "Highlight")
                     + ": " + colour.localizedLabel
+                highlight.accessibilityIdentifier = "nodus-selection-highlight"
                 ours.append(highlight)
             }
 
@@ -1599,6 +1601,7 @@ private struct DocumentProse: UIViewRepresentable {
                     }
                 }
                 comment.accessibilityLabel = String(localized: "Add comment")
+                comment.accessibilityIdentifier = "nodus-selection-comment"
                 ours.append(comment)
             }
 
@@ -1626,6 +1629,7 @@ private struct DocumentProse: UIViewRepresentable {
                 // Spoken rather than shown. The title is empty on purpose — see above — and this
                 // is the only thing left for VoiceOver to read, so it carries the whole meaning.
                 mark.accessibilityLabel = title
+                mark.accessibilityIdentifier = "nodus-selection-bookmark"
                 ours.append(mark)
             }
 
@@ -1641,6 +1645,7 @@ private struct DocumentProse: UIViewRepresentable {
                     }
                 }
                 ask.accessibilityLabel = String(localized: "Ask about this")
+                ask.accessibilityIdentifier = "nodus-selection-ask"
                 ours.append(ask)
 
                 // Keep the system dictionary one tap away too. It follows the report-chat icon
@@ -1655,6 +1660,7 @@ private struct DocumentProse: UIViewRepresentable {
                     }
                 }
                 lookUp.accessibilityLabel = String(localized: "Look Up")
+                lookUp.accessibilityIdentifier = "nodus-selection-lookup"
                 ours.append(lookUp)
             }
 
@@ -1897,11 +1903,58 @@ private struct DocumentProse: UIViewRepresentable {
             if activeHighlight == nil,
                let textView = interaction.view as? UITextView,
                textView.selectedRange.length > 0 {
-                return self.textView(
+                guard let selectionMenu = self.textView(
                     textView,
                     editMenuForTextIn: textView.selectedRange,
                     suggestedActions: suggestedActions
+                ) else { return nil }
+
+                // A secondary click asks UIKit for a context menu, whose default layout expands
+                // every system suggestion into the tall popover used for files and links. Text
+                // selection is different: finger and Pencil expose one compact edit ribbon.
+                // Preserve that same one-row surface for a mouse, while keeping Look Up,
+                // Translate, Share and the remaining system actions one press away.
+                guard let nodusPalette = selectionMenu.children.first as? UIMenu else {
+                    return selectionMenu
+                }
+                if expandsNextPointerSelectionMenu {
+                    expandsNextPointerSelectionMenu = false
+                    return selectionMenu
+                }
+
+                // UIKit flattens a submenu placed inside an edit palette, so a nested `UIMenu`
+                // still expands the whole context menu. Use one explicit ellipsis action and
+                // re-present the complete menu only when the reader asks for it.
+                let sourcePoint = configuration.sourcePoint
+                let more = UIAction(title: "", image: UIImage(systemName: "ellipsis")) { [weak self, weak interaction, weak textView] _ in
+                    guard let self, let interaction, let textView else { return }
+                    expandsNextPointerSelectionMenu = true
+                    interaction.dismissMenu()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self, weak interaction, weak textView] in
+                        guard let interaction, let textView,
+                              textView.selectedRange.length > 0
+                        else {
+                            self?.expandsNextPointerSelectionMenu = false
+                            return
+                        }
+                        interaction.presentEditMenu(with: UIEditMenuConfiguration(
+                            identifier: "pointer-selection-more" as NSString,
+                            sourcePoint: sourcePoint
+                        ))
+                    }
+                }
+                more.accessibilityLabel = String(localized: "More actions")
+                more.accessibilityIdentifier = "nodus-selection-more"
+                let primaryActions = nodusPalette.children.filter {
+                    ($0 as? UIAction)?.accessibilityIdentifier != "nodus-selection-lookup"
+                }
+                let compact = UIMenu(
+                    title: "",
+                    options: .displayInline,
+                    preferredElementSize: .small,
+                    children: primaryActions + [more]
                 )
+                return UIMenu(children: [compact])
             }
 
             guard let placement = activeHighlight else { return nil }
