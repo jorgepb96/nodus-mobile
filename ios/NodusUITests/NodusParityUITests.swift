@@ -759,11 +759,28 @@ final class NodusParityUITests: XCTestCase {
         start.click(forDuration: 0.1, thenDragTo: end)
         end.rightClick()
 
-        XCTAssertTrue(
-            app.descendants(matching: .any)["nodus-selection-copy"].waitForExistence(timeout: 5),
-            "The pointer menu must expose the Nodus ribbon"
-        )
+        let ribbonItems = [
+            app.descendants(matching: .any)["nodus-selection-copy"],
+            app.descendants(matching: .any)["nodus-selection-bookmark"],
+            app.descendants(matching: .any)["nodus-selection-ask"],
+            app.descendants(matching: .any)["nodus-selection-more"],
+        ]
+        for item in ribbonItems {
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "The pointer menu must expose the Nodus ribbon")
+        }
+        let ribbonMidY = ribbonItems[0].frame.midY
+        for item in ribbonItems.dropFirst() {
+            XCTAssertEqual(item.frame.midY, ribbonMidY, accuracy: 3, "Pointer actions must stay in one row")
+        }
+        let expandedSystemAction = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@ OR label == %@", "Look Up", "Consultar")
+        ).firstMatch
+        XCTAssertFalse(expandedSystemAction.isHittable, "System actions must remain collapsed under More actions")
         attachScreenshot(named: "report-selection-pointer-nodus-ribbon")
+
+        ribbonItems.last?.tap()
+        XCTAssertTrue(expandedSystemAction.waitForExistence(timeout: 5))
+        XCTAssertTrue(expandedSystemAction.isHittable, "More actions must expose the system menu on demand")
     }
 
     @MainActor
