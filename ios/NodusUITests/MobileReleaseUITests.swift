@@ -1635,16 +1635,21 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["companion-download-error"].exists)
         capture(app, "companion-selected-download-complete")
         app.buttons["Cerrar"].tap()
-        XCTAssertTrue(app.staticTexts["1 documento de Scriptor"].waitForExistence(timeout: 15))
+        let pack = app.staticTexts["1 documento de Scriptor"].firstMatch
+        for _ in 0..<6 { if pack.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(pack.waitForExistence(timeout: 15), app.debugDescription)
         capture(app, "companion-download-size-and-expiry")
         // Refresh the exact same selection. It must remain one complete copy.
+        for _ in 0..<6 { if select.isHittable { break }; app.swipeDown() }
+        XCTAssertTrue(select.isHittable)
         select.tap()
         XCTAssertTrue(app.navigationBars["Descargar para llevar"].waitForExistence(timeout: 15))
         XCTAssertTrue(note.waitForExistence(timeout: 30)); note.tap()
         app.buttons["companion-download-start"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["companion-download-ready"].firstMatch.waitForExistence(timeout: 45))
         app.buttons["Cerrar"].tap()
-        XCTAssertTrue(app.staticTexts["1 documento de Scriptor"].firstMatch.waitForExistence(timeout: 15))
+        for _ in 0..<6 { if pack.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(pack.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "1 documento de Scriptor")).count, 1)
         capture(app, "companion-repeated-selection-refreshes-one-copy")
         // Only disposable consulted copies are freed. The selected download
@@ -1662,7 +1667,10 @@ final class MobileReleaseUITests: XCTestCase {
         let app = try openExistingPrincipal(destination: "settings")
         defer { app.terminate() }
         let identity = app.staticTexts[model]
-        for _ in 0..<10 { if identity.isHittable { break }; app.swipeUp() }
+        for _ in 0..<10 {
+            if identity.isHittable && identity.frame.maxY < app.windows.firstMatch.frame.maxY - 50 { break }
+            app.swipeUp()
+        }
         XCTAssertTrue(identity.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "does not grant access")).firstMatch.exists)
         capture(app, "companion-settings-real-mac-index-identity")
