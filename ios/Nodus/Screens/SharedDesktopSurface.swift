@@ -540,6 +540,9 @@ private struct DesktopWebView: UIViewRepresentable {
                             } else if let request = args.first?.objectValue, method == "getContentTranslationGenerationContext",
                                       let kind = request["entityKind"]?.stringValue, let id = request["entityId"]?.stringValue {
                                 portableSource = ("getContentTranslationOfflineSource", [.object(["entityKind": .string(kind), "entityId": .string(id)])])
+                            } else if let request = args.first?.objectValue, method == "getImmersionGenerationContext", let topic = request["topic"]?.stringValue {
+                                portableSource = ("getImmersionOfflineSource", [.object(["topic": .string(topic.trimmingCharacters(in: .whitespacesAndNewlines)),
+                                    "language": request["language"] ?? .string("es")])])
                             } else { portableSource = nil }
                             let hasPortableSource: Bool
                             if let (sourceMethod, sourceArgs) = portableSource {

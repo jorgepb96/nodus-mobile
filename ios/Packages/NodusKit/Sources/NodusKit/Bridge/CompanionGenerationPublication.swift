@@ -40,7 +40,7 @@ public struct CompanionGenerationPublication: Sendable {
         else { throw DesktopBridgeError.malformedResponse }
         var input: [String: JSONValue] = ["request": .object(request), "revision": .string(revision), "requestId": .string(identity)]
         if let version = context["offlineSourceVersion"] {
-            guard version == .int(1), ["translation", "writing"].contains(kind) else { throw DesktopBridgeError.malformedResponse }
+            guard version == .int(1), ["translation", "writing", "immersion"].contains(kind) else { throw DesktopBridgeError.malformedResponse }
             input["offlineSourceVersion"] = version
         }
         let operation: String

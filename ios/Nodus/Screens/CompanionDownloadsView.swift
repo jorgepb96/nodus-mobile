@@ -36,13 +36,21 @@ struct CompanionDownloadsView: View {
                         NavigationLink("Ideas y conexiones del corpus") {
                             CompanionIdeaDownloadsView(session: session)
                         }.accessibilityIdentifier("companion-download-ideas")
+                        NavigationLink("Material para crear inmersiones") {
+                            CompanionImmersionDownloadsView(session: session)
+                        }.accessibilityIdentifier("companion-download-immersion-material")
                     }
                     NavigationLink("Informes, diccionario e inmersiones") {
                         CompanionResearchDownloadsView(session: session)
                     }.accessibilityIdentifier("companion-download-research")
                 }
                 if loading { ProgressView("Cargando documentos del Mac…") }
-                if let issue { Section { Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("companion-download-error") } }
+                if let issue {
+                    Section {
+                        Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("companion-download-error")
+                        if progress == nil { Button("Volver a cargar") { Task { await load() } } }
+                    }
+                }
                 if let progress {
                     Section {
                         ProgressView(value: Double(progress.done), total: Double(max(1, progress.total)))
@@ -86,6 +94,7 @@ struct CompanionDownloadsView: View {
         }
     }
     private func load() async {
+        loading = true; issue = nil; saved = false
         defer { loading = false }
         do {
             let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
@@ -93,6 +102,7 @@ struct CompanionDownloadsView: View {
             let value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getNotesTree", args: [.bool(true)])
             guard value.objectValue?["notes"]?.arrayValue != nil, value.objectValue?["folders"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
             tree = value
+            selected.formIntersection(Set((value.objectValue?["notes"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue }))
         } catch { issue = error.localizedDescription }
     }
     private func download() async {

@@ -52,7 +52,7 @@ struct CompanionGenerationPublicationTests {
 
     @Test("portable source versions survive the atomic publication and reject unknown contracts")
     func offlineSourceVersion() throws {
-        for kind in ["writing", "translation"] {
+        for kind in ["writing", "translation", "immersion"] {
             var value = try #require(checkpoint(kind: kind).objectValue)
             value["context"] = .object(["revision": .string(revision), "offlineSourceVersion": .int(1)])
             let publication = try #require(CompanionGenerationPublication(kind: kind, entity: "entity-a", checkpoint: .object(value)))

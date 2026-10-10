@@ -14,6 +14,7 @@ struct CompanionResearchDownloadsView: View {
     let session: SpaceSession
     @State private var kind = Kind.reports
     @State private var catalogue: [JSONValue] = []
+    @State private var catalogueRevision: String?
     @State private var selected = Set<String>()
     @State private var days = 7
     @State private var query = ""
@@ -44,7 +45,12 @@ struct CompanionResearchDownloadsView: View {
                 Text("Solo se descargan los elementos que elijas, con sus traducciones y anotaciones. Sin conexión, la galería muestra el contenido conservado en este dispositivo. Los originales de las fuentes se descargan por separado.")
             }
             if loading { ProgressView("Cargando contenido del Mac…") }
-            if let issue { Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("companion-research-download-error") }
+            if let issue {
+                Section {
+                    Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("companion-research-download-error")
+                    if progress == nil { Button("Volver a cargar") { Task { await load() } } }
+                }
+            }
             if let progress {
                 Section {
                     ProgressView(value: Double(progress.done), total: Double(max(1, progress.total)))
@@ -93,11 +99,12 @@ struct CompanionResearchDownloadsView: View {
         return (vault, DesktopBridgeClient(pairing: pairing, token: token), try PrivateBridgeCache(pairingId: pairing.id))
     }
     private func load() async {
-        loading = true; issue = nil; saved = false; selected = []; catalogue = []; query = ""
+        loading = true; issue = nil; saved = false; selected = []; catalogue = []; catalogueRevision = nil; query = ""
         let loadingKind = kind
         defer { if kind == loadingKind { loading = false } }
         do {
             let (vault, client, _) = try connection()
+            let revision = try await session.client.snapshotRevision(in: session.connection.spaceId)
             let value: [JSONValue]
             if loadingKind == .dictionary || loadingKind == .reports {
                 value = try await completePages(client: client, vault: vault,
@@ -110,7 +117,9 @@ struct CompanionResearchDownloadsView: View {
             guard value.allSatisfy({ $0.objectValue?["id"]?.stringValue?.isEmpty == false }),
                   Set(value.compactMap { $0.objectValue?["id"]?.stringValue }).count == value.count else { throw DesktopBridgeError.malformedResponse }
             try Task.checkCancellation()
-            if kind == loadingKind { catalogue = value }
+            let current = try await session.client.snapshotRevision(in: session.connection.spaceId)
+            guard current == revision else { throw DesktopBridgeError.malformedResponse }
+            if kind == loadingKind { catalogue = value; catalogueRevision = revision }
         } catch is CancellationError { }
         catch { if kind == loadingKind { issue = error.localizedDescription } }
     }
@@ -144,6 +153,8 @@ struct CompanionResearchDownloadsView: View {
         defer { progress = nil }
         do {
             let (vault, client, cache) = try connection()
+            let revision = try await session.client.snapshotRevision(in: session.connection.spaceId)
+            guard revision == catalogueRevision else { throw DesktopBridgeError.malformedResponse }
             let chosen = catalogue.filter { selected.contains($0.objectValue?["id"]?.stringValue ?? "") }
             guard chosen.count == selected.count, !chosen.isEmpty else { throw PrivateBridgeCache.ReadPackError.invalidSelection }
             var records: [PrivateBridgeCache.ReadPackRecord] = [], bytes = 0, dictionaryBytes = 0
@@ -225,6 +236,10 @@ struct CompanionResearchDownloadsView: View {
                         let session = try await fetch("getImmersionSession", [.string(id)])
                         guard session.objectValue?["id"]?.stringValue == id, session.objectValue?["plan"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
                         reader = session
+                        if let topic = session.objectValue?["topic"]?.stringValue,
+                           let language = session.objectValue?["language"]?.stringValue {
+                            _ = try await fetch("getImmersionOfflineSource", [.object(["topic": .string(topic.trimmingCharacters(in: .whitespacesAndNewlines)), "language": .string(language)])])
+                        }
                     }
                     let target: JSONValue = .object(["entityKind": .string(entity), "entityId": .string(id)])
                     let source = try await fetch("getContentTranslationOfflineSource", [target])
@@ -280,6 +295,8 @@ struct CompanionResearchDownloadsView: View {
                 records.append(.init(domain: .corpus, recordId: "companion:dictionary:v1", data: data))
             }
             try Task.checkCancellation()
+            let current = try await session.client.snapshotRevision(in: session.connection.spaceId)
+            guard current == revision else { throw DesktopBridgeError.malformedResponse }
             let packId = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: selected.map { "\(kind.rawValue):\($0)" })
             try await cache.saveReadPack(id: packId, vaultId: vault, title: "\(kind.title) · \(chosen.count)",
                 expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: records)

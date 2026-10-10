@@ -70,6 +70,12 @@ revision inputs survive native JSON key ordering; reconnect still rejects change
 styles. Older context/save contracts remain supported, and transcript sources retain their
 separate recordings permission. Downloads reject an editor/source change before committing.
 These contracts and their prepared regression scenarios await the final local build and tests.
+The selected-topic immersion download keeps real ideas, passages, sources and graph material.
+New autonomous immersions can change duration, quizzes and phone model against that retained
+topic/language. Scope estimates are rebuilt from the chosen duration, and both scope and
+generation now receive the form's chosen language. A changed Mac evidence revision rejects
+publication; a permission failure never opens the offline fallback. Research selections also
+check a stable corpus revision before and after copying. This path awaits final local validation.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;
