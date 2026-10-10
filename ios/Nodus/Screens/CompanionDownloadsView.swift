@@ -31,6 +31,11 @@ struct CompanionDownloadsView: View {
                 } footer: {
                     Text("Las copias temporales caducan. Los borradores y cambios pendientes se conservan siempre. Los archivos externos y las imágenes enlazadas requieren su propia copia.")
                 }
+                Section {
+                    NavigationLink("Informes, diccionario e inmersiones") {
+                        CompanionResearchDownloadsView(session: session)
+                    }.accessibilityIdentifier("companion-download-research")
+                }
                 if loading { ProgressView("Cargando documentos del Mac…") }
                 if let issue { Section { Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("companion-download-error") } }
                 if let progress {

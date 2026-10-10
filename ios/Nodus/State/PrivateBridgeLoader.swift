@@ -25,6 +25,63 @@ func isPrivateBridgeOffline(_ error: Error) -> Bool {
             .cannotFindHost, .dnsLookupFailed, .timedOut].contains(transport.code)
 }
 
+/// Combine independent selected downloads without including disposable,
+/// previously consulted catalogues. Newer copies win for a repeated identity.
+func companionDownloadedCatalogue(_ cache: PrivateBridgeCache, vaultId: String, method: String) async throws -> JSONValue? {
+    guard ["listWritingWorkshopDrafts", "listImmersionSessions"].contains(method) else { return nil }
+    let copies = try await cache.downloadedData(vaultId: vaultId, domain: .corpus,
+        recordId: CompanionDocumentOutbox.operationKey(method, []))
+    guard !copies.isEmpty else { return nil }
+    var ids = Set<String>(), rows: [JSONValue] = []
+    for bytes in copies {
+        guard let items = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes).arrayValue else { throw DesktopBridgeError.malformedResponse }
+        for item in items {
+            guard let id = item.objectValue?["id"]?.stringValue, !id.isEmpty else { throw DesktopBridgeError.malformedResponse }
+            if ids.insert(id).inserted { rows.append(item) }
+        }
+    }
+    return .array(rows)
+}
+
+func companionDictionaryCopy(_ session: SpaceSession) async throws -> JSONValue {
+    let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+    guard !pairing.isExpired else { throw DesktopBridgeError.permissionDenied }
+    let copies = try await PrivateBridgeCache(pairingId: pairing.id).downloadedData(vaultId: vault, domain: .corpus, recordId: "companion:dictionary:v1")
+    guard !copies.isEmpty else { return .null }
+    var ids = Set<String>(), entries: [JSONValue] = []
+    for bytes in copies {
+        let copy = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+        guard copy.objectValue?["version"]?.intValue == 1, let items = copy.objectValue?["entries"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
+        for item in items {
+            guard let id = item.objectValue?["detail"]?.objectValue?["entry"]?.objectValue?["id"]?.stringValue,
+                  !id.isEmpty, item.objectValue?["evidence"]?.arrayValue != nil, item.objectValue?["versions"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
+            if ids.insert(id).inserted { entries.append(item) }
+        }
+    }
+    return .object(["version": .int(1), "entries": .array(entries)])
+}
+
+func companionCitationVerification(_ cache: PrivateBridgeCache, vaultId: String, refs: JSONValue) async throws -> JSONValue? {
+    guard let refs = refs.arrayValue, refs.count <= 10_000 else { throw DesktopBridgeError.malformedResponse }
+    let copies = try await cache.downloadedData(vaultId: vaultId, domain: .corpus, recordId: "companion:citations:v1")
+    guard !copies.isEmpty else { return nil }
+    var known: [String: JSONValue] = [:]
+    for bytes in copies {
+        guard let map = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes).objectValue,
+              map.values.allSatisfy({ if case .bool = $0 { return true }; return false }) else { throw DesktopBridgeError.malformedResponse }
+        for (key, value) in map where known[key] == nil { known[key] = value }
+    }
+    var result: [String: JSONValue] = [:]
+    for ref in refs {
+        guard let kind = ref.objectValue?["kind"]?.stringValue, ["idea", "work", "gap", "contradiction", "passage"].contains(kind),
+              let id = ref.objectValue?["id"]?.stringValue, !id.isEmpty else { throw DesktopBridgeError.malformedResponse }
+        let key = "\(kind):\(id)"
+        // An undownloaded source cannot be vouched for on this device.
+        result[key] = known[key] ?? .bool(false)
+    }
+    return .object(result)
+}
+
 @MainActor
 func loadPrivateBridgeValue(_ session: SpaceSession, method: String, args: [JSONValue]) async throws -> JSONValue {
     guard ["getLibraryReaderDocument", "getGlobalLibraryItem"].contains(method) else { throw DesktopBridgeError.permissionDenied }
@@ -55,6 +112,7 @@ func loadPrivateBridgeFile(_ session: SpaceSession, kind: DesktopBridgeFileKind,
     var descriptor: DesktopBridgeFileDescriptor, bytes: Data, offline = false
     do {
         descriptor = try await client.fileDescriptor(vaultId: vaultId, kind: kind, id: id)
+        guard descriptor.byteSize <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
         if let cached = try? await cache.data(vaultId: vaultId, domain: kind.domain, recordId: "\(key):\(descriptor.sha256)"),
            cached.count == descriptor.byteSize,
            SHA256.hash(data: cached).map({ String(format: "%02x", $0) }).joined() == descriptor.sha256.lowercased() {

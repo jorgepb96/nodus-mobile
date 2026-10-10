@@ -183,6 +183,10 @@ struct SourceDocumentReader: View {
                                 }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             readingControls(document)
+                            if let file {
+                                CompanionFileDownloadButton(session: session, copy: file,
+                                    requiredQueries: [(method: "getLibraryReaderDocument", args: [.string(target.itemId)])])
+                            }
                         }.font(.subheadline).buttonStyle(.borderless).tint(headerAccent)
                             .padding(16).background(headerBackground)
                     }

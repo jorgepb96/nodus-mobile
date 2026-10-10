@@ -1001,6 +1001,7 @@ public actor PrivateBridgeCache {
         public let expiresAt: Date
         public let bytes: Int
         public let recordCount: Int
+        public let primaryFile: DesktopBridgeFileDescriptor?
         fileprivate let directory: String
         fileprivate let files: [String]
     }
@@ -1016,9 +1017,18 @@ public actor PrivateBridgeCache {
     /// Commit the complete selection with one atomic encrypted pointer. A failed
     /// refresh retains the previous download; no partial pack is advertised.
     @discardableResult
-    public func saveReadPack(id: UUID = UUID(), vaultId: String, title: String, expiresAt: Date, records: [ReadPackRecord]) throws -> ReadPack {
+    public func saveReadPack(id: UUID = UUID(), vaultId: String, title: String, expiresAt: Date, records: [ReadPackRecord], primaryFile: DesktopBridgeFileDescriptor? = nil) throws -> ReadPack {
         guard !vaultId.isEmpty, !title.isEmpty, expiresAt > Date(), !records.isEmpty,
               records.allSatisfy({ !Self.isDurable($0.domain) }) else { throw ReadPackError.invalidSelection }
+        if let file = primaryFile {
+            try file.validate()
+            let record = "file:\(file.kind.rawValue):\(file.id)"
+            guard let metadata = records.first(where: { $0.domain == file.kind.domain && $0.recordId == record }),
+                  let content = records.first(where: { $0.domain == file.kind.domain && $0.recordId == "\(record):\(file.sha256)" }),
+                  try JSONDecoder.nodus.decode(DesktopBridgeFileDescriptor.self, from: metadata.data) == file,
+                  content.data.count == file.byteSize,
+                  SHA256.hash(data: content.data).map({ String(format: "%02x", $0) }).joined() == file.sha256.lowercased() else { throw ReadPackError.invalidSelection }
+        }
         return try Self.diskLock.withLock {
             try cleanReadPacks()
             let existing = try readPackManifests()
@@ -1041,7 +1051,7 @@ public actor PrivateBridgeCache {
             let createdAt = Date()
             func manifest(_ size: Int) -> ReadPack {
                 ReadPack(id: id, vaultId: vaultId, title: title, createdAt: createdAt, expiresAt: expiresAt,
-                         bytes: size, recordCount: records.count, directory: directory, files: names.sorted())
+                         bytes: size, recordCount: records.count, primaryFile: primaryFile, directory: directory, files: names.sorted())
             }
             var pack = manifest(bytes), pointer = Data()
             for _ in 0..<4 {
@@ -1065,6 +1075,27 @@ public actor PrivateBridgeCache {
         try Self.diskLock.withLock {
             try cleanReadPacks()
             return try readPackManifests().filter { $0.vaultId == vaultId }.sorted { $0.createdAt > $1.createdAt }
+        }
+    }
+    /// Selected catalogues can span several downloads. Read every unexpired
+    /// selection in newest-first order instead of hiding all but the last pack.
+    /// Consulted copies never enter this list and cannot broaden a selection.
+    public func downloadedData(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> [Data] {
+        try Self.diskLock.withLock {
+            try cleanReadPacks()
+            let name = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId).lastPathComponent
+            return try readPackManifests().filter { $0.vaultId == vaultId && $0.files.contains(name) }
+                .sorted { $0.createdAt > $1.createdAt }.map { pack in
+                    let copy = folder.appendingPathComponent(pack.directory).appendingPathComponent(name)
+                    return try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: copy)), using: key)
+                }
+        }
+    }
+    public func hasDownloadedData(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Bool {
+        try Self.diskLock.withLock {
+            try cleanReadPacks()
+            let name = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId).lastPathComponent
+            return try readPackManifests().contains { $0.vaultId == vaultId && $0.files.contains(name) }
         }
     }
     public func removeReadPack(id: UUID, vaultId: String) throws {

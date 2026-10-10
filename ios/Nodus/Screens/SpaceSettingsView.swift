@@ -1,6 +1,7 @@
 import NodusKit
 import NodusUI
 import SwiftUI
+import QuickLook
 
 struct SpaceSettingsView: View {
     @Environment(AppModel.self) private var model
@@ -670,6 +671,8 @@ private struct CompanionCopySettings: View {
     @State private var confirmClear = false
     @Binding var showingDownload: Bool
     @State private var packs: [PrivateBridgeCache.ReadPack] = []
+    @State private var preview: URL?
+    @State private var openingFile = false
     var body: some View {
         Section {
             if let usage {
@@ -684,6 +687,17 @@ private struct CompanionCopySettings: View {
                         Text(pack.title)
                         Text("\(ByteCountFormatter.string(fromByteCount: Int64(pack.bytes), countStyle: .file)) · caduca \(pack.expiresAt.formatted(date: .abbreviated, time: .omitted))")
                             .font(.caption).foregroundStyle(.secondary)
+                        if let file = pack.primaryFile {
+                            Button("Abrir archivo descargado") {
+                                openingFile = true
+                                Task {
+                                    defer { openingFile = false }
+                                    do { preview = try await loadPrivateBridgeFile(session, kind: file.kind, id: file.id).url }
+                                    catch { issue = error.localizedDescription }
+                                }
+                            }.disabled(openingFile)
+                                .accessibilityIdentifier("companion-download-open-\(pack.id)")
+                        }
                         Button("Eliminar copia descargada", role: .destructive) {
                             Task {
                                 do { try await PrivateBridgeCache(pairingId: pairingId).removeReadPack(id: pack.id, vaultId: pack.vaultId); await refresh() }
@@ -701,6 +715,7 @@ private struct CompanionCopySettings: View {
             Text("Opened content is kept encrypted for offline reading. Older consulted copies are removed when the limit is reached. Drafts and pending work are always preserved.")
         }
         .task { await refresh() }
+        .quickLookPreview($preview)
         .onChange(of: showingDownload) { _, shown in if !shown { Task { await refresh() } } }
         .confirmationDialog("Free space used by consulted content?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Free space", role: .destructive) {

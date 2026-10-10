@@ -23,7 +23,14 @@ SwiftUI navigation hosts shared Nodus graph, argument-map, research, dictionary 
 surfaces. Selected Scriptor documents use encrypted temporary downloads with a shared 250 MiB
 read budget per Mac. Pending structured edits and new authored notes/ideas survive app restart
 and temporary-copy cleanup. Reconnection sends immutable saves; revision conflicts require an
-explicit choice. Other-domain downloads and the complete release acceptance remain pending.
+explicit choice.
+
+The current implementation extends selected downloads to research reports, dictionary entries
+and immersions, with saved translations, annotations, decorative images and citation previews.
+Dictionary copies include local filters, complete paginated evidence and versions. Independent
+selections are combined. Originals, attachments and recordings can be retained separately for
+7 or 30 days and reopened from device storage. These additions await the final build and
+acceptance campaign; other-domain catalogues and the complete release gate remain pending.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;
@@ -64,8 +71,9 @@ acceptance and reviewed evidence. Historical scoped passes and skipped tests do 
 parity or TestFlight. Private fixtures, screenshots, logs and `.xcresult` bundles remain in ignored
 `artifacts/acceptance-0.1.0`, outside GitHub.
 
-GitHub Actions is temporarily disabled in both repositories at the user's request. Continue checks
-locally; do not re-enable Actions or dispatch workflows without their instruction.
+GitHub Actions remains enabled in both repositories. At the user's request, implementation
+continues without running workflows or an intermediate test campaign. Defer the complete checks
+until implementation is ready; use `[skip ci]` on interim pushes to the open draft PRs.
 
 ## Licence
 

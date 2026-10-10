@@ -198,7 +198,59 @@ struct PrivateBridgeCacheTests {
         try #require(AES.GCM.seal(JSONSerialization.data(withJSONObject: object), using: key).combined).write(to: pointer)
         #expect(try await f.cache.readPacks(vaultId: "a").isEmpty)
         #expect(try await f.cache.data(vaultId: "a", domain: .corpus, recordId: "editor") == nil)
+        #expect(try await f.cache.downloadedData(vaultId: "a", domain: .corpus, recordId: "editor").isEmpty)
         #expect(try await f.cache.usage().downloadedBytes == 0)
         #expect(try await f.cache.data(vaultId: "a", domain: .writing, recordId: "draft") == Data("local work".utf8))
+    }
+
+    @Test("independent selections remain enumerable after clearing and reopening, isolated from other vaults and consulted data")
+    func combinedDownloads() async throws {
+        let f = try Fixture(limit: 8_192); defer { f.clean() }
+        let one = Data("selected first catalogue".utf8), two = Data("selected second catalogue".utf8)
+        let first = try await f.cache.saveReadPack(vaultId: "a", title: "First", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "catalogue", data: one)])
+        let second = try await f.cache.saveReadPack(vaultId: "a", title: "Second", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "catalogue", data: two)])
+        try await f.cache.saveReadPack(vaultId: "other", title: "Other vault", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "catalogue", data: Data("never included".utf8))])
+        try await f.cache.store(Data("consulted only".utf8), vaultId: "a", domain: .corpus, recordId: "catalogue")
+        #expect(Set(try await f.cache.downloadedData(vaultId: "a", domain: .corpus, recordId: "catalogue")) == Set([one, two]))
+        try await f.cache.removeReusableCopies()
+        let reopened = try PrivateBridgeCache(pairingId: f.id, directory: f.root, keychain: f.keychain, readLimitBytes: 8_192)
+        #expect(Set(try await reopened.downloadedData(vaultId: "a", domain: .corpus, recordId: "catalogue")) == Set([one, two]))
+        #expect(try await reopened.hasDownloadedData(vaultId: "a", domain: .corpus, recordId: "catalogue"))
+        #expect(try await !reopened.hasDownloadedData(vaultId: "missing", domain: .corpus, recordId: "catalogue"))
+        #expect(try await reopened.downloadedData(vaultId: "a", domain: .testimonies, recordId: "catalogue").isEmpty)
+        try await reopened.removeReadPack(id: second.id, vaultId: "a")
+        #expect(try await reopened.downloadedData(vaultId: "a", domain: .corpus, recordId: "catalogue") == [one])
+        #expect(try await reopened.readPacks(vaultId: "a").first?.id == first.id)
+        for content in try encryptedDiskContents(f.root) {
+            #expect(content.range(of: one) == nil); #expect(content.range(of: two) == nil)
+        }
+    }
+
+    @Test("a downloadable private file preserves its descriptor and rejects unverified or incomplete bytes before commit")
+    func selectedFileIdentity() async throws {
+        let f = try Fixture(limit: 8_192); defer { f.clean() }
+        let content = Data("Private selected recording fixture".utf8)
+        let hash = SHA256.hash(data: content).map { String(format: "%02x", $0) }.joined()
+        let file = DesktopBridgeFileDescriptor(kind: .studyRecording, id: "recording-fixture", filename: "recording.wav", mime: "audio/wav", byteSize: content.count, sha256: hash, chunkSize: 128)
+        let key = "file:studyRecording:recording-fixture", id = UUID()
+        let metadata = PrivateBridgeCache.ReadPackRecord(domain: .studyRecordings, recordId: key, data: try JSONEncoder.nodus.encode(file))
+        let bytes = PrivateBridgeCache.ReadPackRecord(domain: .studyRecordings, recordId: "\(key):\(hash)", data: content)
+        try await f.cache.saveReadPack(id: id, vaultId: "a", title: "Recording", expiresAt: .distantFuture, records: [metadata, bytes], primaryFile: file)
+        let reopened = try PrivateBridgeCache(pairingId: f.id, directory: f.root, keychain: f.keychain, readLimitBytes: 8_192)
+        #expect(try await reopened.readPacks(vaultId: "a").first?.primaryFile == file)
+        #expect(try await reopened.data(vaultId: "a", domain: .studyRecordings, recordId: "\(key):\(hash)") == content)
+        #expect(try await reopened.data(vaultId: "a", domain: .corpus, recordId: "\(key):\(hash)") == nil)
+        await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+            try await reopened.saveReadPack(id: id, vaultId: "a", title: "Incomplete", expiresAt: .distantFuture, records: [metadata], primaryFile: file)
+        }
+        await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+            try await reopened.saveReadPack(id: id, vaultId: "a", title: "Wrong bytes", expiresAt: .distantFuture,
+                records: [metadata, .init(domain: .studyRecordings, recordId: "\(key):\(hash)", data: Data(repeating: 0, count: content.count))], primaryFile: file)
+        }
+        #expect(try await reopened.readPacks(vaultId: "a").first?.title == "Recording")
+        #expect(try await reopened.data(vaultId: "a", domain: .studyRecordings, recordId: "\(key):\(hash)") == content)
     }
 }

@@ -21,7 +21,7 @@ public enum DesktopLibraryAttachmentIdentity {
     }
 }
 
-public struct DesktopBridgeFileDescriptor: Codable, Sendable {
+public struct DesktopBridgeFileDescriptor: Codable, Sendable, Equatable {
     public let kind: DesktopBridgeFileKind
     public let id: String
     public let filename: String

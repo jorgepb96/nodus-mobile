@@ -5132,6 +5132,18 @@
       ]
     },
     {
+      "id": "AcademicApi.getWritingWorkshopDraft",
+      "interface": "AcademicApi",
+      "method": "getWritingWorkshopDraft",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.getWritingWorkshopSnapshot",
       "interface": "AcademicApi",
       "method": "getWritingWorkshopSnapshot",
@@ -6179,6 +6191,18 @@
       "id": "AcademicApi.listWritingDraftAnnotations",
       "interface": "AcademicApi",
       "method": "listWritingDraftAnnotations",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.listWritingWorkshopDownloadCatalogue",
+      "interface": "AcademicApi",
+      "method": "listWritingWorkshopDownloadCatalogue",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "catalogued",

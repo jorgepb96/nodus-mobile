@@ -12,6 +12,7 @@ struct PrivateFileButton: View {
     @State private var downloading = false
     @State private var issue: String?
     @State private var offline = false
+    @State private var copy: PrivateBridgeFileCopy?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
@@ -24,6 +25,7 @@ struct PrivateFileButton: View {
             .accessibilityIdentifier("bridge-file-\(kind.rawValue)-\(id)")
             if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             if offline { Label("Downloaded copy", systemImage: "wifi.slash").font(.caption).foregroundStyle(.secondary) }
+            if let copy { CompanionFileDownloadButton(session: session, copy: copy) }
         }
         .quickLookPreview($preview)
     }
@@ -32,6 +34,7 @@ struct PrivateFileButton: View {
         defer { downloading = false }
         do {
             let copy = try await loadPrivateBridgeFile(session, kind: kind, id: id)
+            self.copy = copy
             preview = copy.url; offline = copy.offline
         } catch { issue = error.localizedDescription }
     }
