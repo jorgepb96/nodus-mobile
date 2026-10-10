@@ -1,6 +1,6 @@
 # Nodus Mobile
 
-Mobile clients for [Nodus](https://github.com/Drakonis96/nodus), one directory per platform.
+iPhone and iPad companion for [Nodus](https://github.com/jorgepb96/nodus), one directory per platform.
 
 ```
 ios/          iOS and iPadOS app (SwiftUI), its Swift packages and its tools
@@ -9,13 +9,25 @@ ios/          iOS and iPadOS app (SwiftUI), its Swift packages and its tools
 Android has no directory yet. When it gets one it sits beside `ios/`, and nothing above this line
 should have to change for it.
 
-## What is not here
+## Companion connection
 
-The corpus itself, and everything that reasons about it. These clients talk to a Nodus Server over
-HTTPS and hold no authority over a vault: the desktop application publishes, the server serves, and
-a phone reads what it is given. The domain model, the report design and the reading-copy rules live
-in the Nodus repository and are not vendored here — a copy would drift, and drift is precisely what
-`ios/scripts/test-reading-copy-parity.mjs` exists to catch.
+Open Desktop Settings → Mobile connection and link the complete workspace with a temporary QR,
+code or link. Direct HTTPS on the same LAN or local VPN is the enabled connection in 0.1.0.
+Server/Cloud onboarding and iCloud content synchronization are hidden in this beta.
+
+Live mode uses the Mac's effective models and providers; their credentials remain on the Mac.
+Autonomous mode uses providers explicitly configured on the device. The app never switches modes
+automatically. Extraction, indexing and derived-idea pipelines stay on Desktop.
+
+SwiftUI navigation hosts shared Nodus graph, argument-map, research, dictionary and BlockNote
+surfaces. Selected Scriptor documents use encrypted temporary downloads with a shared 250 MiB
+read budget per Mac. Pending structured edits and new authored notes/ideas survive app restart
+and temporary-copy cleanup. Reconnection sends immutable saves; revision conflicts require an
+explicit choice. Other-domain downloads and the complete release acceptance remain pending.
+
+Shared domain models, report layout and reading-copy rules live in the Nodus repository.
+`ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;
+`ios/scripts/test-reading-copy-parity.mjs` checks the reading contract.
 
 ## Getting it running
 
@@ -42,10 +54,18 @@ this one or at `NODUS_REPO` and says so plainly when it cannot.
 
 ## Versions
 
-The desktop and Nodus Server are kept to a single version number by a test in that repository. This
-repository is no longer part of that check, so a build states the release it targets in
-`ios/project.yml` and the server states its own at `/healthz`. When they disagree, the server is
-right.
+Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
+`ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
+Server retain their own version contract. Native acceptance records the actual Desktop/mobile
+commits, compiled binaries, shared resources and test inputs for each run.
+
+The release gate requires every operation in `ios/Parity/parity-manifest.json` to have executed
+acceptance and reviewed evidence. Historical scoped passes and skipped tests do not approve full
+parity or TestFlight. Private fixtures, screenshots, logs and `.xcresult` bundles remain in ignored
+`artifacts/acceptance-0.1.0`, outside GitHub.
+
+GitHub Actions is temporarily disabled in both repositories at the user's request. Continue checks
+locally; do not re-enable Actions or dispatch workflows without their instruction.
 
 ## Licence
 

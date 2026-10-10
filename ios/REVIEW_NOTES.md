@@ -1,9 +1,8 @@
 # Notes for the App Store reviewer
 
-Nodus is a client for a Nodus Server, which is software people run themselves. A reviewer has
-no server, no account and no vault, so the app carries a corpus of its own and says so on its
-first screen. What follows is the text to paste into **App Store Connect → App Review
-Information → Notes**. Keep it to those two paragraphs; anything longer stops being read.
+Nodus 0.1.0 is a companion for Nodus Desktop. A reviewer can use the built-in example vault
+without an account or a Mac connection. The following notes describe the current onboarding;
+they are source notes, not evidence of an App Store submission or TestFlight approval.
 
 Regenerate the corpus with `node ios/scripts/make-demo-snapshot.mjs` whenever the vault schema
 moves. It builds one snapshot per interface language from public-domain works only — no real
@@ -14,39 +13,35 @@ ships without them.
 
 ## English
 
-> This app is a reader for a Nodus Server, a self-hosted research server. You do not need one to
-> review the app, and you do not need an account. On the first screen, under the blue "Add a
-> server" button, there is a second button: **"See an example vault"**. Tap it. It opens a small
-> read-only corpus that is compiled into the app itself — ten public-domain works of
-> nineteenth-century political thought, with the ideas, themes, quotations, debates and notes
-> built on them. Everything in it is read from the device: no network connection is made at any
-> point, and it works in aeroplane mode on a device that has never seen a server.
+> Nodus is an iPhone/iPad companion for Nodus Desktop. No account or connected Mac is required
+> to inspect the built-in example vault, available from the first screen. Its public-domain
+> research corpus and reading data are bundled with the app and can be consulted offline.
+> Connecting a personal workspace uses Desktop Settings → Mobile connection and a temporary
+> QR, code or link over the same local network or VPN. Server/Cloud onboarding is hidden in
+> this beta; no Nodus account is created.
 >
-> Inside the example vault every part of the app is reachable: the sections on the home screen
-> (Library, Ideas, Themes, Gaps, Authors), the record for any row, full-text search, the debates
-> between contradicting ideas, and the argument map. Two features are deliberately shown but not
-> functional there: **Chat** and **Deep Research** call an AI provider directly from the device
-> with a key the user supplies under Settings → Providers, and the app never transmits that key
-> to any Nodus server. Without a key those screens explain what would be needed rather than
-> hiding themselves. Sign-in exists only for people who already run a Nodus Server of their own;
-> no account is created by this app and none is required to see what it does.
+> AI execution modes are explicit. Live mode uses the connected Mac's models and credentials;
+> autonomous mode uses the provider configured on the mobile device. Provider credentials stay
+> on their owning device. Without an available Mac or configured mobile provider, generation
+> explains the missing connection/configuration. Reading and selected temporary Scriptor
+> downloads work offline. Pending authored notes, ideas and structured edits synchronize when
+> the Mac returns, with explicit revision-conflict choices. Extraction/indexing remain Desktop
+> operations. Browser, Radar, Compass, Focus and other unimplemented tools show coming soon.
 
 ## Español
 
-> Esta app es un lector para Nodus Server, un servidor de investigación autoalojado. No hace
-> falta tener uno para revisarla, ni una cuenta. En la primera pantalla, bajo el botón azul
-> «Añadir un servidor», hay un segundo botón: **«Ver un vault de ejemplo»**. Púlselo. Abre un
-> corpus breve de solo lectura compilado dentro de la propia app: diez obras de dominio público
-> de pensamiento político del siglo XIX, con las ideas, los temas, las citas, los debates y las
-> notas construidos sobre ellas. Todo se lee del dispositivo: no se abre ninguna conexión en
-> ningún momento, y funciona en modo avión en un dispositivo que nunca ha visto un servidor.
+> Nodus es una aplicación companion para Nodus Desktop en iPhone y iPad. No hace falta una
+> cuenta ni un Mac conectado para consultar el vault de ejemplo de la primera pantalla. Su
+> corpus de dominio público y sus datos de lectura están incluidos en la app y funcionan sin
+> conexión. Para vincular un workspace personal, abra Ajustes → Conexión móvil en Desktop y
+> utilice el QR, código o enlace temporal desde la misma red local o VPN. La conexión mediante
+> Server/Cloud está oculta en esta beta; la app no crea una cuenta de Nodus.
 >
-> Dentro del vault de ejemplo se llega a todas las partes de la app: las secciones de la pantalla
-> de inicio (Biblioteca, Ideas, Temas, Huecos, Autores), la ficha de cualquier registro, la
-> búsqueda por texto, los debates entre ideas que se contradicen y el mapa de argumentos. Dos
-> funciones se enseñan a propósito sin estar operativas allí: **Chat** e **Investigación
-> profunda** llaman a un proveedor de IA directamente desde el dispositivo con una clave que
-> aporta el usuario en Ajustes → Proveedores, y la app nunca envía esa clave a ningún servidor de
-> Nodus. Sin clave, esas pantallas explican qué haría falta en lugar de esconderse. El inicio de
-> sesión existe solo para quien ya tiene su propio Nodus Server; la app no crea ninguna cuenta y
-> no hace falta ninguna para ver qué hace.
+> Los modos de IA son explícitos. Live utiliza los modelos y credenciales del Mac conectado;
+> autónomo utiliza el proveedor configurado en el móvil. Las credenciales permanecen en su
+> dispositivo. Sin un Mac disponible o un proveedor móvil configurado, la generación explica
+> qué falta. La lectura y las descargas temporales seleccionadas de Scriptor funcionan sin
+> conexión. Las notas, ideas y ediciones estructuradas pendientes se sincronizan al volver el
+> Mac, con una elección explícita ante conflictos de revisión. La extracción e indexación se
+> realizan en Desktop. Browser, Radar, Compass, Focus y otras herramientas pendientes muestran
+> «Próximamente».
