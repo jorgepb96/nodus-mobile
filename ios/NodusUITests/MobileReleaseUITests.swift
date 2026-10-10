@@ -174,6 +174,15 @@ final class MobileReleaseUITests: XCTestCase {
             web.buttons["Acercar"].firstMatch.tap()
         }
         if phone {
+            let back = web.buttons["Volver a los temas"].firstMatch
+            let search = web.textFields["Buscar una idea"].firstMatch
+            XCTAssertTrue(back.isHittable); XCTAssertTrue(search.isHittable)
+            XCTAssertLessThanOrEqual(search.frame.maxY - back.frame.minY, 110,
+                                     "The phone theme header must leave room for the graph instead of repeating Desktop chrome.")
+            let fullscreen = web.switches["Pantalla completa"].firstMatch
+            XCTAssertTrue(fullscreen.isHittable)
+            XCTAssertGreaterThanOrEqual(fullscreen.frame.width, 43.5)
+            XCTAssertLessThanOrEqual(fullscreen.frame.width, 45, "The phone fullscreen action should use a compact labelled icon.")
             let stage = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Canvas de ideas.")).firstMatch
             // The accessible canvas announces its actual world-camera scale.
             // Captions can disappear when they collide after zooming, and
@@ -267,6 +276,8 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertTrue(sheet.waitForExistence(timeout: 20), app.debugDescription)
             let close = sheet.buttons["Cerrar"].firstMatch
             XCTAssertTrue(close.isHittable)
+            XCTAssertGreaterThanOrEqual(close.frame.width, 43.5)
+            XCTAssertGreaterThanOrEqual(close.frame.height, 43.5)
             XCTAssertGreaterThanOrEqual(sheet.frame.width, web.frame.width - 2, "The phone dossier must fill the width instead of becoming a right sidebar.")
             let evidence = sheet.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Obras que la desarrollan")).firstMatch
             XCTAssertTrue(evidence.waitForExistence(timeout: 30), "The persisted dossier must load beyond its skeleton.\n\(app.debugDescription)")
@@ -311,6 +322,8 @@ final class MobileReleaseUITests: XCTestCase {
             idea.tap()
             let close = web.buttons["Cerrar"].firstMatch
             XCTAssertTrue(close.waitForExistence(timeout: 20), app.debugDescription)
+            XCTAssertGreaterThanOrEqual(close.frame.width, 43.5, "The iPad dossier also needs touch-sized actions.")
+            XCTAssertGreaterThanOrEqual(close.frame.height, 43.5)
             let works = web.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Obras que la desarrollan")).firstMatch
             XCTAssertTrue(works.waitForExistence(timeout: 30), "The saved dossier must load its evidence on iPad.")
             if name == "graph" {
