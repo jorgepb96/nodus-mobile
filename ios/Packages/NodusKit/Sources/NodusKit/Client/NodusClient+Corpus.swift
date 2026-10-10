@@ -63,6 +63,13 @@ public extension NodusClient {
         return Row(row)
     }
 
+    func dossier(_ collection: CollectionDescriptor, id: String, in spaceId: String) async throws -> CollectionDossier {
+        let response = try await perform(.init(
+            path: address.spacePath(spaceId, "/\(collection.path)/\(escape(id))"), cacheable: true
+        ))
+        return try CollectionDossier(collection: collection, id: id, payload: JSONDecoder.nodus.decode(JSONValue.self, from: response.data))
+    }
+
     // MARK: - Enriched details
 
     /// `GET .../ideas/:globalId` — the idea plus everything hanging off it.

@@ -4,10 +4,8 @@ import SwiftUI
 
 /// One row, opened.
 ///
-/// Five collections have an enriched handler on the server — ideas, works, persons, authors and
-/// databases — and for those the detail request brings back the relations that make the screen
-/// worth opening. Everything else is the row itself, rendered field by field: a generic view
-/// that never claims more structure than the table has.
+/// Domain readers preserve the whole public dossier, including versions and
+/// nested sections added by Desktop. Large relation lists grow on demand.
 struct RowDetailView: View {
     let session: SpaceSession
     let collection: CollectionDescriptor?
@@ -20,6 +18,8 @@ struct RowDetailView: View {
     @State private var enriched: Enriched?
     @State private var isLoading = false
     @State private var error: String?
+    @State private var relationLimits: [String: Int] = [:]
+    @State private var evidenceLimit = 40
 
     init(
         session: SpaceSession,
@@ -43,6 +43,7 @@ struct RowDetailView: View {
         case database(DatabaseDetail)
         case exam(ExamDetail)
         case plan(StudyPlanDetail)
+        case dossier(CollectionDossier)
     }
 
     private var presenter: RowPresenter {
@@ -100,7 +101,9 @@ struct RowDetailView: View {
 
                 if let error {
                     NodusNotice(tone: .caution, title: "Could not expand", message: LocalizedStringKey(error))
+                    Button("Reintentar") { Task { await enrich() } }.frame(minHeight: 44).disabled(isLoading)
                 }
+                if isLoading { ProgressView("Cargando dossier…").tint(session.accent) }
 
                 if collection?.path == "themes", theme != nil {
                     NavigationLink {
@@ -125,6 +128,9 @@ struct RowDetailView: View {
                 case .author(let detail): authorBody(detail)
                 case .database(let detail): databaseBody(detail)
                 case .plan(let detail): planBody(detail)
+                case .dossier(let detail):
+                    if collection?.path == "passages" { passageBody(detail.primary) }
+                    else { CollectionDossierBody(session: session, dossier: detail, onOpenRelated: onOpenRelated) }
                 // Handled above: an exam replaces the dossier rather than sitting inside it.
                 case .exam: EmptyView()
                 case nil:
@@ -220,7 +226,7 @@ struct RowDetailView: View {
             if !detail.evidence.isEmpty {
                 section("Passages that support it", count: detail.evidence.count) {
                     VStack(alignment: .leading, spacing: 16) {
-                        ForEach(Array(detail.evidence.prefix(40).enumerated()), id: \.offset) { index, item in
+                        ForEach(Array(detail.evidence.prefix(evidenceLimit).enumerated()), id: \.offset) { index, item in
                             VStack(alignment: .leading, spacing: 8) {
                                 if let quote = item.text("quote") {
                                     Text(quote)
@@ -252,7 +258,10 @@ struct RowDetailView: View {
                                     }
                                 }
                             }
-                            if index < min(detail.evidence.count, 40) - 1 { Divider().opacity(0.3) }
+                            if index < min(detail.evidence.count, evidenceLimit) - 1 { Divider().opacity(0.3) }
+                        }
+                        if detail.evidence.count > evidenceLimit {
+                            Button("Mostrar más evidencias") { evidenceLimit += 40 }.frame(minHeight: 44)
                         }
                     }
                 }
@@ -473,6 +482,8 @@ struct RowDetailView: View {
 
     private func databaseBody(_ detail: DatabaseDetail) -> some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
+            NavigationLink { DatabaseGridView(session: session, database: detail.database) }
+                label: { Label("Abrir tabla", systemImage: "tablecells").frame(minHeight: 44) }
             Text("\(detail.total.formatted()) rows · \(detail.columns.count) columns")
                 .font(.caption).foregroundStyle(.secondary)
             group("Columns", detail.columns, table: "db_columns")
@@ -659,14 +670,16 @@ struct RowDetailView: View {
         table: String,
         linksTo collection: CollectionDescriptor? = nil
     ) -> some View {
-        Group {
+        let groupId = "\(title):\(table)"
+        let limit = relationLimits[groupId] ?? 60
+        return Group {
             if !rows.isEmpty {
                 // The heading is the key and the count is data beside it. Interpolating the
                 // two — `"\(title) · \(rows.count)"` — made the *whole line* the key, so the
                 // catalogue never matched and every group on a dossier read in English.
                 section(title, count: rows.count) {
                     VStack(spacing: 0) {
-                        ForEach(Array(rows.prefix(60).enumerated()), id: \.offset) { index, row in
+                        ForEach(Array(rows.prefix(limit).enumerated()), id: \.offset) { index, row in
                             if let collection, row.string(collection.idField) != nil {
                                 if let onOpenRelated {
                                     Button { onOpenRelated(collection, row) } label: {
@@ -699,13 +712,11 @@ struct RowDetailView: View {
                                 RowCell(row: row, presenter: RowPresenter.forTable(table), accent: session.accent)
                                     .padding(.vertical, 4)
                             }
-                            if index < min(rows.count, 60) - 1 { Divider().opacity(0.35) }
+                            if index < min(rows.count, limit) - 1 { Divider().opacity(0.35) }
                         }
-                        if rows.count > 60 {
-                            Text("and \(rows.count - 60) more")
-                                .font(.caption2).foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.top, 8)
+                        if rows.count > limit {
+                            Button("Mostrar más (\(rows.count - limit))") { relationLimits[groupId] = limit + 60 }
+                                .frame(minHeight: 44).accessibilityIdentifier("dossier-related-show-more-\(table)")
                         }
                     }
                 }
@@ -856,7 +867,9 @@ struct RowDetailView: View {
                 row = detail.plan
                 enriched = .plan(detail)
             default:
-                row = try await session.client.item(collection, id: id, in: session.connection.spaceId)
+                let detail = try await session.client.dossier(collection, id: id, in: session.connection.spaceId)
+                row = detail.primary
+                enriched = .dossier(detail)
             }
             error = nil
         } catch where error.isCancellation {

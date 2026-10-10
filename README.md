@@ -117,6 +117,14 @@ this one or at `NODUS_REPO` and says so plainly when it cannot.
 
 ## Versions
 
+Public native dossier readers now retain their nested sections, including source
+text versions, study question history, testimony fragments, world manuscripts
+and page blocks. Related records open in native navigation using explicit domain
+links; annotation and aggregate ids never become private identity links. Long
+evidence and relation lists offer more items instead of silently truncating at
+40 or 60. These changes and their prepared contract regressions still await the
+consolidated local build, test and visual acceptance campaign.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile
