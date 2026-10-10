@@ -218,6 +218,7 @@ private struct DesktopWebView: UIViewRepresentable {
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         context.coordinator.webView = view
+        context.coordinator.setRouteActive(routeActive)
         if let resource = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "SharedDesktop") {
             let script = resource.deletingLastPathComponent().appendingPathComponent("surface.iife.js")
             do {
@@ -259,6 +260,7 @@ private struct DesktopWebView: UIViewRepresentable {
         // the container's accessibility descendants leaves stale HTML controls
         // reachable after switching workspaces.
         view.isHidden = !routeActive
+        context.coordinator.setRouteActive(routeActive)
         view.evaluateJavaScript("document.documentElement.classList.toggle('dark',\(dark));document.documentElement.classList.toggle('light',\(!dark));document.documentElement.style.fontSize='\(16 * textScale)px';document.documentElement.style.setProperty('--nodus-mobile-text-scale','\(textScale)');", completionHandler: nil)
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
@@ -267,7 +269,7 @@ private struct DesktopWebView: UIViewRepresentable {
         coordinator.finishJavaScriptPanel()
         coordinator.session.isSurfaceFullscreen = false
     }
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+    @MainActor final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
         private var javaScriptPanel: UIAlertController?
         private var cancelJavaScriptPanel: (() -> Void)?
         private static let operationDomains: [String: String] = {
@@ -277,6 +279,17 @@ private struct DesktopWebView: UIViewRepresentable {
             return methods.mapValues { $0.count == 2 ? $0[1] : "unavailable" }
         }()
         weak var webView: WKWebView?
+        private var routeActive = true
+        func setRouteActive(_ active: Bool) {
+            routeActive = active
+            // The remote WebKit accessibility process can outlive UIKit's hidden
+            // container. Inert removes its HTML controls from focus and VoiceOver
+            // without destroying the canvas, draft or scroll position.
+            webView?.evaluateJavaScript("if(document.documentElement){document.documentElement.inert=\(!active);if(\(!active))document.activeElement?.blur();}", completionHandler: nil)
+        }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            setRouteActive(routeActive)
+        }
         let session: SpaceSession
         let autonomous: AutonomousSurfaceProvider
         let onNavigate: (String, String, String?, String?) -> Void

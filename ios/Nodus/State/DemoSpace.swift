@@ -80,7 +80,7 @@ enum DemoSpace {
     /// case after the first launch. Two things make it stale, and the revision catches both
     /// without either being special-cased: a newer build carrying a newer corpus, and the phone
     /// being switched to a language whose corpus is a different document.
-    static func prepare() async throws -> (connection: AppModel.Connection, corpus: LocalCorpus) {
+    @MainActor static func prepare() async throws -> (connection: AppModel.Connection, corpus: LocalCorpus) {
         let archive = try archive()
         let snapshot = try SnapshotDownload.read(archive)
         let revision = snapshot.revision ?? ""

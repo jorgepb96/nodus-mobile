@@ -136,6 +136,96 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "phone-reader-unified-selection")
     }
     @MainActor
+    func testExistingMacPhoneGraphDetailReturnsToTheSameCanvas() throws {
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_GRAPH_THEME"])
+        let count = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_GRAPH_IDEAS"].flatMap(Int.init))
+        let app = try openExistingPrincipal(destination: "graph")
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        let web = app.otherElements["shared-desktop-graph"].webViews.firstMatch
+        let filter = web.searchFields["Filtrar temas"]
+        XCTAssertTrue(filter.waitForExistence(timeout: 60), app.debugDescription)
+        try focusResearchSearch(filter, in: web, app: app)
+        filter.typeText(name)
+        try dismissResearchKeyboard(app)
+        let theme = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "TEMA ·", name)).firstMatch
+        XCTAssertTrue(theme.waitForExistence(timeout: 30)); theme.tap()
+        let status = web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "ideas del tema")).firstMatch
+        let loaded = NSPredicate { _, _ in
+            guard status.exists, let from = status.label.range(of: " de "), let to = status.label.range(of: " ideas del tema") else { return false }
+            return Int(status.label[..<from.lowerBound].filter(\.isNumber)) == count && Int(status.label[from.upperBound..<to.lowerBound].filter(\.isNumber)) == count
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 120), .completed, app.debugDescription)
+        let distributing = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Distribuyendo la constelación")).firstMatch
+        XCTAssertTrue(distributing.waitForNonExistence(timeout: 90))
+        let labels = web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "fuente"))
+        for _ in 0..<5 {
+            if labels.allElementsBoundByIndex.contains(where: { $0.isHittable }) { break }
+            web.buttons["Acercar"].firstMatch.tap()
+        }
+        capture(app, "phone-graph-before-idea-selection")
+        let idea = try XCTUnwrap(labels.allElementsBoundByIndex.first(where: { $0.isHittable }), "At least one idea must be readable and selectable on the phone.\n\(app.debugDescription)")
+        try verifyPhoneIdeaSheet(app: app, web: web, idea: idea, name: "graph")
+    }
+    @MainActor
+    func testExistingMacPhoneArgumentDetailAndPinch() throws {
+        let app = try openExistingPrincipal(destination: "argument")
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        let web = app.otherElements["shared-desktop-argument"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 35))
+        XCTAssertTrue(web.buttons["Automático"].firstMatch.waitForExistence(timeout: 40))
+        let routes = web.buttons
+        let ready = NSPredicate { _, _ in routes.allElementsBoundByIndex.contains(where: { $0.label.count > 100 && $0.isHittable }) }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: 60), .completed, app.debugDescription)
+        capture(app, "phone-argument-route-catalogue")
+        let route = try XCTUnwrap(routes.allElementsBoundByIndex.first(where: { $0.label.count > 100 && $0.isHittable }))
+        XCTAssertLessThanOrEqual(route.frame.maxX, web.frame.maxX + 1, "Phone route cards must fit the width.")
+        route.tap()
+        let central = web.switches.matching(NSPredicate(format: "label BEGINSWITH %@", "IDEA CENTRAL")).firstMatch
+        XCTAssertTrue(central.waitForExistence(timeout: 60), app.debugDescription)
+        XCTAssertGreaterThanOrEqual(central.frame.width, 200, "The initial phone map must open at a readable scale.")
+        capture(app, "phone-argument-map-before-pinch")
+        let stage = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Canvas de ideas.")).firstMatch
+        XCTAssertTrue(stage.exists, app.debugDescription)
+        let zoom = web.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Zoom:"))
+        let before = try XCTUnwrap(zoom.allElementsBoundByIndex.first(where: { $0.isHittable }).flatMap { Int($0.label.filter(\.isNumber)) })
+        stage.pinch(withScale: 1.5, velocity: 1)
+        let enlarged = NSPredicate { _, _ in
+            zoom.allElementsBoundByIndex.contains(where: { $0.isHittable && (Int($0.label.filter(\.isNumber)) ?? 0) > before })
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enlarged, object: nil)], timeout: 10), .completed, "A native two-finger gesture must change the map camera.")
+        XCTAssertFalse(web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch.exists, "Pinching must not accidentally select an idea.")
+        web.buttons["Volver al inicio"].firstMatch.tap()
+        try verifyPhoneIdeaSheet(app: app, web: web, idea: central, name: "argument")
+    }
+    @MainActor private func verifyPhoneIdeaSheet(app: XCUIApplication, web: XCUIElement, idea: XCUIElement, name: String) throws {
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let turned = NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+            XCTAssertTrue(idea.isHittable, app.debugDescription)
+            let previous = idea.frame
+            idea.tap()
+            let sheet = web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch
+            XCTAssertTrue(sheet.waitForExistence(timeout: 20), app.debugDescription)
+            let close = sheet.buttons["Cerrar"].firstMatch
+            XCTAssertTrue(close.isHittable)
+            XCTAssertGreaterThanOrEqual(sheet.frame.width, web.frame.width - 2, "The phone dossier must fill the width instead of becoming a right sidebar.")
+            let evidence = sheet.staticTexts["Obras que la desarrollan"]
+            XCTAssertTrue(evidence.waitForExistence(timeout: 30), "The persisted dossier must load beyond its skeleton.\n\(app.debugDescription)")
+            XCTAssertTrue(sheet.staticTexts.allElementsBoundByIndex.contains(where: { $0.label.count > 80 }), "The actual statement must load, not just the title.")
+            capture(app, "phone-\(name)-idea-\(orientation == .portrait ? "portrait" : "landscape")")
+            close.tap()
+            XCTAssertTrue(sheet.waitForNonExistence(timeout: 10))
+            XCTAssertTrue(idea.isHittable)
+            XCTAssertEqual(idea.frame.minX, previous.minX, accuracy: 2, "Closing the detail must keep the camera position.")
+            XCTAssertEqual(idea.frame.minY, previous.minY, accuracy: 2)
+            XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        }
+    }
+    @MainActor
     func testSharedGraphLoadsRealDesktopCanvas() throws {
         for style in ["light", "dark"] {
             try verifyDesktopGraph(style: style)
@@ -962,8 +1052,10 @@ final class MobileReleaseUITests: XCTestCase {
             let research = app.buttons["nodus-nav-deepResearch"]
             XCTAssertTrue(research.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(research.isHittable, app.debugDescription); research.tap()
-            XCTAssertFalse(app.otherElements["shared-desktop-graph"].webViews.firstMatch.exists,
+            let inactiveGraph = app.otherElements["shared-desktop-graph"].webViews.firstMatch
+            XCTAssertFalse(inactiveGraph.searchFields["Filtrar temas"].exists,
                 "An inactive graph must not leave its HTML search controls in the accessibility tree.")
+            XCTAssertFalse(inactiveGraph.isHittable, "A retained invisible view cannot receive touches.")
             let web = app.webViews.firstMatch
             XCTAssertTrue(web.waitForExistence(timeout: 35), app.debugDescription)
             let back = web.buttons["Volver a la galería"].firstMatch
