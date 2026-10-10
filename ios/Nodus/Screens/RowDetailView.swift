@@ -20,6 +20,8 @@ struct RowDetailView: View {
     @State private var error: String?
     @State private var relationLimits: [String: Int] = [:]
     @State private var evidenceLimit = 40
+    @State private var supplement: CollectionDossier?
+    @State private var fromDevice = false
 
     init(
         session: SpaceSession,
@@ -87,6 +89,10 @@ struct RowDetailView: View {
             // occasional bold words in it. The distance is what says where one ends.
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 heading
+                if fromDevice {
+                    Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 if let state = row.string("mobileSyncState") {
                     Label(state == "pending" ? "Guardado en este dispositivo · pendiente de sincronizar" : "Guardado en este dispositivo · revisa la sincronización en Scriptor", systemImage: "iphone")
                         .font(.caption).foregroundStyle(.secondary)
@@ -130,7 +136,7 @@ struct RowDetailView: View {
                 case .plan(let detail): planBody(detail)
                 case .dossier(let detail):
                     if collection?.path == "passages" { passageBody(detail.primary) }
-                    else { CollectionDossierBody(session: session, dossier: detail, onOpenRelated: onOpenRelated) }
+                    else { CollectionDossierBody(session: session, dossier: detail, showConnectionState: false, onOpenRelated: onOpenRelated) }
                 // Handled above: an exam replaces the dossier rather than sitting inside it.
                 case .exam: EmptyView()
                 case nil:
@@ -143,6 +149,9 @@ struct RowDetailView: View {
                     } else {
                         fields(of: row)
                     }
+                }
+                if let supplement {
+                    CollectionDossierBody(session: session, dossier: supplement, displayPrimary: false, showConnectionState: false, onOpenRelated: onOpenRelated)
                 }
             }
             .padding(NodusSpace.page)
@@ -273,11 +282,17 @@ struct RowDetailView: View {
 
     private func workBody(_ detail: WorkDetail) -> some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
+            if session.connection.desktopPairingId != nil, let workId = detail.work.string("nodus_id") {
+                NavigationLink {
+                    SourceDocumentReader(session: session, target: SourceDocumentTarget(itemId: workId, scope: .vault, page: nil, attachmentId: nil))
+                } label: { Label("Abrir documento", systemImage: "doc.text").frame(minHeight: 44) }
+                    .accessibilityIdentifier("work-open-source-document")
+            }
             if detail.passages > 0 {
                 NodusNotice(
                     tone: .info,
                     title: detail.passages == 1 ? "1 passage extracted" : "\(detail.passages) passages extracted",
-                    message: "They are read from each idea that rests on them. The original document never leaves the desktop.",
+                    message: "Consulta los pasajes desde las ideas que sustentan o abre el documento para seguir leyendo.",
                     systemImage: "text.quote"
                 )
             }
@@ -837,39 +852,49 @@ struct RowDetailView: View {
         isLoading = true
         defer { isLoading = false }
         do {
+            let query = collection.path == "databases" ? [URLQueryItem(name: "limit", value: "50"), URLQueryItem(name: "offset", value: "0")] : []
+            let dossier = try await session.client.dossier(collection, id: id, in: session.connection.spaceId, query: query)
+            try Task.checkCancellation()
+            fromDevice = dossier.fromDevice
+            supplement = nil
             switch collection.path {
             case "ideas":
-                let detail = try await session.client.idea(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(IdeaDetail.self)
                 row = detail.idea
                 enriched = .idea(detail)
+                supplement = try dossier.supplement(excluding: ["relations", "occurrences", "evidence", "themes"])
             case "works":
-                let detail = try await session.client.work(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(WorkDetail.self)
                 row = detail.work
                 enriched = .work(detail)
+                supplement = try dossier.supplement(excluding: ["ideas", "summary", "passages"])
             case "persons":
-                let detail = try await session.client.person(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(PersonDetail.self)
                 row = detail.person
                 enriched = .person(detail)
+                supplement = try dossier.supplement(excluding: ["names", "places", "relationships", "events", "portrait"])
             case "authors":
-                let detail = try await session.client.author(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(AuthorDetail.self)
                 row = detail.author
                 enriched = .author(detail)
+                supplement = try dossier.supplement(excluding: ["works", "relations", "synthesis"])
             case "databases":
-                let detail = try await session.client.database(id, in: session.connection.spaceId, limit: 50)
+                let detail = try dossier.decode(DatabaseDetail.self)
                 row = detail.database
                 enriched = .database(detail)
+                supplement = try dossier.supplement(excluding: ["columns", "views", "options", "rows", "cells", "relations", "attachments", "total", "offset", "limit", "hasMore"])
             case "teaching-exams":
-                let detail = try await session.client.exam(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(ExamDetail.self)
                 row = detail.exam
                 enriched = .exam(detail)
             case "study-plans":
-                let detail = try await session.client.studyPlan(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(StudyPlanDetail.self)
                 row = detail.plan
                 enriched = .plan(detail)
+                supplement = try dossier.supplement(excluding: ["blocks"])
             default:
-                let detail = try await session.client.dossier(collection, id: id, in: session.connection.spaceId)
-                row = detail.primary
-                enriched = .dossier(detail)
+                row = dossier.primary
+                enriched = .dossier(dossier)
             }
             error = nil
         } catch where error.isCancellation {

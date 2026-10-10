@@ -7,6 +7,8 @@ public struct CollectionDossier: Sendable {
     public let primary: Row
     public let sections: [String: JSONValue]
     public let fromDevice: Bool
+    public let payload: JSONValue
+    private let primaryKey: String
 
     public init(collection: CollectionDescriptor, id: String, payload: JSONValue, fromDevice: Bool = false) throws {
         guard let object = payload.objectValue,
@@ -16,7 +18,22 @@ public struct CollectionDossier: Sendable {
         self.primary = Row(primary)
         self.fromDevice = fromDevice
         let primaryKey = object[collection.detailKey]?.objectValue != nil ? collection.detailKey : "document"
+        self.primaryKey = primaryKey
+        self.payload = payload
         self.sections = object.filter { $0.key != primaryKey && $0.key != "revision" && $0.value != .null }
+    }
+
+    public func decode<Model: Decodable & Sendable>(_ type: Model.Type) throws -> Model {
+        try JSONDecoder.nodus.decode(type, from: JSONEncoder.nodus.encode(payload))
+    }
+
+    /// Native domain components render their known fields. Keep every other
+    /// section beside them, using the same response and the same revision.
+    public func supplement(excluding rendered: Set<String>) throws -> Self? {
+        var remaining = sections.filter { !rendered.contains($0.key) }
+        guard !remaining.isEmpty, let id = primary.string(collection.idField) else { return nil }
+        remaining[primaryKey] = .object(primary.columns)
+        return try Self(collection: collection, id: id, payload: .object(remaining), fromDevice: fromDevice)
     }
 
     /// Only explicit domain context can turn a row into a navigable dossier.
@@ -27,6 +44,10 @@ public struct CollectionDossier: Sendable {
             "transcripts": "testimony-transcripts", "codes": "testimony-codes"]
         let specific: [String: String]
         switch collection.path {
+        case "places": specific = ["parent": "places", "children": "places", "persons": "persons"]
+        case "events": specific = ["participants": "persons", "place": "places"]
+        case "relationships": specific = ["from": "persons", "to": "persons"]
+        case "persons": specific = ["scenes": "world-scenes", "secrets": "world-secrets"]
         case "world-groups": specific = ["children": "world-groups", "members": "persons", "seat": "places"]
         case "world-scenes": specific = ["place": "places"]
         case "world-articles": specific = ["rules": "world-rules"]

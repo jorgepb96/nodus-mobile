@@ -4,6 +4,42 @@ import Testing
 
 @Suite("Complete public dossier contracts")
 struct CollectionDossierTests {
+    @Test("typed library readers retain the same response's document profile and exact evidence")
+    func librarySupplement() throws {
+        let collection = try #require(Collections["works"])
+        let profile: JSONValue = .object(["citationPolicy": .string("orientation_only"), "fields": .array([.object(["field": .string("argument"), "value": .string("Orientation only")])])])
+        let evidence: JSONValue = .array([.object(["id": .string("quote-1"), "quote": .string("Literal evidence"), "location": .string("p. 37")])])
+        let payload = JSONValue.object(["work": .object(["nodus_id": .string("chosen-work"), "title": .string("Chosen work")]), "ideas": .array([]), "summary": .null,
+            "passages": .int(1201), "revision": .string("same-response-revision"), "documentProfile": profile, "evidence": evidence])
+        let dossier = try CollectionDossier(collection: collection, id: "chosen-work", payload: payload, fromDevice: true)
+        let typed = try dossier.decode(WorkDetail.self)
+        #expect(typed.passages == 1201)
+        #expect(typed.revision == "same-response-revision")
+        let supplement = try #require(dossier.supplement(excluding: ["ideas", "summary", "passages"]))
+        #expect(supplement.fromDevice)
+        #expect(supplement.sections["documentProfile"] == profile)
+        #expect(supplement.sections["evidence"] == evidence)
+        #expect(supplement.sections["passages"] == nil)
+        #expect(try dossier.supplement(excluding: ["ideas", "summary", "passages", "documentProfile", "evidence"]) == nil)
+    }
+
+    @Test("character supplements keep scene and secret links while private annotations never become identity links")
+    func characterSupplement() throws {
+        let collection = try #require(Collections["persons"])
+        let payload = JSONValue.object(["person": .object(["person_id": .string("character"), "display_name": .string("Character")]),
+            "names": .array([]), "places": .array([]), "relationships": .array([]), "events": .array([]),
+            "abilities": .array([.object(["description": .string("Complete ability")])]),
+            "scenes": .array([.object(["scene_id": .string("scene"), "title": .string("Appearance")])]),
+            "secrets": .array([.object(["secret_id": .string("secret"), "knowledge": .object(["confidence": .double(0.75)])])])])
+        let dossier = try CollectionDossier(collection: collection, id: "character", payload: payload)
+        #expect(try dossier.decode(PersonDetail.self).person.string("person_id") == "character")
+        let extra = try #require(dossier.supplement(excluding: ["names", "places", "relationships", "events", "portrait"]))
+        #expect(extra.linkedCollection(for: "scenes")?.path == "world-scenes")
+        #expect(extra.linkedCollection(for: "secrets")?.path == "world-secrets")
+        #expect(extra.linkedCollection(for: "abilities") == nil)
+        #expect(extra.sections["secrets"]?.arrayValue?.first?.objectValue?["knowledge"]?.objectValue?["confidence"] == .double(0.75))
+    }
+
     @Test("question versions and nested content survive beyond the first page of a reader")
     func completeSections() throws {
         let collection = try #require(Collections["study-questions"])

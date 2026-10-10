@@ -144,6 +144,14 @@ acknowledgements. A restored result therefore appears even when its generation
 status text did not change. Error and generation notices reserve layout space
 above shared surfaces, and stored-result read failures stay explicit and retryable.
 
+The specialised native idea, work, person and author readers now decode their
+known models from the same complete dossier response and retain all remaining
+sections beside the existing domain components. This includes document profiles,
+literal work evidence and character context. Document profiles keep their
+orientation-only status; they do not become quotation evidence. A linked work
+offers the granted on-device source reader directly. Contract regressions are
+prepared and remain pending execution.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

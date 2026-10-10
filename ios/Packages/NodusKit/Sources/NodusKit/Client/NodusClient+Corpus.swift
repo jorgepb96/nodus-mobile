@@ -63,9 +63,9 @@ public extension NodusClient {
         return Row(row)
     }
 
-    func dossier(_ collection: CollectionDescriptor, id: String, in spaceId: String) async throws -> CollectionDossier {
+    func dossier(_ collection: CollectionDescriptor, id: String, in spaceId: String, query: [URLQueryItem] = []) async throws -> CollectionDossier {
         let response = try await perform(.init(
-            path: address.spacePath(spaceId, "/\(collection.path)/\(escape(id))"), cacheable: true
+            path: address.spacePath(spaceId, "/\(collection.path)/\(escape(id))"), query: query, cacheable: true
         ))
         return try CollectionDossier(collection: collection, id: id, payload: JSONDecoder.nodus.decode(JSONValue.self, from: response.data), fromDevice: response.fromCache)
     }

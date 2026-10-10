@@ -7,20 +7,28 @@ import SwiftUI
 struct CollectionDossierBody: View {
     let session: SpaceSession
     let dossier: CollectionDossier
+    var displayPrimary = true
+    var showConnectionState = true
     var onOpenRelated: ((CollectionDescriptor, Row) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
-            if dossier.fromDevice {
+            if showConnectionState, dossier.fromDevice {
                 Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            DossierValueView(session: session, value: .object(dossier.primary.columns), field: "", linkedCollection: nil, onOpenRelated: onOpenRelated)
+            if displayPrimary {
+                DossierValueView(session: session, value: .object(dossier.primary.columns), field: "", linkedCollection: nil, onOpenRelated: onOpenRelated)
+            }
             ForEach(dossier.sections.keys.sorted(), id: \.self) { key in
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text(Self.label(key)).font(.headline)
                         if let count = dossier.sections[key]?.arrayValue?.count { Text(count.formatted()).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    if key == "documentProfile" {
+                        Text("Guía de orientación del documento. Las citas se consultan en sus evidencias y pasajes.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     DossierValueView(session: session, value: dossier.sections[key]!, field: key, linkedCollection: dossier.linkedCollection(for: key), onOpenRelated: onOpenRelated)
                 }
@@ -29,7 +37,7 @@ struct CollectionDossierBody: View {
     }
 
     static func label(_ key: String) -> String {
-        let labels = ["versions": "Versiones", "textVersions": "Versiones del texto", "evidence": "Evidencias",
+        let labels = ["versions": "Versiones", "textVersions": "Versiones del texto", "evidence": "Evidencias", "documentProfile": "Perfil documental",
             "relations": "Relaciones", "links": "Enlaces", "annotations": "Anotaciones", "segments": "Fragmentos",
             "transcripts": "Transcripciones", "codes": "Códigos", "annotationCodes": "Codificación",
             "items": "Fuentes", "excerpts": "Extractos", "units": "Unidades descriptivas", "repository": "Repositorio",
@@ -39,7 +47,8 @@ struct CollectionDossierBody: View {
             "cast": "Personajes", "snapshots": "Historial", "images": "Imágenes", "rules": "Reglas",
             "options": "Opciones", "blocks": "Bloques", "comments": "Comentarios", "placements": "Ubicaciones",
             "calendar": "Calendario", "subjects": "Asignaturas", "plans": "Planes", "publication": "Publicación",
-            "edges": "Relaciones", "occurrences": "Procedencia"]
+            "edges": "Relaciones", "occurrences": "Procedencia", "abilities": "Habilidades", "scenes": "Apariciones en escenas",
+            "secrets": "Secretos", "relatedPersons": "Personas relacionadas", "placeLinks": "Vínculos con lugares"]
         return labels[key] ?? FieldNames.label(for: key)
     }
 }
