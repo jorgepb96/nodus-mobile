@@ -68,14 +68,21 @@ struct SharedDesktopSurface: View {
         .id("\(session.connection.id):\(surface.rawValue):\(session.aiExecutionMode.rawValue)")
         .overlay(alignment: .top) { if let issue { Text(issue).font(.caption).padding().background(.background).foregroundStyle(.red).accessibilityIdentifier("shared-surface-error") } }
         .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+            CompanionResultsButton(session: session, surface: surface, generationStatus: autonomousStatus)
             if offlineCopy {
                 Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial)
                     .accessibilityIdentifier("shared-surface-offline-copy")
             }
+            if let autonomousStatus {
+                Text(autonomousStatus).font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 12).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.thinMaterial).accessibilityIdentifier("autonomous-job-status")
+            }
+            }
         }
-        .overlay(alignment: .bottom) { if let autonomousStatus { Text(autonomousStatus).font(.caption).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)).padding().accessibilityIdentifier("autonomous-job-status") } }
         .sheet(item: $exportedURL) { ActivityShareSheet(items: [$0]) }
         .sheet(item: $savedAudio) { target in
             NavigationStack { SavedAudioPlayer(target: target, accent: session.accent).nodusModalClose(accent: session.accent) }

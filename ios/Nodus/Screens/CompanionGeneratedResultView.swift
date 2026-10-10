@@ -10,7 +10,6 @@ struct CompanionGeneratedResultView: View {
     @State private var synchronizedRequest: DesktopJobLedger.Request?
     private var current: DesktopJobLedger.Request { synchronizedRequest ?? request }
     private var value: [String: JSONValue] { (current.checkpoint ?? checkpoint).objectValue ?? [:] }
-    private var input: [String: JSONValue] { value["request"]?.objectValue ?? [:] }
     private var markdown: String? {
         switch current.method {
         case "saveDictionaryGeneratedVersion": return value["definition"]?.objectValue?["contentMarkdown"]?.stringValue
@@ -19,11 +18,7 @@ struct CompanionGeneratedResultView: View {
         default: return nil
         }
     }
-    private var title: String {
-        if let entry = value["context"]?.objectValue?["entry"]?.objectValue,
-           let term = entry["name"]?.stringValue ?? entry["term"]?.stringValue ?? entry["title"]?.stringValue { return term }
-        return input["sourceTitle"]?.stringValue ?? value["plan"]?.objectValue?["title"]?.stringValue ?? String(localized: "Resultado guardado")
-    }
+    private var title: String { CompanionResultCatalogue.title(current) }
     var body: some View {
         Group {
             if current.method == "saveImmersionGeneratedSession", let plan = value["plan"],

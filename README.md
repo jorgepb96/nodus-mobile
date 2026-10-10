@@ -125,6 +125,13 @@ evidence and relation lists offer more items instead of silently truncating at
 40 or 60. These changes and their prepared contract regressions still await the
 consolidated local build, test and visual acceptance campaign.
 
+The shared dictionary, Scriptor, research reader and immersion surfaces expose
+their completed phone results through a native results sheet. It reads the local
+encrypted ledger without contacting the Mac, retains rejected results for review
+and shows pending versus acknowledged synchronization. Generation status uses a
+reserved strip above the surface so it does not cover the chat/editor composer.
+This implementation is not yet an executed acceptance result.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile
