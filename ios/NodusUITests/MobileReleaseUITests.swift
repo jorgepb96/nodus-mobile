@@ -1383,19 +1383,23 @@ final class MobileReleaseUITests: XCTestCase {
         let entry = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
         XCTAssertTrue(entry.waitForExistence(timeout: 30), app.debugDescription); entry.tap()
         openDictionaryEntryOptions(in: web)
-        let generate = web.buttons["Generar"]
+        let generate = web.buttons.matching(NSPredicate(format: "label IN %@", ["Generar", "Regenerar"])).firstMatch
         XCTAssertTrue(generate.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(generate.isEnabled)
         capture(app, "autonomous-dictionary-before-generation"); generate.tap()
+        let running = web.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Generando")).firstMatch
+        XCTAssertTrue(running.waitForExistence(timeout: 45), "The requested definition must actually enter generation.\n\(app.debugDescription)")
+        capture(app, "autonomous-dictionary-generation-running")
         let regenerate = web.buttons["Regenerar"]
         let completed = NSPredicate { _, _ in
             let status = app.staticTexts["autonomous-job-status"]
-            return regenerate.exists || (status.exists && status.label.contains("Error")) || web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "requiere un proveedor web")).firstMatch.exists
+            return (regenerate.exists && regenerate.isEnabled) || (status.exists && status.label.contains("Error")) || web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "requiere un proveedor web")).firstMatch.exists
                 || web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "La generación no pudo completarse")).firstMatch.exists
         }
         let completion = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: completed, object: app)], timeout: 600)
         capture(app, "autonomous-dictionary-after-generation-request")
         XCTAssertEqual(completion, .completed, app.debugDescription)
-        XCTAssertTrue(regenerate.exists, "A phone-owned generation must finish and become the current persisted version.\n\(app.debugDescription)")
+        XCTAssertTrue(regenerate.exists && regenerate.isEnabled, "A phone-owned generation must finish and become the current persisted version.\n\(app.debugDescription)")
         XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
         capture(app, "autonomous-dictionary-generated")
         web.buttons["Versiones"].tap()
@@ -1519,6 +1523,15 @@ final class MobileReleaseUITests: XCTestCase {
         let editor = web.textViews["Editor del documento"]
         XCTAssertTrue(editor.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(editor.isHittable, app.debugDescription)
+        for label in ["Contexto", "Foco", "Deshacer", "Rehacer", "Citar fuente", "Añadir comentario"] {
+            let control = web.buttons[label].firstMatch
+            XCTAssertTrue(control.exists, label)
+            XCTAssertGreaterThanOrEqual(control.frame.width, 44, label)
+            XCTAssertGreaterThanOrEqual(control.frame.height, 44, label)
+        }
+        let prompts = web.switches["Prompts de mejora"]
+        XCTAssertTrue(prompts.exists)
+        XCTAssertGreaterThanOrEqual(prompts.frame.width, 44)
         capture(app, "live-scriptor-before-edit")
         let paragraph = web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "escrito en el Mac para comprobar la edición móvil.")).firstMatch
         XCTAssertTrue(paragraph.exists, app.debugDescription)
@@ -1893,10 +1906,11 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testLiveDeepResearchComposerAndMacModels() throws {
-        _ = try liveDeepResearchComposerSelectingMacModel()
+        let app = try liveDeepResearchComposerSelectingMacModel()
+        defer { app.terminate() }
     }
     @MainActor private func liveDeepResearchComposerSelectingMacModel() throws -> XCUIApplication {
-        let app = try pairLive(route: "settings")
+        let app = try openExistingPrincipal(destination: "settings")
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.waitForExistence(timeout: 20)); mode.tap()
@@ -1906,7 +1920,7 @@ final class MobileReleaseUITests: XCTestCase {
         let research = app.buttons["nodus-nav-deepResearch"]
         for _ in 0..<6 { if research.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(research.isHittable); research.tap()
-        let web = app.webViews.firstMatch
+        let web = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
         let newReport = web.buttons["Nuevo informe"].firstMatch
         XCTAssertTrue(newReport.waitForExistence(timeout: 60))
         XCTAssertTrue(newReport.isHittable && web.frame.contains(newReport.frame))
