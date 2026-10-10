@@ -7,12 +7,12 @@ public enum AcademicTranslation {
         case empty, protectedContent, numbers, tables, headings, oversizedBlock
         public var errorDescription: String? {
             switch self {
-            case .empty: "The translation is empty. The saved copy was preserved."
-            case .protectedContent: "The translation changed a citation, link, formula or code. The saved copy was preserved."
-            case .numbers: "The translation changed numbers or dates. The saved copy was preserved."
-            case .tables: "The translation changed a table. The saved copy was preserved."
-            case .headings: "The translation changed the document structure. The saved copy was preserved."
-            case .oversizedBlock: "A protected block is too large to translate safely. The saved copy was preserved."
+            case .empty: String(localized: "The translation is empty. The saved copy was preserved.")
+            case .protectedContent: String(localized: "The translation changed a citation, link, formula or code. The saved copy was preserved.")
+            case .numbers: String(localized: "The translation changed numbers or dates. The saved copy was preserved.")
+            case .tables: String(localized: "The translation changed a table. The saved copy was preserved.")
+            case .headings: String(localized: "The translation changed the document structure. The saved copy was preserved.")
+            case .oversizedBlock: String(localized: "A protected block is too large to translate safely. The saved copy was preserved.")
             }
         }
     }

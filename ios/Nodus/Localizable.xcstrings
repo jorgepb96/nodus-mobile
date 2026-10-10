@@ -26886,6 +26886,66 @@
           }
         }
       }
+    },
+    "The translation is empty. The saved copy was preserved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La traducción está vacía. Se ha conservado la copia guardada."
+          }
+        }
+      }
+    },
+    "The translation changed a citation, link, formula or code. The saved copy was preserved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La traducción ha alterado una cita, un enlace, una fórmula o un bloque de código. Se ha conservado la copia guardada."
+          }
+        }
+      }
+    },
+    "The translation changed numbers or dates. The saved copy was preserved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La traducción ha alterado cifras o fechas. Se ha conservado la copia guardada."
+          }
+        }
+      }
+    },
+    "The translation changed a table. The saved copy was preserved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La traducción ha alterado una tabla. Se ha conservado la copia guardada."
+          }
+        }
+      }
+    },
+    "The translation changed the document structure. The saved copy was preserved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La traducción ha alterado la estructura del documento. Se ha conservado la copia guardada."
+          }
+        }
+      }
+    },
+    "A protected block is too large to translate safely. The saved copy was preserved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un bloque protegido es demasiado largo para traducirlo con seguridad. Se ha conservado la copia guardada."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

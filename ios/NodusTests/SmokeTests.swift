@@ -131,7 +131,7 @@ struct MobileSurfaceStorageTests {
     }
 }
 
-private final class CompanionReconnectProtocol: URLProtocol, @unchecked Sendable {
+private nonisolated final class CompanionReconnectProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "companion.test" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
