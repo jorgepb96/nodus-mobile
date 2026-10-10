@@ -1539,7 +1539,7 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(prompts.exists)
         XCTAssertGreaterThanOrEqual(prompts.frame.width, 44)
         capture(app, "live-scriptor-before-edit")
-        let paragraph = web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "escrito en el Mac para comprobar la edición móvil.")).firstMatch
+        let paragraph = web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Frase de prueba enviada desde Desktop al movil.")).firstMatch
         XCTAssertTrue(paragraph.exists, app.debugDescription)
         for _ in 0..<8 { if paragraph.isHittable { break }; web.swipeUp() }
         XCTAssertTrue(paragraph.isHittable, app.debugDescription)
