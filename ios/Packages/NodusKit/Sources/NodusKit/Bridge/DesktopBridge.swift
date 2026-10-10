@@ -416,29 +416,35 @@ public actor DesktopBridgeClient {
     /// grants, invalid certificates and server errors always remain errors.
     public func corpusWithOfflineCopy(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", body: JSONValue? = nil, percentEncoded: Bool = false, cache suppliedCache: PrivateBridgeCache? = nil) async throws -> (response: DesktopBridgeResponse, fromCache: Bool) {
         guard method == "GET" else { return (try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded), false) }
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
         let cache = try suppliedCache ?? store.offlineCache(for: pairing)
         var address = URLComponents(); address.path = try Self.corpusPath(vaultId: vaultId, path: path, percentEncoded: percentEncoded); address.queryItems = query.isEmpty ? nil : query
         let identity = "corpus-http:" + (address.string ?? "")
+        let retained = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: identity)
+        let selectedIdeas = path.split(separator: "/").first == "ideas"
+            ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
         do {
-            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded)
+            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas ? 4 : nil)
             if response.status == 200 { try await cache.store(JSONEncoder.nodus.encode(response), vaultId: vaultId, domain: .corpus, recordId: identity) }
             return (response, false)
         } catch {
             guard let offline = error as? URLError,
-                  [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut].contains(offline.code),
-                  let bytes = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: identity) else { throw error }
+                  [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut].contains(offline.code) else { throw error }
+            if selectedIdeas, let copy = try await CompanionIdeaCopy.downloaded(cache: cache, vaultId: vaultId),
+               let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
+            guard let bytes = retained else { throw error }
             return (try JSONDecoder.nodus.decode(DesktopBridgeResponse.self, from: bytes), true)
         }
     }
 
-    public func corpus(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", body: JSONValue? = nil, percentEncoded: Bool = false) async throws -> DesktopBridgeResponse {
+    public func corpus(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", body: JSONValue? = nil, percentEncoded: Bool = false, timeout: TimeInterval? = nil) async throws -> DesktopBridgeResponse {
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         let readQuery = method == "POST" && ["search/semantic", "context"].contains(path)
         guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), ["GET", "HEAD"].contains(method) || readQuery else { throw DesktopBridgeError.permissionDenied }
         if readQuery {
             guard let body, body.objectValue != nil, try JSONEncoder.nodus.encode(body).count <= 256 * 1024 else { throw DesktopBridgeError.malformedResponse }
         } else if body != nil { throw DesktopBridgeError.permissionDenied }
-        return try await raw(path: Self.corpusPath(vaultId: vaultId, path: path, percentEncoded: percentEncoded), query: query, method: method, body: body)
+        return try await raw(path: Self.corpusPath(vaultId: vaultId, path: path, percentEncoded: percentEncoded), query: query, method: method, body: body, timeout: timeout)
     }
 
     func fileRequest(vaultId: String, kind: DesktopBridgeFileKind, id: String, action: String, query: [URLQueryItem] = []) async throws -> DesktopBridgeResponse {
@@ -461,11 +467,12 @@ public actor DesktopBridgeClient {
         return "/bridge/v2/vaults/\(vault)/corpus/" + parts.map { $0.addingPercentEncoding(withAllowedCharacters: allowed) ?? "" }.joined(separator: "/")
     }
 
-    private func raw(path: String, query: [URLQueryItem] = [], method: String, body: JSONValue? = nil) async throws -> DesktopBridgeResponse {
+    private func raw(path: String, query: [URLQueryItem] = [], method: String, body: JSONValue? = nil, timeout: TimeInterval? = nil) async throws -> DesktopBridgeResponse {
         guard var url = URLComponents(string: pairing.origin + path) else { throw DesktopBridgeError.invalidOrigin }
         url.queryItems = query.isEmpty ? nil : query
         guard let address = url.url else { throw DesktopBridgeError.invalidOrigin }
         var request = URLRequest(url: address)
+        if let timeout { request.timeoutInterval = timeout }
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {

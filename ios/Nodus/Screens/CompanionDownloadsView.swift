@@ -32,6 +32,11 @@ struct CompanionDownloadsView: View {
                     Text("Las copias temporales caducan. Los borradores y cambios pendientes se conservan siempre. Los archivos externos y las imágenes enlazadas requieren su propia copia.")
                 }
                 Section {
+                    if session.vaultType == .academic {
+                        NavigationLink("Ideas y conexiones del corpus") {
+                            CompanionIdeaDownloadsView(session: session)
+                        }.accessibilityIdentifier("companion-download-ideas")
+                    }
                     NavigationLink("Informes, diccionario e inmersiones") {
                         CompanionResearchDownloadsView(session: session)
                     }.accessibilityIdentifier("companion-download-research")

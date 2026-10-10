@@ -46,6 +46,12 @@ academic catalogue and graph. A linked corpus revision refreshes mounted graph, 
 research and Scriptor catalogues without replacing the web view or editor. Graph source and
 background caches are invalidated together; saved camera, tabs and exploration are retained.
 These freshness and visibility changes also await the consolidated build and acceptance run.
+Selected academic ideas now have a dedicated download picker. Copies retain complete dossiers,
+evidence and paginated direct graph neighbourhoods, with search, ordering and native-reader
+fallback. A source revision change rejects the download instead of committing inconsistent
+records. Independent selections combine without resurrecting relations removed from a newer
+copy. Neighbour summaries never impersonate a downloaded full dossier or neighbourhood. This
+path is implemented locally and awaits compilation, contracts and the final visual campaign.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;

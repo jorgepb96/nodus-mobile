@@ -89,6 +89,13 @@ struct IdeasWorkspaceView: View {
         .nodusPageFunctions(accent: session.accent)
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) { catalogueControls }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if page?.fromDevice == true {
+                Label("Sin conexión · contenido de este dispositivo", systemImage: "iphone")
+                    .font(.caption).foregroundStyle(.secondary).padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial)
+            }
+        }
         .task(id: loadID) { await reload() }
         .refreshable { await reload() }
     }
@@ -749,7 +756,7 @@ private extension IdeaWorkspacePage {
         let appended = left.items + right.items.filter { !existing.contains($0.id) }
         return Self(
             items: appended, total: right.total, offset: 0, limit: appended.count,
-            hasMore: right.hasMore, revision: right.revision
+            hasMore: right.hasMore, revision: right.revision, fromDevice: right.fromDevice
         )
     }
 }

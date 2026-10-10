@@ -513,15 +513,20 @@ private struct DesktopWebView: UIViewRepresentable {
                                 ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: "companion:dictionary:v1") : false
                             let hasVerification = method == "verifyCitations" && args.count == 1
                                 ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: "companion:citations:v1") : false
+                            let hasIdeas = CompanionIdeaCopy.operationMethods.contains(method)
+                                ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
                             do {
-                                value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification ? nil : 4)
+                                value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification && !hasIdeas ? nil : 4)
                                 onOfflineCopy(false)
                                 if Self.operationDomains[method] == "corpus" { try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key) }
                             } catch {
                                 guard Self.operationDomains[method] == "corpus", isPrivateBridgeOffline(error) else { throw error }
                                 let catalogue = hasCatalogue ? try await companionDownloadedCatalogue(cache, vaultId: vaultId, method: method) : nil
                                 let verification = hasVerification ? try await companionCitationVerification(cache, vaultId: vaultId, refs: args[0]) : nil
+                                let ideaCopy = hasIdeas ? try await CompanionIdeaCopy.downloaded(cache: cache, vaultId: vaultId) : nil
+                                let idea = try ideaCopy?.operation(method, args: args)
                                 if let catalogue { value = catalogue }
+                                else if let idea { value = idea }
                                 else if let cached { value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached) }
                                 else if let verification { value = verification }
                                 else { throw error }

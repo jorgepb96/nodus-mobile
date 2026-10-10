@@ -22,17 +22,19 @@ public struct IdeaWorkspacePage: Sendable, Hashable, Codable {
     public let limit: Int
     public let hasMore: Bool
     public let revision: String?
+    public let fromDevice: Bool?
 
-    public init(items: [IdeaWorkspaceItem], total: Int, offset: Int, limit: Int, hasMore: Bool, revision: String?) {
+    public init(items: [IdeaWorkspaceItem], total: Int, offset: Int, limit: Int, hasMore: Bool, revision: String?, fromDevice: Bool? = nil) {
         self.items = items
         self.total = total
         self.offset = offset
         self.limit = limit
         self.hasMore = hasMore
         self.revision = revision
+        self.fromDevice = fromDevice
     }
 
-    private enum CodingKeys: String, CodingKey { case items = "ideas", total, offset, limit, hasMore, revision }
+    private enum CodingKeys: String, CodingKey { case items = "ideas", total, offset, limit, hasMore, revision, fromDevice }
 }
 
 public enum AuthorWorkspaceSort: String, Sendable, Hashable, Codable, CaseIterable {
@@ -248,7 +250,9 @@ public extension NodusClient {
             ],
             cacheable: true
         ))
-        return try decode(IdeaWorkspacePage.self, from: response)
+        let page = try decode(IdeaWorkspacePage.self, from: response)
+        return IdeaWorkspacePage(items: page.items, total: page.total, offset: page.offset, limit: page.limit,
+            hasMore: page.hasMore, revision: page.revision, fromDevice: response.fromCache)
     }
 
     func workspaceAuthors(

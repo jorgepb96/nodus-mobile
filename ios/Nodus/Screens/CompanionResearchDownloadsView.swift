@@ -234,8 +234,9 @@ struct CompanionResearchDownloadsView: View {
                     let image = try await fetch("getDecorativeImage", [.string(entity), .string(id)])
                     if image.objectValue?["status"]?.stringValue == "ready" {
                         let full = try await fetch("getDecorativeImageDataUrl", [.string(entity), .string(id), .bool(false)])
+                        try validateImage(full)
                         try add("getDecorativeImageDataUrl", [.string(entity), .string(id)], full)
-                        _ = try await fetch("getDecorativeImageDataUrl", [.string(entity), .string(id), .bool(true)])
+                        try validateImage(try await fetch("getDecorativeImageDataUrl", [.string(entity), .string(id), .bool(true)]))
                     }
                 }
                 progress = (index + 1, chosen.count)
@@ -276,6 +277,11 @@ struct CompanionResearchDownloadsView: View {
         } catch is CancellationError { issue = "Descarga cancelada. No se ha creado una copia incompleta." }
         catch let error as URLError where error.code == .cancelled { issue = "Descarga cancelada. No se ha creado una copia incompleta." }
         catch { issue = error.localizedDescription }
+    }
+    private func validateImage(_ value: JSONValue) throws {
+        guard case .string(let url) = value, let comma = url.firstIndex(of: ","),
+              url[..<comma].hasPrefix("data:image/"), url[..<comma].hasSuffix(";base64"),
+              let bytes = Data(base64Encoded: String(url[url.index(after: comma)...])), !bytes.isEmpty else { throw DesktopBridgeError.malformedResponse }
     }
 }
 
