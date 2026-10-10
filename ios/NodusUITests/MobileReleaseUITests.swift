@@ -157,7 +157,7 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 120), .completed, app.debugDescription)
         let distributing = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Distribuyendo la constelación")).firstMatch
         XCTAssertTrue(distributing.waitForNonExistence(timeout: 90))
-        let labels = web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "fuente"))
+        let labels = web.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "fuente"))
         for _ in 0..<5 {
             if labels.allElementsBoundByIndex.contains(where: { $0.isHittable }) { break }
             web.buttons["Acercar"].firstMatch.tap()
@@ -206,6 +206,7 @@ final class MobileReleaseUITests: XCTestCase {
             }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
             XCTAssertTrue(idea.isHittable, app.debugDescription)
+            capture(app, "phone-\(name)-before-detail-\(orientation == .portrait ? "portrait" : "landscape")")
             let previous = idea.frame
             idea.tap()
             let sheet = web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch
