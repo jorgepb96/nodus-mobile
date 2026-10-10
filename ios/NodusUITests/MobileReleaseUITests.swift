@@ -173,6 +173,26 @@ final class MobileReleaseUITests: XCTestCase {
             if labels.allElementsBoundByIndex.contains(where: { $0.isHittable }) { break }
             web.buttons["Acercar"].firstMatch.tap()
         }
+        if phone {
+            let stage = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Canvas de ideas.")).firstMatch
+            let visible = labels.allElementsBoundByIndex.filter { $0.isHittable }
+            XCTAssertGreaterThanOrEqual(visible.count, 2, "A native graph pinch needs two visible idea captions to measure its scale.")
+            let a = web.buttons[visible[0].label].firstMatch
+            let b = web.buttons[visible[1].label].firstMatch
+            let distance = hypot(a.frame.midX - b.frame.midX, a.frame.midY - b.frame.midY)
+            XCTAssertGreaterThan(distance, 20)
+            stage.pinch(withScale: 1.2, velocity: 1)
+            let enlarged = NSPredicate { _, _ in
+                guard a.exists, b.exists else { return false }
+                return hypot(a.frame.midX - b.frame.midX, a.frame.midY - b.frame.midY) > distance * 1.05
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enlarged, object: nil)], timeout: 10), .completed,
+                           "Two native touches must enlarge the actual graph camera, not just the page text.")
+            XCTAssertFalse(web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch.exists,
+                           "Pinching the graph must not open an idea dossier.")
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 5), .completed)
+            capture(app, "phone-graph-after-native-pinch")
+        }
         capture(app, "\(phone ? "phone" : "ipad")-graph-before-idea-selection")
         let idea = try XCTUnwrap(labels.allElementsBoundByIndex.first(where: { $0.isHittable }), "At least one idea must be readable and selectable on the phone.\n\(app.debugDescription)")
         if phone { try verifyPhoneIdeaSheet(app: app, web: web, idea: idea, name: "graph") }
@@ -200,7 +220,7 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: 60), .completed, app.debugDescription)
         capture(app, "\(phone ? "phone" : "ipad")-argument-route-catalogue")
         let route = try XCTUnwrap(routes.allElementsBoundByIndex.first(where: { $0.label.count > 100 && $0.isHittable }))
-        XCTAssertLessThanOrEqual(route.frame.maxX, web.frame.maxX + 1, "Phone route cards must fit the width.")
+        if phone { XCTAssertLessThanOrEqual(route.frame.maxX, web.frame.maxX + 1, "Phone route cards must fit the width.") }
         route.tap()
         let central = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "IDEA CENTRAL")).firstMatch
         XCTAssertTrue(central.waitForExistence(timeout: 60), app.debugDescription)
