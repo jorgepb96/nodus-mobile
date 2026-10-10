@@ -30,7 +30,7 @@ public struct DesktopBridgeFileDescriptor: Codable, Sendable, Equatable {
     public let sha256: String
     public let chunkSize: Int
     func validate() throws {
-        guard byteSize >= 0, chunkSize > 0, chunkSize <= 4 * 1024 * 1024,
+        guard !id.isEmpty, byteSize >= 0, chunkSize > 0, chunkSize <= 4 * 1024 * 1024,
               sha256.count == 64, sha256.allSatisfy(\.isHexDigit),
               !filename.isEmpty, filename != ".", filename != "..",
               !filename.contains("/"), !filename.contains("\\") else { throw DesktopBridgeError.malformedResponse }

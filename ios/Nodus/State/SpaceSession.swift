@@ -348,6 +348,18 @@ final class SpaceSession {
         defer { isSynchronizingCompanionChanges = false }
         if let vaultId, let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
             try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) }
+            // Portable results synchronize in either mode. New Mac generation
+            // resumes only while live remains explicitly selected, including
+            // when the user changes modes during the preceding network probe.
+            if let pairingId = connection.desktopPairingId,
+               let ledger = try? await DesktopJobLedgers.shared.ledger(pairingId: pairingId, vaultId: vaultId) {
+                try? await ledger.synchronize(list: { try await bridge.listJobs(vaultId: vaultId) }, canSubmit: { request in
+                    if DesktopBridgeClient.providerFreeJobMethods.contains(request.method) { return true }
+                    return await MainActor.run { self.aiExecutionMode == .live }
+                }, submit: { request in
+                    try await bridge.submitJob(vaultId: vaultId, method: request.method, args: request.args, idempotencyKey: request.id)
+                })
+            }
         }
         let directory = mirrorDirectory
         guard MutationOutbox.exists(spaceId: connection.storageId, directory: directory),

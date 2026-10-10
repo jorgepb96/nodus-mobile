@@ -31,6 +31,10 @@ Dictionary copies include local filters, complete paginated evidence and version
 selections are combined. Originals, attachments and recordings can be retained separately for
 7 or 30 days and reopened from device storage. These additions await the final build and
 acceptance campaign; other-domain catalogues and the complete release gate remain pending.
+Open file previews also share a bounded transient budget and release their temporary plaintext
+files when the last reader closes. Pending Mac requests reuse their original identities after
+reconnection; portable result saves synchronize in either mode, while queued Mac generation
+requires live to remain selected. Failed or interrupted generations are not restarted automatically.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;
@@ -73,7 +77,9 @@ parity or TestFlight. Private fixtures, screenshots, logs and `.xcresult` bundle
 
 GitHub Actions remains enabled in both repositories. At the user's request, implementation
 continues without running workflows or an intermediate test campaign. Defer the complete checks
-until implementation is ready; use `[skip ci]` on interim pushes to the open draft PRs.
+until implementation is ready; use `[skip ci]` on pushes to the open draft PRs. The privileged CLA
+workflow uses the default branch and does not respect that marker, so consolidate remote updates
+and cancel any automatic CLA runs for this branch rather than disabling repository Actions.
 
 ## Licence
 

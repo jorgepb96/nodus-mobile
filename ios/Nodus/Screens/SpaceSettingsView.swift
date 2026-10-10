@@ -672,6 +672,7 @@ private struct CompanionCopySettings: View {
     @Binding var showingDownload: Bool
     @State private var packs: [PrivateBridgeCache.ReadPack] = []
     @State private var preview: URL?
+    @State private var previewCopy: PrivateBridgeFileCopy?
     @State private var openingFile = false
     var body: some View {
         Section {
@@ -692,7 +693,10 @@ private struct CompanionCopySettings: View {
                                 openingFile = true
                                 Task {
                                     defer { openingFile = false }
-                                    do { preview = try await loadPrivateBridgeFile(session, kind: file.kind, id: file.id).url }
+                                    do {
+                                        let copy = try await loadPrivateBridgeFile(session, kind: file.kind, id: file.id)
+                                        previewCopy = copy; preview = copy.url
+                                    }
                                     catch { issue = error.localizedDescription }
                                 }
                             }.disabled(openingFile)
@@ -716,6 +720,7 @@ private struct CompanionCopySettings: View {
         }
         .task { await refresh() }
         .quickLookPreview($preview)
+        .onChange(of: preview) { _, value in if value == nil { previewCopy = nil } }
         .onChange(of: showingDownload) { _, shown in if !shown { Task { await refresh() } } }
         .confirmationDialog("Free space used by consulted content?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Free space", role: .destructive) {

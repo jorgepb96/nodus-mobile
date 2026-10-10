@@ -15,6 +15,7 @@ public actor DesktopJobLedger {
     private let cache: PrivateBridgeCache
     private let vaultId: String
     private var requests: [String: Request]
+    private var isSynchronizing = false
     init(cache: PrivateBridgeCache, vaultId: String, data: Data?) throws {
         self.cache = cache; self.vaultId = vaultId
         requests = try data.map { try JSONDecoder.nodus.decode([String: Request].self, from: $0) } ?? [:]
@@ -32,7 +33,8 @@ public actor DesktopJobLedger {
         return request
     }
     public func update(id: String, job: DesktopBridgeJob) async throws {
-        guard var request = requests[id] else { throw DesktopBridgeError.malformedResponse }
+        guard var request = requests[id], job.vaultId == vaultId, job.method == request.method,
+              request.jobId == nil || request.jobId == job.id else { throw DesktopBridgeError.malformedResponse }
         if request.jobId == job.id, request.state == job.state.rawValue, request.issue == job.error { return }
         request.jobId = job.id; request.state = job.state.rawValue; request.issue = job.error; requests[id] = request
         try await persist()
@@ -40,6 +42,38 @@ public actor DesktopJobLedger {
     public func disconnected(id: String, issue: String) async throws {
         guard var request = requests[id] else { return }
         request.issue = issue; requests[id] = request; try await persist()
+    }
+    /// A real successful Mac probe may recover previously authorised sends.
+    /// Accepted jobs are only observed; failed/interrupted work is never restarted
+    /// automatically. A lost acknowledgement reuses the original request identity.
+    public func synchronize(
+        list: @Sendable () async throws -> [DesktopBridgeJob],
+        canSubmit: @Sendable (Request) async -> Bool = { _ in true },
+        submit: @Sendable (Request) async throws -> DesktopBridgeJob
+    ) async throws {
+        guard !isSynchronizing, requests.values.contains(where: { ["pending", "accepted", "running", "saved"].contains($0.state) }) else { return }
+        isSynchronizing = true
+        defer { isSynchronizing = false }
+        let remote = try await list()
+        for request in all() {
+            try Task.checkCancellation()
+            if let jobId = request.jobId {
+                if let job = remote.first(where: { $0.id == jobId }) { try await update(id: request.id, job: job) }
+                // A known job absent from the server listing must not silently
+                // become a new generation; retain its identity for explicit recovery.
+                continue
+            }
+            guard requests[request.id]?.state == "pending" else { continue }
+            guard await canSubmit(request) else { continue }
+            do {
+                let job = try await submit(request)
+                try await update(id: request.id, job: job)
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+                try await disconnected(id: request.id, issue: error.localizedDescription)
+                throw error
+            }
+        }
     }
     private func persist() async throws {
         let data = try JSONEncoder.nodus.encode(requests)

@@ -199,7 +199,9 @@ struct CompanionResearchDownloadsView: View {
                     guard detail.objectValue?["entry"]?.objectValue?["id"]?.stringValue == id else { throw DesktopBridgeError.malformedResponse }
                     let evidence = try await completePages(client: client, vault: vault, method: "listDictionaryEvidence", request: ["entryId": .string(id)], maxBytes: max(0, PrivateBridgeCache.defaultReadLimitBytes - bytes - dictionaryBytes))
                     let versions = try await fetch("listDictionaryVersions", [.string(id)])
-                    guard versions.arrayValue != nil, evidence.allSatisfy({ $0.objectValue?["entryId"]?.stringValue == id }) else { throw DesktopBridgeError.malformedResponse }
+                    guard let versionRows = versions.arrayValue,
+                          versionRows.allSatisfy({ $0.objectValue?["entryId"]?.stringValue == id }),
+                          evidence.allSatisfy({ $0.objectValue?["entryId"]?.stringValue == id }) else { throw DesktopBridgeError.malformedResponse }
                     let entry: JSONValue = .object(["detail": detail, "evidence": .array(evidence), "versions": versions])
                     dictionaryBytes += try JSONEncoder.nodus.encode(entry).count
                     guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }

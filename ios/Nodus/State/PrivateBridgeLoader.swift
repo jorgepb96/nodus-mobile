@@ -102,6 +102,7 @@ struct PrivateBridgeFileCopy {
     let url: URL
     let descriptor: DesktopBridgeFileDescriptor
     let offline: Bool
+    let lease: PrivateBridgeFileLease
 }
 
 @MainActor
@@ -132,11 +133,8 @@ func loadPrivateBridgeFile(_ session: SpaceSession, kind: DesktopBridgeFileKind,
               SHA256.hash(data: downloaded).map({ String(format: "%02x", $0) }).joined() == file.sha256.lowercased() else { throw error }
         descriptor = file; bytes = downloaded; offline = true
     }
-    let folder = URL.temporaryDirectory.appendingPathComponent("Nodus-private-files/\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let url = folder.appendingPathComponent(URL(fileURLWithPath: descriptor.filename).lastPathComponent)
-    try bytes.write(to: url, options: [.atomic, .completeFileProtection])
-    return PrivateBridgeFileCopy(url: url, descriptor: descriptor, offline: offline)
+    let lease = try PrivateBridgeFileLease.write(bytes, filename: descriptor.filename)
+    return PrivateBridgeFileCopy(url: lease.url, descriptor: descriptor, offline: offline, lease: lease)
 }
 
 /// Reads a fixed private domain directly from its paired Mac and keeps only an encrypted,

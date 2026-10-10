@@ -24,7 +24,7 @@ struct CompanionFileDownloadButton: View {
                 .accessibilityIdentifier("companion-file-download-\(copy.descriptor.kind.rawValue)-\(copy.descriptor.id)")
             if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
         }
-        .id(copy.descriptor.sha256)
+        .onChange(of: copy.descriptor.sha256) { _, _ in saved = false; issue = nil }
     }
     private func save(days: Int) {
         saving = true; issue = nil
