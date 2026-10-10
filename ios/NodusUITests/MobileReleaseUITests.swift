@@ -926,6 +926,25 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, downloaded ? "offline-source-original-after-attachment" : "live-source-original-after-attachment")
     }
     @MainActor
+    func testPhoneDictionaryCatalogueBadgesInBothOrientations() throws {
+        let app = try openExistingPrincipal(destination: "dictionary")
+        defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
+        let web = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
+        let catalogue = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Diccionario (")).firstMatch
+        if catalogue.waitForExistence(timeout: 20), catalogue.isHittable { catalogue.tap() }
+        let search = web.textFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 25))
+        let ready = NSPredicate { _, _ in !web.staticTexts["Cargando entradas…"].exists }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: 40), .completed)
+        search.tap(); search.typeText("Propaganda\n")
+        XCTAssertTrue(web.staticTexts["ACTIVO"].waitForExistence(timeout: 20), app.debugDescription)
+        capture(app, "phone-dictionary-compact-badges-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(web.staticTexts["ACTIVO"].waitForExistence(timeout: 15))
+        capture(app, "phone-dictionary-compact-badges-landscape")
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+    }
+    @MainActor
     func testLiveDictionarySearchEvidenceAndVersions() throws {
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_DICTIONARY_NAME"], "A saved definition with evidence and versions is required.")
         let relatedName = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_DICTIONARY_RELATED_NAME"], "The related entry must come from the actual lab.")
