@@ -1794,9 +1794,15 @@ final class MobileReleaseUITests: XCTestCase {
         defer { app.terminate() }
         let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 45))
-        let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
-        if note.waitForExistence(timeout: 8) { note.tap() }
         let editor = web.textViews["Editor del documento"]
+        if !editor.exists {
+            let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+            guard note.waitForExistence(timeout: 30) else {
+                capture(app, "scriptor-offline-catalogue-unavailable")
+                XCTFail("The selected offline document must appear in its catalogue.\n\(app.debugDescription)"); return
+            }
+            note.tap()
+        }
         guard editor.waitForExistence(timeout: 30) else { XCTFail("The chosen offline document must open.\n\(app.debugDescription)"); return }
         let paragraph = web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Frase de prueba enviada desde Desktop al movil.")).firstMatch
         guard paragraph.exists else { XCTFail("The downloaded paragraph is missing."); return }
