@@ -36,7 +36,9 @@ import Observation
 @Observable
 @MainActor
 final class CloudBackup {
-    static let shared = CloudBackup()
+    // Mobile 0.1.0 synchronises only through the linked Mac. Keep legacy CloudKit
+    // code and local files recoverable, without opening or deleting cloud records.
+    static let shared = CloudBackup(allowSync: false)
 
     enum Kind: String, Sendable, CaseIterable {
         case chat, report
@@ -82,6 +84,7 @@ final class CloudBackup {
     private let defaults: UserDefaults
     private let root: URL
     private let makeTransport: @Sendable () -> any CloudRecordTransport
+    private let allowSync: Bool
     private var transport: (any CloudRecordTransport)?
 
     private enum Key {
@@ -97,18 +100,21 @@ final class CloudBackup {
     init(
         defaults: UserDefaults = .standard,
         root: URL = .applicationSupportDirectory,
+        allowSync: Bool = false,
         makeTransport: @escaping @Sendable () -> any CloudRecordTransport = { CloudKitTransport() }
     ) {
         self.defaults = defaults
         self.root = root
         self.makeTransport = makeTransport
-        isEnabled = defaults.bool(forKey: Key.enabled)
-        status = defaults.bool(forKey: Key.enabled) ? .ready(nil) : .off
+        self.allowSync = allowSync
+        isEnabled = allowSync && defaults.bool(forKey: Key.enabled)
+        status = isEnabled ? .ready(nil) : .off
     }
 
     // MARK: - The switch
 
     func setEnabled(_ wanted: Bool) async {
+        guard allowSync else { return }
         guard wanted != isEnabled else { return }
         isEnabled = wanted
         defaults.set(wanted, forKey: Key.enabled)

@@ -1710,12 +1710,17 @@ final class MobileReleaseUITests: XCTestCase {
         for _ in 0..<6 { if reports.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(reports.isHittable); reports.tap()
         let web = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
-        let search = web.textFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 35)); search.tap(); search.typeText(String(title.prefix(42)) + "\n")
+        let search = web.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 35))
+        let catalogueReady = NSPredicate { _, _ in !web.staticTexts["Cargando informes…"].exists }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: catalogueReady, object: nil)], timeout: 45), .completed)
+        search.tap(); search.typeText(String(title.prefix(42)) + "\n")
         let report = web.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
         XCTAssertTrue(report.waitForExistence(timeout: 60), app.debugDescription)
         for _ in 0..<5 { if report.isHittable { break }; web.swipeUp() }; report.tap()
         let translate = web.buttons["Traducir"]
+        let readerOptions = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Opciones del informe")).firstMatch
+        if readerOptions.waitForExistence(timeout: 10), !translate.exists { readerOptions.tap() }
         XCTAssertTrue(translate.waitForExistence(timeout: 25), app.debugDescription)
         for _ in 0..<5 { if translate.isHittable { break }; web.swipeLeft() }; translate.tap()
         let generate = web.buttons["Generar traducción"]
@@ -1744,7 +1749,7 @@ final class MobileReleaseUITests: XCTestCase {
         app.terminate()
         let relaunched = try openExistingPrincipal(destination: "deepResearch")
         let reopened = relaunched.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
-        let reopenedSearch = reopened.textFields.firstMatch
+        let reopenedSearch = reopened.searchFields.firstMatch
         XCTAssertTrue(reopenedSearch.waitForExistence(timeout: 35))
         let loaded = NSPredicate { _, _ in !reopened.staticTexts["Cargando informes…"].exists }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 45), .completed)
@@ -1753,6 +1758,8 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(saved.waitForExistence(timeout: 40))
         for _ in 0..<5 { if saved.isHittable { break }; reopened.swipeUp() }; saved.tap()
         let translationMenu = reopened.buttons["Traducir"].firstMatch
+        let reopenedOptions = reopened.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Opciones del informe")).firstMatch
+        if reopenedOptions.waitForExistence(timeout: 10), !translationMenu.exists { reopenedOptions.tap() }
         XCTAssertTrue(translationMenu.waitForExistence(timeout: 20)); translationMenu.tap()
         let persistedEnglish = reopened.buttons["Leer traducción a English"].firstMatch
         XCTAssertTrue(persistedEnglish.waitForExistence(timeout: 20)); XCTAssertTrue(persistedEnglish.isEnabled)

@@ -13,6 +13,22 @@ import Testing
 @Suite("Cloud backup")
 @MainActor
 struct CloudBackupTests {
+    @Test("mobile companion never enables legacy cloud sync or deletes existing cloud data")
+    func companionKeepsCloudInert() async throws {
+        let store = defaults("companion")
+        store.set(true, forKey: "nodus.cloud.enabled")
+        let ledger = Ledger()
+        let backup = CloudBackup(defaults: store, root: try temporaryRoot(), makeTransport: {
+            ledger.madeTransports += 1; return FakeTransport()
+        })
+        #expect(!backup.isEnabled)
+        await backup.setEnabled(true)
+        await backup.refresh()
+        #expect(!backup.isEnabled)
+        #expect(backup.status == .off)
+        #expect(ledger.madeTransports == 0)
+        #expect(store.bool(forKey: "nodus.cloud.enabled"), "Disabling this release's transport does not erase legacy records or preferences.")
+    }
     /// Counts how many times a transport was asked for.
     ///
     /// `@unchecked Sendable` and a plain `var`: the factory that touches it is called from
@@ -108,6 +124,7 @@ struct CloudBackupTests {
         let backup = CloudBackup(
             defaults: defaults("off"),
             root: root,
+            allowSync: true,
             makeTransport: { ledger.madeTransports += 1; return FakeTransport() }
         )
 
@@ -148,7 +165,7 @@ struct CloudBackupTests {
         let root = try temporaryRoot()
         try writeChat("c-1", in: root, spaceId: "s-1", updatedAt: Date(), text: "Hola")
         let fake = FakeTransport()
-        let backup = CloudBackup(defaults: defaults("order"), root: root, makeTransport: { fake })
+        let backup = CloudBackup(defaults: defaults("order"), root: root, allowSync: true, makeTransport: { fake })
 
         await backup.setEnabled(true)
 
@@ -177,7 +194,7 @@ struct CloudBackupTests {
             )],
             token: Data("t".utf8)
         ))
-        let backup = CloudBackup(defaults: defaults("newer"), root: root, makeTransport: { fake })
+        let backup = CloudBackup(defaults: defaults("newer"), root: root, allowSync: true, makeTransport: { fake })
 
         await backup.setEnabled(true)
 
@@ -204,7 +221,7 @@ struct CloudBackupTests {
             token: Data("t".utf8)
         ))
         let store = defaults("older")
-        let backup = CloudBackup(defaults: store, root: root, makeTransport: { fake })
+        let backup = CloudBackup(defaults: store, root: root, allowSync: true, makeTransport: { fake })
 
         await backup.setEnabled(true)
 
@@ -223,7 +240,7 @@ struct CloudBackupTests {
             deleted: [CloudBackup.recordName(.chat, spaceId: "s-1", id: "c-1")],
             token: Data("t".utf8)
         ))
-        let backup = CloudBackup(defaults: defaults("deleted"), root: root, makeTransport: { fake })
+        let backup = CloudBackup(defaults: defaults("deleted"), root: root, allowSync: true, makeTransport: { fake })
 
         await backup.setEnabled(true)
 
@@ -237,7 +254,7 @@ struct CloudBackupTests {
         try writeChat("c-1", in: root, spaceId: "s-1", updatedAt: Date(), text: "Hola")
         let fake = FakeTransport()
         let store = defaults("disable")
-        let backup = CloudBackup(defaults: store, root: root, makeTransport: { fake })
+        let backup = CloudBackup(defaults: store, root: root, allowSync: true, makeTransport: { fake })
 
         await backup.setEnabled(true)
         await backup.setEnabled(false)
@@ -257,7 +274,7 @@ struct CloudBackupTests {
         let root = try temporaryRoot()
         let fake = FakeTransport()
         let store = defaults("retry")
-        let backup = CloudBackup(defaults: store, root: root, makeTransport: { fake })
+        let backup = CloudBackup(defaults: store, root: root, allowSync: true, makeTransport: { fake })
         await backup.setEnabled(true)
 
         await fake.setRefusingDeletes(true)

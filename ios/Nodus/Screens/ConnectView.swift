@@ -32,19 +32,12 @@ struct ConnectView: View {
     @State private var refusal: String?
     @State private var isBusy = false
     @State private var linkingDesktop = false
-    @State private var advanced = false
 
     private let accent = Color(hex: VaultType.academic.accentHex)
 
     var body: some View {
-        Group {
-            if advanced {
-                NavigationStack { content }
-            } else {
-                DesktopBridgePairingSheet(accent: accent, onAdvanced: { advanced = true }) { dismiss() }
-                    .environment(model)
-            }
-        }
+        DesktopBridgePairingSheet(accent: accent) { dismiss() }
+            .environment(model)
         .onAppear {
             // Debug builds only: lets the verification loop skip retyping a local address on
             // every run. Release has no such path — see LabDefaults.
