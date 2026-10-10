@@ -341,11 +341,14 @@ final class SpaceSession {
 
     /// A successful direct probe is the reconnection signal. Finish only work
     /// already authorised by its save/send action, preserving stable mutation IDs.
-    private func synchronizeCompanionChanges() async {
+    func synchronizeCompanionChanges() async {
         guard connection.desktopPairingId != nil, connection.role.canSendChanges,
               !isSynchronizingCompanionChanges else { return }
         isSynchronizingCompanionChanges = true
         defer { isSynchronizingCompanionChanges = false }
+        if let vaultId, let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
+            try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) }
+        }
         let directory = mirrorDirectory
         guard MutationOutbox.exists(spaceId: connection.storageId, directory: directory),
               let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: directory),

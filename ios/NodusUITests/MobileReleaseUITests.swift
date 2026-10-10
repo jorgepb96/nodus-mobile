@@ -1599,6 +1599,58 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "autonomous-immersion-resumed-after-restart")
     }
     @MainActor
+    func testScriptorPreparesStructuredCompanionCopy() throws {
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 45))
+        let search = web.textFields["Buscar en notas e ideas…"]
+        XCTAssertTrue(search.waitForExistence(timeout: 30)); search.tap(); search.typeText("Aceptación Scriptor móvil 0.1.0\n")
+        let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        XCTAssertTrue(note.waitForExistence(timeout: 30)); note.tap()
+        XCTAssertTrue(web.textViews["Editor del documento"].waitForExistence(timeout: 30))
+        XCTAssertTrue(web.staticTexts["Libro"].firstMatch.exists && web.staticTexts["Cita"].firstMatch.exists)
+        capture(app, "scriptor-companion-copy-ready")
+    }
+    @MainActor
+    func testOfflineScriptorSavesStructuredEditAndReopens() async throws {
+        try await verifyOwningMacUnavailable()
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 45))
+        let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        if note.waitForExistence(timeout: 8) { note.tap() }
+        let editor = web.textViews["Editor del documento"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 30), app.debugDescription)
+        let paragraph = web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Frase de prueba enviada desde Desktop al movil.")).firstMatch
+        XCTAssertTrue(paragraph.exists)
+        for _ in 0..<8 { if paragraph.isHittable { break }; web.swipeUp() }
+        XCTAssertTrue(paragraph.isHittable); paragraph.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.2)).tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        let marker = "MobileOffline-\(UUID().uuidString.prefix(8))"
+        editor.typeText(" \(marker).")
+        print("NODUS_OFFLINE_SCRIPTOR_MARKER=\(marker)")
+        let pending = web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "pendiente de sincronizar")).firstMatch
+        XCTAssertTrue(pending.waitForExistence(timeout: 30), "The document must be saved locally while its Mac is unreachable.\n\(app.debugDescription)")
+        XCTAssertTrue((editor.value as? String)?.contains(marker) == true)
+        capture(app, "offline-scriptor-saved-on-device")
+        app.terminate()
+        let relaunched = try openExistingPrincipal(destination: "workspace")
+        defer { relaunched.terminate() }
+        let restoredWeb = relaunched.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(restoredWeb.waitForExistence(timeout: 45))
+        let catalogue = restoredWeb.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        if catalogue.waitForExistence(timeout: 8) { catalogue.tap() }
+        let restored = restoredWeb.textViews["Editor del documento"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 30), relaunched.debugDescription)
+        XCTAssertTrue((restored.value as? String)?.contains(marker) == true)
+        XCTAssertTrue(restoredWeb.staticTexts["Libro"].firstMatch.exists && restoredWeb.staticTexts["Cita"].firstMatch.exists)
+        XCTAssertTrue(restoredWeb.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "pendiente de sincronizar")).firstMatch.exists)
+        XCTAssertFalse(relaunched.staticTexts["shared-surface-error"].exists)
+        capture(relaunched, "offline-scriptor-structured-document-reopened")
+    }
+    @MainActor
     func testLiveScriptorReadsDesktopEditAndReopens() throws {
         let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"], "A marker written through the real Desktop editor is required.")
         let app = try openExistingPrincipal(destination: "workspace")

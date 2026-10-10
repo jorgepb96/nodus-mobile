@@ -354,6 +354,16 @@ public actor DesktopBridgeClient {
         return try await raw(path: "/bridge/v2/vaults/\(vault)/corpus/mutations", method: "POST", body: value)
     }
 
+    public func saveWorkspaceEdit(vaultId: String, request: CompanionDocumentOutbox.Request) async throws -> JSONValue {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/workspace-edits", method: "POST", body: .object([
+            "id": .string(request.id), "noteId": .string(request.noteId), "input": request.input
+        ]))
+        return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
+    }
+
     public func operation(vaultId: String, method: String, args: [JSONValue]) async throws -> JSONValue {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))

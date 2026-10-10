@@ -146,6 +146,9 @@ enum BackgroundJobs {
     // MARK: - Mutations
 
     static func hasAuthorisedMutations() async -> Bool {
+        for connection in AppModel.syncableConnections() {
+            if let (_, documents) = try? await ConnectionClient.companionDocuments(for: connection), await documents.pendingCount() > 0 { return true }
+        }
         for connection in connectionsWithQueues {
             guard let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
             if let count = try? await outbox.authorisedCount(), count > 0 { return true }
@@ -162,6 +165,11 @@ enum BackgroundJobs {
         var everythingLanded = true
         for connection in AppModel.syncableConnections() where connection.role.canSendChanges {
             if Task.isCancelled { return false }
+            if let vaultId = connection.vaultId,
+               let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
+                do { try await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) } }
+                catch { everythingLanded = false }
+            }
             guard MutationOutbox.exists(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
             guard let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
             guard let queued = try? await outbox.authorisedPending(limit: connection.desktopPairingId == nil ? 200 : 100), !queued.isEmpty else { continue }

@@ -390,7 +390,35 @@ private struct DesktopWebView: UIViewRepresentable {
                             let pairing = store.pairings().first(where: { $0.id == session.connection.desktopPairingId }),
                             let token = store.credential(for: pairing) else { throw DesktopBridgeError.permissionDenied }
                         let client = DesktopBridgeClient(pairing: pairing, token: token)
-                        if DesktopBridgeClient.jobMethods.contains(method) {
+                        if ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict"].contains(method) {
+                            guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
+                            let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
+                            if method == "updateWorkspaceNote", args.count == 2, let noteId = args[0].stringValue {
+                                guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+                                value = try await documents.save(noteId: noteId, input: args[1])
+                                Task { await session.synchronizeCompanionChanges() }
+                            } else if method == "resolveMobileWorkspaceConflict", args.count == 2,
+                                      let noteId = args[0].stringValue, let keepMobile = args[1].boolValue {
+                                guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+                                value = try await documents.resolve(noteId: noteId, keepMobile: keepMobile)
+                                Task { await session.synchronizeCompanionChanges() }
+                            } else if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue,
+                                      let local = await documents.editorData(noteId: noteId) {
+                                value = local
+                            } else {
+                                let cache = try PrivateBridgeCache(pairingId: pairing.id)
+                                let key = try CompanionDocumentOutbox.operationKey(method, args)
+                                do {
+                                    value = try await client.operation(vaultId: vaultId, method: method, args: args)
+                                    try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
+                                } catch {
+                                    guard isPrivateBridgeOffline(error), let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key) else { throw error }
+                                    value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached)
+                                }
+                                if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue { try await documents.seed(noteId: noteId, editorData: value) }
+                                if method == "getNotesTree" { value = await documents.overlayTree(value) }
+                            }
+                        } else if DesktopBridgeClient.jobMethods.contains(method) {
                             let first = input.first as? String
                             let streamMethod = ["generateImmersionSession", "researchChatStream", "improveStudyText", "exportDeepResearchArchive"].contains(method)
                             let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil

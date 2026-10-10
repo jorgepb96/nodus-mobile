@@ -1,0 +1,193 @@
+import Foundation
+import Testing
+@testable import NodusKit
+
+@Suite("Structured companion document saves")
+struct CompanionDocumentOutboxTests {
+    private struct Fixture {
+        let pairing = UUID().uuidString
+        let directory: URL
+        let keychain: KeychainStore
+        let cache: PrivateBridgeCache
+        init() throws {
+            directory = .temporaryDirectory.appendingPathComponent("nodus-companion-\(pairing)")
+            keychain = KeychainStore(service: "nodus.tests.companion.\(pairing)")
+            cache = try PrivateBridgeCache(pairingId: pairing, directory: directory, keychain: keychain, readLimitBytes: 0)
+        }
+        func open() async throws -> CompanionDocumentOutbox {
+            try await CompanionDocumentOutbox(cache: cache, vaultId: "vault-a", data: cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        }
+        func cleanup() {
+            try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: pairing)); try? FileManager.default.removeItem(at: directory)
+        }
+    }
+    private static func editor(_ revision: Int = 7, text: String = "Original") -> JSONValue {
+        .object(["revision": .int(Int64(revision)), "documentTitle": .string("Private document"), "contentMarkdown": .string(text),
+                 "nativeDocument": .array([.object(["id": .string("table-1"), "type": .string("table"), "content": .object(["rows": .array([.string(text)])])])]),
+                 "style": .object(["fontFamily": .string("serif")]), "annotations": .array([]), "versions": .array([])])
+    }
+    private static func input(_ revision: Int, text: String) -> JSONValue {
+        .object(["expectedRevision": .int(Int64(revision)), "title": .string("Private document"), "contentMarkdown": .string(text),
+                 "nativeDocument": editor(text: text).objectValue!["nativeDocument"]!, "schemaVersion": .int(2),
+                 "academicMetadata": .object(["bibliography": .array([.string("Citation 2024")])]),
+                 "style": .object(["fontFamily": .string("serif")]), "spellcheckLanguage": .string("es-ES")])
+    }
+    private static func receipt(_ request: CompanionDocumentOutbox.Request, revision: Int) -> JSONValue {
+        .object(["id": .string(request.id), "editorData": editor(revision, text: request.input.objectValue!["contentMarkdown"]!.stringValue!)])
+    }
+    private actor Requests {
+        var values: [CompanionDocumentOutbox.Request] = []
+        func append(_ value: CompanionDocumentOutbox.Request) { values.append(value) }
+        func all() -> [CompanionDocumentOutbox.Request] { values }
+    }
+    private actor InFlight {
+        var first: CompanionDocumentOutbox.Request?
+        var ready: [CheckedContinuation<Void, Never>] = []
+        var acknowledgement: CheckedContinuation<JSONValue, Never>?
+        func send(_ request: CompanionDocumentOutbox.Request) async -> JSONValue {
+            if first != nil { return CompanionDocumentOutboxTests.receipt(request, revision: 9) }
+            first = request
+            for waiter in ready { waiter.resume() }; ready = []
+            return await withCheckedContinuation { acknowledgement = $0 }
+        }
+        func waitUntilStarted() async {
+            if first != nil { return }
+            await withCheckedContinuation { ready.append($0) }
+        }
+        func release() { acknowledgement?.resume(returning: CompanionDocumentOutboxTests.receipt(first!, revision: 8)); acknowledgement = nil }
+    }
+    @Test("typing during an in-flight save cannot retire or overwrite the newer draft")
+    func editDuringSend() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(); try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "First"))
+        let gate = InFlight(), requests = Requests()
+        let delivery = Task { try await queue.synchronize { request in await requests.append(request); return await gate.send(request) } }
+        await gate.waitUntilStarted()
+        _ = try await queue.save(noteId: "note-a", input: Self.input(-1, text: "Typed during delivery"))
+        await gate.release(); try await delivery.value
+        let sent = await requests.all(); #expect(sent.count == 2)
+        #expect(sent[0].input.objectValue?["contentMarkdown"] == .string("First"))
+        #expect(sent[1].input.objectValue?["contentMarkdown"] == .string("Typed during delivery"))
+        #expect(sent[1].input.objectValue?["expectedRevision"] == .int(8))
+        #expect(await queue.pendingCount() == 0)
+    }
+    @Test("a just-confirmed local revision can be edited before the view's next refresh")
+    func editAfterAcknowledgement() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(); try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "First"))
+        try await queue.synchronize { Self.receipt($0, revision: 8) }
+        let next = try await queue.save(noteId: "note-a", input: Self.input(-1, text: "Immediate next edit"))
+        #expect(next.objectValue?["editorRevision"] == .int(-2))
+        try await queue.synchronize { request in
+            #expect(request.input.objectValue?["expectedRevision"] == .int(8)); return Self.receipt(request, revision: 9)
+        }
+        try await queue.seed(noteId: "note-a", editorData: Self.editor(10, text: "New Mac edit"))
+        await #expect(throws: APIError.self) { try await queue.save(noteId: "note-a", input: Self.input(-2, text: "Stale view")) }
+        #expect(await queue.pendingCount() == 0)
+    }
+    @Test("suspension and temporary server failures retain the same replayable request")
+    func transientFailures() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(); try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "Must survive suspension"))
+        let requests = Requests()
+        let failures: [any Error & Sendable] = [CancellationError(), URLError(.cancelled), APIError(status: 500), APIError(status: 429)]
+        for failure in failures {
+            do { try await queue.synchronize { request in await requests.append(request); throw failure }; Issue.record("The simulated transport must fail") }
+            catch { #expect(await queue.pendingCount() == 1) }
+        }
+        try await queue.synchronize { request in await requests.append(request); return Self.receipt(request, revision: 8) }
+        let attempts = await requests.all(); #expect(attempts.count == 5); #expect(Set(attempts.map(\.id)).count == 1)
+        #expect(await queue.pendingCount() == 0)
+    }
+    @Test("an offline structured save survives reopen, quota cleanup and vault isolation")
+    func offline() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        let input = Self.input(7, text: "Offline private table and formula $x^2$ [source](nodus://evidence/source)")
+        let saved = try await queue.save(noteId: "note-a", input: input)
+        #expect(saved.objectValue?["editorRevision"] == .int(-1))
+        await #expect(throws: URLError.self) { try await queue.synchronize { _ in throw URLError(.cannotConnectToHost) } }
+        try await fixture.cache.removeReusableCopies()
+        let reopened = try await fixture.open()
+        let data = try #require(await reopened.editorData(noteId: "note-a")).objectValue!
+        #expect(data["nativeDocument"] == input.objectValue?["nativeDocument"])
+        #expect(data["academicMetadata"] == input.objectValue?["academicMetadata"])
+        #expect(data["mobileSyncState"] == .string("pending"))
+        #expect(try await fixture.cache.data(vaultId: "vault-b", domain: .writing, recordId: CompanionDocumentOutbox.storageKey) == nil)
+        for file in try FileManager.default.contentsOfDirectory(at: fixture.directory.appendingPathComponent("bridge-\(fixture.pairing)"), includingPropertiesForKeys: nil) {
+            #expect(try Data(contentsOf: file).range(of: Data("Offline private table".utf8)) == nil)
+        }
+    }
+    @Test("unsent autosaves coalesce while preserving the Mac revision")
+    func coalesce() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(); try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "First"))
+        _ = try await queue.save(noteId: "note-a", input: Self.input(-1, text: "Latest"))
+        let requests = Requests()
+        try await queue.synchronize { request in await requests.append(request); return Self.receipt(request, revision: 8) }
+        let sent = await requests.all()
+        #expect(sent.count == 1); #expect(sent[0].input.objectValue?["expectedRevision"] == .int(7))
+        #expect(sent[0].input.objectValue?["contentMarkdown"] == .string("Latest"))
+        #expect(await queue.editorData(noteId: "note-a") == nil); #expect(await queue.pendingCount() == 0)
+    }
+    @Test("a lost acknowledgement replays the frozen request before sending newer edits")
+    func lostAcknowledgement() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(); try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "First"))
+        let before = Requests()
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in await before.append(request); throw URLError(.networkConnectionLost) } }
+        _ = try await queue.save(noteId: "note-a", input: Self.input(-1, text: "Newer draft"))
+        let reopened = try await fixture.open(), after = Requests()
+        try await reopened.synchronize { request in
+            await after.append(request)
+            return Self.receipt(request, revision: request.input.objectValue?["expectedRevision"] == .int(7) ? 8 : 9)
+        }
+        let first = await before.all(), sent = await after.all()
+        #expect(sent.count == 2); #expect(sent[0] == first[0]); #expect(sent[1].id != sent[0].id)
+        #expect(sent[1].input.objectValue?["expectedRevision"] == .int(8))
+        #expect(sent[1].input.objectValue?["contentMarkdown"] == .string("Newer draft"))
+        #expect(await reopened.pendingCount() == 0)
+    }
+    @Test("a conflict preserves both structured documents until an explicit mobile choice")
+    func conflict() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(); try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "Mobile edit"))
+        let rejected = Requests(), remote = Self.editor(9, text: "Mac edit")
+        await #expect(throws: APIError.self) { try await queue.synchronize { request in
+            await rejected.append(request); throw APIError(status: 409, code: "revision_conflict", details: ["remote": remote])
+        } }
+        let reopened = try await fixture.open()
+        let conflicted = try #require(await reopened.editorData(noteId: "note-a")).objectValue!
+        #expect(conflicted["contentMarkdown"] == .string("Mobile edit"))
+        #expect(conflicted["mobileConflictRemote"] == remote)
+        #expect(await reopened.pendingCount() == 0)
+        let noRetry = Requests()
+        try await reopened.synchronize { request in await noRetry.append(request); return Self.receipt(request, revision: 10) }
+        #expect(await noRetry.all().isEmpty)
+        _ = try await reopened.resolve(noteId: "note-a", keepMobile: true)
+        let approved = Requests()
+        try await reopened.synchronize { request in await approved.append(request); return Self.receipt(request, revision: 10) }
+        let sent = await approved.all(), prior = await rejected.all()
+        #expect(sent.count == 1); #expect(sent[0].id != prior[0].id)
+        #expect(sent[0].input.objectValue?["expectedRevision"] == .int(9))
+        #expect(sent[0].input.objectValue?["contentMarkdown"] == .string("Mobile edit"))
+    }
+    @Test("choosing the Mac version retires the local queue without a write")
+    func keepMac() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(); try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "Mobile edit"))
+        let remote = Self.editor(9, text: "Mac edit")
+        await #expect(throws: APIError.self) { try await queue.synchronize { _ in throw APIError(status: 409, code: "revision_conflict", details: ["remote": remote]) } }
+        #expect(try await queue.resolve(noteId: "note-a", keepMobile: false) == remote)
+        #expect(await queue.editorData(noteId: "note-a") == nil)
+        #expect(try await fixture.open().pendingCount() == 0)
+    }
+}
