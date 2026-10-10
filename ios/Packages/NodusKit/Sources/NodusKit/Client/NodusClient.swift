@@ -135,7 +135,8 @@ public actor NodusClient {
             var fromCache = false
             if path == "mutations", request.method == "POST", let body = request.body { response = try await bridge.client.sendMutations(vaultId: bridge.vaultId, body: body) }
             else {
-                let result = try await bridge.client.corpusWithOfflineCopy(vaultId: bridge.vaultId, path: path, query: request.query, method: request.method, percentEncoded: true)
+                let body = try request.body.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) }
+                let result = try await bridge.client.corpusWithOfflineCopy(vaultId: bridge.vaultId, path: path, query: request.query, method: request.method, body: body, percentEncoded: true)
                 response = result.response; fromCache = result.fromCache
             }
             return Response(data: response.data, status: response.status, headers: response.headers, fromCache: fromCache)

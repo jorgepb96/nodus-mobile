@@ -94,8 +94,16 @@ struct CompanionDownloadsView: View {
             guard !pairing.isExpired else { throw DesktopBridgeError.permissionDenied }
             let client = DesktopBridgeClient(pairing: pairing, token: token)
             let cache = try PrivateBridgeCache(pairingId: pairing.id)
+            // Retain catalogue navigation without carrying the text of every
+            // unselected document alongside one chosen download.
+            var catalogue = tree.objectValue!
+            catalogue["notes"] = .array(catalogue["notes"]!.arrayValue!.map { value in
+                guard var note = value.objectValue else { return value }
+                if !selected.contains(note["id"]?.stringValue ?? "") { note["content"] = .string("") }
+                return .object(note)
+            })
             var records = [PrivateBridgeCache.ReadPackRecord(domain: .corpus,
-                recordId: try CompanionDocumentOutbox.operationKey("getNotesTree", []), data: try JSONEncoder.nodus.encode(tree))]
+                recordId: try CompanionDocumentOutbox.operationKey("getNotesTree", []), data: try JSONEncoder.nodus.encode(JSONValue.object(catalogue))) ]
             var bytes = records[0].data.count
             for (index, id) in selected.sorted().enumerated() {
                 try Task.checkCancellation()

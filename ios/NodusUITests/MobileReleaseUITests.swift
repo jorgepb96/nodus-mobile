@@ -1630,6 +1630,31 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "companion-chosen-download-survives-consulted-cleanup")
     }
     @MainActor
+    func testCompanionSettingsReadsRealMacEmbeddingIdentity() throws {
+        let model = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_EMBEDDING_MODEL"], "The owning Mac index identity must come from an actual isolated-vault query.")
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
+        let identity = app.staticTexts[model]
+        for _ in 0..<10 { if identity.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(identity.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "does not grant access")).firstMatch.exists)
+        capture(app, "companion-settings-real-mac-index-identity")
+    }
+    @MainActor
+    func testCompanionClearsConsultedCopiesAndKeepsChosenDownload() throws {
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
+        let pack = app.staticTexts["1 documento de Scriptor"]
+        for _ in 0..<12 { if pack.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(pack.exists, "A previously chosen download is required; missing setup is a failure.")
+        let clear = app.buttons["companion-clear-read-copies"]
+        for _ in 0..<6 { if clear.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(clear.isHittable); clear.tap()
+        app.buttons["Liberar espacio"].tap()
+        XCTAssertTrue(pack.exists)
+        capture(app, "companion-clear-consulted-before-real-offline-read")
+    }
+    @MainActor
     func testScriptorShowsRealCompanionConflictWithoutOverwriting() throws {
         let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"])
         let app = try openExistingPrincipal(destination: "workspace")

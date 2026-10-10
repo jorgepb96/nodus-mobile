@@ -169,6 +169,9 @@ function operationMatrix(routes) {
     'graph.filters', 'graph.themes', 'graph.selection', 'graph.evidence', 'argumentMap.structural', 'argumentMap.expansion',
     'scriptor.blocks', 'scriptor.tables', 'scriptor.images', 'scriptor.formulas', 'scriptor.references', 'scriptor.bibliography',
     'scriptor.history', 'scriptor.roundTrip', 'scriptor.conflict', 'scriptor.draftRecovery',
+    'companion.downloadSelection', 'companion.downloadExpiry', 'companion.storageBudget',
+    'companion.offlineConsultation', 'companion.offlineEditing', 'companion.offlineCreation',
+    'companion.reconnect', 'companion.conflictResolution', 'queries.semantic', 'queries.context',
     'catalogues.pagination', 'documents.long', 'files.download',
     'pairing.qr', 'pairing.code', 'pairing.link', 'pairing.expiry', 'pairing.renew', 'pairing.revoke', 'pairing.permissions',
     'transport.lan', 'transport.vpn', 'transport.serverRelay', 'transport.cloudRelay', 'transport.disconnect', 'transport.relaunch',
@@ -178,7 +181,10 @@ function operationMatrix(routes) {
   return [
     ...routes.map(route => ({ id: `consultation.${route.id}`, route: route.id,
       category: COMING_SOON.has(route.id) ? 'comingSoon' : 'consultation', result: 'pending', evidence: [] })),
-    ...consultations.map(id => ({ id, category: 'consultation', result: 'pending', evidence: [] })),
+    ...consultations.map(id => ({ id,
+      category: ['transport.serverRelay', 'transport.cloudRelay'].includes(id) ? 'comingSoon' : 'consultation',
+      ...(['transport.serverRelay', 'transport.cloudRelay'].includes(id) ? { reason: 'Esta beta sólo habilita la conexión directa al Mac por red local o VPN. Las rutas avanzadas permanecen ocultas en el móvil.' } : {}),
+      result: 'pending', evidence: [] })),
     ...['deepResearch', 'immersion', 'dictionary', 'chat', 'translation', 'synthesis', 'argumentMap', 'writingAssistant']
       .flatMap(id => ['live', 'autonomous'].map(mode => ({ id: `generation.${id}.${mode}`, category: 'generation', result: 'pending', evidence: [] }))),
     ...['extractDocuments', 'indexDocuments', 'deriveIdeas'].map(id => ({ id, category: 'desktopExclusive', result: 'notApplicable', evidence: [] })),

@@ -745,6 +745,66 @@
       "evidence": []
     },
     {
+      "id": "companion.downloadSelection",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "companion.downloadExpiry",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "companion.storageBudget",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "companion.offlineConsultation",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "companion.offlineEditing",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "companion.offlineCreation",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "companion.reconnect",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "companion.conflictResolution",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "queries.semantic",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "queries.context",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "catalogues.pagination",
       "category": "consultation",
       "result": "pending",
@@ -818,13 +878,15 @@
     },
     {
       "id": "transport.serverRelay",
-      "category": "consultation",
+      "category": "comingSoon",
+      "reason": "Esta beta sólo habilita la conexión directa al Mac por red local o VPN. Las rutas avanzadas permanecen ocultas en el móvil.",
       "result": "pending",
       "evidence": []
     },
     {
       "id": "transport.cloudRelay",
-      "category": "consultation",
+      "category": "comingSoon",
+      "reason": "Esta beta sólo habilita la conexión directa al Mac por red local o VPN. Las rutas avanzadas permanecen ocultas en el móvil.",
       "result": "pending",
       "evidence": []
     },
