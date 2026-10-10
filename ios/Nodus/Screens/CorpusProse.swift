@@ -289,28 +289,48 @@ struct CorpusReferenceView: View {
     }
 }
 
+/// Keep a failed link actionable and preserve its actual transport/domain error.
+struct CorpusOpenFailure: View {
+    let message: String
+    let retry: () -> Void
+    var body: some View {
+        ContentUnavailableView {
+            Label("Could not open", systemImage: "questionmark.circle")
+        } description: {
+            Text(message)
+        } actions: {
+            Button("Retry", action: retry).frame(minHeight: 44)
+        }
+    }
+}
+
 /// A note, which is a resource rather than a collection and so has its own route.
 struct NoteByIdView: View {
     let session: SpaceSession
     let noteId: String
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: nil, row: row, title: "Notes")
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.note(noteId, in: session.connection.spaceId) }
-            catch { failed = true }
+        .task(id: "\(noteId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.note(noteId, in: session.connection.spaceId)
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }
@@ -322,22 +342,27 @@ struct RowByIdView: View {
     let id: String
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: collection, row: row)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.item(collection, id: id, in: session.connection.spaceId) }
-            catch { failed = true }
+        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.item(collection, id: id, in: session.connection.spaceId)
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }
@@ -359,7 +384,8 @@ struct PassageByIdView: View {
 
     @State private var row: Row?
     @State private var asWork: String?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
@@ -367,21 +393,27 @@ struct PassageByIdView: View {
                 RowDetailView(session: session, collection: Collections["passages"], row: row)
             } else if let asWork {
                 WorkByIdView(session: session, nodusId: asWork)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, asWork == nil, !failed else { return }
-            guard let passages = Collections["passages"] else { failed = true; return }
+        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil, asWork == nil else { return }
+            failure = nil
+            guard let passages = Collections["passages"] else {
+                failure = String(localized: "Passages are not available in this vault."); return
+            }
             do {
-                row = try await session.client.item(passages, id: id, in: session.connection.spaceId)
+                let loaded = try await session.client.item(passages, id: id, in: session.connection.spaceId)
+                try Task.checkCancellation(); row = loaded
             } catch let error as APIError where error.isNotFound {
+                guard !Task.isCancelled else { return }
                 asWork = id
+            } catch where error.isCancellation {
             } catch {
-                failed = true
+                failure = error.localizedDescription
             }
         }
     }

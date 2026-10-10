@@ -52,6 +52,10 @@ fallback. A source revision change rejects the download instead of committing in
 records. Independent selections combine without resurrecting relations removed from a newer
 copy. Neighbour summaries never impersonate a downloaded full dossier or neighbourhood. This
 path is implemented locally and awaits compilation, contracts and the final visual campaign.
+Native source-link readers preserve the actual failure and offer a retry; a cancelled navigation
+does not become a failed record. Compact chips keep their intrinsic size, and a tag wider than
+the available reading column receives a bounded proposal rather than forcing horizontal overflow.
+The iPhone/iPad visual acceptance of these refinements remains pending.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;

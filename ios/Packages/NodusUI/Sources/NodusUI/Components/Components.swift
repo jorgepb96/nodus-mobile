@@ -344,7 +344,7 @@ public struct NodusChip: View {
         .padding(.vertical, Self.verticalPadding)
         .background(tint.opacity(0.16), in: Capsule())
         // A tag is a label on something, so it never grows past the thing it labels.
-        .fixedSize(horizontal: true, vertical: false)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The first letter up and the rest left alone. `localizedCapitalized` would give "Comparte

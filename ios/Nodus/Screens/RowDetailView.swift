@@ -922,12 +922,17 @@ typealias PlatformImage = UIImage
 /// Wrapping chips. `Layout` rather than a stack of rows so it reflows with Dynamic Type.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
+    private func measuredSize(_ subview: LayoutSubview, within width: CGFloat) -> CGSize {
+        let ideal = subview.sizeThatFits(.unspecified)
+        guard width.isFinite, ideal.width > max(0, width) else { return ideal }
+        return subview.sizeThatFits(ProposedViewSize(width: max(0, width), height: nil))
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = measuredSize(subview, within: width)
             if x + size.width > width, x > 0 {
                 x = 0; y += rowHeight + spacing; rowHeight = 0
             }
@@ -940,7 +945,7 @@ struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = measuredSize(subview, within: bounds.width)
             if x + size.width > bounds.maxX, x > bounds.minX {
                 x = bounds.minX; y += rowHeight + spacing; rowHeight = 0
             }
@@ -958,22 +963,27 @@ struct IdeaByIdView: View {
     let globalId: String
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: Collections["ideas"], row: row)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.idea(globalId, in: session.connection.spaceId).idea }
-            catch { failed = true }
+        .task(id: "\(globalId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.idea(globalId, in: session.connection.spaceId).idea
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }
@@ -984,22 +994,27 @@ struct AuthorByIdView: View {
     let authorId: String
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: Collections["authors"], row: row)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.author(authorId, in: session.connection.spaceId).author }
-            catch { failed = true }
+        .task(id: "\(authorId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.author(authorId, in: session.connection.spaceId).author
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }
@@ -1010,22 +1025,27 @@ struct WorkByIdView: View {
     let nodusId: String
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: Collections["works"], row: row)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.work(nodusId, in: session.connection.spaceId).work }
-            catch { failed = true }
+        .task(id: "\(nodusId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.work(nodusId, in: session.connection.spaceId).work
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }
