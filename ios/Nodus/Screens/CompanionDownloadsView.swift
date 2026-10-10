@@ -24,6 +24,9 @@ struct CompanionDownloadsView: View {
         NavigationStack {
             List {
                 Section {
+                    NavigationLink("Biblioteca y otros dossiers") {
+                        CompanionCollectionDownloadsView(session: session)
+                    }.accessibilityIdentifier("companion-download-collections")
                     Text("Elige qué notas e ideas de Scriptor llevar contigo. Podrás leerlas y editarlas sin el Mac; tus cambios se sincronizarán cuando vuelva a estar disponible.")
                     Picker("Conservar la descarga", selection: $days) {
                         Text("7 días").tag(7); Text("30 días").tag(30)

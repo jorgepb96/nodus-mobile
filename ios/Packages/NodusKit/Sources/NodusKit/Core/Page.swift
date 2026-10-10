@@ -17,14 +17,16 @@ public struct Page<Element: Sendable>: Sendable {
     public let offset: Int
     public let hasMore: Bool
     public let revision: String
+    public let fromDevice: Bool
 
-    public init(items: [Element], total: Int, limit: Int, offset: Int, hasMore: Bool, revision: String) {
+    public init(items: [Element], total: Int, limit: Int, offset: Int, hasMore: Bool, revision: String, fromDevice: Bool = false) {
         self.items = items
         self.total = total
         self.limit = limit
         self.offset = offset
         self.hasMore = hasMore
         self.revision = revision
+        self.fromDevice = fromDevice
     }
 
     public func map<T: Sendable>(_ transform: (Element) throws -> T) rethrows -> Page<T> {
@@ -34,7 +36,8 @@ public struct Page<Element: Sendable>: Sendable {
             limit: limit,
             offset: offset,
             hasMore: hasMore,
-            revision: revision
+            revision: revision,
+            fromDevice: fromDevice
         )
     }
 }

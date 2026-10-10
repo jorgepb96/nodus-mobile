@@ -91,9 +91,12 @@ public enum VaultType: String, Sendable, Hashable, Codable, CaseIterable {
 
     public var families: Set<VaultFamily> {
         switch self {
-        case .academic, .primarySources, .testimonios: return [.academic]
-        case .genealogy, .prosopography: return [.records, .academic]
-        case .worldbuilding: return [.records, .academic]
+        case .academic: return [.academic]
+        case .primarySources: return [.archive, .academic]
+        case .testimonios: return [.testimonies, .academic]
+        case .genealogy: return [.records, .academic]
+        case .prosopography: return [.prosopography, .records, .academic]
+        case .worldbuilding: return [.worldbuilding, .records, .academic]
         case .estudio: return [.study, .academic]
         case .docencia: return [.study, .teaching, .academic]
         case .databases: return [.databases]

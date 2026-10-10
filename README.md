@@ -76,6 +76,17 @@ topic/language. Scope estimates are rebuilt from the chosen duration, and both s
 generation now receive the form's chosen language. A changed Mac evidence revision rejects
 publication; a permission failure never opens the offline fallback. Research selections also
 check a stable corpus revision before and after copying. This path awaits final local validation.
+The generic public read registry now retains all 49 Desktop collection contracts, including
+worldbuilding, archival, testimony and aggregate-only prosopography dossiers, with their actual
+primary and response keys. A separate native picker downloads only chosen dossiers and reads
+catalogue pages on demand. Selected databases traverse every row page and retain its cells,
+relations and attachment metadata; a truncated or changing database cannot commit. Independent
+copies combine with the newest complete dossier owning removals, and offline searches retain
+the server's per-column substring semantics. Study-document copies also retain autonomous
+writing/translation sources. Native collection catalogues identify device content, and source
+IDs with slash, hash or percent characters remain one exact path segment. Integration into
+specialised mirror-based surfaces, binary assets and final visual/contract acceptance remain
+part of the unfinished parity campaign.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;

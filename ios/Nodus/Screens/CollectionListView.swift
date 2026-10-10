@@ -24,6 +24,7 @@ struct CollectionListView: View {
     @State private var query = ""
     @State private var isLoading = false
     @State private var error: String?
+    @State private var fromDevice = false
     @State private var loadTask: Task<Void, Never>?
 
     var body: some View {
@@ -96,6 +97,13 @@ struct CollectionListView: View {
         }
         .nodusDismissesKeyboard()
         .nodusPageFunctions(accent: session.accent)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if fromDevice {
+                Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial)
+            }
+        }
         .navigationTitle(Text(LocalizedStringKey(collection.label)))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
@@ -213,6 +221,7 @@ struct CollectionListView: View {
             total = page.total
             hasMore = page.hasMore
             revision = page.revision
+            fromDevice = page.fromDevice
             error = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1",
@@ -251,6 +260,7 @@ struct CollectionListView: View {
                 return
             }
             rows.append(contentsOf: page.items)
+            fromDevice = page.fromDevice
             hasMore = page.hasMore
         } catch {
             hasMore = false

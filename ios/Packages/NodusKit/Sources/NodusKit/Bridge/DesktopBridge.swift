@@ -425,8 +425,14 @@ public actor DesktopBridgeClient {
             ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
         let localIdeas = path.split(separator: "/").first == "ideas"
             ? try await CompanionIdeaCopy.authored(cache: cache, vaultId: vaultId) : nil
+        let collectionPath = path.split(separator: "/").first.map(String.init)
+        let selectedCollection: Bool
+        if let collectionPath, Collections[collectionPath] != nil {
+            selectedCollection = try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus,
+                recordId: CompanionCollectionCopy.recordId(path: collectionPath))
+        } else { selectedCollection = false }
         do {
-            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas || localIdeas != nil ? 4 : nil)
+            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas || localIdeas != nil || selectedCollection ? 4 : nil)
             if response.status == 200 { try await cache.store(JSONEncoder.nodus.encode(response), vaultId: vaultId, domain: .corpus, recordId: identity) }
             return (response, false)
         } catch {
@@ -441,6 +447,9 @@ public actor DesktopBridgeClient {
             guard let offline = error as? URLError,
                   [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut].contains(offline.code) else { throw error }
             if selectedIdeas || localIdeas != nil, let copy = try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId),
+               let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
+            if selectedCollection, let collectionPath,
+               let copy = try await CompanionCollectionCopy.downloaded(cache: cache, vaultId: vaultId, path: collectionPath),
                let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
             guard let bytes = retained else { throw error }
             return (try JSONDecoder.nodus.decode(DesktopBridgeResponse.self, from: bytes), true)

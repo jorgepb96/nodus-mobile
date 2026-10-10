@@ -29,13 +29,38 @@ public struct CollectionDescriptor: Sendable, Hashable {
     /// (`corpus.mjs:292`). Note it keeps the hyphen — `/study-docs/x` answers under
     /// `study-doc`.
     ///
-    /// The enriched handlers answer under their own name, and for most of them the derived
-    /// key happens to match (`ideas` → `idea`). The two that do not are named here, because a
+    /// The enriched handlers answer under their own domain name. These exceptions
+    /// are explicit because a
     /// computed key that is wrong is indistinguishable from an empty answer.
     public var detailKey: String {
         switch path {
         case "teaching-exams": return "exam"
+        case "teaching-rubrics": return "rubric"
         case "study-plans": return "plan"
+        case "study-courses": return "course"
+        case "study-materials": return "material"
+        case "study-questions": return "question"
+        case "study-ideas": return "idea"
+        case "study-schedule": return "period"
+        case "dictionary": return "entry"
+        case "archive-items": return "item"
+        case "archive-repositories": return "repository"
+        case "archive-units": return "unit"
+        case "archive-excerpts": return "excerpt"
+        case "source-analyses": return "analysis"
+        case "testimony-interviews": return "interview"
+        case "testimony-transcripts": return "transcript"
+        case "testimony-codes": return "code"
+        case "testimony-contrasts": return "contrast"
+        case "database-pages": return "page"
+        case "prosopography-public-population": return "population"
+        case "prosopography-public-variables": return "variable"
+        case "prosopography-public-sources": return "source"
+        case "prosopography-public-analysis": return "analysis"
+        case "prosopography-public-networks": return "network"
+        case let value where value.hasPrefix("world-"):
+            let key = String(value.dropFirst(6))
+            return key.hasSuffix("s") ? String(key.dropLast()) : key
         default: return path.hasSuffix("s") ? String(path.dropLast()) : path
         }
     }
@@ -45,6 +70,10 @@ public struct CollectionDescriptor: Sendable, Hashable {
 public enum VaultFamily: String, Sendable, Hashable, CaseIterable {
     case academic
     case records
+    case worldbuilding
+    case archive
+    case testimonies
+    case prosopography
     case study
     case teaching
     case databases
@@ -60,11 +89,21 @@ public enum Collections {
         .init(path: "gaps", table: "gaps", listKey: "gaps", idField: "id", families: [.academic]),
         .init(path: "authors", table: "authors", listKey: "authors", idField: "author_id", families: [.academic]),
         .init(path: "passages", table: "passages", listKey: "passages", idField: "passage_id", families: [.academic]),
+        .init(path: "dictionary", table: "dictionary_entries", listKey: "entries", idField: "id", families: [.academic]),
         // Genealogy and prosopography
         .init(path: "persons", table: "persons", listKey: "persons", idField: "person_id", families: [.records]),
         .init(path: "places", table: "places", listKey: "places", idField: "place_id", families: [.records]),
         .init(path: "events", table: "events", listKey: "events", idField: "event_id", families: [.records]),
-        .init(path: "relationships", table: "relationships", listKey: "relationships", idField: "id", families: [.records]),
+        .init(path: "relationships", table: "relationships", listKey: "relationships", idField: "rel_id", families: [.records]),
+        // Worldbuilding's dossiers have complete published read projections.
+        .init(path: "world-groups", table: "world_groups", listKey: "groups", idField: "group_id", families: [.worldbuilding]),
+        .init(path: "world-scenes", table: "world_scenes", listKey: "scenes", idField: "scene_id", families: [.worldbuilding]),
+        .init(path: "world-articles", table: "world_articles", listKey: "articles", idField: "article_id", families: [.worldbuilding]),
+        .init(path: "world-maps", table: "world_maps", listKey: "maps", idField: "map_id", families: [.worldbuilding]),
+        .init(path: "world-threads", table: "world_threads", listKey: "threads", idField: "thread_id", families: [.worldbuilding]),
+        .init(path: "world-rules", table: "world_rules", listKey: "rules", idField: "rule_id", families: [.worldbuilding]),
+        .init(path: "world-questions", table: "world_questions", listKey: "questions", idField: "question_id", families: [.worldbuilding]),
+        .init(path: "world-secrets", table: "world_secrets", listKey: "secrets", idField: "secret_id", families: [.worldbuilding]),
         // Study.
         //
         // `id`, every one of them. The study and teaching migrations name their primary key
@@ -80,18 +119,37 @@ public enum Collections {
         .init(path: "study-materials", table: "study_materials", listKey: "materials", idField: "id", families: [.study, .teaching]),
         .init(path: "study-flashcards", table: "study_flashcards", listKey: "flashcards", idField: "id", families: [.study, .teaching]),
         .init(path: "study-questions", table: "study_questions", listKey: "questions", idField: "id", families: [.study, .teaching]),
+        .init(path: "study-ideas", table: "study_ideas", listKey: "ideas", idField: "id", families: [.study, .teaching]),
         // The week. `study_plan_blocks` has no collection of its own on purpose: a block
         // outside its plan is a title and a timestamp, so it arrives inside the plan and
         // inside the agenda instead.
         .init(path: "study-plans", table: "study_plans", listKey: "plans", idField: "id", families: [.study, .teaching]),
+        .init(path: "study-schedule", table: "study_schedule_periods", listKey: "periods", idField: "id", families: [.study, .teaching]),
         .init(path: "study-goals", table: "study_goals", listKey: "goals", idField: "id", families: [.study, .teaching]),
         .init(path: "study-calendar", table: "study_calendar_events", listKey: "events", idField: "id", families: [.study, .teaching]),
         // Teaching. Rosters, groups and grades are never published, so there is deliberately
         // no collection here that could ever serve them.
         .init(path: "teaching-exams", table: "teaching_exams", listKey: "exams", idField: "id", families: [.teaching]),
         .init(path: "teaching-rubrics", table: "teaching_rubrics", listKey: "rubrics", idField: "id", families: [.teaching]),
+        // Source texts and public testimony dossiers. Private contacts/media
+        // continue to use their separately granted Bridge domains.
+        .init(path: "archive-items", table: "archive_items", listKey: "items", idField: "item_id", families: [.archive]),
+        .init(path: "archive-repositories", table: "archive_repositories", listKey: "repositories", idField: "repository_id", families: [.archive]),
+        .init(path: "archive-units", table: "archive_description_units", listKey: "units", idField: "unit_id", families: [.archive]),
+        .init(path: "archive-excerpts", table: "archive_excerpts", listKey: "excerpts", idField: "excerpt_id", families: [.archive]),
+        .init(path: "source-analyses", table: "archive_source_analyses", listKey: "analyses", idField: "analysis_id", families: [.archive]),
+        .init(path: "testimony-interviews", table: "testimony_interviews", listKey: "interviews", idField: "id", families: [.testimonies]),
+        .init(path: "testimony-transcripts", table: "testimony_transcripts", listKey: "transcripts", idField: "id", families: [.testimonies]),
+        .init(path: "testimony-codes", table: "testimony_codes", listKey: "codes", idField: "id", families: [.testimonies]),
+        .init(path: "testimony-contrasts", table: "testimony_contrasts", listKey: "contrasts", idField: "id", families: [.testimonies]),
+        .init(path: "prosopography-public-population", table: "prosopography_public_population", listKey: "population", idField: "id", families: [.prosopography]),
+        .init(path: "prosopography-public-variables", table: "prosopography_public_variables", listKey: "variables", idField: "id", families: [.prosopography]),
+        .init(path: "prosopography-public-sources", table: "prosopography_public_sources", listKey: "sources", idField: "id", families: [.prosopography]),
+        .init(path: "prosopography-public-analysis", table: "prosopography_public_analysis", listKey: "analyses", idField: "id", families: [.prosopography]),
+        .init(path: "prosopography-public-networks", table: "prosopography_public_networks", listKey: "networks", idField: "id", families: [.prosopography]),
         // Databases
         .init(path: "databases", table: "db_databases", listKey: "databases", idField: "id", families: [.databases]),
+        .init(path: "database-pages", table: "pages", listKey: "pages", idField: "id", families: [.databases]),
     ]
 
     public static let byPath: [String: CollectionDescriptor] = Dictionary(

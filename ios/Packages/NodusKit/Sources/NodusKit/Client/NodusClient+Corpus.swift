@@ -20,7 +20,7 @@ public extension NodusClient {
         return try decode(SpaceOverview.self, from: response)
     }
 
-    /// A page of any of the twenty collections.
+    /// A page of any declared public collection.
     ///
     /// `q` is the server's only filter: a case-insensitive substring scanned across *every*
     /// string column of the row (`server/lib/core/search.mjs:54-61`), not a field search.
@@ -47,18 +47,17 @@ public extension NodusClient {
         return try page(from: response, key: collection.listKey)
     }
 
-    /// The generic detail: one row under the path with its trailing `s` removed.
+    /// The primary row of a dossier, under its declared domain key.
     ///
-    /// Five collections have an enriched handler instead and have their own methods below —
-    /// `ideas`, `works`, `persons`, `authors`, `databases`. Calling this for one of those
-    /// would still work, but would throw away the relations that make the screen worth opening.
+    /// Use a dossier reader when relations, versions or evidence are needed; this
+    /// convenience method deliberately returns only the primary row.
     func item(_ collection: CollectionDescriptor, id: String, in spaceId: String) async throws -> Row {
         let response = try await perform(.init(
             path: address.spacePath(spaceId, "/\(collection.path)/\(escape(id))"),
             cacheable: true
         ))
         let object = try object(from: response)
-        guard let row = object[collection.detailKey]?.objectValue else {
+        guard let row = CompanionCollectionCopy.primaryRow(collection, detail: object) else {
             throw TransportError.malformedResponse(expected: "an object under \"\(collection.detailKey)\"")
         }
         return Row(row)
@@ -323,7 +322,7 @@ public extension NodusClient {
 
 extension NodusClient {
     func escape(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))) ?? value
     }
 
     func pagingItems(limit: Int?, offset: Int?) -> [URLQueryItem] {
@@ -339,7 +338,7 @@ extension NodusClient {
 
     func page(from response: Response, key: String) throws -> Page<Row> {
         let object = try object(from: response)
-        guard let array = object[key]?.arrayValue else {
+        guard let array = object[key]?.arrayValue, array.allSatisfy({ $0.objectValue != nil }) else {
             // Reading the wrong key is the one mistake that produces an empty list and no
             // error at all, so it is named rather than allowed to look like an empty vault.
             throw TransportError.malformedResponse(expected: "an array under \"\(key)\"")
@@ -350,7 +349,8 @@ extension NodusClient {
             limit: object["limit"]?.intValue ?? PageBounds.defaultLimit,
             offset: object["offset"]?.intValue ?? 0,
             hasMore: object["hasMore"]?.boolValue ?? false,
-            revision: object["revision"]?.stringValue ?? ""
+            revision: object["revision"]?.stringValue ?? "",
+            fromDevice: response.fromCache
         )
     }
 }
