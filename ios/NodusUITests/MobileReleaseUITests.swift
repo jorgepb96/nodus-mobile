@@ -1301,7 +1301,8 @@ final class MobileReleaseUITests: XCTestCase {
     func testAutonomousDictionaryConsultationAndModePersistence() throws {
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_DICTIONARY_NAME"], "A generated entry with evidence, versions and a relation is required.")
         let relatedName = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_DICTIONARY_RELATED_NAME"], "The related entry must be identified by the laboratory fixture.")
-        let app = try pairLive(route: "settings")
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.waitForExistence(timeout: 20), app.debugDescription); mode.tap()
@@ -1312,7 +1313,7 @@ final class MobileReleaseUITests: XCTestCase {
         let dictionary = app.buttons["nodus-nav-dictionary"]
         for _ in 0..<6 { if dictionary.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(dictionary.isHittable, app.debugDescription); dictionary.tap()
-        let web = app.webViews.firstMatch
+        let web = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 35), app.debugDescription)
         let search = web.textFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 30)); search.tap(); search.typeText(name + "\n")
@@ -1346,7 +1347,7 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(web.staticTexts["Editar entrada"].waitForExistence(timeout: 15))
         capture(app, "autonomous-dictionary-options")
         app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK")
-        app.launchEnvironment["NODUS_START_ROUTE"] = "dictionary"; app.launch()
+        app.launch()
         let principal = app.buttons["space-default"]
         if principal.waitForExistence(timeout: 5) { principal.tap() }
         XCTAssertTrue(app.descendants(matching: .any)["shared-desktop-dictionary"].waitForExistence(timeout: 30))
@@ -1359,7 +1360,8 @@ final class MobileReleaseUITests: XCTestCase {
     @MainActor
     func testAutonomousDictionaryGeneratesWithPhoneProviderAndPersists() throws {
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_DICTIONARY_NAME"])
-        let app = try pairLive(route: "settings")
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.waitForExistence(timeout: 20)); mode.tap()
@@ -1368,7 +1370,7 @@ final class MobileReleaseUITests: XCTestCase {
         let dictionary = app.buttons["nodus-nav-dictionary"]
         for _ in 0..<6 { if dictionary.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(dictionary.isHittable); dictionary.tap()
-        let web = app.webViews.firstMatch
+        let web = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 35))
         let search = web.textFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 30)); search.tap()
@@ -1396,10 +1398,10 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Versión ·")).firstMatch.waitForExistence(timeout: 20))
         capture(app, "autonomous-dictionary-generated-version")
         app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK")
-        app.launchEnvironment["NODUS_START_ROUTE"] = "dictionary"; app.launch()
+        app.launch()
         let principal = app.buttons["space-default"]
         if principal.waitForExistence(timeout: 5) { principal.tap() }
-        let reopened = app.webViews.firstMatch
+        let reopened = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 30))
         let reopenedSearch = reopened.textFields.firstMatch
         XCTAssertTrue(reopenedSearch.waitForExistence(timeout: 30)); reopenedSearch.tap(); reopenedSearch.typeText("\(name)\n")
@@ -1411,7 +1413,8 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testAutonomousImmersionGeneratesPersistsAndResumes() throws {
-        let app = try pairLive(route: "settings")
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.waitForExistence(timeout: 20)); mode.tap()
@@ -1420,7 +1423,7 @@ final class MobileReleaseUITests: XCTestCase {
         let immersion = app.buttons["nodus-nav-immersion"]
         for _ in 0..<6 { if immersion.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(immersion.isHittable); immersion.tap()
-        let web = app.webViews.firstMatch
+        let web = app.otherElements["shared-desktop-immersion"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 35))
         let create = web.buttons["Nueva inmersión"]
         XCTAssertTrue(create.waitForExistence(timeout: 30)); create.tap()
@@ -1450,10 +1453,10 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "autonomous-immersion-first-station")
         XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
         app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK")
-        app.launchEnvironment["NODUS_START_ROUTE"] = "immersion"; app.launch()
+        app.launch()
         let principal = app.buttons["space-default"]
         if principal.waitForExistence(timeout: 5) { principal.tap() }
-        let reopened = app.webViews.firstMatch
+        let reopened = app.otherElements["shared-desktop-immersion"].webViews.firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 35))
         let search = reopened.textFields["Buscar entre tus inmersiones…"]
         XCTAssertTrue(search.waitForExistence(timeout: 25)); search.tap(); search.typeText("propaganda turística\n")
@@ -1513,8 +1516,10 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(editor.isHittable, app.debugDescription)
         capture(app, "live-scriptor-before-edit")
-        let paragraph = web.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Párrafo escrito en el Mac para comprobar la edición móvil.")).firstMatch
+        let paragraph = web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "escrito en el Mac para comprobar la edición móvil.")).firstMatch
         XCTAssertTrue(paragraph.exists, app.debugDescription)
+        for _ in 0..<8 { if paragraph.isHittable { break }; web.swipeUp() }
+        XCTAssertTrue(paragraph.isHittable, app.debugDescription)
         paragraph.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.2)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         let edit = "Edición comprobada desde el iPhone \(UUID().uuidString.prefix(8))"
@@ -1536,7 +1541,8 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testAutonomousWritingImprovesAndReopensSavedDocument() throws {
-        let app = try pairLive(route: "settings")
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.waitForExistence(timeout: 20)); mode.tap()
@@ -1545,7 +1551,7 @@ final class MobileReleaseUITests: XCTestCase {
         let scriptor = app.buttons["nodus-nav-workspace"]
         for _ in 0..<7 { if scriptor.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(scriptor.isHittable, app.debugDescription); scriptor.tap()
-        let web = app.webViews.firstMatch
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
         let search = web.textFields["Buscar en notas e ideas…"]
         XCTAssertTrue(search.waitForExistence(timeout: 35)); search.tap()
         search.typeText("Aceptación asistencia autónoma 0.1.0\n")
@@ -1587,7 +1593,7 @@ final class MobileReleaseUITests: XCTestCase {
         app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK"); app.launchEnvironment.removeValue(forKey: "NODUS_START_ROUTE"); app.launch()
         let principal = app.buttons["space-default"]
         if principal.waitForExistence(timeout: 10) { principal.tap() }
-        let reopened = app.webViews.firstMatch
+        let reopened = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
         let catalogue = reopened.buttons["Abrir Aceptación asistencia autónoma 0.1.0"]
         if catalogue.waitForExistence(timeout: 10) { catalogue.tap() }
         let persisted = reopened.textViews["Editor del documento"]
@@ -1599,7 +1605,8 @@ final class MobileReleaseUITests: XCTestCase {
     @MainActor
     func testAutonomousReportTranslationUsesPhoneAndReopens() throws {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TRANSLATION_REPORT_TITLE"], "An actual saved lab report is required.")
-        let app = try pairLive(route: "settings")
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.waitForExistence(timeout: 20)); mode.tap()
@@ -1608,7 +1615,7 @@ final class MobileReleaseUITests: XCTestCase {
         let reports = app.buttons["nodus-nav-deepResearch"]
         for _ in 0..<6 { if reports.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(reports.isHittable); reports.tap()
-        let web = app.webViews.firstMatch
+        let web = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
         let search = web.textFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 35)); search.tap(); search.typeText(String(title.prefix(42)) + "\n")
         let report = web.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
