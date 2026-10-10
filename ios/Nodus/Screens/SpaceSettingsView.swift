@@ -698,7 +698,6 @@ private struct CompanionCopySettings: View {
         } header: { Text("On this device") } footer: {
             Text("Opened content is kept encrypted for offline reading. Older consulted copies are removed when the limit is reached. Drafts and pending work are always preserved.")
         }
-        .accessibilityIdentifier("companion-offline-storage")
         .task { await refresh() }
         .sheet(isPresented: $showingDownload, onDismiss: { Task { await refresh() } }) { CompanionDownloadsView(session: session) }
         .confirmationDialog("Free space used by consulted content?", isPresented: $confirmClear, titleVisibility: .visible) {
