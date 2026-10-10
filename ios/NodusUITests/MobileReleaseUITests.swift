@@ -1373,7 +1373,11 @@ final class MobileReleaseUITests: XCTestCase {
         let web = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 35))
         let search = web.textFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 30)); search.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 30))
+        let readyEntry = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        XCTAssertTrue(readyEntry.waitForExistence(timeout: 90), "The real dictionary catalogue must finish loading before generation.\n\(app.debugDescription)")
+        capture(app, "autonomous-dictionary-ready-before-keyboard")
+        XCTAssertTrue(search.isHittable); search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "The dictionary input must open the keyboard on touch.\n\(app.debugDescription)")
         search.typeText("\(name)\n")
         let entry = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
