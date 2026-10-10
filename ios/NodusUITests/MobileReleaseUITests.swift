@@ -82,8 +82,16 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testLivePhoneChatStreamsCopiesAndReopensFromHistory() throws {
-        let app = try openExistingPrincipal(destination: "researchChat")
+        let app = try openExistingPrincipal(destination: "settings")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        let mode = app.buttons["ai-execution-mode"]
+        for _ in 0..<8 { if mode.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(mode.isHittable); mode.tap(); app.buttons["Live · modelos del Mac"].tap()
+        XCTAssertTrue(mode.label.contains("Live · modelos del Mac"))
+        app.buttons["nodus-navigation-toggle"].tap()
+        let chat = app.buttons["nodus-nav-researchChat"]
+        for _ in 0..<8 { if chat.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(chat.isHittable); chat.tap()
         let web = app.otherElements["shared-desktop-chat"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 35))
         let history = web.buttons["Historial de chats"].firstMatch
@@ -1783,7 +1791,7 @@ final class MobileReleaseUITests: XCTestCase {
         var request = URLRequest(url: address); request.timeoutInterval = 8
         do {
             _ = try await probe.data(for: request)
-            XCTFail("The owning Mac must actually be unavailable."); return
+            throw NSError(domain: "NodusAcceptance", code: 1, userInfo: [NSLocalizedDescriptionKey: "The owning Mac must actually be unavailable."])
         } catch {
             let transport = try XCTUnwrap(error as? URLError)
             XCTAssertTrue([.cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet, .timedOut].contains(transport.code))

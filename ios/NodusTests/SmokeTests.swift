@@ -6,6 +6,35 @@ import Testing
 @Suite("Local surface draft isolation")
 @MainActor
 struct MobileSurfaceStorageTests {
+    @Test("an unchanged Mac revision flushes authorized work without a downloaded mirror")
+    func reconnectWithoutPublicationChange() async throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let connection = AppModel.Connection(origin: "https://companion.test", spaceId: "isolated-reconnect-\(UUID().uuidString)",
+            spaceName: "Fixture", serverName: "Mac", role: .owner, vaultId: "fixture-vault", desktopPairingId: "fixture-grant")
+        defer { UserDefaults.standard.removeObject(forKey: "ai-execution-mode:\(connection.id)") }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CompanionReconnectProtocol.self]
+        let transport = URLSession(configuration: configuration)
+        defer { transport.invalidateAndCancel() }
+        let client = NodusClient(address: ServerAddress(trusted: connection.origin), token: "fixture-token", session: transport, cache: ResponseCache(directory: root.appendingPathComponent("http")))
+        let session = SpaceSession(connection: connection, client: client, mirrorDirectory: root)
+        await session.refreshPublishedContent() // No revision and no pending work.
+        #expect(session.publishedRevision == nil)
+        #expect(session.mirror == nil)
+        let queue = try await MutationOutbox.open(spaceId: connection.storageId, directory: root)
+        let authorized = Mutation(clientId: "phone", kind: .upsert, table: .notes, key: ["authorized"], schemaVersion: 1)
+        let unsent = Mutation(clientId: "phone", kind: .upsert, table: .notes, key: ["unsent"], schemaVersion: 1)
+        try await queue.enqueue(authorized, title: "Authorized save")
+        try await queue.enqueue(unsent, title: "Unconfirmed draft")
+        _ = try await queue.authorise(ids: [authorized.id])
+        await session.refreshPublishedContent() // The same successful HEAD must trigger delivery.
+        let items = try await queue.items()
+        #expect(items.first(where: { $0.id == authorized.id })?.state == .delivered)
+        #expect(items.first(where: { $0.id == unsent.id })?.state == .pending)
+        #expect(try await queue.authorisedCount() == 0)
+        #expect(session.aiExecutionMode == .live)
+    }
     @Test("a stored live connection uses the Bridge and rejects generic authenticated Server routes before transport")
     func backgroundLiveClientUsesBridge() async throws {
         let pairing = try DesktopBridgePairing(id: "fixture-pair", origin: "https://mac.invalid", certificateFingerprint: String(repeating: "a", count: 64),
@@ -100,6 +129,38 @@ struct MobileSurfaceStorageTests {
             #expect(try Data(contentsOf: file).range(of: payload) == nil)
         }
     }
+}
+
+private final class CompanionReconnectProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "companion.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            let body: Data
+            if request.httpMethod == "HEAD" { body = Data() }
+            else {
+                guard request.httpMethod == "POST", request.url?.path.hasSuffix("/mutations") == true else { throw URLError(.unsupportedURL) }
+                let bytes: Data
+                if let data = request.httpBody { bytes = data }
+                else if let stream = request.httpBodyStream {
+                    stream.open(); defer { stream.close() }
+                    var data = Data(), buffer = [UInt8](repeating: 0, count: 4096)
+                    while stream.hasBytesAvailable { let count = stream.read(&buffer, maxLength: buffer.count); if count <= 0 { break }; data.append(buffer, count: count) }
+                    bytes = data
+                } else { throw URLError(.badServerResponse) }
+                let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
+                let mutations = try #require(object?["mutations"] as? [[String: Any]])
+                #expect(mutations.count == 1)
+                #expect(mutations.first?["key"] as? [String] == ["authorized"])
+                let ids = mutations.compactMap { $0["id"] as? String }
+                body = try JSONSerialization.data(withJSONObject: ["accepted": ids, "duplicate": [], "rejected": [], "applied": ids])
+            }
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body); client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
+    }
+    override func stopLoading() { }
 }
 
 /// The app target's own tests. The interesting assertions live in the packages, where they

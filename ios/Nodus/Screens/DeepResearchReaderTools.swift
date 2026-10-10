@@ -491,15 +491,12 @@ struct DeepResearchTranslationSheet: View {
         let requestedLanguage = language
         Task {
             do {
-                let response = try await ProviderClient(keyProvider: ai.keyProvider).complete(ChatRequest(
-                    model: model,
-                    messages: [
-                        .init(role: .system, content: "Translate academic Markdown faithfully. Preserve headings, Nodus citation links, quotations and bibliography. Return only the translated Markdown."),
-                        .init(role: .user, content: "Target language: \(languageName)\n\n\(sourceMarkdown)"),
-                    ],
-                    temperature: 0.1,
-                    maxTokens: 16_000
-                ))
+                let provider = ProviderClient(keyProvider: ai.keyProvider)
+                let response = try await AcademicTranslation.translate(source: sourceMarkdown, language: languageName) { system, source in
+                    try await provider.complete(ChatRequest(model: model, messages: [
+                        .init(role: .system, content: system), .init(role: .user, content: source)
+                    ], temperature: 0.1, maxTokens: 16_000))
+                }
                 let value = store.save(reportId: reportId, language: requestedLanguage, markdown: response, model: model)
                 await sync(value)
             } catch {

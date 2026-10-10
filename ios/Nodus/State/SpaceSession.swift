@@ -63,9 +63,10 @@ final class SpaceSession {
         return overview?.vault?.type ?? connection.vaultType
     }
 
-    private init(
+    init(
         connection: AppModel.Connection,
         client: NodusClient,
+        mirrorDirectory: URL = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true),
         // Defaulted because a corpus held on this device has no connection to fail: the example
         // vault opens or the build is broken, and neither is something the space picker can
         // offer a way out of.
@@ -78,7 +79,7 @@ final class SpaceSession {
         self.onFailure = onFailure
         // Application Support, not Caches: the mirror is what the app falls back to on a plane,
         // and the system is free to delete Caches whenever it likes.
-        mirrorDirectory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
+        self.mirrorDirectory = mirrorDirectory
         names = CorpusNames(client: client, spaceId: connection.spaceId)
     }
 
@@ -345,7 +346,7 @@ final class SpaceSession {
               !isSynchronizingCompanionChanges else { return }
         isSynchronizingCompanionChanges = true
         defer { isSynchronizingCompanionChanges = false }
-        let directory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
+        let directory = mirrorDirectory
         guard MutationOutbox.exists(spaceId: connection.storageId, directory: directory),
               let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: directory),
               let pending = try? await outbox.authorisedPending(limit: 1), !pending.isEmpty else { return }
