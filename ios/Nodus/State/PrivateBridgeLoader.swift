@@ -84,6 +84,7 @@ func loadPrivateBridgeFile(_ session: SpaceSession, kind: DesktopBridgeFileKind,
 /// Reads a fixed private domain directly from its paired Mac and keeps only an encrypted,
 /// complete-file-protection fallback. The caller supplies the table names; Desktop still applies
 /// the authoritative per-domain allowlist, so this helper cannot broaden a pairing grant.
+@MainActor
 func loadPrivateBridgeTables(
     _ session: SpaceSession,
     domain: DesktopBridgeDomain,

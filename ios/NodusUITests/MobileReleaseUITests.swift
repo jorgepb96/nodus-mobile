@@ -5,6 +5,137 @@ import CryptoKit
 final class MobileReleaseUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     @MainActor
+    func testExistingMacPhoneChatKeepsKeyboardDraftAndSeparateHistory() throws {
+        let app = try openExistingPrincipal(destination: "researchChat")
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        XCTAssertLessThan(app.windows.firstMatch.frame.width, 600, "Run this test on an iPhone.")
+        let web = app.otherElements["shared-desktop-chat"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 30), app.debugDescription)
+        let input = web.textViews.firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        XCTAssertFalse(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "operation_forbidden")).firstMatch.exists)
+        let draft = "Pregunta de prueba sin enviar\nSegunda línea"
+        XCTAssertTrue(input.isHittable); input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        input.typeText(draft)
+        XCTAssertEqual(input.value as? String, draft, "Return must insert a line break without sending a live request.")
+        XCTAssertTrue(app.keyboards.firstMatch.exists, "Typing must not dismiss the iPhone keyboard.")
+        capture(app, "phone-chat-keyboard-multiline-draft")
+        let history = web.buttons["Historial de chats"].firstMatch
+        XCTAssertTrue(history.isHittable); history.tap()
+        let dialog = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Historial de chats,")).firstMatch
+        XCTAssertTrue(dialog.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(dialog.buttons["Cerrar"].isHittable)
+        XCTAssertGreaterThanOrEqual(dialog.frame.width, web.frame.width - 2)
+        capture(app, "phone-chat-separate-history")
+        dialog.buttons["Cerrar"].tap()
+        XCTAssertTrue(dialog.waitForNonExistence(timeout: 10))
+        XCTAssertEqual(input.value as? String, draft)
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            let turned = NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+            XCTAssertTrue(input.isHittable); input.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+            XCTAssertEqual(input.value as? String, draft)
+            XCTAssertTrue(history.isHittable)
+            let webSearch = web.switches["Búsqueda web"].firstMatch
+            let effort = web.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Esfuerzo de thinking:")).firstMatch
+            for control in [input, history, web.buttons["Enviar"].firstMatch, webSearch, effort] {
+                XCTAssertTrue(control.exists, app.debugDescription)
+                XCTAssertTrue(control.isHittable, "Every composer control must remain reachable above the keyboard.")
+                XCTAssertGreaterThanOrEqual(control.frame.minY, web.frame.minY - 1)
+                XCTAssertLessThanOrEqual(control.frame.maxY, web.frame.maxY + 1, "A partly clipped control must not count as mobile-friendly.\n\(app.debugDescription)")
+            }
+            XCTAssertFalse(web.staticTexts["para enviar"].exists, "Desktop keyboard instructions do not belong on the iPhone.")
+            capture(app, orientation == .portrait ? "phone-chat-keyboard-portrait" : "phone-chat-keyboard-landscape")
+        }
+    }
+    @MainActor private func openExistingPrincipal(destination: String) throws -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+        let env = ProcessInfo.processInfo.environment
+        for key in ["NODUS_ACCEPTANCE_LINK", "NODUS_ACCEPTANCE_PAIRING_CODE", "NODUS_ACCEPTANCE_SNAPSHOT_FILENAME", "NODUS_START_ROUTE"] {
+            XCTAssertNil(env[key], "This regression must use the normally reopened Mac connection.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        if let style = env["NODUS_ACCEPTANCE_INTERFACE_STYLE"] { app.launchArguments += ["-nodus.prefs.interfaceStyle", style] }
+        app.launch()
+        let navigation = app.buttons["nodus-navigation-toggle"]
+        XCTAssertTrue(navigation.waitForExistence(timeout: 45), app.debugDescription)
+        app.buttons["Cambiar de espacio"].tap()
+        let principal = app.buttons["space-default"]
+        XCTAssertTrue(principal.waitForExistence(timeout: 20), "The previously linked workspace must be available.")
+        for _ in 0..<8 { if principal.isHittable { break }; app.swipeDown() }
+        XCTAssertTrue(principal.isHittable); principal.tap()
+        XCTAssertTrue(navigation.waitForExistence(timeout: 45)); navigation.tap()
+        let route = app.buttons["nodus-nav-" + destination]
+        XCTAssertTrue(route.waitForExistence(timeout: 10))
+        for _ in 0..<8 { if route.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(route.isHittable); route.tap()
+        return app
+    }
+    @MainActor
+    func testExistingMacPhoneReaderUsesOneSelectionRibbon() throws {
+        let env = ProcessInfo.processInfo.environment
+        let marker = try XCTUnwrap(env["NODUS_ACCEPTANCE_RESEARCH_MARKER"])
+        let snippet = try XCTUnwrap(env["NODUS_ACCEPTANCE_RESEARCH_BODY_SNIPPET"])
+        let app = try openExistingPrincipal(destination: "deepResearch")
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        let web = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 35), app.debugDescription)
+        let back = web.buttons["Volver a la galería"].firstMatch
+        if back.waitForExistence(timeout: 3) { back.tap() }
+        let search = web.textFields.firstMatch
+        try focusResearchSearch(search, in: web, app: app)
+        if let value = search.value as? String, value.contains("NodusQA-") {
+            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
+        }
+        search.typeText(marker); try dismissResearchKeyboard(app)
+        let read = web.buttons["Leer"].firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 45), app.debugDescription)
+        try revealResearchControl(read, in: web, upwards: true); read.tap()
+        let body = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", snippet)).firstMatch
+        XCTAssertTrue(body.waitForExistence(timeout: 25), app.debugDescription)
+        try revealResearchControl(body, in: web, upwards: true)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        XCTAssertFalse(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "does not grant access")).firstMatch.exists)
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let turned = NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+            try revealResearchControl(body, in: web, upwards: true)
+            XCTAssertGreaterThanOrEqual(body.frame.minX, web.frame.minX - 1)
+            XCTAssertLessThanOrEqual(body.frame.maxX, web.frame.maxX + 1, "Reading text must fit the iPhone's width.")
+            capture(app, orientation == .portrait ? "phone-reader-portrait" : "phone-reader-landscape")
+        }
+        XCUIDevice.shared.orientation = .portrait
+        try revealResearchControl(body, in: web, upwards: true)
+        body.press(forDuration: 1.2)
+        let copy = web.buttons["Copiar"].firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 10), "Selecting a word must present the Nodus ribbon.\n\(app.debugDescription)")
+        for label in ["Subrayar 1", "Subrayar 2", "Subrayar 3", "Subrayar 4", "Subrayar 5", "Subrayar 6", "Copiar", "Añadir comentario", "Citar en Nodi"] {
+            let action = web.buttons[label].firstMatch
+            XCTAssertTrue(action.exists, label)
+            XCTAssertTrue(action.isHittable, "The unified ribbon must fit the phone: " + label)
+            XCTAssertGreaterThanOrEqual(action.frame.minX, web.frame.minX - 1)
+            XCTAssertLessThanOrEqual(action.frame.maxX, web.frame.maxX + 1)
+        }
+        XCTAssertFalse(app.menuItems["Copiar"].exists)
+        XCTAssertFalse(app.menuItems["Copy"].exists)
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "Copiar")).count,
+                       web.buttons.matching(NSPredicate(format: "label == %@", "Copiar")).count,
+                       "There must not be a second native Copy action outside the Nodus ribbon.")
+        capture(app, "phone-reader-unified-selection")
+    }
+    @MainActor
     func testSharedGraphLoadsRealDesktopCanvas() throws {
         for style in ["light", "dark"] {
             try verifyDesktopGraph(style: style)

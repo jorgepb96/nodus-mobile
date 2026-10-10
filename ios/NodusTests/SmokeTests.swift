@@ -60,8 +60,11 @@ struct MobileSurfaceStorageTests {
         #expect(context.name == "Principal")
         #expect(context.type == .academic)
         let loaded = MobileSurfaceVaultContext.descriptor(connection: connection, vault: VaultDescriptor(id: "vault-b", name: "Estudio", type: .estudio))
-        #expect(loaded.id == "vault-b")
-        #expect(loaded.type == .estudio)
+        #expect(loaded.id == "vault-a")
+        #expect(loaded.name == "Principal")
+        #expect(loaded.type == .academic)
+        let matching = MobileSurfaceVaultContext.descriptor(connection: connection, vault: VaultDescriptor(id: "vault-a", name: "Principal actualizado", type: .academic))
+        #expect(matching.name == "Principal actualizado")
     }
 
     @Test("a publication without a vault identity retains that absence in shared surfaces")

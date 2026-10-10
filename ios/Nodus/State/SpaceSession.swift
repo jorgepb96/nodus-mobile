@@ -54,8 +54,13 @@ final class SpaceSession {
     private let mirrorDirectory: URL
 
     var accent: Color { connection.accent }
-    var vaultId: String? { overview?.vault?.id ?? connection.vaultId }
-    var vaultType: VaultType? { overview?.vault?.type ?? connection.vaultType }
+    // A live grant is bound to this vault, regardless of the Mac's active vault
+    // or an overview retained during a workspace switch.
+    var vaultId: String? { connection.desktopPairingId != nil ? connection.vaultId : overview?.vault?.id ?? connection.vaultId }
+    var vaultType: VaultType? {
+        if connection.desktopPairingId != nil && overview?.vault?.id != connection.vaultId { return connection.vaultType }
+        return overview?.vault?.type ?? connection.vaultType
+    }
 
     private init(
         connection: AppModel.Connection,

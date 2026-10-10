@@ -7,7 +7,12 @@ enum DesktopSurface: String { case graph, dictionary, workspace, argument, deepR
 
 enum MobileSurfaceVaultContext {
     static func descriptor(connection: AppModel.Connection, vault: VaultDescriptor?) -> VaultDescriptor {
-        VaultDescriptor(id: vault?.id ?? connection.vaultId,
+        if connection.desktopPairingId != nil {
+            let matchingVault = vault?.id == connection.vaultId ? vault : nil
+            return VaultDescriptor(id: connection.vaultId, name: matchingVault?.name ?? connection.vaultName,
+                type: matchingVault?.type ?? connection.vaultType)
+        }
+        return VaultDescriptor(id: vault?.id ?? connection.vaultId,
             name: vault?.name ?? connection.vaultName, type: vault?.type ?? connection.vaultType)
     }
 }
@@ -144,6 +149,25 @@ private struct StudyEvidenceDocument: View {
     }
 }
 
+/// Preserve native selection handles and the keyboard's editing commands. Only
+/// a selection handled by the document's Nodus ribbon replaces the system menu.
+private final class ReaderSurfaceWebView: WKWebView {
+    var readerSelectionManaged = false
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        if readerSelectionManaged { builder.replaceChildren(ofMenu: .root) { _ in [] } }
+    }
+    func dismissReaderEditMenu() {
+        func dismiss(in view: UIView) {
+            for interaction in view.interactions {
+                (interaction as? UIEditMenuInteraction)?.dismissMenu()
+            }
+            view.subviews.forEach { dismiss(in: $0) }
+        }
+        dismiss(in: self)
+    }
+}
+
 private struct DesktopWebView: UIViewRepresentable {
     @Environment(\.nodusResidentRouteActive) private var routeActive
     let session: SpaceSession
@@ -163,6 +187,7 @@ private struct DesktopWebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "nodus")
         let data: [String: Any] = ["surface": surface.rawValue, "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+            "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
         if let json = try? JSONSerialization.data(withJSONObject: data), let text = String(data: json, encoding: .utf8) {
             let bootstrap = """
@@ -184,7 +209,7 @@ private struct DesktopWebView: UIViewRepresentable {
             """
             config.userContentController.addUserScript(WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
-        let view = WKWebView(frame: .zero, configuration: config)
+        let view = ReaderSurfaceWebView(frame: .zero, configuration: config)
         view.accessibilityElementsHidden = !routeActive
         view.isHidden = !routeActive
         view.isOpaque = false
@@ -199,15 +224,7 @@ private struct DesktopWebView: UIViewRepresentable {
                 let javascript = try String(contentsOf: script, encoding: .utf8)
                 let guarded = "try {\n" + javascript + "\n} catch(e) { window.webkit.messageHandlers.nodus.postMessage({id:'error',method:'surfaceError',args:[String(e.message || e)]}); }"
                 config.userContentController.addUserScript(WKUserScript(source: guarded, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-                if UIDevice.current.userInterfaceIdiom == .phone {
-                    guard let stylesheet = Bundle.main.url(forResource: "PhoneSurfaces", withExtension: "css") else {
-                        throw CocoaError(.fileNoSuchFile)
-                    }
-                    let styles = try String(contentsOf: stylesheet, encoding: .utf8)
-                    let encoded = try JSONSerialization.data(withJSONObject: styles, options: [.fragmentsAllowed])
-                    let literal = String(decoding: encoded, as: UTF8.self)
-                    config.userContentController.addUserScript(WKUserScript(source: "document.documentElement.classList.add('nodus-phone');const phoneStyle=document.createElement('style');phoneStyle.textContent=\(literal);document.head.appendChild(phoneStyle);", injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-                }
+
             } catch { context.coordinator.onError(error.localizedDescription) }
             context.coordinator.tasks.append(Task {
                 do {
@@ -283,7 +300,10 @@ private struct DesktopWebView: UIViewRepresentable {
                     var value: JSONValue
                     if method == "persistSurfaceStorage" {
                         try await persistSurfaceStorage(args.first ?? .null); value = .null
-                    } else if method == "surfaceVaultContext", args.isEmpty {
+                    } else if method == "readerSelectionState", args.count == 1, let selected = input.first as? Bool {
+                        (webView as? ReaderSurfaceWebView)?.readerSelectionManaged = selected
+                        value = .null
+                    } else if ["surfaceVaultContext", "getActiveVault"].contains(method), args.isEmpty {
                         let vault = MobileSurfaceVaultContext.descriptor(connection: session.connection, vault: session.overview?.vault)
                         value = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(vault))
                     } else if method == "surfaceFullscreen", let enabled = input.first as? Bool {
@@ -475,6 +495,15 @@ private struct DesktopWebView: UIViewRepresentable {
             panel.addAction(UIAlertAction(title: String(localized: "Accept"), style: .default) { _ in finish(true) })
             javaScriptPanel = panel
             presenter.present(panel, animated: true)
+        }
+        func webView(_ view: WKWebView, willPresentEditMenuWithAnimator animator: any UIEditMenuInteractionAnimating) {
+            // WebKit may present before the asynchronous selection-state message
+            // reaches Swift. Recheck the actual range and keep handles intact.
+            animator.addCompletion {
+                view.evaluateJavaScript("(()=>{const s=window.getSelection();if(!s||s.isCollapsed||!s.rangeCount)return false;const node=s.getRangeAt(0).commonAncestorContainer;const root=(node.nodeType===1?node:node.parentElement)?.closest('[data-reader-managed-selection]');if(!root)return false;document.dispatchEvent(new Event('nodus-reader-selection'));return true})()") { value, _ in
+                    if value as? Bool == true { (view as? ReaderSurfaceWebView)?.dismissReaderEditMenu() }
+                }
+            }
         }
         func webView(_ view: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard let url = action.request.url else { return .cancel }
