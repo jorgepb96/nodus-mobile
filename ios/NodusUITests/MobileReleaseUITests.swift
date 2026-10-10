@@ -88,6 +88,7 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(web.waitForExistence(timeout: 35))
         let history = web.buttons["Historial de chats"].firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 30)); history.tap()
+        let priorChats = Set(web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Abrir ")).allElementsBoundByIndex.map(\.label))
         let newChat = web.buttons["Nueva conversación"].firstMatch
         XCTAssertTrue(newChat.waitForExistence(timeout: 15)); newChat.tap()
         let input = web.textViews["Pregunta al asistente..."].firstMatch
@@ -128,6 +129,12 @@ final class MobileReleaseUITests: XCTestCase {
         copy.tap()
         XCTAssertTrue(UIPasteboard.general.string?.contains(marker) == true, "Copy must contain this exact generated response.")
         capture(app, "phone-chat-live-completed-copied")
+        history.tap()
+        let newRow = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@ AND NOT (label IN %@)", "Abrir ", Array(priorChats))).firstMatch
+        XCTAssertTrue(newRow.waitForExistence(timeout: 20), "The generated conversation must be present in the history.\n\(app.debugDescription)")
+        let savedTitle = String(newRow.label.dropFirst("Abrir ".count))
+        XCTAssertFalse(savedTitle.isEmpty)
+        print("NODUS_CHAT_TITLE=\(savedTitle)")
         app.terminate(); app.launch()
         let principal = app.buttons["space-default"]
         if principal.waitForExistence(timeout: 5) { principal.tap() }
@@ -136,8 +143,8 @@ final class MobileReleaseUITests: XCTestCase {
         reopened.buttons["Historial de chats"].firstMatch.tap()
         let search = reopened.searchFields["Buscar en el historial"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 20), app.debugDescription)
-        search.tap(); search.typeText(marker + "\n")
-        let saved = reopened.buttons.containing(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
+        search.tap(); search.typeText(savedTitle + "\n")
+        let saved = reopened.buttons["Abrir " + savedTitle].firstMatch
         XCTAssertTrue(saved.waitForExistence(timeout: 20)); saved.tap()
         let restored = reopened.otherElements["Respuesta del asistente"].firstMatch
         XCTAssertTrue(restored.waitForExistence(timeout: 20))
