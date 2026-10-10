@@ -11,6 +11,7 @@ struct RootView: View {
     @State private var preferences = AppPreferences()
     @State private var tilt = DeviceTiltProvider()
     @State private var showingConnect = false
+    @State private var didRestoreSession = false
     @State private var pairingLink: String?
     /// The queue belongs to the device rather than to a space, so it lives above the branch
     /// that decides whether a space is open at all.
@@ -82,6 +83,10 @@ struct RootView: View {
         }
         .dynamicTypeSize(effectiveTextSize)
         .task {
+            // Changing the root branch can start this task again. Restoration belongs
+            // to launch; closing a workspace must leave its chooser open, also offline.
+            guard !didRestoreSession else { return }
+            didRestoreSession = true
 #if DEBUG
             if let filename = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SNAPSHOT_FILENAME"] {
                 do { try await model.openAcceptanceSnapshot(filename) }

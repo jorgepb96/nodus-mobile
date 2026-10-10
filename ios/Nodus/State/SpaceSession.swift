@@ -39,6 +39,7 @@ final class SpaceSession {
     /// Serialises the cheap HEAD probes from the foreground loop and the scene activation
     /// hook. Returning to the app commonly fires both at once; asking twice adds no freshness.
     private var isCheckingPublishedContent = false
+    private var isSynchronizingCompanionChanges = false
 
     /// Told to `AppModel` so the space picker can say the same thing this screen says.
     private let onFailure: (ConnectionFailure) -> Void
@@ -305,6 +306,9 @@ final class SpaceSession {
 
         do {
             let revision = try await client.snapshotRevision(in: connection.spaceId)
+            // Pending local work does not change the Mac's publication revision.
+            // Flush after a real successful probe, before the unchanged-revision exit.
+            await synchronizeCompanionChanges()
             let publicationChanged = revision != publishedRevision
             let mirrorNeedsRefresh = mirror != nil && mirrorSummary?.revision != revision
             guard publicationChanged || mirrorNeedsRefresh else { return }
@@ -337,7 +341,10 @@ final class SpaceSession {
     /// A successful direct probe is the reconnection signal. Finish only work
     /// already authorised by its save/send action, preserving stable mutation IDs.
     private func synchronizeCompanionChanges() async {
-        guard connection.desktopPairingId != nil, connection.role.canSendChanges else { return }
+        guard connection.desktopPairingId != nil, connection.role.canSendChanges,
+              !isSynchronizingCompanionChanges else { return }
+        isSynchronizingCompanionChanges = true
+        defer { isSynchronizingCompanionChanges = false }
         let directory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
         guard MutationOutbox.exists(spaceId: connection.storageId, directory: directory),
               let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: directory),

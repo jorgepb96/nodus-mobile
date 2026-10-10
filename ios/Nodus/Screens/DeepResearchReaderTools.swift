@@ -398,6 +398,7 @@ struct DeepResearchTranslationSheet: View {
     var syncEnabled = true
 
     @Environment(AISettings.self) private var ai
+    @Environment(\.dismiss) private var dismiss
     @State private var store: DeepResearchTranslationStore
     @State private var language = "es"
     @State private var translating = false
@@ -432,6 +433,7 @@ struct DeepResearchTranslationSheet: View {
                     .pickerStyle(.menu)
                     .tint(session.accent)
                     .accessibilityIdentifier("report-translation-language")
+                    .disabled(translating)
 
                     if let failure {
                         NodusNotice(tone: .blocked, title: "Translation failed", message: LocalizedStringKey(failure))
@@ -446,10 +448,12 @@ struct DeepResearchTranslationSheet: View {
                             Button(role: .destructive) { deleteTranslation() } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                            .frame(minHeight: 44)
                         }
                         CorpusProse(selected.markdown, accent: session.accent, session: session)
                             .padding(16)
                             .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                            .accessibilityIdentifier("report-translation-body")
                     } else {
                         ContentUnavailableView("No saved translation", systemImage: "character.book.closed", description: Text("Generate it once and it remains available offline."))
                             .frame(maxWidth: .infinity, minHeight: 240)
@@ -460,7 +464,7 @@ struct DeepResearchTranslationSheet: View {
                         else { Label(selected == nil ? "Translate report" : "Regenerate translation", systemImage: "character.book.closed").frame(maxWidth: .infinity) }
                     }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                    .disabled(translating || ai.model(for: .deepResearch) == nil)
+                    .disabled(translating || ai.model(for: .translation) == nil)
                     .accessibilityIdentifier("report-translation-generate")
                 }
                 .padding(NodusSpace.page)
@@ -469,6 +473,7 @@ struct DeepResearchTranslationSheet: View {
             }
             .navigationTitle("Translations")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .nodusPageBackdrop(accent: session.accent)
         }
         .task(id: session.publishedRevision) {
@@ -477,11 +482,13 @@ struct DeepResearchTranslationSheet: View {
     }
 
     private func translate() {
-        guard !translating, let model = ai.model(for: .deepResearch),
+        guard !translating, session.aiExecutionMode == .autonomous,
+              let model = ai.model(for: .translation),
               let languageName = TranslationLanguage.supported.first(where: { $0.id == language })?.name
         else { return }
         translating = true
         failure = nil
+        let requestedLanguage = language
         Task {
             do {
                 let response = try await ProviderClient(keyProvider: ai.keyProvider).complete(ChatRequest(
@@ -493,7 +500,7 @@ struct DeepResearchTranslationSheet: View {
                     temperature: 0.1,
                     maxTokens: 16_000
                 ))
-                let value = store.save(reportId: reportId, language: language, markdown: response, model: model)
+                let value = store.save(reportId: reportId, language: requestedLanguage, markdown: response, model: model)
                 await sync(value)
             } catch {
                 failure = error.localizedDescription

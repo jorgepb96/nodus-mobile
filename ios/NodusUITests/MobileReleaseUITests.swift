@@ -1753,6 +1753,29 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testAutonomousTranslationWithMacUnavailable() async throws {
+        try await verifyOwningMacUnavailable()
+        try generateAutonomousTranslationAndReopen()
+    }
+    @MainActor
+    func testOfflineSavedTranslationReopensWithoutRegeneration() async throws {
+        try await verifyOwningMacUnavailable()
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TRANSLATION_REPORT_TITLE"])
+        let expectedText = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TRANSLATION_BODY_SNIPPET"])
+        XCTAssertGreaterThan(expectedText.count, 100)
+        var rendered: String?
+        for _ in 0..<2 {
+            let app = try openExistingPrincipal(destination: "deepResearch")
+            try openNativeTranslation(app, title: title)
+            let saved = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", expectedText)).firstMatch
+            XCTAssertTrue(saved.waitForExistence(timeout: 30), app.debugDescription)
+            if let rendered { XCTAssertEqual(saved.label, rendered) } else { rendered = saved.label }
+            XCTAssertFalse(app.descendants(matching: .any)["report-translation-error"].exists)
+            XCTAssertTrue(app.buttons["Done"].exists || app.buttons["Listo"].exists)
+            capture(app, "offline-existing-translation-reopened")
+            app.terminate()
+        }
+    }
+    @MainActor private func verifyOwningMacUnavailable() async throws {
         let origin = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_OFFLINE_ORIGIN"])
         let address = try XCTUnwrap(URL(string: origin + "/bridge/v2/capabilities"))
         let probe = URLSession(configuration: .ephemeral)
@@ -1765,10 +1788,12 @@ final class MobileReleaseUITests: XCTestCase {
             let transport = try XCTUnwrap(error as? URLError)
             XCTAssertTrue([.cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet, .timedOut].contains(transport.code))
         }
-        try testAutonomousReportTranslationUsesPhoneAndReopens()
     }
     @MainActor
     func testAutonomousReportTranslationUsesPhoneAndReopens() throws {
+        try generateAutonomousTranslationAndReopen()
+    }
+    @MainActor private func generateAutonomousTranslationAndReopen() throws {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TRANSLATION_REPORT_TITLE"], "An actual saved lab report is required.")
         let app = try openExistingPrincipal(destination: "settings")
         defer { app.terminate() }
@@ -1785,8 +1810,10 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(generate.waitForExistence(timeout: 20)); XCTAssertTrue(generate.isEnabled)
         capture(app, "autonomous-translation-before-generation")
         generate.tap()
-        XCTAssertTrue(app.progressIndicators["report-translation-progress"].waitForExistence(timeout: 15), "The phone must actually start generation.")
-        XCTAssertTrue(app.progressIndicators["report-translation-progress"].waitForNonExistence(timeout: 240), app.debugDescription)
+        let generating = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"), object: generate)
+        XCTAssertEqual(XCTWaiter.wait(for: [generating], timeout: 15), .completed, "The phone must actually start generation.")
+        let completed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: generate)
+        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 240), .completed, app.debugDescription)
         XCTAssertFalse(app.descendants(matching: .any)["report-translation-error"].exists, app.debugDescription)
         let translated = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Francoist")).firstMatch
         XCTAssertTrue(translated.waitForExistence(timeout: 20), app.debugDescription)
