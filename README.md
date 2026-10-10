@@ -132,6 +132,13 @@ and shows pending versus acknowledged synchronization. Generation status uses a
 reserved strip above the surface so it does not cover the chat/editor composer.
 This implementation is not yet an executed acceptance result.
 
+Opening a theme now reads that theme's enriched dossier rather than requiring a
+whole-vault download. Study Ideas uses the study catalogue. Local relation joins
+retain all matching rows by default, and large sets of linked identities avoid
+SQLite's bound-variable limit while preserving publication order. Prepared local
+regressions include 1,201 memberships, distinct themes with identical labels and
+a 35,001-id lookup; they have not yet been executed.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

@@ -308,6 +308,10 @@ public struct LocalCorpus: Sendable {
             return try await idea(row, id: wanted, revision: revision)
         case "works":
             return try await work(row, id: wanted, revision: revision)
+        case "themes":
+            let links = try await mirror.rows(table: "idea_theme_links", where: "theme_id", equals: wanted)
+            let ids = Array(Set(links.compactMap { $0.string("global_id") }))
+            return ["theme": .object(row.columns), "ideas": .array(try await mirror.rows(table: "ideas", ids: ids).map { .object($0.columns) }), "revision": .string(revision)]
         case "authors":
             if segments.count == 3, segments[2] == "dossier" {
                 guard let dossier = try await AcademicWorkspaceProjection.authorDossier(in: academicTables(), authorId: wanted) else {

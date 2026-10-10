@@ -67,7 +67,7 @@ public extension NodusClient {
         let response = try await perform(.init(
             path: address.spacePath(spaceId, "/\(collection.path)/\(escape(id))"), cacheable: true
         ))
-        return try CollectionDossier(collection: collection, id: id, payload: JSONDecoder.nodus.decode(JSONValue.self, from: response.data))
+        return try CollectionDossier(collection: collection, id: id, payload: JSONDecoder.nodus.decode(JSONValue.self, from: response.data), fromDevice: response.fromCache)
     }
 
     // MARK: - Enriched details

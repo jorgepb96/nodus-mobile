@@ -106,7 +106,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) {
             DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } }
         }
@@ -283,13 +283,15 @@ private struct PrimarySourcesArchiveWorkspace: View {
     private func load() async {
         do {
             let snapshot = try await loadPrivateBridgeTables(session, domain: .primarySourceFiles, names: archivePrivateTables, fixture: debugSensitiveFixture(for: ["primary_sources", "genealogy"]))
+            try Task.checkCancellation()
             tables = snapshot.tables; cached = snapshot.readFromEncryptedCache; issue = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", tabs.tabs(in: section).isEmpty {
                 SensitiveRecordsParity.archiveItems(in: tables).prefix(2).forEach(open)
             }
 #endif
-        } catch { tables = [:]; issue = error.localizedDescription }
+        } catch where error.isCancellation { }
+        catch { tables = [:]; issue = error.localizedDescription }
     }
 }
 
@@ -336,7 +338,7 @@ private struct ProsopographyWorkspace: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
         .accessibilityIdentifier("prosopography-\(mode.rawValue)-workspace")
     }
@@ -384,11 +386,13 @@ private struct ProsopographyWorkspace: View {
         do {
             let names = ["persons", "prosop_studies", "prosop_population_criteria", "prosop_population_memberships", "prosop_person_profiles", "prosop_sources", "prosop_source_segments", "prosop_factoids", "prosop_statements", "prosop_statement_entities", "prosop_authority_ids", "prosop_analysis_definitions", "prosop_analysis_runs", "prosop_network_layers", "prosop_network_edges", "prosop_audit_log"]
             let snapshot = try await loadPrivateBridgeTables(session, domain: .prosopographyPrivate, names: names, fixture: debugSensitiveFixture(for: ["prosopography"]))
+            try Task.checkCancellation()
             tables = snapshot.tables; cached = snapshot.readFromEncryptedCache; issue = nil
 #if DEBUG
             if mode == .prosopPersons, ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", tabs.tabs(in: section).isEmpty { SensitiveRecordsParity.prosopPersons(in: tables).prefix(2).forEach(open) }
 #endif
-        } catch { tables = [:]; issue = error.localizedDescription }
+        } catch where error.isCancellation { }
+        catch { tables = [:]; issue = error.localizedDescription }
     }
 }
 
@@ -417,7 +421,7 @@ private struct TestimoniesWorkspace: View {
             default: EmptyView()
             }
         }
-        .nodusPageBackdrop(accent: session.accent).task { await load() }
+        .nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
         .accessibilityIdentifier("testimonies-\(mode.rawValue)-workspace")
     }
@@ -499,11 +503,13 @@ private struct TestimoniesWorkspace: View {
         do {
             let names = ["persons", "testimony_interviews", "testimony_participant_profiles", "testimony_interview_participants", "testimony_sessions", "testimony_media", "testimony_transcripts", "testimony_transcript_segments", "testimony_codes", "testimony_annotations", "testimony_annotation_codes", "testimony_agreements", "testimony_contrasts", "testimony_contrast_items", "testimony_note_links"]
             let snapshot = try await loadPrivateBridgeTables(session, domain: .testimonies, names: names, fixture: debugSensitiveFixture(for: ["testimonios"]))
+            try Task.checkCancellation()
             tables = snapshot.tables; cached = snapshot.readFromEncryptedCache; issue = nil
 #if DEBUG
             if mode == .testimonyInterviews, ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", tabs.tabs(in: section).isEmpty { SensitiveRecordsParity.testimonyInterviews(in: tables).prefix(2).forEach(open) }
 #endif
-        } catch { tables = [:]; issue = error.localizedDescription }
+        } catch where error.isCancellation { }
+        catch { tables = [:]; issue = error.localizedDescription }
     }
 }
 

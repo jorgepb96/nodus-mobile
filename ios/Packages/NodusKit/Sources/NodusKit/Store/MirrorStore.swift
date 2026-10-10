@@ -449,20 +449,21 @@ public actor MirrorStore {
     /// This is how a link table gets traversed — `idea_theme_links` for the ideas under a
     /// theme, say. The API has no route for those tables and no way to filter by a column even
     /// where it does, so a relationship the desktop shows as a list is only reachable here.
-    public func rows(table: String, where column: String, equals value: String, limit: Int = 500) throws -> [Row] {
+    public func rows(table: String, where column: String, equals value: String, limit: Int? = nil) throws -> [Row] {
         try dbQueue.read { db in
             try GRDB.Row.fetchAll(db, sql: """
                 SELECT body FROM rows_json
                 WHERE tbl = ? AND json_extract(body, '$.' || ?) = ?
                 ORDER BY ordinal
                 LIMIT ?
-                """, arguments: [table, column, value, limit])
-                .compactMap { row in
+                """, arguments: [table, column, value, limit.map { max(0, $0) } ?? -1])
+                .map { row in
                     guard
                         let body: String = row["body"],
                         let data = body.data(using: .utf8),
-                        let columns = try? JSONDecoder().decode([String: JSONValue].self, from: data)
-                    else { return nil }
+                        !data.isEmpty
+                    else { throw TransportError.malformedResponse(expected: "a stored row in \(table)") }
+                    let columns = try JSONDecoder().decode([String: JSONValue].self, from: data)
                     return NodusKit.Row(columns)
                 }
         }
@@ -476,12 +477,13 @@ public actor MirrorStore {
     public func allRows(table: String) throws -> [Row] {
         try dbQueue.read { db in
             try GRDB.Row.fetchAll(db, sql: "SELECT body FROM rows_json WHERE tbl = ? ORDER BY ordinal", arguments: [table])
-                .compactMap { row in
+                .map { row in
                     guard
                         let body: String = row["body"],
                         let data = body.data(using: .utf8),
-                        let columns = try? JSONDecoder().decode([String: JSONValue].self, from: data)
-                    else { return nil }
+                        !data.isEmpty
+                    else { throw TransportError.malformedResponse(expected: "a stored row in \(table)") }
+                    let columns = try JSONDecoder().decode([String: JSONValue].self, from: data)
                     return NodusKit.Row(columns)
                 }
         }
@@ -491,18 +493,21 @@ public actor MirrorStore {
     public func rows(table: String, ids: [String]) throws -> [Row] {
         guard !ids.isEmpty else { return [] }
         return try dbQueue.read { db in
-            let placeholders = databaseQuestionMarks(count: ids.count)
+            // One bound JSON array avoids SQLite's variable limit without
+            // splitting the result into differently ordered batches.
+            let encodedIds = String(decoding: try JSONEncoder().encode(ids), as: UTF8.self)
             return try GRDB.Row.fetchAll(db, sql: """
                 SELECT body FROM rows_json
-                WHERE tbl = ? AND row_id IN (\(placeholders))
+                WHERE tbl = ? AND row_id IN (SELECT value FROM json_each(?))
                 ORDER BY ordinal
-                """, arguments: StatementArguments([table] + ids))
-                .compactMap { row in
+                """, arguments: [table, encodedIds])
+                .map { row in
                     guard
                         let body: String = row["body"],
                         let data = body.data(using: .utf8),
-                        let columns = try? JSONDecoder().decode([String: JSONValue].self, from: data)
-                    else { return nil }
+                        !data.isEmpty
+                    else { throw TransportError.malformedResponse(expected: "a stored row in \(table)") }
+                    let columns = try JSONDecoder().decode([String: JSONValue].self, from: data)
                     return NodusKit.Row(columns)
                 }
         }
