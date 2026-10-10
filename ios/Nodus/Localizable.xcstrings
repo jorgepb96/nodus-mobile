@@ -26798,6 +26798,94 @@
           }
         }
       }
+    },
+    "Consulted content": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contenido consultado"
+          }
+        }
+      }
+    },
+    "Maximum for this Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Límite para este Mac"
+          }
+        }
+      }
+    },
+    "Drafts and pending work": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borradores y trabajo pendiente"
+          }
+        }
+      }
+    },
+    "Free space used by consulted content": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liberar copias de consulta"
+          }
+        }
+      }
+    },
+    "Opened content is kept encrypted for offline reading. Older consulted copies are removed when the limit is reached. Drafts and pending work are always preserved.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El contenido abierto se conserva cifrado para leer sin conexión. Al alcanzar el límite se liberan las copias de consulta más antiguas. Los borradores y el trabajo pendiente siempre se conservan."
+          }
+        }
+      }
+    },
+    "Free space used by consulted content?": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Liberar las copias de consulta?"
+          }
+        }
+      }
+    },
+    "Free space": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liberar espacio"
+          }
+        }
+      }
+    },
+    "Drafts and pending work remain on this device. Open the consulted content again while connected to keep another copy.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los borradores y el trabajo pendiente se conservan. Abre de nuevo el contenido con conexión para guardar otra copia."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -187,6 +187,9 @@ struct SpaceSettingsView: View {
                 }
 
 
+                if let pairingId = session.connection.desktopPairingId {
+                    CompanionCopySettings(pairingId: pairingId)
+                } else {
                 Section {
                     switch session.mirrorProgress {
                     case .absent:
@@ -238,6 +241,8 @@ struct SpaceSettingsView: View {
                     // twenty tables out of the dozens a publication can carry — a worldbuilding
                     // vault's scenes and articles have no route at all.
                     Text("Keeps the whole publication on the device: works with no network, sorts instantly, and reaches the tables the API does not expose.")
+                }
+
                 }
 
                 Section {
@@ -649,5 +654,47 @@ struct PublishedTablesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: Text("Filter tables"))
         .nodusDismissesKeyboard()
+    }
+}
+
+/// A linked workspace retains opened content rather than downloading a complete
+/// publication. This control never removes drafts or authorised pending work.
+private struct CompanionCopySettings: View {
+    let pairingId: String
+    @State private var usage: PrivateBridgeCache.Usage?
+    @State private var issue: String?
+    @State private var clearing = false
+    @State private var confirmClear = false
+    var body: some View {
+        Section {
+            if let usage {
+                LabeledContent("Consulted content", value: ByteCountFormatter.string(fromByteCount: Int64(usage.reusableBytes), countStyle: .file))
+                LabeledContent("Maximum for this Mac", value: ByteCountFormatter.string(fromByteCount: Int64(usage.readLimitBytes), countStyle: .file))
+                LabeledContent("Drafts and pending work", value: ByteCountFormatter.string(fromByteCount: Int64(usage.protectedBytes), countStyle: .file))
+                Button("Free space used by consulted content", role: .destructive) { confirmClear = true }
+                    .disabled(clearing)
+                    .accessibilityIdentifier("companion-clear-read-copies")
+            } else { ProgressView() }
+            if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
+        } header: { Text("On this device") } footer: {
+            Text("Opened content is kept encrypted for offline reading. Older consulted copies are removed when the limit is reached. Drafts and pending work are always preserved.")
+        }
+        .accessibilityIdentifier("companion-offline-storage")
+        .task { await refresh() }
+        .confirmationDialog("Free space used by consulted content?", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Free space", role: .destructive) {
+                clearing = true
+                Task {
+                    defer { clearing = false }
+                    do { try await PrivateBridgeCache(pairingId: pairingId).removeReusableCopies(); await refresh() }
+                    catch { issue = error.localizedDescription }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { Text("Drafts and pending work remain on this device. Open the consulted content again while connected to keep another copy.") }
+    }
+    private func refresh() async {
+        do { usage = try await PrivateBridgeCache(pairingId: pairingId).usage(); issue = nil }
+        catch { issue = error.localizedDescription }
     }
 }

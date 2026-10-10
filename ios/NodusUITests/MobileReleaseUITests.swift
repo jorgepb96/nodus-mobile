@@ -88,7 +88,6 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(web.waitForExistence(timeout: 35))
         let history = web.buttons["Historial de chats"].firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 30)); history.tap()
-        let priorChats = Set(web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Abrir ")).allElementsBoundByIndex.map(\.label))
         let newChat = web.buttons["Nueva conversación"].firstMatch
         XCTAssertTrue(newChat.waitForExistence(timeout: 15)); newChat.tap()
         let input = web.textViews["Pregunta al asistente..."].firstMatch
@@ -127,11 +126,22 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(copy.frame.minX, answer.frame.minX - 1)
         XCTAssertLessThanOrEqual(copy.frame.maxX, answer.frame.maxX + 1)
         copy.tap()
-        XCTAssertTrue(UIPasteboard.general.string?.contains(marker) == true, "Copy must contain this exact generated response.")
+        // Verify Copy through the user's paste action inside Nodus. Reading the
+        // Runner's pasteboard triggers a cross-app privacy prompt and stalls XCTest.
+        XCTAssertTrue(input.isHittable); input.tap(); input.press(forDuration: 1.1)
+        let paste = app.menuItems["Pegar"].firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: 10), app.debugDescription); paste.tap()
+        let copied = try XCTUnwrap(input.value as? String)
+        XCTAssertTrue(copied.contains(marker)); XCTAssertGreaterThan(copied.count, 120)
+        let copiedAttachment = XCTAttachment(string: copied)
+        copiedAttachment.name = "exact-generated-chat-markdown"; copiedAttachment.lifetime = .keepAlways
+        add(copiedAttachment)
         capture(app, "phone-chat-live-completed-copied")
         history.tap()
-        let newRow = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@ AND NOT (label IN %@)", "Abrir ", Array(priorChats))).firstMatch
-        XCTAssertTrue(newRow.waitForExistence(timeout: 20), "The generated conversation must be present in the history.\n\(app.debugDescription)")
+        // Automatic titles can be identical. The newest row must reopen the
+        // exact unique response below; title uniqueness is not a product contract.
+        let newRow = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Abrir ")).firstMatch
+        XCTAssertTrue(newRow.waitForExistence(timeout: 20), app.debugDescription)
         let savedTitle = String(newRow.label.dropFirst("Abrir ".count))
         XCTAssertFalse(savedTitle.isEmpty)
         print("NODUS_CHAT_TITLE=\(savedTitle)")
@@ -1728,64 +1738,45 @@ final class MobileReleaseUITests: XCTestCase {
         let reports = app.buttons["nodus-nav-deepResearch"]
         for _ in 0..<6 { if reports.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(reports.isHittable); reports.tap()
-        let web = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
-        let search = web.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 35))
-        let catalogueReady = NSPredicate { _, _ in !web.staticTexts["Cargando informes…"].exists }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: catalogueReady, object: nil)], timeout: 45), .completed)
-        search.tap(); search.typeText(String(title.prefix(42)) + "\n")
-        let report = web.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
-        XCTAssertTrue(report.waitForExistence(timeout: 60), app.debugDescription)
-        for _ in 0..<5 { if report.isHittable { break }; web.swipeUp() }; report.tap()
-        let translate = web.buttons["Traducir"]
-        let readerOptions = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Opciones del informe")).firstMatch
-        if readerOptions.waitForExistence(timeout: 10), !translate.exists { readerOptions.tap() }
-        XCTAssertTrue(translate.waitForExistence(timeout: 25), app.debugDescription)
-        for _ in 0..<5 { if translate.isHittable { break }; web.swipeLeft() }; translate.tap()
-        let generate = web.buttons["Generar traducción"]
-        XCTAssertTrue(generate.waitForExistence(timeout: 15), app.debugDescription)
-        let english = web.buttons["Leer traducción a English"]
+        try openNativeTranslation(app, title: title)
+        let generate = app.buttons["report-translation-generate"]
+        XCTAssertTrue(generate.waitForExistence(timeout: 20)); XCTAssertTrue(generate.isEnabled)
         capture(app, "autonomous-translation-before-generation")
-        let regenerate = web.buttons["Regenerar traducción a English"]
-        if regenerate.exists { regenerate.tap() } else { generate.tap() }
-        let pending = expectation(for: NSPredicate(format: "exists == true AND enabled == false"), evaluatedWith: english)
-        XCTAssertEqual(XCTWaiter.wait(for: [pending], timeout: 45), .completed, "The requested English translation must actually enter generation.\n\(app.debugDescription)")
-        let ready = NSPredicate(format: "exists == true AND enabled == true")
-        let completed = expectation(for: ready, evaluatedWith: english)
-        let outcome = XCTWaiter.wait(for: [completed], timeout: 240)
-        capture(app, "autonomous-translation-result")
-        XCTAssertEqual(outcome, .completed, app.debugDescription)
-        guard outcome == .completed else { return }
-        english.tap()
-        let closed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: generate)
-        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 45), .completed, "The translated document must load before the reader is accepted.\n\(app.debugDescription)")
-        XCTAssertTrue(web.buttons["Aumentar texto"].waitForExistence(timeout: 20))
-        XCTAssertTrue(web.staticTexts.containing(NSPredicate(format:"label CONTAINS %@", "Francoist")).firstMatch.exists, app.debugDescription)
+        generate.tap()
+        XCTAssertTrue(app.progressIndicators["report-translation-progress"].waitForExistence(timeout: 15), "The phone must actually start generation.")
+        XCTAssertTrue(app.progressIndicators["report-translation-progress"].waitForNonExistence(timeout: 240), app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["report-translation-error"].exists, app.debugDescription)
+        let translated = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Francoist")).firstMatch
+        XCTAssertTrue(translated.waitForExistence(timeout: 20), app.debugDescription)
+        let result = translated.label
+        XCTAssertGreaterThan(result.count, 120)
         capture(app, "autonomous-translation-reader")
-        translate.tap()
-        XCTAssertTrue(english.waitForExistence(timeout: 15)); XCTAssertTrue(english.isEnabled)
-        capture(app, "autonomous-translation-saved-menu")
         app.terminate()
         let relaunched = try openExistingPrincipal(destination: "deepResearch")
-        let reopened = relaunched.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
-        let reopenedSearch = reopened.searchFields.firstMatch
-        XCTAssertTrue(reopenedSearch.waitForExistence(timeout: 35))
-        let loaded = NSPredicate { _, _ in !reopened.staticTexts["Cargando informes…"].exists }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 45), .completed)
-        reopenedSearch.tap(); reopenedSearch.typeText(String(title.prefix(42)) + "\n")
-        let saved = reopened.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
-        XCTAssertTrue(saved.waitForExistence(timeout: 40))
-        for _ in 0..<5 { if saved.isHittable { break }; reopened.swipeUp() }; saved.tap()
-        let translationMenu = reopened.buttons["Traducir"].firstMatch
-        let reopenedOptions = reopened.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Opciones del informe")).firstMatch
-        if reopenedOptions.waitForExistence(timeout: 10), !translationMenu.exists { reopenedOptions.tap() }
-        XCTAssertTrue(translationMenu.waitForExistence(timeout: 20)); translationMenu.tap()
-        let persistedEnglish = reopened.buttons["Leer traducción a English"].firstMatch
-        XCTAssertTrue(persistedEnglish.waitForExistence(timeout: 20)); XCTAssertTrue(persistedEnglish.isEnabled)
-        persistedEnglish.tap()
-        XCTAssertTrue(reopened.buttons["Aumentar texto"].waitForExistence(timeout: 20))
-        XCTAssertTrue(reopened.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Francoist")).firstMatch.waitForExistence(timeout: 20), "The actual saved translated document must load after a full app restart.")
+        try openNativeTranslation(relaunched, title: title)
+        let persisted = relaunched.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Francoist")).firstMatch
+        XCTAssertTrue(persisted.waitForExistence(timeout: 30), relaunched.debugDescription)
+        XCTAssertEqual(persisted.label, result, "Reopening must retain the exact generated translation.")
         capture(relaunched, "autonomous-translation-saved-reopened")
+    }
+    @MainActor private func openNativeTranslation(_ app: XCUIApplication, title: String) throws {
+        let search = app.textFields["nodus-search-field"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 35), app.debugDescription)
+        search.tap(); search.typeText(String(title.prefix(42)))
+        try dismissResearchKeyboard(app)
+        let report = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
+        XCTAssertTrue(report.waitForExistence(timeout: 45), app.debugDescription)
+        for _ in 0..<6 { if report.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(report.isHittable); report.tap()
+        let translations = app.buttons["report-tool-translations"].firstMatch
+        XCTAssertTrue(translations.waitForExistence(timeout: 30), app.debugDescription)
+        let ready = NSPredicate(format: "enabled == true")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: translations)], timeout: 30), .completed)
+        translations.tap()
+        let language = app.buttons["report-translation-language"]
+        XCTAssertTrue(language.waitForExistence(timeout: 15)); language.tap()
+        let english = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "English")).firstMatch
+        XCTAssertTrue(english.waitForExistence(timeout: 10), app.debugDescription); english.tap()
     }
     @MainActor private func pairLive(route: String, vaultId: String = "default") throws -> XCUIApplication {
         let link = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_LINK"], "A real HTTPS lab is required.")

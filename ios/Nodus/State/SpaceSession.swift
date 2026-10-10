@@ -166,6 +166,7 @@ final class SpaceSession {
         }
         do {
             let revision = try await client.snapshotRevision(in: connection.spaceId)
+            await synchronizeCompanionChanges()
             let current = try await mirror.isCurrent(with: revision ?? "")
             let counts = try await mirror.tableCounts()
             mirrorProgress = current
@@ -330,6 +331,22 @@ final class SpaceSession {
         } catch {
             // Live refresh is opportunistic. The last coherent publication remains readable,
             // and the ordinary screen loaders still surface actionable connection failures.
+        }
+    }
+
+    /// A successful direct probe is the reconnection signal. Finish only work
+    /// already authorised by its save/send action, preserving stable mutation IDs.
+    private func synchronizeCompanionChanges() async {
+        guard connection.desktopPairingId != nil, connection.role.canSendChanges else { return }
+        let directory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
+        guard MutationOutbox.exists(spaceId: connection.storageId, directory: directory),
+              let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: directory),
+              let pending = try? await outbox.authorisedPending(limit: 1), !pending.isEmpty else { return }
+        do {
+            try await OutboxDelivery.send(from: outbox, using: client, in: connection.spaceId, limits: .unstated)
+        } catch {
+            // The durable queue retains rejected/conflicting changes and transport
+            // failures. Reconnection never reports a failed write as synchronized.
         }
     }
 

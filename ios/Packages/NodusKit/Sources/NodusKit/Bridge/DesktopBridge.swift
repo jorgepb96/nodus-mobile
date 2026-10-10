@@ -137,7 +137,7 @@ public actor DesktopBridgeClient {
         let store = DesktopBridgePairingStore(keychain: keychain)
         self.store = store
         self.requiresStoredCredential = store.pairings().contains { $0.id == pairing.id }
-        self.relay = store.relay(for: pairing)
+        self.relay = nil // Companion beta connects directly over LAN or VPN.
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -397,6 +397,26 @@ public actor DesktopBridgeClient {
         return response.data
     }
 
+    /// Native catalogues and readers retain the same protected, bounded copies
+    /// as the shared surfaces. Only transport loss permits fallback; revoked
+    /// grants, invalid certificates and server errors always remain errors.
+    public func corpusWithOfflineCopy(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", percentEncoded: Bool = false, cache suppliedCache: PrivateBridgeCache? = nil) async throws -> (response: DesktopBridgeResponse, fromCache: Bool) {
+        guard method == "GET" else { return (try await corpus(vaultId: vaultId, path: path, query: query, method: method, percentEncoded: percentEncoded), false) }
+        let cache = try suppliedCache ?? store.offlineCache(for: pairing)
+        var address = URLComponents(); address.path = try Self.corpusPath(vaultId: vaultId, path: path, percentEncoded: percentEncoded); address.queryItems = query.isEmpty ? nil : query
+        let identity = "corpus-http:" + (address.string ?? "")
+        do {
+            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, percentEncoded: percentEncoded)
+            if response.status == 200 { try await cache.store(JSONEncoder.nodus.encode(response), vaultId: vaultId, domain: .corpus, recordId: identity) }
+            return (response, false)
+        } catch {
+            guard let offline = error as? URLError,
+                  [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut].contains(offline.code),
+                  let bytes = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: identity) else { throw error }
+            return (try JSONDecoder.nodus.decode(DesktopBridgeResponse.self, from: bytes), true)
+        }
+    }
+
     public func corpus(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", percentEncoded: Bool = false) async throws -> DesktopBridgeResponse {
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), ["GET", "HEAD"].contains(method) else { throw DesktopBridgeError.permissionDenied }
@@ -512,7 +532,7 @@ public actor DesktopBridgeClient {
     }
 }
 
-public struct DesktopBridgeResponse: Sendable {
+public struct DesktopBridgeResponse: Sendable, Codable {
     public let data: Data
     public let status: Int
     public let headers: [String: String]
@@ -557,6 +577,10 @@ struct PairingEnvelope: Decodable {
 /// Revoking locally deletes it synchronously, so the app cannot issue another request even if
 /// the Mac is currently unreachable and has not yet recorded its own revocation.
 public struct DesktopBridgePairingStore: @unchecked Sendable {
+    func offlineCache(for pairing: DesktopBridgePairing) throws -> PrivateBridgeCache {
+        try PrivateBridgeCache(pairingId: pairing.id, keychain: keychain)
+    }
+
     private static let renewalLock = NSLock()
     private static let pendingLock = NSLock()
     private let defaults: UserDefaults
@@ -777,33 +801,46 @@ final class DesktopBridgeSessionDelegate: NSObject, URLSessionDelegate, URLSessi
 /// Opaque private cache encrypted independently of iOS file protection. The AES key lives in
 /// the non-synchronizing, when-unlocked Keychain; the files use `.complete`, so neither layer
 /// is readable from a locked device.
+/// Encrypted copies of consulted content share a bounded LRU budget per Mac.
+/// Drafts and accepted jobs are durable work and never participate in eviction.
 public actor PrivateBridgeCache {
+    public static let defaultReadLimitBytes = 250 * 1_024 * 1_024
+    public struct Usage: Sendable, Equatable {
+        public let reusableBytes: Int
+        public let protectedBytes: Int
+        public let readLimitBytes: Int
+    }
     public static var defaultDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NodusPrivateBridge", isDirectory: true)
     }
 
+    // Several surfaces construct cache actors for the same pairing. Serialize disk
+    // accounting and key creation across them, including reads that update the LRU.
+    private static let diskLock = NSLock()
     private let folder: URL
     private let key: SymmetricKey
+    private let readLimitBytes: Int
 
-    public init(pairingId: String, directory: URL, keychain: KeychainStore = KeychainStore()) throws {
+    public init(pairingId: String, directory: URL, keychain: KeychainStore = KeychainStore(), readLimitBytes: Int = PrivateBridgeCache.defaultReadLimitBytes) throws {
         folder = directory.appendingPathComponent("bridge-\(pairingId)", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        self.readLimitBytes = max(0, readLimitBytes)
+        let cacheFolder = folder
+        key = try Self.diskLock.withLock {
+            try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
 #if os(iOS)
-        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: folder.path)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: cacheFolder.path)
 #endif
-        BackupPolicy.apply(.excluded, to: folder)
-        let keyName = KeychainStore.desktopBridgeCacheKey(pairingId: pairingId)
-        if let encoded = keychain.value(for: keyName), let data = Data(base64Encoded: encoded), data.count == 32 {
-            key = SymmetricKey(data: data)
-        } else {
-            var bytes = [UInt8](repeating: 0, count: 32)
-            guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-                throw DesktopBridgeError.locked
+            BackupPolicy.apply(.excluded, to: cacheFolder)
+            let keyName = KeychainStore.desktopBridgeCacheKey(pairingId: pairingId)
+            if let encoded = keychain.value(for: keyName), let data = Data(base64Encoded: encoded), data.count == 32 {
+                return SymmetricKey(data: data)
             }
+            var bytes = [UInt8](repeating: 0, count: 32)
+            guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { throw DesktopBridgeError.locked }
             let data = Data(bytes)
             try keychain.set(data.base64EncodedString(), for: keyName)
-            key = SymmetricKey(data: data)
+            return SymmetricKey(data: data)
         }
     }
 
@@ -811,26 +848,96 @@ public actor PrivateBridgeCache {
         try self.init(pairingId: pairingId, directory: Self.defaultDirectory, keychain: keychain)
     }
 
-    public func store(_ data: Data, vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws {
+    /// False means an oversized reusable copy was deliberately not retained. The
+    /// caller can still display the online response. Durable work always persists.
+    @discardableResult
+    public func store(_ data: Data, vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Bool {
         let sealed = try AES.GCM.seal(data, using: key)
         guard let combined = sealed.combined else { throw DesktopBridgeError.malformedResponse }
-        let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
-        try combined.write(to: url, options: [.atomic, .completeFileProtection])
-        BackupPolicy.apply(.excluded, to: url)
+        return try Self.diskLock.withLock {
+            let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
+            let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
+            if !Self.isDurable(domain), combined.count > readLimitBytes {
+                try removeIfPresent(url); try removeIfPresent(legacy)
+                return false
+            }
+            try combined.write(to: url, options: [.atomic, .completeFileProtection])
+            BackupPolicy.apply(.excluded, to: url)
+            try removeIfPresent(legacy)
+            try trimReusableCopies(keeping: url)
+            return true
+        }
     }
 
     public func data(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Data? {
-        let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key)
+        try Self.diskLock.withLock {
+            let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
+            let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
+            let source = FileManager.default.fileExists(atPath: url.path) ? url : legacy
+            guard FileManager.default.fileExists(atPath: source.path) else { return nil }
+            let value = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: source)), using: key)
+            // Migrate only after decrypting and knowing the domain. Unclassified
+            // legacy files may hold drafts and must never be blindly evicted.
+            if source == legacy { try FileManager.default.moveItem(at: legacy, to: url) }
+            try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+            try trimReusableCopies(keeping: url)
+            return value
+        }
     }
 
     public func remove(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws {
-        let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
-        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        try Self.diskLock.withLock {
+            try removeIfPresent(fileURL(vaultId: vaultId, domain: domain, recordId: recordId))
+            try removeIfPresent(legacyURL(vaultId: vaultId, domain: domain, recordId: recordId))
+        }
     }
 
+    public func usage() throws -> Usage {
+        try Self.diskLock.withLock {
+            let files = try cacheFiles()
+            return Usage(reusableBytes: files.filter { $0.url.lastPathComponent.hasPrefix("read-") }.reduce(0) { $0 + $1.size },
+                         protectedBytes: files.filter { !$0.url.lastPathComponent.hasPrefix("read-") }.reduce(0) { $0 + $1.size },
+                         readLimitBytes: readLimitBytes)
+        }
+    }
+
+    /// Frees consulted copies while keeping local drafts, work queues and all
+    /// still-unclassified files left by older app versions.
+    public func removeReusableCopies() throws {
+        try Self.diskLock.withLock {
+            for file in try cacheFiles() where file.url.lastPathComponent.hasPrefix("read-") { try removeIfPresent(file.url) }
+        }
+    }
+
+    private static func isDurable(_ domain: DesktopBridgeDomain) -> Bool { domain == .writing || domain == .researchGeneration }
+    private func cacheFiles() throws -> [(url: URL, size: Int, date: Date)] {
+        try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey])
+            .filter { $0.pathExtension == "bridgecache" }
+            .compactMap { url in
+                let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey])
+                guard values.isRegularFile == true else { return nil }
+                return (url, values.fileSize ?? 0, values.contentModificationDate ?? .distantPast)
+            }
+    }
+    private func trimReusableCopies(keeping: URL) throws {
+        let files = try cacheFiles().filter { $0.url.lastPathComponent.hasPrefix("read-") }.sorted {
+            if $0.url == keeping { return false }
+            if $1.url == keeping { return true }
+            return $0.date < $1.date
+        }
+        var total = files.reduce(0) { $0 + $1.size }
+        for file in files where total > readLimitBytes {
+            try removeIfPresent(file.url); total -= file.size
+        }
+    }
+    private func removeIfPresent(_ url: URL) throws {
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
     private func fileURL(vaultId: String, domain: DesktopBridgeDomain, recordId: String) -> URL {
+        let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
+        return folder.appendingPathComponent((Self.isDurable(domain) ? "work-" : "read-") + legacy.lastPathComponent)
+    }
+    private func legacyURL(vaultId: String, domain: DesktopBridgeDomain, recordId: String) -> URL {
         let address = "\(vaultId)\u{1f}\(domain.rawValue)\u{1f}\(recordId)"
         let name = SHA256.hash(data: Data(address.utf8)).map { String(format: "%02x", $0) }.joined()
         return folder.appendingPathComponent(name).appendingPathExtension("bridgecache")

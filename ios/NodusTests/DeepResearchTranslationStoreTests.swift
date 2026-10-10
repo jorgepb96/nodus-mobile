@@ -41,6 +41,8 @@ struct DeepResearchTranslationStoreTests {
             model: ModelRef(provider: .openai, model: "test")
         )
 
+        store.markSynchronized(language: "es")
+
         store.replaceFromServer(rows: [
             Row([
                 "id": .string("desktop-translation"),
@@ -60,4 +62,37 @@ struct DeepResearchTranslationStoreTests {
         let reopened = DeepResearchTranslationStore(spaceId: "space", reportId: "report", root: root)
         #expect(reopened.translation(language: "fr")?.markdown == "Version publiée")
     }
+    @Test("stale or empty Mac reads never erase a translation waiting to synchronize")
+    func pendingTranslationSurvivesRefreshAndRelaunch() throws {
+        let root = URL.temporaryDirectory.appendingPathComponent("translations-pending-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DeepResearchTranslationStore(spaceId: "space", reportId: "report", root: root)
+        let generated = store.save(reportId: "report", language: "en", markdown: "New offline translation", model: ModelRef(provider: .deepseek, model: "test"))
+        store.replaceFromServer(rows: [])
+        #expect(store.translation(language: "en")?.markdown == generated.markdown)
+        let reopened = DeepResearchTranslationStore(spaceId: "space", reportId: "report", root: root)
+        var stale = generated.row; stale["markdown"] = .string("Old translation")
+        reopened.replaceFromServer(rows: [Row(stale)])
+        #expect(reopened.translation(language: "en")?.markdown == generated.markdown)
+        reopened.replaceFromServer(rows: [Row(generated.row)]) // Exact delivery acknowledgement.
+        reopened.replaceFromServer(rows: [Row(stale)])
+        #expect(reopened.translation(language: "en")?.markdown == "Old translation")
+    }
+
+    @Test("a pending offline deletion cannot be resurrected by stale publication rows")
+    func pendingDeletion() throws {
+        let root = URL.temporaryDirectory.appendingPathComponent("translations-delete-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DeepResearchTranslationStore(spaceId: "space", reportId: "report", root: root)
+        let generated = store.save(reportId: "report", language: "en", markdown: "Deleted locally", model: ModelRef(provider: .deepseek, model: "test"))
+        store.replaceFromServer(rows: [Row(generated.row)])
+        store.delete(language: "en")
+        let reopened = DeepResearchTranslationStore(spaceId: "space", reportId: "report", root: root)
+        reopened.replaceFromServer(rows: [Row(generated.row)])
+        #expect(reopened.translation(language: "en") == nil)
+        reopened.replaceFromServer(rows: []) // Mac has now applied the deletion.
+        reopened.replaceFromServer(rows: [Row(generated.row)])
+        #expect(reopened.translation(language: "en")?.markdown == generated.markdown)
+    }
+
 }

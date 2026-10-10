@@ -1334,6 +1334,7 @@ struct PublishedReportReader: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { translationOpen = true } label: { Image(systemName: "character.book.closed") }
                     .accessibilityLabel("Translations")
+                    .accessibilityIdentifier("report-tool-translations")
                     .disabled(document == nil)
             }
         }

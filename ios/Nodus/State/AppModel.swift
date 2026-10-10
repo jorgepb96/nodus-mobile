@@ -89,7 +89,7 @@ final class AppModel {
     /// mirror — would wake the device to discover there is nobody to talk to, and would report
     /// failure for a space that is perfectly healthy and permanently current.
     static func syncableConnections() -> [Connection] {
-        storedConnections().filter { !$0.isDemo }
+        storedConnections().filter { !$0.isDemo && $0.desktopPairingId != nil }
     }
 
     var hasAnyConnection: Bool { !connections.isEmpty }

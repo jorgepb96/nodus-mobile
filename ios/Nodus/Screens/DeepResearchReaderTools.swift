@@ -431,9 +431,11 @@ struct DeepResearchTranslationSheet: View {
                     }
                     .pickerStyle(.menu)
                     .tint(session.accent)
+                    .accessibilityIdentifier("report-translation-language")
 
                     if let failure {
                         NodusNotice(tone: .blocked, title: "Translation failed", message: LocalizedStringKey(failure))
+                            .accessibilityIdentifier("report-translation-error")
                     }
 
                     if let selected {
@@ -454,11 +456,12 @@ struct DeepResearchTranslationSheet: View {
                     }
 
                     Button { translate() } label: {
-                        if translating { ProgressView().controlSize(.small).frame(maxWidth: .infinity) }
+                        if translating { ProgressView().controlSize(.small).frame(maxWidth: .infinity).accessibilityIdentifier("report-translation-progress") }
                         else { Label(selected == nil ? "Translate report" : "Regenerate translation", systemImage: "character.book.closed").frame(maxWidth: .infinity) }
                     }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
                     .disabled(translating || ai.model(for: .deepResearch) == nil)
+                    .accessibilityIdentifier("report-translation-generate")
                 }
                 .padding(NodusSpace.page)
                 .frame(maxWidth: 760)

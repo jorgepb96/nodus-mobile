@@ -132,9 +132,13 @@ public actor NodusClient {
             guard components.count >= 4, components[0] == "api", components[1] == "v1", components[2] == "spaces" else { throw DesktopBridgeError.permissionDenied }
             let path = components.dropFirst(4).joined(separator: "/")
             let response: DesktopBridgeResponse
+            var fromCache = false
             if path == "mutations", request.method == "POST", let body = request.body { response = try await bridge.client.sendMutations(vaultId: bridge.vaultId, body: body) }
-            else { response = try await bridge.client.corpus(vaultId: bridge.vaultId, path: path, query: request.query, method: request.method, percentEncoded: true) }
-            return Response(data: response.data, status: response.status, headers: response.headers, fromCache: false)
+            else {
+                let result = try await bridge.client.corpusWithOfflineCopy(vaultId: bridge.vaultId, path: path, query: request.query, method: request.method, percentEncoded: true)
+                response = result.response; fromCache = result.fromCache
+            }
+            return Response(data: response.data, status: response.status, headers: response.headers, fromCache: fromCache)
         }
 
         let url = try address.url(path: request.path, query: request.query)
