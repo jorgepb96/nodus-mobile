@@ -9,10 +9,10 @@ struct CompanionDocumentOutboxTests {
         let directory: URL
         let keychain: KeychainStore
         let cache: PrivateBridgeCache
-        init() throws {
+        init(readLimitBytes: Int = 0) throws {
             directory = .temporaryDirectory.appendingPathComponent("nodus-companion-\(pairing)")
             keychain = KeychainStore(service: "nodus.tests.companion.\(pairing)")
-            cache = try PrivateBridgeCache(pairingId: pairing, directory: directory, keychain: keychain, readLimitBytes: 0)
+            cache = try PrivateBridgeCache(pairingId: pairing, directory: directory, keychain: keychain, readLimitBytes: readLimitBytes)
         }
         func open() async throws -> CompanionDocumentOutbox {
             try await CompanionDocumentOutbox(cache: cache, vaultId: "vault-a", data: cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
@@ -39,6 +39,72 @@ struct CompanionDocumentOutboxTests {
         var values: [CompanionDocumentOutbox.Request] = []
         func append(_ value: CompanionDocumentOutbox.Request) { values.append(value) }
         func all() -> [CompanionDocumentOutbox.Request] { values }
+    }
+    private static let creationInput: JSONValue = .object(["title": .string("New offline document"), "content": .string(""),
+        "kind": .string("markdown"), "folderId": .string("folder-a"), "tags": .array([.string("offline")])])
+    @Test("new offline documents preserve stable identity, metadata and structured content through restart")
+    func offlineCreation() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        let note = try await queue.create(input: Self.creationInput)
+        let id = try #require(note.objectValue?["id"]?.stringValue)
+        #expect(UUID(uuidString: id) != nil); #expect(note.objectValue?["kind"] == .string("markdown"))
+        _ = try await queue.save(noteId: id, input: Self.input(-1, text: "New table, formula $x^2$ and citation"))
+        try await fixture.cache.removeReusableCopies()
+        let reopened = try await fixture.open()
+        let tree = await reopened.overlayTree(.object(["folders": .array([]), "notes": .array([])]))
+        let notes = try #require(tree.objectValue?["notes"]?.arrayValue)
+        #expect(notes.count == 1); #expect(notes[0].objectValue?["id"] == .string(id))
+        #expect(notes[0].objectValue?["folderId"] == .string("folder-a")); #expect(notes[0].objectValue?["tags"] == .array([.string("offline")]))
+        let editor = try #require(await reopened.editorData(noteId: id))
+        #expect(editor.objectValue?["nativeDocument"] == Self.input(-1, text: "New table, formula $x^2$ and citation").objectValue?["nativeDocument"])
+        let anotherVault = try await CompanionDocumentOutbox(cache: fixture.cache, vaultId: "vault-b", data: fixture.cache.data(vaultId: "vault-b", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        #expect(await anotherVault.editorData(noteId: id) == nil)
+    }
+    @Test("lost creation acknowledgements replay once before sending a newer edit and retain the canonical catalogue")
+    func creationAcknowledgement() async throws {
+        let fixture = try Fixture(readLimitBytes: 1_000_000); defer { fixture.cleanup() }
+        let queue = try await fixture.open(), requests = Requests()
+        let note = try await queue.create(input: Self.creationInput), id = try #require(note.objectValue?["id"]?.stringValue)
+        for args: [JSONValue] in [[], [.bool(true)]] {
+            try await fixture.cache.store(JSONEncoder.nodus.encode(JSONValue.object(["folders": .array([]), "notes": .array([])])), vaultId: "vault-a", domain: .corpus, recordId: CompanionDocumentOutbox.operationKey("getNotesTree", args))
+        }
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in await requests.append(request); throw URLError(.networkConnectionLost) } }
+        _ = try await queue.save(noteId: id, input: Self.input(-1, text: "Typed after connection loss"))
+        let reopened = try await fixture.open()
+        try await reopened.synchronize { request in
+            await requests.append(request)
+            var response = Self.receipt(request, revision: request.creation == nil ? 9 : 8).objectValue!
+            var canonicalNote = note.objectValue!
+            canonicalNote["content"] = request.input.objectValue?["contentMarkdown"]
+            response["note"] = .object(canonicalNote); return .object(response)
+        }
+        let sent = await requests.all()
+        #expect(sent.count == 3); #expect(sent[0] == sent[1]); #expect(sent[0].creation != nil)
+        #expect(sent[2].creation == nil); #expect(sent[2].input.objectValue?["expectedRevision"] == .int(8))
+        #expect(sent[2].input.objectValue?["contentMarkdown"] == .string("Typed after connection loss"))
+        #expect(await reopened.pendingCount() == 0)
+        for args: [JSONValue] in [[], [.bool(true)]] {
+            let data = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .corpus, recordId: CompanionDocumentOutbox.operationKey("getNotesTree", args)))
+            let tree = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
+            #expect(tree.objectValue?["notes"]?.arrayValue?.count == 1)
+            #expect(tree.objectValue?["notes"]?.arrayValue?.first?.objectValue?["id"] == .string(id))
+            #expect(tree.objectValue?["notes"]?.arrayValue?.first?.objectValue?["content"] == .string("Typed after connection loss"))
+        }
+    }
+    @Test("invalid creation metadata and incomplete canonical acknowledgements cannot discard a new draft")
+    func rejectedCreation() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }; let queue = try await fixture.open()
+        for field in ["title", "folderId", "tags"] {
+            var input = Self.creationInput.objectValue!; input[field] = field == "tags" ? .array([.int(37)]) : .int(37)
+            await #expect(throws: DesktopBridgeError.self) { try await queue.create(input: .object(input)) }
+        }
+        #expect(await queue.pendingCount() == 0)
+        let note = try await queue.create(input: Self.creationInput), id = try #require(note.objectValue?["id"]?.stringValue)
+        await #expect(throws: DesktopBridgeError.self) { try await queue.synchronize { Self.receipt($0, revision: 8) } }
+        #expect(await queue.pendingCount() == 1)
+        let reopened = try await fixture.open()
+        #expect(await reopened.editorData(noteId: id) != nil)
     }
     private actor InFlight {
         var first: CompanionDocumentOutbox.Request?

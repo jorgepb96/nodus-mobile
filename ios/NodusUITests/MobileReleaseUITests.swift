@@ -1771,6 +1771,62 @@ final class MobileReleaseUITests: XCTestCase {
         capture(reopened, "scriptor-mac-choice-reopened")
     }
     @MainActor
+    func testOfflineScriptorCreatesDocumentAndReopens() async throws {
+        continueAfterFailure = true
+        try await verifyOwningMacUnavailable()
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        guard web.waitForExistence(timeout: 45) else { XCTFail("Scriptor must be available offline."); return }
+        let create = web.buttons["Crear"].firstMatch
+        if !create.waitForExistence(timeout: 8) {
+            let home = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Nodus Scriptor")).firstMatch
+            guard home.exists, home.isHittable else { capture(app, "offline-creation-catalogue-unavailable"); XCTFail("The Scriptor catalogue must remain reachable."); return }
+            home.tap()
+        }
+        guard create.waitForExistence(timeout: 30), create.isHittable else { capture(app, "offline-creation-action-unavailable"); XCTFail("The real Create action must be usable offline."); return }
+        XCTAssertGreaterThanOrEqual(create.frame.width, 44); XCTAssertGreaterThanOrEqual(create.frame.height, 44)
+        create.tap()
+        let note = web.buttons["Nota"].firstMatch
+        guard note.waitForExistence(timeout: 10), note.isHittable else { XCTFail("The creation menu must offer a note."); return }
+        XCTAssertGreaterThanOrEqual(note.frame.height, 44)
+        capture(app, "scriptor-offline-create-menu")
+        note.tap()
+        let editor = web.textViews["Editor del documento"]
+        guard editor.waitForExistence(timeout: 45), editor.isHittable else { capture(app, "offline-new-editor-unavailable"); XCTFail("A locally created document must open without the Mac.\n\(app.debugDescription)"); return }
+        editor.tap()
+        guard app.keyboards.firstMatch.waitForExistence(timeout: 10) else { XCTFail("The new document must accept native keyboard input."); return }
+        let marker = "CompanionCreate-\(UUID().uuidString.prefix(8))"
+        let body = "\(marker). Documento creado y escrito sin conexión al Mac. Debe conservarse al cerrar la app y sincronizarse con su misma identidad al volver a conectar."
+        editor.typeText(body)
+        print("NODUS_OFFLINE_CREATED_DOCUMENT_MARKER=\(marker)")
+        let pending = web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Guardado en este dispositivo")).firstMatch
+        guard pending.waitForExistence(timeout: 20) else { capture(app, "offline-new-document-not-saved"); XCTFail("The new document must save on this device."); return }
+        XCTAssertTrue((editor.value as? String)?.contains(marker) == true)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        capture(app, "scriptor-offline-new-document-saved")
+        app.terminate()
+        let reopened = try openExistingPrincipal(destination: "workspace")
+        defer { reopened.terminate() }
+        let restoredWeb = reopened.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        guard restoredWeb.waitForExistence(timeout: 45) else { XCTFail("Scriptor must reopen offline."); return }
+        let restoredEditor = restoredWeb.textViews["Editor del documento"]
+        if !restoredEditor.waitForExistence(timeout: 8) {
+            let search = restoredWeb.textFields["Buscar en notas e ideas…"]
+            guard search.waitForExistence(timeout: 30), search.isHittable else { XCTFail("The local new document must be discoverable after restarting."); return }
+            search.tap(); search.typeText(marker + "\n")
+            let created = restoredWeb.buttons["Abrir Nota sin título"]
+            guard created.waitForExistence(timeout: 20), created.isHittable else { capture(reopened, "offline-created-row-unavailable"); XCTFail("The exact newly created note must remain in its catalogue."); return }
+            XCTAssertEqual(restoredWeb.buttons.matching(NSPredicate(format: "label == %@", "Abrir Nota sin título")).count, 1)
+            created.tap()
+        }
+        guard restoredEditor.waitForExistence(timeout: 30) else { XCTFail("The complete new document must reopen offline."); return }
+        XCTAssertTrue((restoredEditor.value as? String)?.contains(body) == true)
+        XCTAssertTrue(restoredWeb.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Guardado en este dispositivo")).firstMatch.exists)
+        XCTAssertFalse(reopened.staticTexts["shared-surface-error"].exists)
+        capture(reopened, "scriptor-offline-new-document-reopened")
+    }
+    @MainActor
     func testScriptorPreparesStructuredCompanionCopy() throws {
         let app = try openExistingPrincipal(destination: "workspace")
         defer { app.terminate() }

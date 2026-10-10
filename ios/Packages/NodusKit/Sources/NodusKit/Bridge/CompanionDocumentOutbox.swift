@@ -9,6 +9,7 @@ public actor CompanionDocumentOutbox {
         public let id: String
         public let noteId: String
         public let input: JSONValue
+        public var creation: JSONValue? = nil
         let generation: Int
     }
     private struct Record: Codable {
@@ -19,6 +20,8 @@ public actor CompanionDocumentOutbox {
         var state: State
         var remote: JSONValue?
         var issue: String?
+        var creation: JSONValue?
+        var createdNote: JSONValue?
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
@@ -59,7 +62,9 @@ public actor CompanionDocumentOutbox {
     }
     public func overlayTree(_ tree: JSONValue) -> JSONValue {
         guard var object = tree.objectValue, let notes = object["notes"]?.arrayValue else { return tree }
-        object["notes"] = .array(notes.map { note in
+        let present = Set(notes.compactMap { $0.objectValue?["id"]?.stringValue })
+        let created = records.keys.sorted().filter { !present.contains($0) }.compactMap { records[$0]?.createdNote }
+        object["notes"] = .array((notes + created).map { note in
             guard var value = note.objectValue, let id = value["id"]?.stringValue,
                   let editor = editorData(noteId: id)?.objectValue else { return note }
             value["title"] = editor["documentTitle"]; value["content"] = editor["contentMarkdown"]
@@ -67,6 +72,41 @@ public actor CompanionDocumentOutbox {
             return .object(value)
         })
         return .object(object)
+    }
+    /// A new authored document has a stable identity before any Mac request.
+    /// The same frozen creation and its latest structured edit commit together.
+    public func create(input: JSONValue) async throws -> JSONValue {
+        guard let fields = input.objectValue,
+              fields.keys.allSatisfy({ ["title", "content", "kind", "folderId", "tags", "source"].contains($0) }),
+              fields["source"] == nil || fields["source"] == .null,
+              fields["content"] == .string(""),
+              case let .string(title)? = fields["title"], title.count <= 4096,
+              fields["kind"] == nil || fields["kind"] == .string("markdown"),
+              fields["tags"] == nil || fields["tags"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
+        if let folder = fields["folderId"], folder != .null {
+            guard case let .string(id) = folder, !id.isEmpty, id.count <= 128 else { throw DesktopBridgeError.malformedResponse }
+        }
+        let tags = fields["tags"]?.arrayValue ?? []
+        guard tags.count <= 100, tags.allSatisfy({ if case let .string(tag) = $0 { return tag.count <= 80 }; return false }) else { throw DesktopBridgeError.malformedResponse }
+        let noteId = UUID().uuidString, kind = "markdown"
+        let titleValue = JSONValue.string(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Nota sin título" : title)
+        let created = JSONValue.string(ISO8601DateFormatter().string(from: Date()))
+        let creation: JSONValue = .object(["kind": .string(kind), "folderId": fields["folderId"] ?? .null, "tags": .array(tags)])
+        let note: JSONValue = .object(["id": .string(noteId), "title": titleValue, "content": .string(""), "kind": .string(kind),
+            "folderId": fields["folderId"] ?? .null, "tags": .array(tags), "source": .null, "trashedAt": .null,
+            "orderIdx": .int(0), "createdAt": created, "updatedAt": created])
+        let baseline: JSONValue = .object(["revision": .int(0), "documentTitle": titleValue, "contentMarkdown": .string(""),
+            "nativeDocument": .array([]), "schemaVersion": .int(2), "academicMetadata": .null,
+            "versions": .array([]), "annotations": .array([]), "outgoingLinks": .array([]), "backlinks": .array([]),
+            "style": .object(["fontFamily": .string("serif"), "fontSize": .int(18), "lineHeight": .double(1.75),
+                "pageWidth": .int(820), "marginX": .int(56), "paragraphSpacing": .double(0.8), "firstLineIndent": .int(0),
+                "alignment": .string("justify"), "theme": .string("paper")]),
+            "spellcheckLanguage": .string("es-ES"), "customDictionary": .array([])])
+        let draft: JSONValue = .object(["expectedRevision": .int(0), "title": titleValue, "contentMarkdown": .string(""),
+            "nativeDocument": .array([]), "schemaVersion": .int(2)])
+        records[noteId] = Record(baseline: baseline, draft: draft, generation: 1, sending: nil, state: .pending, creation: creation, createdNote: note)
+        do { try await persist() } catch { records[noteId] = nil; throw error }
+        return noteResult(noteId: noteId)
     }
     public func save(noteId: String, input: JSONValue) async throws -> JSONValue {
         guard let fields = input.objectValue, fields["title"]?.stringValue != nil,
@@ -80,6 +120,10 @@ public actor CompanionDocumentOutbox {
         }
         var record = existing ?? Record(baseline: baseline, draft: input, generation: abs(acknowledgedLocalRevisions[noteId] ?? 0), sending: nil, state: .pending)
         record.draft = input; record.generation += 1
+        if var note = record.createdNote?.objectValue {
+            note["updatedAt"] = .string(ISO8601DateFormatter().string(from: Date()))
+            record.createdNote = .object(note)
+        }
         // A rejected input never committed. A transport failure might have
         // committed, so keep that immutable request while coalescing later edits.
         if record.state == .blocked { record.sending = nil; record.state = .pending; record.issue = nil }
@@ -90,8 +134,10 @@ public actor CompanionDocumentOutbox {
     }
     private func noteResult(noteId: String) -> JSONValue {
         let editor = editorData(noteId: noteId)!.objectValue!
-        return .object(["id": .string(noteId), "title": editor["documentTitle"]!, "content": editor["contentMarkdown"]!,
-                        "editorRevision": editor["revision"]!, "mobileSyncState": editor["mobileSyncState"]!])
+        var note = records[noteId]?.createdNote?.objectValue ?? [:]
+        note.merge(["id": .string(noteId), "title": editor["documentTitle"]!, "content": editor["contentMarkdown"]!,
+                    "editorRevision": editor["revision"]!, "mobileSyncState": editor["mobileSyncState"]!], uniquingKeysWith: { _, new in new })
+        return .object(note)
     }
     public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count }
     public func synchronize(send: @Sendable (Request) async throws -> JSONValue) async throws {
@@ -102,7 +148,7 @@ public actor CompanionDocumentOutbox {
                 if record.sending == nil {
                     var wire = record.draft.objectValue!
                     wire["expectedRevision"] = record.baseline.objectValue!["revision"]
-                    record.sending = Request(id: UUID().uuidString, noteId: noteId, input: .object(wire), generation: record.generation)
+                    record.sending = Request(id: UUID().uuidString, noteId: noteId, input: .object(wire), creation: record.creation, generation: record.generation)
                     records[noteId] = record; try await persist()
                 }
                 let request = record.sending!
@@ -122,6 +168,21 @@ public actor CompanionDocumentOutbox {
                       let committed = response.objectValue?["editorData"],
                       let revision = committed.objectValue?["revision"]?.intValue, revision >= 0,
                       records[noteId] != nil else { throw DesktopBridgeError.malformedResponse }
+                if request.creation != nil || records[noteId]?.createdNote != nil {
+                    guard let note = response.objectValue?["note"], note.objectValue?["id"]?.stringValue == noteId else { throw DesktopBridgeError.malformedResponse }
+                    // A confirmed new document must remain discoverable after the
+                    // queue retires, including when its selected catalogue predates it.
+                    for args: [JSONValue] in [[], [.bool(true)]] {
+                        let key = try Self.operationKey("getNotesTree", args)
+                        if let data = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key),
+                           var tree = try JSONDecoder.nodus.decode(JSONValue.self, from: data).objectValue,
+                           var notes = tree["notes"]?.arrayValue {
+                            notes.removeAll { $0.objectValue?["id"]?.stringValue == noteId }; notes.append(note)
+                            tree["notes"] = .array(notes)
+                            try await cache.store(JSONEncoder.nodus.encode(JSONValue.object(tree)), vaultId: vaultId, domain: .corpus, recordId: key)
+                        }
+                    }
+                }
                 // Make a confirmed document consultable before retiring its
                 // durable queue. Failure here leaves the same replayable receipt.
                 try await cache.store(JSONEncoder.nodus.encode(committed), vaultId: vaultId, domain: .corpus,
@@ -132,7 +193,11 @@ public actor CompanionDocumentOutbox {
                 baselines[noteId] = committed
                 acknowledgedLocalRevisions[noteId] = -request.generation
                 if latest.generation == request.generation { records[noteId] = nil }
-                else { latest.baseline = committed; latest.sending = nil; latest.issue = nil; records[noteId] = latest }
+                else {
+                    latest.baseline = committed; latest.sending = nil; latest.issue = nil; latest.creation = nil
+                    if let note = response.objectValue?["note"], latest.createdNote != nil { latest.createdNote = note }
+                    records[noteId] = latest
+                }
                 try await persist()
             }
         }

@@ -382,7 +382,12 @@ private struct DesktopWebView: UIViewRepresentable {
                         guard let provider = args.first?.stringValue else { throw DesktopBridgeError.malformedResponse }
                         value = try await autonomous.models(provider, includeStatus: method == "getModelCatalog")
                     } else {
-                        if Self.operationDomains[method] == "research-generation", session.aiExecutionMode != .live {
+                        let creationFields = args.first?.objectValue
+                        let localCreation = method == "createNote" &&
+                            (creationFields?["kind"] == nil || creationFields?["kind"] == .string("markdown")) &&
+                            (creationFields?["source"] == nil || creationFields?["source"] == .null) &&
+                            creationFields?["content"] == .string("")
+                        if Self.operationDomains[method] == "research-generation", session.aiExecutionMode != .live, !localCreation {
                             throw APIError(status: 409, code: "explicit_mode_required", message: String(localized: "Choose live mode to run this operation on the Mac. The app does not switch execution modes automatically."))
                         }
                         let store = DesktopBridgePairingStore()
@@ -390,10 +395,14 @@ private struct DesktopWebView: UIViewRepresentable {
                             let pairing = store.pairings().first(where: { $0.id == session.connection.desktopPairingId }),
                             let token = store.credential(for: pairing) else { throw DesktopBridgeError.permissionDenied }
                         let client = DesktopBridgeClient(pairing: pairing, token: token)
-                        if ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict"].contains(method) {
+                        if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict"].contains(method) {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
                             let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
-                            if method == "updateWorkspaceNote", args.count == 2, let noteId = args[0].stringValue {
+                            if localCreation, args.count == 1 {
+                                guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+                                value = try await documents.create(input: args[0])
+                                Task { await session.synchronizeCompanionChanges() }
+                            } else if method == "updateWorkspaceNote", args.count == 2, let noteId = args[0].stringValue {
                                 guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
                                 value = try await documents.save(noteId: noteId, input: args[1])
                                 Task { await session.synchronizeCompanionChanges() }

@@ -358,9 +358,11 @@ public actor DesktopBridgeClient {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
-        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/workspace-edits", method: "POST", body: .object([
+        var body: [String: JSONValue] = [
             "id": .string(request.id), "noteId": .string(request.noteId), "input": request.input
-        ]))
+        ]
+        if let creation = request.creation { body["creation"] = creation }
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/workspace-edits", method: "POST", body: .object(body))
         return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
     }
 
