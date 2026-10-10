@@ -115,7 +115,7 @@ struct CompanionDownloadsView: View {
                                  data: try JSONEncoder.nodus.encode(JSONValue.object(visibleCatalogue))))
             // These read-only queries bootstrap the shared editor. They must be
             // part of the chosen copy, rather than depend on disposable cache.
-            for method in ["getSettings", "listStudyStyles", "listAllWorkspaceLibraryLinks"] {
+            for method in ["getSettings", "listStudyStyles", "listAllWorkspaceLibraryLinks", "getThemes"] {
                 try Task.checkCancellation()
                 var value = try await client.operation(vaultId: vault, method: method, args: [])
                 if method == "getSettings" {

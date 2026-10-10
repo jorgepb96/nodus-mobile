@@ -1772,6 +1772,14 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testOfflineScriptorCreatesDocumentAndReopens() async throws {
+        try await createOfflineCompanionItem(menuItem: "Nota", defaultTitle: "Nota sin título")
+    }
+    @MainActor
+    func testOfflineScriptorCreatesManualIdeaAndReopens() async throws {
+        try await createOfflineCompanionItem(menuItem: "Idea", defaultTitle: "Idea sin título")
+    }
+    @MainActor
+    private func createOfflineCompanionItem(menuItem: String, defaultTitle: String) async throws {
         continueAfterFailure = true
         try await verifyOwningMacUnavailable()
         let app = try openExistingPrincipal(destination: "workspace")
@@ -1787,8 +1795,8 @@ final class MobileReleaseUITests: XCTestCase {
         guard create.waitForExistence(timeout: 30), create.isHittable else { capture(app, "offline-creation-action-unavailable"); XCTFail("The real Create action must be usable offline."); return }
         XCTAssertGreaterThanOrEqual(create.frame.width, 44); XCTAssertGreaterThanOrEqual(create.frame.height, 44)
         create.tap()
-        let note = web.buttons["Nota"].firstMatch
-        guard note.waitForExistence(timeout: 10), note.isHittable else { XCTFail("The creation menu must offer a note."); return }
+        let note = web.buttons[menuItem].firstMatch
+        guard note.waitForExistence(timeout: 10), note.isHittable else { XCTFail("The creation menu must offer the actual requested item."); return }
         XCTAssertGreaterThanOrEqual(note.frame.height, 44)
         capture(app, "scriptor-offline-create-menu")
         note.tap()
@@ -1814,10 +1822,14 @@ final class MobileReleaseUITests: XCTestCase {
         if !restoredEditor.waitForExistence(timeout: 8) {
             let search = restoredWeb.textFields["Buscar en notas e ideas…"]
             guard search.waitForExistence(timeout: 30), search.isHittable else { XCTFail("The local new document must be discoverable after restarting."); return }
-            search.tap(); search.typeText(marker + "\n")
-            let created = restoredWeb.buttons["Abrir Nota sin título"]
+            search.tap()
+            if let previous = search.value as? String, previous != search.placeholderValue {
+                search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+            }
+            search.typeText(marker + "\n")
+            let created = restoredWeb.buttons["Abrir \(defaultTitle)"]
             guard created.waitForExistence(timeout: 20), created.isHittable else { capture(reopened, "offline-created-row-unavailable"); XCTFail("The exact newly created note must remain in its catalogue."); return }
-            XCTAssertEqual(restoredWeb.buttons.matching(NSPredicate(format: "label == %@", "Abrir Nota sin título")).count, 1)
+            XCTAssertEqual(restoredWeb.buttons.matching(NSPredicate(format: "label == %@", "Abrir \(defaultTitle)")).count, 1)
             created.tap()
         }
         guard restoredEditor.waitForExistence(timeout: 30) else { XCTFail("The complete new document must reopen offline."); return }
@@ -1828,6 +1840,14 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testCreatedCompanionDocumentSynchronizesAndReopens() throws {
+        try createdCompanionItemSynchronizes(defaultTitle: "Nota sin título")
+    }
+    @MainActor
+    func testCreatedCompanionManualIdeaSynchronizesAndReopens() throws {
+        try createdCompanionItemSynchronizes(defaultTitle: "Idea sin título")
+    }
+    @MainActor
+    private func createdCompanionItemSynchronizes(defaultTitle: String) throws {
         let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_CREATED_DOCUMENT_MARKER"])
         XCTAssertTrue(marker.hasPrefix("CompanionCreate-"))
         let app = try openExistingPrincipal(destination: "workspace")
@@ -1842,7 +1862,7 @@ final class MobileReleaseUITests: XCTestCase {
                 search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
             }
             search.typeText(marker + "\n")
-            let row = web.buttons["Abrir Nota sin título"]
+            let row = web.buttons["Abrir \(defaultTitle)"]
             XCTAssertTrue(row.waitForExistence(timeout: 30)); XCTAssertTrue(row.isHittable); row.tap()
         }
         XCTAssertTrue(editor.waitForExistence(timeout: 30))
@@ -1858,7 +1878,7 @@ final class MobileReleaseUITests: XCTestCase {
         defer { reopened.terminate() }
         let restoredWeb = reopened.otherElements["shared-desktop-workspace"].webViews.firstMatch
         XCTAssertTrue(restoredWeb.waitForExistence(timeout: 45))
-        let row = restoredWeb.buttons["Abrir Nota sin título"]
+        let row = restoredWeb.buttons["Abrir \(defaultTitle)"]
         if row.waitForExistence(timeout: 8) { row.tap() }
         let restored = restoredWeb.textViews["Editor del documento"]
         XCTAssertTrue(restored.waitForExistence(timeout: 30))

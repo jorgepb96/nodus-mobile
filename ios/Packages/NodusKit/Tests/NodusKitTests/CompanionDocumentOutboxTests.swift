@@ -42,6 +42,60 @@ struct CompanionDocumentOutboxTests {
     }
     private static let creationInput: JSONValue = .object(["title": .string("New offline document"), "content": .string(""),
         "kind": .string("markdown"), "folderId": .string("folder-a"), "tags": .array([.string("offline")])])
+    @Test("authored ideas retain both identities, source ownership and local dossier after offline restart")
+    func offlineIdeaCreation() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        for invalid: JSONValue in [.object(["globalId": .string("g-0001")]), .object(["source": .null]), .object(["title": .int(37)]), .object(["folderId": .int(37)])] {
+            await #expect(throws: DesktopBridgeError.self) { try await queue.createManualIdea(input: invalid) }
+        }
+        #expect(await queue.pendingCount() == 0)
+        let created = try await queue.createManualIdea(input: .object(["title": .string("Authored idea"), "folderId": .string("folder-a")]))
+        let note = try #require(created.objectValue?["note"]), globalId = try #require(created.objectValue?["globalId"]?.stringValue)
+        let id = try #require(note.objectValue?["id"]?.stringValue)
+        #expect(UUID(uuidString: id) != nil); #expect(globalId.hasPrefix("manual-")); #expect(UUID(uuidString: String(globalId.dropFirst(7))) != nil)
+        #expect(note.objectValue?["kind"] == .string("idea")); #expect(note.objectValue?["source"]?.objectValue?["ref"] == .string(globalId))
+        _ = try await queue.save(noteId: id, input: Self.input(-1, text: "User-authored development with a table and citation"))
+        try await fixture.cache.removeReusableCopies()
+        let reopened = try await fixture.open(), dossier = try #require(await reopened.pendingIdeaDetail(globalId: globalId))
+        #expect(dossier.objectValue?["idea"]?.objectValue?["statement"] == .string("User-authored development with a table and citation"))
+        #expect(dossier.objectValue?["evidence"] == .array([])); #expect(await reopened.pendingIdeaDetail(globalId: "g-0001") == nil)
+        let tree = await reopened.overlayTree(.object(["folders": .array([]), "notes": .array([])]))
+        #expect(tree.objectValue?["notes"]?.arrayValue?.first?.objectValue?["source"] == note.objectValue?["source"])
+        let anotherVault = try await CompanionDocumentOutbox(cache: fixture.cache, vaultId: "vault-b", data: fixture.cache.data(vaultId: "vault-b", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        #expect(await anotherVault.pendingIdeaDetail(globalId: globalId) == nil)
+    }
+    @Test("lost authored-idea creation acknowledgements reuse both identities and refuse changed canonical ownership")
+    func ideaCreationAcknowledgement() async throws {
+        let fixture = try Fixture(readLimitBytes: 1_000_000); defer { fixture.cleanup() }
+        let queue = try await fixture.open(), requests = Requests()
+        let created = try await queue.createManualIdea(input: .object(["folderId": .null]))
+        let note = try #require(created.objectValue?["note"]), id = try #require(note.objectValue?["id"]?.stringValue)
+        let globalId = try #require(created.objectValue?["globalId"])
+        _ = try await queue.save(noteId: id, input: Self.input(-1, text: "Complete authored content"))
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in await requests.append(request); throw URLError(.networkConnectionLost) } }
+        let reopened = try await fixture.open()
+        await #expect(throws: DesktopBridgeError.self) {
+            try await reopened.synchronize { request in
+                await requests.append(request)
+                var response = Self.receipt(request, revision: 8).objectValue!, wrong = note.objectValue!
+                wrong["source"] = .object(["note": .string("manual-idea"), "ref": .string("g-0001")]); response["note"] = .object(wrong)
+                return .object(response)
+            }
+        }
+        #expect(await reopened.pendingCount() == 1); #expect(await reopened.editorData(noteId: id) != nil)
+        try await reopened.synchronize { request in
+            await requests.append(request)
+            var response = Self.receipt(request, revision: 8).objectValue!; response["note"] = note
+            return .object(response)
+        }
+        let sent = await requests.all()
+        #expect(sent.count == 3); #expect(sent[0] == sent[1]); #expect(sent[1] == sent[2])
+        #expect(sent[0].creation?.objectValue?["globalId"] == globalId); #expect(sent[0].noteId == id)
+        #expect(await reopened.pendingCount() == 0); #expect(await reopened.pendingIdeaDetail(globalId: globalId.stringValue!) == nil)
+        let canonical = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .corpus, recordId: CompanionDocumentOutbox.operationKey("getWorkspaceNoteEditorData", [.string(id)])))
+        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: canonical).objectValue?["contentMarkdown"] == .string("Complete authored content"))
+    }
     @Test("new offline documents preserve stable identity, metadata and structured content through restart")
     func offlineCreation() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }

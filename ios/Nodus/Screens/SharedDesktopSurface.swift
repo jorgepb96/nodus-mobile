@@ -383,10 +383,11 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try await autonomous.models(provider, includeStatus: method == "getModelCatalog")
                     } else {
                         let creationFields = args.first?.objectValue
-                        let localCreation = method == "createNote" &&
+                        let localIdeaCreation = method == "createManualIdea"
+                        let localCreation = localIdeaCreation || (method == "createNote" &&
                             (creationFields?["kind"] == nil || creationFields?["kind"] == .string("markdown")) &&
                             (creationFields?["source"] == nil || creationFields?["source"] == .null) &&
-                            creationFields?["content"] == .string("")
+                            creationFields?["content"] == .string(""))
                         if Self.operationDomains[method] == "research-generation", session.aiExecutionMode != .live, !localCreation {
                             throw APIError(status: 409, code: "explicit_mode_required", message: String(localized: "Choose live mode to run this operation on the Mac. The app does not switch execution modes automatically."))
                         }
@@ -395,12 +396,12 @@ private struct DesktopWebView: UIViewRepresentable {
                             let pairing = store.pairings().first(where: { $0.id == session.connection.desktopPairingId }),
                             let token = store.credential(for: pairing) else { throw DesktopBridgeError.permissionDenied }
                         let client = DesktopBridgeClient(pairing: pairing, token: token)
-                        if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict"].contains(method) {
+                        if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
                             let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
                             if localCreation, args.count == 1 {
                                 guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
-                                value = try await documents.create(input: args[0])
+                                value = localIdeaCreation ? try await documents.createManualIdea(input: args[0]) : try await documents.create(input: args[0])
                                 Task { await session.synchronizeCompanionChanges() }
                             } else if method == "updateWorkspaceNote", args.count == 2, let noteId = args[0].stringValue {
                                 guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
@@ -414,6 +415,9 @@ private struct DesktopWebView: UIViewRepresentable {
                             } else if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue,
                                       let local = await documents.editorData(noteId: noteId) {
                                 value = local
+                            } else if ["getIdeaDetail", "getIdeaEdges"].contains(method), let globalId = args.first?.stringValue,
+                                      let local = await documents.pendingIdeaDetail(globalId: globalId) {
+                                value = method == "getIdeaDetail" ? local : .array([])
                             } else {
                                 let cache = try PrivateBridgeCache(pairingId: pairing.id)
                                 let key = try CompanionDocumentOutbox.operationKey(method, args)

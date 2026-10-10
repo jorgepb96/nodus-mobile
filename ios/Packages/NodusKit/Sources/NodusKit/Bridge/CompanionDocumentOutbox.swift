@@ -76,24 +76,49 @@ public actor CompanionDocumentOutbox {
     /// A new authored document has a stable identity before any Mac request.
     /// The same frozen creation and its latest structured edit commit together.
     public func create(input: JSONValue) async throws -> JSONValue {
+        try await createDocument(input: input, ideaId: nil)
+    }
+    public func createManualIdea(input: JSONValue) async throws -> JSONValue {
+        guard var fields = input.objectValue, fields.keys.allSatisfy({ ["title", "folderId"].contains($0) }) else { throw DesktopBridgeError.malformedResponse }
+        if fields["title"] == nil { fields["title"] = .string("Idea sin título") }
+        fields["content"] = .string(""); fields["kind"] = .string("idea")
+        let ideaId = "manual-\(UUID().uuidString)"
+        let note = try await createDocument(input: .object(fields), ideaId: ideaId)
+        return .object(["note": note, "globalId": .string(ideaId)])
+    }
+    /// Only a newly authored, not-yet-confirmed idea has a local empty dossier.
+    /// Existing corpus dossiers continue through their authenticated query cache.
+    public func pendingIdeaDetail(globalId: String) -> JSONValue? {
+        guard let id = records.keys.first(where: { records[$0]?.creation?.objectValue?["globalId"] == .string(globalId) }),
+              let note = records[id]?.createdNote?.objectValue, let editor = editorData(noteId: id)?.objectValue else { return nil }
+        return .object(["idea": .object(["global_id": .string(globalId), "type": .string("claim"),
+            "label": editor["documentTitle"]!, "statement": editor["contentMarkdown"]!, "embedding": .null,
+            "created_at": note["createdAt"] ?? .null]), "themes": .array([]), "occurrences": .array([]),
+            "evidence": .array([]), "gaps": .array([]), "externalRefs": .array([])])
+    }
+    private func createDocument(input: JSONValue, ideaId: String?) async throws -> JSONValue {
+        let kind = ideaId == nil ? "markdown" : "idea"
         guard let fields = input.objectValue,
               fields.keys.allSatisfy({ ["title", "content", "kind", "folderId", "tags", "source"].contains($0) }),
               fields["source"] == nil || fields["source"] == .null,
               fields["content"] == .string(""),
               case let .string(title)? = fields["title"], title.count <= 4096,
-              fields["kind"] == nil || fields["kind"] == .string("markdown"),
+              fields["kind"] == nil || fields["kind"] == .string(kind),
               fields["tags"] == nil || fields["tags"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
         if let folder = fields["folderId"], folder != .null {
             guard case let .string(id) = folder, !id.isEmpty, id.count <= 128 else { throw DesktopBridgeError.malformedResponse }
         }
         let tags = fields["tags"]?.arrayValue ?? []
         guard tags.count <= 100, tags.allSatisfy({ if case let .string(tag) = $0 { return tag.count <= 80 }; return false }) else { throw DesktopBridgeError.malformedResponse }
-        let noteId = UUID().uuidString, kind = "markdown"
-        let titleValue = JSONValue.string(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Nota sin título" : title)
+        let noteId = UUID().uuidString
+        let titleValue = JSONValue.string(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (ideaId == nil ? "Nota sin título" : "Idea sin título") : title)
         let created = JSONValue.string(ISO8601DateFormatter().string(from: Date()))
-        let creation: JSONValue = .object(["kind": .string(kind), "folderId": fields["folderId"] ?? .null, "tags": .array(tags)])
+        var creationFields: [String: JSONValue] = ["kind": .string(kind), "folderId": fields["folderId"] ?? .null, "tags": .array(tags)]
+        if let ideaId { creationFields["globalId"] = .string(ideaId) }
+        let creation: JSONValue = .object(creationFields)
+        let source: JSONValue = ideaId.map { .object(["origin": .string("idea"), "ref": .string($0), "note": .string("manual-idea")]) } ?? .null
         let note: JSONValue = .object(["id": .string(noteId), "title": titleValue, "content": .string(""), "kind": .string(kind),
-            "folderId": fields["folderId"] ?? .null, "tags": .array(tags), "source": .null, "trashedAt": .null,
+            "folderId": fields["folderId"] ?? .null, "tags": .array(tags), "source": source, "trashedAt": .null,
             "orderIdx": .int(0), "createdAt": created, "updatedAt": created])
         let baseline: JSONValue = .object(["revision": .int(0), "documentTitle": titleValue, "contentMarkdown": .string(""),
             "nativeDocument": .array([]), "schemaVersion": .int(2), "academicMetadata": .null,
@@ -170,6 +195,11 @@ public actor CompanionDocumentOutbox {
                       records[noteId] != nil else { throw DesktopBridgeError.malformedResponse }
                 if request.creation != nil || records[noteId]?.createdNote != nil {
                     guard let note = response.objectValue?["note"], note.objectValue?["id"]?.stringValue == noteId else { throw DesktopBridgeError.malformedResponse }
+                    if let globalId = request.creation?.objectValue?["globalId"] {
+                        guard note.objectValue?["kind"] == .string("idea"),
+                              note.objectValue?["source"]?.objectValue?["ref"] == globalId,
+                              note.objectValue?["source"]?.objectValue?["note"] == .string("manual-idea") else { throw DesktopBridgeError.malformedResponse }
+                    }
                     // A confirmed new document must remain discoverable after the
                     // queue retires, including when its selected catalogue predates it.
                     for args: [JSONValue] in [[], [.bool(true)]] {
