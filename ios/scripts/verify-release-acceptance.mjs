@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { mobileRoot } from './nodus-repo.mjs';
+
+const manifest = JSON.parse(fs.readFileSync(path.join(mobileRoot, 'ios/Parity/parity-manifest.json'), 'utf8'));
+const input = process.argv[2];
+if (!input || !fs.existsSync(input)) {
+  console.error('Release blocked: an executed acceptance campaign is required. No missing configuration or omitted operation can count as a pass.');
+  process.exit(1);
+}
+const campaign = JSON.parse(fs.readFileSync(input, 'utf8'));
+const issues = [];
+for (const [repo, commit] of Object.entries(manifest.referenceCommits)) {
+  if (campaign.referenceCommits?.[repo] !== commit) issues.push(`Missing reference commit: ${repo}`);
+}
+if (!campaign.revisionDigests?.desktop || !campaign.revisionDigests?.mobile) issues.push('The exact tested code revisions must be recorded.');
+for (const operation of manifest.operations.filter(operation => operation.category !== 'desktopExclusive')) {
+  const result = campaign.operations?.find(item => item.id === operation.id);
+  if (!result || result.result !== 'passed' || result.executed < 1 || result.skipped !== 0) {
+    issues.push(`Not verified: ${operation.id}`); continue;
+  }
+  if (!result.evidence?.length) { issues.push(`No evidence: ${operation.id}`); continue; }
+  for (const evidence of result.evidence) {
+    const file = path.resolve(path.dirname(input), evidence.path);
+    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) { issues.push(`Missing evidence: ${evidence.path}`); continue; }
+    const digest = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    if (digest !== evidence.sha256) issues.push(`Evidence changed: ${evidence.path}`);
+  }
+}
+for (const required of ['desktop', 'iphoneSimulator', 'ipadSimulator', 'physicalIphone']) {
+  const run = campaign.environments?.[required];
+  if (!run?.executed || run.failed !== 0 || run.skipped !== 0 || !run.artifact) issues.push(`Unverified environment: ${required}`);
+  if (run?.artifact) {
+    const artifact = path.resolve(path.dirname(input), run.artifact);
+    if (!fs.existsSync(artifact)) { issues.push(`Missing environment artifact: ${required}`); continue; }
+    if (required !== 'desktop') {
+      try {
+        const result = JSON.parse(execFileSync('xcrun', ['xcresulttool', 'get', 'test-results', 'summary', '--path', artifact], { encoding: 'utf8' }));
+        if (result.result !== 'Passed' || result.totalTestCount < 1 || result.failedTests !== 0 || result.skippedTests !== 0 || result.expectedFailures !== 0 || result.passedTests !== run.executed) issues.push(`Actual XCTest result does not pass: ${required}`);
+        const platforms = result.devicesAndConfigurations?.map(item => item.device.platform) ?? [];
+        if (required === 'physicalIphone' && !platforms.includes('iOS')) issues.push('Physical iPhone evidence must come from a physical iOS device.');
+      } catch { issues.push(`Unreadable XCTest evidence: ${required}`); }
+    } else if (!run.sha256 || fs.statSync(artifact).isDirectory() || createHash('sha256').update(fs.readFileSync(artifact)).digest('hex') !== run.sha256) issues.push('Desktop evidence digest is missing or changed.');
+  }
+}
+if (issues.length) { console.error(`Release blocked (${issues.length} checks):\n${issues.join('\n')}`); process.exit(1); }
+console.log('Executed acceptance campaign passed. This permits archiving; Apple processing and TestFlight availability still need verification.');

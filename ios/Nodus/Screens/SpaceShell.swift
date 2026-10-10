@@ -2,6 +2,19 @@ import NodusAI
 import NodusKit
 import NodusUI
 import SwiftUI
+import UIKit
+
+private struct ResidentRouteActiveKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// UIKit-backed content must hide its own accessibility tree when its route is resident.
+    var nodusResidentRouteActive: Bool {
+        get { self[ResidentRouteActiveKey.self] }
+        set { self[ResidentRouteActiveKey.self] = newValue }
+    }
+}
 
 /// Renders the original Nodus icon when SF Symbols has no semantic equivalent. The telescope
 /// path comes from the desktop icon set; all other names continue to use native SF Symbols.
@@ -31,6 +44,8 @@ struct SpaceShell: View {
     @Environment(AppPreferences.self) private var preferences
     @Environment(OutboxTrayModel.self) private var tray
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var textSize
+    @ScaledMetric(relativeTo: .footnote) private var scaledSidebarWidth: CGFloat = 176
 
     let session: SpaceSession
 
@@ -47,7 +62,8 @@ struct SpaceShell: View {
 
     init(session: SpaceSession) {
         self.session = session
-        var initial: NodusRoute = .home
+        var initial = UserDefaults.standard.string(forKey: "nodus.navigation.lastRoute.\(session.connection.id)")
+            .flatMap(NodusRoute.init(rawValue:)) ?? .home
 #if DEBUG
         // Deterministic visual-QA entry point. `simctl` can set this without persisting a
         // different navigation state for real users, which lets every phase capture the exact
@@ -66,18 +82,21 @@ struct SpaceShell: View {
             let presentation = SidebarPresentation(
                 availableWidth: proxy.size.width,
                 isUserCollapsed: preferences.sidebarCollapsed,
-                expandedWidth: CGFloat(preferences.sidebarWidth)
+                isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+                expandedWidth: textSize.isAccessibilitySize
+                    ? max(CGFloat(preferences.sidebarWidth), scaledSidebarWidth)
+                    : CGFloat(preferences.sidebarWidth)
             )
             // Resident routes sit below the top bar and, on a regular-width device, beside
             // the persistent sidebar. Freezing an inactive route to the whole window made
             // that hidden route dictate the ZStack's minimum size: one top bar too tall and
             // one sidebar too wide. The visible workspace was consequently clipped at the
             // bottom and trailing edge on iPad in both orientations.
-            let residentRouteSize = presentation.residentRouteSize(in: proxy.size)
+            let residentRouteSize = session.isSurfaceFullscreen ? proxy.size : presentation.residentRouteSize(in: proxy.size)
 
             ZStack(alignment: .leading) {
                 VStack(spacing: 0) {
-                    DesktopTopBar(
+                    if !session.isSurfaceFullscreen { DesktopTopBar(
                         session: session,
                         presentation: presentation,
                         queueCount: tray.outbox.pending,
@@ -89,10 +108,10 @@ struct SpaceShell: View {
                         onRefresh: { Task { await session.refreshPublishedContent() } },
                         onTheme: { preferences.toggleInterfaceStyle(current: colorScheme) },
                         onSettings: { select(.settings) }
-                    )
+                    ) }
 
                     HStack(spacing: 0) {
-                        if presentation.isPersistent {
+                        if presentation.isPersistent, !session.isSurfaceFullscreen {
                             sidebar(collapsed: presentation.isCollapsed)
                                 .frame(width: presentation.sidebarWidth)
                                 .overlay(alignment: .trailing) {
@@ -105,37 +124,33 @@ struct SpaceShell: View {
                     }
                 }
 
-                if !presentation.isPersistent, showingDrawer {
+                if !presentation.isPersistent, showingDrawer, !session.isSurfaceFullscreen {
                     Color.black.opacity(0.28)
                         .ignoresSafeArea()
                         .onTapGesture { withAnimation(NodusMotion.standard) { showingDrawer = false } }
+                        .accessibilityElement()
+                        .accessibilityLabel("Close navigation")
+                        .accessibilityIdentifier("nodus-navigation-dismiss")
+                        .accessibilityAddTraits(.isButton)
                         .transition(.opacity)
 
                     sidebar(collapsed: false)
-                        .frame(width: min(320, proxy.size.width * 0.86))
+                        // The scrim paints outside the safe area. Its expanded size must not
+                        // become the drawer's layout proposal and move Home under the clock.
+                        .frame(width: min(320, proxy.size.width * 0.86), height: proxy.size.height)
                         .shadow(color: .black.opacity(0.28), radius: 24, x: 8)
                         .transition(.move(edge: .leading))
                 }
 
-                // WKWebView and other UIKit-backed views can consume a drag before a SwiftUI
-                // ancestor sees it. Keep a narrow, dedicated edge band above route content so
-                // the standard drawer gesture works consistently without affecting horizontal
-                // scrolling elsewhere on the screen.
-                if !presentation.isPersistent, !showingDrawer {
-                    VStack(spacing: 0) {
-                        Color.clear.frame(height: 52).allowsHitTesting(false)
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .gesture(edgeOpenGesture(presentation: presentation, width: proxy.size.width))
-                    }
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
-                    .zIndex(20)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .background {
+                ScreenEdgeNavigationInstaller(enabled: !presentation.isPersistent && !session.isSurfaceFullscreen && !showingDrawer) {
+                    withAnimation(NodusMotion.standard) { showingDrawer = true }
                 }
             }
             .animation(NodusMotion.standard, value: showingDrawer)
             .animation(NodusMotion.standard, value: presentation.sidebarWidth)
-            .simultaneousGesture(edgeOpenGesture(presentation: presentation, width: proxy.size.width))
         }
         .environment(chrome)
         .environment(workspaceTabs)
@@ -212,6 +227,7 @@ struct SpaceShell: View {
                 NavigationStack {
                     routeView(resident).toolbar(.hidden, for: .navigationBar)
                 }
+                .environment(\.nodusResidentRouteActive, resident == route)
                 .frame(
                     width: resident == route ? nil : frozenSize.width,
                     height: resident == route ? nil : frozenSize.height
@@ -236,6 +252,7 @@ struct SpaceShell: View {
     }
 
     private func select(_ selected: NodusRoute) {
+        session.isSurfaceFullscreen = false
         guard selected != route else {
             showingDrawer = false
             return
@@ -244,6 +261,7 @@ struct SpaceShell: View {
         let previous = route
         if !residentRoutes.contains(selected) { residentRoutes.append(selected) }
         route = selected
+        UserDefaults.standard.set(selected.rawValue, forKey: "nodus.navigation.lastRoute.\(session.connection.id)")
         workspaceTabs.leave(previous.rawValue)
         if !retainsRouteState(previous) { residentRoutes.removeAll { $0 == previous } }
         chrome.setScrolled(false)
@@ -273,13 +291,20 @@ struct SpaceShell: View {
         case .library:
             LibraryRouteView(session: session)
         case .argument:
-            ArgumentMapView(session: session)
+            if session.connection.desktopPairingId != nil { SharedDesktopSurface(session: session, surface: .argument) }
+            else { ArgumentMapView(session: session) }
+        case .graph, .studyGraph:
+            SharedDesktopSurface(session: session, surface: .graph)
+        case .dictionary:
+            DictionaryWorkspaceView(session: session)
         case .ideas:
             IdeasWorkspaceView(session: session, onOpenArgument: openArgument)
         case .authors:
             AuthorsWorkspaceView(session: session, onOpenIdea: openIdea, onOpenArgument: openArgument)
-        case .deepResearch, .studyDeepResearch:
-            DeepResearchRouteView(session: session)
+        case .deepResearch, .studyDeepResearch, .dbDeepResearch:
+            if session.connection.desktopPairingId != nil, session.aiExecutionMode == .live {
+                SharedDesktopSurface(session: session, surface: .deepResearch)
+            } else { DeepResearchRouteView(session: session) }
         case .research:
             ResearchStateView(session: session)
         case .gaps:
@@ -291,9 +316,12 @@ struct SpaceShell: View {
         case .reading:
             ReadingPathMobileView(session: session)
         case .immersion:
-            ImmersionLibraryView(session: session)
+            if session.connection.desktopPairingId != nil {
+                SharedDesktopSurface(session: session, surface: .immersion)
+            } else { ImmersionLibraryView(session: session) }
         case .workspace, .notes:
-            PublishedWorkspaceView(session: session)
+            if session.connection.desktopPairingId != nil { SharedDesktopSurface(session: session, surface: .workspace) }
+            else { PublishedWorkspaceView(session: session) }
         case .writing:
             WritingWorkshopMobileView(session: session)
         case .projects:
@@ -373,28 +401,13 @@ struct SpaceShell: View {
             StudyTeachingWorkspaceView(session: session, mode: .grades)
         case .teachingUnits:
             StudyTeachingWorkspaceView(session: session, mode: .units)
-        case .worldChat, .studyChat, .dbChat:
+        case .researchChat, .worldChat, .studyChat, .dbChat:
             ChatTab(session: session)
-        case .browser, .radar, .toolkit:
-            PlatformToolsWorkspaceView(session: session, route: route)
+        case .browser, .radar, .compass, .studyFocus, .toolkit:
+            ComingSoonToolView(route: route, accent: session.accent)
         case .settings:
             SpaceSettingsView(session: session)
         }
-    }
-
-    /// A drawer gesture begins only in the system-like edge band and commits only after a
-    /// decisive horizontal movement. Using a simultaneous gesture preserves carousels,
-    /// browser history swipes and horizontally scrolling workspaces away from the edge.
-    private func edgeOpenGesture(presentation: SidebarPresentation, width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .onEnded { value in
-                guard !presentation.isPersistent, !showingDrawer else { return }
-                let beganAtEdge = value.startLocation.x <= min(28, width * 0.08)
-                let horizontal = value.translation.width >= 64
-                    && abs(value.translation.width) > abs(value.translation.height) * 1.25
-                guard beganAtEdge, horizontal else { return }
-                withAnimation(NodusMotion.standard) { showingDrawer = true }
-            }
     }
 
     private func openIdea(_ row: Row) {
@@ -441,7 +454,7 @@ private struct DeepResearchRouteView: View {
             }
         }
         .task {
-            if store == nil { store = LocalReportStore.shared(for: session.connection.spaceId) }
+            if store == nil { store = LocalReportStore.shared(for: session.connection.storageId) }
         }
     }
 }
@@ -455,11 +468,25 @@ private struct DeepResearchRouteView: View {
 private struct LibraryRouteView: View {
     let session: SpaceSession
     @State private var supportsAccountSync: Bool?
+    @State private var showDocuments = false
+    @State private var liveLibraryIssue: String?
 
     var body: some View {
         Group {
             if session.isDemo {
                 AccountLibraryView(session: session)
+            } else if session.connection.desktopPairingId != nil {
+                VStack(spacing: 0) {
+                    Picker("Library", selection: $showDocuments) {
+                        Text("Documents").tag(true)
+                        Text("Works").tag(false)
+                    }.pickerStyle(.segmented).padding(.horizontal).padding(.vertical, 8)
+                    if let liveLibraryIssue { Text(liveLibraryIssue).font(.caption).foregroundStyle(.red).padding() }
+                    if showDocuments { PublishedLibraryView(session: session) }
+                    else if let works = Collections.byPath["works"] {
+                        CollectionListView(session: session, collection: works, workspaceRoute: .library)
+                    }
+                }
             } else if let supportsAccountSync {
                 switch LibraryRouteSource.resolve(
                     isDemo: false,
@@ -480,6 +507,14 @@ private struct LibraryRouteView: View {
         }
         .task {
             guard !session.isDemo, supportsAccountSync == nil else { return }
+            if session.connection.desktopPairingId != nil {
+                do {
+                    showDocuments = try await session.client.publishedLibrarySummary(in: session.connection.spaceId).documents > 0
+                    liveLibraryIssue = nil
+                } catch { liveLibraryIssue = error.localizedDescription }
+                supportsAccountSync = false
+                return
+            }
             supportsAccountSync = (try? await session.client.capabilities().supportsAccountLibrarySync) ?? false
         }
     }
@@ -497,6 +532,7 @@ enum LibraryRouteSource: Equatable {
 struct SidebarPresentation: Equatable {
     let availableWidth: CGFloat
     let isUserCollapsed: Bool
+    var isPhone = false
     var expandedWidth: CGFloat = NodusChromeMetrics.expandedSidebar
 
     static let minimumExpandedWidth = 176.0
@@ -506,7 +542,7 @@ struct SidebarPresentation: Equatable {
         min(maximumExpandedWidth, max(minimumExpandedWidth, width))
     }
 
-    var isPersistent: Bool { availableWidth >= 600 }
+    var isPersistent: Bool { !isPhone && availableWidth >= 600 }
     var isCollapsed: Bool { availableWidth < 720 || isUserCollapsed }
     var sidebarWidth: CGFloat {
         isCollapsed
@@ -567,7 +603,7 @@ private struct DesktopTopBar: View {
                     .accessibilityLabel("Navigation")
                     .accessibilityIdentifier("nodus-navigation-toggle")
 
-                    if presentation.availableWidth >= 720 {
+                    if !presentation.isPhone && presentation.availableWidth >= 720 {
                         NodusMark(style: .accent(session.accent)).frame(width: 24, height: 24)
                         Text(verbatim: "Nodus")
                             .font(.headline.weight(.semibold))
@@ -596,6 +632,8 @@ private struct DesktopTopBar: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: presentation.availableWidth < 500 ? 156 : 260)
+            .frame(height: 44)
+            .contentShape(Rectangle())
             .accessibilityLabel("Switch space")
         }
         .frame(height: NodusChromeMetrics.topBar)
@@ -609,7 +647,7 @@ private struct DesktopTopBar: View {
 
     private var actionRail: some View {
         HStack(spacing: 0) {
-            if presentation.availableWidth >= 620 {
+            if !presentation.isPhone && presentation.availableWidth >= 620 {
                 topButton("command", label: "Commands", action: onCommands)
                 topButton("sparkles", label: "Nodi", action: onAssistant)
                 topButton("arrow.clockwise", label: "Refresh", action: onRefresh)
@@ -643,6 +681,7 @@ private struct DesktopTopBar: View {
             Image(systemName: image)
                 .font(.system(size: 14, weight: .medium))
                 .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
                     if let badge {
                         Text(badge, format: .number)
@@ -656,7 +695,12 @@ private struct DesktopTopBar: View {
                 }
         }
         .buttonStyle(.plain)
+        .frame(width: 44, height: 44)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
         .accessibilityLabel(label)
+        .accessibilityValue(badge.map(String.init) ?? "")
+        .accessibilityIdentifier("nodus-top-\(image)")
     }
 }
 
@@ -704,17 +748,15 @@ private struct DesktopSidebar: View {
                                         .font(.system(size: 8, weight: .semibold))
                                         .rotationEffect(.degrees(collapsedGroups.contains(group) ? 0 : 90))
                                     Text(group.title)
-                                        .font(.system(size: 9, weight: .bold)).tracking(0.7)
+                                        .font(.caption2.weight(.bold)).tracking(0.7)
                                         .textCase(.uppercase)
                                     Spacer(minLength: 0)
                                 }
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Color.primary.opacity(0.7))
                                 .padding(.top, 14).padding(.horizontal, 10).padding(.bottom, 3)
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("nodus-nav-group-\(group.rawValue)")
-                        } else {
-                            Divider().padding(.vertical, 6).padding(.horizontal, 12)
                         }
                         if collapsed || !collapsedGroups.contains(group) {
                             ForEach(items) { item($0) }
@@ -724,13 +766,16 @@ private struct DesktopSidebar: View {
                 .padding(8)
             }
 
-            Divider()
             if let settings = visible.first(where: { $0.route == .settings }) {
                 item(settings).padding(8)
             }
         }
         .background(colorScheme == .dark ? Color(hex: "#111113") : Color(hex: "#f7f7f8"))
-        .overlay(alignment: .trailing) { Divider() }
+        .overlay(alignment: .trailing) {
+            // Divider has a horizontal default in an overlay, irrespective of its alignment.
+            Rectangle().fill(Color.secondary.opacity(0.22)).frame(width: 1)
+                .accessibilityHidden(true)
+        }
     }
 
     private func item(_ nav: NodusNavigationItem) -> some View {
@@ -743,11 +788,12 @@ private struct DesktopSidebar: View {
                     size: 14,
                     weight: selection == nav.route ? .semibold : .regular
                 )
-                    .frame(width: 44, height: 44, alignment: .center)
+                    .frame(width: collapsed ? 44 : 20, height: 44, alignment: .center)
                 if !collapsed {
                     Text(nav.label)
-                        .font(.system(size: 12, weight: selection == nav.route ? .semibold : .regular))
-                        .lineLimit(1)
+                        .font(.footnote.weight(selection == nav.route ? .semibold : .regular))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
             }
@@ -803,5 +849,60 @@ private struct CommandPalette: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }
+    }
+}
+
+/// Observe a system edge pan without placing an invisible hit-test view above the
+/// workspace. A stationary tap at the left of an HTML input must reach WebKit.
+private struct ScreenEdgeNavigationInstaller: UIViewRepresentable {
+    let enabled: Bool
+    let open: () -> Void
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> UIView {
+        let view = WindowWatcher()
+        view.isUserInteractionEnabled = false
+        view.onWindow = { [coordinator = context.coordinator] window in coordinator.install(in: window) }
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.open = open
+        context.coordinator.enabled = enabled
+        context.coordinator.install(in: view.window)
+    }
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) { coordinator.remove() }
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        weak var window: UIWindow?
+        var recognizer: UIPanGestureRecognizer?
+        var enabled = false { didSet { recognizer?.isEnabled = enabled } }
+        var open: (() -> Void)?
+        func install(in target: UIWindow?) {
+            guard let target, target !== window else { return }
+            remove(); window = target
+            let edge = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
+            edge.maximumNumberOfTouches = 1
+            edge.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+            edge.cancelsTouchesInView = false
+            edge.delaysTouchesBegan = false; edge.delaysTouchesEnded = false
+            edge.delegate = self; edge.isEnabled = enabled
+            target.addGestureRecognizer(edge); recognizer = edge
+        }
+        func remove() { if let recognizer { window?.removeGestureRecognizer(recognizer) }; recognizer = nil; window = nil }
+        @objc func pan(_ gesture: UIPanGestureRecognizer) {
+            let translation = gesture.translation(in: window)
+            if gesture.state == .changed || gesture.state == .ended, translation.x >= 64, translation.x > abs(translation.y) * 1.25 { open?() }
+        }
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let window else { return false }
+            let translation = pan.translation(in: window)
+            let startX = pan.location(in: window).x - translation.x
+            // Observe only a rightward stroke that started at the screen edge. Stationary
+            // taps, text selection and vertical scrolling keep their normal recognizers.
+            return startX <= 24 && translation.x > 0 && translation.x > abs(translation.y) * 1.25
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+    private final class WindowWatcher: UIView {
+        var onWindow: ((UIWindow?) -> Void)?
+        override func didMoveToWindow() { super.didMoveToWindow(); onWindow?(window) }
     }
 }

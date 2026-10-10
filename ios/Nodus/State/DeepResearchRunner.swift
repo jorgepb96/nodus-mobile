@@ -72,6 +72,10 @@ final class DeepResearchRunner {
         session: SpaceSession,
         ai: AISettings
     ) {
+        guard session.aiExecutionMode == .autonomous else {
+            failure = String(localized: "Choose autonomous mode to generate on this device. The app does not switch execution modes automatically.")
+            return
+        }
         finished = nil
         failure = nil
         illustrationFailure = nil
@@ -100,6 +104,7 @@ final class DeepResearchRunner {
     /// Only the matching request consumes the checkpoint. A second request that had never
     /// started must not inherit the first report's already-written sections.
     func attachPending(session: SpaceSession, ai: AISettings) {
+        guard session.aiExecutionMode == .autonomous else { return }
         let checkpoint = DeepResearchCheckpointStore.load(spaceId: spaceId)
         for job in queue.jobs(in: spaceId) where job.status == .queued {
             let resume = checkpoint.flatMap { $0.request == job.request ? $0 : nil }
@@ -123,6 +128,9 @@ final class DeepResearchRunner {
         session: SpaceSession,
         ai: AISettings
     ) async throws -> DeepResearchQueueResult {
+        guard session.aiExecutionMode == .autonomous else {
+            throw DeepResearchRunFailure(message: String(localized: "Choose autonomous mode to generate on this device. The app does not switch execution modes automatically."))
+        }
         failure = nil
         illustrationFailure = nil
 
@@ -137,12 +145,12 @@ final class DeepResearchRunner {
             deps: DeepResearchWiring.deps(
                 retrieval: CorpusRetrieval(
                     client: client,
-                    spaceId: spaceId,
+                    spaceId: session.connection.spaceId,
                     embeddings: EmbeddingService(keyProvider: keyProvider),
                     identity: identity
                 ),
                 provider: ProviderClient(keyProvider: keyProvider),
-                citations: CorpusCitations(client: client, spaceId: spaceId)
+                citations: CorpusCitations(client: client, spaceId: session.connection.spaceId)
             )
         )
 
@@ -193,7 +201,7 @@ final class DeepResearchRunner {
                 // The whole `ModelRef`, not just its name: sending the report to the vault needs
                 // the provider too, and a record that kept only the label could never be turned
                 // back into a sendable row.
-            let saved = store.save(report, mode: request.mode, model: request.model, id: jobId)
+            let saved = store.save(report, mode: request.mode, model: request.model, language: request.language, id: jobId)
             DeepResearchCheckpointStore.clear(spaceId: spaceId)
             self.finished = saved
 

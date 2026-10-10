@@ -31,12 +31,19 @@ struct ConnectView: View {
     /// words are better than anything this screen could invent, so they are kept.
     @State private var refusal: String?
     @State private var isBusy = false
+    @State private var linkingDesktop = false
+    @State private var advanced = false
 
     private let accent = Color(hex: VaultType.academic.accentHex)
 
     var body: some View {
-        NavigationStack {
-            content
+        Group {
+            if advanced {
+                NavigationStack { content }
+            } else {
+                DesktopBridgePairingSheet(accent: accent, onAdvanced: { advanced = true }) { dismiss() }
+                    .environment(model)
+            }
         }
         .onAppear {
             // Debug builds only: lets the verification loop skip retyping a local address on
@@ -46,6 +53,7 @@ struct ConnectView: View {
             if email.isEmpty { email = defaults.email }
             if password.isEmpty { password = defaults.password }
         }
+        .sheet(isPresented: $linkingDesktop) { DesktopBridgePairingSheet(accent: accent) { dismiss() }.environment(model) }
     }
 
     private var content: some View {
@@ -117,8 +125,12 @@ struct ConnectView: View {
 
     private var addressStep: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Button("Link Nodus", systemImage: "qrcode") { linkingDesktop = true }
+                .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
+                .accessibilityIdentifier("nodus-link-mac")
             Text("Server address").font(.subheadline.weight(.medium))
             TextField("nodus.example.org", text: $addressInput)
+                .accessibilityIdentifier("nodus-server-address")
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)

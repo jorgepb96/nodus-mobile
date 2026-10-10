@@ -1,66 +1,66 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "CFBundleDisplayName" : {
-      "comment" : "Bundle display name",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Nodus Research"
+  "sourceLanguage": "en",
+  "strings": {
+    "CFBundleDisplayName": {
+      "comment": "Bundle display name",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Nodus"
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nodus Research"
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nodus"
           }
         }
       }
     },
-    "CFBundleName" : {
-      "comment" : "Bundle name",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Nodus Research"
+    "CFBundleName": {
+      "comment": "Bundle name",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Nodus"
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nodus Research"
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nodus"
           }
         }
       }
     },
-    "NSFaceIDUsageDescription" : {
-      "comment" : "Shown by iOS when the app first asks to use Face ID to unlock itself.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nodus Research usa Face ID para proteger tus claves de proveedor y las copias de tus vaults en este dispositivo."
+    "NSFaceIDUsageDescription": {
+      "comment": "Shown by iOS when the app first asks to use Face ID to unlock itself.",
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nodus Research usa Face ID para proteger tus claves de proveedor y las copias de tus vaults en este dispositivo."
           }
         }
       }
     },
-    "NSLocalNetworkUsageDescription" : {
-      "comment" : "Shown by iOS the first time the app reaches a Nodus Server on the local network.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nodus Research se conecta a un Nodus Server de tu red local cuando le indicas su dirección."
+    "NSLocalNetworkUsageDescription": {
+      "comment": "Shown by iOS the first time the app reaches a Nodus Server on the local network.",
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nodus encuentra tu Mac para vincularlo mediante código o QR y consultar tus vaults en la red local."
           }
         }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

@@ -415,7 +415,7 @@ struct DeepResearchTranslationSheet: View {
         self.session = session
         self.remoteRows = remoteRows
         self.syncEnabled = syncEnabled
-        _store = State(initialValue: DeepResearchTranslationStore(spaceId: session.connection.spaceId, reportId: reportId))
+        _store = State(initialValue: DeepResearchTranslationStore(spaceId: session.connection.storageId, reportId: reportId))
     }
 
     private var selected: ContentTranslation? { store.translation(language: language) }

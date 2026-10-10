@@ -34,6 +34,7 @@ struct NodusModalClose: ViewModifier {
             }
             .tint(accent.nodusReadable)
             .accessibilityLabel("Close")
+            .accessibilityIdentifier("nodus-modal-close")
             // The same height off the bottom the page tools sit at inside a sheet, where there
             // is no bar under them: the two read as one pair rather than as two decisions.
             .padding(.bottom, 22)

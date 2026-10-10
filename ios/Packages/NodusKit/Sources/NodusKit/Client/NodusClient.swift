@@ -20,6 +20,7 @@ public actor NodusClient {
     public let address: ServerAddress
     private let session: URLSession
     private let cache: ResponseCache
+    let publishedAssets: PublishedAssetStore
     private var bearerToken: String?
     /// Raised when the server answers 401, so the app can drop the stored credential once
     /// rather than every screen discovering it separately.
@@ -31,18 +32,29 @@ public actor NodusClient {
     /// `SpaceSession` — two of everything, drifting apart — or a client that answers from the
     /// device. It is the second, and the seam is the first four lines of `perform`.
     private let local: LocalCorpus?
+    private var bridge: (client: DesktopBridgeClient, vaultId: String)?
+    var hasDesktopBridge: Bool { bridge != nil }
+
+    public func useDesktopBridge(_ client: DesktopBridgeClient, vaultId: String) {
+        bridge = (client, vaultId)
+    }
 
     public init(
         address: ServerAddress,
         token: String? = nil,
         session: URLSession = .nodusDefault,
-        cache: ResponseCache
+        cache: ResponseCache,
+        desktopBridge: DesktopBridgeClient? = nil,
+        vaultId: String? = nil,
+        publishedAssets: PublishedAssetStore = PublishedAssetStore()
     ) {
         self.address = address
         self.bearerToken = token
         self.session = session
         self.cache = cache
+        self.publishedAssets = publishedAssets
         self.local = nil
+        if let desktopBridge, let vaultId { self.bridge = (desktopBridge, vaultId) }
     }
 
     /// A client for a corpus that lives on this device and nowhere else.
@@ -51,11 +63,12 @@ public actor NodusClient {
     /// leaves the process. The address is a name for the space, not a place — `perform`
     /// returns before it is ever resolved — and it is what the routes are built from, so the
     /// paths this answers are the paths a real server would have been asked for.
-    public init(local: LocalCorpus, address: ServerAddress, cache: ResponseCache) {
+    public init(local: LocalCorpus, address: ServerAddress, cache: ResponseCache, publishedAssets: PublishedAssetStore = PublishedAssetStore()) {
         self.address = address
         self.bearerToken = nil
         self.session = .nodusProbe
         self.cache = cache
+        self.publishedAssets = publishedAssets
         self.local = local
     }
 
@@ -108,6 +121,20 @@ public actor NodusClient {
         // aeroplane mode.
         if let local {
             return try await local.answer(request)
+        }
+
+        if let bridge {
+            if request.path == "/healthz" || request.path == "/api/v1/capabilities" {
+                let response = try await bridge.client.controlPlane(request.path == "/healthz" ? "health" : "server-capabilities")
+                return Response(data: response.data, status: response.status, headers: response.headers, fromCache: false)
+            }
+            let components = request.path.split(separator: "/")
+            guard components.count >= 4, components[0] == "api", components[1] == "v1", components[2] == "spaces" else { throw DesktopBridgeError.permissionDenied }
+            let path = components.dropFirst(4).joined(separator: "/")
+            let response: DesktopBridgeResponse
+            if path == "mutations", request.method == "POST", let body = request.body { response = try await bridge.client.sendMutations(vaultId: bridge.vaultId, body: body) }
+            else { response = try await bridge.client.corpus(vaultId: bridge.vaultId, path: path, query: request.query, method: request.method, percentEncoded: true) }
+            return Response(data: response.data, status: response.status, headers: response.headers, fromCache: false)
         }
 
         let url = try address.url(path: request.path, query: request.query)

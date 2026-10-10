@@ -151,18 +151,21 @@ public struct SpaceSummary: Sendable, Hashable, Codable, Identifiable {
 
 /// What the publication says about the vault behind a space.
 public struct VaultDescriptor: Sendable, Hashable, Codable {
+    public let id: String?
     public let name: String?
     public let type: VaultType?
 
-    public init(name: String?, type: VaultType?) {
+    public init(id: String? = nil, name: String?, type: VaultType?) {
+        self.id = id
         self.name = name
         self.type = type
     }
 
-    private enum CodingKeys: String, CodingKey { case name, type }
+    private enum CodingKeys: String, CodingKey { case id, name, type }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
         name = try container.decodeIfPresent(String.self, forKey: .name)
         // An unknown type must not fail the whole space: a server ahead of this build may
         // publish a vault kind this app has never heard of, and the corpus is still readable.

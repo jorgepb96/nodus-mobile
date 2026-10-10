@@ -34,9 +34,10 @@ final class OutboxController {
     /// stopped drawing until the disk answered.
     static func open(session: SpaceSession) async -> OutboxController? {
         guard session.connection.role.canSendChanges else { return nil }
+        guard (try? ConnectionStorage.prepare(for: session.connection)) != nil else { return nil }
         let directory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
         guard let outbox = try? await MutationOutbox.open(
-            spaceId: session.connection.spaceId,
+            spaceId: session.connection.storageId,
             directory: directory
         ) else { return nil }
         // Asked once, here, because it is the one place that already waits on I/O. A server
@@ -162,8 +163,7 @@ final class OutboxController {
 
         do {
             let receipt = try await client.send(mutations: [mutation], in: spaceId)
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
+            try await outbox.recordReceipt(receipt, for: [mutation])
             if let rejection = receipt.rejected.first(where: { $0.id == mutation.id }) {
                 lastError = rejection.errorDescription ?? rejection.reason
             } else {
@@ -228,10 +228,7 @@ final class OutboxController {
 
         do {
             let receipt = try await client.send(mutations: [mutation], in: spaceId)
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-            try await outbox.markRejected(receipt.rejected.map {
-                (id: $0.id, reason: $0.reason, detail: $0.errorDescription)
-            })
+            try await outbox.recordReceipt(receipt, for: [mutation])
             if let rejection = receipt.rejected.first(where: { $0.id == mutation.id }) {
                 lastError = rejection.errorDescription ?? rejection.reason
             } else {
@@ -321,8 +318,7 @@ final class OutboxController {
 
         do {
             let receipt = try await client.send(mutations: [mutation], in: spaceId)
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
+            try await outbox.recordReceipt(receipt, for: [mutation])
         } catch let error as APIError where error.isForbidden {
             // Left as a bare key, the way `flush()` leaves it: the notice that renders this
             // wraps it in `LocalizedStringKey`, so the lookup happens at draw time.

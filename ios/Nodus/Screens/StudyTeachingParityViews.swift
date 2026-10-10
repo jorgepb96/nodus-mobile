@@ -43,6 +43,7 @@ private struct StudyCoursesWorkspace: View {
     @State private var tables: [String: [Row]] = [:]
     @State private var query = ""
     @State private var error: String?
+
     private let section = "studyCourses"
 
     private var courses: [StudyTeachingParity.Course] {
@@ -166,7 +167,7 @@ private struct StudyMaterialsWorkspace: View {
         }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }.accessibilityIdentifier("study-materials-workspace")
     }
     private var catalogue: some View { ScrollView { VStack(alignment: .leading, spacing: 12) { DesktopPageHeader(title: "Study materials", subtitle: "Documents, reading state and grounded search", systemImage: "books.vertical", accent: session.accent); NodusSearchField(text: $query, prompt: "Search materials", accent: session.accent); if loading { ProgressView("Loading materials…").frame(maxWidth: .infinity).padding(.vertical, 32) }; if let issue { NodusNotice(tone: .blocked, title: "Could not load materials", message: LocalizedStringKey(issue)) }; ForEach(materials, id: \.columns) { row in Button { open(row) } label: { HStack { Image(systemName: previewIcon(row.text("preview_kind"))).font(.title2).foregroundStyle(session.accent); VStack(alignment: .leading) { Text(row.text("title") ?? "Material").font(.headline); Text("\(row.text("read_state") ?? "pending") · \(row.text("index_status") ?? "pending")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }.buttonStyle(NodusCardButtonStyle()) }; if materials.isEmpty, !loading, issue == nil { ContentUnavailableView("No materials", systemImage: "books.vertical", description: Text("Published study materials will appear here.")) } }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor() } }
-    private func materialReader(_ row: Row) -> some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: LocalizedStringKey(row.text("title") ?? "Material"), subtitle: "\(row.text("original_name") ?? "") · \(row.text("read_state") ?? "pending")", systemImage: previewIcon(row.text("preview_kind")), accent: session.accent); NodusNotice(tone: .info, title: "File on demand", message: "Metadata and annotations stay available offline. The primary file downloads through its authenticated object route when requested.", systemImage: "arrow.down.doc"); Text(row.text("description") ?? "No description").font(.body); HStack { Button { } label: { Label("Open preview", systemImage: "doc.text.magnifyingglass") }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)); ShareLink(item: row.text("title") ?? "Material") { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent)) } }.padding(NodusSpace.page).frame(maxWidth: 900).frame(maxWidth: .infinity).nodusTopAnchor() }.accessibilityIdentifier("study-material-reader") }
+    private func materialReader(_ row: Row) -> some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: LocalizedStringKey(row.text("title") ?? "Material"), subtitle: "\(row.text("original_name") ?? "") · \(row.text("read_state") ?? "pending")", systemImage: previewIcon(row.text("preview_kind")), accent: session.accent); NodusNotice(tone: .info, title: "File on demand", message: "Metadata and annotations stay available offline. The primary file downloads through its authenticated object route when requested.", systemImage: "arrow.down.doc"); Text(row.text("description") ?? "No description").font(.body); PrivateFileButton(session: session, kind: .studyMaterial, id: row.string("id") ?? "") }.padding(NodusSpace.page).frame(maxWidth: 900).frame(maxWidth: .infinity).nodusTopAnchor() }.accessibilityIdentifier("study-material-reader") }
     private func open(_ row: Row) { guard let id = row.string("id") else { return }; tabs.open(.init(id: id, title: row.text("title") ?? id, systemImage: previewIcon(row.text("preview_kind")), kind: .document, payload: .row(row)), in: section) }
     private func previewIcon(_ kind: String?) -> String { ["pdf":"doc.richtext", "audio":"waveform", "image":"photo", "presentation":"rectangle.on.rectangle" ][kind ?? ""] ?? "doc.text" }
     private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil } catch { tables = [:]; issue = error.localizedDescription } }
@@ -282,7 +283,7 @@ private struct StudyRecordingsWorkspace: View {
     private var active:Row?{(tables["study_recordings"] ?? []).first{$0.string("id")==tabs.activeTabId(in:section)}}
     var body:some View { VStack(spacing:0){WorkspaceTabStrip(section:section,catalogueTitle:"Recordings",catalogueImage:"waveform",accent:session.accent); if let active{reader(active)}else{catalogue}}.nodusPageBackdrop(accent:session.accent).task{await load()}.nodusSheet(isPresented:$pairing){DesktopBridgePairingSheet(accent:session.accent){Task{await load()}}}.accessibilityIdentifier("study-recordings-workspace") }
     private var catalogue:some View { ScrollView{VStack(alignment:.leading,spacing:12){DesktopPageHeader(title:"Recordings",subtitle:"Private audio, transcripts and markers",systemImage:"waveform",accent:session.accent); if let issue{NodusNotice(tone:.info,title:"Direct Mac connection required",message:LocalizedStringKey(issue),systemImage:"lock.shield");Button("Pair Desktop Bridge"){pairing=true}.buttonStyle(NodusPrimaryButtonStyle(accent:session.accent))};ForEach(tables["study_recordings"] ?? [],id:\.columns){row in Button{open(row)}label:{HStack{Image(systemName:"waveform.circle.fill").font(.title2).foregroundStyle(session.accent);VStack(alignment:.leading){Text(row.text("title") ?? "Recording").font(.headline);Text("\(duration(row.int("duration_seconds") ?? 0)) · \(row.text("processing_status") ?? "pending")").font(.caption).foregroundStyle(.secondary)};Spacer();Image(systemName:"chevron.right").foregroundStyle(.secondary)}.desktopContentRow(accent:session.accent)}.buttonStyle(NodusCardButtonStyle())}}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()} }
-    private func reader(_ recording:Row)->some View { let transcript=(tables["study_transcripts"] ?? []).first{$0.string("recording_id")==recording.string("id")};let markers=(tables["study_audio_markers"] ?? []).filter{$0.string("recording_id")==recording.string("id")};return ScrollView{VStack(alignment:.leading,spacing:14){DesktopPageHeader(title:LocalizedStringKey(recording.text("title") ?? "Recording"),subtitle:"\(duration(recording.int("duration_seconds") ?? 0)) · private",systemImage:"waveform",accent:session.accent);NodusNotice(tone:.info,title:"End-to-end private route",message:"Audio metadata and transcript were read from the paired Mac. Nothing is relayed through the Nodus cloud.",systemImage:"lock.shield.fill");ForEach(markers,id:\.columns){marker in HStack{Text(duration(Int(marker.double("seconds") ?? 0))).font(.caption.monospacedDigit()).foregroundStyle(session.accent);Text(marker.text("label") ?? "Marker");Spacer()}.desktopContentRow(accent:session.accent)};DesktopSectionHeader(title:"Transcript",subtitle:LocalizedStringKey(transcript?.text("kind") ?? "Not available"),systemImage:"text.quote",accent:session.accent);Text(transcript?.text("content_markdown") ?? "No transcript").font(.body).textSelection(.enabled)}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()} }
+    private func reader(_ recording:Row)->some View { let transcript=(tables["study_transcripts"] ?? []).first{$0.string("recording_id")==recording.string("id")};let markers=(tables["study_audio_markers"] ?? []).filter{$0.string("recording_id")==recording.string("id")};return ScrollView{VStack(alignment:.leading,spacing:14){DesktopPageHeader(title:LocalizedStringKey(recording.text("title") ?? "Recording"),subtitle:"\(duration(recording.int("duration_seconds") ?? 0)) · private",systemImage:"waveform",accent:session.accent);NodusNotice(tone:.info,title:"End-to-end private route",message:"Audio and transcripts use the permissions of the paired Mac. Remote transport remains encrypted between devices.",systemImage:"lock.shield.fill");PrivateFileButton(session:session,kind:.studyRecording,id:recording.string("id") ?? "");ForEach(markers,id:\.columns){marker in HStack{Text(duration(Int(marker.double("seconds") ?? 0))).font(.caption.monospacedDigit()).foregroundStyle(session.accent);Text(marker.text("label") ?? "Marker");Spacer()}.desktopContentRow(accent:session.accent)};DesktopSectionHeader(title:"Transcript",subtitle:LocalizedStringKey(transcript?.text("kind") ?? "Not available"),systemImage:"text.quote",accent:session.accent);Text(transcript?.text("content_markdown") ?? "No transcript").font(.body).textSelection(.enabled)}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()} }
     private func open(_ row:Row){guard let id=row.string("id")else{return};tabs.open(.init(id:id,title:row.text("title") ?? id,systemImage:"waveform",kind:.document,payload:.row(row)),in:section)}
     private func duration(_ seconds:Int)->String{"\(seconds/60):\(String(format:"%02d",seconds%60))"}
     private func load()async{do{tables=try await loadPrivateStudyTables(session,domain:.studyRecordings,names:["study_recordings","study_transcripts","study_transcript_segments","study_audio_markers"]);issue=nil}catch{tables=[:];issue=error.localizedDescription}}
@@ -487,60 +488,217 @@ private struct TeachingUnitsWorkspace: View {
 
 struct DesktopBridgePairingSheet: View {
     let accent: Color
+    var initialLink: String = ""
+    var onAdvanced: (() -> Void)? = nil
     let onPaired: () -> Void
+    @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var textSize
     @State private var origin = "https://"
     @State private var fingerprint = ""
     @State private var code = ""
+    @State private var link = ""
+    @State private var scanning = false
     @State private var working = false
     @State private var error: String?
+    @State private var offer: DesktopPairingOffer?
+    @State private var connectAfterDiscovery = false
+    @State private var resumingPending = false
+    @State private var discovery = PairingDiscovery()
+    @FocusState private var codeFocused: Bool
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Offer from Nodus Desktop") {
-                    TextField("https://mac.local:4545", text: $origin)
-                        .textInputAutocapitalization(.never).keyboardType(.URL)
-                    TextField("SHA-256 certificate fingerprint", text: $fingerprint)
-                        .textInputAutocapitalization(.characters).font(.caption.monospaced())
-                    TextField("Pairing code", text: $code).textInputAutocapitalization(.characters)
+                if let error {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(Color.nodusDanger)
+                            .accessibilityIdentifier("pairing-error")
+                    }
                 }
                 Section {
-                    NodusNotice(
-                        tone: .info, title: "Direct HTTPS only",
-                        message: "The certificate is pinned before the first request. Pairing never creates a cloud relay and grants only the vaults and private domains shown on the Mac.",
-                        systemImage: "lock.shield"
-                    )
+                    Text("Open Settings → Mobile connection in Nodus on your Mac. Enter its code or scan its QR to connect your entire workspace.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    if resumingPending {
+                        Text("A connection is pending. Tap Connect to continue without a new code.")
+                            .font(.callout).accessibilityIdentifier("pairing-pending-notice")
+                    }
+                    Button("Scan QR", systemImage: "qrcode.viewfinder") { scanning = true }.accessibilityIdentifier("pairing-scan-qr")
+                        .disabled(working || discovery.searching)
+                    TextField("Pairing code", text: $code).textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled().accessibilityIdentifier("pairing-code")
+                        .focused($codeFocused).submitLabel(.go)
+                        .onSubmit { requestConnection() }
+                        .onChange(of: code) { _, value in
+                            if let offer, value.filter({ $0.isLetter || $0.isNumber }).uppercased() != offer.code.filter({ $0.isLetter || $0.isNumber }).uppercased() {
+                                self.offer = nil; fingerprint = ""; error = nil
+                                resumingPending = false
+                            }
+                        }
+                        .disabled(working || discovery.searching)
+                    Button("Connect in real time", systemImage: "link", action: requestConnection)
+                        .accessibilityIdentifier("pairing-find-mac")
+                        .disabled(working || discovery.searching || code.filter { $0.isLetter || $0.isNumber }.count != 10)
+                    if working { ProgressView("Connecting to Nodus…") }
+                    if discovery.searching { ProgressView("Looking for your Mac…") }
+                    if let discoveryError = discovery.error {
+                        Text(discoveryError).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("pairing-discovery-error")
+                    }
+                    DisclosureGroup("Use a pairing link") {
+                        TextField("Pairing link from Nodus", text: $link, axis: .vertical)
+                        .lineLimit(1...3)
+                        .accessibilityIdentifier("pairing-link")
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .onChange(of: link) { _, value in readOffer(value) }
+                    }.disabled(working || discovery.searching)
+                    Text("Keep Nodus open on your Mac and use the same network or a VPN such as Tailscale. Live uses the models configured on your Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
+                if let offer {
+                    Section("Mac and vaults") {
+                        Label(offer.deviceName ?? "Nodus", systemImage: "desktopcomputer")
+                        if offer.renewalPairingId != nil {
+                            Text("Renewing the existing connection preserves its vaults, permissions and local data.")
+                                .accessibilityIdentifier("pairing-renewal-notice")
+                        }
+                        Text("\(offer.vaults?.count ?? 0) linked vaults")
+                        DisclosureGroup("Workspace details") {
+                            ForEach(offer.vaults ?? []) { vault in Label(vault.name, systemImage: "books.vertical") }
+                            ForEach(offer.domains.sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { domain in
+                                Text(pairingDomainLabel(domain)).accessibilityIdentifier("pairing-domain-\(domain.rawValue)")
+                            }
+                        }
+                        Text(offer.expiresAt, style: .relative)
+                    }
+                }
+                if let onAdvanced {
+                    Section {
+                        Button("Advanced connection · Server or Cloud", action: onAdvanced)
+                            .accessibilityIdentifier("pairing-advanced-connection").disabled(working || discovery.searching)
+                    }
+                }
             }
-            .navigationTitle("Pair Desktop Bridge")
+            .nodusDismissesKeyboard()
+            .navigationTitle("Link Nodus")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Pair") { Task { await pair() } }
-                        .disabled(working || origin.count < 9 || fingerprint.isEmpty || code.isEmpty)
+                    if offer != nil {
+                        Button("Connect") { Task { await pair() } }.accessibilityIdentifier("pairing-confirm")
+                            .disabled(working || origin.count < 9 || fingerprint.isEmpty || code.isEmpty)
+                    }
                 }
             }
         }
         .tint(accent)
+        .onAppear {
+            if !initialLink.isEmpty { link = initialLink; readOffer(initialLink) }
+            else if offer == nil, let pending = DesktopBridgePairingStore().pendingOffers().first {
+                accept(pending); resumingPending = true
+            }
+        }
+        .onChange(of: discovery.offer?.id) { _, _ in
+            if let found = discovery.offer {
+                accept(found)
+                if connectAfterDiscovery { connectAfterDiscovery = false; Task { await pair() } }
+            }
+        }
+        .onDisappear { discovery.stop() }
+        .sheet(isPresented: $scanning) {
+            NavigationStack {
+                PairingQRScanner { value in
+                    link = value; scanning = false; readOffer(value)
+                    if offer != nil { Task { await pair() } }
+                }
+                .navigationTitle("Scan QR")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { scanning = false }.accessibilityIdentifier("pairing-close-scanner")
+                    }
+                }
+            }
+            .dynamicTypeSize(textSize)
+        }
+    }
+
+    private func readOffer(_ value: String) {
+        do {
+            let offer = try DesktopPairingOffer.read(value)
+            accept(offer)
+        } catch { offer = nil; fingerprint = ""; self.error = error.localizedDescription }
+    }
+
+    private func requestConnection() {
+        guard !working, !discovery.searching, code.filter({ $0.isLetter || $0.isNumber }).count == 10 else { return }
+        if offer != nil { Task { await pair() } }
+        else { connectAfterDiscovery = true; findMac() }
+    }
+
+    private func findMac() {
+        codeFocused = false
+        discovery.search(code: code)
+    }
+
+    private func accept(_ offer: DesktopPairingOffer) {
+        self.offer = offer; origin = offer.origins.first ?? ""; fingerprint = offer.certificateFingerprint; code = offer.code; error = nil
     }
 
     private func pair() async {
+        guard !working else { return }
         working = true
         defer { working = false }
         do {
+            guard let offer else { throw DesktopBridgeError.malformedResponse }
             let result = try await DesktopBridgeClient.pair(
-                origin: origin, certificateFingerprint: fingerprint, code: code,
+                offer: offer,
                 deviceId: UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString,
                 deviceName: UIDevice.current.name
             )
-            try DesktopBridgePairingStore().save(result.pairing, token: result.token)
+            try await model.connectDesktop(pairing: result.pairing, token: result.token, expectedMacId: offer.macDeviceId)
+            guard model.openLinkedDesktopWorkspace(pairingId: result.pairing.id) else { throw DesktopBridgeError.malformedResponse }
             onPaired()
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            if error is URLError {
+                let pending = offer.map { active in DesktopBridgePairingStore().pendingOffers().contains { $0.id == active.id } } ?? false
+                resumingPending = pending
+                self.error = pending
+                    ? String(localized: "The connection was interrupted. Your request is saved. Keep Nodus open and tap Connect to continue.")
+                    : String(localized: "Your Mac could not be reached. Keep Nodus open and check that both devices use the same network or VPN.")
+            } else if let bridgeError = error as? DesktopBridgeError {
+                switch bridgeError {
+                case .expired:
+                    resumingPending = false
+                    self.error = String(localized: "This code has expired. Generate a new code in Mobile connection on your Mac.")
+                case .certificateMismatch:
+                    self.error = String(localized: "Your Mac's connection identity has changed. Generate a new code in Nodus to link it again.")
+                case .permissionDenied:
+                    self.error = String(localized: "This connection is no longer available. Generate a new code on your Mac.")
+                case .invalidOrigin, .invalidFingerprint:
+                    self.error = String(localized: "This pairing link is invalid. Generate a new code or QR in Nodus on your Mac.")
+                case .malformedResponse:
+                    self.error = String(localized: "Nodus returned a response that could not be read. Please try again.")
+                case .locked:
+                    self.error = String(localized: "Unlock this device to continue the connection.")
+                }
+            } else { self.error = error.localizedDescription }
         }
+    }
+}
+
+private func pairingDomainLabel(_ domain: DesktopBridgeDomain) -> String {
+    switch domain {
+    case .corpus: String(localized: "Corpus consultation")
+    case .writing: String(localized: "Writing and ideas")
+    case .researchGeneration: String(localized: "Research generation")
+    case .testimonies: String(localized: "Interviews and participants")
+    case .teachingRoster: String(localized: "Students")
+    case .teachingGrades: String(localized: "Grades")
+    case .studyRecordings: String(localized: "Recordings")
+    case .primarySourceFiles: String(localized: "Primary source files")
+    case .prosopographyPrivate: String(localized: "Private prosopography data")
     }
 }
 

@@ -17,12 +17,11 @@ public actor MutationOutbox {
         case accepted
         /// The server refused it. `detail` carries the reason it gave.
         case rejected
-        /// The owner's desktop has drained it out of the ledger and applied it.
+        /// The owner's desktop has applied it, confirmed by its ledger cursor or live receipt.
         ///
         /// One step further than `accepted` and one step short of readable: applying a change
-        /// writes it into the desktop's own SQLite, and nobody — the author included — reads it
-        /// back until that desktop republishes. Which is why this is a fourth state and not a
-        /// renaming of the third.
+        /// writes it into the desktop's own SQLite. Live consultation can read it immediately;
+        /// a published corpus needs a later republication. This state proves the write only.
         case delivered
     }
 
@@ -274,6 +273,56 @@ public actor MutationOutbox {
                 )
             }
         }
+    }
+
+    /// Commit all receipt outcomes atomically. A confirmed canonical write is delivered;
+    /// a legacy or relay acceptance still waits for a ledger acknowledgement.
+    /// Returns newly delivered items, so repeated receipts cannot announce a write twice.
+    @discardableResult
+    public func recordReceipt(_ receipt: MutationReceipt, for submitted: [Mutation]) throws -> [Item] {
+        let ids = receipt.accepted + receipt.duplicate + receipt.rejected.map(\.id)
+        try receipt.validate(submittedIDs: submitted.map(\.id))
+        let sent = Dictionary(uniqueKeysWithValues: submitted.map { ($0.id, $0) })
+        let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
+        return try dbQueue.write { db in
+            // Do not let a receipt release another locally queued, unauthorised change.
+            for id in ids {
+                guard let row = try GRDB.Row.fetchOne(db, sql: "SELECT authorised, state, payload FROM outbox WHERE id = ?", arguments: [id]),
+                      let authorised: Int = row["authorised"], authorised == 1,
+                      let state: String = row["state"],
+                      [State.pending.rawValue, State.accepted.rawValue, State.delivered.rawValue].contains(state),
+                      let payload: String = row["payload"], let bytes = payload.data(using: .utf8),
+                      try JSONDecoder.nodus.decode(Mutation.self, from: bytes) == sent[id] else {
+                    throw TransportError.malformedResponse(expected: "a receipt for authorised outbox items")
+                }
+            }
+            for id in receipt.accepted + receipt.duplicate {
+                try db.execute(sql: """
+                    UPDATE outbox SET state = ?, sent_at = COALESCE(sent_at, ?), detail = NULL, cursor = ?
+                    WHERE id = ? AND state != ?
+                    """, arguments: [State.accepted.rawValue, now, receipt.cursor, id, State.delivered.rawValue])
+            }
+            for rejection in receipt.rejected {
+                let sentence = rejection.errorDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+                try db.execute(sql: "UPDATE outbox SET state = ?, detail = ? WHERE id = ? AND state != ?",
+                               arguments: [State.rejected.rawValue, sentence?.isEmpty == false ? sentence : Self.explain(rejection.reason), rejection.id, State.delivered.rawValue])
+            }
+            var landed: [Item] = []
+            for id in receipt.applied ?? [] {
+                try db.execute(sql: "UPDATE outbox SET state = ?, delivered_at = ? WHERE id = ? AND state = ?",
+                               arguments: [State.delivered.rawValue, now, id, State.accepted.rawValue])
+                if db.changesCount > 0, let row = try GRDB.Row.fetchOne(db, sql: "SELECT * FROM outbox WHERE id = ?", arguments: [id]),
+                   let item = Self.item(from: row) { landed.append(item) }
+            }
+            return landed
+        }
+    }
+
+    /// Re-send an older cursorless Bridge acceptance with its original idempotency key.
+    /// Only previously authorised submissions qualify; pending drafts never do.
+    public func acceptedWithoutCursor(limit: Int = 100) throws -> [Mutation] {
+        try mutations(sql: "SELECT payload FROM outbox WHERE state = ? AND cursor IS NULL AND authorised = 1 ORDER BY created_at LIMIT ?",
+                      arguments: [State.accepted.rawValue, max(1, min(100, limit))])
     }
 
     /// Move to `delivered` everything the owner's cursor has now passed.

@@ -869,14 +869,24 @@ struct AssetImage: View {
     let hash: String
 
     @State private var data: Data?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let data, let image = PlatformImage(data: data) {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
-            } else if failed {
-                Image(systemName: "photo").font(.largeTitle).foregroundStyle(.tertiary)
+                    .accessibilityLabel("Published image")
+                    .accessibilityIdentifier("published-image-\(hash)")
+            } else if let failure {
+                VStack(spacing: 8) {
+                    Image(systemName: "photo").font(.largeTitle).foregroundStyle(.tertiary)
+                    Text("Image unavailable").font(.caption)
+                    Text(failure).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
+                    Button("Retry") { attempt += 1 }
+                }
+                .padding()
+                .accessibilityIdentifier("published-image-error")
             } else {
                 ProgressView().tint(session.accent)
             }
@@ -887,12 +897,18 @@ struct AssetImage: View {
         // photograph on its way — the same reasoning `nodusFieldSurface` is written from.
         .background(session.accent.opacity(0.12))
         .clipped()
-        .task {
-            guard data == nil, !failed else { return }
+        .task(id: attempt) {
+            guard data == nil else { return }
+            failure = nil
             do {
-                data = try await session.client.asset(hash: hash, in: session.connection.spaceId)
+                let bytes = try await session.client.asset(hash: hash, in: session.connection.spaceId)
+                guard PlatformImage(data: bytes) != nil else {
+                    failure = String(localized: "The downloaded file could not be opened as an image.")
+                    return
+                }
+                data = bytes
             } catch {
-                failed = true
+                failure = error.localizedDescription
             }
         }
     }

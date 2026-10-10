@@ -2,6 +2,8 @@ import NodusKit
 import Observation
 import SwiftUI
 
+enum AIExecutionMode: String, CaseIterable, Identifiable { case live, autonomous; var id: String { rawValue } }
+
 /// One open space: its client, what it published, and the menu that follows from that.
 ///
 /// The menu is not a fixed list per vault type. It is derived from `counts` on the space
@@ -11,8 +13,12 @@ import SwiftUI
 @Observable
 @MainActor
 final class SpaceSession {
+    var isSurfaceFullscreen = false
     let connection: AppModel.Connection
     let client: NodusClient
+    var aiExecutionMode: AIExecutionMode {
+        didSet { UserDefaults.standard.set(aiExecutionMode.rawValue, forKey: "ai-execution-mode:\(connection.id)") }
+    }
 
     private(set) var overview: SpaceOverview?
     /// Why the space could not be read, classified rather than described.
@@ -48,6 +54,7 @@ final class SpaceSession {
     private let mirrorDirectory: URL
 
     var accent: Color { connection.accent }
+    var vaultId: String? { overview?.vault?.id ?? connection.vaultId }
     var vaultType: VaultType? { overview?.vault?.type ?? connection.vaultType }
 
     private init(
@@ -59,6 +66,8 @@ final class SpaceSession {
         onFailure: @escaping (ConnectionFailure) -> Void = { _ in }
     ) {
         self.connection = connection
+        self.aiExecutionMode = UserDefaults.standard.string(forKey: "ai-execution-mode:\(connection.id)").flatMap(AIExecutionMode.init(rawValue:))
+            ?? (connection.desktopPairingId == nil ? .autonomous : .live)
         self.client = client
         self.onFailure = onFailure
         // Application Support, not Caches: the mirror is what the app falls back to on a plane,
@@ -67,20 +76,18 @@ final class SpaceSession {
         names = CorpusNames(client: client, spaceId: connection.spaceId)
     }
 
-    convenience init(
+    convenience init?(
         connection: AppModel.Connection,
         token: String,
         cacheDirectory: URL,
         onUnauthorized: @escaping @Sendable () async -> Void,
         onFailure: @escaping (ConnectionFailure) -> Void = { _ in }
     ) {
+        guard let client = ConnectionClient.make(for: connection, token: token,
+            pairings: DesktopBridgePairingStore().pairings(), cacheDirectory: cacheDirectory) else { return nil }
         self.init(
             connection: connection,
-            client: NodusClient(
-                address: ServerAddress(trusted: connection.origin),
-                token: token,
-                cache: ResponseCache(directory: cacheDirectory)
-            ),
+            client: client,
             onFailure: onFailure
         )
         Task { [client] in await client.setUnauthorizedHandler(onUnauthorized) }
@@ -114,6 +121,7 @@ final class SpaceSession {
         case absent
         case downloading
         case importing
+        case downloadingAssets(done: Int, total: Int)
         /// Held locally and matching the server's current revision.
         case current(rows: Int, tables: Int)
         /// Held locally, but the owner has republished since.
@@ -125,7 +133,8 @@ final class SpaceSession {
     func loadMirror() async {
         guard mirror == nil else { return }
         do {
-            let store = try await MirrorStore.open(spaceId: connection.spaceId, directory: mirrorDirectory)
+            try ConnectionStorage.prepare(for: connection)
+            let store = try await MirrorStore.open(spaceId: connection.storageId, directory: mirrorDirectory)
             guard let summary = try await store.summary() else { return }
             mirror = store
             mirrorSummary = summary
@@ -141,6 +150,15 @@ final class SpaceSession {
     /// discovering a mirror is current costs one round trip rather than a whole snapshot.
     func refreshMirrorFreshness() async {
         guard let mirror, let summary = mirrorSummary else { return }
+        do {
+            guard try await client.hasDownloadedPublishedAssets(mirror.assetRefs(), in: connection.spaceId) else {
+                mirrorProgress = .failed(String(localized: "The offline images are incomplete. Download the copy again."))
+                return
+            }
+        } catch {
+            mirrorProgress = .failed(error.localizedDescription)
+            return
+        }
         do {
             let revision = try await client.snapshotRevision(in: connection.spaceId)
             let current = try await mirror.isCurrent(with: revision ?? "")
@@ -161,6 +179,7 @@ final class SpaceSession {
     func downloadMirror() async {
         mirrorProgress = .downloading
         do {
+            try ConnectionStorage.prepare(for: connection)
             let snapshot = try await client.snapshot(in: connection.spaceId)
             let revision = try await client.snapshotRevision(in: connection.spaceId)
                 ?? snapshot.revision
@@ -171,13 +190,16 @@ final class SpaceSession {
             if let mirror {
                 store = mirror
             } else {
-                store = try await MirrorStore.open(spaceId: connection.spaceId, directory: mirrorDirectory)
+                store = try await MirrorStore.open(spaceId: connection.storageId, directory: mirrorDirectory)
             }
             let summary = try await store.replace(with: snapshot, revision: revision)
             mirror = store
             mirrorSummary = summary
             await refreshBrowsableTables()
             await names.preload(from: store)
+            try await client.downloadPublishedAssets(snapshot, in: connection.spaceId) { [weak self] done, total in
+                await MainActor.run { self?.mirrorProgress = .downloadingAssets(done: done, total: total) }
+            }
             mirrorProgress = .current(rows: summary.totalRows, tables: summary.counts.count)
         } catch let error as APIError where error.isNotPublished {
             mirrorProgress = .failed("This space has no publication to download yet.")
@@ -189,6 +211,7 @@ final class SpaceSession {
     func removeMirror() async {
         guard let mirror else { return }
         try? await mirror.drop()
+        try? await client.removeDownloadedAssets(in: connection.spaceId)
         self.mirror = nil
         mirrorSummary = nil
         mirrorOnlyTables = []

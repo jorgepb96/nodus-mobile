@@ -147,7 +147,7 @@ enum BackgroundJobs {
 
     static func hasAuthorisedMutations() async -> Bool {
         for connection in connectionsWithQueues {
-            guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
+            guard let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
             if let count = try? await outbox.authorisedCount(), count > 0 { return true }
         }
         return false
@@ -162,9 +162,9 @@ enum BackgroundJobs {
         var everythingLanded = true
         for connection in AppModel.syncableConnections() where connection.role.canSendChanges {
             if Task.isCancelled { return false }
-            guard MutationOutbox.exists(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
-            guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
-            guard let queued = try? await outbox.authorisedPending(limit: 200), !queued.isEmpty else { continue }
+            guard MutationOutbox.exists(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
+            guard let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
+            guard let queued = try? await outbox.authorisedPending(limit: connection.desktopPairingId == nil ? 200 : 100), !queued.isEmpty else { continue }
             // Cut by bytes, with the conservative budget rather than the server's: a background
             // window is not the place to spend a round trip on capabilities. Whatever does not
             // fit stays authorised and goes out in the next window or the next flush.
@@ -182,8 +182,7 @@ enum BackgroundJobs {
             guard let client = ConnectionClient.make(for: connection) else { everythingLanded = false; continue }
             do {
                 let receipt = try await client.send(mutations: batch, in: connection.spaceId)
-                try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-                try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
+                try await outbox.recordReceipt(receipt, for: batch)
             } catch {
                 everythingLanded = false
             }
@@ -200,15 +199,16 @@ enum BackgroundJobs {
         // `syncableConnections`, not `storedConnections`: the example vault is on this device and
         // has no server, so it can hold nothing that could ever be delivered.
         AppModel.syncableConnections().filter {
-            $0.role.canSendChanges && MutationOutbox.exists(spaceId: $0.spaceId, directory: spacesDirectory)
+            $0.role.canSendChanges && MutationOutbox.exists(spaceId: $0.storageId, directory: spacesDirectory)
         }
     }
 
     /// Whether any space is holding changes whose fate this device could still learn.
     static func awaitsDeliveries() async -> Bool {
         for connection in connectionsWithQueues {
-            guard let outbox = try? MutationOutbox(spaceId: connection.spaceId, directory: spacesDirectory) else { continue }
+            guard let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
             if let waiting = try? await outbox.awaitingDelivery(), waiting > 0 { return true }
+            if connection.desktopPairingId != nil, let legacy = try? await outbox.acceptedWithoutCursor(), !legacy.isEmpty { return true }
         }
         return false
     }
@@ -228,7 +228,7 @@ enum BackgroundJobs {
         let directory = spacesDirectory
 
         let outcome = await MutationDelivery.confirm(for: connections) { connection in
-            try? MutationOutbox(spaceId: connection.spaceId, directory: directory)
+            try? MutationOutbox(spaceId: connection.storageId, directory: directory)
         }
         // `mayAsk: false` — the prompt is only ever shown to an app that is on screen.
         await DeliveryNotice.announce(outcome.landings, mayAsk: false)
@@ -250,7 +250,7 @@ enum BackgroundJobs {
     }
 
     static func hasMirrors() -> Bool {
-        AppModel.syncableConnections().contains { hasMirror(spaceId: $0.spaceId) }
+        AppModel.syncableConnections().contains { hasMirror(spaceId: $0.storageId) }
     }
 
     /// Bring offline copies back up to date, and only ones that already exist.
@@ -259,9 +259,9 @@ enum BackgroundJobs {
     /// spend their bytes on a decision they did not make.
     static func refreshStaleMirrors() async -> Bool {
         var allCurrent = true
-        for connection in AppModel.syncableConnections() where hasMirror(spaceId: connection.spaceId) {
+        for connection in AppModel.syncableConnections() where hasMirror(spaceId: connection.storageId) {
             if Task.isCancelled { return false }
-            guard let store = try? MirrorStore(spaceId: connection.spaceId, directory: spacesDirectory),
+            guard let store = try? MirrorStore(spaceId: connection.storageId, directory: spacesDirectory),
                   (try? await store.summary()) != nil
             else { continue }
             guard let client = ConnectionClient.make(for: connection) else { allCurrent = false; continue }
@@ -294,17 +294,20 @@ enum BackgroundJobs {
 
         for (spaceId, checkpoint) in unfinished {
             if Task.isCancelled { return false }
-            guard let connection = connections.first(where: { $0.spaceId == spaceId }),
+            guard let connection = connections.first(where: { $0.storageId == spaceId }),
                   let client = ConnectionClient.make(for: connection)
             else { allFinished = false; continue }
+            let mode = UserDefaults.standard.string(forKey: "ai-execution-mode:\(connection.id)").flatMap(AIExecutionMode.init(rawValue:))
+                ?? (connection.desktopPairingId == nil ? .autonomous : .live)
+            guard mode == .autonomous else { allFinished = false; continue }
             // Presence, not value: the key itself is read inside the provider client.
             guard settings.hasKey(for: checkpoint.request.model.provider) else { allFinished = false; continue }
 
             let retrieval = CorpusRetrieval(
                 client: client,
-                spaceId: spaceId,
+                spaceId: connection.spaceId,
                 embeddings: EmbeddingService(keyProvider: settings.keyProvider),
-                identity: await reachableEmbedding(client: client, spaceId: spaceId, settings: settings)
+                identity: await reachableEmbedding(client: client, spaceId: connection.spaceId, settings: settings)
             )
             let orchestrator = DeepResearchOrchestrator(
                 deps: DeepResearchWiring.deps(
@@ -313,7 +316,7 @@ enum BackgroundJobs {
                     // The same naming the foreground gets. A report finished by a background
                     // task is the same document, and it would be a strange one that cited raw
                     // ids only because the app happened to be closed when it ended.
-                    citations: CorpusCitations(client: client, spaceId: spaceId)
+                    citations: CorpusCitations(client: client, spaceId: connection.spaceId)
                 )
             )
 

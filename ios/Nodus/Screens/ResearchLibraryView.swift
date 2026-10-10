@@ -61,7 +61,7 @@ struct ResearchLibraryView: View {
     /// What this reader has done with these reports. One store for both sections, because
     /// "which have I read" is a question about the list rather than about where a report
     /// was written.
-    private var marks: ReportMarks { ReportMarks.shared(for: session.connection.spaceId) }
+    private var marks: ReportMarks { ReportMarks.shared(for: session.connection.storageId) }
 
     private var matchingLocal: [LocalReportStore.Saved] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -90,7 +90,7 @@ struct ResearchLibraryView: View {
     }
 
     /// The run in flight, which belongs to the space and not to the screen that started it.
-    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
+    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.storageId) }
 
     var body: some View {
         List {
@@ -164,7 +164,7 @@ struct ResearchLibraryView: View {
                 }
             }
 
-            if matchingLocal.isEmpty, matchingPublished.isEmpty, !isLoading, !runner.isRunning {
+            if matchingLocal.isEmpty, matchingPublished.isEmpty, !isLoading, !runner.isRunning, error == nil {
                 ContentUnavailableView(
                     emptyTitle,
                     systemImage: "doc.text.magnifyingglass",
@@ -367,11 +367,12 @@ struct ResearchLibraryView: View {
         defer { isLoading = false }
         local.reload()
         do {
-            published = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 100).items
+            published = try await session.client.allDeepResearchReports(in: session.connection.spaceId)
             reconcilePublishedReadState()
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             published = []
+            error = nil
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
@@ -451,6 +452,23 @@ struct LocalReportImage: View {
                 .resizable()
                 .scaledToFill()
                 .clipped()
+        }
+    }
+}
+
+/// The same 16:9 illustration and 26rem height cap as Desktop. A layout gives
+/// the image an actual frame; a suggested aspect ratio alone lets a large
+/// photograph keep its original height and fill most of an iPad screen.
+private struct ReportHeroLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: min(width * 9 / 16, 416))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for view in subviews {
+            view.place(at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center,
+                proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
         }
     }
 }
@@ -593,7 +611,7 @@ private struct LocalReportReadingTools: ViewModifier {
                 rows: rows
             ))
         } else {
-            content.nodusReadingMarks(spaceId: session.connection.spaceId, id: localId, accent: session.accent)
+            content.nodusReadingMarks(spaceId: session.connection.storageId, id: localId, accent: session.accent)
         }
     }
 }
@@ -609,7 +627,7 @@ struct OptionalReadingMarks: ViewModifier {
 
     func body(content: Content) -> some View {
         if let id {
-            content.nodusReadingMarks(spaceId: session.connection.spaceId, id: id, accent: session.accent)
+            content.nodusReadingMarks(spaceId: session.connection.storageId, id: id, accent: session.accent)
         } else {
             content
         }
@@ -650,7 +668,7 @@ struct SyncedReportReadingTools: ViewModifier {
         self.rows = rows
         self.scope = scope
         self.annotationPrefix = annotationPrefix
-        let store = ReportMarks.shared(for: session.connection.spaceId)
+        let store = ReportMarks.shared(for: session.connection.storageId)
         marks = store
         _legacyBookmark = State(initialValue: ReadingBookmarks(bookmark: store.bookmark(for: localMarkId ?? id)) { next in
             store.setBookmark(next, for: localMarkId ?? id)
@@ -999,7 +1017,7 @@ struct LocalReportReader: View {
     }
     private var liveMarkdown: String { publishedMarkdown ?? report.markdown }
     private var liveTitle: String { liveDetail?.report.text("title") ?? saved.title }
-    private var store: LocalReportStore { LocalReportStore.shared(for: session.connection.spaceId) }
+    private var store: LocalReportStore { LocalReportStore.shared(for: session.connection.storageId) }
     private var currentSaved: LocalReportStore.Saved { local.reports.first(where: { $0.id == saved.id }) ?? saved }
 
     /// What the send control needs, or nothing at all when this access cannot send.
@@ -1016,14 +1034,10 @@ struct LocalReportReader: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                 if let hash = liveDetail?.image?.text("hash") {
-                    AssetImage(session: session, hash: hash)
-                        .frame(height: 200)
-                        .frame(maxWidth: .infinity)
+                    ReportHeroLayout { AssetImage(session: session, hash: hash) }
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 } else if let url = store.imageURL(for: currentSaved) {
-                    LocalReportImage(url: url)
-                        .frame(height: 200)
-                        .frame(maxWidth: .infinity)
+                    ReportHeroLayout { LocalReportImage(url: url) }
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
 
@@ -1051,6 +1065,8 @@ struct LocalReportReader: View {
                     ReportActions(
                         markdown: liveMarkdown,
                         title: nil,
+                        pdf: (session, currentSaved.vaultRowId ?? currentSaved.id, liveTitle),
+                        localPDF: liveDetail == nil ? (currentSaved, local) : nil,
                         send: sendContext,
                         saveToNotes: (saved.id, liveTitle, liveMarkdown, session),
                         accent: session.accent
@@ -1231,9 +1247,7 @@ struct PublishedReportReader: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let hash = detail?.image?.text("hash") ?? row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
-                    AssetImage(session: session, hash: hash)
-                        .frame(height: 200)
-                        .frame(maxWidth: .infinity)
+                    ReportHeroLayout { AssetImage(session: session, hash: hash) }
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
 
@@ -1436,6 +1450,7 @@ struct ReportSectionTitle: View {
     private let accent: Color
 
     @Environment(\.nodusReadingStyle) private var reading
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(_ title: String, accent: Color) {
         self.title = title
@@ -1446,7 +1461,7 @@ struct ReportSectionTitle: View {
         VStack(alignment: .leading, spacing: 7) {
             // Zero, so a section's own name is the first thing the find bar walks onto inside it.
             PageText(title.uppercased(), order: 0)
-                .font(reading.font(.title3, weight: .bold))
+                .font(reading.font(.title3, weight: .bold, dynamicTypeSize: dynamicTypeSize))
                 .tracking(0.8)
                 .fixedSize(horizontal: false, vertical: true)
             Rectangle()

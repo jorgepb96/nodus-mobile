@@ -10,7 +10,7 @@
 		<string>es</string>
 	</array>
 	<key>CFBundleDisplayName</key>
-	<string>Nodus Research</string>
+	<string>Nodus</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -18,7 +18,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Nodus Research</string>
+	<string>Nodus</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -108,6 +108,8 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array><string>_nodus-mobile._tcp</string></array>
 
 	<!-- These two are the base (English) strings. `Nodus/InfoPlist.xcstrings` carries the
 	     Spanish, which iOS substitutes by key at runtime — a plist string on its own is
@@ -118,6 +120,8 @@
 	<string>Nodus Research connects to a Nodus Server on your local network when you give it the address.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+    <key>NSCameraUsageDescription</key>
+    <string>Scan a Nodus pairing QR code to connect securely to your Mac.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

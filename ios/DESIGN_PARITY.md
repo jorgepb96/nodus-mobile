@@ -2,9 +2,22 @@
 
 This document is the implementation contract for the shared iPhone/iPad application. There is
 one product and one navigation model: iPad renders the Desktop shell at tablet scale, while an
-iPhone keeps the same hierarchy and surfaces in a vertical, drawer-based presentation.
+iPhone keeps the same hierarchy and surfaces with drawer navigation and touch controls in
+both portrait and landscape.
 
-## Completed phases
+## Current acceptance status
+
+The 0.1.0 release is still under validation. `Parity/parity-manifest.json` is the current
+operation matrix; implementation and historical passing scenarios do not establish full
+parity. The executed results, source receipts, screenshots and remaining work are recorded
+under `artifacts/acceptance-0.1.0`. No TestFlight build is approved yet.
+
+The primary connection is Desktop Settings → Mobile connection: a code or QR links the
+entire current workspace through direct HTTPS on LAN or VPN. Server and Cloud are advanced
+options. Code discovery is Bonjour on LAN; a QR/link supplies the VPN addresses. Actual VPN
+and camera scanning acceptance remains pending.
+
+## Historical implementation phases
 
 1. **Auditable contract baseline (phase 0)** — Desktop's 73 routes, 1,595 public actions and 49 mutable
    tables are captured in `Parity/parity-manifest.json`. The check rejects Desktop drift,
@@ -58,7 +71,9 @@ iPhone keeps the same hierarchy and surfaces in a vertical, drawer-based present
     with write permission. Desktop now checkpoints its queue atomically and parks other-vault jobs
     instead of deleting them. The merged local/published gallery supports persistent read/view/sort
     preferences, search, selection, bulk deletion and deterministic Markdown/PDF ZIP export. No
-    audio control, artifact or job is created on mobile.
+    speech synthesis job is created on mobile. Saved Desktop narration is listed in the shared
+    reader and downloaded through a scoped, hashed Bridge file before native playback; the
+    protected downloaded copy remains available when the Mac is unreachable.
 13. **Deep Research reader (phase 6)** — iPad uses the Desktop reader composition while iPhone keeps
     the same toolbar and workspaces in a vertical surface. Outline, current section, reading progress,
     anchor restoration, typography, interactive citations, support/audit matrix, gaps,
@@ -279,10 +294,11 @@ visibility and width. iPhone opens the same hierarchy as a vertical drawer.
 
 Dedicated vault modes are guarded by the same closed allow-lists as Desktop, so academic routes
 cannot leak into Prosopography, Primary Sources, Study, Teaching, Databases, Testimonies or
-Worldbuilding. Hidden routes remain executable through typed deep links and Commands. Graph and
-Study Graph are the deliberate exception: the product decision suspends them completely on mobile,
-so they have no menu item, enum case, deep link or placeholder screen. The versioned manifest keeps
-those Desktop routes as explicit exclusions alongside Deep Research audio. CI regenerates
+Worldbuilding. Hidden routes remain executable through typed deep links and Commands. The
+0.1.0 implementation restores Graph and Study Graph through shared Desktop components;
+their complete functional and visual acceptance remains pending in the operation matrix.
+Saved narration consultation is included; Desktop speech synthesis is an explicit exclusion.
+CI regenerates
 this manifest against a fresh Desktop checkout and rejects any unclassified route, action, table,
 fallback destination or missing evidence file.
 

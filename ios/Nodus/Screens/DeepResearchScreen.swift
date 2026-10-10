@@ -40,11 +40,11 @@ struct DeepResearchScreen: View {
 
     /// The run itself, which belongs to the space rather than to this screen: leaving here does
     /// not stop it, and coming back finds it exactly where it got to.
-    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
+    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.storageId) }
 
     private var report: DeepResearchReport? { nil }
     private var queue: DeepResearchQueue { .shared }
-    private var marks: ReportMarks { .shared(for: session.connection.spaceId) }
+    private var marks: ReportMarks { .shared(for: session.connection.storageId) }
 
     var body: some View {
         ScrollView {
@@ -55,6 +55,10 @@ struct DeepResearchScreen: View {
                 if let unfinished { resumeNotice(unfinished) }
                 if let publishedError {
                     NodusNotice(tone: .caution, title: "Published reports are unavailable", message: LocalizedStringKey(publishedError))
+                        .accessibilityIdentifier("deep-research-catalog-error")
+                    Button { Task { await loadPublished() } } label: { Label("Try again", systemImage: "arrow.clockwise") }
+                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                        .accessibilityIdentifier("deep-research-catalog-retry")
                 }
                 galleryControls
                 gallery
@@ -64,6 +68,7 @@ struct DeepResearchScreen: View {
             .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
+        .accessibilityIdentifier("deep-research-gallery-scroll")
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: false))
         .nodusDismissesKeyboard()
         .navigationTitle("Deep Research")
@@ -134,7 +139,7 @@ struct DeepResearchScreen: View {
 
     @ViewBuilder
     private var queueStrip: some View {
-        let jobs = queue.jobs(in: session.connection.spaceId)
+        let jobs = queue.jobs(in: session.connection.storageId)
         if !jobs.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -247,13 +252,16 @@ struct DeepResearchScreen: View {
     @ViewBuilder
     private var gallery: some View {
         let entries = galleryEntries
-        if entries.isEmpty {
+        if entries.isEmpty, publishedError != nil {
+            EmptyView()
+        } else if entries.isEmpty {
             ContentUnavailableView(
                 query.isEmpty ? "No reports" : "No matches",
                 systemImage: "doc.text.magnifyingglass",
                 description: Text(query.isEmpty ? "Start a research job to create the first report." : "Change the search or reading filter.")
             )
             .frame(maxWidth: .infinity, minHeight: 300)
+            .accessibilityIdentifier("deep-research-catalog-empty")
         } else if galleryView == "grid" {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12)], spacing: 12) {
                 ForEach(entries) { entry in galleryCell(entry, grid: true) }
@@ -357,11 +365,11 @@ struct DeepResearchScreen: View {
         switch entry.origin {
         case .local(let saved):
             let markdown = saved.report.markdown
-            return (markdown, printableHTML(title: saved.title, markdown: markdown))
+            return (markdown, try ReportDocument.html(saved: saved, store: local))
         case .published(let row):
             guard let id = row.string("id") else { throw DeepResearchExportFailure.missingReport }
             async let detail = session.client.deepResearchReport(id, in: session.connection.spaceId)
-            async let html = session.client.deepResearchDocument(id, in: session.connection.spaceId)
+            async let html = ReportDocument.html(session: session, reportId: id)
             let resolved = try await detail
             guard let markdown = publishedMarkdown(resolved.report) else { throw DeepResearchExportFailure.missingReport }
             let resolvedHTML = try await html
@@ -384,24 +392,13 @@ struct DeepResearchScreen: View {
         return row.text("content") ?? row.text("markdown")
     }
 
-    private func printableHTML(title: String, markdown: String) -> String {
-        let escapedTitle = title.htmlEscaped
-        let escapedBody = markdown.htmlEscaped
-        return """
-        <!doctype html><html><head><meta charset="utf-8"><style>
-        @page { size: A4; margin: 20mm; } body { color:#171717; font: 11pt -apple-system, sans-serif; line-height:1.55; }
-        h1 { font: 700 25pt Georgia, serif; margin-bottom:24pt; } pre { font: 11pt Georgia, serif; white-space:pre-wrap; }
-        </style></head><body><h1>\(escapedTitle)</h1><pre>\(escapedBody)</pre></body></html>
-        """
-    }
-
     private func exportFilename(_ title: String) -> String {
         title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
     }
 
     private func loadPublished() async {
         do {
-            published = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 100).items
+            published = try await session.client.allDeepResearchReports(in: session.connection.spaceId)
             for row in published {
                 guard let remoteId = row.string("id") else { continue }
                 let localId = local.reports.first(where: { $0.vaultRowId == remoteId })?.id ?? remoteId
@@ -410,6 +407,7 @@ struct DeepResearchScreen: View {
             publishedError = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             published = []
+            publishedError = nil
         } catch where error.isCancellation {
         } catch {
             publishedError = error.localizedDescription
@@ -419,7 +417,7 @@ struct DeepResearchScreen: View {
     private func seedVisualFixtureIfNeeded() {
 #if DEBUG
         guard ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1" else { return }
-        if queue.jobs(in: session.connection.spaceId).isEmpty {
+        if queue.jobs(in: session.connection.storageId).isEmpty {
             let queuedRequest = DeepResearchRequest(
                 objective: "Contested meanings of sovereignty",
                 targetLength: .standard,
@@ -427,8 +425,8 @@ struct DeepResearchScreen: View {
                 model: ModelRef(provider: .openai, model: "gpt-5")
             )
             queue.enqueue(
-                id: "visual-deep-research-complete",
-                spaceId: session.connection.spaceId,
+                id: "visual-deep-research-complete-\(session.connection.storageId)",
+                spaceId: session.connection.storageId,
                 spaceName: session.connection.spaceName,
                 request: queuedRequest
             ) {
@@ -465,7 +463,7 @@ struct DeepResearchScreen: View {
 
     /// The sections a stopped run already paid for, if there are any.
     private func readCheckpoint() {
-        let saved = DeepResearchCheckpointStore.load(spaceId: session.connection.spaceId)
+        let saved = DeepResearchCheckpointStore.load(spaceId: session.connection.storageId)
         unfinished = (saved?.isComplete == false) ? saved : nil
     }
 
@@ -492,7 +490,7 @@ struct DeepResearchScreen: View {
                 .disabled(ai.model(for: .deepResearch) == nil)
 
                 Button(role: .destructive) {
-                    DeepResearchCheckpointStore.clear(spaceId: session.connection.spaceId)
+                    DeepResearchCheckpointStore.clear(spaceId: session.connection.storageId)
                     unfinished = nil
                 } label: {
                     Label("Discard", systemImage: "trash")

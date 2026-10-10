@@ -24,7 +24,8 @@ private struct WorldEntityDefinition {
     var section: String { route.rawValue }
 
     func includes(_ row: Row) -> Bool {
-        fixed.allSatisfy { row.string($0.key) == $0.value.stringValue }
+        // A default value for a new character is not a catalogue filter.
+        route == .characters || fixed.allSatisfy { row.string($0.key) == $0.value.stringValue }
     }
 
     func title(of row: Row) -> String {
@@ -161,6 +162,7 @@ struct WorldEntityWorkspaceView: View {
 
     let session: SpaceSession
     let route: NodusRoute
+    var initialRowID: String? = nil
 
     @State private var rows: [Row] = []
     @State private var relatedTables: [String: [Row]] = [:]
@@ -254,6 +256,7 @@ struct WorldEntityWorkspaceView: View {
                         .desktopContentRow(accent: session.accent)
                     }
                     .buttonStyle(NodusCardButtonStyle())
+                    .accessibilityIdentifier("world-catalogue-\(definition.table.rawValue)-\(row.string(definition.idField) ?? "")")
                 }
             }
             if loading { ProgressView().tint(session.accent).padding(42) }
@@ -317,9 +320,11 @@ struct WorldEntityWorkspaceView: View {
                 let names = [
                     definition.table.rawValue, "world_links", "world_beats", "thread_parties",
                     "scene_characters", "character_affiliations", "character_abilities", "person_names",
-                    "person_places", "secret_knowers", "world_question_options", "world_scene_days",
+                    "person_places", "relationships", "character_profiles", "place_profiles",
+                    "secret_knowers", "world_question_options", "world_scene_days",
                     "world_scene_text", "world_chapter_breaks", "world_manuscript_starts",
-                    "world_scene_snapshots", "world_images",
+                    "world_scene_snapshots", "world_images", "persons", "places", "world_groups",
+                    "world_articles", "world_scenes", "world_threads", "world_rules", "world_questions",
                 ]
                 var loaded: [String: [Row]] = [:]
                 loaded[definition.table.rawValue] = try await mirror.allRows(table: definition.table.rawValue)
@@ -345,6 +350,9 @@ struct WorldEntityWorkspaceView: View {
                 for row in filtered.prefix(2) { open(row) }
             }
 #endif
+            if let initialRowID, let selected = filtered.first(where: { $0.string(definition.idField) == initialRowID }) {
+                open(selected)
+            }
         } catch { self.error = error.localizedDescription }
     }
 
@@ -659,6 +667,14 @@ private struct WorldEntityEditor: View {
     }
 }
 
+private struct WorldConnectedTarget: Identifiable {
+    let route: NodusRoute
+    let row: Row
+    let rowID: String
+    let title: String
+    var id: String { "\(route.rawValue):\(rowID)" }
+}
+
 private struct WorldEntityDossier: View {
     let session: SpaceSession
     let definition: WorldEntityDefinition
@@ -672,17 +688,133 @@ private struct WorldEntityDossier: View {
 
     @State private var confirmingDelete = false
     @State private var photo: PhotosPickerItem?
+    @State private var connectedTarget: WorldConnectedTarget?
 
     private var rowId: String { row.string(definition.idField) ?? "" }
+    private var profileTable: String? {
+        switch definition.route {
+        case .characters: "character_profiles"
+        case .places: "place_profiles"
+        default: nil
+        }
+    }
+    private var profile: Row? {
+        guard let profileTable else { return nil }
+        return relatedTables[profileTable]?.first { $0.string(definition.idField) == rowId }
+    }
+    private var profileFields: [WorldEntityField] {
+        let fields: [(String, String, WorldEntityField.Kind)] = switch definition.route {
+        case .characters: [
+            ("species", "Species", .line), ("gender", "Gender", .line), ("pronouns", "Pronouns", .line),
+            ("life_status", "Life status", .line), ("narrative_role", "Narrative role", .line),
+            ("appearance", "Appearance", .prose), ("personality", "Personality", .prose),
+            ("backstory", "Backstory", .prose), ("visual_seed", "Visual identity", .prose),
+            ("birth_year_sort", "Birth year", .integer), ("death_year_sort", "Death year", .integer),
+            ("arc_want", "Want", .prose), ("arc_need", "Need", .prose), ("arc_flaw", "Flaw", .prose),
+            ("arc_lie", "Lie", .prose), ("arc_wound", "Wound", .prose),
+            ("voice_register", "Voice register", .prose), ("voice_tics", "Voice tics", .prose),
+            ("voice_sample", "Voice sample", .prose), ("biography_proposed", "Proposed biography", .prose),
+        ]
+        case .places: [
+            ("appearance", "Appearance", .prose), ("atmosphere", "Atmosphere", .prose),
+            ("history", "History", .prose), ("visual_seed", "Visual identity", .prose),
+        ]
+        default: []
+        }
+        return fields.map { .init(key: $0.0, label: $0.1, kind: $0.2) }
+    }
     private var related: [(String, Row)] {
-        relatedTables.flatMap { table, rows in
-            rows.compactMap { candidate in
-                guard table != definition.table.rawValue,
+        relatedTables.keys.sorted().flatMap { table in
+            (relatedTables[table] ?? []).compactMap { candidate in
+                guard !(table == definition.table.rawValue && candidate.string(definition.idField) == rowId),
+                      !(table == profileTable && candidate.string(definition.idField) == rowId),
                       candidate.columns.values.contains(where: { $0.stringValue == rowId })
                 else { return nil }
                 return (table, candidate)
             }
-        }.prefix(80).map { $0 }
+        }
+    }
+
+    private func target(for pair: (String, Row)) -> WorldConnectedTarget? {
+        if pair.0 == "relationships" {
+            for key in ["from_person", "to_person"] {
+                if let id = pair.1.string(key), id != rowId,
+                   let target = entityTarget(id: id, routes: [.characters]) { return target }
+            }
+        }
+        let routes: [NodusRoute] = [.characters, .places, .factions, .cultures, .dynasties, .scenes, .encyclopedia, .conflicts, .arcs, .rules, .questions]
+        for route in routes {
+            guard let entity = WorldEntityDefinition.forRoute(route) else { continue }
+            if pair.0 == entity.table.rawValue, entity.includes(pair.1), let id = pair.1.string(entity.idField), id != rowId {
+                return .init(route: route, row: pair.1, rowID: id, title: entity.title(of: pair.1))
+            }
+            guard let id = pair.1.string(entity.idField), id != rowId,
+                  let record = relatedTables[entity.table.rawValue]?.first(where: { $0.string(entity.idField) == id && entity.includes($0) })
+            else { continue }
+            return .init(route: route, row: record, rowID: id, title: entity.title(of: record))
+        }
+        return nil
+    }
+
+    private func entityTarget(id: String?, routes: [NodusRoute]) -> WorldConnectedTarget? {
+        guard let id, id != rowId else { return nil }
+        for route in routes {
+            guard let entity = WorldEntityDefinition.forRoute(route),
+                  let record = relatedTables[entity.table.rawValue]?.first(where: { $0.string(entity.idField) == id && entity.includes($0) })
+            else { continue }
+            return .init(route: route, row: record, rowID: id, title: entity.title(of: record))
+        }
+        return nil
+    }
+
+    private func target(for field: WorldEntityField) -> WorldConnectedTarget? {
+        let routes: [NodusRoute]
+        switch field.key {
+        case "place_id", "seat_place_id": routes = [.places]
+        case "parent_id":
+            routes = definition.route == .places ? [.places] : [.factions, .cultures, .dynasties]
+        case "scope_id", "anchor_id":
+            let kind = row.string(field.key == "scope_id" ? "scope_kind" : "anchor_kind")
+            switch kind {
+            case "character", "person": routes = [.characters]
+            case "place": routes = [.places]
+            case "group": routes = [.factions, .cultures, .dynasties]
+            case "scene": routes = [.scenes]
+            case "article": routes = [.encyclopedia]
+            case "conflict": routes = [.conflicts]
+            case "arc": routes = [.arcs]
+            case "rule": routes = [.rules]
+            default: routes = []
+            }
+        default: routes = []
+        }
+        return entityTarget(id: row.string(field.key), routes: routes)
+    }
+
+    @ViewBuilder private func fieldCell(_ field: WorldEntityField, from source: Row, destination: WorldConnectedTarget? = nil) -> some View {
+        if let destination {
+            Button { connectedTarget = destination } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(LocalizedStringKey(field.label)).textCase(.uppercase).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    HStack {
+                        Text(destination.title).font(.callout).foregroundStyle(session.accent.nodusReadable)
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .desktopContentRow(accent: session.accent)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("world-field-link-\(field.key)")
+        } else {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(LocalizedStringKey(field.label)).textCase(.uppercase).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                Text(display(field, from: source)).font(field.kind == .prose ? .body : .callout).textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .desktopContentRow(accent: session.accent)
+        }
     }
 
     var body: some View {
@@ -729,26 +861,40 @@ private struct WorldEntityDossier: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 9)], spacing: 9) {
                     ForEach(definition.fields.filter { row.text($0.key) != nil || row.bool($0.key) == true }) { field in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(field.label.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                            Text(display(field)).font(field.kind == .prose ? .body : .callout).textSelection(.enabled)
+                        fieldCell(field, from: row, destination: target(for: field))
+                    }
+                    if let profile {
+                        ForEach(profileFields.filter { profile.text($0.key) != nil }) { field in
+                            fieldCell(field, from: profile)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .desktopContentRow(accent: session.accent)
                     }
                 }
                 if !related.isEmpty {
                     VStack(alignment: .leading, spacing: 9) {
                         Text("CONNECTED RECORDS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        ForEach(Array(related.enumerated()), id: \.offset) { _, pair in
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: RowPresenter.forTable(pair.0).icon).foregroundStyle(session.accent.nodusReadable)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(RowPresenter.forTable(pair.0).title(pair.1)).font(.callout.weight(.medium))
-                                    Text(MirrorOnlySectionsView.label(for: pair.0)).font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }.desktopContentRow(accent: .secondary)
+                        ForEach(Array(related.enumerated()), id: \.offset) { index, pair in
+                            let destination = target(for: pair)
+                            let presented = RowPresenter.forTable(pair.0).title(pair.1)
+                            Button { connectedTarget = destination } label: {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: RowPresenter.forTable(pair.0).icon).foregroundStyle(session.accent.nodusReadable)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(LocalizedStringKey(destination?.title ?? (presented == "Untitled" ? MirrorOnlySectionsView.label(for: pair.0) : presented))).font(.callout.weight(.medium))
+                                        HStack(spacing: 4) {
+                                            Text(LocalizedStringKey(MirrorOnlySectionsView.label(for: pair.0)))
+                                            if pair.0 == "relationships" {
+                                                Text("·")
+                                                Text(LocalizedStringKey(presented))
+                                            }
+                                        }.font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if destination != nil { Image(systemName: "chevron.right").foregroundStyle(.secondary) }
+                                }.desktopContentRow(accent: .secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(destination == nil)
+                            .accessibilityIdentifier("world-connected-record-\(pair.0)-\(index)")
                         }
                     }
                 }
@@ -757,6 +903,17 @@ private struct WorldEntityDossier: View {
             .nodusTopAnchor()
         }
         .nodusPageBackdrop(accent: session.accent)
+        .sheet(item: $connectedTarget) { target in
+            NavigationStack {
+                WorldEntityWorkspaceView(session: session, route: target.route, initialRowID: target.rowID)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { connectedTarget = nil }
+                                .accessibilityIdentifier("world-connected-close-\(target.rowID)")
+                        }
+                    }
+            }
+        }
         .alert("Delete this entry?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive, action: onDelete); Button("Cancel", role: .cancel) {}
         } message: { Text("The deletion is queued and applied by the owner Desktop without duplicating retries.") }
@@ -778,9 +935,9 @@ private struct WorldEntityDossier: View {
         return (relatedTables["world_images"] ?? []).filter { $0.string("entity_kind") == kind && $0.string("entity_id") == rowId }
     }
 
-    private func display(_ field: WorldEntityField) -> String {
-        if field.kind == .toggle { return row.bool(field.key) == true ? "Yes" : "No" }
-        return row.text(field.key) ?? "—"
+    private func display(_ field: WorldEntityField, from source: Row) -> String {
+        if field.kind == .toggle { return source.bool(field.key) == true ? String(localized: "Yes") : String(localized: "No") }
+        return source.text(field.key) ?? "—"
     }
 }
 

@@ -1,0 +1,49 @@
+/* iPhone keeps touch controls in both orientations. iPad uses the shared
+   Desktop layout, with its own available-width adaptations. */
+.nodus-phone .mobile-surface :is(button,input,select){min-height:44px}
+.nodus-phone .mobile-surface .section-header{padding:8px 12px;gap:8px}
+.nodus-phone .mobile-surface .section-header h1{font-size:1.125rem;line-height:1.35}
+.nodus-phone .mobile-surface .section-header>div:first-child{min-width:0;flex:1 1 100%}
+.nodus-phone .mobile-surface .section-header>.flex-1{display:none}
+.nodus-phone .mobile-surface .section-header>button{font-size:.8125rem;padding-inline:10px}
+.nodus-phone .library-workspace-tabs-scroll{min-height:44px}
+.nodus-phone .library-workspace-tab-main{min-height:44px}
+.nodus-phone .library-workspace-tab-close{min-width:44px;min-height:44px}
+
+/* Put optional tools beside Back, giving the actual document another row. */
+.nodus-phone .mobile-surface .deep-research-reader-header{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:"back tools" "meta meta";padding:6px 12px;gap:4px 8px;
+}
+.nodus-phone .deep-research-reader-back{grid-area:back;justify-self:start;max-width:100%;white-space:normal}
+.nodus-phone .deep-research-reader-meta{grid-area:meta;width:100%;min-width:0}
+.nodus-phone .deep-research-reader-header>.deep-research-reader-disclosure{
+  grid-area:tools;align-self:start;width:auto;min-width:0;max-width:18rem;
+}
+.nodus-phone .deep-research-reader-header>.deep-research-reader-disclosure>summary{padding:10px 4px}
+.nodus-phone .deep-research-reader-header>.deep-research-reader-disclosure[open]{grid-column:1/-1;grid-row:3;width:100%;max-width:100%}
+.nodus-phone .deep-research-reader-title{font-size:1rem;line-height:1.35}
+.nodus-phone .deep-research-reader-content{padding:12px}
+.nodus-phone .deep-research-reader-document{padding-inline:0}
+
+/* Keep wide phone graph controls tappable without installing a desktop sidebar. */
+.nodus-phone .mobile-surface[data-surface="graph"] .stellar-header{padding:8px 12px;gap:8px}
+.nodus-phone .mobile-surface[data-surface="graph"] .stellar-header-actions{flex-wrap:wrap;min-width:0;gap:8px}
+.nodus-phone .mobile-surface[data-surface="graph"] .stellar-header-actions>.stellar-search{flex:1 1 160px;min-width:0;width:auto}
+.nodus-phone .mobile-surface[data-surface="graph"] .stellar-header-actions>select{min-width:0;max-width:100%}
+.nodus-phone .mobile-surface[data-surface="graph"] .stellar-navigation button{min-width:44px}
+.nodus-phone .mobile-surface[data-surface="graph"] .graph-detail-panel{position:absolute;inset:0 0 0 auto;width:min(92%,420px)!important;z-index:30}
+.nodus-phone .mobile-surface[data-surface="graph"] .stellar-body{position:relative}
+.nodus-phone .mobile-surface[data-surface="workspace"] .editorial-editor-header{height:auto;flex-wrap:wrap}
+.nodus-phone .mobile-surface[data-surface="workspace"] .editorial-save-status{white-space:normal}
+
+@media(orientation:landscape){
+  .nodus-phone .mobile-surface .section-header>div:first-child{flex:1 1 240px}
+  .nodus-phone .mobile-surface .section-header>div:first-child p{max-width:30rem}
+  .nodus-phone .mobile-surface .deep-research-reader-header{
+    grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"back meta tools";
+  }
+  .nodus-phone .deep-research-reader-header>.deep-research-reader-disclosure[open]{grid-column:1/-1;grid-row:2}
+  .nodus-phone .deep-research-reader-title>span{-webkit-line-clamp:1}
+  .nodus-phone .mobile-surface[data-surface="graph"] .stellar-header h2{font-size:13px}
+}

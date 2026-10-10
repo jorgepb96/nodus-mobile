@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Nodus
 
@@ -66,5 +67,26 @@ struct ReadingSizeTests {
         #expect(ReadingStyle.plain.scale == 1)
         #expect(!ReadingStyle.plain.document)
         #expect(ReadingStyle(scale: 2).size(.body) == ReadingStyle.plain.size(.body) * 2)
+    }
+
+    @Test("an overridden accessible size enlarges native prose and preserves reader zoom")
+    func accessibleEnvironmentSize() {
+        let plain = ReadingStyle.plain
+        let normal = plain.size(.callout, dynamicTypeSize: .large)
+        let accessible = plain.size(.callout, dynamicTypeSize: .accessibility3)
+        #expect(accessible > normal * 1.8)
+        #expect(plain.uiFont(.callout, dynamicTypeSize: .accessibility3).pointSize == accessible)
+        #expect(ReadingStyle(scale: 1.5).size(.callout, dynamicTypeSize: .accessibility3) == accessible * 1.5)
+        let sizes = DynamicTypeSize.allCases.map { plain.size(.callout, dynamicTypeSize: $0) }
+        #expect(zip(sizes, sizes.dropFirst()).allSatisfy { $0 < $1 })
+    }
+
+    @Test("shared components preserve every system text size without an accessibility cap")
+    func sharedSurfaceDynamicType() {
+        #expect(ReadingStyle.sharedSurfaceScale(for: .large) == 1)
+        #expect(ReadingStyle.sharedSurfaceScale(for: .accessibility3) > 1.8)
+        let sizes = DynamicTypeSize.allCases.map { ReadingStyle.sharedSurfaceScale(for: $0) }
+        #expect(zip(sizes, sizes.dropFirst()).allSatisfy { $0 < $1 })
+        #expect(sizes.allSatisfy { $0.isFinite && $0 > 0 })
     }
 }

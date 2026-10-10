@@ -1,0 +1,1334 @@
+"use strict";
+var NodusReport = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // shared/deepResearchReport.ts
+  var deepResearchReport_exports = {};
+  __export(deepResearchReport_exports, {
+    DEEP_LABELS: () => DEEP_LABELS,
+    deepResearchReportInput: () => deepResearchReportInput,
+    renderProfessionalReportHtml: () => renderProfessionalReportHtml
+  });
+
+  // skill-capabilities/registry/catalog.ts
+  var BUILTIN_CAPABILITY_REGISTRY = [
+    { id: "nodus:vision", version: "1.0.0", description: "Bounded visual relevance review with the selected model.", source: "builtin", tools: [{ id: "review-images", description: "Review host-prepared image candidates; unknown or text-only models skip safely." }] },
+    { id: "nodus:maps", version: "1.0.0", description: "Deterministic SVG cartography with approved source retrieval and provenance.", source: "builtin", tools: [{ id: "render", description: "Render geometry, markers and connections as an attributed SVG." }, { id: "retrieve", description: "Retrieve geometry from approved open providers." }] },
+    { id: "nodus:svg", version: "1.0.0", description: "Sanitized SVG rendering and quality review.", source: "builtin", tools: [{ id: "render", description: "Render a self-contained SVG." }] },
+    { id: "nodus:image", version: "1.0.0", description: "Image generation using the configured provider.", source: "builtin", tools: [{ id: "generate", description: "Generate and persist one image." }] },
+    // Deliberately generic: a molecule, a bone, a pot and a building are the same thing to
+    // it. Packages hand over a glTF or GLB asset and the core validates, stores and draws
+    // it; no discipline is named here and none ever should be.
+    { id: "nodus:3d", version: "1.0.0", description: "Validation, storage and interactive viewing of glTF and GLB models.", source: "builtin", tools: [
+      { id: "validate", description: "Check that a glTF or GLB asset is self-contained and can be opened." },
+      { id: "store", description: "Validate a glTF or GLB asset and keep it beside the conversation for the viewer." }
+    ] }
+  ];
+  var REGISTERED_BUILTIN_CAPABILITY_IDS = BUILTIN_CAPABILITY_REGISTRY.map((entry) => entry.id);
+
+  // shared/skillMarketplace.ts
+  var skillSlug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "my-skill";
+
+  // shared/generalChatSkills.ts
+  var GENERAL_CHAT_SKILLS = [
+    {
+      id: "builtin-thought-partner",
+      name: "Thought Partner",
+      builtin: "general",
+      version: "1.0.1",
+      category: "Thinking and decision-making",
+      description: "Develop an unfinished idea, surface assumptions and find a useful way forward.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill when the user wants to think through an idea, untangle a problem or develop an uncertain direction. Respond in their language and preserve what makes their idea distinctive.
+Briefly formulate the problem from what they actually said. Separate known facts, assumptions, preferences and open questions. Identify the one or two tensions that most affect progress; avoid turning a simple conversation into an exhaustive framework.
+Offer two or three meaningfully different ways forward and explain what each would clarify. Make suggestions concrete with an example, a small experiment or a draft formulation. Challenge weak assumptions respectfully rather than automatically agreeing. Do not invent evidence or speculate confidently about the user's motives.
+Use relevant vault evidence with accurate attribution. Ask one focused question only if its answer would materially change the next step; otherwise proceed with an explicit working assumption. Finish with a sharper formulation, a practical next move or one useful question. Support the user's thinking without taking over their decision.`
+    },
+    {
+      id: "builtin-brainstorm-studio",
+      name: "Brainstorm Studio",
+      builtin: "general",
+      version: "1.0.1",
+      category: "Thinking and decision-making",
+      description: "Generate distinct ideas, then select and develop the most promising ones.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill for ideation, alternative approaches, naming, concepts or creative problem solving. Respond in the user's language. Establish the purpose, audience and explicit constraints from the request; ask only for a missing detail that would substantially change the direction.
+Separate exploration from selection. Unless a number is specified, propose five to eight distinct ideas spanning practical, unexpected and ambitious approaches. Vary the underlying mechanism, not merely the wording. Give each idea a short name, a concrete explanation and a reason it could work. Avoid near duplicates and generic advice.
+Select two or three promising candidates using the user's criteria, explaining tradeoffs honestly. Develop the strongest with an example or a small test. If the user requested exploration without judgment, leave selection to them.
+Treat invented concepts as proposals, not facts. Do not claim uniqueness, legal availability, proven results or market validation without evidence. Build on supplied material while respecting its attribution and the user's constraints.`
+    },
+    {
+      id: "builtin-make-it-simple",
+      name: "Make It Simple",
+      builtin: "general",
+      version: "1.0.1",
+      category: "Writing and communication",
+      description: "Explain complex material clearly with concrete examples and useful analogies.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill when the user wants a clearer or more accessible explanation of a concept, passage or process. Adapt to their audience and knowledge level; otherwise start with an intelligent beginner. Respond in their language without sounding patronizing.
+Lead with the central idea in one or two plain sentences. Explain the essential mechanism in a short sequence, defining unfamiliar terms when first needed. Use one concrete example. Add an analogy only when helpful and state where it stops being accurate.
+Simplify the presentation, not the truth. Preserve meaningful distinctions, uncertainty, units, conditions and causal direction. Never turn correlation into causation or remove a qualification that changes the meaning. Identify ambiguity rather than silently choosing an interpretation.
+Keep optional technical detail separate. Use an enabled visual skill only when it adds clarity. Provide a direct explanation rather than a quiz unless the user asks to practice. Aim for an explanation the reader can restate in their own words.`
+    },
+    {
+      id: "builtin-action-planner",
+      name: "Action Planner",
+      builtin: "general",
+      version: "1.0.1",
+      category: "Planning and productivity",
+      description: "Turn a goal into priorities, concrete steps and an achievable first action.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill to turn a goal, idea or problem into an actionable plan. Respond in the user's language. Identify the desired outcome and observable completion criteria, using their deadlines, resources and constraints. Make assumptions explicit rather than inventing commitments or availability.
+Break the work into three to seven useful steps or phases unless the scope requires otherwise. Start each with an action and specify its tangible result. Put prerequisites before dependent work, distinguish essential steps from optional improvements, and identify the main bottleneck or uncertainty. Do not assign real people commitments they have not made.
+Give time or effort estimates only with a reasonable basis and label approximate ranges. Include a proportionate checkpoint and a fallback for the main obstacle. Avoid elaborate project machinery for a simple task. Finish with one small action the user can take now.
+This skill produces a plan: never claim to have created tasks, sent messages, scheduled reminders or changed external systems unless an available tool actually completed the authorized action.`
+    },
+    {
+      id: "builtin-compare-and-choose",
+      name: "Compare & Choose",
+      builtin: "general",
+      version: "1.0.1",
+      category: "Thinking and decision-making",
+      description: "Compare alternatives against explicit criteria and recommend a choice suited to your needs.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill when the user is choosing among alternatives, approaches or proposals. Respond in their language. Frame the decision around their goal, constraints and priorities. Use their options; add another only when it fills a meaningful gap.
+Choose a small set of discriminating criteria and assess all options consistently. Use a compact table when it helps. Separate documented facts, reasoned judgments and unknowns. Do not invent current prices, specifications, availability, performance or source evidence. Identify missing facts that could change the choice.
+Explain practical tradeoffs and what the user gives up with each option. Avoid arbitrary scores and hidden weights. If scoring is requested, show the scale, assumptions and weights.
+Recommend the best fit with a concise rationale and the condition under which another option would win. If evidence is insufficient, give a conditional recommendation and one concrete way to resolve the uncertainty. Preserve the user's agency rather than treating preference as objective fact.`
+    },
+    {
+      id: "builtin-constructive-critic",
+      name: "Constructive Critic",
+      builtin: "general",
+      version: "1.0.1",
+      category: "Thinking and decision-making",
+      description: "Review a text, design or proposal and prioritize specific, practical improvements.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill for reviews, critiques, stress tests and improvements of texts, designs, arguments or proposals. Respond in the user's language. Judge the work against its intended purpose, audience and constraints. Base comments on supplied material; do not pretend to inspect an unavailable image or document.
+Identify strengths worth preserving, then prioritize the few issues that most affect the outcome. Distinguish factual or logical errors, missing evidence, usability problems and matters of taste. For each important issue, identify the specific passage or element, explain the consequence and suggest a concrete repair or example revision.
+Be candid without being dismissive. Critique the work, not the person. Do not invent problems to fill a quota, dilute serious flaws with automatic praise or rewrite away the author's intention. Consider a strong counterargument or likely failure scenario when appropriate.
+Finish with an ordered improvement sequence or the highest-value change. If the user asks for the revised artifact, deliver it rather than stopping at advice.`
+    },
+    {
+      id: "builtin-writing-partner",
+      name: "Writing Partner",
+      builtin: "general",
+      version: "1.0.1",
+      category: "Writing and communication",
+      description: "Draft and refine clear, purposeful writing while preserving your voice and intent.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill to draft, rewrite or polish emails, documents, presentations, posts and other prose. Match the user's language, audience, purpose, format and tone. Infer reasonable defaults; ask only if a missing detail would materially change the message.
+Deliver usable writing first. Organize it around the reader's needs, lead with the main point and make any request or next action explicit. Use concrete language, natural transitions and varied sentence length. Remove repetition, inflated claims and stock phrases. Preserve the author's voice instead of imposing generic business prose.
+Retain intended meaning, factual details, qualifications, names and commitments. Do not invent quotations, citations, achievements, statistics or promises. Use clearly marked placeholders for necessary missing details, and preserve accurate source attribution.
+Scale the intervention to the request: proofreading should not become a wholesale rewrite. Explain only consequential changes unless a detailed review is requested. Offer alternatives when they provide a useful difference in tone or emphasis. Preparing a message does not authorize sending or publishing it.`
+    },
+    {
+      id: "builtin-perspective-switcher",
+      name: "Perspective Switcher",
+      builtin: "general",
+      version: "1.0.1",
+      category: "Thinking and decision-making",
+      description: "Explore different viewpoints and see which assumptions change the conclusions.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill to examine a question from several viewpoints, understand disagreement or challenge one interpretation. Respond in the user's language. Choose three to five relevant perspectives: stakeholders, disciplines, time horizons or value priorities. Avoid artificial viewpoints added merely for symmetry.
+For each perspective, explain its central concern, assumptions, strongest reasoning and likely blind spot. Present positions a thoughtful advocate could recognize. Do not stereotype groups, claim to know a real person's beliefs or imply that a simulated viewpoint is a quotation or endorsement.
+Separate factual disagreements from differences in values, incentives and priorities. Weigh the evidence: fairness does not require giving unsupported claims the same credibility as well-supported ones. Identify shared ground and the assumptions whose revision would change the conclusions.
+End with a synthesis of what becomes clearer, what remains unresolved and how it affects the user's question or decision. Do not force agreement where real tradeoffs remain. When useful, identify one question or piece of evidence that could move the discussion forward.`
+    }
+  ];
+
+  // shared/chatSkills.ts
+  var DEFAULT_CHAT_SKILLS = [
+    {
+      id: "builtin-svg",
+      name: "SVG Studio",
+      builtin: "svg",
+      capabilities: ["nodus:svg"],
+      version: "1.0.1",
+      category: "Design and visual communication",
+      description: "Precise diagrams, explanatory drawings, maps, timelines and visual systems.",
+      enabled: { assistant: true, nodi: true },
+      instructions: `Use this skill when the user asks to draw, diagram, map, visualize, or explain spatial relationships, or when a precise visual would substantially clarify the answer. It applies across science, humanities, engineering, education, business, and creative work. Prefer SVG when exact labels, relationships, geometry, or editable line work matter. Honor an explicit request for SVG.
+Plan the visual before writing markup: identify the learning or communication goal, necessary objects, correct relationships, reading order, labels, and a generous layout. Choose a clear visual hierarchy, restrained harmonious colors, ample negative space, and typography that remains legible at chat width. Do not decorate at the expense of accuracy. For charts use supplied or calculated data only; label any illustrative data explicitly.
+Treat each legend row as two aligned cells: a fixed-size symbol area and a text area. Draw every symbol, including wedges and arrowheads, entirely inside its cell with at least 16 units of clearance from the legend border; align symbols to the visual center of their text. Check the full bounds of paths, strokes and markers, not just their starting coordinates. Reserve separate, non-overlapping regions for the diagram, legend and captions before drawing; enlarge the canvas instead of covering a node with the legend. Keep badges in empty space, never over labels, connectors or other cards. Keep junction labels visible, with a small clear gap before each connecting line. A triangular wedge has exactly three vertices; list polygon vertices in perimeter order to avoid crossed, bow-tie shapes. Use consistent per-element styling: broad CSS classes must not override a label's intended contrast or size. Trace each arrow from its intended source to its intended destination and confirm that its direction agrees with the explanation.
+Return one complete self-contained SVG in a fenced code block labeled svg. Nodus renders it as an interactive preview with enlarge, copy and download. Include xmlns="http://www.w3.org/2000/svg", a viewBox, a descriptive <title> and <desc>, explicit colors, and an intentional background. Use a canvas around 800\u20131200 units wide, labels generally at least 20 units, and at least 32 units of outer padding. Fit every label inside the viewBox; wrap text manually with tspan. Prefer a vertical legend with one short entry per row; never cram long explanations into a horizontal strip. Estimate text width before positioning: at 20 units in a typical sans-serif font, allow about 11 units per character, and wrap long labels. Keep explanatory paragraphs outside the drawing. Use basic SVG geometry, text, groups, gradients and local defs. No scripts, foreignObject, animation, external links, images, fonts, stylesheets, or executable content.
+Choose domain-appropriate conventions: circuit symbols for circuits; arrows and labeled dependencies for processes; and oriented and labeled axes for plots. When an installed package provides a verified drawing lane for the subject \u2014 molecular notation, for instance \u2014 leave that subject to it, even if the requested export is SVG; SVG Studio still draws everything outside that lane.
+Before returning, audit semantic correctness, counts, units, arrow direction, connectivity, label collisions, clipping, contrast, and completeness of XML. A missing source illustration is not a reason to withhold an original drawing. Cite any source-supported explanation outside the SVG; describe the figure as your own construction when appropriate.`
+    },
+    {
+      id: "builtin-image",
+      name: "Image Atelier",
+      builtin: "image",
+      capabilities: ["nodus:image"],
+      version: "1.0.1",
+      category: "Design and visual communication",
+      description: "Original illustrations, concept art and visual scenes using your image model.",
+      enabled: { assistant: true, nodi: true },
+      instructions: `Use this skill to fulfill requests for original images, illustrations, photographs, concept art, visual metaphors, or rich scenes. You write the creative brief; Nodus sends it to the image provider and model selected by the user in Settings. Do not claim the text model itself rendered an image. Use SVG Studio for exact diagrams or extensive labels unless the user specifically requests a generated image.
+Translate the request into a precise, polished English production prompt. Preserve every explicit constraint: subject, number of objects, relationships, format, style, mood, palette, setting, audience, and any exact visible wording in its original language. Improve underspecified composition and visual coherence without changing the user's intent. Specify focal hierarchy, framing, depth, lighting and materials when relevant, with deliberate negative space. Choose a visual treatment suited to the task; do not default every request to cinematic photography. Scientific and historical illustrations must avoid unsupported specificity; label conceptual reconstructions in the accompanying answer.
+Build a self-contained brief of roughly 100\u2013250 words: first the purpose and subjects, then their arrangement and distinguishing details, then art direction and lighting, then precise constraints and exclusions. Include only facts and context needed for this image, never wholesale private documents or unrelated vault contents. Request crisp, readable typography only when necessary and include exact text. Avoid unwanted logos, watermarks and extraneous text.
+Invoke generation by emitting a fenced code block labeled nodus-image containing ONLY a JSON object with string fields "title", "alt", and "prompt", plus an optional "aspectRatio" chosen from 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, or 2:3. Choose the requested aspect ratio or the closest supported one; use a composition-appropriate format when unspecified. title and alt should be in the user's language; prompt must be in English. Example: {"title":"A quiet observatory","alt":"An astronomer working beneath an open dome at dusk","prompt":"Create an editorial illustration ..."}. This is an executable image request, not an example to quote. Emit it only when you intend to generate, at most once per answer. Never fabricate a URL or replace generation with a description of an imaginary result. Nodus replaces the request with the actual image card, stores the prompt and chosen model, and reports any failure. Keep surrounding prose short and do not claim success before the image arrives.`
+    },
+    {
+      id: "builtin-socratic-tutor",
+      name: "Socratic Tutor",
+      builtin: "socratic",
+      version: "1.0.1",
+      category: "Learning and teaching",
+      description: "Guided learning through focused questions, progressive hints and personalized feedback.",
+      enabled: { assistant: false, nodi: false },
+      instructions: `Use this skill when the user wants to learn, practice, test their understanding, or work through a problem with guidance. It applies across disciplines and levels. Do not turn unrelated requests into lessons. Speak in the user's language and match their terminology, confidence and goals.
+Start from the topic, material and prior answers already available. If the goal is clear, begin with one useful diagnostic question or small exercise rather than a lengthy intake questionnaire. If a necessary detail is missing, ask one focused question. Ask one main question per turn and wait for the learner's response; never invent their answers or complete both sides of the dialogue.
+Guide reasoning in manageable steps. Connect each question to the learner's last answer and the next concept they need. Prefer concrete examples, counterexamples, comparisons and predictions over vague prompts such as "What do you think?" Adjust difficulty based on demonstrated understanding, not assumptions about the learner. Keep turns concise and avoid overwhelming them with a full lesson or several exercises at once.
+Give specific feedback: identify what is correct, explain any misconception respectfully, and offer the smallest useful hint before asking the next question. Do not endorse an incorrect answer to be encouraging. If the learner is stuck, provide progressively clearer hints; after repeated difficulty, explain or demonstrate the missing step instead of looping through questions. If they explicitly ask for the answer, a worked solution or a direct explanation, provide it without withholding it in the name of the method. Offer a brief check of understanding afterward only when useful.
+Use relevant vault evidence accurately and cite source-dependent claims. Distinguish supplied evidence from general knowledge, original examples and assumptions. Do not invent facts or citations, or demand that the sources contain a worked answer before teaching the underlying concept. Use an enabled visual skill only when a diagram would clarify the current learning step; do not reveal a whole solution through a visual while inviting the learner to discover it.
+When the learner demonstrates understanding, summarize the key idea in a few sentences and offer one short transfer exercise or a natural stopping point. Treat success as the learner being able to explain or apply the idea, not merely agreeing with you.`
+    },
+    ...GENERAL_CHAT_SKILLS
+  ];
+  var BUILTIN_SKILL_PACKAGES = Object.fromEntries(DEFAULT_CHAT_SKILLS.map((skill) => [skillSlug(skill.name), skill.id]));
+
+  // shared/pipelineLogMessages.ts
+  var PIPELINE_LOG_SUBJECTS = {
+    subjectExtraction: "Extracci\xF3n de texto",
+    subjectLibraryExtraction: "Extracci\xF3n de la Biblioteca",
+    subjectOcr: "OCR",
+    subjectModelCall: "Llamada al modelo",
+    subjectJsonResponse: "Respuesta JSON del modelo",
+    subjectEmbeddings: "Embeddings",
+    subjectIndexing: "Indexado de documentos",
+    subjectPassages: "Fragmentos de recuperaci\xF3n",
+    subjectProfileScan: "An\xE1lisis del documento",
+    subjectFigureAnalysis: "An\xE1lisis de figuras",
+    subjectScan: "An\xE1lisis con IA",
+    subjectPublish: "Publicaci\xF3n del \xEDndice",
+    subjectDatabase: "Base de datos",
+    subjectQueue: "Cola de trabajos",
+    subjectApp: "Aplicaci\xF3n"
+  };
+  var PIPELINE_LOG_REASONS = {
+    reasonNoAttachment: "el \xEDtem no tiene ning\xFAn adjunto legible",
+    reasonUnreadable: "el adjunto no se pudo leer",
+    reasonAbstractOnly: "solo hay resumen disponible",
+    reasonZoteroUnavailable: "Zotero no est\xE1 disponible",
+    reasonNoLegibleText: "no se encontr\xF3 texto legible en el documento",
+    reasonOcrLowQuality: "la calidad del OCR es insuficiente",
+    reasonProviderConfig: "falta la clave o el modelo de IA",
+    reasonSourceChanged: "el documento de origen cambi\xF3",
+    reasonUnsupportedFormat: "el formato del archivo no es compatible",
+    reasonCancelled: "el usuario cancel\xF3 el trabajo",
+    // Why a proposal the planner made never became a figure. A run that produced none
+    // because it refused them all must not read as a document that needed none, so every
+    // refusal names its motive instead of vanishing into an anonymous `continue`.
+    reasonUnknownBlock: "el bloque indicado no existe",
+    reasonHeadingBlock: "un t\xEDtulo no admite una figura",
+    reasonSkillNotEnabled: "la skill no estaba habilitada",
+    reasonSkillCeiling: "se alcanz\xF3 el m\xE1ximo de la skill",
+    reasonSourceNotInBlock: "la fuente citada no est\xE1 en ese bloque",
+    reasonBlockAlreadyFigured: "el bloque ya tiene una figura",
+    reasonDiscardNotSelected: "descartada al elegir las figuras del documento"
+  };
+  var PIPELINE_LOG_TEMPLATES = {
+    logDone: "{subject}: completado",
+    logFailed: "{subject}: error \u2014 {detail}",
+    logFailedPlain: "{subject}: error",
+    logWarning: "{subject}: aviso \u2014 {reason}",
+    logWarningDetail: "{subject}: aviso \u2014 {detail}",
+    logWarningPlain: "{subject}: aviso",
+    logInfo: "{subject}: {detail}",
+    logInfoPlain: "{subject}",
+    logRetry: "{subject}: error \u2014 reintentando ({attempt}/{max})",
+    logPaused: "{subject}: en pausa \u2014 {reason}",
+    logCancelled: "{subject}: cancelado",
+    logSkipped: "{subject}: omitido \u2014 {reason}",
+    logFallback: "{subject}: alternativa aplicada \u2014 {reason}"
+  };
+  var PIPELINE_LOG_EVENTS = {
+    documentExtracted: "Documento extra\xEDdo: {title} \xB7 {words} palabras \xB7 {figures} figuras \xB7 {tables} tablas",
+    documentExtractedReview: "Documento extra\xEDdo con avisos: {title} \xB7 {warnings}",
+    documentIndexed: "Documento indexado: {title} \xB7 {sections} secciones \xB7 {vectors} vectores",
+    campaignFinished: "Indexado terminado: {completed} de {total} documentos ({failed} con errores)",
+    passagesEmbedded: "Fragmentos indexados: {done} de {total}",
+    ideasEmbedded: "Ideas indexadas: {done} de {total}",
+    summariesEmbedded: "Res\xFAmenes indexados: {done} de {total}",
+    uncaughtFailure: "Fallo no controlado: {detail}",
+    repeatedGrouped: "Se agruparon {count} repeticiones id\xE9nticas",
+    burstDiscarded: "Se descartaron {count} entradas por l\xEDmite de r\xE1faga",
+    figuresDiscarded: "Recursos visuales descartados: {count} \u2014 {reason}"
+  };
+  var PIPELINE_LOG_TEXT = {
+    ...PIPELINE_LOG_SUBJECTS,
+    ...PIPELINE_LOG_REASONS,
+    ...PIPELINE_LOG_TEMPLATES,
+    ...PIPELINE_LOG_EVENTS
+  };
+
+  // shared/documentSkills.ts
+  function documentBlocks(fields) {
+    return Object.entries(fields).flatMap(([field, markdown]) => {
+      const chunks = [];
+      let current = [], fence = "";
+      const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+      for (const [lineIndex, line] of lines.entries()) {
+        const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+        if (marker) fence = fence && marker[0] === fence[0] && marker.length >= fence.length ? "" : fence || marker;
+        if (!fence && !line.trim()) {
+          if (current.length) chunks.push({ markdown: current.join("\n"), endLine: lineIndex });
+          current = [];
+        } else current.push(line);
+      }
+      if (current.length) chunks.push({ markdown: current.join("\n"), endLine: lines.length });
+      return chunks.map((content, index) => ({ id: `${field}:${index}`, field, index, ...content }));
+    });
+  }
+
+  // shared/toolkitMarkdown.ts
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function renderInline(text) {
+    const parts = [];
+    for (const chunk of text.split(/(`[^`]+`)/g)) {
+      if (chunk.startsWith("`") && chunk.endsWith("`") && chunk.length >= 2) {
+        parts.push(`<code>${escapeHtml(chunk.slice(1, -1))}</code>`);
+      } else {
+        parts.push(inlineEmphasis(escapeHtml(chunk)));
+      }
+    }
+    return parts.join("");
+  }
+  function inlineEmphasis(escaped) {
+    return escaped.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label, url) => `<a href="${safeHref(url)}">${label}</a>`).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>").replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
+  }
+  function safeHref(value) {
+    const href = String(value ?? "").trim();
+    if (/^(?:https?:\/\/|mailto:|#)/i.test(href)) return href;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return "#";
+    return href;
+  }
+  function isTableSeparator(line) {
+    return /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/.test(line);
+  }
+  function splitRow(line) {
+    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  }
+  function markdownToHtml(markdown) {
+    const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*```/.test(line)) {
+        const fence = line.trim().slice(3);
+        const buf2 = [];
+        i++;
+        while (i < lines.length && !/^\s*```/.test(lines[i])) buf2.push(lines[i++]);
+        i++;
+        const cls = fence.trim() ? ` class="language-${escapeHtml(fence.trim())}"` : "";
+        out.push(`<pre><code${cls}>${escapeHtml(buf2.join("\n"))}</code></pre>`);
+        continue;
+      }
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = heading[1].length;
+        out.push(`<h${level}>${renderInline(heading[2].trim())}</h${level}>`);
+        i++;
+        continue;
+      }
+      if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        out.push("<hr/>");
+        i++;
+        continue;
+      }
+      if (/^\s*\|.*\|/.test(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+        const header = splitRow(line);
+        i += 2;
+        const rows = [];
+        while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim()) rows.push(splitRow(lines[i++]));
+        const thead = `<thead><tr>${header.map((c) => `<th>${renderInline(c)}</th>`).join("")}</tr></thead>`;
+        const tbody = `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${renderInline(c)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+        out.push(`<table>${thead}${tbody}</table>`);
+        continue;
+      }
+      if (/^\s*[-*+]\s+/.test(line)) {
+        const items = [];
+        while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+          items.push(`<li>${renderInline(lines[i].replace(/^\s*[-*+]\s+/, ""))}</li>`);
+          i++;
+        }
+        out.push(`<ul>${items.join("")}</ul>`);
+        continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const start = Number(line.match(/^\s*(\d+)\./)?.[1] ?? "1");
+        const items = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          items.push(`<li>${renderInline(lines[i].replace(/^\s*\d+\.\s+/, ""))}</li>`);
+          i++;
+        }
+        out.push(`<ol${start === 1 ? "" : ` start="${start}"`}>${items.join("")}</ol>`);
+        continue;
+      }
+      if (/^\s*>\s?/.test(line)) {
+        const buf2 = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) buf2.push(lines[i++].replace(/^\s*>\s?/, ""));
+        out.push(`<blockquote>${renderInline(buf2.join(" "))}</blockquote>`);
+        continue;
+      }
+      if (!line.trim()) {
+        i++;
+        continue;
+      }
+      const buf = [];
+      while (i < lines.length && lines[i].trim() && !/^(#{1,6})\s/.test(lines[i]) && !/^\s*```/.test(lines[i]) && !/^\s*[-*+]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i]) && !/^\s*>\s?/.test(lines[i]) && !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[i])) {
+        buf.push(lines[i++]);
+      }
+      out.push(`<p>${renderInline(buf.join(" "))}</p>`);
+    }
+    return out.join("\n");
+  }
+
+  // shared/documentFigureExport.ts
+  var readyDocumentFigures = (manifest) => manifest?.figures.filter((figure) => figure.state === "ready" && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(figure.poster ?? "")).sort((a, b) => manifest.blocks.findIndex((block) => block.id === a.blockId) - manifest.blocks.findIndex((block) => block.id === b.blockId)) ?? [];
+  function figureHtml(figure, number) {
+    return `<figure class="report-figure"><img src="${figure.poster}" alt="${escapeHtml(figure.caption)}"/><figcaption><b>${number}.</b> ${escapeHtml(figure.caption)}${figure.sources.map((source, index) => /^nodus:\/\/[a-z-]+\//.test(source) ? ` <a href="${escapeHtml(source)}">[${index + 1}]</a>` : "").join("")}</figcaption></figure>`;
+  }
+  function documentFigureInsertions(markdown, field, manifest) {
+    const result = /* @__PURE__ */ new Map();
+    if (!manifest) return result;
+    const blocks = documentBlocks({ [field]: markdown }), saved = manifest.blocks.filter((block) => block.field === field);
+    const ready = readyDocumentFigures(manifest);
+    let cursor = 0;
+    for (const block of blocks) {
+      const index = saved.findIndex((candidate, index2) => index2 >= cursor && candidate.markdown === block.markdown);
+      if (index < 0) continue;
+      cursor = index + 1;
+      const figures = ready.filter((figure) => figure.blockId === saved[index].id);
+      if (figures.length) result.set(block.index, figures.map((figure) => figureHtml(figure, ready.indexOf(figure) + 1)).join(""));
+    }
+    return result;
+  }
+
+  // shared/writingDocument.ts
+  function stripLeadingAbstract(markdown, abstract) {
+    const lines = (markdown ?? "").replace(/\r\n?/g, "\n").split("\n");
+    const first = lines.findIndex((line) => line.trim().length > 0);
+    if (first < 0) return markdown;
+    const expected = (abstract ?? "").replace(/\s+/g, " ").trim();
+    if (!/^#{1,3}\s+/.test(lines[first])) {
+      let next2 = first + 1;
+      while (next2 < lines.length && lines[next2].trim().length > 0) next2 += 1;
+      const paragraph = lines.slice(first, next2).join(" ").replace(/\s+/g, " ").trim();
+      if (!expected || !paragraph.includes(expected.slice(0, Math.min(80, expected.length)))) return markdown;
+      while (next2 < lines.length && !lines[next2].trim()) next2 += 1;
+      return lines.slice(next2).join("\n").trim();
+    }
+    let next = first + 1;
+    while (next < lines.length && !/^#{1,3}\s+/.test(lines[next])) next++;
+    const block = lines.slice(first + 1, next).join(" ").replace(/\s+/g, " ").trim();
+    if (!expected || !block || !block.includes(expected.slice(0, Math.min(80, expected.length)))) return markdown;
+    return lines.slice(next).join("\n").trim();
+  }
+
+  // shared/professionalReport.ts
+  var DEEP_THEME = {
+    accent: "#4f46e5",
+    accentDark: "#312e81",
+    accentSoft: "#eef2ff",
+    accentRgb: [79 / 255, 70 / 255, 229 / 255]
+  };
+  var IMMERSION_THEME = {
+    accent: "#0f766e",
+    accentDark: "#134e4a",
+    accentSoft: "#ecfdf5",
+    accentRgb: [15 / 255, 118 / 255, 110 / 255]
+  };
+  var PROFESSIONAL_REPORT_THEMES = {
+    deepResearch: DEEP_THEME,
+    immersion: IMMERSION_THEME
+  };
+  function slug(value, fallback) {
+    const clean = value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70);
+    return clean || fallback;
+  }
+  function plainInline(value) {
+    return value.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
+  }
+  function anchoredMarkdown(markdown, prefix, insertions) {
+    const headings = [];
+    const ids = [];
+    const seen = /* @__PURE__ */ new Map();
+    for (const line of markdown.replace(/\r\n?/g, "\n").split("\n")) {
+      const match = /^(#{1,6})\s+(.+)$/.exec(line);
+      if (!match) continue;
+      const base = `${prefix}-${slug(plainInline(match[2]), "section")}`;
+      const count = (seen.get(base) ?? 0) + 1;
+      seen.set(base, count);
+      const id = count === 1 ? base : `${base}-${count}`;
+      ids.push(id);
+      if (match[1].length <= 3) headings.push({ id, title: plainInline(match[2]) });
+    }
+    let index = 0;
+    const sourceHtml = insertions?.size ? documentBlocks({ text: markdown }).map((block) => markdownToHtml(block.markdown) + (insertions.get(block.index) ?? "")).join("\n") : markdownToHtml(markdown);
+    const html = sourceHtml.replace(/<h([1-6])>/g, (_match, level) => {
+      const id = ids[index++] ?? `${prefix}-section-${index}`;
+      return `<h${level} id="${escapeHtml(id)}">`;
+    });
+    return { html, headings };
+  }
+  function reportLink(href, label, className = "") {
+    const safeHref2 = /^(?:https?:\/\/|nodus:\/\/|zotero:\/\/|#)/.test(href) ? href : "#";
+    return `<a${className ? ` class="${escapeHtml(className)}"` : ""} href="${escapeHtml(safeHref2)}">${escapeHtml(label)}</a>`;
+  }
+  function imageIsSafe(dataUrl) {
+    return !!dataUrl && /^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i.test(dataUrl);
+  }
+  function tocHtml(items) {
+    return `<ol class="toc-list">${items.map((item, index) => {
+      const children = item.children?.length ? `<ol class="toc-children">${item.children.map(
+        (child) => `<li><a href="#${escapeHtml(child.id)}"><span>${escapeHtml(child.title)}</span><i></i></a></li>`
+      ).join("")}</ol>` : "";
+      return `<li>
+      <a href="#${escapeHtml(item.id)}"><b>${String(index + 1).padStart(2, "0")}</b><span>${escapeHtml(item.title)}</span><i></i></a>
+      ${children}
+    </li>`;
+    }).join("")}</ol>`;
+  }
+  function sectionHtml(section) {
+    return `<section id="${escapeHtml(section.id)}" class="report-section ${section.pageBreakBefore ? "page-break" : ""} ${escapeHtml(section.className ?? "")}">
+    <header class="section-heading">
+      <span>${escapeHtml(section.number)}</span>
+      <div>
+        ${section.eyebrow ? `<p>${escapeHtml(section.eyebrow)}</p>` : ""}
+        <h2>${escapeHtml(section.title)}</h2>
+        ${section.lead ? `<div class="section-lead">${escapeHtml(section.lead)}</div>` : ""}
+      </div>
+    </header>
+    <div class="section-body">${section.html}</div>
+  </section>`;
+  }
+  function renderProfessionalReportHtml(input) {
+    const hasImage = imageIsSafe(input.imageDataUrl);
+    const image = hasImage ? `<figure class="cover-image"><img src="${input.imageDataUrl}" alt="" />${input.imageCredit ? `<figcaption>${escapeHtml(input.imageCredit)}</figcaption>` : ""}</figure>` : "";
+    const metrics = input.metrics?.length ? `<div class="cover-metrics">${input.metrics.map(
+      (metric) => `<div><strong>${escapeHtml(metric.value)}</strong><span>${escapeHtml(metric.label)}</span></div>`
+    ).join("")}</div>` : "";
+    const tocItems = input.sections.map((section) => ({
+      id: section.id,
+      title: section.title,
+      children: section.tocChildren
+    }));
+    return `<!doctype html>
+<html lang="${escapeHtml(input.language)}">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(input.title)}</title>
+  <style>
+    @page { size: A4; margin: 20mm 20mm 20mm; }
+    * { box-sizing: border-box; }
+    :root {
+      --accent: ${input.theme.accent};
+      --accent-dark: ${input.theme.accentDark};
+      --accent-soft: ${input.theme.accentSoft};
+      --ink: #182033;
+      --muted: #667085;
+      --line: #d9deea;
+      --paper-soft: #f7f8fb;
+    }
+    html { color: var(--ink); background: #fff; font-family: Georgia, "Times New Roman", serif; }
+    body { margin: 0; font-size: 10.7pt; line-height: 1.62; }
+    a { color: var(--accent-dark); text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 2px; overflow-wrap: anywhere; }
+    p { margin: 0 0 3.8mm; }
+    strong { color: #111827; }
+    .cover {
+      min-height: 245mm;
+      display: flex;
+      flex-direction: column;
+      break-after: page;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover-kicker {
+      margin-top: 7mm;
+      color: var(--accent);
+      font: 700 8.3pt/1.2 Arial, sans-serif;
+      letter-spacing: .19em;
+      text-transform: uppercase;
+    }
+    .cover-rule { width: 19mm; height: 1.4mm; margin: 5mm 0 8mm; border-radius: 99px; background: var(--accent); }
+    .cover h1 {
+      max-width: 165mm;
+      margin: 0;
+      color: var(--ink);
+      font: 700 30pt/1.07 Arial, sans-serif;
+      letter-spacing: -.035em;
+    }
+    .cover-subtitle { max-width: 150mm; margin: 5mm 0 0; color: var(--muted); font-size: 13pt; line-height: 1.48; }
+    .cover-image { margin: 10mm 0 0; background: #fff; }
+    /* Blurred shadows can be flattened as grey filter bounds by PDF viewers. */
+    .cover-image img {
+      display: block;
+      width: 100%;
+      height: 91mm;
+      object-fit: cover;
+      background: #fff;
+      border: .25mm solid #d9deea;
+      border-radius: 4mm;
+    }
+    .cover-image figcaption { margin-top: 2mm; color: var(--muted); font: italic 7.7pt/1.35 Georgia, serif; text-align: right; }
+    /* No picture: the title block sits in the upper third instead of hugging the top edge. */
+    .cover-plain .cover-kicker { margin-top: 46mm; }
+    .cover-plain .cover-subtitle { max-width: 138mm; margin-top: 7mm; }
+    .cover-meta {
+      margin-top: auto;
+      padding-top: 8mm;
+      border-top: .25mm solid var(--line);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8mm;
+      align-items: end;
+    }
+    .cover-meta dl { margin: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 3mm; row-gap: 1.2mm; }
+    .cover-meta dt { color: var(--muted); font: 700 7.4pt/1.35 Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+    .cover-meta dd { margin: 0; max-width: 110mm; font-size: 9pt; }
+    .cover-metrics { display: flex; gap: 2mm; }
+    .cover-metrics div { min-width: 22mm; padding: 2.5mm 3mm; border-radius: 2.3mm; background: var(--accent-soft); text-align: center; }
+    .cover-metrics strong { display: block; color: var(--accent-dark); font: 700 14pt/1 Arial, sans-serif; }
+    .cover-metrics span { display: block; margin-top: 1.2mm; color: var(--muted); font: 700 6.4pt/1.2 Arial, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+    .contents { break-after: page; padding-top: 5mm; }
+    .contents-kicker { color: var(--accent); font: 700 8pt/1.2 Arial, sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+    .contents h2 { margin: 2mm 0 10mm; font: 700 25pt/1.1 Arial, sans-serif; color: var(--ink); letter-spacing: -.025em; }
+    .toc-list, .toc-children { margin: 0; padding: 0; list-style: none; }
+    .toc-list > li { padding: 3.1mm 0; border-bottom: .25mm solid var(--line); }
+    .toc-list a { display: flex; align-items: baseline; gap: 3mm; color: var(--ink); font: 600 10.3pt/1.35 Arial, sans-serif; text-decoration: none; }
+    .toc-list a b { color: var(--accent); font-size: 8pt; letter-spacing: .08em; }
+    .toc-list a i { flex: 1; border-bottom: .25mm dotted #c5cad5; }
+    .toc-children { margin: 2mm 0 0 12mm; }
+    .toc-children li { margin: 1.2mm 0; }
+    .toc-children a { color: var(--muted); font-size: 8.6pt; font-weight: 500; }
+    .report-section { padding-top: 5mm; }
+    .report-section + .report-section { margin-top: 10mm; }
+    .report-section.page-break { break-before: page; }
+    .section-heading {
+      display: grid;
+      grid-template-columns: 13mm 1fr;
+      gap: 4mm;
+      align-items: start;
+      margin: 0 0 7mm;
+      break-after: avoid;
+    }
+    .section-heading > span {
+      display: grid;
+      width: 11mm;
+      height: 11mm;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      font: 700 8pt/1 Arial, sans-serif;
+    }
+    .section-heading p { margin: 0 0 1.3mm; color: var(--accent); font: 700 7pt/1.2 Arial, sans-serif; letter-spacing: .13em; text-transform: uppercase; }
+    .section-heading h2 { margin: 0; color: var(--accent-dark); font: 700 20pt/1.15 Arial, sans-serif; letter-spacing: -.02em; }
+    .section-lead { max-width: 145mm; margin-top: 2mm; color: var(--muted); font-size: 9.5pt; line-height: 1.48; }
+    .section-body { margin-left: 17mm; }
+    .report-section.exec-summary .section-heading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 2.5mm;
+    }
+    .report-section.exec-summary .section-body { margin-left: 0; }
+    .report-section.exec-summary .abstract-box { max-width: 150mm; margin: 0 auto; }
+    .report-figure { margin: 6mm auto; max-width: 100%; break-inside: avoid; text-indent: 0; }
+    .report-figure img { display: block; width: 100%; max-height: 210mm; object-fit: contain; }
+    .report-figure figcaption { margin-top: 2.5mm; font: 8.5pt/1.5 Georgia, serif; color: var(--muted); text-align: left; }
+    .report-figure figcaption b { color: var(--accent); }
+    .prose { color: #262d3d; }
+    .prose p { text-align: justify; text-indent: 1.35em; hyphens: auto; orphans: 3; widows: 3; }
+    .prose h1, .prose h2, .prose h3, .prose h4 {
+      margin: 8mm 0 3mm;
+      color: var(--accent-dark);
+      font-family: Arial, sans-serif;
+      line-height: 1.22;
+      break-after: avoid;
+    }
+    .prose h1 { padding-bottom: 2mm; border-bottom: .35mm solid color-mix(in srgb, var(--accent) 27%, white); font-size: 18pt; }
+    .prose h2 { font-size: 15pt; }
+    .prose h3 { font-size: 12pt; color: var(--accent); }
+    .prose h4 { font-size: 10.5pt; }
+    .prose h1:first-child, .prose h2:first-child, .prose h3:first-child { margin-top: 0; }
+    .prose h1 + p, .prose h2 + p, .prose h3 + p, .prose li p { text-indent: 0; }
+    .prose ul, .prose ol { margin: 0 0 4mm 5mm; padding-left: 5mm; }
+    .prose li { margin: 1.2mm 0; padding-left: 1.5mm; text-align: justify; }
+    .prose li::marker { color: var(--accent); font-weight: 700; }
+    blockquote {
+      margin: 5mm 0;
+      padding: 4mm 5mm;
+      border-left: 1.2mm solid var(--accent);
+      border-radius: 0 2.5mm 2.5mm 0;
+      background: var(--accent-soft);
+      color: #344054;
+      font-size: 9.8pt;
+      line-height: 1.58;
+      break-inside: avoid;
+    }
+    table { width: 100%; margin: 5mm 0; border-collapse: collapse; table-layout: fixed; font: 7.8pt/1.38 Arial, sans-serif; }
+    th { padding: 2.6mm; border: .25mm solid color-mix(in srgb, var(--accent) 23%, #d9deea); background: var(--accent-soft); color: var(--accent-dark); text-align: left; }
+    td { padding: 2.6mm; border: .25mm solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+    tr { break-inside: avoid; }
+    code { padding: .25mm 1mm; border-radius: 1mm; background: #f1f3f7; font: 8.7pt Consolas, monospace; }
+    pre { max-width: 100%; padding: 4mm; overflow-wrap: anywhere; white-space: pre-wrap; border-radius: 2mm; background: #161b2b; color: #f8fafc; }
+    .abstract-box, .question-box {
+      padding: 6mm;
+      border: .25mm solid color-mix(in srgb, var(--accent) 24%, #d9deea);
+      border-radius: 3mm;
+      background: linear-gradient(145deg, var(--accent-soft), #fff);
+    }
+    .abstract-box p, .question-box p { text-indent: 0; margin: 0; font-size: 11pt; line-height: 1.7; }
+    .question-box { margin-bottom: 5mm; }
+    .question-box small { display: block; margin-bottom: 1.5mm; color: var(--accent); font: 700 7pt/1.2 Arial, sans-serif; letter-spacing: .11em; text-transform: uppercase; }
+    .outline-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+      gap: 3.5mm;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: outline;
+    }
+    .outline-list > li { position: relative; padding: 4mm 4mm 4mm 14mm; border: .25mm solid var(--line); border-radius: 2.5mm; break-inside: avoid; counter-increment: outline; }
+    .outline-list > li::before { content: counter(outline, decimal-leading-zero); position: absolute; left: 4mm; top: 4.2mm; color: var(--accent); font: 700 8pt Arial, sans-serif; }
+    .outline-list h3 { margin: 0; color: var(--ink); font: 700 10.5pt/1.3 Arial, sans-serif; }
+    .outline-list p { margin: 1.2mm 0 0; color: var(--muted); font-size: 8.8pt; text-indent: 0; text-align: left; }
+    .claim-list { margin: 2mm 0 0; padding-left: 4mm; font-size: 8.3pt; }
+    .claim-list li { margin: .7mm 0; }
+    .source-pills { display: flex; flex-wrap: wrap; gap: 1.2mm; margin-top: 2mm; }
+    .source-pills span { padding: .8mm 1.8mm; border-radius: 99px; background: var(--paper-soft); color: var(--muted); font: 6.8pt/1.2 Arial, sans-serif; }
+    .evidence-grid { display: grid; gap: 3mm; }
+    .evidence-card { padding: 4mm; border: .25mm solid var(--line); border-left: 1mm solid var(--accent); border-radius: 2mm; break-inside: avoid; }
+    .evidence-card > span { color: var(--accent); font: 700 6.8pt/1.2 Arial, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+    .evidence-card h3 { margin: 1.3mm 0 2.5mm; color: var(--ink); font: 700 10pt/1.35 Arial, sans-serif; }
+    .evidence-card dl { display: grid; grid-template-columns: 21mm 1fr; gap: 1mm 3mm; margin: 0; font-size: 8.3pt; }
+    .evidence-card dt { color: var(--muted); font: 700 6.8pt/1.35 Arial, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+    .evidence-card dd { margin: 0; }
+    .evidence-table { width: 100%; margin: 0; border-collapse: collapse; table-layout: fixed; font: 8pt/1.42 Arial, sans-serif; }
+    .evidence-table th {
+      padding: 2.2mm 2.4mm;
+      border-bottom: .35mm solid color-mix(in srgb, var(--accent) 30%, #d9deea);
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      text-align: left;
+      font: 700 6.6pt/1.25 Arial, sans-serif;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+    .evidence-table td { padding: 2.3mm 2.4mm; border-bottom: .25mm solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+    .evidence-table tr { break-inside: avoid; }
+    .evidence-table .claim { color: var(--ink); font-weight: 700; }
+    .evidence-table .role-tag {
+      display: inline-block;
+      padding: .5mm 1.7mm;
+      border-radius: 99px;
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      font: 700 5.7pt/1.3 Arial, sans-serif;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      overflow-wrap: break-word;
+    }
+    .term-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+    .term-card { padding: 3.5mm; border: .25mm solid var(--line); border-radius: 2mm; break-inside: avoid; }
+    .term-card h3 { margin: 0 0 1mm; color: var(--accent-dark); font: 700 9.5pt/1.3 Arial, sans-serif; }
+    .term-card p { margin: 0; color: #475467; font-size: 8.5pt; line-height: 1.45; text-indent: 0; text-align: left; }
+    .section-body > h3 {
+      margin: 6mm 0 2.5mm;
+      color: var(--accent-dark);
+      font: 700 11pt/1.3 Arial, sans-serif;
+      break-after: avoid;
+    }
+    .source-card { margin: 4mm 0; padding: 4mm; border: .25mm solid var(--line); border-radius: 2.5mm; break-inside: avoid; }
+    .source-card blockquote { margin: 0 0 2.5mm; padding: 0 0 0 4mm; border-radius: 0; background: transparent; font-style: italic; }
+    .source-card footer { color: var(--muted); font: 7.8pt/1.4 Arial, sans-serif; }
+    .source-card .commentary { margin: 2.5mm 0 0; padding-top: 2.5mm; border-top: .25mm solid var(--line); font-size: 8.8pt; text-indent: 0; }
+    .takeaway-list { margin-top: 3mm; padding: 4mm 5mm; border-radius: 2.5mm; background: var(--accent-soft); }
+    .takeaway-list h3 { margin: 0 0 2mm; color: var(--accent-dark); font: 700 9pt Arial, sans-serif; }
+    .takeaway-list ul { margin-bottom: 0; }
+    .reference-list { padding-left: 5mm; }
+    .reference-list li { margin: 2mm 0; padding-left: 1mm; font-size: 8.7pt; }
+    .muted { color: var(--muted); }
+    .no-indent, .no-indent p { text-indent: 0 !important; }
+    @media print {
+      a { color: var(--accent-dark); }
+      /* UIKit's WebKit print formatter still uses the legacy fragmentation
+         properties. Keep them alongside the modern rules used by Chromium. */
+      thead { display: table-header-group; }
+      tfoot { display: table-footer-group; }
+      tr, .report-figure, blockquote, .outline-list > li,
+      .evidence-card, .term-card, .source-card { page-break-inside: avoid; }
+      .prose h1, .prose h2, .prose h3, .prose h4,
+      .section-heading, .section-body > h3 { page-break-after: avoid; }
+      /* Keep the facts with the title even when a long title needs four lines.
+         The illustration takes the remaining space instead of pushing the footer
+         onto a separate, almost empty page. Both Chromium and WebKit use this. */
+      .cover { height: 245mm; min-height: 0; }
+      .cover > :not(.cover-image) { flex-shrink: 0; }
+      .cover-image { display: flex; flex-direction: column; flex: 1 1 91mm; min-height: 24mm; }
+      .cover-image img { flex: 1 1 auto; height: 0; min-height: 0; }
+      .cover-image figcaption { flex-shrink: 0; }
+      .report-section, .source-card, .evidence-card, .term-card { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="cover${hasImage ? "" : " cover-plain"}">
+      <div class="cover-kicker">${escapeHtml(input.kindLabel)}</div>
+      <div class="cover-rule"></div>
+      <h1>${escapeHtml(input.title)}</h1>
+      ${input.subtitle ? `<p class="cover-subtitle">${escapeHtml(input.subtitle)}</p>` : ""}
+      ${image}
+      <div class="cover-meta">
+        <dl>
+          <dt>${escapeHtml(input.generatedLabel)}</dt><dd>${escapeHtml(input.generatedAt)}</dd>
+          ${input.objectiveLabel && input.objective ? `<dt>${escapeHtml(input.objectiveLabel)}</dt><dd>${escapeHtml(input.objective)}</dd>` : ""}
+        </dl>
+        ${metrics}
+      </div>
+    </section>
+    <nav class="contents" aria-label="${escapeHtml(input.contentsLabel)}">
+      <div class="contents-kicker">NODUS</div>
+      <h2>${escapeHtml(input.contentsLabel)}</h2>
+      ${tocHtml(tocItems)}
+    </nav>
+    ${input.sections.map(sectionHtml).join("\n")}
+  </main>
+</body>
+</html>`;
+  }
+
+  // shared/deepResearchReport.ts
+  var DEEP_LABELS = {
+    es: {
+      kind: "Informe profesional \xB7 Deep Research",
+      contents: "Contenido",
+      generated: "Generado",
+      objective: "Objetivo",
+      summary: "Resumen ejecutivo",
+      summaryEyebrow: "S\xEDntesis",
+      outline: "Esquema de investigaci\xF3n",
+      outlineEyebrow: "Arquitectura del informe",
+      report: "Informe",
+      reportEyebrow: "Desarrollo",
+      recommendations: "Siguientes pasos",
+      recommendationsEyebrow: "Recomendaciones",
+      traceability: "Matriz de trazabilidad",
+      traceabilityEyebrow: "Evidencia y enlaces",
+      sections: "secciones",
+      sources: "fuentes",
+      words: "palabras",
+      imageAi: "Imagen de portada generada por IA en Nodus.",
+      imageCustom: "Imagen de portada aportada por el usuario.",
+      claims: "Afirmaciones clave",
+      role: "Rol",
+      claim: "Afirmaci\xF3n",
+      source: "Fuente",
+      evidence: "Evidencia",
+      notes: "Notas"
+    },
+    en: {
+      kind: "Professional report \xB7 Deep Research",
+      contents: "Contents",
+      generated: "Generated",
+      objective: "Objective",
+      summary: "Executive summary",
+      summaryEyebrow: "Synthesis",
+      outline: "Research outline",
+      outlineEyebrow: "Report architecture",
+      report: "Report",
+      reportEyebrow: "Analysis",
+      recommendations: "Next steps",
+      recommendationsEyebrow: "Recommendations",
+      traceability: "Evidence matrix",
+      traceabilityEyebrow: "Evidence and links",
+      sections: "sections",
+      sources: "sources",
+      words: "words",
+      imageAi: "Cover image generated with AI in Nodus.",
+      imageCustom: "Cover image provided by the user.",
+      claims: "Key claims",
+      role: "Role",
+      claim: "Claim",
+      source: "Source",
+      evidence: "Evidence",
+      notes: "Notes"
+    },
+    fr: {
+      kind: "Rapport professionnel \xB7 Deep Research",
+      contents: "Sommaire",
+      generated: "G\xE9n\xE9r\xE9",
+      objective: "Objectif",
+      summary: "R\xE9sum\xE9 ex\xE9cutif",
+      summaryEyebrow: "Synth\xE8se",
+      outline: "Plan de recherche",
+      outlineEyebrow: "Architecture du rapport",
+      report: "Rapport",
+      reportEyebrow: "Analyse",
+      recommendations: "Prochaines \xE9tapes",
+      recommendationsEyebrow: "Recommandations",
+      traceability: "Matrice de tra\xE7abilit\xE9",
+      traceabilityEyebrow: "Preuves et liens",
+      sections: "sections",
+      sources: "sources",
+      words: "mots",
+      imageAi: "Image de couverture g\xE9n\xE9r\xE9e par IA dans Nodus.",
+      imageCustom: "Image de couverture fournie par l\u2019utilisateur.",
+      claims: "Affirmations cl\xE9s",
+      role: "R\xF4le",
+      claim: "Affirmation",
+      source: "Source",
+      evidence: "Preuve",
+      notes: "Notes"
+    },
+    tr: {
+      kind: "Profesyonel rapor \xB7 Deep Research",
+      contents: "\u0130\xE7indekiler",
+      generated: "Olu\u015Fturulma",
+      objective: "Ama\xE7",
+      summary: "Y\xF6netici \xF6zeti",
+      summaryEyebrow: "Sentez",
+      outline: "Ara\u015Ft\u0131rma plan\u0131",
+      outlineEyebrow: "Rapor mimarisi",
+      report: "Rapor",
+      reportEyebrow: "Analiz",
+      recommendations: "Sonraki ad\u0131mlar",
+      recommendationsEyebrow: "\xD6neriler",
+      traceability: "\u0130zlenebilirlik matrisi",
+      traceabilityEyebrow: "Kan\u0131t ve ba\u011Flant\u0131lar",
+      sections: "b\xF6l\xFCm",
+      sources: "kaynak",
+      words: "kelime",
+      imageAi: "Kapak g\xF6rseli Nodus\u2019ta yapay zek\xE2 ile olu\u015Fturuldu.",
+      imageCustom: "Kapak g\xF6rseli kullan\u0131c\u0131 taraf\u0131ndan sa\u011Fland\u0131.",
+      claims: "Temel iddialar",
+      role: "Rol",
+      claim: "\u0130ddia",
+      source: "Kaynak",
+      evidence: "Kan\u0131t",
+      notes: "Notlar"
+    },
+    "zh-Hans": {
+      kind: "\u4E13\u4E1A\u62A5\u544A \xB7 Deep Research",
+      contents: "\u76EE\u5F55",
+      generated: "\u751F\u6210\u65E5\u671F",
+      objective: "\u76EE\u6807",
+      summary: "\u6267\u884C\u6458\u8981",
+      summaryEyebrow: "\u7EFC\u5408",
+      outline: "\u7814\u7A76\u5927\u7EB2",
+      outlineEyebrow: "\u62A5\u544A\u67B6\u6784",
+      report: "\u62A5\u544A",
+      reportEyebrow: "\u9610\u8FF0",
+      recommendations: "\u540E\u7EED\u6B65\u9AA4",
+      recommendationsEyebrow: "\u5EFA\u8BAE",
+      traceability: "\u6EAF\u6E90\u77E9\u9635",
+      traceabilityEyebrow: "\u8BC1\u636E\u4E0E\u94FE\u63A5",
+      sections: "\u8282",
+      sources: "\u6765\u6E90",
+      words: "\u5B57\u6570",
+      imageAi: "\u7531 Nodus \u4E2D\u7684\u4EBA\u5DE5\u667A\u80FD\u751F\u6210\u7684\u5C01\u9762\u56FE\u7247\u3002",
+      imageCustom: "\u7528\u6237\u63D0\u4F9B\u7684\u5C01\u9762\u56FE\u7247\u3002",
+      claims: "\u5173\u952E\u8BBA\u65AD",
+      role: "\u89D2\u8272",
+      claim: "\u8BBA\u65AD",
+      source: "\u6765\u6E90",
+      evidence: "\u8BC1\u636E",
+      notes: "\u5907\u6CE8"
+    },
+    "zh-Hant": {
+      kind: "\u5C08\u696D\u5831\u544A \xB7 Deep Research",
+      contents: "\u76EE\u9304",
+      generated: "\u7522\u751F\u65E5\u671F",
+      objective: "\u76EE\u6A19",
+      summary: "\u57F7\u884C\u6458\u8981",
+      summaryEyebrow: "\u7D9C\u5408",
+      outline: "\u7814\u7A76\u5927\u7DB1",
+      outlineEyebrow: "\u5831\u544A\u67B6\u69CB",
+      report: "\u5831\u544A",
+      reportEyebrow: "\u95E1\u8FF0",
+      recommendations: "\u5F8C\u7E8C\u6B65\u9A5F",
+      recommendationsEyebrow: "\u5EFA\u8B70",
+      traceability: "\u8FFD\u6EAF\u77E9\u9663",
+      traceabilityEyebrow: "\u8B49\u64DA\u8207\u9023\u7D50",
+      sections: "\u7BC0",
+      sources: "\u4F86\u6E90",
+      words: "\u5B57\u6578",
+      imageAi: "\u7531 Nodus \u4E2D\u7684\u4EBA\u5DE5\u667A\u6167\u7522\u751F\u7684\u5C01\u9762\u5716\u7247\u3002",
+      imageCustom: "\u4F7F\u7528\u8005\u63D0\u4F9B\u7684\u5C01\u9762\u5716\u7247\u3002",
+      claims: "\u95DC\u9375\u8AD6\u65B7",
+      role: "\u89D2\u8272",
+      claim: "\u8AD6\u65B7",
+      source: "\u4F86\u6E90",
+      evidence: "\u8B49\u64DA",
+      notes: "\u5099\u8A3B"
+    },
+    vi: {
+      kind: "B\xE1o c\xE1o chuy\xEAn nghi\u1EC7p \xB7 Deep Research",
+      contents: "M\u1EE5c l\u1EE5c",
+      generated: "\u0110\xE3 t\u1EA1o",
+      objective: "M\u1EE5c ti\xEAu",
+      summary: "T\xF3m t\u1EAFt \u0111i\u1EC1u h\xE0nh",
+      summaryEyebrow: "T\u1ED5ng h\u1EE3p",
+      outline: "\u0110\u1EC1 c\u01B0\u01A1ng nghi\xEAn c\u1EE9u",
+      outlineEyebrow: "Ki\u1EBFn tr\xFAc b\xE1o c\xE1o",
+      report: "B\xE1o c\xE1o",
+      reportEyebrow: "Ph\xE2n t\xEDch",
+      recommendations: "C\xE1c b\u01B0\u1EDBc ti\u1EBFp theo",
+      recommendationsEyebrow: "Khuy\u1EBFn ngh\u1ECB",
+      traceability: "Ma tr\u1EADn truy v\u1EBFt",
+      traceabilityEyebrow: "B\u1EB1ng ch\u1EE9ng v\xE0 li\xEAn k\u1EBFt",
+      sections: "ph\u1EA7n",
+      sources: "ngu\u1ED3n",
+      words: "t\u1EEB",
+      imageAi: "\u1EA2nh b\xECa \u0111\u01B0\u1EE3c t\u1EA1o b\u1EB1ng AI trong Nodus.",
+      imageCustom: "\u1EA2nh b\xECa do ng\u01B0\u1EDDi d\xF9ng cung c\u1EA5p.",
+      claims: "Kh\u1EB3ng \u0111\u1ECBnh ch\xEDnh",
+      role: "Vai tr\xF2",
+      claim: "Kh\u1EB3ng \u0111\u1ECBnh",
+      source: "Ngu\u1ED3n",
+      evidence: "B\u1EB1ng ch\u1EE9ng",
+      notes: "Ghi ch\xFA"
+    },
+    ja: {
+      kind: "\u30D7\u30ED\u30D5\u30A7\u30C3\u30B7\u30E7\u30CA\u30EB\u30EC\u30DD\u30FC\u30C8 \xB7 Deep Research",
+      contents: "\u76EE\u6B21",
+      generated: "\u4F5C\u6210\u65E5",
+      objective: "\u76EE\u7684",
+      summary: "\u30A8\u30B0\u30BC\u30AF\u30C6\u30A3\u30D6\u30B5\u30DE\u30EA\u30FC",
+      summaryEyebrow: "\u7DCF\u5408",
+      outline: "\u8ABF\u67FB\u306E\u69CB\u6210",
+      outlineEyebrow: "\u30EC\u30DD\u30FC\u30C8\u306E\u8A2D\u8A08",
+      report: "\u30EC\u30DD\u30FC\u30C8",
+      reportEyebrow: "\u5206\u6790",
+      recommendations: "\u6B21\u306E\u30B9\u30C6\u30C3\u30D7",
+      recommendationsEyebrow: "\u63D0\u8A00",
+      traceability: "\u30C8\u30EC\u30FC\u30B5\u30D3\u30EA\u30C6\u30A3\u30FB\u30DE\u30C8\u30EA\u30AF\u30B9",
+      traceabilityEyebrow: "\u30A8\u30D3\u30C7\u30F3\u30B9\u3068\u30EA\u30F3\u30AF",
+      sections: "\u30BB\u30AF\u30B7\u30E7\u30F3",
+      sources: "\u51FA\u5178",
+      words: "\u8A9E\u6570",
+      imageAi: "Nodus \u3067 AI \u306B\u3088\u308A\u751F\u6210\u3055\u308C\u305F\u30AB\u30D0\u30FC\u753B\u50CF\u3002",
+      imageCustom: "\u30E6\u30FC\u30B6\u30FC\u304C\u63D0\u4F9B\u3057\u305F\u30AB\u30D0\u30FC\u753B\u50CF\u3002",
+      claims: "\u4E3B\u8981\u306A\u4E3B\u5F35",
+      role: "\u5F79\u5272",
+      claim: "\u4E3B\u5F35",
+      source: "\u51FA\u5178",
+      evidence: "\u30A8\u30D3\u30C7\u30F3\u30B9",
+      notes: "\u30E1\u30E2"
+    },
+    ru: {
+      kind: "\u041F\u0440\u043E\u0444\u0435\u0441\u0441\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u044B\u0439 \u043E\u0442\u0447\u0451\u0442 \xB7 Deep Research",
+      contents: "\u0421\u043E\u0434\u0435\u0440\u0436\u0430\u043D\u0438\u0435",
+      generated: "\u0421\u043E\u0437\u0434\u0430\u043D\u043E",
+      objective: "\u0426\u0435\u043B\u044C",
+      summary: "\u0420\u0435\u0437\u044E\u043C\u0435 \u0434\u043B\u044F \u0440\u0443\u043A\u043E\u0432\u043E\u0434\u0441\u0442\u0432\u0430",
+      summaryEyebrow: "\u0421\u0438\u043D\u0442\u0435\u0437",
+      outline: "\u0421\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 \u0438\u0441\u0441\u043B\u0435\u0434\u043E\u0432\u0430\u043D\u0438\u044F",
+      outlineEyebrow: "\u0410\u0440\u0445\u0438\u0442\u0435\u043A\u0442\u0443\u0440\u0430 \u043E\u0442\u0447\u0451\u0442\u0430",
+      report: "\u041E\u0442\u0447\u0451\u0442",
+      reportEyebrow: "\u0410\u043D\u0430\u043B\u0438\u0437",
+      recommendations: "\u0421\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0435 \u0448\u0430\u0433\u0438",
+      recommendationsEyebrow: "\u0420\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u0438",
+      traceability: "\u041C\u0430\u0442\u0440\u0438\u0446\u0430 \u043F\u0440\u043E\u0441\u043B\u0435\u0436\u0438\u0432\u0430\u0435\u043C\u043E\u0441\u0442\u0438",
+      traceabilityEyebrow: "\u0414\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u0441\u0442\u0432\u0430 \u0438 \u0441\u0441\u044B\u043B\u043A\u0438",
+      sections: "\u0440\u0430\u0437\u0434\u0435\u043B\u043E\u0432",
+      sources: "\u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u043E\u0432",
+      words: "\u0441\u043B\u043E\u0432",
+      imageAi: "\u041E\u0431\u043B\u043E\u0436\u043A\u0430 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0430 \u0418\u0418 \u0432 Nodus.",
+      imageCustom: "\u041E\u0431\u043B\u043E\u0436\u043A\u0430 \u043F\u0440\u0435\u0434\u043E\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u0430 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C.",
+      claims: "\u041A\u043B\u044E\u0447\u0435\u0432\u044B\u0435 \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F",
+      role: "\u0420\u043E\u043B\u044C",
+      claim: "\u0423\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435",
+      source: "\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A",
+      evidence: "\u0414\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u0441\u0442\u0432\u043E",
+      notes: "\u0417\u0430\u043C\u0435\u0442\u043A\u0438"
+    },
+    uk: {
+      kind: "\u041F\u0440\u043E\u0444\u0435\u0441\u0456\u0439\u043D\u0438\u0439 \u0437\u0432\u0456\u0442 \xB7 Deep Research",
+      contents: "\u0417\u043C\u0456\u0441\u0442",
+      generated: "\u0421\u0442\u0432\u043E\u0440\u0435\u043D\u043E",
+      objective: "\u041C\u0435\u0442\u0430",
+      summary: "\u0420\u0435\u0437\u044E\u043C\u0435 \u0434\u043B\u044F \u043A\u0435\u0440\u0456\u0432\u043D\u0438\u0446\u0442\u0432\u0430",
+      summaryEyebrow: "\u0421\u0438\u043D\u0442\u0435\u0437",
+      outline: "\u0421\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u0430 \u0434\u043E\u0441\u043B\u0456\u0434\u0436\u0435\u043D\u043D\u044F",
+      outlineEyebrow: "\u0410\u0440\u0445\u0456\u0442\u0435\u043A\u0442\u0443\u0440\u0430 \u0437\u0432\u0456\u0442\u0443",
+      report: "\u0417\u0432\u0456\u0442",
+      reportEyebrow: "\u0410\u043D\u0430\u043B\u0456\u0437",
+      recommendations: "\u041D\u0430\u0441\u0442\u0443\u043F\u043D\u0456 \u043A\u0440\u043E\u043A\u0438",
+      recommendationsEyebrow: "\u0420\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0456\u0457",
+      traceability: "\u041C\u0430\u0442\u0440\u0438\u0446\u044F \u043F\u0440\u043E\u0441\u0442\u0435\u0436\u0443\u0432\u0430\u043D\u043E\u0441\u0442\u0456",
+      traceabilityEyebrow: "\u0414\u043E\u043A\u0430\u0437\u0438 \u0442\u0430 \u043F\u043E\u0441\u0438\u043B\u0430\u043D\u043D\u044F",
+      sections: "\u0440\u043E\u0437\u0434\u0456\u043B\u0456\u0432",
+      sources: "\u0434\u0436\u0435\u0440\u0435\u043B",
+      words: "\u0441\u043B\u0456\u0432",
+      imageAi: "\u041E\u0431\u043A\u043B\u0430\u0434\u0438\u043D\u043A\u0443 \u0437\u0433\u0435\u043D\u0435\u0440\u043E\u0432\u0430\u043D\u043E \u0428\u0406 \u0432 Nodus.",
+      imageCustom: "\u041E\u0431\u043A\u043B\u0430\u0434\u0438\u043D\u043A\u0443 \u043D\u0430\u0434\u0430\u0432 \u043A\u043E\u0440\u0438\u0441\u0442\u0443\u0432\u0430\u0447.",
+      claims: "\u041A\u043B\u044E\u0447\u043E\u0432\u0456 \u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043D\u043D\u044F",
+      role: "\u0420\u043E\u043B\u044C",
+      claim: "\u0422\u0432\u0435\u0440\u0434\u0436\u0435\u043D\u043D\u044F",
+      source: "\u0414\u0436\u0435\u0440\u0435\u043B\u043E",
+      evidence: "\u0414\u043E\u043A\u0430\u0437",
+      notes: "\u041D\u043E\u0442\u0430\u0442\u043A\u0438"
+    },
+    ko: {
+      kind: "\uC804\uBB38 \uBCF4\uACE0\uC11C \xB7 Deep Research",
+      contents: "\uBAA9\uCC28",
+      generated: "\uC0DD\uC131\uC77C",
+      objective: "\uBAA9\uD45C",
+      summary: "\uD575\uC2EC \uC694\uC57D",
+      summaryEyebrow: "\uC885\uD569",
+      outline: "\uC5F0\uAD6C \uAC1C\uC694",
+      outlineEyebrow: "\uBCF4\uACE0\uC11C \uAD6C\uC870",
+      report: "\uBCF4\uACE0\uC11C",
+      reportEyebrow: "\uBD84\uC11D",
+      recommendations: "\uB2E4\uC74C \uB2E8\uACC4",
+      recommendationsEyebrow: "\uAD8C\uACE0 \uC0AC\uD56D",
+      traceability: "\uCD94\uC801\uC131 \uB9E4\uD2B8\uB9AD\uC2A4",
+      traceabilityEyebrow: "\uC99D\uAC70\uC640 \uB9C1\uD06C",
+      sections: "\uC808",
+      sources: "\uCD9C\uCC98",
+      words: "\uB2E8\uC5B4",
+      imageAi: "Nodus\uC5D0\uC11C AI\uB85C \uC0DD\uC131\uD55C \uD45C\uC9C0 \uC774\uBBF8\uC9C0\uC785\uB2C8\uB2E4.",
+      imageCustom: "\uC0AC\uC6A9\uC790\uAC00 \uC81C\uACF5\uD55C \uD45C\uC9C0 \uC774\uBBF8\uC9C0\uC785\uB2C8\uB2E4.",
+      claims: "\uD575\uC2EC \uC8FC\uC7A5",
+      role: "\uC5ED\uD560",
+      claim: "\uC8FC\uC7A5",
+      source: "\uCD9C\uCC98",
+      evidence: "\uC99D\uAC70",
+      notes: "\uBA54\uBAA8"
+    },
+    de: {
+      kind: "Professioneller Bericht \xB7 Deep Research",
+      contents: "Inhalt",
+      generated: "Erstellt",
+      objective: "Ziel",
+      summary: "Zusammenfassung",
+      summaryEyebrow: "Synthese",
+      outline: "Forschungsstruktur",
+      outlineEyebrow: "Berichtsarchitektur",
+      report: "Bericht",
+      reportEyebrow: "Analyse",
+      recommendations: "N\xE4chste Schritte",
+      recommendationsEyebrow: "Empfehlungen",
+      traceability: "Nachweismatrix",
+      traceabilityEyebrow: "Evidenz und Links",
+      sections: "Abschnitte",
+      sources: "Quellen",
+      words: "W\xF6rter",
+      imageAi: "Titelbild mit KI in Nodus generiert.",
+      imageCustom: "Titelbild vom Benutzer bereitgestellt.",
+      claims: "Kernaussagen",
+      role: "Rolle",
+      claim: "Aussage",
+      source: "Quelle",
+      evidence: "Evidenz",
+      notes: "Notizen"
+    },
+    pt: {
+      kind: "Relat\xF3rio profissional \xB7 Deep Research",
+      contents: "Conte\xFAdo",
+      generated: "Gerado",
+      objective: "Objetivo",
+      summary: "Resumo executivo",
+      summaryEyebrow: "S\xEDntese",
+      outline: "Esquema de investiga\xE7\xE3o",
+      outlineEyebrow: "Arquitetura do relat\xF3rio",
+      report: "Relat\xF3rio",
+      reportEyebrow: "An\xE1lise",
+      recommendations: "Pr\xF3ximos passos",
+      recommendationsEyebrow: "Recomenda\xE7\xF5es",
+      traceability: "Matriz de rastreabilidade",
+      traceabilityEyebrow: "Evid\xEAncia e liga\xE7\xF5es",
+      sections: "sec\xE7\xF5es",
+      sources: "fontes",
+      words: "palavras",
+      imageAi: "Imagem de capa gerada por IA no Nodus.",
+      imageCustom: "Imagem de capa fornecida pelo utilizador.",
+      claims: "Afirma\xE7\xF5es-chave",
+      role: "Papel",
+      claim: "Afirma\xE7\xE3o",
+      source: "Fonte",
+      evidence: "Evid\xEAncia",
+      notes: "Notas"
+    },
+    "pt-BR": {
+      kind: "Relat\xF3rio profissional \xB7 Deep Research",
+      contents: "Conte\xFAdo",
+      generated: "Gerado",
+      objective: "Objetivo",
+      summary: "Resumo executivo",
+      summaryEyebrow: "S\xEDntese",
+      outline: "Estrutura da pesquisa",
+      outlineEyebrow: "Arquitetura do relat\xF3rio",
+      report: "Relat\xF3rio",
+      reportEyebrow: "An\xE1lise",
+      recommendations: "Pr\xF3ximos passos",
+      recommendationsEyebrow: "Recomenda\xE7\xF5es",
+      traceability: "Matriz de rastreabilidade",
+      traceabilityEyebrow: "Evid\xEAncias e links",
+      sections: "se\xE7\xF5es",
+      sources: "fontes",
+      words: "palavras",
+      imageAi: "Imagem de capa gerada por IA no Nodus.",
+      imageCustom: "Imagem de capa fornecida pelo usu\xE1rio.",
+      claims: "Afirma\xE7\xF5es-chave",
+      role: "Papel",
+      claim: "Afirma\xE7\xE3o",
+      source: "Fonte",
+      evidence: "Evid\xEAncia",
+      notes: "Notas"
+    },
+    it: {
+      kind: "Relazione professionale \xB7 Deep Research",
+      contents: "Indice",
+      generated: "Generato",
+      objective: "Obiettivo",
+      summary: "Sintesi esecutiva",
+      summaryEyebrow: "Sintesi",
+      outline: "Schema della ricerca",
+      outlineEyebrow: "Architettura della relazione",
+      report: "Relazione",
+      reportEyebrow: "Analisi",
+      recommendations: "Passi successivi",
+      recommendationsEyebrow: "Raccomandazioni",
+      traceability: "Matrice di tracciabilit\xE0",
+      traceabilityEyebrow: "Evidenze e collegamenti",
+      sections: "sezioni",
+      sources: "fonti",
+      words: "parole",
+      imageAi: "Immagine di copertina generata con l\u2019IA in Nodus.",
+      imageCustom: "Immagine di copertina fornita dall\u2019utente.",
+      claims: "Affermazioni chiave",
+      role: "Ruolo",
+      claim: "Affermazione",
+      source: "Fonte",
+      evidence: "Evidenza",
+      notes: "Note"
+    }
+  };
+  function localizedDate(iso, language) {
+    try {
+      return new Intl.DateTimeFormat(language, { day: "2-digit", month: "long", year: "numeric" }).format(new Date(iso));
+    } catch {
+      return iso;
+    }
+  }
+  function matrixHtml(rows, labels) {
+    if (!rows.length) return "";
+    const head = `<colgroup><col style="width:20mm" /><col /><col style="width:26mm" /><col /><col style="width:26mm" /></colgroup>
+    <thead><tr>
+      <th>${escapeCellHtml(labels.role)}</th>
+      <th>${escapeCellHtml(labels.claim)}</th>
+      <th>${escapeCellHtml(labels.source)}</th>
+      <th>${escapeCellHtml(labels.evidence)}</th>
+      <th>${escapeCellHtml(labels.notes)}</th>
+    </tr></thead>`;
+    const body = rows.map((row) => {
+      const source = row.citation ? reportLink(row.citation, row.sourceLabel || labels.source) : escapeCellHtml(row.sourceLabel || labels.source);
+      return `<tr>
+      <td><span class="role-tag">${escapeCellHtml(row.role)}</span></td>
+      <td class="claim">${escapeCellHtml(row.claim)}</td>
+      <td>${source}</td>
+      <td>${escapeCellHtml(row.evidence)}</td>
+      <td>${row.notes ? escapeCellHtml(row.notes) : "\u2014"}</td>
+    </tr>`;
+    }).join("");
+    return `<table class="evidence-table">${head}<tbody>${body}</tbody></table>`;
+  }
+  function escapeCellHtml(value) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function deepResearchReportInput(draft, image = { dataUrl: null, credit: null }, visuals) {
+    const language = draft.brief.language ?? "es";
+    const labels = DEEP_LABELS[language];
+    const body = stripLeadingAbstract(draft.draftMarkdown, draft.abstract);
+    const report = anchoredMarkdown(body, "report", documentFigureInsertions(body, "body", visuals));
+    const abstract = anchoredMarkdown(draft.abstract || draft.brief.objective, "summary");
+    const sections = [
+      {
+        id: "executive-summary",
+        number: "01",
+        title: labels.summary,
+        eyebrow: labels.summaryEyebrow,
+        html: `<div class="abstract-box prose">${abstract.html}</div>`,
+        className: "exec-summary"
+      }
+    ];
+    sections.push({
+      id: "research-report",
+      number: String(sections.length + 1).padStart(2, "0"),
+      title: labels.report,
+      eyebrow: labels.reportEyebrow,
+      html: `<div class="prose">${report.html}</div>`,
+      tocChildren: report.headings,
+      pageBreakBefore: true
+    });
+    if (draft.nextSteps.length) {
+      sections.push({
+        id: "next-steps",
+        number: String(sections.length + 1).padStart(2, "0"),
+        title: labels.recommendations,
+        eyebrow: labels.recommendationsEyebrow,
+        html: `<div class="prose no-indent"><ol>${draft.nextSteps.map((item) => `<li>${escapeCellHtml(item)}</li>`).join("")}</ol></div>`
+      });
+    }
+    if (draft.matrix.length) {
+      sections.push({
+        id: "traceability",
+        number: String(sections.length + 1).padStart(2, "0"),
+        title: labels.traceability,
+        eyebrow: labels.traceabilityEyebrow,
+        html: matrixHtml(draft.matrix, labels),
+        pageBreakBefore: true
+      });
+    }
+    const words = draft.draftMarkdown.split(/\s+/).filter(Boolean).length;
+    return {
+      title: draft.title || labels.report,
+      subtitle: draft.brief.objective,
+      kindLabel: labels.kind,
+      language,
+      generatedLabel: labels.generated,
+      generatedAt: localizedDate(draft.generatedAt, language),
+      objectiveLabel: labels.objective,
+      objective: draft.brief.objective,
+      imageDataUrl: image.dataUrl,
+      imageCredit: image.credit,
+      contentsLabel: labels.contents,
+      metrics: [
+        { value: String(draft.deepResearchStructure === "single" ? 1 : draft.outline.length), label: labels.sections },
+        { value: String(draft.stats.selectedWorks || draft.bibliography.length), label: labels.sources },
+        { value: words.toLocaleString(language), label: labels.words }
+      ],
+      sections,
+      theme: PROFESSIONAL_REPORT_THEMES.deepResearch
+    };
+  }
+  return __toCommonJS(deepResearchReport_exports);
+})();

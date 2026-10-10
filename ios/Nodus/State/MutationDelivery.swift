@@ -69,6 +69,28 @@ enum MutationDelivery {
                 deliveredBefore: Date().addingTimeInterval(-MutationOutbox.deliveredRetention)
             )
 
+            if connection.desktopPairingId != nil {
+                // Older live receipts did not distinguish acceptance from application.
+                // Re-send the same authorised payload; the Mac's durable idempotency receipt
+                // confirms it without applying the edit twice. Never ask Bridge for `/me`.
+                do {
+                    let accepted = try await queue.acceptedWithoutCursor()
+                    guard !accepted.isEmpty else { continue }
+                    guard let client = ConnectionClient.make(for: connection) else {
+                        outcome.everySpaceAnswered = false
+                        continue
+                    }
+                    let receipt = try await client.send(mutations: accepted, in: connection.spaceId)
+                    let landed = try await queue.recordReceipt(receipt, for: accepted)
+                    if !landed.isEmpty { outcome.landings.append(Landing(connection: connection, items: landed)) }
+                } catch let error as APIError where error.isUnauthorized {
+                    outcome.credentials[connection.id] = .rejected
+                } catch {
+                    outcome.everySpaceAnswered = false
+                }
+                continue
+            }
+
             // Nothing in the ledger with a sequence to compare means nothing to ask about. A
             // device whose whole queue predates the cursor never sends a request at all.
             guard let waiting = try? await queue.awaitingDelivery(), waiting > 0 else { continue }
@@ -81,7 +103,7 @@ enum MutationDelivery {
             do {
                 let me = try await client.me()
                 if let credential = credential(from: me) {
-                    outcome.credentials[connection.spaceId] = credential
+                    outcome.credentials[connection.id] = credential
                 }
                 // A server that does not publish the cursor leaves every row exactly where it
                 // was, saying what it says today. Nothing is guessed from its silence.
@@ -95,7 +117,7 @@ enum MutationDelivery {
                     outcome.landings.append(Landing(connection: connection, items: landed))
                 }
             } catch let error as APIError where error.isUnauthorized {
-                outcome.credentials[connection.spaceId] = .rejected
+                outcome.credentials[connection.id] = .rejected
             } catch {
                 outcome.everySpaceAnswered = false
             }

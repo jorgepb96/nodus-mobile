@@ -24,20 +24,46 @@ struct ReadingStyle: Equatable {
 
     static let plain = ReadingStyle()
 
+    /// Shared web components use a 16px base and the same twelve system sizes.
+    static func sharedSurfaceScale(for size: DynamicTypeSize) -> Double {
+        Double(plain.size(.body, dynamicTypeSize: size) / plain.size(.body, dynamicTypeSize: .large))
+    }
+
     /// A text style at this reading size, in points.
     ///
     /// Built from the user's own Dynamic Type size rather than from a constant, so enlarging a
     /// report scales *their* body size instead of overriding it.
-    func size(_ style: UIFont.TextStyle) -> CGFloat {
-        UIFont.preferredFont(forTextStyle: style).pointSize * scale
+    func size(_ style: UIFont.TextStyle, dynamicTypeSize: DynamicTypeSize? = nil) -> CGFloat {
+        let traits = dynamicTypeSize.map { UITraitCollection(preferredContentSizeCategory: $0.readingContentSizeCategory) }
+        return UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize * scale
     }
 
-    func font(_ style: UIFont.TextStyle, weight: Font.Weight = .regular) -> Font {
-        .system(size: size(style), weight: weight)
+    func font(_ style: UIFont.TextStyle, weight: Font.Weight = .regular, dynamicTypeSize: DynamicTypeSize? = nil) -> Font {
+        .system(size: size(style, dynamicTypeSize: dynamicTypeSize), weight: weight)
     }
 
-    func uiFont(_ style: UIFont.TextStyle, weight: UIFont.Weight = .regular) -> UIFont {
-        .systemFont(ofSize: size(style), weight: weight)
+    func uiFont(_ style: UIFont.TextStyle, weight: UIFont.Weight = .regular, dynamicTypeSize: DynamicTypeSize? = nil) -> UIFont {
+        .systemFont(ofSize: size(style, dynamicTypeSize: dynamicTypeSize), weight: weight)
+    }
+}
+
+private extension DynamicTypeSize {
+    var readingContentSizeCategory: UIContentSizeCategory {
+        switch self {
+        case .xSmall: .extraSmall
+        case .small: .small
+        case .medium: .medium
+        case .large: .large
+        case .xLarge: .extraLarge
+        case .xxLarge: .extraExtraLarge
+        case .xxxLarge: .extraExtraExtraLarge
+        case .accessibility1: .accessibilityMedium
+        case .accessibility2: .accessibilityLarge
+        case .accessibility3: .accessibilityExtraLarge
+        case .accessibility4: .accessibilityExtraExtraLarge
+        case .accessibility5: .accessibilityExtraExtraExtraLarge
+        @unknown default: .large
+        }
     }
 }
 

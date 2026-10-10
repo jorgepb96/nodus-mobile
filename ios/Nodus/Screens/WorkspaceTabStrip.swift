@@ -1,6 +1,7 @@
 import NodusKit
 import NodusUI
 import SwiftUI
+import UIKit
 
 /// Desktop's fixed catalogue tab followed by closeable document tabs.
 ///
@@ -18,13 +19,14 @@ struct WorkspaceTabStrip: View {
 
     private var tabs: [WorkspaceTab] { workspaceTabs.tabs(in: section) }
     private var activeId: String? { workspaceTabs.activeTabId(in: section) }
+    private var usesTouchTabs: Bool { UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact }
     private var height: CGFloat {
-        horizontalSizeClass == .compact
+        usesTouchTabs
             ? NodusChromeMetrics.compactWorkspaceTabs
             : NodusChromeMetrics.workspaceTabs
     }
-    private var catalogueWidth: CGFloat { horizontalSizeClass == .compact ? 150 : 168 }
-    private var documentWidth: CGFloat { horizontalSizeClass == .compact ? 218 : 260 }
+    private var catalogueWidth: CGFloat { usesTouchTabs ? 150 : 168 }
+    private var documentWidth: CGFloat { usesTouchTabs ? 218 : 260 }
     private var localizedCatalogueTitle: String {
         Bundle.main.localizedString(forKey: catalogueTitle, value: catalogueTitle, table: nil)
     }
@@ -104,7 +106,7 @@ struct WorkspaceTabStrip: View {
             Button { workspaceTabs.close(tab.id, in: section) } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
-                    .frame(width: horizontalSizeClass == .compact ? 34 : 26, height: height)
+                    .frame(width: usesTouchTabs ? 44 : 26, height: height)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

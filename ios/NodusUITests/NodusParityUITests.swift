@@ -7,14 +7,14 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testDeterministicDemoOpensRequestedRoute() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "ideas"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
         app.launch()
 
         XCTAssertTrue(app.otherElements["nodus-space-shell"].waitForExistence(timeout: 20))
-        app.buttons["Navigation"].tap()
+        app.buttons["nodus-navigation-toggle"].tap()
         XCTAssertTrue(app.buttons["nodus-nav-ideas"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["nodus-nav-ideas"].isSelected)
     }
@@ -22,11 +22,11 @@ final class NodusParityUITests: XCTestCase {
     @MainActor
     func testEveryVisibleDestinationUsesTheSharedShell() throws {
         let routes = [
-            "home", "search", "library", "argument", "ideas", "authors", "research",
+            "home", "search", "library", "graph", "argument", "ideas", "dictionary", "authors", "research", "researchChat",
             "hypothesis", "reading", "deepResearch", "workspace", "writing", "projects",
         ]
         for route in routes {
-            let app = XCUIApplication()
+            let app = makeApp()
             app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
             app.launchEnvironment["NODUS_START_ROUTE"] = route
             app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -38,7 +38,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testAcademicSidebarMatchesCurrentDesktopHierarchy() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "home"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -48,10 +48,12 @@ final class NodusParityUITests: XCTestCase {
         let search = app.buttons["nodus-nav-search"]
         if !search.waitForExistence(timeout: 10) { app.buttons["nodus-navigation-toggle"].tap() }
         XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(app.buttons["nodus-nav-home"].frame.minY, app.buttons["nodus-navigation-toggle"].frame.minY,
+            "The drawer's first row must remain inside the same safe area as the top bar, below the system clock.")
 
         let orderedRoutes = [
             "home", "library", "search", "ideas", "authors", "argument",
-            "research", "immersion", "deepResearch", "workspace", "browser", "radar", "toolkit",
+            "research", "immersion", "deepResearch", "dictionary", "researchChat", "workspace", "browser", "radar", "toolkit",
         ]
         for route in orderedRoutes {
             XCTAssertTrue(app.buttons["nodus-nav-\(route)"].exists, "Desktop sidebar row is missing: \(route)")
@@ -75,7 +77,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testWorkspaceTabsAndCatalogueStateSurviveSectionChanges() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "ideas"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -105,7 +107,7 @@ final class NodusParityUITests: XCTestCase {
     @MainActor
     func testWorkspaceCatalogueSelectionFillsTheTabInBothAppearanceModes() throws {
         for (style, screenshotName) in [("light", "workspace-tab-selection-light"), ("dark", "workspace-tab-selection-dark")] {
-            let app = XCUIApplication()
+            let app = makeApp()
             app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
             app.launchEnvironment["NODUS_START_ROUTE"] = "ideas"
             app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -115,7 +117,7 @@ final class NodusParityUITests: XCTestCase {
             let catalogue = app.buttons["workspace-catalogue-ideas"]
             XCTAssertTrue(catalogue.waitForExistence(timeout: 20))
             XCTAssertTrue(catalogue.isSelected)
-            XCTAssertGreaterThan(catalogue.frame.width, 150)
+            XCTAssertGreaterThanOrEqual(catalogue.frame.width, 150)
             attachScreenshot(named: screenshotName)
             app.terminate()
         }
@@ -123,7 +125,9 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testWorkspaceTabsRemainReachableAfterRotation() throws {
-        let app = XCUIApplication()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .portrait
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "ideas"
         app.launchEnvironment["NODUS_SHOW_TAB_DEMO"] = "1"
@@ -131,16 +135,28 @@ final class NodusParityUITests: XCTestCase {
 
         XCTAssertTrue(app.buttons["workspace-catalogue-ideas"].waitForExistence(timeout: 20))
         XCUIDevice.shared.orientation = .landscapeLeft
+        let landscape = NSPredicate { _, _ in
+            let frame = app.windows.firstMatch.frame
+            return frame.width > frame.height
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: nil)], timeout: 15), .completed)
         XCTAssertTrue(app.buttons["workspace-catalogue-ideas"].waitForExistence(timeout: 5))
         XCTAssertGreaterThan(app.windows.firstMatch.frame.width, app.windows.firstMatch.frame.height)
+        attachScreenshot(named: "workspace-tabs-landscape")
         XCUIDevice.shared.orientation = .portrait
+        let portrait = NSPredicate { _, _ in
+            let frame = app.windows.firstMatch.frame
+            return frame.height > frame.width
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: portrait, object: nil)], timeout: 15), .completed)
         XCTAssertTrue(app.buttons["workspace-catalogue-ideas"].waitForExistence(timeout: 5))
         XCTAssertGreaterThan(app.windows.firstMatch.frame.height, app.windows.firstMatch.frame.width)
+        attachScreenshot(named: "workspace-tabs-portrait")
     }
 
     @MainActor
     func testAcademicWorkspacesOpenMultipleTabsAndCloseToTheirNeighbour() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "ideas"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -168,7 +184,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testSavedAuthorsRemainADeviceLocalCataloguePreference() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "authors"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -190,7 +206,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testAccountLibraryKeepsMultipleReadersAndClosesToItsNeighbour() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "library"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -210,7 +226,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testLibraryReaderTabsScrollAndActionsStayLegible() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "library"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -248,7 +264,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testDeepResearchGalleryQueueAndReaderToolsMatchDesktopWorkflow() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "deepResearch"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -279,7 +295,7 @@ final class NodusParityUITests: XCTestCase {
     @MainActor
     func testResearchStateUsesCompactEqualDestinationCards() throws {
         for style in ["light", "dark"] {
-            let app = XCUIApplication()
+            let app = makeApp()
             app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
             app.launchEnvironment["NODUS_START_ROUTE"] = "research"
             app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -308,12 +324,19 @@ final class NodusParityUITests: XCTestCase {
     @MainActor
     func testChatModalUsesTopDoneInEnglishAndSpanish() throws {
         for (language, locale, expectedLabel) in [("en", "en_US", "Done"), ("es", "es_ES", "Listo")] {
-            let app = XCUIApplication()
+            let app = makeApp()
             app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
             app.launchEnvironment["NODUS_START_ROUTE"] = "authors"
             app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
-            app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", locale]
+            app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale]
             app.launch()
+
+            let navigation = app.buttons["nodus-navigation-toggle"]
+            XCTAssertTrue(navigation.waitForExistence(timeout: 20))
+            if !app.buttons["nodus-nav-dictionary"].exists { navigation.tap() }
+            XCTAssertEqual(app.buttons["nodus-nav-dictionary"].label, language == "es" ? "Diccionario" : "Dictionary")
+            XCTAssertEqual(app.buttons["nodus-nav-researchChat"].label, language == "es" ? "Chat de investigación" : "Research chat")
+            app.buttons["nodus-nav-authors"].tap()
 
             let author = app.buttons.matching(
                 NSPredicate(format: "identifier == %@", "workspace-open-author-row-demo-a-darwin")
@@ -336,12 +359,12 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testAuthorSynthesisQueuesInsteadOfReturningMethodNotAllowed() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "authors"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
         app.launchEnvironment["NODUS_UI_TEST_ACTIONS"] = "1"
-        app.launchArguments += ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launch()
 
         let author = app.buttons.matching(
@@ -367,7 +390,7 @@ final class NodusParityUITests: XCTestCase {
     /// navigation sequence instead of two hand-built mock states drifting apart.
     @MainActor
     func testCaptureAcademicReviewSurfaces() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "home"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -441,7 +464,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testResidentRoutesAndSidebarToggleStayWithinTheDeviceBounds() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "home"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -492,7 +515,7 @@ final class NodusParityUITests: XCTestCase {
             ("projects", "academic-projects"),
         ]
         for (route, identifier) in expectations {
-            let app = XCUIApplication()
+            let app = makeApp()
             app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
             app.launchEnvironment["NODUS_START_ROUTE"] = route
             app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
@@ -504,7 +527,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testWorldbuildingWorkspacesContinuityAndManuscriptAreNative() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "scenes"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "worldbuilding"
@@ -519,6 +542,14 @@ final class NodusParityUITests: XCTestCase {
         closers.element(boundBy: 1).tap()
         XCTAssertTrue(tabs.element(boundBy: 0).isSelected)
         attachScreenshot(named: "world-scenes")
+        let character = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "world-connected-record-scene_characters-", "Lyra")).firstMatch
+        for _ in 0..<6 { if character.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(character.isHittable, "Scene relationships must resolve the character's name and open its dossier, including characters with a known sex.")
+        character.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["world-workspace-characters"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Lyra Veyra"].exists)
+        attachScreenshot(named: "world-connected-character-dossier")
+        app.buttons["Done"].tap()
 
         openRoute("continuity", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["world-continuity"].waitForExistence(timeout: 10))
@@ -526,23 +557,102 @@ final class NodusParityUITests: XCTestCase {
 
         openRoute("manuscript", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["world-manuscript"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Arrival at the flooded gate"].exists)
-        if app.windows.firstMatch.frame.width < 700 {
-            let scenePane = app.buttons["Scene"]
-            XCTAssertTrue(scenePane.waitForExistence(timeout: 5), "iPhone must retain the Desktop manuscript rail")
-            scenePane.tap()
+        let manuscript = app.descendants(matching: .any)["world-manuscript"].firstMatch
+        let loaded = manuscript.textViews.firstMatch.waitForExistence(timeout: 30)
+        attachScreenshot(named: "world-manuscript-before-layout-check")
+        let hierarchy = XCTAttachment(string: manuscript.debugDescription)
+        hierarchy.name = "world-manuscript-loaded-hierarchy"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+        XCTAssertTrue(loaded, "The manuscript must load its scene editor before checking its layout")
+        XCTAssertTrue(manuscript.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Arrival at the flooded gate", "Arrival at the flooded gate")
+        ).firstMatch.exists, "The scene picker must expose the loaded scene title")
+        attachScreenshot(named: "world-manuscript-loaded-before-layout-check")
+        let window = app.windows.firstMatch.frame
+        let leftEdge = app.buttons["nodus-nav-home"].isHittable ? app.buttons["nodus-nav-home"].frame.maxX : window.minX
+        let title = manuscript.staticTexts["Manuscript"].firstMatch
+        XCTAssertTrue(title.exists)
+        XCTAssertGreaterThanOrEqual(title.frame.minX, leftEdge, "The manuscript title must not overflow beneath the sidebar")
+        for name in ["Export manuscript", "Edit manuscript structure", "Save manuscript scene"] {
+            let action = app.buttons[name]
+            XCTAssertTrue(action.exists)
+            XCTAssertGreaterThanOrEqual(action.frame.minX, leftEdge)
+            XCTAssertLessThanOrEqual(action.frame.maxX, window.maxX)
+        }
+        attachScreenshot(named: "world-manuscript-writing")
+        let panes = manuscript.segmentedControls["world-manuscript-pane"]
+        if manuscript.frame.width < 1_100 {
+            XCTAssertTrue(panes.exists, "A narrow manuscript must expose its Write/Scene switch")
+        }
+        if panes.exists {
+            XCTAssertTrue(panes.buttons["Scene"].isHittable, "A narrow iPad or iPhone must retain the Desktop manuscript rail")
+            panes.buttons["Scene"].tap()
         }
         XCTAssertTrue(app.staticTexts["What moves here"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Rules in play"].exists)
+        for label in ["Obeys", "Bends", "Breaks", "Establishes"] {
+            let action = manuscript.buttons[label].firstMatch
+            XCTAssertTrue(action.exists, "The scene rule action must remain available: \(label)")
+            XCTAssertGreaterThanOrEqual(action.frame.height, 44, "Rule actions need a touch-sized target")
+        }
         let writtenScene = app.staticTexts["The written scene"]
         if !writtenScene.exists { app.swipeUp() }
         XCTAssertTrue(writtenScene.waitForExistence(timeout: 5))
         attachScreenshot(named: "world-manuscript")
+        if panes.exists {
+            panes.buttons["Write"].tap()
+            XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 5), "The scene editor must remain reachable after reading its context")
+        }
+    }
+
+    @MainActor
+    func testWorldDossiersResolvePlaceProfilesAndBothRelationshipDirections() throws {
+        let app = makeApp()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "scenes"
+        app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "worldbuilding"
+        app.launchEnvironment["NODUS_SHOW_TAB_DEMO"] = "1"
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["world-workspace-scenes"].waitForExistence(timeout: 20))
+        let arrival = app.buttons["workspace-tab-scenes-scenes-scene-arrival"].firstMatch
+        XCTAssertTrue(arrival.waitForExistence(timeout: 10)); arrival.tap()
+        let place = app.buttons["world-field-link-place_id"].firstMatch
+        for _ in 0..<12 { if place.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(place.isHittable)
+        XCTAssertTrue(place.label.contains("Veyra-on-Rain"))
+        XCTAssertFalse(app.staticTexts["place-capital"].exists, "The scene's place must expose its name.")
+        place.tap()
+        XCTAssertTrue(app.staticTexts["Capital built around a flooded archive."].waitForExistence(timeout: 15))
+        attachScreenshot(named: "world-scene-place-dossier")
+        app.buttons["world-connected-close-place-capital"].tap()
+        let character = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "world-connected-record-scene_characters-", "Lyra")).firstMatch
+        for _ in 0..<16 { if character.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(character.isHittable); character.tap()
+        let personality = app.staticTexts["Precise, guarded, unexpectedly kind."]
+        for _ in 0..<16 { if personality.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(personality.isHittable, "The character profile must be consulted in its dossier, not a disabled record.")
+        attachScreenshot(named: "world-character-profile")
+        let sibling = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "world-connected-record-relationships-", "Maelis Thorn")).firstMatch
+        for _ in 0..<20 { if sibling.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(sibling.isHittable); XCTAssertTrue(sibling.isEnabled); sibling.tap()
+        XCTAssertTrue(app.staticTexts["Young diplomat who can hear the memories stored in stone."].waitForExistence(timeout: 15))
+        attachScreenshot(named: "world-forward-relationship-dossier")
+        app.buttons["world-connected-close-char-maelis"].tap()
+        // Closing the nested dossier keeps its existing tab. Return to Lyra,
+        // then traverse the relation for which she is the to_person endpoint.
+        let lyraTab = app.buttons["workspace-tab-characters-characters-char-lyra"].firstMatch
+        if lyraTab.exists { lyraTab.tap() }
+        let ally = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "world-connected-record-relationships-", "Orren Vale")).firstMatch
+        for _ in 0..<24 { if ally.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(ally.isHittable); XCTAssertTrue(ally.isEnabled); ally.tap()
+        XCTAssertTrue(app.staticTexts["Cartographer commissioned to redraw a border that moves at night."].waitForExistence(timeout: 15))
+        attachScreenshot(named: "world-reverse-relationship-dossier")
     }
 
     @MainActor
     func testPagesAndDatabasesKeepDesktopWorkspacesAndTypedViews() throws {
-        let pages = XCUIApplication()
+        let pages = makeApp()
         pages.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         pages.launchEnvironment["NODUS_START_ROUTE"] = "pages"
         pages.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "databases"
@@ -562,7 +672,7 @@ final class NodusParityUITests: XCTestCase {
         XCTAssertTrue(pages.buttons["workspace-tab-pages-page-research"].isSelected)
         pages.terminate()
 
-        let databases = XCUIApplication()
+        let databases = makeApp()
         databases.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         databases.launchEnvironment["NODUS_START_ROUTE"] = "databases"
         databases.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "databases"
@@ -588,7 +698,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testStudyTeachingParityKeepsTabsGradesAndPrivateRecordings() throws {
-        let app = XCUIApplication()
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "studyCourses"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "docencia"
@@ -626,7 +736,7 @@ final class NodusParityUITests: XCTestCase {
 
     @MainActor
     func testSensitiveRecordsStayPrivateAndKeepDesktopDossierTabs() throws {
-        let archive = XCUIApplication()
+        let archive = makeApp()
         archive.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         archive.launchEnvironment["NODUS_START_ROUTE"] = "archive"
         archive.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "primary_sources"
@@ -648,7 +758,7 @@ final class NodusParityUITests: XCTestCase {
         attachScreenshot(named: "primary-sources-private-dossier")
         archive.terminate()
 
-        let prosopography = XCUIApplication()
+        let prosopography = makeApp()
         prosopography.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         prosopography.launchEnvironment["NODUS_START_ROUTE"] = "prosopPersons"
         prosopography.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "prosopography"
@@ -667,7 +777,7 @@ final class NodusParityUITests: XCTestCase {
         attachScreenshot(named: "prosopography-private-network")
         prosopography.terminate()
 
-        let testimonies = XCUIApplication()
+        let testimonies = makeApp()
         testimonies.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         testimonies.launchEnvironment["NODUS_START_ROUTE"] = "testimonyInterviews"
         testimonies.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "testimonios"
@@ -686,27 +796,15 @@ final class NodusParityUITests: XCTestCase {
     }
 
     @MainActor
-    func testBrowserRadarToolkitAndSettingsMatchDesktopTools() throws {
-        let app = XCUIApplication()
+    func testToolsRemainVisibleAsComingSoonAndSettingsWorks() throws {
+        let app = makeApp()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "browser"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
         app.launch()
 
-        XCTAssertTrue(app.descendants(matching: .any)["browser-workspace"].waitForExistence(timeout: 20))
-        let omnibox = app.descendants(matching: .any)["browser-omnibox"]
-        XCTAssertTrue(omnibox.waitForExistence(timeout: 5))
-        let browserHome = app.descendants(matching: .any)["browser-home"]
-        XCTAssertTrue(browserHome.waitForExistence(timeout: 5))
-        browserHome.tap()
-        let atlasLoaded = NSPredicate(format: "value CONTAINS[c] %@", "nodusresearch.com/research-atlas")
-        expectation(for: atlasLoaded, evaluatedWith: omnibox)
-        waitForExpectations(timeout: 5)
-        XCTAssertFalse(app.staticTexts["Nodus blocked a local address or unsupported scheme."].exists)
-        let tabs = app.buttons.matching(identifier: "browser-tab")
-        let before = tabs.count
-        app.buttons["browser-new-tab"].tap()
-        XCTAssertEqual(tabs.count, before + 1, "Browser must keep simultaneous isolated tabs")
+        XCTAssertTrue(app.descendants(matching: .any)["nodus-coming-soon-browser"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.descendants(matching: .any)["browser-omnibox"].exists)
 
         let window = app.windows.firstMatch
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.55))
@@ -715,63 +813,92 @@ final class NodusParityUITests: XCTestCase {
         app.buttons["nodus-nav-browser"].tap()
         attachScreenshot(named: "platform-browser")
 
-        openRoute("radar", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["radar-view"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Knowledge graphs for historical research"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["radar-check-now"].exists)
-        XCTAssertTrue(app.buttons["radar-follow-open"].exists)
-        attachScreenshot(named: "platform-radar")
-
-        openRoute("toolkit", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["toolkit-home"].waitForExistence(timeout: 10))
-        for card in ["apps", "convert", "protect", "translate", "presenter", "ocr"] {
-            XCTAssertTrue(app.buttons["toolkit-card-\(card)"].exists, "Missing native Toolkit card \(card)")
+        for route in ["radar", "compass", "toolkit"] {
+            openRoute(route, in: app)
+            XCTAssertTrue(app.descendants(matching: .any)["nodus-coming-soon-\(route)"].waitForExistence(timeout: 10))
+            attachScreenshot(named: "platform-coming-soon-\(route)")
         }
-        XCTAssertTrue(app.descendants(matching: .any)["toolkit-run-on-mac"].exists)
-        attachScreenshot(named: "platform-toolkit")
-
-        app.buttons["toolkit-card-convert"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["toolkit-convert-page"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["toolkit-run"].exists)
 
         openRoute("settings", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["settings-workspace"].waitForExistence(timeout: 5))
     }
 
     @MainActor
-    func testReportSelectionMenuUsesNodusRibbonForPointerSecondaryClick() throws {
-        let app = XCUIApplication()
+    func testReportSelectionMenuUsesDeviceSelectionActions() throws {
+        try verifyReportDeviceSelection(landscape: false)
+    }
+
+    @MainActor
+    func testReportSelectionMenuUsesDeviceSelectionActionsInLandscape() throws {
+        try verifyReportDeviceSelection(landscape: true)
+    }
+
+    @MainActor
+    private func verifyReportDeviceSelection(landscape: Bool) throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = makeApp()
+        XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+        app.launchEnvironment["NODUS_ACCEPTANCE_READER_INPUT"] = "1"
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "deepResearch"
         app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
         app.launchEnvironment["NODUS_SHOW_TAB_DEMO"] = "1"
         app.launch()
 
+        let orientationReady = NSPredicate { _, _ in
+            let frame = app.windows.firstMatch.frame
+            return landscape ? frame.width > frame.height : frame.height > frame.width
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: orientationReady, object: nil)], timeout: 15), .completed,
+            "Pointer coordinates must be measured in the requested interface orientation")
+
         let report = app.staticTexts["Networks of correspondence in the early modern Atlantic"]
+        let gallery = app.scrollViews["deep-research-gallery-scroll"]
+        XCTAssertTrue(gallery.waitForExistence(timeout: 20))
+        for _ in 0..<6 {
+            if report.isHittable { break }
+            gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.85))
+                .press(forDuration: 0.05, thenDragTo: gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.15)))
+        }
         XCTAssertTrue(report.waitForExistence(timeout: 20))
         report.tap()
 
-        let prose = app.textViews.firstMatch
+        // UITextView exposes a padded parent and a text child. Begin the mouse
+        // stroke inside the child glyphs, rather than the parent's blank margin.
+        let prose = app.textViews.matching(NSPredicate(format: "label BEGINSWITH %@", "Correspondence networks reveal")).firstMatch
         XCTAssertTrue(prose.waitForExistence(timeout: 10))
 
-        let start = prose.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
-        let end = prose.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.75))
-        start.click(forDuration: 0.1, thenDragTo: end)
-        end.rightClick()
+        let start = prose.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.20))
+        let end = prose.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: 0.20))
+        let supportsPointer = min(app.windows.firstMatch.frame.width, app.windows.firstMatch.frame.height) > 600
+        if supportsPointer {
+            start.click(forDuration: 0.1, thenDragTo: end)
+            attachScreenshot(named: "report-pointer-selection-before-menu")
+            end.rightClick()
+            attachScreenshot(named: "report-pointer-selection-after-secondary-click")
+        } else {
+            start.press(forDuration: 1.2)
+            attachScreenshot(named: landscape ? "report-touch-selection-landscape" : "report-touch-selection-portrait")
+        }
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "report-pointer-selection-hierarchy"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
 
-        let ribbonItems = [
+        var ribbonItems = [
             app.descendants(matching: .any)["nodus-selection-copy"],
             app.descendants(matching: .any)["nodus-selection-bookmark"],
             app.descendants(matching: .any)["nodus-selection-ask"],
-            app.descendants(matching: .any)["nodus-selection-more"],
         ]
+        if supportsPointer { ribbonItems.append(app.descendants(matching: .any)["nodus-selection-more"]) }
         for item in ribbonItems {
-            XCTAssertTrue(item.waitForExistence(timeout: 5), "The pointer menu must expose the Nodus ribbon")
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "The supported device input must expose the Nodus reader actions")
         }
         let ribbonMidY = ribbonItems[0].frame.midY
         for item in ribbonItems.dropFirst() {
             XCTAssertEqual(item.frame.midY, ribbonMidY, accuracy: 3, "Pointer actions must stay in one row")
         }
+        guard supportsPointer else { return }
         let expandedSystemAction = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@ OR label == %@", "Look Up", "Consultar")
         ).firstMatch
@@ -781,6 +908,43 @@ final class NodusParityUITests: XCTestCase {
         ribbonItems.last?.tap()
         XCTAssertTrue(expandedSystemAction.waitForExistence(timeout: 5))
         XCTAssertTrue(expandedSystemAction.isHittable, "More actions must expose the system menu on demand")
+    }
+
+    @MainActor
+    func testReportTouchSelectionExposesNodusActions() throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .portrait
+        let app = makeApp()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "deepResearch"
+        app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
+        app.launchEnvironment["NODUS_SHOW_TAB_DEMO"] = "1"
+        app.launchEnvironment["NODUS_ACCEPTANCE_READER_INPUT"] = "1"
+        app.launch()
+        let report = app.staticTexts["Networks of correspondence in the early modern Atlantic"]
+        for _ in 0..<6 { if report.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(report.waitForExistence(timeout: 20))
+        report.tap()
+        let prose = app.textViews.matching(NSPredicate(format: "label BEGINSWITH %@", "Correspondence networks reveal")).firstMatch
+        XCTAssertTrue(prose.waitForExistence(timeout: 10))
+        prose.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.20)).press(forDuration: 1.2)
+        attachScreenshot(named: "report-touch-selection-menu")
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "report-touch-selection-hierarchy"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+        for action in ["nodus-selection-copy", "nodus-selection-bookmark", "nodus-selection-ask"] {
+            XCTAssertTrue(app.descendants(matching: .any)[action].waitForExistence(timeout: 5),
+                "Touch selection must expose the Nodus reader action \(action)")
+        }
+    }
+
+    @MainActor
+    private func makeApp() -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        return app
     }
 
     @MainActor

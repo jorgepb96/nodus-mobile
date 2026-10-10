@@ -13,6 +13,8 @@ struct HomeView: View {
 
     @Environment(AppPreferences.self) private var preferences
     @Environment(OutboxTrayModel.self) private var tray
+    @Environment(\.dynamicTypeSize) private var textSize
+    @ScaledMetric(relativeTo: .caption) private var metricMinimumWidth: CGFloat = 170
 
     var body: some View {
         ScrollView {
@@ -241,10 +243,10 @@ struct HomeView: View {
                     .foregroundStyle(session.accent.nodusReadable)
                     .textCase(.uppercase)
                 Text("Your research workspace")
-                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                    .font(.system(.title2, design: .rounded).weight(.semibold))
                 Text("Organise your corpus, connect ideas and turn analysis into the next useful step from one local, private workspace.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.nodusSecondaryText)
                     .frame(maxWidth: 680, alignment: .leading)
             }
             .padding(18)
@@ -259,19 +261,21 @@ struct HomeView: View {
             )
             .overlay(NodusRadius.panelShape.stroke(session.accent.opacity(0.22), lineWidth: 1))
 
-            HStack(alignment: .top, spacing: 12) {
+            (textSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                : AnyLayout(HStackLayout(alignment: .top, spacing: 12))) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("NEXT RECOMMENDED STEP")
                         .font(.caption2.weight(.semibold))
                         .tracking(0.7)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.nodusSecondaryText)
                     Text(recommendationTitle)
                         .font(.headline)
                     Text(recommendationBody)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.nodusSecondaryText)
                 }
-                Spacer(minLength: 12)
+                if !textSize.isAccessibilitySize { Spacer(minLength: 12) }
                 Button {
                     openResearch?()
                 } label: {
@@ -323,14 +327,14 @@ struct HomeView: View {
             HStack {
                 Label(title, systemImage: icon)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.nodusSecondaryText)
                 Spacer()
             }
             Text(value.formatted())
-                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .font(.system(.title2, design: .rounded).weight(.semibold))
             Text(detail)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.nodusSecondaryText)
             if let progress {
                 ProgressView(value: min(max(progress, 0), 1))
                     .tint(session.accent)
@@ -342,7 +346,7 @@ struct HomeView: View {
     }
 
     private var dashboardColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 170), spacing: 10)]
+        [GridItem(.adaptive(minimum: metricMinimumWidth), spacing: 10)]
     }
 
     private var isAcademicDashboard: Bool {
@@ -605,7 +609,7 @@ struct SectionTile: View {
             countAccessory
             Image(systemName: "chevron.right")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.nodusTertiaryText)
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 48)

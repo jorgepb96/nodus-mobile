@@ -1,4 +1,6 @@
 .DS_Store
+__pycache__/
+*.pyc
 
 # The Xcode project is generated from ios/project.yml (`cd ios && xcodegen generate`), so
 # committing the .pbxproj would only add churn and merge conflicts.

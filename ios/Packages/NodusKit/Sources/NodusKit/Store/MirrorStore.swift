@@ -108,6 +108,7 @@ public actor MirrorStore {
                     mime TEXT NOT NULL,
                     thumb_mime TEXT,
                     bytes INTEGER NOT NULL,
+                    thumb_bytes INTEGER,
                     kind TEXT NOT NULL,
                     tbl TEXT NOT NULL,
                     row_key TEXT NOT NULL,
@@ -116,6 +117,9 @@ public actor MirrorStore {
 
                 CREATE INDEX IF NOT EXISTS asset_refs_lookup ON asset_refs (tbl, row_key);
                 """)
+            if try !db.columns(in: "asset_refs").contains(where: { $0.name == "thumb_bytes" }) {
+                try db.execute(sql: "ALTER TABLE asset_refs ADD COLUMN thumb_bytes INTEGER")
+            }
 
             // FTS5 over the same text the server's own `?q=` scans, so a filter typed offline
             // and the same filter typed online agree about what matches.
@@ -159,11 +163,11 @@ public actor MirrorStore {
 
             for ref in snapshot.assetRefs {
                 try db.execute(sql: """
-                    INSERT OR REPLACE INTO asset_refs (hash, thumb_hash, mime, thumb_mime, bytes, kind, tbl, row_key)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO asset_refs (hash, thumb_hash, mime, thumb_mime, bytes, thumb_bytes, kind, tbl, row_key)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [
                         ref.hash, ref.thumbHash, ref.mime, ref.thumbMime,
-                        ref.bytes, ref.kind, ref.table, ref.key.joined(separator: "\u{1F}"),
+                        ref.bytes, ref.thumbBytes, ref.kind, ref.table, ref.key.joined(separator: "\u{1F}"),
                     ])
             }
 
@@ -408,7 +412,7 @@ public actor MirrorStore {
                 mime: row["mime"],
                 thumbMime: row["thumb_mime"],
                 bytes: row["bytes"],
-                thumbBytes: nil,
+                thumbBytes: row["thumb_bytes"],
                 kind: row["kind"],
                 table: row["tbl"],
                 key: key
@@ -427,6 +431,17 @@ public actor MirrorStore {
 
     public func assetCount() throws -> Int {
         try dbQueue.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM asset_refs") ?? 0 }
+    }
+
+    public func assetRefs() throws -> [SnapshotAssetRef] {
+        try dbQueue.read { db in
+            try GRDB.Row.fetchAll(db, sql: "SELECT * FROM asset_refs ORDER BY tbl, row_key, hash").map { row in
+                let key: String = row["row_key"]
+                return SnapshotAssetRef(hash: row["hash"], thumbHash: row["thumb_hash"], mime: row["mime"],
+                    thumbMime: row["thumb_mime"], bytes: row["bytes"], thumbBytes: row["thumb_bytes"],
+                    kind: row["kind"], table: row["tbl"], key: key.components(separatedBy: "\u{1F}"))
+            }
+        }
     }
 
     /// Rows of one table whose JSON body has `column` equal to `value`.

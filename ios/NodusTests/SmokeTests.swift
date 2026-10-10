@@ -3,6 +3,102 @@ import NodusKit
 import Testing
 @testable import Nodus
 
+@Suite("Local surface draft isolation")
+@MainActor
+struct MobileSurfaceStorageTests {
+    @Test("a stored live connection uses the Bridge and rejects generic authenticated Server routes before transport")
+    func backgroundLiveClientUsesBridge() async throws {
+        let pairing = try DesktopBridgePairing(id: "fixture-pair", origin: "https://mac.invalid", certificateFingerprint: String(repeating: "a", count: 64),
+            deviceId: "mac-id", deviceName: "Mac ficticio", vaultIds: ["vault-id"], domains: [.corpus, .writing], pairedAt: .now, expiresAt: nil)
+        let connection = AppModel.Connection(origin: pairing.origin, spaceId: "live:mac-id:vault-id", spaceName: "Vault", serverName: "Mac",
+            role: .owner, vaultId: "vault-id", desktopPairingId: pairing.id)
+        let directory = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let client = try #require(ConnectionClient.make(for: connection, token: "fixture-token", pairings: [pairing], cacheDirectory: directory))
+        await #expect(throws: DesktopBridgeError.permissionDenied) { _ = try await client.me() }
+        #expect(ConnectionClient.make(for: connection, token: "fixture-token", pairings: [], cacheDirectory: directory) == nil)
+        var invalid = connection; invalid.vaultId = "another-vault"
+        #expect(ConnectionClient.make(for: invalid, token: "fixture-token", pairings: [pairing], cacheDirectory: directory) == nil)
+        invalid = connection; invalid.vaultId = nil
+        #expect(ConnectionClient.make(for: invalid, token: "fixture-token", pairings: [pairing], cacheDirectory: directory) == nil)
+        let expired = try DesktopBridgePairing(id: pairing.id, origin: pairing.origin, certificateFingerprint: pairing.certificateFingerprint,
+            deviceId: pairing.deviceId, deviceName: pairing.deviceName, vaultIds: pairing.vaultIds, domains: pairing.domains, pairedAt: .distantPast, expiresAt: .distantPast)
+        #expect(ConnectionClient.make(for: connection, token: "fixture-token", pairings: [expired], cacheDirectory: directory) == nil)
+    }
+    @Test("an evidence quote resolves to the paragraph rendered by the document reader")
+    func evidenceDocumentAnchor() {
+        let prose = CorpusProse("# Documento\n\nPrimer párrafo.\n\n## Evidencia\n\nLa definición A 222 pertenece a este\ncorpus de pruebas ficticio.", accent: .blue)
+        #expect(prose.anchor(containing: "La definición A 222 pertenece a este corpus de pruebas ficticio.") == PageSearchAnchor(path: [3]))
+        #expect(prose.anchor(containing: "primer PÁRRAFO", path: [7]) == PageSearchAnchor(path: [7, 1]))
+        #expect(prose.anchor(containing: "cita ausente") == nil)
+        #expect(prose.anchor(containing: "  \n ") == nil)
+    }
+    @Test("published-space identities isolate origins and spaces without borrowing a Mac vault id")
+    func localIdentities() throws {
+        let first = try MobileSurfaceStorageScope(connectionId: "https://one.example|space-a", pairingId: nil, vaultId: "vault-a")
+        let same = try MobileSurfaceStorageScope(connectionId: "https://one.example|space-a", pairingId: nil, vaultId: nil)
+        let otherOrigin = try MobileSurfaceStorageScope(connectionId: "https://two.example|space-a", pairingId: nil, vaultId: "vault-a")
+        let otherSpace = try MobileSurfaceStorageScope(connectionId: "https://one.example|space-b", pairingId: nil, vaultId: "vault-a")
+        #expect(first == same)
+        #expect(first != otherOrigin)
+        #expect(first != otherSpace)
+        #expect(first.recordVaultId != "vault-a")
+        let paired = try MobileSurfaceStorageScope(connectionId: "live:space-a", pairingId: "pairing-a", vaultId: "vault-a")
+        #expect(paired.cacheId == "pairing-a")
+        #expect(paired.recordVaultId == "vault-a")
+        #expect(throws: DesktopBridgeError.permissionDenied) {
+            try MobileSurfaceStorageScope(connectionId: "live:space-a", pairingId: "pairing-a", vaultId: nil)
+        }
+    }
+
+    @Test("shared surfaces use the selected vault identity, rather than the Mac or published-space identity")
+    func surfaceVaultIdentity() {
+        let connection = AppModel.Connection(origin: "https://mac.example", spaceId: "live:mac-a:space-a", spaceName: "Espacio",
+            serverName: "Mac", role: .reader, vaultType: .academic, vaultName: "Principal", vaultId: "vault-a", desktopPairingId: "grant-a")
+        let context = MobileSurfaceVaultContext.descriptor(connection: connection, vault: nil)
+        #expect(context.id == "vault-a")
+        #expect(context.name == "Principal")
+        #expect(context.type == .academic)
+        let loaded = MobileSurfaceVaultContext.descriptor(connection: connection, vault: VaultDescriptor(id: "vault-b", name: "Estudio", type: .estudio))
+        #expect(loaded.id == "vault-b")
+        #expect(loaded.type == .estudio)
+    }
+
+    @Test("a publication without a vault identity retains that absence in shared surfaces")
+    func surfacePublicationIdentity() {
+        let connection = AppModel.Connection(origin: "https://server.example", spaceId: "published-space", spaceName: "Espacio",
+            serverName: "Server", role: .reader, vaultType: .academic)
+        let context = MobileSurfaceVaultContext.descriptor(connection: connection, vault: nil)
+        #expect(context.id == nil)
+        #expect(context.name == nil)
+        #expect(context.type == .academic)
+    }
+
+    @Test("local drafts survive reopening encrypted storage and remain absent from other spaces")
+    func encryptedRecovery() async throws {
+        let directory = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let keychain = KeychainStore(service: "nodus.acceptance.surface.\(UUID().uuidString)")
+        let first = try MobileSurfaceStorageScope(connectionId: "https://one.example|space-a", pairingId: nil, vaultId: nil)
+        let other = try MobileSurfaceStorageScope(connectionId: "https://one.example|space-b", pairingId: nil, vaultId: nil)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: first.cacheId))
+            try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: other.cacheId))
+        }
+        let payload = Data("A local structured draft with a citation and formula".utf8)
+        let cache = try PrivateBridgeCache(pairingId: first.cacheId, directory: directory, keychain: keychain)
+        try await cache.store(payload, vaultId: first.recordVaultId, domain: .writing, recordId: "surface-storage:v1")
+        let reopened = try PrivateBridgeCache(pairingId: first.cacheId, directory: directory, keychain: keychain)
+        #expect(try await reopened.data(vaultId: first.recordVaultId, domain: .writing, recordId: "surface-storage:v1") == payload)
+        let otherCache = try PrivateBridgeCache(pairingId: other.cacheId, directory: directory, keychain: keychain)
+        #expect(try await otherCache.data(vaultId: other.recordVaultId, domain: .writing, recordId: "surface-storage:v1") == nil)
+        let folder = directory.appendingPathComponent("bridge-\(first.cacheId)")
+        for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
+            #expect(try Data(contentsOf: file).range(of: payload) == nil)
+        }
+    }
+}
+
 /// The app target's own tests. The interesting assertions live in the packages, where they
 /// run without a simulator; this bundle exists to prove the app links what it claims to.
 @Suite("App wiring")
@@ -33,15 +129,15 @@ struct AppWiringTests {
         }
     }
 
-    @Test("academic sidebar matches the mobile hierarchy without the suspended Graph view")
+    @Test("academic sidebar includes the shared graph, dictionary, chat and announced tools")
     func academicSidebarMatchesMobile() {
         let visible = NodusNavigationContract.visibleItems(for: .academic).map(\.route)
         #expect(visible == [
             .home, .library,
-            .search, .ideas, .authors, .argument,
-            .research, .immersion, .deepResearch,
+            .search, .graph, .ideas, .authors, .argument,
+            .research, .immersion, .deepResearch, .dictionary, .researchChat,
             .workspace,
-            .browser, .radar, .toolkit,
+            .browser, .radar, .compass, .studyFocus, .toolkit,
             .settings,
         ])
         #expect(NodusNavigationContract.groupedItems(for: .academic).map(\.0) == [.explore, .analyze, .create, .tools])
@@ -53,13 +149,13 @@ struct AppWiringTests {
         let expected: [VaultType: Set<NodusRoute>] = [
             .prosopography: [.prosopSearch, .prosopPopulation, .prosopPersons, .prosopSources, .prosopAnalysis, .prosopNetworks, .notes, .browser, .radar, .toolkit],
             .primarySources: [.search, .archive, .persons, .timeline, .map, .relations, .notes, .browser, .radar, .toolkit],
-            .estudio: [.studyCourses, .studySchedule, .studyCalendar, .studySearch, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyQuestions, .studyReview, .studyDeepResearch, .browser, .radar, .toolkit],
-            .docencia: [.studyCourses, .teachingGroups, .studySchedule, .studyCalendar, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyQuestions, .teachingRubrics, .teachingExams, .teachingGrades, .teachingUnits, .browser, .radar, .toolkit],
-            .databases: [.pages, .dbSearch, .dbAnalysis, .dbChat, .notes, .browser, .radar, .toolkit],
+            .estudio: [.studyCourses, .studySchedule, .studyCalendar, .studySearch, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyQuestions, .studyReview, .studyDeepResearch, .browser, .radar, .toolkit],
+            .docencia: [.studyCourses, .teachingGroups, .studySchedule, .studyCalendar, .studyLibrary, .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyDeepResearch, .studyQuestions, .teachingRubrics, .teachingExams, .teachingGrades, .teachingUnits, .browser, .radar, .toolkit],
+            .databases: [.pages, .databases, .dbSearch, .dbAnalysis, .dbChat, .dbDeepResearch, .notes, .browser, .radar, .toolkit],
             .testimonios: [.search, .testimonyInterviews, .testimonyParticipants, .testimonyContrasts, .notes, .browser, .radar, .toolkit],
             .worldbuilding: [.encyclopedia, .characters, .places, .factions, .cultures, .timeline, .map, .relations, .tree, .dynasties, .worldChat, .rules, .conflicts, .arcs, .continuity, .questions, .notes, .scenes, .manuscript, .browser, .radar, .toolkit],
         ]
-        let pinned: Set<NodusRoute> = [.home, .library, .settings]
+        let pinned: Set<NodusRoute> = [.home, .library, .settings, .dictionary, .compass, .studyFocus]
         for (vaultType, routes) in expected {
             #expect(Set(NodusNavigationContract.visibleItems(for: vaultType).map(\.route)) == routes.union(pinned))
         }
@@ -104,6 +200,10 @@ struct AppWiringTests {
         let phone = SidebarPresentation(availableWidth: 430, isUserCollapsed: false)
         #expect(!phone.isPersistent)
         #expect(phone.residentRouteSize(in: CGSize(width: 430, height: 932)) == CGSize(width: 430, height: 888))
+
+        let phoneLandscape = SidebarPresentation(availableWidth: 956, isUserCollapsed: false, isPhone: true)
+        #expect(!phoneLandscape.isPersistent)
+        #expect(phoneLandscape.residentRouteSize(in: CGSize(width: 956, height: 440)) == CGSize(width: 956, height: 396))
 
         let split = SidebarPresentation(availableWidth: 640, isUserCollapsed: false)
         #expect(split.isPersistent)

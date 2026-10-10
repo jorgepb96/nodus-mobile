@@ -411,6 +411,7 @@ struct CorpusProse: View {
     /// in the middle of the dismissal, which is exactly the pause a reader saw.
     @State private var presenting = Presentation()
     @Environment(\.nodusReadingStyle) private var reading
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// The page's find bar, when there is one. Prose is the thing a reader searches, so this is
     /// where the words of a page are declared — after the Markdown and the citations have been
@@ -469,6 +470,16 @@ struct CorpusProse: View {
     /// handed to it is now the same instance each pass, so the identity check that decides whether
     /// to reparse the Markdown short-circuits instead of walking two copies of a paragraph.
     private let blocks: [Block]
+
+    /// Uses the same block identities as the rendered reader, so an evidence
+    /// jump opens the cited paragraph rather than the start of a long document.
+    func anchor(containing text: String, path: [Int] = []) -> PageSearchAnchor? {
+        let needle = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !needle.isEmpty, let block = blocks.first(where: {
+            $0.text.split(whereSeparator: \.isWhitespace).joined(separator: " ").range(of: needle, options: .caseInsensitive) != nil
+        }) else { return nil }
+        return PageSearchAnchor(path: path + [block.id])
+    }
 
     /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: an
     /// identity that changed with each pass would throw away every `UITextView` on the page — and
@@ -553,9 +564,9 @@ struct CorpusProse: View {
                     } else if reading.document {
                         DocumentProse(
                             source: block.source,
-                            font: reading.uiFont(.callout),
+                            font: reading.uiFont(.callout, dynamicTypeSize: dynamicTypeSize),
                             accent: accent,
-                            justified: true,
+                            justified: horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize,
                             linksLive: session != nil,
                             referencesLive: onReference != nil,
                             highlights: search?.highlights(for: path),
@@ -631,7 +642,7 @@ struct CorpusProse: View {
                         )
                     } else {
                         Text(attributed(block.source, path: path))
-                            .font(reading.font(.callout))
+                            .font(reading.font(.callout, dynamicTypeSize: dynamicTypeSize))
                             .textSelection(.enabled)
                     }
                 }
@@ -714,7 +725,7 @@ struct CorpusProse: View {
             attributed.nodusHighlight(highlights, in: shown)
         }
         return Text(attributed)
-            .font(reading.font(isPart ? .title3 : .headline, weight: .bold))
+            .font(reading.font(isPart ? .title3 : .headline, weight: .bold, dynamicTypeSize: dynamicTypeSize))
             .tracking(isPart ? 0.7 : 0)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -767,7 +778,7 @@ struct CorpusProse: View {
             let live = isReference ? onReference != nil : session != nil
             if !live { parsed[run.range].link = nil }
             parsed[run.range].foregroundColor = CorpusReferenceTone(link).color(accent: accent)
-            parsed[run.range].font = reading.font(.callout, weight: .medium)
+            parsed[run.range].font = reading.font(.callout, weight: .medium, dynamicTypeSize: dynamicTypeSize)
             parsed[run.range].underlineStyle = live ? .single : nil
         }
         if let highlights = search?.highlights(for: path) {
@@ -1035,6 +1046,7 @@ extension UIView {
 /// - The find bar's highlights are painted on top rather than parsed in: the Markdown is the
 ///   expensive half and it does not change while somebody types in the search field.
 private struct DocumentProse: UIViewRepresentable {
+    @Environment(\.nodusResidentRouteActive) private var routeActive
     /// Markdown, already linkified.
     let source: String
     let font: UIFont
@@ -1081,6 +1093,7 @@ private struct DocumentProse: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
+        view.accessibilityElementsHidden = !routeActive
         view.isEditable = false
         view.isScrollEnabled = false
         view.isSelectable = true
@@ -1155,6 +1168,7 @@ private struct DocumentProse: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
+        view.accessibilityElementsHidden = !routeActive
         context.coordinator.onOpen = onOpen
         context.coordinator.linksLive = linksLive
         context.coordinator.onMark = onMark
@@ -1498,6 +1512,7 @@ private struct DocumentProse: UIViewRepresentable {
         private var strokeAnchor: Int?
         private var strokeBaseline: NSAttributedString?
         private var activeHighlight: ReaderAnnotationDocument.Placement?
+        private var selectionUsesPointer = false
         private var expandsNextPointerSelectionMenu = false
         private var marginButtons: [UIButton] = []
         /// Whether this paragraph has already gone looking for its scroll view to hang the
@@ -1673,11 +1688,64 @@ private struct DocumentProse: UIViewRepresentable {
                 (element as? UIMenu)?.identifier != .standardEdit
             }
             children.insert(palette, at: 0)
-            return UIMenu(children: children)
+            let selectionMenu = UIMenu(children: children)
+
+            // UIKit can present a secondary click through either its own text-selection
+            // interaction or our installed edit interaction. Both must use the same ribbon.
+            guard selectionUsesPointer, let interaction = highlightMenu else { return selectionMenu }
+            if expandsNextPointerSelectionMenu {
+                expandsNextPointerSelectionMenu = false
+                return selectionMenu
+            }
+            let rect = textView.selectedTextRange.map { textView.firstRect(for: $0) } ?? .zero
+            return compactPointerSelectionMenu(
+                selectionMenu, in: textView, interaction: interaction,
+                sourcePoint: CGPoint(x: rect.midX, y: rect.midY)
+            )
+        }
+
+        private func compactPointerSelectionMenu(
+            _ selectionMenu: UIMenu,
+            in textView: UITextView,
+            interaction: UIEditMenuInteraction,
+            sourcePoint: CGPoint
+        ) -> UIMenu {
+            guard let palette = selectionMenu.children.first as? UIMenu else { return selectionMenu }
+            // An explicit action keeps system suggestions out of the initial context popover.
+            // Re-presenting through our interaction makes them reachable from either UIKit path.
+            let more = UIAction(title: "", image: UIImage(systemName: "ellipsis")) { [weak self, weak interaction, weak textView] _ in
+                guard let self, let interaction, let textView else { return }
+                expandsNextPointerSelectionMenu = true
+                interaction.dismissMenu()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self, weak interaction, weak textView] in
+                    guard let interaction, let textView, textView.selectedRange.length > 0 else {
+                        self?.expandsNextPointerSelectionMenu = false
+                        return
+                    }
+                    interaction.presentEditMenu(with: UIEditMenuConfiguration(
+                        identifier: "pointer-selection-more" as NSString,
+                        sourcePoint: sourcePoint
+                    ))
+                }
+            }
+            more.accessibilityLabel = String(localized: "More actions")
+            more.accessibilityIdentifier = "nodus-selection-more"
+            let primary = palette.children.filter {
+                ($0 as? UIAction)?.accessibilityIdentifier != "nodus-selection-lookup"
+            }
+            return UIMenu(children: [UIMenu(
+                title: "", options: .displayInline, preferredElementSize: .small,
+                children: primary + [more]
+            )])
         }
 
         /// Which paragraph is holding a selection, so any other one can let go of its own.
         func textViewDidChangeSelection(_ textView: UITextView) {
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_READER_INPUT"] == "1" {
+                NSLog("NodusReaderInput selection length=%ld firstResponder=%d", textView.selectedRange.length, textView.isFirstResponder ? 1 : 0)
+            }
+#endif
             if let range = textView.selectedTextRange, !range.isEmpty {
                 ProseSelection.began(in: textView)
             } else {
@@ -1896,65 +1964,21 @@ private struct DocumentProse: UIViewRepresentable {
             menuFor configuration: UIEditMenuConfiguration,
             suggestedActions: [UIMenuElement]
         ) -> UIMenu? {
-            // A trackpad secondary click presents the edit menu through the interaction we
-            // install for saved highlights, rather than through UITextViewDelegate's
-            // `textView(_:editMenuForTextIn:suggestedActions:)`. Reuse the selection ribbon
-            // here so mouse selection and touch/Pencil selection expose the same Nodus actions.
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_READER_INPUT"] == "1", let view = interaction.view as? UITextView {
+                NSLog("NodusReaderInput custom-menu length=%ld firstResponder=%d", view.selectedRange.length, view.isFirstResponder ? 1 : 0)
+            }
+#endif
+            // The installed highlight interaction also receives some secondary clicks on
+            // selected prose. Delegate to the same builder used by UIKit's text interaction.
             if activeHighlight == nil,
                let textView = interaction.view as? UITextView,
                textView.selectedRange.length > 0 {
-                guard let selectionMenu = self.textView(
+                return self.textView(
                     textView,
                     editMenuForTextIn: textView.selectedRange,
                     suggestedActions: suggestedActions
-                ) else { return nil }
-
-                // A secondary click asks UIKit for a context menu, whose default layout expands
-                // every system suggestion into the tall popover used for files and links. Text
-                // selection is different: finger and Pencil expose one compact edit ribbon.
-                // Preserve that same one-row surface for a mouse, while keeping Look Up,
-                // Translate, Share and the remaining system actions one press away.
-                guard let nodusPalette = selectionMenu.children.first as? UIMenu else {
-                    return selectionMenu
-                }
-                if expandsNextPointerSelectionMenu {
-                    expandsNextPointerSelectionMenu = false
-                    return selectionMenu
-                }
-
-                // UIKit flattens a submenu placed inside an edit palette, so a nested `UIMenu`
-                // still expands the whole context menu. Use one explicit ellipsis action and
-                // re-present the complete menu only when the reader asks for it.
-                let sourcePoint = configuration.sourcePoint
-                let more = UIAction(title: "", image: UIImage(systemName: "ellipsis")) { [weak self, weak interaction, weak textView] _ in
-                    guard let self, let interaction, let textView else { return }
-                    expandsNextPointerSelectionMenu = true
-                    interaction.dismissMenu()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self, weak interaction, weak textView] in
-                        guard let interaction, let textView,
-                              textView.selectedRange.length > 0
-                        else {
-                            self?.expandsNextPointerSelectionMenu = false
-                            return
-                        }
-                        interaction.presentEditMenu(with: UIEditMenuConfiguration(
-                            identifier: "pointer-selection-more" as NSString,
-                            sourcePoint: sourcePoint
-                        ))
-                    }
-                }
-                more.accessibilityLabel = String(localized: "More actions")
-                more.accessibilityIdentifier = "nodus-selection-more"
-                let primaryActions = nodusPalette.children.filter {
-                    ($0 as? UIAction)?.accessibilityIdentifier != "nodus-selection-lookup"
-                }
-                let compact = UIMenu(
-                    title: "",
-                    options: .displayInline,
-                    preferredElementSize: .small,
-                    children: primaryActions + [more]
                 )
-                return UIMenu(children: [compact])
             }
 
             guard let placement = activeHighlight else { return nil }
@@ -2152,6 +2176,13 @@ private struct DocumentProse: UIViewRepresentable {
         /// arbitration — and on the two things it does claim, the mark and a citation, it is the
         /// only one that wants them.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            selectionUsesPointer = touch.type == .indirectPointer
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_READER_INPUT"] == "1", let view = recognizer.view {
+                let point = touch.location(in: view)
+                NSLog("NodusReaderInput touch type=%ld x=%.1f y=%.1f", touch.type.rawValue, point.x, point.y)
+            }
+#endif
             if recognizer === strokeHighlighter {
                 return (touch.type == .direct || touch.type == .pencil)
                     && fixedHighlighter != nil

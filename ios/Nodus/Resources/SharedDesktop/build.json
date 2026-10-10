@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "desktopCommit": "6cda0daa8ec4d34fb86d8f91bd7f4f31b1df01c5",
+  "sourceDigest": "2ff6c70bf8c9cf2b63d2611cdc8331ad39e02bee6d03804cf1a1e9864306599d",
+  "files": {
+    "index.html": "7db9ed662f53ca86dadacb30f5319b7008a136a28c590a2b6e8ed451ef5914fd",
+    "operations.json": "ac9a312f91dac7c4555867078e7977ecdeefcb35c4cf6d10a1f97e4813db038f",
+    "report-renderer.js": "b96aec3cfb12c0a61014938e670fa89651bb63e585dd03f5b06e04a02e698a84",
+    "surface.css": "53e3f0017676bcc80bea58059b4b72b39b6c2c1ccd88934930a7b394e4ee8e5f",
+    "surface.iife.js": "11063e7a4e2c1468025a5bed76d78d7f0c1be68297ba5cb6231285ba56b40f1e"
+  }
+}

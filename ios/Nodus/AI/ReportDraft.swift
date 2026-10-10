@@ -36,15 +36,37 @@ enum ReportDraft {
         now: Date = Date()
     ) -> [String: JSONValue] {
         let timestamp = ISO8601DateFormatter.nodusFractional.string(from: now)
+        let (brief, selection, draft) = content(report: report, language: language, now: now)
+
+        return [
+            "id": .string(id),
+            "title": .string(report.objective),
+            "brief_json": .string(json(brief)),
+            "selection_json": .string(json(selection)),
+            "model_json": .string(json(["provider": model.provider.rawValue, "model": model.model])),
+            "draft_json": .string(json(draft)),
+            "created_at": .string(timestamp),
+            "updated_at": .string(timestamp),
+        ]
+    }
+
+    /// The document contains no provider metadata. Older local reports can be
+    /// printed too, without inventing a model or asking for mobile credentials.
+    static func document(report: DeepResearchReport, language: String?, now: Date) throws -> JSONValue {
+        let (_, _, draft) = content(report: report, language: language, now: now)
+        return try JSONDecoder.nodus.decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: draft))
+    }
+
+    private static func content(report: DeepResearchReport, language: String?, now: Date) -> ([String: Any], [String: Any], [String: Any]) {
+        let timestamp = ISO8601DateFormatter.nodusFractional.string(from: now)
         let selection = selection(citing: report.sections.flatMap(\.citations))
 
-        let brief: [String: Any] = [
+        var brief: [String: Any] = [
             // The one value the server filters on. Anything else and the report is stored and
             // never listed.
             "kind": entityKind,
             "objective": report.objective,
             "tone": "academic",
-            "language": language,
         ]
 
         let draft: [String: Any] = [
@@ -82,16 +104,10 @@ enum ReportDraft {
             ] as [String: Any],
         ]
 
-        return [
-            "id": .string(id),
-            "title": .string(report.objective),
-            "brief_json": .string(json(brief)),
-            "selection_json": .string(json(selection)),
-            "model_json": .string(json(["provider": model.provider.rawValue, "model": model.model])),
-            "draft_json": .string(json(draft)),
-            "created_at": .string(timestamp),
-            "updated_at": .string(timestamp),
-        ]
+        if let language { brief["language"] = language }
+        var document = draft
+        document["brief"] = brief
+        return (brief, selection, document)
     }
 
     /// What the report was built from, read off the citations it really used.

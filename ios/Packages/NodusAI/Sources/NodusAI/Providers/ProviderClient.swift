@@ -32,6 +32,8 @@ public struct ChatRequest: Sendable {
     public var maxTokens: Int?
     public var reasoning: ReasoningEffort?
     public var jsonMode: Bool
+    /// Non-secret generation controls supplied by the shared Desktop policy.
+    public var researchParameters: [String: JSONBody]
 
     public init(
         model: ModelRef,
@@ -39,7 +41,8 @@ public struct ChatRequest: Sendable {
         temperature: Double? = 0.4,
         maxTokens: Int? = nil,
         reasoning: ReasoningEffort? = nil,
-        jsonMode: Bool = false
+        jsonMode: Bool = false,
+        researchParameters: [String: JSONBody] = [:]
     ) {
         self.model = model
         self.messages = messages
@@ -47,10 +50,11 @@ public struct ChatRequest: Sendable {
         self.maxTokens = maxTokens
         self.reasoning = reasoning
         self.jsonMode = jsonMode
+        self.researchParameters = researchParameters
     }
 }
 
-public enum ProviderError: Error, Sendable {
+public enum ProviderError: LocalizedError, Sendable {
     case missingKey(AIProvider)
     case http(status: Int, provider: AIProvider, message: String?)
     case malformedResponse(String)
@@ -61,6 +65,16 @@ public enum ProviderError: Error, Sendable {
     /// that was simply cut off.
     case truncated(model: String)
     case cancelled
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingKey(let provider): return "\(provider.label): " + String(localized: "No API key is configured on this device.")
+        case .http(let status, let provider, let message): return "\(provider.label) · HTTP \(status): \(message ?? String(localized: "The provider rejected the request."))"
+        case .malformedResponse(let message): return "malformed_output: \(message)"
+        case .truncated(let model): return "output_truncated: \(model). " + String(localized: "The model reached its output limit before finishing the response.")
+        case .cancelled: return String(localized: "Cancelled.")
+        }
+    }
 }
 
 /// Talks to whichever provider the user configured.
@@ -165,6 +179,7 @@ public actor ProviderClient {
         body.merge(RequestShaping.samplingBody(provider: provider, model: request.model.model, temperature: request.temperature)) { _, new in new }
         body.merge(RequestShaping.reasoningBody(provider: provider, model: request.model.model, effort: request.reasoning)) { _, new in new }
         body.merge(RequestShaping.routingBody(provider: provider)) { _, new in new }
+        body.merge(request.researchParameters) { _, new in new }
 
         if let maxTokens = request.maxTokens
             ?? RequestShaping.freeTierMaxTokens(provider: provider, model: request.model.model) {
@@ -203,6 +218,7 @@ public actor ProviderClient {
         ]
         if !system.isEmpty { body["system"] = .string(system) }
         if let temperature = request.temperature { body["temperature"] = .double(temperature) }
+        body.merge(request.researchParameters) { _, new in new }
 
         var urlRequest = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         urlRequest.httpMethod = "POST"

@@ -30,11 +30,24 @@ enum ConnectionClient {
             origin: connection.origin,
             spaceId: connection.spaceId
         )) else { return nil }
-        return NodusClient(
-            address: ServerAddress(trusted: connection.origin),
-            token: token,
-            cache: ResponseCache(directory: cacheDirectory)
-        )
+        return make(for: connection, token: token, pairings: DesktopBridgePairingStore().pairings())
+    }
+
+    /// Foreground and background clients must use the same Mac/vault route.
+    /// Losing a private pairing must never fall through to a Server API on the
+    /// same address, or send queued content using a different connection mode.
+    static func make(for connection: AppModel.Connection, token: String,
+                     pairings: [DesktopBridgePairing], cacheDirectory directory: URL? = nil) -> NodusClient? {
+        guard !token.isEmpty else { return nil }
+        var bridge: DesktopBridgeClient?
+        if let pairingId = connection.desktopPairingId {
+            guard let pairing = pairings.first(where: { $0.id == pairingId }),
+                  let vaultId = connection.vaultId, pairing.vaultIds.contains(vaultId),
+                  !pairing.isExpired else { return nil }
+            bridge = DesktopBridgeClient(pairing: pairing, token: token)
+        }
+        return NodusClient(address: ServerAddress(trusted: connection.origin), token: token,
+            cache: ResponseCache(directory: directory ?? cacheDirectory), desktopBridge: bridge, vaultId: connection.vaultId)
     }
 }
 
@@ -57,8 +70,9 @@ enum OutboxDelivery {
         in spaceId: String,
         limits: MutationLimits = .unstated
     ) async throws {
+        let maximumBatch = min(limits.maxBatch, await client.maximumMutationBatch)
         while true {
-            let queued = try await outbox.pending(limit: limits.maxBatch)
+            let queued = try await outbox.authorisedPending(limit: maximumBatch)
             guard !queued.isEmpty else { return }
 
             // Cut by bytes, not by count. One Deep Research report is a quarter of a megabyte,
@@ -82,14 +96,13 @@ enum OutboxDelivery {
             // The cursor is kept with them. It is where this batch came to rest in the ledger,
             // and the only number the space's own `mutationCursor` can later be measured
             // against to say the owner has collected it.
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
+            try await outbox.recordReceipt(receipt, for: batch)
 
             if receipt.accepted.isEmpty, receipt.duplicate.isEmpty, !receipt.rejected.isEmpty { return }
             // Drained only when a short read was also sent whole. Testing the batch alone would
             // stop early every time bytes ran out before rows did, leaving the rest queued with
             // nothing to start it again.
-            if batch.count == queued.count, queued.count < limits.maxBatch { return }
+            if batch.count == queued.count, queued.count < maximumBatch { return }
         }
     }
 }

@@ -19,6 +19,12 @@ final class AISettings {
         var chat: ModelRef?
         var deepResearch: ModelRef?
         var image: ModelRef?
+        var dictionary: ModelRef?
+        var immersion: ModelRef?
+        var writing: ModelRef?
+        var synthesis: ModelRef?
+        var translation: ModelRef?
+        var argumentMap: ModelRef?
     }
 
     private(set) var models = Models()
@@ -52,6 +58,22 @@ final class AISettings {
             pinnedModels = decoded
         }
         refreshConfigured()
+#if DEBUG && targetEnvironment(simulator)
+        // Used only by the isolated acceptance simulator. No secret enters XCTest
+        // arguments, launch environments, logs, or the Desktop pairing protocol.
+        let fixtureURL = URL.documentsDirectory.appendingPathComponent("NodusAcceptance.provider.json")
+        if let bytes = try? Data(contentsOf: fixtureURL),
+           let fixture = try? JSONDecoder().decode(AcceptanceProvider.self, from: bytes),
+           fixture.marker == "nodus-mobile-isolated-acceptance-0.1.0" {
+            do {
+                try setKey(fixture.key, for: fixture.provider)
+                for task in fixture.tasks?.compactMap(Task.init(rawValue:)) ?? [.dictionary] {
+                    setModel(ModelRef(provider: fixture.provider, model: fixture.model), for: task)
+                }
+                try FileManager.default.removeItem(at: fixtureURL)
+            } catch { /* Missing configuration remains a failing acceptance condition. */ }
+        }
+#endif
         store.onExternalChange(of: [defaultsKey, pinnedKey]) { [weak self] in self?.adoptRemote() }
     }
 
@@ -69,6 +91,28 @@ final class AISettings {
            let decoded = try? JSONDecoder().decode([ModelRef].self, from: data) {
             pinnedModels = decoded
         }
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    private struct AcceptanceProvider: Decodable { let marker: String; let provider: AIProvider; let model: String; let key: String; let tasks: [String]? }
+#endif
+    var surfacePreferences: [String: JSONValue] {
+        let base: [String: JSONValue] = ["researchWebSearch": .string("off"), "modelSettingsMode": .string("advanced"), "researchThinkingEffort": .string("standard"), "researchEffortByModel": .object([:])]
+        guard let bytes = store.data(forKey: "nodus.ai.surface-preferences.v1"),
+            let saved = try? JSONDecoder.nodus.decode([String: JSONValue].self, from: bytes) else { return base }
+        return base.merging(saved, uniquingKeysWith: { _, new in new })
+    }
+    func setSurfacePreferences(_ patch: [String: JSONValue]) throws {
+        let allowed = Set(["modelSettingsMode", "researchThinkingEffort", "researchEffortByModel", "researchWebSearch", "studyImproveToolbarStyleIds"])
+        guard patch.keys.allSatisfy(allowed.contains) else { throw DesktopBridgeError.permissionDenied }
+        if let web = patch["researchWebSearch"], !["off", "auto", "on"].contains(web.stringValue ?? "") { throw DesktopBridgeError.malformedResponse }
+        if let styles = patch["studyImproveToolbarStyleIds"] {
+            guard let values = styles.arrayValue, values.count <= 4,
+                values.allSatisfy({ $0.stringValue.map { !$0.isEmpty && $0.utf8.count <= 256 } ?? false }),
+                Set(values.compactMap(\.stringValue)).count == values.count else { throw DesktopBridgeError.malformedResponse }
+        }
+        let value = surfacePreferences.merging(patch, uniquingKeysWith: { _, new in new })
+        store.set(try JSONEncoder.nodus.encode(value), forKey: "nodus.ai.surface-preferences.v1")
     }
 
     // MARK: - Keys
@@ -120,6 +164,12 @@ final class AISettings {
         case .chat: models.chat = model
         case .deepResearch: models.deepResearch = model
         case .image: models.image = model
+        case .dictionary: models.dictionary = model
+        case .immersion: models.immersion = model
+        case .writing: models.writing = model
+        case .synthesis: models.synthesis = model
+        case .translation: models.translation = model
+        case .argumentMap: models.argumentMap = model
         }
         persist()
     }
@@ -129,17 +179,29 @@ final class AISettings {
         case .chat: return models.chat
         case .deepResearch: return models.deepResearch ?? models.chat
         case .image: return models.image
+        case .dictionary: return models.dictionary ?? models.chat
+        case .immersion: return models.immersion ?? models.chat
+        case .writing: return models.writing ?? models.chat
+        case .synthesis: return models.synthesis ?? models.chat
+        case .translation: return models.translation ?? models.chat
+        case .argumentMap: return models.argumentMap ?? models.chat
         }
     }
 
     enum Task: String, CaseIterable, Sendable {
-        case chat, deepResearch, image
+        case chat, deepResearch, image, dictionary, immersion, writing, synthesis, translation, argumentMap
 
         var label: String {
             switch self {
             case .chat: return String(localized: "Chat")
             case .deepResearch: return String(localized: "Deep Research")
             case .image: return String(localized: "Images")
+            case .dictionary: return String(localized: "Dictionary")
+            case .immersion: return String(localized: "Immersion")
+            case .writing: return String(localized: "Writing")
+            case .synthesis: return String(localized: "Synthesis")
+            case .translation: return String(localized: "Translation")
+            case .argumentMap: return String(localized: "Argument map")
             }
         }
     }

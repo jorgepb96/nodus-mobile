@@ -1,11 +1,30 @@
 import Foundation
 import NodusAI
+import NodusKit
 import Testing
 @testable import Nodus
 
 @Suite("Deep Research queue")
 @MainActor
 struct DeepResearchQueueTests {
+    @Test("live mode cannot enqueue a generation using mobile credentials")
+    func liveModeDoesNotExecuteOnMobile() async throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let space = "isolated-live-mode-\(UUID().uuidString)"
+        let mirror = try await MirrorStore.open(spaceId: space, directory: root)
+        let corpus = LocalCorpus(space: .init(id: space, name: "Mode verification"), mirror: mirror, archive: Data())
+        let connection = AppModel.Connection(origin: DemoSpace.origin, spaceId: space, spaceName: "Mode verification", serverName: "Isolated", role: .reader)
+        let session = SpaceSession(demo: connection, corpus: corpus, cacheDirectory: root)
+        defer { UserDefaults.standard.removeObject(forKey: "ai-execution-mode:\(connection.id)") }
+        session.aiExecutionMode = .live
+        let runner = DeepResearchRunner.shared(for: space)
+        runner.start(request("Must stay on the Mac"), session: session, ai: AISettings())
+        #expect(!runner.isRunning)
+        #expect(runner.failure != nil)
+        #expect(DeepResearchQueue.shared.jobs(in: space).isEmpty)
+        #expect(session.aiExecutionMode == .live)
+    }
     @Test("jobs run sequentially and keep their stable report ids")
     func sequentialExecution() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -1,0 +1,59 @@
+import Foundation
+
+public struct DesktopBridgeJob: Decodable, Sendable, Identifiable {
+    public enum State: String, Decodable, Sendable { case accepted, running, saved, available, failed, interrupted, cancelled }
+    public struct Event: Codable, Sendable {
+        public let sequence: Int
+        public let channel: String
+        public let args: [JSONValue]
+    }
+    public let id: String
+    public let vaultId: String
+    public let method: String
+    public let state: State
+    public let nextSequence: Int
+    public let events: [Event]
+    public let result: JSONValue
+    public let error: String?
+}
+
+public extension DesktopBridgeClient {
+    static let jobMethods: Set<String> = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "startDictionaryGeneration", "enqueueDeepResearchJob", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "generateImmersionSession", "generateWritingWorkshopDraft", "generateContentTranslation", "researchChat", "researchChatStream", "improveStudyText", "buildArgumentMap", "scanDictionaryNewEvidence", "generateConversationTitle"]
+
+    /// A stable key can be resubmitted after transport failure; the Mac returns the
+    /// existing job instead of generating and saving the same content twice.
+    func submitJob(vaultId: String, method: String, args: [JSONValue], idempotencyKey: String) async throws -> DesktopBridgeJob {
+        guard Self.jobMethods.contains(method) else { throw DesktopBridgeError.permissionDenied }
+        let response = try await jobRequest(vaultId: vaultId, method: "POST", body: .object([
+            "method": .string(method), "args": .array(args), "idempotencyKey": .string(idempotencyKey)
+        ]))
+        return response.job
+    }
+    func readJob(vaultId: String, id: String, cursor: Int = 0) async throws -> DesktopBridgeJob {
+        try await jobRequest(vaultId: vaultId, id: id, query: [URLQueryItem(name: "cursor", value: String(cursor))], method: "GET").job
+    }
+    func cancelJob(vaultId: String, id: String) async throws -> DesktopBridgeJob {
+        try await jobRequest(vaultId: vaultId, id: id, method: "DELETE").job
+    }
+    func awaitJob(vaultId: String, job: DesktopBridgeJob, onState: @Sendable (DesktopBridgeJob) async throws -> Void = { _ in }, onEvents: @Sendable ([DesktopBridgeJob.Event]) async -> Void) async throws -> JSONValue {
+        var current = job
+        var cursor = 0
+        while true {
+            try Task.checkCancellation()
+            try await onState(current)
+            await onEvents(current.events)
+            cursor = max(cursor, current.events.last?.sequence ?? 0)
+            switch current.state {
+            case .available: return current.result
+            case .failed, .interrupted:
+                throw APIError(status: 409, code: current.state.rawValue, message: current.error ?? "The Mac could not finish this request.")
+            case .cancelled: throw CancellationError()
+            case .accepted, .running, .saved: break
+            }
+            try await Task.sleep(for: .milliseconds(700))
+            current = try await readJob(vaultId: vaultId, id: current.id, cursor: cursor)
+        }
+    }
+}
+
+struct DesktopBridgeJobEnvelope: Decodable, Sendable { let job: DesktopBridgeJob }

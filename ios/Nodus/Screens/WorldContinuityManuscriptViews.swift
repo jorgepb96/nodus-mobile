@@ -148,6 +148,7 @@ struct WorldContinuityView: View {
 
 struct WorldManuscriptView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: SpaceSession
 
     @State private var scenes: [WorldbuildingParity.ManuscriptScene] = []
@@ -179,27 +180,34 @@ struct WorldManuscriptView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            if sizeClass == .regular {
-                HStack(spacing: 0) {
-                    sceneList.frame(width: 310)
-                    Divider()
-                    editor
-                    Divider()
-                    inspector.frame(width: 330)
-                }
-            } else {
-                VStack(spacing: 0) {
-                    compactSelector
-                    Divider()
-                    if compactPane == 0 { editor }
-                    else { inspector }
+        GeometryReader { geometry in
+            // An iPad retains a regular size class even when its sidebar or
+            // window leaves too little room for all three Desktop panes.
+            let showsThreePanes = geometry.size.width >= 1_100 && !dynamicTypeSize.isAccessibilitySize
+            VStack(spacing: 0) {
+                header
+                Divider()
+                if showsThreePanes {
+                    HStack(spacing: 0) {
+                        sceneList.frame(width: 310)
+                        Divider()
+                        editor
+                        Divider()
+                        inspector.frame(width: 330)
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        compactSelector
+                        Divider()
+                        if compactPane == 0 { editor }
+                        else { inspector }
+                    }
                 }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .nodusPageBackdrop(accent: session.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("world-manuscript")
         .task(id: session.publishedRevision) { await load() }
         .onChange(of: selectedId) { _, _ in selectDraft() }
@@ -277,6 +285,8 @@ struct WorldManuscriptView: View {
                 Label("Scene", systemImage: "sidebar.right").tag(1)
             }
             .pickerStyle(.segmented)
+            .accessibilityLabel("Manuscript pane")
+            .accessibilityIdentifier("world-manuscript-pane")
         }.padding(.horizontal, NodusSpace.page).padding(.vertical, 8)
     }
 
@@ -407,6 +417,7 @@ struct WorldManuscriptView: View {
 /// continuity and recoverable prose operations. iPad keeps it beside the editor; iPhone
 /// reaches this exact view through the compact Write/Scene switch rather than losing it.
 private struct WorldManuscriptInspector: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: SpaceSession
     let scene: WorldbuildingParity.ManuscriptScene
     @Binding var draft: String
@@ -540,11 +551,11 @@ private struct WorldManuscriptInspector: View {
                 Spacer()
                 NodusChip(key: kind, tint: session.accent)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 62), spacing: 5)], spacing: 5) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 200 : 110), spacing: 5)], spacing: 5) {
                 ForEach(marks, id: \.self) { mark in
-                    Button(mark.capitalized) { Task { await setBeat(kind: kind, id: id, mark: current?.string("mark") == mark ? nil : mark) } }
+                    Button(LocalizedStringKey(mark.capitalized)) { Task { await setBeat(kind: kind, id: id, mark: current?.string("mark") == mark ? nil : mark) } }
                         .buttonStyle(.bordered).buttonBorderShape(.roundedRectangle).tint(session.accent)
-                        .font(.caption2).disabled(outbox == nil)
+                        .font(.caption2).lineLimit(1).frame(minHeight: 44).contentShape(Rectangle()).disabled(outbox == nil)
                 }
             }
             if let text = current?.text("text") { Text(text).font(.caption2).foregroundStyle(.secondary) }
@@ -567,11 +578,11 @@ private struct WorldManuscriptInspector: View {
                 Spacer()
                 Text((rule.string("hardness") ?? "rule").capitalized).font(.caption2).foregroundStyle(.secondary)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 5)], spacing: 5) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 200 : 110), spacing: 5)], spacing: 5) {
                 ForEach(["obeys", "bends", "breaks", "establishes"], id: \.self) { mark in
-                    Button(mark.capitalized) { Task { await setBeat(kind: "rule", id: id, mark: current?.string("mark") == mark ? nil : mark) } }
+                    Button(LocalizedStringKey(mark.capitalized)) { Task { await setBeat(kind: "rule", id: id, mark: current?.string("mark") == mark ? nil : mark) } }
                         .buttonStyle(.bordered).buttonBorderShape(.roundedRectangle).tint(session.accent)
-                        .font(.caption2).disabled(outbox == nil)
+                        .font(.caption2).lineLimit(1).frame(minHeight: 44).contentShape(Rectangle()).disabled(outbox == nil)
                 }
             }
             if current?.string("mark") == "breaks" {

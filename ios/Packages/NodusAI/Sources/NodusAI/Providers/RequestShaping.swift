@@ -136,7 +136,7 @@ public enum RequestShaping {
 ///
 /// NodusKit has its own `JSONValue` for *decoding* snapshot rows; this one exists for
 /// *encoding* provider requests, where the shapes are small, known, and assembled by hand.
-public indirect enum JSONBody: Sendable, Hashable, Encodable {
+public indirect enum JSONBody: Sendable, Hashable, Codable {
     case null
     case bool(Bool)
     case int(Int)
@@ -144,6 +144,17 @@ public indirect enum JSONBody: Sendable, Hashable, Encodable {
     case string(String)
     case array([JSONBody])
     case object([String: JSONBody])
+
+    public init(from decoder: any Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() { self = .null }
+        else if let item = try? value.decode(Bool.self) { self = .bool(item) }
+        else if let item = try? value.decode(Int.self) { self = .int(item) }
+        else if let item = try? value.decode(Double.self) { self = .double(item) }
+        else if let item = try? value.decode(String.self) { self = .string(item) }
+        else if let item = try? value.decode([JSONBody].self) { self = .array(item) }
+        else { self = .object(try value.decode([String: JSONBody].self)) }
+    }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()

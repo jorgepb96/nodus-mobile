@@ -15,6 +15,13 @@ struct SpaceSettingsView: View {
     @State private var diagnosticFailure: ConnectionFailure?
     @State private var libraryDeletion: LibraryDeletion?
     @State private var showingLibraryDeletion = false
+    @State private var liveSettings: JSONValue?
+    @State private var liveSettingsError: String?
+    @State private var changingMacConnection = false
+    @State private var confirmingMacRevocation = false
+    @State private var macConnectionResult: String?
+    @State private var showingLegacyRecovery = false
+    @State private var legacyRecoveryResult: String?
 
     private enum LibraryDeletion: Equatable { case space, everySpace }
 
@@ -32,62 +39,67 @@ struct SpaceSettingsView: View {
                 .padding(.bottom, 10)
 
                 List {
+                if session.connection.desktopPairingId != nil { macConnectionSection }
+
                 Section("Space") {
                     labelled("Name", session.connection.spaceName)
                     labelled("Vault", session.connection.vaultName ?? "—")
-                    labelled("Type", session.vaultType?.rawValue ?? "—")
+                    labelled("Type", session.vaultType?.localizedName ?? "—")
                     labelled("Access", roleLabel)
-                    if let revision = session.overview?.space.revision {
-                        labelled("Revision", String(revision.prefix(12)))
-                    }
-                    if let schema = session.overview?.schemaVersion {
-                        labelled("Schema", "v\(schema)")
+                }
+
+                if let legacy = ConnectionStorage.legacyData(for: session.connection) {
+                    Section("Documentos de la copia anterior") {
+                        Text("Se conservan \(legacy.reports) informes y \(legacy.chats) conversaciones sin una conexión identificada.")
+                        Button("Recuperar documentos locales aquí") { showingLegacyRecovery = true }
+                            .accessibilityIdentifier("recover-legacy-local-documents")
+                        if let legacyRecoveryResult { Text(legacyRecoveryResult).font(.caption) }
                     }
                 }
 
                 Section {
-                    labelled("Server", session.connection.serverName)
-                    labelled("Address", session.connection.origin)
-                    if let health {
-                        labelled("Status", health.ok ? "Online · v\(health.version ?? "?")" : "No answer")
+                    Picker("Execution mode", selection: Binding(get: { session.aiExecutionMode }, set: { session.aiExecutionMode = $0 })) {
+                        Text("Live · Mac models").tag(AIExecutionMode.live)
+                            .disabled(session.connection.desktopPairingId == nil)
+                        Text("Autonomous · this device").tag(AIExecutionMode.autonomous)
                     }
-                    if let capabilities {
-                        labelled("Largest image", ByteCountFormatter.string(fromByteCount: Int64(capabilities.maxAssetBytes), countStyle: .file))
-                        labelled("Change batch", "\(capabilities.maxMutationBatch)")
-                        // A report is one change carrying its whole text, so this is the number
-                        // that decides whether a long one can be sent at all. Shown rather than
-                        // left to be discovered by a rejection.
-                        if let maxMutationBytes = capabilities.maxMutationBytes {
-                            labelled("Largest change", ByteCountFormatter.string(fromByteCount: Int64(maxMutationBytes), countStyle: .file))
+                    .accessibilityIdentifier("ai-execution-mode")
+                    if session.aiExecutionMode == .live {
+                        labelled("Mac", session.connection.serverName)
+                        NavigationLink("Mac requests") { LiveJobsView(session: session) }
+                        if let liveSettings {
+                            ForEach(["chatModel", "deepResearchModel", "dictionaryModel", "immersionModel", "writingModel"], id: \.self) { key in
+                                let choice = liveSettings.objectValue?[key]?.objectValue
+                                labelled(macModelLabel(key), choice?["model"]?.stringValue ?? "—")
+                            }
                         }
+                        if let liveSettingsError { Text(liveSettingsError).foregroundStyle(Color.nodusDanger) }
                     }
-                    if let diagnosticFailure {
-                        // One line, and a way to find out more. The whole of what this screen
-                        // could say about a failure used to be `error.localizedDescription`.
-                        Text(LocalizedStringKey(diagnosticFailure.sentence))
-                            .font(.caption)
-                            .foregroundStyle(diagnosticFailure.tone == .caution ? Color.nodusCaution : Color.nodusDanger)
-                    }
-                } header: {
-                    Text("Server")
-                } footer: {
-                    if ServerAddress(trusted: session.connection.origin).isInsecure {
-                        Text("This connection is not encrypted. That should only ever be a local test.")
-                            .foregroundStyle(Color.nodusCaution)
-                    }
+                } header: { Text("Execution mode") } footer: {
+                    Text(session.aiExecutionMode == .live
+                        ? "Requests run on the linked Mac using its providers and subscription sessions. Credentials stay on the Mac. Disconnection never switches to autonomous mode."
+                        : "Requests use the providers configured on this device. The execution mode changes only when you choose it.")
                 }
 
-                Section {
-                    NavigationLink {
-                        ConnectionDiagnosticsView(connection: session.connection)
-                            .environment(model)
-                    } label: {
-                        Label("Diagnostics", systemImage: "stethoscope")
+                if session.connection.desktopPairingId != nil {
+                    Section {
+                        DisclosureGroup("Advanced connection · Server or Cloud") {
+                            serverConnectionRows
+                            workspaceProtocolRows
+                            connectionDiagnosticsLink
+                        }
+                        .accessibilityIdentifier("mac-advanced-connection")
                     }
-                } header: {
-                    Text("Connection")
-                } footer: {
-                    Text("Runs the checks in order — this device's network, then the address, then whether a Nodus Server is behind it — and says where it stops.")
+                } else {
+                    Section {
+                        serverConnectionRows
+                    } header: { Text("Server") } footer: { insecureConnectionFooter }
+                    Section {
+                        workspaceProtocolRows
+                        connectionDiagnosticsLink
+                    } header: { Text("Connection") } footer: {
+                        Text("Runs the checks in order — this device's network, then the address, then whether a Nodus Server is behind it — and says where it stops.")
+                    }
                 }
 
                 Section {
@@ -95,15 +107,6 @@ struct SpaceSettingsView: View {
                     labelled("This server", serverVersion ?? "—")
                 } header: {
                     Text("Version")
-                } footer: {
-                    // The whole reason the three parts share one number: a mismatch is a
-                    // sentence a person can read out, instead of a bug they have to reproduce.
-                    if let serverVersion, serverVersion != NodusVersion.current {
-                        Text("The app and the server are on different releases. Anything that behaves oddly should be suspected here first.")
-                            .foregroundStyle(Color.nodusCaution)
-                    } else {
-                        Text("Nodus desktop, Nodus Server and this app ship as one release and carry one number.")
-                    }
                 }
 
                 Section {
@@ -130,7 +133,7 @@ struct SpaceSettingsView: View {
                     Text("The vault fixes the model, not this app: retrieval only works when provider, model and dimension all match exactly.")
                 }
 
-                Section {
+                if session.aiExecutionMode == .autonomous { Section {
                     NavigationLink {
                         ProviderSettingsView(accent: session.accent, requiredEmbedding: requiredEmbedding, embedded: true)
                             .environment(ai)
@@ -162,7 +165,7 @@ struct SpaceSettingsView: View {
                     Text("Artificial intelligence")
                 } footer: {
                     Text("Your keys stay in this device's keychain. The Nodus Server never receives one — it hands over the material, and this app calls your provider itself.")
-                }
+                } }
 
                 Section {
                     Toggle(isOn: Binding(
@@ -250,6 +253,10 @@ struct SpaceSettingsView: View {
                     case .importing:
                         Label("Indexing…", systemImage: "gearshape.2")
                             .foregroundStyle(.secondary)
+                    case .downloadingAssets(let done, let total):
+                        ProgressView(value: Double(done), total: Double(max(1, total))) {
+                            Text("Downloading images: \(done) of \(total)")
+                        }
                     case .current(let rows, let tables):
                         labelled("Rows", rows.formatted())
                         labelled("Tables", "\(tables)")
@@ -346,6 +353,138 @@ struct SpaceSettingsView: View {
             }
         }
         .accessibilityIdentifier("settings-workspace")
+        .alert("Revoke Mac connection?", isPresented: $confirmingMacRevocation) {
+            Button("Revoke Mac connection", role: .destructive) {
+                changingMacConnection = true; macConnectionResult = nil
+                Task {
+                    defer { changingMacConnection = false }
+                    do { try await model.revokeDesktop(session.connection) }
+                    catch { macConnectionResult = error.localizedDescription }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This device will lose access to every vault linked through this connection. You can link it again from Nodus on your Mac.")
+        }
+        .confirmationDialog("Recuperar en \(session.connection.spaceName)", isPresented: $showingLegacyRecovery, titleVisibility: .visible) {
+            Button("Recuperar documentos locales") {
+                do {
+                    let count = try ConnectionStorage.recoverLocalDocuments(for: session.connection)
+                    legacyRecoveryResult = "Se han recuperado \(count) documentos nuevos. Las copias originales se conservan."
+                } catch { legacyRecoveryResult = error.localizedDescription }
+            }
+            Button("Cancelar", role: .cancel) { }
+        } message: {
+            Text("Confirma que estos documentos son tuyos y corresponden a esta conexión. Los informes y conversaciones se copiarán como documentos locales; revisa sus fuentes antes de enviarlos. Las copias descargadas y los envíos anteriores se conservarán aparte.")
+        }
+    }
+
+    private var macConnectionSection: some View {
+        Section {
+            labelled("Mac", session.connection.serverName)
+            if let id = session.connection.desktopPairingId,
+               let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == id }) {
+                Text("\(pairing.vaultIds.count) linked vaults")
+                DisclosureGroup("Workspace details") {
+                    ForEach(model.connections.filter { $0.desktopPairingId == id }) { connection in
+                        Text(connection.vaultName ?? connection.spaceName)
+                    }
+                    Text("Permissions").font(.subheadline.weight(.medium))
+                    ForEach(pairing.domains.sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { domain in
+                        Text(macPermissionLabel(domain)).font(.caption)
+                    }
+                }
+                .accessibilityIdentifier("mac-workspace-details")
+            }
+            Button {
+                changingMacConnection = true; macConnectionResult = nil
+                Task {
+                    defer { changingMacConnection = false }
+                    do { try await model.renewDesktop(session.connection); macConnectionResult = String(localized: "Connection renewed. Copies, drafts and requests are preserved.") }
+                    catch { macConnectionResult = error.localizedDescription }
+                }
+            } label: { Label("Renew Mac connection", systemImage: "arrow.clockwise") }
+                .disabled(changingMacConnection).accessibilityIdentifier("renew-mac-connection")
+            Button(role: .destructive) {
+                confirmingMacRevocation = true
+            } label: { Label("Revoke Mac connection", systemImage: "link") }
+                .disabled(changingMacConnection).accessibilityIdentifier("revoke-mac-connection")
+            if changingMacConnection { ProgressView() }
+            if let macConnectionResult { Text(macConnectionResult).font(.caption).accessibilityIdentifier("mac-connection-result") }
+        } header: { Text("Linked Mac connection") } footer: {
+            Text("Renewal keeps the same vaults and permissions. Revocation requires a connection to the Mac and affects all its linked vaults.")
+        }
+    }
+
+    private var serverConnectionRows: some View {
+        Group {
+            labelled("Server", session.connection.serverName)
+            labelled("Address", session.connection.origin)
+            if let health {
+                labelled("Status", health.ok ? "Online · v\(health.version ?? "?")" : "No answer")
+            }
+            if let capabilities {
+                labelled("Largest image", ByteCountFormatter.string(fromByteCount: Int64(capabilities.maxAssetBytes), countStyle: .file))
+                labelled("Change batch", "\(capabilities.maxMutationBatch)")
+                if let maxMutationBytes = capabilities.maxMutationBytes {
+                    labelled("Largest change", ByteCountFormatter.string(fromByteCount: Int64(maxMutationBytes), countStyle: .file))
+                }
+            }
+            if let diagnosticFailure {
+                Text(LocalizedStringKey(diagnosticFailure.sentence))
+                    .font(.caption)
+                    .foregroundStyle(diagnosticFailure.tone == .caution ? Color.nodusCaution : Color.nodusDanger)
+            }
+        }
+    }
+
+    private var connectionDiagnosticsLink: some View {
+        NavigationLink {
+            ConnectionDiagnosticsView(connection: session.connection).environment(model)
+        } label: {
+            Label("Diagnostics", systemImage: "stethoscope")
+        }
+    }
+
+    @ViewBuilder private var workspaceProtocolRows: some View {
+        if let revision = session.overview?.space.revision {
+            labelled("Revision", String(revision.prefix(12)))
+        }
+        if let schema = session.overview?.schemaVersion {
+            labelled("Schema", "v\(schema)")
+        }
+    }
+
+    @ViewBuilder private var insecureConnectionFooter: some View {
+        if ServerAddress(trusted: session.connection.origin).isInsecure {
+            Text("This connection is not encrypted. That should only ever be a local test.")
+                .foregroundStyle(Color.nodusCaution)
+        }
+    }
+
+    private func macModelLabel(_ key: String) -> LocalizedStringKey {
+        switch key {
+        case "chatModel": "Chat"
+        case "deepResearchModel": "Deep Research"
+        case "dictionaryModel": "Dictionary"
+        case "immersionModel": "Immersion"
+        case "writingModel": "Writing"
+        default: "Model"
+        }
+    }
+
+    private func macPermissionLabel(_ domain: DesktopBridgeDomain) -> String {
+        switch domain {
+        case .corpus: String(localized: "Corpus consultation")
+        case .writing: String(localized: "Writing and ideas")
+        case .researchGeneration: String(localized: "Research generation")
+        case .testimonies: String(localized: "Interviews and participants")
+        case .teachingRoster: String(localized: "Students")
+        case .teachingGrades: String(localized: "Grades")
+        case .studyRecordings: String(localized: "Recordings")
+        case .primarySourceFiles: String(localized: "Primary source files")
+        case .prosopographyPrivate: String(localized: "Private prosopography data")
+        }
     }
 
     private func requestLibraryDeletion(_ deletion: LibraryDeletion) {
@@ -357,7 +496,7 @@ struct SpaceSettingsView: View {
         switch libraryDeletion {
         case .space:
             Task {
-                let library = PublishedLibraryStore(spaceId: session.connection.spaceId)
+                let library = PublishedLibraryStore(spaceId: session.connection.spaceId, storageId: session.connection.storageId)
                 await library.removeAll()
             }
         case .everySpace:
@@ -400,7 +539,7 @@ struct SpaceSettingsView: View {
         HStack {
             Text(title)
             Spacer()
-            Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+            Text(value).foregroundStyle(Color.nodusSecondaryText).multilineTextAlignment(.trailing)
         }
         .font(.callout)
     }
@@ -411,6 +550,14 @@ struct SpaceSettingsView: View {
     /// needs the ceilings and the version, not a verdict. What it does share is the wording —
     /// when the two calls fail, the sentence comes from the same classifier.
     private func diagnose() async {
+        if let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == session.connection.desktopPairingId }),
+           let token = DesktopBridgePairingStore().credential(for: pairing), let vault = session.vaultId {
+            do {
+                liveSettings = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getSettings", args: [])
+                liveSettingsError = nil
+            } catch { liveSettingsError = error.localizedDescription }
+            return
+        }
         do {
             async let health = session.client.health()
             async let capabilities = session.client.capabilities()

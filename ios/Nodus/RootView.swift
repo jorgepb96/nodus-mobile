@@ -4,12 +4,14 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var systemTextSize
     @State private var model = AppModel()
     @State private var ai = AISettings()
     @State private var lock = AppLock()
     @State private var preferences = AppPreferences()
     @State private var tilt = DeviceTiltProvider()
     @State private var showingConnect = false
+    @State private var pairingLink: String?
     /// The queue belongs to the device rather than to a space, so it lives above the branch
     /// that decides whether a space is open at all.
     @State private var tray = OutboxTrayModel()
@@ -18,10 +20,21 @@ struct RootView: View {
     /// way it reads everything else.
     private let cloud = CloudBackup.shared
 
+    private var effectiveTextSize: DynamicTypeSize {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_DYNAMIC_TYPE"] == "accessibility3" { return .accessibility3 }
+#endif
+        return systemTextSize
+    }
+
     var body: some View {
         Group {
             if let session = model.session {
                 SpaceShell(session: session)
+            } else if model.isOpeningLocalCorpus {
+                ProgressView("Abriendo el vault…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("nodus-opening-corpus")
             } else {
                 SpacePickerView(showingConnect: $showingConnect)
             }
@@ -43,13 +56,18 @@ struct RootView: View {
         .environment(preferences)
         .environment(tray)
         .environment(cloud)
+        .nodusTextHierarchy()
         .preferredColorScheme(preferences.interfaceStyle.colorScheme)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
         // Once, here, for every field in the app — including the ones inside sheets, which are
         // presented into this same window.
         .nodusDismissesKeyboardOnTap()
-        .nodusSheet(isPresented: $showingConnect) { ConnectView().environment(model) }
+        .nodusSheet(isPresented: $showingConnect) { ConnectView().environment(model).dynamicTypeSize(effectiveTextSize) }
+        .sheet(isPresented: Binding(get: { pairingLink != nil }, set: { if !$0 { pairingLink = nil } })) {
+            DesktopBridgePairingSheet(accent: model.session?.accent ?? Color(hex: VaultType.academic.accentHex), initialLink: pairingLink ?? "") { pairingLink = nil }.environment(model).dynamicTypeSize(effectiveTextSize)
+        }
+        .onOpenURL { url in if url.scheme == "nodus", url.host == "pair" { pairingLink = url.absoluteString } }
         // Attached here, above the branch, so one sheet serves both the picker and whatever
         // space happens to be open. Presenting it from inside `SpaceShell` would put it behind
         // that shell's own sheets, and iOS fails a second presentation silently.
@@ -57,12 +75,23 @@ struct RootView: View {
             OutboxTraySheet()
                 .environment(tray)
                 .environment(model)
+                .dynamicTypeSize(effectiveTextSize)
                 // The open space's colour when there is one; the queue is also reachable from
                 // the picker, where no vault is open to lend one.
                 .nodusModalClose(accent: model.session?.accent ?? Color(hex: VaultType.academic.accentHex))
         }
+        .dynamicTypeSize(effectiveTextSize)
         .task {
 #if DEBUG
+            if let filename = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SNAPSHOT_FILENAME"] {
+                do { try await model.openAcceptanceSnapshot(filename) }
+                catch { model.reportAcceptanceFailure(error) }
+                return
+            }
+            if let link = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_PAIRING_LINK"] {
+                pairingLink = link
+                return
+            }
             // UI and visual-parity tests always start from the bundled public-domain fixture.
             // This bypasses persisted connections without adding any test credential or
             // production-data path to the app.
@@ -242,7 +271,7 @@ struct SpacePickerView: View {
                         NodusNotice(
                             tone: .info,
                             title: "No spaces yet",
-                            message: "Connect to the Nodus Server where your vault is published.",
+                            message: "Link your desktop Nodus with a code or QR to access your workspace in real time.",
                             systemImage: "antenna.radiowaves.left.and.right"
                         )
                     }
@@ -250,10 +279,11 @@ struct SpacePickerView: View {
                     Button {
                         showingConnect = true
                     } label: {
-                        Label("Add a server", systemImage: "plus")
+                        Label("Link Nodus", systemImage: "qrcode")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
+                    .accessibilityIdentifier("nodus-add-server")
 
                     if !hasDemo { exampleVaultButton }
                 }
@@ -297,7 +327,7 @@ struct SpacePickerView: View {
         VStack(spacing: model.hasAnyConnection ? 6 : 12) {
             NodusMark(style: .brand)
                 .frame(width: model.hasAnyConnection ? 54 : 84, height: model.hasAnyConnection ? 54 : 84)
-            Text("Nodus Research")
+            Text("Nodus")
                 .font(model.hasAnyConnection ? .title2.weight(.semibold) : .largeTitle.weight(.semibold))
             Text("Your vaults, wherever you are.")
                 .font(model.hasAnyConnection ? .caption : .subheadline)
@@ -348,6 +378,7 @@ struct SpacePickerView: View {
             ConnectionCard(connection: connection, needsSignIn: !usable)
         }
         .buttonStyle(NodusCardButtonStyle())
+        .accessibilityIdentifier("space-\(connection.vaultId ?? connection.spaceId)")
         .contextMenu {
             Button(role: .destructive) {
                 model.forget(connection)

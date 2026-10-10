@@ -27,8 +27,14 @@ final class AppModel {
         /// existed decodes with nil, and the picker falls back to its place in the stored list,
         /// which is the order they were added in.
         var addedAt: Date?
+        var vaultId: String?
+        var desktopPairingId: String?
 
-        var id: String { "\(origin)|\(spaceId)" }
+        nonisolated var id: String {
+            if desktopPairingId != nil, spaceId.hasPrefix("live:") { return spaceId }
+            return "\(origin)|\(spaceId)"
+        }
+        nonisolated var storageId: String { SpaceStorageIdentity(connectionID: id).key }
         var accent: Color { Color(hex: vaultType?.accentHex ?? VaultType.academic.accentHex) }
 
         /// The example vault in the bundle rather than a space on a server.
@@ -44,15 +50,28 @@ final class AppModel {
 
     private(set) var connections: [Connection] = []
     private(set) var session: SpaceSession?
+    private(set) var isOpeningLocalCorpus = false
     var isConnecting = false
 
     private let keychain = KeychainStore()
     private static let defaultsKey = "nodus.connections.v1"
     private let cacheDirectory: URL
+#if DEBUG
+    private var acceptanceCapabilitiesFailureDelivered = false
+#endif
 
     init() {
         cacheDirectory = URL.cachesDirectory.appendingPathComponent("nodus-http", isDirectory: true)
         connections = Self.loadConnections(key: Self.defaultsKey)
+        // Earlier live connections used the network address as identity. Preserve the
+        // explicitly selected execution mode when upgrading to Mac + vault identity.
+        for connection in connections where connection.desktopPairingId != nil {
+            let key = "ai-execution-mode:\(connection.id)"
+            let legacy = "ai-execution-mode:\(connection.origin)|\(connection.spaceId)"
+            if UserDefaults.standard.string(forKey: key) == nil, let mode = UserDefaults.standard.string(forKey: legacy) {
+                UserDefaults.standard.set(mode, forKey: key)
+            }
+        }
     }
 
     /// The connections on disk, without an `AppModel` to ask.
@@ -227,6 +246,45 @@ final class AppModel {
 
     // MARK: - Opening
 
+    func connectDesktop(pairing: DesktopBridgePairing, token: String, expectedMacId: String? = nil) async throws {
+#if DEBUG
+        // Interrupt only the post-pairing capability stage in UI acceptance.
+        // The real Mac POST and durable credential storage have already run.
+        if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_FAIL_PAIRING_CAPABILITIES_ONCE"] == "1",
+           !acceptanceCapabilitiesFailureDelivered {
+            acceptanceCapabilitiesFailureDelivered = true
+            throw URLError(.networkConnectionLost)
+        }
+#endif
+        let capabilities = try await DesktopBridgeClient(pairing: pairing, token: token).liveCapabilities()
+        guard capabilities.protocolVersion == 2 else { throw DesktopBridgeError.malformedResponse }
+        if let expectedMacId, capabilities.deviceId != expectedMacId { throw DesktopBridgeError.permissionDenied }
+        guard !capabilities.vaults.isEmpty,
+              Set(capabilities.vaults.map(\.id)).isSubset(of: pairing.vaultIds) else { throw DesktopBridgeError.permissionDenied }
+        try DesktopBridgePairingStore().save(pairing, token: token)
+        for vault in capabilities.vaults {
+            let spaceId = "live:\(capabilities.deviceId):\(vault.id)"
+            let previous = connections.first { $0.desktopPairingId != nil && $0.spaceId == spaceId }
+            try keychain.set(token, for: KeychainStore.deviceTokenKey(origin: pairing.origin, spaceId: spaceId))
+            let connection = Connection(origin: pairing.origin, spaceId: spaceId, spaceName: vault.name,
+                serverName: capabilities.deviceName, role: pairing.domains.contains(.writing) ? .writer : .reader, vaultType: vault.type, vaultName: vault.name,
+                lastOpenedAt: previous?.lastOpenedAt, addedAt: previous?.addedAt ?? Date(), vaultId: vault.id, desktopPairingId: pairing.id)
+            connections.removeAll { $0.id == connection.id || ($0.desktopPairingId != nil && $0.spaceId == spaceId) }
+            connections.append(connection)
+        }
+        persist()
+        try DesktopBridgePairingStore().completePendingPairing(grantId: pairing.id)
+    }
+
+    /// Enter the linked workspace immediately, preserving the last vault on renewal.
+    @discardableResult
+    func openLinkedDesktopWorkspace(pairingId: String) -> Bool {
+        let linked = connections.filter { $0.desktopPairingId == pairingId }
+        let recent = linked.filter { $0.lastOpenedAt != nil }.max { ($0.lastOpenedAt ?? .distantPast) < ($1.lastOpenedAt ?? .distantPast) }
+        guard let connection = recent ?? linked.first(where: { $0.vaultId == "default" }) ?? linked.first else { return false }
+        return open(connection)
+    }
+
     /// Whether this device still holds a credential for a connection.
     ///
     /// The picker asks before it draws, because a connection with no token is not a space you
@@ -256,6 +314,8 @@ final class AppModel {
     /// task for the benefit of one of them.
     @discardableResult
     func openDemo() async -> Bool {
+        isOpeningLocalCorpus = true
+        defer { isOpeningLocalCorpus = false }
         do {
             let prepared = try await DemoSpace.prepare()
             var connection = prepared.connection
@@ -276,6 +336,56 @@ final class AppModel {
             return false
         }
     }
+
+#if DEBUG
+    func reportAcceptanceFailure(_ error: Error) { demoFailure = error.localizedDescription }
+    /// Acceptance imports use the production snapshot decoder and local client.
+    /// Only a marked folder inside this app's sandbox is eligible; Release has no loader.
+    func openAcceptanceSnapshot(_ filename: String) async throws {
+        isOpeningLocalCorpus = true
+        defer { isOpeningLocalCorpus = false }
+        let permitted: [String: VaultType] = ["study-snapshot.json": .estudio,
+            "teaching-snapshot.json": .docencia, "dictionary-snapshot.json": .academic,
+            "research-damaged-snapshot.json": .academic, "research-repaired-snapshot.json": .academic]
+        guard let expectedType = permitted[filename] else {
+            throw DesktopBridgeError.permissionDenied
+        }
+        let folder = URL.applicationSupportDirectory.appendingPathComponent("AcceptanceLab", isDirectory: true)
+        let marker = folder.appendingPathComponent(".nodus-mobile-acceptance-lab")
+        guard (try? String(contentsOf: marker, encoding: .utf8)) == "Nodus Mobile isolated acceptance fixture\n" else {
+            throw DesktopBridgeError.permissionDenied
+        }
+        let (archive, snapshot) = try await Task.detached(priority: .userInitiated) {
+            let archive = try Data(contentsOf: folder.appendingPathComponent(filename))
+            return (archive, try SnapshotDownload.read(archive))
+        }.value
+        guard let vaultType = snapshot.vault?.type, vaultType == expectedType else {
+            throw DesktopBridgeError.malformedResponse
+        }
+        let spaceId = "nodus-acceptance-\(vaultType.rawValue)"
+        let directory = folder.appendingPathComponent("mirrors", isDirectory: true)
+        let mirror = try await MirrorStore.open(spaceId: spaceId, directory: directory)
+        let revision = snapshot.revision ?? ""
+        if try await !mirror.isCurrent(with: revision) {
+            try await mirror.replace(with: snapshot, revision: revision)
+        }
+        let name = "Aceptación · \(vaultType.rawValue)"
+        let connection = Connection(origin: DemoSpace.origin, spaceId: spaceId, spaceName: name,
+            serverName: "Laboratorio local", role: .reader, vaultType: vaultType, vaultName: name)
+        let images = folder.appendingPathComponent("published-images", isDirectory: true)
+        if FileManager.default.fileExists(atPath: images.path) {
+            let assets = PublishedAssetStore()
+            for hash in Set(snapshot.assetRefs.flatMap { [$0.hash, $0.thumbHash].compactMap { $0 } }) {
+                let bytes = try await Task.detached { try Data(contentsOf: images.appendingPathComponent(hash)) }.value
+                try await assets.write(bytes, hash: hash, origin: connection.origin, spaceId: spaceId)
+            }
+        }
+        let corpus = LocalCorpus(space: .init(id: spaceId, name: name), mirror: mirror, archive: archive)
+        needsSignIn = nil
+        demoFailure = nil
+        session = SpaceSession(demo: connection, corpus: corpus, cacheDirectory: cacheDirectory)
+    }
+#endif
 
     /// Opens a space, or reports that it cannot be opened.
     ///
@@ -301,13 +411,18 @@ final class AppModel {
             connections[index] = updated
             persist()
         }
-        session = SpaceSession(
+        guard let opened = SpaceSession(
             connection: updated,
             token: token,
             cacheDirectory: cacheDirectory,
             onUnauthorized: { [weak self, updated] in await self?.handleRevocation(of: updated) },
             onFailure: { [weak self, updated] failure in self?.report(failure, on: updated) }
-        )
+        ) else {
+            session = nil
+            needsSignIn = updated
+            return false
+        }
+        session = opened
         return true
     }
 
@@ -357,6 +472,30 @@ final class AppModel {
         connections.removeAll { $0.id == connection.id }
         if session?.connection.id == connection.id { session = nil }
         persist()
+    }
+
+    /// Rotate the credential without changing the grant or its local storage identity.
+    func renewDesktop(_ connection: Connection) async throws {
+        let store = DesktopBridgePairingStore()
+        guard let pairing = store.pairings().first(where: { $0.id == connection.desktopPairingId }),
+              let token = store.credential(for: pairing) else { throw DesktopBridgeError.permissionDenied }
+        let renewed = try await DesktopBridgeClient(pairing: pairing, token: token).renew()
+        for linked in connections.filter({ $0.desktopPairingId == pairing.id }) {
+            try keychain.set(renewed, for: KeychainStore.deviceTokenKey(origin: linked.origin, spaceId: linked.spaceId))
+        }
+        // Grant and connection IDs stay fixed: drafts, downloads, jobs and the active
+        // session continue under their existing storage identity.
+    }
+
+    /// Revocation applies to the whole device grant, including every linked vault.
+    func revokeDesktop(_ connection: Connection) async throws {
+        let store = DesktopBridgePairingStore()
+        guard let pairing = store.pairings().first(where: { $0.id == connection.desktopPairingId }),
+              let token = store.credential(for: pairing) else { throw DesktopBridgeError.permissionDenied }
+        try await DesktopBridgeClient(pairing: pairing, token: token).revoke()
+        try store.revokeLocally(pairing)
+        await DesktopJobLedgers.shared.forget(pairingId: pairing.id)
+        for linked in connections.filter({ $0.desktopPairingId == pairing.id }) { forget(linked) }
     }
 
     // MARK: - Persistence

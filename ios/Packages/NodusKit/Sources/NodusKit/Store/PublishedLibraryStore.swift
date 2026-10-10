@@ -54,10 +54,10 @@ public actor PublishedLibraryStore {
         }
     }
 
-    public init(spaceId: String, root: URL = .applicationSupportDirectory) {
+    public init(spaceId: String, storageId: String? = nil, root: URL = .applicationSupportDirectory) {
         self.spaceId = spaceId
         self.root = root.appendingPathComponent("spaces", isDirectory: true)
-            .appendingPathComponent(spaceId, isDirectory: true)
+            .appendingPathComponent(storageId ?? spaceId, isDirectory: true)
             .appendingPathComponent("library", isDirectory: true)
         try? FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
         if let data = try? Data(contentsOf: self.root.appendingPathComponent("downloads.json")),
@@ -109,6 +109,11 @@ public actor PublishedLibraryStore {
     }
 
     public func prepare(_ document: PublishedLibraryDocument, using client: NodusClient) async throws -> PreparedContent {
+        // Live catalogues defer ZIP construction until a document is opened. Resolve
+        // its current signed-in descriptor before validating the content hash.
+        let document = document.packageHash == nil
+            ? try await client.publishedLibraryDocument(document.id, in: spaceId)
+            : document
         guard document.cleanAvailable || document.originalAvailable, let hash = document.packageHash else { throw StoreError.unavailable }
         if isDownloaded(document.id, packageHash: hash), let package = packageURL(document.id) {
             return PreparedContent(

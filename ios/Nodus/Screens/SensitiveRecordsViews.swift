@@ -35,22 +35,22 @@ private struct PrivateDomainBanner: View {
             VStack(alignment: .leading, spacing: 9) {
                 NodusNotice(
                     tone: .info,
-                    title: "Pair the owner Mac",
+                    title: "Link your Mac",
                     message: LocalizedStringKey(issue),
                     systemImage: "lock.shield"
                 )
                 Button(action: pair) {
-                    Label("Pair Desktop Bridge", systemImage: "macbook.and.iphone")
+                    Label("Link your Mac", systemImage: "macbook.and.iphone")
                 }
                 .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
             }
         } else {
             NodusNotice(
                 tone: cached ? .caution : .info,
-                title: cached ? "Encrypted offline copy" : "Private Desktop Bridge",
+                title: cached ? "Encrypted offline copy" : "Connected to your Mac",
                 message: cached
-                    ? "The Mac is unavailable. This read-only copy is AES-GCM encrypted, protected while the device is locked and removed when the pairing is revoked."
-                    : "These records came directly from the paired Mac. This domain has no Cloudflare route.",
+                    ? "This read-only copy stays encrypted on this device and is removed when you unlink your Mac. Reconnect to refresh it."
+                    : "These private records come from your linked Mac and are not published publicly.",
                 systemImage: cached ? "lock.doc" : "lock.shield.fill"
             )
         }
@@ -236,6 +236,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
                     Label(row.text("verification_status") ?? "pending", systemImage: row.text("verification_status") == "verified" ? "checkmark.seal.fill" : "clock")
                         .font(.caption).foregroundStyle(row.text("verification_status") == "verified" ? .green : .orange)
                 }.desktopContentRow(accent: session.accent)
+                PrivateFileButton(session: session, kind: .archiveFile, id: row.string("file_id") ?? "")
             }
         case "Text":
             ForEach(rows("archive_text_versions", owner: "item_id", id: item.id), id: \.columns) { row in
@@ -466,6 +467,7 @@ private struct TestimoniesWorkspace: View {
                                 Label("Immutable", systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
                             }
                         }.padding(.vertical, 3)
+                        PrivateFileButton(session: session, kind: .testimonyMedia, id: medium.string("id") ?? "")
                         ForEach(transcripts(medium.string("id")), id: \.columns) { transcript in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {

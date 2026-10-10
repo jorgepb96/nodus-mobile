@@ -1,5 +1,6 @@
 import Foundation
 import NodusAI
+import NodusKit
 import Testing
 @testable import Nodus
 
@@ -13,6 +14,45 @@ import Testing
 @Suite("Local report store")
 @MainActor
 struct LocalReportStoreTests {
+    @Test("connections with the same route ID keep local reports separate and legacy recovery is explicit")
+    func connectionScopedRecovery() throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = AppModel.Connection(origin: "https://one.test", spaceId: "same-id", spaceName: "A", serverName: "A", role: .writer)
+        let b = AppModel.Connection(origin: "https://two.test", spaceId: "same-id", spaceName: "B", serverName: "B", role: .writer)
+        try writeLegacyReport(id: "original", in: root, spaceId: "same-id")
+        let source = LocalReportStore.fileURL(spaceId: "same-id", id: "original", root: root)
+        var original = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any])
+        original["sentAt"] = "2026-05-02T10:00:00Z"
+        original["outboxId"] = "old-mutation"
+        original["vaultRowId"] = "old-vault-row"
+        let bytes = try JSONSerialization.data(withJSONObject: original, options: .sortedKeys)
+        try bytes.write(to: source)
+        try ConnectionStorage.prepare(for: a, root: root)
+        try ConnectionStorage.prepare(for: b, root: root)
+        #expect(a.storageId != b.storageId)
+        #expect(LocalReportStore(spaceId: a.storageId, root: root).reports.isEmpty)
+        #expect(LocalReportStore(spaceId: b.storageId, root: root).reports.isEmpty)
+        #expect(try ConnectionStorage.recoverLocalDocuments(for: a, root: root) == 1)
+        #expect(try ConnectionStorage.recoverLocalDocuments(for: a, root: root) == 0)
+        let saved = try #require(LocalReportStore(spaceId: a.storageId, root: root).reports.first)
+        #expect(saved.id != "original")
+        #expect(saved.report.objective == "La escasez como política")
+        #expect(!saved.wasSent && saved.vaultRowId == nil && saved.outboxId == nil)
+        #expect(LocalReportStore(spaceId: b.storageId, root: root).reports.isEmpty)
+        #expect(try Data(contentsOf: source) == bytes)
+    }
+
+    @Test("Mac cache identity stays stable across LAN address changes and separates vaults")
+    func macStorageIdentity() {
+        let first = AppModel.Connection(origin: "https://old.test", spaceId: "live:mac-one:vault-one", spaceName: "A", serverName: "Mac", role: .writer,
+                                        vaultId: "vault-one", desktopPairingId: "grant")
+        var renamed = first; renamed.origin = "https://new.test"
+        #expect(first.storageId == renamed.storageId)
+        renamed.spaceId = "live:mac-one:vault-two"; renamed.vaultId = "vault-two"
+        #expect(first.storageId != renamed.storageId)
+    }
+
     private func temporaryRoot() -> URL {
         let url = URL.temporaryDirectory.appendingPathComponent("reports-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -99,10 +139,15 @@ struct LocalReportStoreTests {
         let root = temporaryRoot()
         let store = LocalReportStore(spaceId: "space-2", root: root)
 
-        let saved = store.save(report(), mode: .research, model: ModelRef(provider: .anthropic, model: "claude-test"))
+        let saved = store.save(report(), mode: .research, model: ModelRef(provider: .anthropic, model: "claude-test"), language: "fr")
 
         #expect(saved.modelLabel == "claude-test")
         #expect(saved.modelRef == ModelRef(provider: .anthropic, model: "claude-test"))
+        let reopened = try #require(LocalReportStore(spaceId: "space-2", root: root).reports.first)
+        #expect(reopened.outputLanguage == "fr")
+        let html = try ReportDocument.html(saved: reopened, store: store)
+        #expect(html.contains("Rapport professionnel"))
+        #expect(html.contains("La escasez como política"))
     }
 
     // Reopened rather than re-read: `ResearchLibraryView` calls `reload()` on every appearance,

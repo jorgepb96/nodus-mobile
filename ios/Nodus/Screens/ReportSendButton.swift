@@ -126,7 +126,7 @@ struct ReportSendButton: View {
             context.saved.report,
             mode: context.saved.mode,
             model: model,
-            language: Prompts.interfaceLanguage,
+            language: context.saved.outputLanguage ?? Prompts.interfaceLanguage,
             // Reusing the row id is what makes a second send an update of the owner's copy
             // rather than a second report in their list.
             rowId: context.saved.vaultRowId ?? UUID().uuidString

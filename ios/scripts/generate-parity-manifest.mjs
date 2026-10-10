@@ -3,16 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
 
-export const PARITY_MANIFEST_VERSION = 1;
+export const PARITY_MANIFEST_VERSION = 2;
 
 // These Desktop routes are intentionally absent from the mobile product. Keep them in the
 // generated inventory so a removal is auditable without leaving a dead enum case, deep link or
 // placeholder screen in the app.
-const EXCLUDED_ROUTES = new Map([
-  ['graph', 'Product decision: the Graph view is suspended in the mobile app.'],
-  ['studyGraph', 'Product decision: the Graph view is suspended in the mobile app.'],
-  ['dictionary', 'Product decision: the standalone Dictionary workspace is currently Desktop-only; mobile keeps contextual dictionary lookup in the reader.'],
-]);
+const EXCLUDED_ROUTES = new Map();
+const COMING_SOON = new Set(['browser', 'radar', 'compass', 'studyFocus', 'toolkit']);
 
 const ROUTE_DELIVERY = {
   accountSync: new Set(['library', 'radar']),
@@ -147,7 +144,8 @@ function mobileRouteState(swift, route) {
   if (EXCLUDED_ROUTES.has(route)) return 'excluded';
   const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const line = swift.match(new RegExp(`\\.init\\(\\.${escaped},[^\\n]+`))?.[0] ?? '';
-  if (/support: \.(?:native|collection|mirror|nested)/.test(line)) return 'implemented';
+  if (COMING_SOON.has(route)) return 'comingSoon';
+  if (/support: \.(?:native|collection|mirror|nested)/.test(line)) return 'available';
   return 'planned';
 }
 
@@ -161,6 +159,30 @@ function navMetadata(navigation, route) {
   const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const literal = navigation.match(new RegExp(`\\{ id: '${escaped}', label: '([^']+)', icon: '([^']+)'(?:, group: '([^']+)')? \\}`));
   return literal ? { label: literal[1], icon: literal[2], group: literal[3] ?? null } : { label: route, icon: null, group: null };
+}
+
+function operationMatrix(routes) {
+  const consultations = [
+    'deepResearch.catalogue', 'deepResearch.pagination', 'deepResearch.detail', 'deepResearch.document',
+    'deepResearch.images', 'deepResearch.citations', 'deepResearch.translations', 'deepResearch.annotations', 'deepResearch.export', 'audio.savedConsultation',
+    'dictionary.search', 'dictionary.filters', 'dictionary.entries', 'dictionary.versions', 'dictionary.evidence', 'dictionary.relations',
+    'graph.filters', 'graph.themes', 'graph.selection', 'graph.evidence', 'argumentMap.structural', 'argumentMap.expansion',
+    'scriptor.blocks', 'scriptor.tables', 'scriptor.images', 'scriptor.formulas', 'scriptor.references', 'scriptor.bibliography',
+    'scriptor.history', 'scriptor.roundTrip', 'scriptor.conflict', 'scriptor.draftRecovery',
+    'catalogues.pagination', 'documents.long', 'files.download',
+    'pairing.qr', 'pairing.code', 'pairing.link', 'pairing.expiry', 'pairing.renew', 'pairing.revoke', 'pairing.permissions',
+    'transport.lan', 'transport.vpn', 'transport.serverRelay', 'transport.cloudRelay', 'transport.disconnect', 'transport.relaunch',
+    'jobs.progress', 'jobs.cancel', 'jobs.retry', 'jobs.persistence', 'jobs.noDuplicates',
+    'visual.iphone', 'visual.ipad', 'visual.physicalIphone', 'visual.lightDark', 'visual.rotation', 'visual.accessibility',
+  ];
+  return [
+    ...routes.map(route => ({ id: `consultation.${route.id}`, route: route.id,
+      category: COMING_SOON.has(route.id) ? 'comingSoon' : 'consultation', result: 'pending', evidence: [] })),
+    ...consultations.map(id => ({ id, category: 'consultation', result: 'pending', evidence: [] })),
+    ...['deepResearch', 'immersion', 'dictionary', 'chat', 'translation', 'synthesis', 'argumentMap', 'writingAssistant']
+      .flatMap(id => ['live', 'autonomous'].map(mode => ({ id: `generation.${id}.${mode}`, category: 'generation', result: 'pending', evidence: [] }))),
+    ...['extractDocuments', 'indexDocuments', 'deriveIdeas'].map(id => ({ id, category: 'desktopExclusive', result: 'notApplicable', evidence: [] })),
+  ];
 }
 
 export function buildParityManifest() {
@@ -187,7 +209,7 @@ export function buildParityManifest() {
       method,
       source: relativePath,
       delivery,
-      mobileState: 'implemented',
+      mobileState: 'catalogued',
       evidence: DELIVERY_EVIDENCE[delivery] ?? [],
     }));
   }).sort((left, right) => left.id.localeCompare(right.id));
@@ -197,12 +219,15 @@ export function buildParityManifest() {
     .map((name) => ({
       name,
       delivery: 'cloudMutation',
-      mobileState: 'implemented',
+      mobileState: 'catalogued',
       evidence: DELIVERY_EVIDENCE.cloudMutation,
     }));
 
   return {
     version: PARITY_MANIFEST_VERSION,
+    referenceCommits: { desktop: '0a173fd9c698a7cb2d5989aa64b59cddd329bcf9', mobile: 'ad6e3069bcea67b48de76de561fc27c3db417563' },
+    validationPolicy: 'Availability and source files are inventory only. Release requires executed operation evidence with no omissions.',
+    operations: operationMatrix(routes),
     sourceOfTruth: {
       repository: 'nodus',
       navigation: 'src/navigation.ts',
@@ -217,7 +242,7 @@ export function buildParityManifest() {
       id: 'deepResearch.audioGeneration',
       delivery: 'explicitExclusion',
       mobileState: 'excluded',
-      reason: 'Product decision: mobile Deep Research has no generated narration UI, jobs, settings or artefacts.',
+      reason: 'Desktop speech synthesis runtimes are not included on iOS. Consultation and playback of saved narration are covered separately by audio.savedConsultation.',
       evidence: ['ios/DESIGN_PARITY.md#phase-5-visual-evidence'],
     }],
     fixture: {
@@ -258,7 +283,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       .filter((item) => item.mobileState === 'implemented')
       .filter((item) => !item.evidence || item.evidence.length === 0);
     const invalidStates = implemented
-      .filter((item) => !['implemented', 'excluded'].includes(item.mobileState));
+      .filter((item) => !['available', 'catalogued', 'comingSoon', 'excluded', 'planned'].includes(item.mobileState));
     const missingEvidence = implemented.flatMap((item) => item.evidence ?? [])
       .filter((entry, index, entries) => entries.indexOf(entry) === index)
       .filter((entry) => !evidenceExists(entry));
@@ -266,6 +291,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (invalidStates.length) throw new Error(`Incomplete parity entries: ${invalidStates.map((item) => item.id ?? item.name).join(', ')}`);
     if (unsupportedClaims.length) throw new Error(`Parity claimed without evidence: ${unsupportedClaims.map((item) => item.id).join(', ')}`);
     if (missingEvidence.length) throw new Error(`Parity evidence does not exist: ${missingEvidence.join(', ')}`);
-    console.log(`Parity manifest is 100% current: ${manifest.routes.length} routes, ${manifest.apiActions.length} actions, ${manifest.mutableTables.length} mutable tables; every entry is classified, implemented and evidenced.`);
+    console.log(`Inventory is current: ${manifest.routes.length} routes, ${manifest.apiActions.length} actions, ${manifest.mutableTables.length} mutable tables. This check does not certify functional parity.`);
   }
 }

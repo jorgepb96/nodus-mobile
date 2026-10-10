@@ -47,6 +47,9 @@ final class LocalReportStore {
         /// `modelLabel` is for reading; `ReportDraft.row` needs the provider too. Without this
         /// a report reopened from the library cannot be turned into a sendable row at all.
         var modelRef: ModelRef?
+        /// Kept from the request, independently of later interface language changes.
+        /// Nil for older records whose generation language was never recorded.
+        var outputLanguage: String?
         /// The last time anything about this record changed, which is what decides an argument
         /// between two devices. `createdAt` cannot: attaching an illustration or marking a
         /// report sent changes the record without changing when it was written.
@@ -128,6 +131,7 @@ final class LocalReportStore {
         _ report: DeepResearchReport,
         mode: DeepResearchMode,
         model: ModelRef,
+        language: String? = nil,
         id: String = UUID().uuidString
     ) -> Saved {
         let saved = Saved(
@@ -136,7 +140,8 @@ final class LocalReportStore {
             mode: mode,
             createdAt: Date(),
             modelLabel: model.model,
-            modelRef: model
+            modelRef: model,
+            outputLanguage: language
         )
         write(saved)
         reload()

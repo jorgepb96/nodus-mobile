@@ -3,6 +3,9 @@ import Foundation
 import Security
 
 public enum DesktopBridgeDomain: String, Sendable, Hashable, Codable, CaseIterable {
+    case corpus
+    case writing
+    case researchGeneration = "research-generation"
     case testimonies
     case teachingRoster = "teaching-roster"
     case teachingGrades = "teaching-grades"
@@ -14,6 +17,8 @@ public enum DesktopBridgeDomain: String, Sendable, Hashable, Codable, CaseIterab
 public struct DesktopBridgePairing: Sendable, Hashable, Codable, Identifiable {
     public let id: String
     public let origin: String
+    /// Addresses authenticated by the original QR/code. Optional for existing links.
+    public let alternateOrigins: [String]?
     /// SHA-256 of the exact leaf certificate accepted during explicit pairing.
     public let certificateFingerprint: String
     public let deviceId: String
@@ -32,8 +37,30 @@ public struct DesktopBridgePairing: Sendable, Hashable, Codable, Identifiable {
         vaultIds: Set<String>,
         domains: Set<DesktopBridgeDomain>,
         pairedAt: Date,
-        expiresAt: Date?
+        expiresAt: Date?,
+        alternateOrigins: [String] = []
     ) throws {
+        try Self.validateOrigin(origin)
+        for alternative in alternateOrigins { try Self.validateOrigin(alternative) }
+        let fingerprint = Self.normalizedFingerprint(certificateFingerprint)
+        guard fingerprint.count == 64, fingerprint.allSatisfy(\.isHexDigit) else {
+            throw DesktopBridgeError.invalidFingerprint
+        }
+        self.id = id
+        let normalizedOrigin = origin.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.origin = normalizedOrigin
+        var seen: Set<String> = [normalizedOrigin]
+        self.alternateOrigins = alternateOrigins.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "/")) }.filter { seen.insert($0).inserted }
+        self.certificateFingerprint = fingerprint.lowercased()
+        self.deviceId = deviceId
+        self.deviceName = deviceName
+        self.vaultIds = vaultIds
+        self.domains = domains
+        self.pairedAt = pairedAt
+        self.expiresAt = expiresAt
+    }
+
+    static func validateOrigin(_ origin: String) throws {
         guard
             let components = URLComponents(string: origin),
             components.scheme == "https",
@@ -44,19 +71,6 @@ public struct DesktopBridgePairing: Sendable, Hashable, Codable, Identifiable {
             components.fragment == nil,
             components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).isEmpty
         else { throw DesktopBridgeError.invalidOrigin }
-        let fingerprint = Self.normalizedFingerprint(certificateFingerprint)
-        guard fingerprint.count == 64, fingerprint.allSatisfy(\.isHexDigit) else {
-            throw DesktopBridgeError.invalidFingerprint
-        }
-        self.id = id
-        self.origin = origin.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        self.certificateFingerprint = fingerprint.lowercased()
-        self.deviceId = deviceId
-        self.deviceName = deviceName
-        self.vaultIds = vaultIds
-        self.domains = domains
-        self.pairedAt = pairedAt
-        self.expiresAt = expiresAt
     }
 
     public var isExpired: Bool { expiresAt.map { $0 <= Date() } ?? false }
@@ -109,20 +123,35 @@ extension DesktopBridgeError: LocalizedError {
 /// request to another host.
 public actor DesktopBridgeClient {
     private let pairing: DesktopBridgePairing
+    private var directOrigin: String
     private let session: URLSession
     private var token: String
+    private let relay: DesktopRelayConfiguration?
+    private let store: DesktopBridgePairingStore
+    private let requiresStoredCredential: Bool
 
-    public init(pairing: DesktopBridgePairing, token: String) {
+    public init(pairing: DesktopBridgePairing, token: String, keychain: KeychainStore = KeychainStore()) {
         self.pairing = pairing
+        self.directOrigin = pairing.origin
         self.token = token
+        let store = DesktopBridgePairingStore(keychain: keychain)
+        self.store = store
+        self.requiresStoredCredential = store.pairings().contains { $0.id == pairing.id }
+        self.relay = store.relay(for: pairing)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 120
-        configuration.waitsForConnectivity = true
+        configuration.waitsForConnectivity = false
         let delegate = DesktopBridgeSessionDelegate(fingerprint: pairing.certificateFingerprint)
         self.session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+    }
+
+    init(pairing: DesktopBridgePairing, token: String, store: DesktopBridgePairingStore, session: URLSession) {
+        self.pairing = pairing; self.directOrigin = pairing.origin; self.token = token
+        self.store = store; self.requiresStoredCredential = store.pairings().contains { $0.id == pairing.id }
+        self.relay = store.relay(for: pairing); self.session = session
     }
 
     /// Completes an offer shown by Desktop. The fingerprint travels out-of-band with the code
@@ -132,7 +161,10 @@ public actor DesktopBridgeClient {
         certificateFingerprint: String,
         code: String,
         deviceId: String,
-        deviceName: String
+        deviceName: String,
+        relay: DesktopRelayConfiguration? = nil,
+        alternateOrigins: [String] = [],
+        renewal: (pairing: DesktopBridgePairing, token: String, nextToken: String)? = nil
     ) async throws -> (pairing: DesktopBridgePairing, token: String) {
         let provisional = try DesktopBridgePairing(
             id: "pending",
@@ -143,41 +175,56 @@ public actor DesktopBridgeClient {
             vaultIds: [],
             domains: [],
             pairedAt: Date(),
-            expiresAt: nil
+            expiresAt: nil,
+            alternateOrigins: alternateOrigins
         )
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         let delegate = DesktopBridgeSessionDelegate(fingerprint: provisional.certificateFingerprint)
+        configuration.timeoutIntervalForRequest = 8
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
         guard let url = URL(string: provisional.origin + "/bridge/v1/pair") else {
             throw DesktopBridgeError.invalidOrigin
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let renewal { request.setValue("Bearer \(renewal.token)", forHTTPHeaderField: "Authorization") }
         request.httpBody = try JSONEncoder.nodus.encode(PairingRequest(
             code: code,
             deviceId: deviceId,
-            deviceName: deviceName
+            deviceName: deviceName,
+            nextToken: renewal?.nextToken
         ))
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await Self.perform(request, session: session, relay: relay, alternateOrigins: alternateOrigins)
             guard let http = response as? HTTPURLResponse, http.statusCode == 201 else {
                 throw DesktopBridgeError.permissionDenied
             }
             let envelope = try JSONDecoder.nodus.decode(PairingEnvelope.self, from: data)
+            if let renewal {
+                guard envelope.token == renewal.nextToken, envelope.pairing.id == renewal.pairing.id,
+                      envelope.pairing.deviceId == renewal.pairing.deviceId,
+                      Set(envelope.pairing.vaultIds) == renewal.pairing.vaultIds,
+                      Set(envelope.pairing.domains) == renewal.pairing.domains else { throw DesktopBridgeError.malformedResponse }
+            }
+            if let configuration = envelope.relay {
+                try DesktopBridgePairingStore().saveRelay(configuration, pairingId: envelope.pairing.id)
+            }
             return (
                 try DesktopBridgePairing(
                     id: envelope.pairing.id,
-                    origin: provisional.origin,
+                    origin: response.url.flatMap(Self.origin(of:)) ?? provisional.origin,
                     certificateFingerprint: provisional.certificateFingerprint,
                     deviceId: envelope.pairing.deviceId,
                     deviceName: envelope.pairing.deviceName,
                     vaultIds: Set(envelope.pairing.vaultIds),
                     domains: Set(envelope.pairing.domains),
                     pairedAt: envelope.pairing.createdAt,
-                    expiresAt: envelope.pairing.expiresAt
+                    expiresAt: envelope.pairing.expiresAt,
+                    alternateOrigins: [provisional.origin] + alternateOrigins
                 ),
                 envelope.token
             )
@@ -188,8 +235,211 @@ public actor DesktopBridgeClient {
         }
     }
 
+    public static func pair(offer: DesktopPairingOffer, deviceId: String, deviceName: String) async throws -> (pairing: DesktopBridgePairing, token: String) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil; configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.timeoutIntervalForRequest = 8
+        let session = URLSession(configuration: configuration,
+            delegate: DesktopBridgeSessionDelegate(fingerprint: offer.certificateFingerprint), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        do {
+            return try await pair(offer: offer, deviceId: deviceId, deviceName: deviceName,
+                store: DesktopBridgePairingStore(), session: session)
+        } catch let error as URLError where error.code == .serverCertificateUntrusted || error.code == .secureConnectionFailed {
+            throw DesktopBridgeError.certificateMismatch
+        } catch is DecodingError {
+            throw DesktopBridgeError.malformedResponse
+        }
+    }
+
+    static func mayUseRelay(after error: URLError, method: String) -> Bool {
+        let beforeSend: Set<URLError.Code> = [.cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet]
+        if beforeSend.contains(error.code) { return true }
+        return ["GET", "HEAD"].contains(method) && [.timedOut, .networkConnectionLost].contains(error.code)
+    }
+
+    static func origin(of url: URL) -> String? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.path = ""; components.query = nil; components.fragment = nil
+        return components.string
+    }
+
+    static func perform(_ request: URLRequest, session: URLSession, relay: DesktopRelayConfiguration?, alternateOrigins: [String] = []) async throws -> (Data, URLResponse) {
+        var candidate = request
+        var remaining = alternateOrigins.filter { $0 != request.url.flatMap(origin(of:)) }
+        while true {
+            do { return try await session.data(for: candidate) }
+            catch let error as URLError {
+                guard mayUseRelay(after: error, method: request.httpMethod ?? "GET") else { throw error }
+                if !remaining.isEmpty {
+                    let next = remaining.removeFirst(); try DesktopBridgePairing.validateOrigin(next)
+                    guard let url = request.url, let original = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                          var target = URLComponents(string: next) else { throw DesktopBridgeError.invalidOrigin }
+                    target.percentEncodedPath = original.percentEncodedPath; target.percentEncodedQuery = original.percentEncodedQuery
+                    guard let address = target.url else { throw DesktopBridgeError.invalidOrigin }
+                    candidate.url = address
+                    continue
+                }
+                guard let relay, let url = candidate.url,
+                      let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw error }
+            let path = components.percentEncodedPath + (components.percentEncodedQuery.map { "?" + $0 } ?? "")
+            let result = try await DesktopRelayTransport.request(configuration: relay, path: path,
+                method: request.httpMethod ?? "GET", headers: request.allHTTPHeaderFields ?? [:], body: request.httpBody)
+            guard let response = HTTPURLResponse(url: url, statusCode: result.status, httpVersion: "HTTP/1.1", headerFields: result.headers) else { throw DesktopBridgeError.malformedResponse }
+            return (result.data, response)
+            }
+        }
+    }
+
+    private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        guard let url = request.url, var target = URLComponents(string: directOrigin),
+              let original = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw DesktopBridgeError.invalidOrigin }
+        target.percentEncodedPath = original.percentEncodedPath; target.percentEncodedQuery = original.percentEncodedQuery
+        var current = request; current.url = target.url
+        if requiresStoredCredential, !store.pairings().contains(where: { $0.id == pairing.id }) { throw DesktopBridgeError.permissionDenied }
+        if let stored = store.credential(for: pairing) { token = stored }
+        else if requiresStoredCredential { throw DesktopBridgeError.locked }
+        current.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let sentToken = token
+        let alternatives = [pairing.origin] + (pairing.alternateOrigins ?? [])
+        var result = try await Self.perform(current, session: session, relay: relay, alternateOrigins: alternatives)
+        if (result.1 as? HTTPURLResponse)?.statusCode == 401 {
+            // A 401 precedes execution on the Mac, so retrying this exact request cannot
+            // duplicate a write. Network failures of an ambiguous write are never retried.
+            if let pending = store.pendingRenewal(for: pairing), pending != sentToken {
+                var health = URLRequest(url: URL(string: directOrigin + "/bridge/v2/health")!)
+                health.setValue("Bearer \(pending)", forHTTPHeaderField: "Authorization")
+                let probe = try await Self.perform(health, session: session, relay: relay, alternateOrigins: alternatives)
+                if (probe.1 as? HTTPURLResponse)?.statusCode == 200 { try store.commitRenewal(for: pairing, token: pending) }
+            }
+            if let fresh = store.credential(for: pairing), fresh != sentToken,
+               store.pairings().contains(where: { $0.id == pairing.id }) {
+                token = fresh; current.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
+                result = try await Self.perform(current, session: session, relay: relay, alternateOrigins: alternatives)
+            }
+        }
+        if let effective = result.1.url.flatMap(Self.origin(of:)) { directOrigin = effective }
+        return result
+    }
+
     public func capabilities() async throws -> DesktopBridgeCapabilitiesDocument {
         try await request("/bridge/v1/capabilities", as: DesktopBridgeCapabilitiesDocument.self)
+    }
+
+    public func liveCapabilities() async throws -> DesktopLiveCapabilities {
+        try await request("/bridge/v2/capabilities", as: DesktopLiveCapabilities.self)
+    }
+
+    public func revoke() async throws {
+        _ = try await raw(path: "/bridge/v2/pairing", method: "DELETE")
+    }
+    public func renew() async throws -> String {
+        let candidate = try store.prepareRenewal(for: pairing)
+        let response = try await raw(path: "/bridge/v2/pairing/renew", method: "POST", body: .object(["nextToken": .string(candidate)]))
+        let value = try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
+        guard response.status == 200, value.objectValue?["id"]?.stringValue == pairing.id else { throw DesktopBridgeError.malformedResponse }
+        try store.commitRenewal(for: pairing, token: candidate)
+        token = candidate
+        return candidate
+    }
+    public func controlPlane(_ path: String) async throws -> DesktopBridgeResponse {
+        guard ["health", "server-capabilities"].contains(path) else { throw DesktopBridgeError.permissionDenied }
+        return try await raw(path: "/bridge/v2/\(path)", method: "GET")
+    }
+    public func sendMutations(vaultId: String, body: Data) async throws -> DesktopBridgeResponse {
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing), !pairing.isExpired else { throw DesktopBridgeError.permissionDenied }
+        let value = try JSONDecoder.nodus.decode(JSONValue.self, from: body)
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+        return try await raw(path: "/bridge/v2/vaults/\(vault)/corpus/mutations", method: "POST", body: value)
+    }
+
+    public func operation(vaultId: String, method: String, args: [JSONValue]) async throws -> JSONValue {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed), let url = URL(string: pairing.origin + "/bridge/v2/vaults/\(vault)/operations") else { throw DesktopBridgeError.invalidOrigin }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder.nodus.encode(JSONValue.object(["method": .string(method), "args": .array(args)]))
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw DesktopBridgeError.malformedResponse }
+        guard (200..<300).contains(http.statusCode) else { throw APIError.decode(status: http.statusCode, data: data, headers: http.allHeaderFields) }
+        let envelope = try JSONDecoder.nodus.decode([String: JSONValue].self, from: data)
+        guard let result = envelope["result"] else { throw DesktopBridgeError.malformedResponse }
+        return result
+    }
+
+    func jobRequest(vaultId: String, id: String? = nil, query: [URLQueryItem] = [], method: String, body: JSONValue? = nil) async throws -> DesktopBridgeJobEnvelope {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed),
+            id == nil || id!.allSatisfy({ $0.isHexDigit || $0 == "-" }) else { throw DesktopBridgeError.permissionDenied }
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/jobs" + (id.map { "/\($0)" } ?? ""), query: query, method: method, body: body)
+        return try JSONDecoder.nodus.decode(DesktopBridgeJobEnvelope.self, from: response.data)
+    }
+    public func listJobs(vaultId: String) async throws -> [DesktopBridgeJob] {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/jobs", method: "GET")
+        struct List: Decodable { let jobs: [DesktopBridgeJob] }
+        return try JSONDecoder.nodus.decode(List.self, from: response.data).jobs
+    }
+
+    public func exportedFile(vaultId: String, id: String, sha256: String) async throws -> Data {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), UUID(uuidString: id) != nil else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/exports/\(id)", method: "GET")
+        guard SHA256.hash(data: response.data).map({ String(format: "%02x", $0) }).joined() == sha256.lowercased() else { throw DesktopBridgeError.malformedResponse }
+        return response.data
+    }
+
+    public func corpus(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", percentEncoded: Bool = false) async throws -> DesktopBridgeResponse {
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), ["GET", "HEAD"].contains(method) else { throw DesktopBridgeError.permissionDenied }
+        return try await raw(path: Self.corpusPath(vaultId: vaultId, path: path, percentEncoded: percentEncoded), query: query, method: method)
+    }
+
+    func fileRequest(vaultId: String, kind: DesktopBridgeFileKind, id: String, action: String, query: [URLQueryItem] = []) async throws -> DesktopBridgeResponse {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(kind.domain),
+              !id.isEmpty, id != ".", id != "..", ["descriptor", "content"].contains(action) else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed),
+              let record = id.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+        return try await raw(path: "/bridge/v2/vaults/\(vault)/files/\(kind.rawValue)/\(record)/\(action)", query: query, method: "GET")
+    }
+
+    static func corpusPath(vaultId: String, path: String, percentEncoded: Bool) throws -> String {
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        let parts = try path.split(separator: "/").map { part in
+            if !percentEncoded { return String(part) }
+            guard let decoded = String(part).removingPercentEncoding else { throw DesktopBridgeError.invalidOrigin }
+            return decoded
+        }
+        guard !parts.contains(where: { $0 == "." || $0 == ".." }), let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.permissionDenied }
+        return "/bridge/v2/vaults/\(vault)/corpus/" + parts.map { $0.addingPercentEncoding(withAllowedCharacters: allowed) ?? "" }.joined(separator: "/")
+    }
+
+    private func raw(path: String, query: [URLQueryItem] = [], method: String, body: JSONValue? = nil) async throws -> DesktopBridgeResponse {
+        guard var url = URLComponents(string: pairing.origin + path) else { throw DesktopBridgeError.invalidOrigin }
+        url.queryItems = query.isEmpty ? nil : query
+        guard let address = url.url else { throw DesktopBridgeError.invalidOrigin }
+        var request = URLRequest(url: address)
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder.nodus.encode(body)
+        }
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw DesktopBridgeError.malformedResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIError.decode(status: http.statusCode, data: data, headers: http.allHeaderFields)
+        }
+        return DesktopBridgeResponse(data: data, status: http.statusCode, headers: Dictionary(uniqueKeysWithValues: http.allHeaderFields.map { (String(describing: $0.key).lowercased(), String(describing: $0.value)) }))
     }
 
     public func privateJSON<T: Decodable & Sendable>(
@@ -248,7 +498,7 @@ public actor DesktopBridgeClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await perform(request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw DesktopBridgeError.permissionDenied
             }
@@ -262,13 +512,33 @@ public actor DesktopBridgeClient {
     }
 }
 
-private struct PairingRequest: Encodable {
+public struct DesktopBridgeResponse: Sendable {
+    public let data: Data
+    public let status: Int
+    public let headers: [String: String]
+}
+
+public struct DesktopLiveCapabilities: Decodable, Sendable {
+    public struct Vault: Decodable, Sendable, Identifiable {
+        public let id: String
+        public let name: String
+        public let type: VaultType
+    }
+    public let protocolVersion: Int
+    public let deviceId: String
+    public let deviceName: String
+    public let vaults: [Vault]
+    public let operations: [String]
+}
+
+struct PairingRequest: Encodable {
     let code: String
     let deviceId: String
     let deviceName: String
+    let nextToken: String?
 }
 
-private struct PairingEnvelope: Decodable {
+struct PairingEnvelope: Decodable {
     struct RawPairing: Decodable {
         let id: String
         let deviceId: String
@@ -279,16 +549,21 @@ private struct PairingEnvelope: Decodable {
         let expiresAt: Date?
     }
     let token: String
+    let relay: DesktopRelayConfiguration?
     let pairing: RawPairing
 }
 
-/// Public pairing metadata stays in ordinary app preferences; only the bearer token is secret.
+/// Public pairing metadata stays in preferences; tokens and relay keys stay in Keychain.
 /// Revoking locally deletes it synchronously, so the app cannot issue another request even if
 /// the Mac is currently unreachable and has not yet recorded its own revocation.
 public struct DesktopBridgePairingStore: @unchecked Sendable {
+    private static let renewalLock = NSLock()
+    private static let pendingLock = NSLock()
     private let defaults: UserDefaults
     private let keychain: KeychainStore
     private let metadataKey = "desktop-bridge-pairings-v1"
+    private let pendingKey = "desktop-bridge-pending-offer-ids-v1"
+    private let pendingIndexKey = "desktop-bridge-pending-index-v1"
 
     public init(defaults: UserDefaults = .standard, keychain: KeychainStore = KeychainStore()) {
         self.defaults = defaults
@@ -311,8 +586,148 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
         keychain.value(for: KeychainStore.desktopBridgeKey(pairingId: pairing.id))
     }
 
+    /// Only opaque offer IDs enter preferences. The code, authenticated offer and
+    /// candidate credential stay together in the non-synchronizing Keychain.
+    public func pendingOffers() -> [DesktopPairingOffer] {
+        Self.pendingLock.withLock {
+            ((try? pendingPairingIDs()) ?? []).reversed().compactMap {
+                pendingPairing(id: $0)?.offer
+            }
+        }
+    }
+
+    func pendingPairingToken(offerId: String) -> String? {
+        Self.pendingLock.withLock { pendingPairing(id: offerId)?.token }
+    }
+
+    private func pendingPairing(id: String) -> DesktopPendingPairing? {
+        guard let text = keychain.value(for: KeychainStore.desktopBridgePendingKey(offerId: id)),
+              let data = Data(base64Encoded: text) else { return nil }
+        return try? JSONDecoder.nodus.decode(DesktopPendingPairing.self, from: data)
+    }
+
+    private func pendingPairingIDs() throws -> [String] {
+        if let text = keychain.value(for: pendingIndexKey) {
+            guard let data = Data(base64Encoded: text),
+                  let ids = try? JSONDecoder().decode([String].self, from: data) else { throw DesktopBridgeError.malformedResponse }
+            return ids
+        }
+        if keychain.contains(pendingIndexKey) { throw DesktopBridgeError.locked }
+        return defaults.stringArray(forKey: pendingKey) ?? []
+    }
+
+    private func savePendingPairingIDs(_ ids: [String]) throws {
+        // The durable index commits before any pairing POST, independently of
+        // asynchronous preferences writes or a restored preferences file.
+        if ids.isEmpty { try keychain.remove(pendingIndexKey); defaults.removeObject(forKey: pendingKey) }
+        else {
+            try keychain.set(try JSONEncoder().encode(ids).base64EncodedString(), for: pendingIndexKey)
+            defaults.set(ids, forKey: pendingKey)
+        }
+    }
+
+    func preparePendingPairing(offer: DesktopPairingOffer, deviceId: String, deviceName: String,
+                               token: String) throws -> DesktopPendingPairing {
+        try Self.pendingLock.withLock {
+            var ids = try pendingPairingIDs()
+            if ids.contains(offer.id) {
+                guard let pending = pendingPairing(id: offer.id) else { throw DesktopBridgeError.locked }
+                guard pending.deviceId == deviceId,
+                      pending.offer.certificateFingerprint == offer.certificateFingerprint,
+                      pending.offer.macDeviceId == offer.macDeviceId,
+                      pending.offer.renewalPairingId == offer.renewalPairingId,
+                      Set(pending.offer.origins) == Set(offer.origins),
+                      Set(pending.offer.vaultIds) == Set(offer.vaultIds),
+                      Set(pending.offer.domains) == Set(offer.domains) else { throw DesktopBridgeError.permissionDenied }
+                return pending
+            }
+            guard offer.expiresAt > Date() else { throw DesktopBridgeError.expired }
+            let pending = DesktopPendingPairing(offer: offer, deviceId: deviceId, deviceName: deviceName, token: token)
+            try keychain.set(try JSONEncoder.nodus.encode(pending).base64EncodedString(),
+                for: KeychainStore.desktopBridgePendingKey(offerId: offer.id))
+            ids.append(offer.id); try savePendingPairingIDs(ids)
+            return pending
+        }
+    }
+
+    func updatePendingPairing(_ pending: DesktopPendingPairing, token: String) throws {
+        try Self.pendingLock.withLock {
+            guard pendingPairing(id: pending.offer.id)?.token == pending.token else { throw DesktopBridgeError.permissionDenied }
+            let updated = DesktopPendingPairing(offer: pending.offer, deviceId: pending.deviceId,
+                deviceName: pending.deviceName, token: token)
+            try keychain.set(try JSONEncoder.nodus.encode(updated).base64EncodedString(),
+                for: KeychainStore.desktopBridgePendingKey(offerId: pending.offer.id))
+        }
+    }
+
+    /// Called after the complete workspace is saved, or when its owner unlinks it.
+    public func completePendingPairing(grantId: String) throws {
+        try Self.pendingLock.withLock {
+            let ids = try pendingPairingIDs()
+            var retained = [String]()
+            for id in ids {
+                guard let pending = pendingPairing(id: id) else { retained.append(id); continue }
+                if (pending.offer.renewalPairingId ?? id) == grantId {
+                    try keychain.remove(KeychainStore.desktopBridgePendingKey(offerId: id))
+                } else { retained.append(id) }
+            }
+            try savePendingPairingIDs(retained)
+        }
+    }
+
+    /// Store the replacement before contacting the Mac. If its response is lost,
+    /// a pinned health request can prove which credential the Mac committed.
+    public func prepareRenewal(for pairing: DesktopBridgePairing) throws -> String {
+        try Self.renewalLock.withLock {
+            guard pairings().contains(where: { $0.id == pairing.id }), credential(for: pairing) != nil,
+                  !pairing.isExpired else { throw DesktopBridgeError.permissionDenied }
+            if let pending = pendingRenewal(for: pairing) { return pending }
+            var bytes = [UInt8](repeating: 0, count: 32)
+            let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+            guard status == errSecSuccess else { throw KeychainStore.Failure.unexpectedStatus(status) }
+            let token = Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+            try keychain.set(token, for: KeychainStore.desktopBridgeRenewalKey(pairingId: pairing.id))
+            return token
+        }
+    }
+
+    public func pendingRenewal(for pairing: DesktopBridgePairing) -> String? {
+        keychain.value(for: KeychainStore.desktopBridgeRenewalKey(pairingId: pairing.id))
+    }
+
+    public func commitRenewal(for pairing: DesktopBridgePairing, token: String) throws {
+        try Self.renewalLock.withLock {
+            guard pairings().contains(where: { $0.id == pairing.id }) else { throw DesktopBridgeError.permissionDenied }
+            guard pendingRenewal(for: pairing) == token else {
+                if credential(for: pairing) == token { return }
+                throw DesktopBridgeError.permissionDenied
+            }
+            try keychain.set(token, for: KeychainStore.desktopBridgeKey(pairingId: pairing.id))
+            try keychain.remove(KeychainStore.desktopBridgeRenewalKey(pairingId: pairing.id))
+        }
+    }
+
+    public func saveRelay(_ relay: DesktopRelayConfiguration, pairingId: String) throws {
+        try relay.validate()
+        guard relay.expiresAt > Date() else { throw DesktopBridgeError.expired }
+        try keychain.set(try JSONEncoder.nodus.encode(relay).base64EncodedString(), for: KeychainStore.desktopBridgeRelayKey(pairingId: pairingId))
+    }
+
+    public func relay(for pairing: DesktopBridgePairing) -> DesktopRelayConfiguration? {
+        guard let encoded = keychain.value(for: KeychainStore.desktopBridgeRelayKey(pairingId: pairing.id)),
+              let data = Data(base64Encoded: encoded), let configuration = try? JSONDecoder.nodus.decode(DesktopRelayConfiguration.self, from: data),
+              (try? configuration.validate()) != nil, configuration.expiresAt > Date() else { return nil }
+        return configuration
+    }
+
     public func revokeLocally(_ pairing: DesktopBridgePairing) throws {
+        try completePendingPairing(grantId: pairing.id)
+        Self.renewalLock.lock()
+        defer { Self.renewalLock.unlock() }
         try keychain.remove(KeychainStore.desktopBridgeKey(pairingId: pairing.id))
+        try keychain.remove(KeychainStore.desktopBridgeRenewalKey(pairingId: pairing.id))
+        try keychain.remove(KeychainStore.desktopBridgeRelayKey(pairingId: pairing.id))
         try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: pairing.id))
         try? FileManager.default.removeItem(at: PrivateBridgeCache.defaultDirectory
             .appendingPathComponent("bridge-\(pairing.id)", isDirectory: true))
@@ -323,7 +738,7 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
     }
 }
 
-private final class DesktopBridgeSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+final class DesktopBridgeSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     private let fingerprint: String
 
     init(fingerprint: String) { self.fingerprint = DesktopBridgePairing.normalizedFingerprint(fingerprint).lowercased() }

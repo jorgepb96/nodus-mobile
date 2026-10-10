@@ -61,6 +61,18 @@ public struct KeychainStore: Sendable {
         "desktop-bridge\u{1F}\(pairingId)"
     }
 
+    public static func desktopBridgeRelayKey(pairingId: String) -> String {
+        "desktop-bridge-relay\u{1F}\(pairingId)"
+    }
+
+    public static func desktopBridgeRenewalKey(pairingId: String) -> String {
+        "desktop-bridge-renewal\u{1F}\(pairingId)"
+    }
+
+    public static func desktopBridgePendingKey(offerId: String) -> String {
+        "desktop-bridge-pending\u{1F}\(offerId)"
+    }
+
     public static func desktopBridgeCacheKey(pairingId: String) -> String {
         "desktop-bridge-cache\u{1F}\(pairingId)"
     }

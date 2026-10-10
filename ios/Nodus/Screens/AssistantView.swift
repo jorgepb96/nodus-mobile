@@ -23,7 +23,7 @@ struct ChatScreen: View {
     init(session: SpaceSession, openProviders: (() -> Void)? = nil) {
         self.session = session
         self.openProviders = openProviders
-        _history = State(initialValue: ChatHistoryStore(spaceId: session.connection.spaceId))
+        _history = State(initialValue: ChatHistoryStore(spaceId: session.connection.storageId))
     }
 
     struct Turn: Identifiable {

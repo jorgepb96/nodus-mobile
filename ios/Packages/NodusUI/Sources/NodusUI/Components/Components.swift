@@ -389,7 +389,7 @@ public struct NodusNotice: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.footnote.weight(.medium))
                 if let message {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    Text(message).font(.caption).foregroundStyle(Color.nodusSecondaryText)
                 }
             }
             Spacer(minLength: 0)
