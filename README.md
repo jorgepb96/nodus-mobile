@@ -56,6 +56,12 @@ Native source-link readers preserve the actual failure and offer a retry; a canc
 does not become a failed record. Compact chips keep their intrinsic size, and a tag wider than
 the available reading column receives a bounded proposal rather than forcing horizontal overflow.
 The iPhone/iPad visual acceptance of these refinements remains pending.
+New offline-authored ideas also project into the native Ideas catalogue and shared graph while
+their stable identities await acknowledgement. These genuine user drafts carry a pending state,
+zero derived evidence and no invented relations. Removing temporary downloads keeps them.
+Only an actual pending authored identity can answer a Mac 404; deleted downloaded corpus
+records, permission failures and certificate errors remain failures. This new route awaits
+the deferred contracts and end-to-end campaign.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;

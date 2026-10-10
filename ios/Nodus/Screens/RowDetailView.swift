@@ -86,6 +86,11 @@ struct RowDetailView: View {
             // occasional bold words in it. The distance is what says where one ends.
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 heading
+                if let state = row.string("mobileSyncState") {
+                    Label(state == "pending" ? "Guardado en este dispositivo · pendiente de sincronizar" : "Guardado en este dispositivo · revisa la sincronización en Scriptor", systemImage: "iphone")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 // Under the title, because following a work back to the library it came from is
                 // something a reader does *instead* of reading this screen rather than after it.

@@ -15,6 +15,9 @@ struct DesktopCorpusOfflineTests {
         let session = URLSession(configuration: config), client = DesktopBridgeClient(pairing: pairing, token: "test-only", store: store, session: session)
         defer { session.invalidateAndCancel(); try? FileManager.default.removeItem(at: root); try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)); defaults.removePersistentDomain(forName: id) }
         let pack = try await cache.saveReadPack(vaultId: "a", title: "Selected ideas", expiresAt: Date().addingTimeInterval(3600), records: [.init(domain: .corpus, recordId: CompanionIdeaCopy.recordId, data: JSONEncoder.nodus.encode(CompanionIdeaCopyTests.copy(ids: ["one", "two"])))])
+        let documents = try CompanionDocumentOutbox(cache: cache, vaultId: "a", data: nil)
+        let creation = try await documents.createManualIdea(input: .object(["title": .string("New phone idea"), "folderId": .null]))
+        let authoredId = try #require(creation.objectValue?["globalId"]?.stringValue)
         try await cache.removeReusableCopies()
         OfflineCorpusProtocol.state.set(error: .notConnectedToInternet, status: 200)
         let query = [URLQueryItem(name: "surface", value: "workspace"), URLQueryItem(name: "q", value: "two")]
@@ -23,6 +26,9 @@ struct DesktopCorpusOfflineTests {
         #expect(try JSONDecoder.nodus.decode(IdeaWorkspacePage.self, from: response.response.data).items.map(\.id) == ["two"])
         let dossier = try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas/two", cache: cache)
         #expect(try JSONDecoder.nodus.decode(IdeaDetail.self, from: dossier.response.data).idea.string("global_id") == "two")
+        let newQuery = [URLQueryItem(name: "surface", value: "workspace"), URLQueryItem(name: "q", value: "New phone")]
+        let authored = try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas", query: newQuery, cache: cache)
+        #expect(try JSONDecoder.nodus.decode(IdeaWorkspacePage.self, from: authored.response.data).items.map(\.id) == [authoredId])
         await #expect(throws: CompanionIdeaCopy.CopyError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas/missing", cache: cache) }
         await #expect(throws: DesktopBridgeError.self) { try await client.corpusWithOfflineCopy(vaultId: "other", path: "ideas", query: query, cache: cache) }
         for code in [URLError.Code.serverCertificateUntrusted, .cancelled] {
@@ -31,9 +37,17 @@ struct DesktopCorpusOfflineTests {
         }
         OfflineCorpusProtocol.state.set(error: nil, status: 403)
         await #expect(throws: APIError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas", query: query, cache: cache) }
+        await #expect(throws: APIError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas/\(authoredId)", cache: cache) }
+        OfflineCorpusProtocol.state.set(error: nil, status: 404)
+        let unacknowledged = try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas/\(authoredId)", cache: cache)
+        #expect(unacknowledged.fromCache)
+        #expect(try JSONDecoder.nodus.decode(IdeaDetail.self, from: unacknowledged.response.data).idea.string("mobileSyncState") == "pending")
+        await #expect(throws: APIError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas/two", cache: cache) }
         try await cache.removeReadPack(id: pack.id, vaultId: "a")
         OfflineCorpusProtocol.state.set(error: .notConnectedToInternet, status: 200)
-        await #expect(throws: URLError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas", query: query, cache: cache) }
+        let kept = try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas", query: newQuery, cache: cache)
+        #expect(try JSONDecoder.nodus.decode(IdeaWorkspacePage.self, from: kept.response.data).items.map(\.id) == [authoredId])
+        await #expect(throws: CompanionIdeaCopy.CopyError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "ideas/two", cache: cache) }
     }
     @Test("exact cached pages reopen only after transport loss; permissions, certificate errors and new pages fail explicitly")
     func protectedFallback() async throws {

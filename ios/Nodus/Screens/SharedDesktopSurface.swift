@@ -463,13 +463,18 @@ private struct DesktopWebView: UIViewRepresentable {
                                 let cache = try PrivateBridgeCache(pairingId: pairing.id)
                                 let key = try CompanionDocumentOutbox.operationKey(method, args)
                                 let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key)
+                                let hasIdeas = CompanionIdeaCopy.operationMethods.contains(method)
+                                    ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
                                 do {
-                                    value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil ? nil : 4)
+                                    value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasIdeas ? nil : 4)
                                     onOfflineCopy(false)
                                     try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
                                 } catch {
-                                    guard isPrivateBridgeOffline(error), let cached else { throw error }
-                                    value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached)
+                                    guard isPrivateBridgeOffline(error) else { throw error }
+                                    let ideaCopy = hasIdeas ? try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId) : nil
+                                    if let local = try ideaCopy?.operation(method, args: args) { value = local }
+                                    else if let cached { value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached) }
+                                    else { throw error }
                                     onOfflineCopy(true)
                                 }
                                 if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue { try await documents.seed(noteId: noteId, editorData: value) }
@@ -513,8 +518,11 @@ private struct DesktopWebView: UIViewRepresentable {
                                 ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: "companion:dictionary:v1") : false
                             let hasVerification = method == "verifyCitations" && args.count == 1
                                 ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: "companion:citations:v1") : false
-                            let hasIdeas = CompanionIdeaCopy.operationMethods.contains(method)
+                            let hasDownloadedIdeas = CompanionIdeaCopy.operationMethods.contains(method)
                                 ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
+                            let authoredIdeas = CompanionIdeaCopy.operationMethods.contains(method)
+                                ? try await CompanionIdeaCopy.authored(cache: cache, vaultId: vaultId) : nil
+                            let hasIdeas = hasDownloadedIdeas || authoredIdeas != nil
                             do {
                                 value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification && !hasIdeas ? nil : 4)
                                 onOfflineCopy(false)
@@ -523,7 +531,7 @@ private struct DesktopWebView: UIViewRepresentable {
                                 guard Self.operationDomains[method] == "corpus", isPrivateBridgeOffline(error) else { throw error }
                                 let catalogue = hasCatalogue ? try await companionDownloadedCatalogue(cache, vaultId: vaultId, method: method) : nil
                                 let verification = hasVerification ? try await companionCitationVerification(cache, vaultId: vaultId, refs: args[0]) : nil
-                                let ideaCopy = hasIdeas ? try await CompanionIdeaCopy.downloaded(cache: cache, vaultId: vaultId) : nil
+                                let ideaCopy = hasIdeas ? try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId) : nil
                                 let idea = try ideaCopy?.operation(method, args: args)
                                 if let catalogue { value = catalogue }
                                 else if let idea { value = idea }

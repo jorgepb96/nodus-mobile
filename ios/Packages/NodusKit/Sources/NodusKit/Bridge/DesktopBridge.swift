@@ -423,14 +423,24 @@ public actor DesktopBridgeClient {
         let retained = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: identity)
         let selectedIdeas = path.split(separator: "/").first == "ideas"
             ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
+        let localIdeas = path.split(separator: "/").first == "ideas"
+            ? try await CompanionIdeaCopy.authored(cache: cache, vaultId: vaultId) : nil
         do {
-            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas ? 4 : nil)
+            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas || localIdeas != nil ? 4 : nil)
             if response.status == 200 { try await cache.store(JSONEncoder.nodus.encode(response), vaultId: vaultId, domain: .corpus, recordId: identity) }
             return (response, false)
         } catch {
+            // The Mac can legitimately return 404 before acknowledging a new
+            // authored identity. Only that device's actual pending creation is
+            // eligible; a deleted Mac record never falls back to an old download.
+            let components = path.split(separator: "/").map { percentEncoded ? String($0).removingPercentEncoding ?? "" : String($0) }
+            if let api = error as? APIError, api.isNotFound, components.count == 2, components[0] == "ideas", let localIdeas {
+                let copy = try CompanionIdeaCopy(copies: [localIdeas])
+                if copy.containsFullIdea(components[1]), let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
+            }
             guard let offline = error as? URLError,
                   [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut].contains(offline.code) else { throw error }
-            if selectedIdeas, let copy = try await CompanionIdeaCopy.downloaded(cache: cache, vaultId: vaultId),
+            if selectedIdeas || localIdeas != nil, let copy = try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId),
                let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
             guard let bytes = retained else { throw error }
             return (try JSONDecoder.nodus.decode(DesktopBridgeResponse.self, from: bytes), true)

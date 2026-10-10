@@ -80,6 +80,18 @@ public struct CompanionIdeaCopy: Sendable {
         guard !bytes.isEmpty else { return nil }
         return try Self(copies: bytes.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) })
     }
+    public static func authored(cache: PrivateBridgeCache, vaultId: String) async throws -> JSONValue? {
+        guard let data = try await cache.data(vaultId: vaultId, domain: .writing, recordId: CompanionDocumentOutbox.storageKey) else { return nil }
+        return try await CompanionDocumentOutbox(cache: cache, vaultId: vaultId, data: data).pendingIdeaCopy()
+    }
+    public static func consultable(cache: PrivateBridgeCache, vaultId: String) async throws -> Self? {
+        var copies: [JSONValue] = []
+        if let local = try await authored(cache: cache, vaultId: vaultId) { copies.append(local) }
+        let downloaded = try await cache.downloadedData(vaultId: vaultId, domain: .corpus, recordId: recordId)
+        copies.append(contentsOf: try downloaded.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) })
+        return copies.isEmpty ? nil : try Self(copies: copies)
+    }
+    public func containsFullIdea(_ id: String) -> Bool { entry(id) != nil }
 
     public func nativeResponse(path: String, query: [URLQueryItem], percentEncoded: Bool) throws -> DesktopBridgeResponse? {
         let parts = try path.split(separator: "/").map { part -> String in
