@@ -188,7 +188,7 @@ struct SpaceSettingsView: View {
 
 
                 if let pairingId = session.connection.desktopPairingId {
-                    CompanionCopySettings(pairingId: pairingId)
+                    CompanionCopySettings(session: session, pairingId: pairingId)
                 } else {
                 Section {
                     switch session.mirrorProgress {
@@ -660,17 +660,36 @@ struct PublishedTablesView: View {
 /// A linked workspace retains opened content rather than downloading a complete
 /// publication. This control never removes drafts or authorised pending work.
 private struct CompanionCopySettings: View {
+    let session: SpaceSession
     let pairingId: String
     @State private var usage: PrivateBridgeCache.Usage?
     @State private var issue: String?
     @State private var clearing = false
     @State private var confirmClear = false
+    @State private var showingDownload = false
+    @State private var packs: [PrivateBridgeCache.ReadPack] = []
     var body: some View {
         Section {
             if let usage {
                 LabeledContent("Consulted content", value: ByteCountFormatter.string(fromByteCount: Int64(usage.reusableBytes), countStyle: .file))
+                LabeledContent("Downloaded content", value: ByteCountFormatter.string(fromByteCount: Int64(usage.downloadedBytes), countStyle: .file))
                 LabeledContent("Maximum for this Mac", value: ByteCountFormatter.string(fromByteCount: Int64(usage.readLimitBytes), countStyle: .file))
                 LabeledContent("Drafts and pending work", value: ByteCountFormatter.string(fromByteCount: Int64(usage.protectedBytes), countStyle: .file))
+                Button("Descargar para llevar") { showingDownload = true }
+                    .accessibilityIdentifier("companion-download-select")
+                ForEach(packs) { pack in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(pack.title)
+                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(pack.bytes), countStyle: .file)) · caduca \(pack.expiresAt.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Eliminar copia descargada", role: .destructive) {
+                            Task {
+                                do { try await PrivateBridgeCache(pairingId: pairingId).removeReadPack(id: pack.id, vaultId: pack.vaultId); await refresh() }
+                                catch { issue = error.localizedDescription }
+                            }
+                        }.accessibilityIdentifier("companion-download-remove-\(pack.id)")
+                    }
+                }
                 Button("Free space used by consulted content", role: .destructive) { confirmClear = true }
                     .disabled(clearing)
                     .accessibilityIdentifier("companion-clear-read-copies")
@@ -681,6 +700,7 @@ private struct CompanionCopySettings: View {
         }
         .accessibilityIdentifier("companion-offline-storage")
         .task { await refresh() }
+        .sheet(isPresented: $showingDownload, onDismiss: { Task { await refresh() } }) { CompanionDownloadsView(session: session) }
         .confirmationDialog("Free space used by consulted content?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Free space", role: .destructive) {
                 clearing = true
@@ -694,7 +714,12 @@ private struct CompanionCopySettings: View {
         } message: { Text("Drafts and pending work remain on this device. Open the consulted content again while connected to keep another copy.") }
     }
     private func refresh() async {
-        do { usage = try await PrivateBridgeCache(pairingId: pairingId).usage(); issue = nil }
+        do {
+            let cache = try PrivateBridgeCache(pairingId: pairingId)
+            usage = try await cache.usage()
+            packs = try await cache.readPacks(vaultId: session.vaultId ?? "")
+            issue = nil
+        }
         catch { issue = error.localizedDescription }
     }
 }

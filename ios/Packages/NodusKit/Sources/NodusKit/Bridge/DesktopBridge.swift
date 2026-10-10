@@ -817,6 +817,7 @@ public actor PrivateBridgeCache {
     public static let defaultReadLimitBytes = 250 * 1_024 * 1_024
     public struct Usage: Sendable, Equatable {
         public let reusableBytes: Int
+        public let downloadedBytes: Int
         public let protectedBytes: Int
         public let readLimitBytes: Int
     }
@@ -865,9 +866,10 @@ public actor PrivateBridgeCache {
         let sealed = try AES.GCM.seal(data, using: key)
         guard let combined = sealed.combined else { throw DesktopBridgeError.malformedResponse }
         return try Self.diskLock.withLock {
+            try cleanReadPacks()
             let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
             let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
-            if !Self.isDurable(domain), combined.count > readLimitBytes {
+            if !Self.isDurable(domain), combined.count > max(0, readLimitBytes - (try readPackBytes())) {
                 try removeIfPresent(url); try removeIfPresent(legacy)
                 return false
             }
@@ -881,10 +883,18 @@ public actor PrivateBridgeCache {
 
     public func data(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Data? {
         try Self.diskLock.withLock {
+            try cleanReadPacks()
             let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
             let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
             let source = FileManager.default.fileExists(atPath: url.path) ? url : legacy
-            guard FileManager.default.fileExists(atPath: source.path) else { return nil }
+            guard FileManager.default.fileExists(atPath: source.path) else {
+                let name = legacy.lastPathComponent
+                for pack in try readPackManifests().sorted(by: { $0.createdAt > $1.createdAt }) where pack.vaultId == vaultId && pack.files.contains(name) {
+                    let copy = folder.appendingPathComponent(pack.directory).appendingPathComponent(name)
+                    return try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: copy)), using: key)
+                }
+                return nil
+            }
             let value = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: source)), using: key)
             // Migrate only after decrypting and knowing the domain. Unclassified
             // legacy files may hold drafts and must never be blindly evicted.
@@ -904,8 +914,10 @@ public actor PrivateBridgeCache {
 
     public func usage() throws -> Usage {
         try Self.diskLock.withLock {
+            try cleanReadPacks()
             let files = try cacheFiles()
             return Usage(reusableBytes: files.filter { $0.url.lastPathComponent.hasPrefix("read-") }.reduce(0) { $0 + $1.size },
+                         downloadedBytes: try readPackBytes(),
                          protectedBytes: files.filter { !$0.url.lastPathComponent.hasPrefix("read-") }.reduce(0) { $0 + $1.size },
                          readLimitBytes: readLimitBytes)
         }
@@ -936,7 +948,8 @@ public actor PrivateBridgeCache {
             return $0.date < $1.date
         }
         var total = files.reduce(0) { $0 + $1.size }
-        for file in files where total > readLimitBytes {
+        let available = max(0, readLimitBytes - (try readPackBytes()))
+        for file in files where total > available {
             try removeIfPresent(file.url); total -= file.size
         }
     }
@@ -951,5 +964,116 @@ public actor PrivateBridgeCache {
         let address = "\(vaultId)\u{1f}\(domain.rawValue)\u{1f}\(recordId)"
         let name = SHA256.hash(data: Data(address.utf8)).map { String(format: "%02x", $0) }.joined()
         return folder.appendingPathComponent(name).appendingPathExtension("bridgecache")
+    }
+
+    public struct ReadPackRecord: Sendable {
+        public let domain: DesktopBridgeDomain
+        public let recordId: String
+        public let data: Data
+        public init(domain: DesktopBridgeDomain, recordId: String, data: Data) {
+            self.domain = domain; self.recordId = recordId; self.data = data
+        }
+    }
+    public struct ReadPack: Codable, Sendable, Identifiable {
+        public let id: UUID
+        public let vaultId: String
+        public let title: String
+        public let createdAt: Date
+        public let expiresAt: Date
+        public let bytes: Int
+        public let recordCount: Int
+        fileprivate let directory: String
+        fileprivate let files: [String]
+    }
+    public enum ReadPackError: LocalizedError {
+        case tooLarge, invalidSelection
+        public var errorDescription: String? {
+            switch self {
+            case .tooLarge: "La selección supera el espacio disponible para descargas. Selecciona menos documentos o elimina otra descarga."
+            case .invalidSelection: "La selección de descarga está incompleta o no es válida."
+            }
+        }
+    }
+    /// Commit the complete selection with one atomic encrypted pointer. A failed
+    /// refresh retains the previous download; no partial pack is advertised.
+    @discardableResult
+    public func saveReadPack(id: UUID = UUID(), vaultId: String, title: String, expiresAt: Date, records: [ReadPackRecord]) throws -> ReadPack {
+        guard !vaultId.isEmpty, !title.isEmpty, expiresAt > Date(), !records.isEmpty,
+              records.allSatisfy({ !Self.isDurable($0.domain) }) else { throw ReadPackError.invalidSelection }
+        return try Self.diskLock.withLock {
+            try cleanReadPacks()
+            let existing = try readPackManifests()
+            let otherBytes = existing.filter { $0.id != id }.reduce(0) { $0 + $1.bytes }
+            let directory = "pack-copy-" + UUID().uuidString
+            let staged = folder.appendingPathComponent(directory, isDirectory: true)
+            try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: false)
+            BackupPolicy.apply(.excluded, to: staged)
+            var committed = false
+            defer { if !committed { try? FileManager.default.removeItem(at: staged) } }
+            var names = Set<String>(), bytes = 0
+            for record in records {
+                let name = legacyURL(vaultId: vaultId, domain: record.domain, recordId: record.recordId).lastPathComponent
+                guard names.insert(name).inserted, let sealed = try AES.GCM.seal(record.data, using: key).combined else { throw ReadPackError.invalidSelection }
+                bytes += sealed.count
+                guard bytes + otherBytes <= readLimitBytes else { throw ReadPackError.tooLarge }
+                try sealed.write(to: staged.appendingPathComponent(name), options: [.atomic, .completeFileProtection])
+            }
+            // Include the encrypted pointer in the same per-Mac budget.
+            let createdAt = Date()
+            func manifest(_ size: Int) -> ReadPack {
+                ReadPack(id: id, vaultId: vaultId, title: title, createdAt: createdAt, expiresAt: expiresAt,
+                         bytes: size, recordCount: records.count, directory: directory, files: names.sorted())
+            }
+            var pack = manifest(bytes), pointer = Data()
+            for _ in 0..<4 {
+                guard let sealed = try AES.GCM.seal(JSONEncoder.nodus.encode(pack), using: key).combined else { throw ReadPackError.invalidSelection }
+                pointer = sealed
+                if pack.bytes == bytes + pointer.count { break }
+                pack = manifest(bytes + pointer.count)
+            }
+            guard pack.bytes == bytes + pointer.count else { throw ReadPackError.invalidSelection }
+            guard pack.bytes + otherBytes <= readLimitBytes else { throw ReadPackError.tooLarge }
+            try pointer.write(to: readPackPointer(id), options: [.atomic, .completeFileProtection])
+            BackupPolicy.apply(.excluded, to: readPackPointer(id))
+            committed = true
+            for name in names { try removeIfPresent(folder.appendingPathComponent("read-" + name)); try removeIfPresent(folder.appendingPathComponent(name)) }
+            try cleanReadPacks()
+            try trimReusableCopies(keeping: folder) // downloaded copies have priority over the consulted LRU
+            return pack
+        }
+    }
+    public func readPacks(vaultId: String) throws -> [ReadPack] {
+        try Self.diskLock.withLock {
+            try cleanReadPacks()
+            return try readPackManifests().filter { $0.vaultId == vaultId }.sorted { $0.createdAt > $1.createdAt }
+        }
+    }
+    public func removeReadPack(id: UUID, vaultId: String) throws {
+        try Self.diskLock.withLock {
+            guard try readPackManifests().contains(where: { $0.id == id && $0.vaultId == vaultId }) else { return }
+            try removeIfPresent(readPackPointer(id)); try cleanReadPacks()
+        }
+    }
+    private func readPackPointer(_ id: UUID) -> URL { folder.appendingPathComponent("pin-\(id.uuidString).readpack") }
+    private func readPackManifests() throws -> [ReadPack] {
+        try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "readpack" }.map { url in
+                let bytes = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key)
+                let pack = try JSONDecoder.nodus.decode(ReadPack.self, from: bytes)
+                guard url.lastPathComponent == readPackPointer(pack.id).lastPathComponent, pack.directory.hasPrefix("pack-copy-"),
+                      UUID(uuidString: String(pack.directory.dropFirst("pack-copy-".count))) != nil,
+                      pack.files.allSatisfy({ $0.count == 76 && $0.hasSuffix(".bridgecache") && $0.prefix(64).allSatisfy(\.isHexDigit) }) else { throw ReadPackError.invalidSelection }
+                return pack
+            }
+    }
+    private func readPackBytes() throws -> Int { try readPackManifests().reduce(0) { $0 + $1.bytes } }
+    private func cleanReadPacks() throws {
+        let packs = try readPackManifests(), now = Date()
+        for pack in packs where pack.expiresAt <= now { try removeIfPresent(readPackPointer(pack.id)) }
+        let retained = Set(packs.filter { $0.expiresAt > now }.map(\.directory))
+        for url in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
+            let name = url.lastPathComponent
+            if name.hasPrefix("pack-copy-"), UUID(uuidString: String(name.dropFirst("pack-copy-".count))) != nil, !retained.contains(name) { try removeIfPresent(url) }
+        }
     }
 }

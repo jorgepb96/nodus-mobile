@@ -26946,6 +26946,16 @@
           }
         }
       }
+    },
+    "Downloaded content": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contenido descargado"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -5,6 +5,14 @@ import Testing
 
 @Suite("Bounded companion storage")
 struct PrivateBridgeCacheTests {
+    private func encryptedDiskContents(_ root: URL) throws -> [Data] {
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey])!
+        var result: [Data] = []
+        for case let file as URL in files where try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+            result.append(try Data(contentsOf: file))
+        }
+        return result
+    }
     private struct Fixture {
         let id = UUID().uuidString
         let root: URL
@@ -87,5 +95,92 @@ struct PrivateBridgeCacheTests {
         #expect(try await f.cache.usage().reusableBytes <= 512)
         try await f.cache.store(Data("kept".utf8), vaultId: "a", domain: .writing, recordId: "work")
         #expect(try await another.data(vaultId: "a", domain: .writing, recordId: "work") == Data("kept".utf8))
+    }
+
+    @Test("chosen complete downloads survive LRU pressure and clearing while sharing the per-Mac budget")
+    func chosenDownload() async throws {
+        let f = try Fixture(limit: 4_096); defer { f.clean() }
+        let selected = Data("Private structured document selected for the journey".utf8)
+        try await f.cache.store(Data("stale consulted revision".utf8), vaultId: "a", domain: .corpus, recordId: "editor")
+        let pack = try await f.cache.saveReadPack(vaultId: "a", title: "One selected document", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "editor", data: selected)])
+        #expect(try await f.cache.data(vaultId: "a", domain: .corpus, recordId: "editor") == selected)
+        for index in 0..<8 { try await f.cache.store(Data(repeating: 65, count: 1_000), vaultId: "a", domain: .corpus, recordId: "consulted-\(index)") }
+        let usage = try await f.cache.usage()
+        #expect(usage.reusableBytes + usage.downloadedBytes <= usage.readLimitBytes)
+        #expect(usage.downloadedBytes == pack.bytes)
+        try await f.cache.store(Data("Unsynced draft".utf8), vaultId: "a", domain: .writing, recordId: "draft")
+        try await f.cache.removeReusableCopies()
+        #expect(try await f.cache.data(vaultId: "a", domain: .corpus, recordId: "editor") == selected)
+        #expect(try await f.cache.usage().reusableBytes == 0)
+        #expect(try await f.cache.readPacks(vaultId: "a").count == 1)
+        #expect(try await f.cache.readPacks(vaultId: "b").isEmpty)
+        #expect(try await f.cache.data(vaultId: "b", domain: .corpus, recordId: "editor") == nil)
+        try await f.cache.removeReadPack(id: pack.id, vaultId: "b")
+        #expect(try await f.cache.readPacks(vaultId: "a").count == 1)
+        try await f.cache.removeReadPack(id: pack.id, vaultId: "a")
+        #expect(try await f.cache.data(vaultId: "a", domain: .corpus, recordId: "editor") == nil)
+        #expect(try await f.cache.data(vaultId: "a", domain: .writing, recordId: "draft") == Data("Unsynced draft".utf8))
+    }
+
+    @Test("failed or duplicate selections never replace the previous complete download")
+    func failedDownload() async throws {
+        let f = try Fixture(limit: 2_048); defer { f.clean() }
+        let id = UUID(), chosen = PrivateBridgeCache.ReadPackRecord(domain: .corpus, recordId: "editor", data: Data("kept".utf8))
+        try await f.cache.saveReadPack(id: id, vaultId: "a", title: "Complete", expiresAt: .distantFuture, records: [chosen])
+        await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+            try await f.cache.saveReadPack(id: id, vaultId: "a", title: "Too large", expiresAt: .distantFuture,
+                records: [.init(domain: .corpus, recordId: "editor", data: Data(repeating: 0, count: 3_000))])
+        }
+        await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+            try await f.cache.saveReadPack(id: id, vaultId: "a", title: "Duplicate", expiresAt: .distantFuture, records: [chosen, chosen])
+        }
+        await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+            try await f.cache.saveReadPack(vaultId: "a", title: "Wrong domain", expiresAt: .distantFuture,
+                records: [.init(domain: .writing, recordId: "queue", data: Data())])
+        }
+        #expect(try await f.cache.data(vaultId: "a", domain: .corpus, recordId: "editor") == chosen.data)
+        #expect(try await f.cache.readPacks(vaultId: "a").first?.title == "Complete")
+        let directories = try FileManager.default.contentsOfDirectory(at: f.folder, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("pack-copy-") }
+        #expect(directories.count == 1, "Failed staging directories must not accumulate")
+    }
+
+    @Test("atomic replacement, encryption and reopen keep only the new selected download")
+    func replaceDownload() async throws {
+        let f = try Fixture(limit: 4_096); defer { f.clean() }
+        let id = UUID()
+        try await f.cache.saveReadPack(id: id, vaultId: "a", title: "Old", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "old", data: Data("old".utf8))])
+        let payload = Data("Selected private content".utf8)
+        try await f.cache.saveReadPack(id: id, vaultId: "a", title: "Private download title", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "new", data: payload)])
+        let reopened = try PrivateBridgeCache(pairingId: f.id, directory: f.root, keychain: f.keychain, readLimitBytes: 4_096)
+        #expect(try await reopened.data(vaultId: "a", domain: .corpus, recordId: "old") == nil)
+        #expect(try await reopened.data(vaultId: "a", domain: .corpus, recordId: "new") == payload)
+        #expect(try await reopened.readPacks(vaultId: "a").first?.title == "Private download title")
+        for bytes in try encryptedDiskContents(f.folder) {
+            #expect(bytes.range(of: payload) == nil)
+            #expect(bytes.range(of: Data("Private download title".utf8)) == nil)
+        }
+    }
+
+    @Test("expiry removes chosen reading copies, never local writing, without relying on sleeps")
+    func expiredDownload() async throws {
+        let f = try Fixture(limit: 4_096); defer { f.clean() }
+        let pack = try await f.cache.saveReadPack(vaultId: "a", title: "Temporary", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "editor", data: Data("temporary".utf8))])
+        try await f.cache.store(Data("local work".utf8), vaultId: "a", domain: .writing, recordId: "draft")
+        let pointer = f.folder.appendingPathComponent("pin-\(pack.id.uuidString).readpack")
+        let encodedKey = try #require(f.keychain.value(for: KeychainStore.desktopBridgeCacheKey(pairingId: f.id)))
+        let keyBytes = try #require(Data(base64Encoded: encodedKey))
+        let key = SymmetricKey(data: keyBytes)
+        let manifest = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: pointer)), using: key)
+        var object = try #require(JSONSerialization.jsonObject(with: manifest) as? [String: Any])
+        object["expiresAt"] = "2000-01-01T00:00:00.000Z"
+        try #require(AES.GCM.seal(JSONSerialization.data(withJSONObject: object), using: key).combined).write(to: pointer)
+        #expect(try await f.cache.readPacks(vaultId: "a").isEmpty)
+        #expect(try await f.cache.data(vaultId: "a", domain: .corpus, recordId: "editor") == nil)
+        #expect(try await f.cache.usage().downloadedBytes == 0)
+        #expect(try await f.cache.data(vaultId: "a", domain: .writing, recordId: "draft") == Data("local work".utf8))
     }
 }

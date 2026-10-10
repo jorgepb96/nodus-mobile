@@ -1599,6 +1599,79 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "autonomous-immersion-resumed-after-restart")
     }
     @MainActor
+    func testCompanionDownloadsChosenScriptorDocument() throws {
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
+        let select = app.buttons["companion-download-select"]
+        for _ in 0..<12 { if select.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(select.isHittable, app.debugDescription); select.tap()
+        let noteId = "71af4d2a-74d1-4761-86ad-7df8b10f387e"
+        let note = app.buttons["companion-download-note-" + noteId]
+        XCTAssertTrue(note.waitForExistence(timeout: 30), app.debugDescription)
+        for _ in 0..<8 { if note.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(note.isHittable); note.tap()
+        XCTAssertEqual(note.value as? String, "Seleccionado")
+        capture(app, "companion-one-structured-document-selected")
+        app.buttons["companion-download-start"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["companion-download-ready"].firstMatch.waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertFalse(app.staticTexts["companion-download-error"].exists)
+        capture(app, "companion-selected-download-complete")
+        app.buttons["Cerrar"].tap()
+        XCTAssertTrue(app.staticTexts["1 documento de Scriptor"].waitForExistence(timeout: 15))
+        capture(app, "companion-download-size-and-expiry")
+        // Only disposable consulted copies are freed. The selected download
+        // must remain available for the following actual offline run.
+        let clear = app.buttons["companion-clear-read-copies"]
+        for _ in 0..<6 { if clear.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(clear.isHittable); clear.tap()
+        app.buttons["Liberar espacio"].tap()
+        XCTAssertTrue(app.staticTexts["1 documento de Scriptor"].exists)
+        capture(app, "companion-chosen-download-survives-consulted-cleanup")
+    }
+    @MainActor
+    func testScriptorShowsRealCompanionConflictWithoutOverwriting() throws {
+        let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"])
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 45))
+        let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        if note.waitForExistence(timeout: 8) { note.tap() }
+        let editor = web.textViews["Editor del documento"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 30), app.debugDescription)
+        let local = NSPredicate { _, _ in (editor.value as? String)?.contains(marker) == true }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: local, object: nil)], timeout: 30), .completed)
+        let keep = web.buttons["Usar mi versión del móvil"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertTrue(web.buttons["Usar la versión del Mac"].exists)
+        XCTAssertTrue(web.buttons["Descargar copia local"].exists)
+        XCTAssertTrue(web.staticTexts["Libro"].firstMatch.exists && web.staticTexts["Cita"].firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        capture(app, "scriptor-both-versions-preserved-before-choice")
+    }
+    @MainActor
+    func testScriptorResolvesRealCompanionConflictWithMobileChoice() throws {
+        let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"])
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 45))
+        let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        if note.waitForExistence(timeout: 8) { note.tap() }
+        let editor = web.textViews["Editor del documento"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 30))
+        let keep = web.buttons["Usar mi versión del móvil"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertTrue(keep.isHittable); XCTAssertGreaterThanOrEqual(keep.frame.height, 44); keep.tap()
+        let saved = NSPredicate { _, _ in
+            !web.buttons["Usar mi versión del móvil"].exists && web.staticTexts["Guardado"].exists
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: saved, object: nil)], timeout: 45), .completed, app.debugDescription)
+        XCTAssertTrue((editor.value as? String)?.contains(marker) == true)
+        XCTAssertTrue(web.staticTexts["Libro"].firstMatch.exists && web.staticTexts["Cita"].firstMatch.exists)
+        capture(app, "scriptor-explicit-mobile-choice-saved")
+    }
+    @MainActor
     func testScriptorPreparesStructuredCompanionCopy() throws {
         let app = try openExistingPrincipal(destination: "workspace")
         defer { app.terminate() }
