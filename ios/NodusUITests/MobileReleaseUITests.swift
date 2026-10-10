@@ -114,6 +114,15 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertLessThanOrEqual(action.frame.maxY, answer.frame.maxY + 1)
         }
         capture(app, "phone-chat-live-streaming-actions")
+        let activity = web.buttons["Ampliar actividad"].firstMatch
+        XCTAssertTrue(activity.isHittable)
+        XCTAssertGreaterThanOrEqual(activity.frame.width, 44); XCTAssertGreaterThanOrEqual(activity.frame.height, 44)
+        activity.tap()
+        let activitySheet = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Actividad del Research chat,")).firstMatch
+        XCTAssertTrue(activitySheet.waitForExistence(timeout: 10), app.debugDescription)
+        capture(app, "phone-chat-live-activity-sheet")
+        XCTAssertTrue(activitySheet.buttons["Cerrar"].isHittable); activitySheet.buttons["Cerrar"].tap()
+        XCTAssertTrue(activitySheet.waitForNonExistence(timeout: 10))
         XCTAssertTrue(stop.waitForNonExistence(timeout: 240), app.debugDescription)
         XCTAssertTrue(answer.buttons["Regenerar respuesta"].waitForExistence(timeout: 20), "The request must complete with a usable answer, not an error bubble.\n\(app.debugDescription)")
         let text = answer.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n")
@@ -1726,6 +1735,39 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "autonomous-writing-reopened")
     }
     @MainActor
+    func testNativeReportPreparesCompanionConsultation() throws {
+        let title = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TRANSLATION_REPORT_TITLE"])
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
+        let mode = app.buttons["ai-execution-mode"]
+        for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(mode.waitForExistence(timeout: 20)); mode.tap(); app.buttons["Autónomo · este dispositivo"].tap()
+        app.buttons["nodus-navigation-toggle"].tap()
+        let reports = app.buttons["nodus-nav-deepResearch"]
+        for _ in 0..<6 { if reports.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(reports.isHittable); reports.tap()
+        try openNativeTranslation(app, title: title)
+        let generate = app.buttons["report-translation-generate"]
+        XCTAssertTrue(generate.waitForExistence(timeout: 20)); XCTAssertTrue(generate.isEnabled)
+        capture(app, "native-report-consultation-ready-for-offline-use")
+    }
+    @MainActor
+    func testAutonomousTranslationWithMacUnavailable() async throws {
+        let origin = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_OFFLINE_ORIGIN"])
+        let address = try XCTUnwrap(URL(string: origin + "/bridge/v2/capabilities"))
+        let probe = URLSession(configuration: .ephemeral)
+        defer { probe.invalidateAndCancel() }
+        var request = URLRequest(url: address); request.timeoutInterval = 8
+        do {
+            _ = try await probe.data(for: request)
+            XCTFail("The owning Mac must actually be unavailable."); return
+        } catch {
+            let transport = try XCTUnwrap(error as? URLError)
+            XCTAssertTrue([.cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet, .timedOut].contains(transport.code))
+        }
+        try testAutonomousReportTranslationUsesPhoneAndReopens()
+    }
+    @MainActor
     func testAutonomousReportTranslationUsesPhoneAndReopens() throws {
         let title = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TRANSLATION_REPORT_TITLE"], "An actual saved lab report is required.")
         let app = try openExistingPrincipal(destination: "settings")
@@ -1762,8 +1804,8 @@ final class MobileReleaseUITests: XCTestCase {
     @MainActor private func openNativeTranslation(_ app: XCUIApplication, title: String) throws {
         let search = app.textFields["nodus-search-field"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 35), app.debugDescription)
-        search.tap(); search.typeText(String(title.prefix(42)))
-        try dismissResearchKeyboard(app)
+        search.tap(); search.typeText(String(title.prefix(42)) + "\n")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 15), "Submitting the native search must dismiss the keyboard.")
         let report = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
         XCTAssertTrue(report.waitForExistence(timeout: 45), app.debugDescription)
         for _ in 0..<6 { if report.isHittable { break }; app.swipeUp() }

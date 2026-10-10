@@ -406,10 +406,10 @@ private struct DesktopWebView: UIViewRepresentable {
                             do {
                                 value = try await client.awaitJob(vaultId: vaultId, job: job, onState: { try await ledger.update(id: requestId, job: $0) }) { events in
                                     await MainActor.run {
-                                        for event in events {
-                                            if let data = try? JSONEncoder.nodus.encode(event) {
-                                                self.webView?.evaluateJavaScript("window.nodusMobileEvent(\(String(decoding: data, as: UTF8.self)));", completionHandler: nil)
-                                            }
+                                        if !events.isEmpty, let data = try? JSONEncoder.nodus.encode(events) {
+                                            // Deliver the ordered batch in one WebKit call.
+                                            // A live turn can contain thousands of deltas.
+                                            self.webView?.evaluateJavaScript("\(String(decoding: data, as: UTF8.self)).forEach(event => window.nodusMobileEvent(event));", completionHandler: nil)
                                         }
                                     }
                                 }

@@ -59,6 +59,7 @@ public struct NodusSearchField: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .submitLabel(.search)
+                .onSubmit { focused = false }
                 .focused($focused)
                 .accessibilityIdentifier("nodus-search-field")
             #else
