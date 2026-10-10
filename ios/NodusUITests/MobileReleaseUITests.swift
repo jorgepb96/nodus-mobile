@@ -123,7 +123,13 @@ final class MobileReleaseUITests: XCTestCase {
         }
         capture(app, "phone-chat-live-streaming-actions")
         let activity = web.buttons["Ampliar actividad"].firstMatch
-        XCTAssertTrue(activity.isHittable)
+        // The assistant placeholder precedes the first polled Mac event. Wait
+        // for its actual touch target; the sheet must still be exercised live.
+        let activityReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: activity)
+        guard XCTWaiter.wait(for: [activityReady], timeout: 30) == .completed else {
+            XCTFail("The Mac's research activity must reach the phone.\n\(app.debugDescription)")
+            return
+        }
         XCTAssertGreaterThanOrEqual(activity.frame.width, 44); XCTAssertGreaterThanOrEqual(activity.frame.height, 44)
         activity.tap()
         let activitySheet = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Actividad del Research chat,")).firstMatch
@@ -1816,6 +1822,10 @@ final class MobileReleaseUITests: XCTestCase {
         try openNativeTranslation(app, title: title)
         let generate = app.buttons["report-translation-generate"]
         XCTAssertTrue(generate.waitForExistence(timeout: 20)); XCTAssertTrue(generate.isEnabled)
+        let body = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Francoist")).firstMatch
+        let previousTranslation = body.exists ? body.label : nil
+        for _ in 0..<20 { if generate.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(generate.isHittable)
         capture(app, "autonomous-translation-before-generation")
         generate.tap()
         let generating = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"), object: generate)
@@ -1827,6 +1837,8 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(translated.waitForExistence(timeout: 20), app.debugDescription)
         let result = translated.label
         XCTAssertGreaterThan(result.count, 120)
+        if let previousTranslation { XCTAssertNotEqual(result, previousTranslation, "Regeneration must save the new validated result.") }
+        for _ in 0..<20 { if app.buttons["report-translation-language"].isHittable { break }; app.swipeDown() }
         capture(app, "autonomous-translation-reader")
         app.terminate()
         let relaunched = try openExistingPrincipal(destination: "deepResearch")
