@@ -60,7 +60,7 @@ struct SharedDesktopSurface: View {
     @State private var offlineCopy = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }) { kind, id, location, quote in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }) { kind, id, location, quote in
             let path = kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
@@ -184,6 +184,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let surface: DesktopSurface
     let dark: Bool
     let textScale: Double
+    let publicationRevision: Int
     let onError: (String) -> Void
     let onExport: (URL) -> Void
     let onAutonomousStatus: (String?) -> Void
@@ -271,6 +272,7 @@ private struct DesktopWebView: UIViewRepresentable {
         // reachable after switching workspaces.
         view.isHidden = !routeActive
         context.coordinator.setRouteActive(routeActive)
+        context.coordinator.sendPublicationUpdates()
         view.evaluateJavaScript("document.documentElement.classList.toggle('dark',\(dark));document.documentElement.classList.toggle('light',\(!dark));document.documentElement.style.fontSize='\(16 * textScale)px';document.documentElement.style.setProperty('--nodus-mobile-text-scale','\(textScale)');", completionHandler: nil)
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
@@ -299,6 +301,7 @@ private struct DesktopWebView: UIViewRepresentable {
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             setRouteActive(routeActive)
+            surfaceReady = true; sendPublicationUpdates()
         }
         let session: SpaceSession
         let autonomous: AutonomousSurfaceProvider
@@ -312,6 +315,17 @@ private struct DesktopWebView: UIViewRepresentable {
         var tasks: [Task<Void, Never>] = []
         var runningJobs: [String: (DesktopBridgeClient, String, String)] = [:]
         private var persistedSurfaceCache: PrivateBridgeCache?
+        private var publicationRevision = 0
+        private var surfaceReady = false
+        private var autonomousGenerationId: String?
+        func sendPublicationUpdates() {
+            guard surfaceReady, publicationRevision != session.companionPublicationRevision,
+                  let data = try? JSONEncoder.nodus.encode(session.companionPublicationUpdates) else { return }
+            publicationRevision = session.companionPublicationRevision
+            let payload = String(decoding: data, as: UTF8.self)
+            webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:publication:changed',args:[\(payload)]});", completionHandler: nil)
+            if session.companionPublicationUpdates.contains(where: { $0.objectValue?["id"]?.stringValue == autonomousGenerationId && $0.objectValue?["state"] == .string("available") }) { onAutonomousStatus(nil) }
+        }
         init(session: SpaceSession, ai: AISettings, onError: @escaping (String) -> Void, onExport: @escaping (URL) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onNavigate = onNavigate }
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
@@ -378,15 +392,18 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = method == "mobileDictionaryCheckpoint" ? try await autonomous.dictionaryCheckpoint(args, session: session) : try await autonomous.generationCheckpoint(args, session: session)
                         let checkpoint = args.first?.stringValue == "load" ? value.objectValue : args.last?.objectValue
                         if let state = checkpoint?["state"]?.stringValue {
+                            autonomousGenerationId = checkpoint?["id"]?.stringValue
                             switch state {
                             case "accepted": onAutonomousStatus(String(localized: "Request accepted"))
                             case "running": onAutonomousStatus(String(localized: "Generating on this device"))
-                            case "saved": onAutonomousStatus(String(localized: "Saved on this device. Sending to the vault…"))
+                            case "saved": onAutonomousStatus(String(localized: "Guardado en este dispositivo · pendiente de sincronizar con Nodus"))
                             case "available": onAutonomousStatus(nil)
                             case "failed": onAutonomousStatus(checkpoint?["error"]?.stringValue ?? String(localized: "Generation failed"))
                             default: break
                             }
                         }
+                    } else if method == "mobileDictionaryGenerationJobs", args.isEmpty {
+                        value = try await autonomous.dictionaryPublications(session: session)
                     } else if method == "mobileStructuredCompletion" {
                         value = try await autonomous.complete(args.first ?? .null, session: session)
                     } else if method == "cancelAutonomousGeneration", let generation = args.first?.stringValue {

@@ -40,6 +40,8 @@ final class SpaceSession {
     /// hook. Returning to the app commonly fires both at once; asking twice adds no freshness.
     private var isCheckingPublishedContent = false
     private var isSynchronizingCompanionChanges = false
+    private(set) var companionPublicationRevision = 0
+    private(set) var companionPublicationUpdates: [JSONValue] = []
 
     /// Told to `AppModel` so the space picker can say the same thing this screen says.
     private let onFailure: (ConnectionFailure) -> Void
@@ -353,12 +355,26 @@ final class SpaceSession {
             // when the user changes modes during the preceding network probe.
             if let pairingId = connection.desktopPairingId,
                let ledger = try? await DesktopJobLedgers.shared.ledger(pairingId: pairingId, vaultId: vaultId) {
+                let before = Dictionary(uniqueKeysWithValues: await ledger.all().map { ($0.id, $0.state) })
                 try? await ledger.synchronize(list: { try await bridge.listJobs(vaultId: vaultId) }, canSubmit: { request in
                     if DesktopBridgeClient.providerFreeJobMethods.contains(request.method) { return true }
                     return await MainActor.run { self.aiExecutionMode == .live }
                 }, submit: { request in
                     try await bridge.submitJob(vaultId: vaultId, method: request.method, args: request.args, idempotencyKey: request.id)
                 })
+                let changed = await ledger.all().filter { before[$0.id] != $0.state }
+                if !changed.isEmpty {
+                    companionPublicationUpdates = changed.map { job in
+                        let checkpoint = job.checkpoint?.objectValue
+                        let original = checkpoint?["request"]?.objectValue ?? [:]
+                        return .object(["id": .string(job.id), "method": .string(job.method), "state": .string(job.state),
+                            "error": job.issue.map(JSONValue.string) ?? .null,
+                            "entryId": original["entryId"] ?? .null, "mode": original["mode"] ?? .null,
+                            "entityKind": original["entityKind"] ?? .null, "entityId": original["entityId"] ?? .null,
+                            "degraded": checkpoint?["definition"]?.objectValue?["outcome"] == .string("degraded") ? .bool(true) : .bool(false)])
+                    }
+                    companionPublicationRevision += 1
+                }
             }
         }
         let directory = mirrorDirectory

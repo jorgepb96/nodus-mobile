@@ -15,13 +15,21 @@ struct LiveJobsView: View {
                 let job = jobs.first { $0.id == request.jobId }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(title(request.method)).font(.headline)
-                    Text(status(job?.state.rawValue ?? request.state)).font(.subheadline)
+                    Text(request.checkpoint != nil && request.state == "pending"
+                        ? "Guardado en este dispositivo · pendiente de sincronizar"
+                        : status(job?.state.rawValue ?? request.state)).font(.subheadline)
                     Text(request.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                    if let checkpoint = request.checkpoint {
+                        NavigationLink("Abrir resultado guardado") {
+                            CompanionGeneratedResultView(session: session, request: request, checkpoint: checkpoint)
+                        }.frame(minHeight: 44).accessibilityIdentifier("companion-generated-result-\(request.id)")
+                    }
                     if let error = job?.error ?? request.issue { Text(error).font(.caption).foregroundStyle(.red) }
                     if ["pending", "accepted", "running", "saved"].contains(job?.state.rawValue ?? request.state)
                         || (job?.state == .interrupted && request.method == "enqueueDeepResearchJob") {
                         HStack {
-                            Button("Recover request") { Task { await recover(request) } }.disabled(loading || session.aiExecutionMode != .live)
+                            Button("Recover request") { Task { await recover(request) } }
+                                .disabled(loading || (session.aiExecutionMode != .live && !DesktopBridgeClient.providerFreeJobMethods.contains(request.method)))
                             if let job { Button("Cancel", role: .destructive) { Task { await cancel(job) } }.disabled(loading) }
                         }
                     }
@@ -30,9 +38,9 @@ struct LiveJobsView: View {
             }
             if pending.isEmpty, !loading, issue == nil { ContentUnavailableView("No pending requests", systemImage: "tray") }
         }
-        .navigationTitle("Mac requests")
+        .navigationTitle("Trabajos y resultados")
         .accessibilityIdentifier("live-job-ledger")
-        .task { await refresh() }
+        .task(id: session.companionPublicationRevision) { await refresh() }
         .refreshable { await refresh() }
     }
     private func connection() throws -> (DesktopBridgePairing, DesktopBridgeClient, String) {
@@ -42,6 +50,7 @@ struct LiveJobsView: View {
         return (pair, DesktopBridgeClient(pairing: pair, token: token), vault)
     }
     private func refresh() async {
+        guard !loading else { return }
         loading = true; defer { loading = false }
         do {
             let (pair, client, vault) = try connection()
@@ -53,7 +62,7 @@ struct LiveJobsView: View {
         } catch { issue = error.localizedDescription }
     }
     private func recover(_ request: DesktopJobLedger.Request) async {
-        guard session.aiExecutionMode == .live else { return }
+        guard session.aiExecutionMode == .live || DesktopBridgeClient.providerFreeJobMethods.contains(request.method) else { return }
         do {
             let (pair, client, vault) = try connection()
             let job = try await client.submitJob(vaultId: vault, method: request.method, args: request.args, idempotencyKey: request.id)
@@ -67,7 +76,7 @@ struct LiveJobsView: View {
         catch { issue = error.localizedDescription }
     }
     private func title(_ method: String) -> String {
-        ["startDictionaryGeneration": "Diccionario", "enqueueDeepResearchJob": "Deep Research", "exportWritingWorkshopDraft": "Exportar informe", "exportDeepResearchArchive": "Descargar informes", "exportImmersionSessionPdf": "Exportar inmersión", "generateImmersionSession": "Inmersión", "generateWritingWorkshopDraft": "Informe", "generateContentTranslation": "Traducción", "researchChat": "Chat", "researchChatStream": "Chat", "improveStudyText": "Asistencia de escritura", "buildArgumentMap": "Mapa de argumentos", "scanDictionaryNewEvidence": "Evidencias del diccionario", "generateConversationTitle": "Título de conversación"][method] ?? method
+        ["saveDictionaryGeneratedVersion": "Definición del diccionario", "saveImmersionGeneratedSession": "Inmersión del móvil", "saveContentTranslationFromMobile": "Traducción del móvil", "saveStudyImprovementFromMobile": "Asistencia de escritura del móvil", "startDictionaryGeneration": "Diccionario", "enqueueDeepResearchJob": "Deep Research", "exportWritingWorkshopDraft": "Exportar informe", "exportDeepResearchArchive": "Descargar informes", "exportImmersionSessionPdf": "Exportar inmersión", "generateImmersionSession": "Inmersión", "generateWritingWorkshopDraft": "Informe", "generateContentTranslation": "Traducción", "researchChat": "Chat", "researchChatStream": "Chat", "improveStudyText": "Asistencia de escritura", "buildArgumentMap": "Mapa de argumentos", "scanDictionaryNewEvidence": "Evidencias del diccionario", "generateConversationTitle": "Título de conversación"][method] ?? method
     }
     private func status(_ state: String) -> String {
         ["pending": "Pendiente de enviar al Mac", "accepted": "Aceptado por el Mac", "running": "Ejecutándose en el Mac", "saved": "Resultado guardado", "available": "Resultado disponible", "failed": "No se pudo completar", "interrupted": "Interrumpido al reiniciar el Mac", "cancelled": "Cancelado"][state] ?? state

@@ -66,9 +66,12 @@ struct SpaceSettingsView: View {
                         Text("Autonomous · this device").tag(AIExecutionMode.autonomous)
                     }
                     .accessibilityIdentifier("ai-execution-mode")
+                    if session.connection.desktopPairingId != nil {
+                        NavigationLink("Trabajos y resultados") { LiveJobsView(session: session) }
+                            .accessibilityIdentifier("companion-jobs-results")
+                    }
                     if session.aiExecutionMode == .live {
                         labelled("Mac", session.connection.serverName)
-                        NavigationLink("Mac requests") { LiveJobsView(session: session) }
                         if let liveSettings {
                             ForEach(["chatModel", "deepResearchModel", "dictionaryModel", "immersionModel", "writingModel"], id: \.self) { key in
                                 let choice = liveSettings.objectValue?[key]?.objectValue

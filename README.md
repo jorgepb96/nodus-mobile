@@ -35,6 +35,12 @@ Open file previews also share a bounded transient budget and release their tempo
 files when the last reader closes. Pending Mac requests reuse their original identities after
 reconnection; portable result saves synchronize in either mode, while queued Mac generation
 requires live to remain selected. Failed or interrupted generations are not restarted automatically.
+Completed dictionary definitions, translations, immersions and writing assistance retain an
+encrypted result together with their immutable publication request. They remain consultable in
+Settings → Jobs and results while awaiting the Mac. Transport loss preserves the saved state;
+source conflicts and provider failures remain explicit errors. Reconnection reconciles the
+original checkpoint with the Mac acknowledgement without regenerating the response. This new
+recovery path also awaits compilation and the deferred acceptance campaign.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;

@@ -60,37 +60,79 @@ final class AutonomousSurfaceProvider {
         let scope = try session.surfaceStorageScope()
         let vault = scope.recordVaultId
         let cache = try PrivateBridgeCache(pairingId: scope.cacheId)
-        let key = "autonomous:dictionary:" + SHA256.hash(data: Data(entryId.utf8)).map { String(format: "%02x", $0) }.joined()
+        let key = try CompanionGenerationPublication.recordId(kind: "dictionary", entity: entryId)
         if action == "load" {
-            guard let bytes = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key) else { return .null }
-            return try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+            return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
         }
         guard action == "save", args.count == 3, let object = args[2].objectValue,
             let id = object["id"]?.stringValue, UUID(uuidString: id) != nil,
             object["request"]?.objectValue?["entryId"]?.stringValue == entryId else { throw DesktopBridgeError.permissionDenied }
         let bytes = try JSONEncoder.nodus.encode(args[2])
         guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
+        try await queuePublication(kind: "dictionary", entity: entryId, checkpoint: args[2], scope: scope, session: session)
         try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key)
         return .null
     }
     func generationCheckpoint(_ args: [JSONValue], session: SpaceSession) async throws -> JSONValue {
-        guard session.aiExecutionMode == .autonomous, args.count >= 3,
-            let action = args[0].stringValue, let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument"].contains(kind),
+        guard args.count >= 3, let action = args[0].stringValue,
+            action == "load" || session.aiExecutionMode == .autonomous,
+            let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument"].contains(kind),
             let entity = args[2].stringValue, entity.utf8.count <= 256, !entity.isEmpty else { throw DesktopBridgeError.permissionDenied }
         let scope = try session.surfaceStorageScope()
         let vault = scope.recordVaultId
         let cache = try PrivateBridgeCache(pairingId: scope.cacheId)
-        let key = "autonomous:\(kind):" + SHA256.hash(data: Data(entity.utf8)).map { String(format: "%02x", $0) }.joined()
+        let key = try CompanionGenerationPublication.recordId(kind: kind, entity: entity)
         if action == "load" {
-            guard let bytes = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key) else { return .null }
-            return try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+            return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
         }
         guard action == "save", args.count == 4, let object = args[3].objectValue,
             object["entityKey"]?.stringValue == entity, let id = object["id"]?.stringValue, UUID(uuidString: id) != nil else { throw DesktopBridgeError.permissionDenied }
         let bytes = try JSONEncoder.nodus.encode(args[3])
         guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
+        try await queuePublication(kind: kind, entity: entity, checkpoint: args[3], scope: scope, session: session)
         try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key)
         return .null
+    }
+    private func queuePublication(kind: String, entity: String, checkpoint: JSONValue,
+                                  scope: MobileSurfaceStorageScope, session: SpaceSession) async throws {
+        guard session.connection.desktopPairingId != nil,
+              let publication = try CompanionGenerationPublication(kind: kind, entity: entity, checkpoint: checkpoint) else { return }
+        let store = DesktopBridgePairingStore()
+        guard let pairing = store.pairings().first(where: { $0.id == scope.cacheId }), !pairing.isExpired,
+              pairing.vaultIds.contains(scope.recordVaultId), pairing.domains.contains(.writing)
+        else { throw DesktopBridgeError.permissionDenied }
+        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: scope.recordVaultId)
+        try await ledger.preparePublication(publication)
+    }
+    private func loadCheckpoint(cache: PrivateBridgeCache, key: String, scope: MobileSurfaceStorageScope,
+                                session: SpaceSession) async throws -> JSONValue {
+        let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: key)
+        let local = try bytes.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) }
+        guard session.connection.desktopPairingId != nil else { return local ?? .null }
+        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: scope.recordVaultId)
+        guard let reconciled = await ledger.generationCheckpoint(recordId: key, generationId: local?.objectValue?["id"]?.stringValue),
+              var value = reconciled.objectValue else { return local ?? .null }
+        if value["state"] == .string("available"), local?.objectValue?["state"] != .string("available") {
+            value["recoveredPublication"] = .bool(true)
+        }
+        return .object(value)
+    }
+    func dictionaryPublications(session: SpaceSession) async throws -> JSONValue {
+        guard session.connection.desktopPairingId != nil else { return .array([]) }
+        let scope = try session.surfaceStorageScope()
+        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: scope.recordVaultId)
+        var seen: Set<String> = []
+        var progress: [JSONValue] = []
+        for job in await ledger.all() where job.method == "saveDictionaryGeneratedVersion" {
+            guard let request = job.checkpoint?.objectValue?["request"]?.objectValue,
+                  let entry = request["entryId"]?.stringValue, seen.insert(entry).inserted else { continue }
+            let phase = job.state == "available" ? (job.checkpoint?.objectValue?["definition"]?.objectValue?["outcome"] == .string("degraded") ? "degraded" : "done")
+                : ["failed", "interrupted", "cancelled"].contains(job.state) ? "failed" : "saving"
+            progress.append(.object(["entryId": .string(entry), "mode": request["mode"] ?? .null, "phase": .string(phase),
+                "message": .string(job.issue ?? (job.state == "available" ? "Definición sincronizada con Nodus" : "Guardado en este dispositivo · pendiente de sincronizar")),
+                "error": job.issue.map(JSONValue.string) ?? .null]))
+        }
+        return .array(progress)
     }
     func complete(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
         guard let generation = input.objectValue?["generationId"]?.stringValue, UUID(uuidString: generation) != nil,

@@ -258,6 +258,7 @@ struct ImmersionView: View {
     let session: SpaceSession
     let sessionId: String
     let title: String
+    var localPlan: ImmersionPlan? = nil
 
     @State private var plan: ImmersionPlan?
     @State private var error: String?
@@ -450,6 +451,7 @@ struct ImmersionView: View {
     }
 
     private func load() async {
+        if let localPlan { plan = localPlan; error = nil; return }
         do {
             let detail = try await session.client.immersionSession(sessionId, in: session.connection.spaceId)
             plan = ImmersionPlan(detail)

@@ -11,32 +11,87 @@ public actor DesktopJobLedger {
         public var jobId: String?
         public var state: String
         public var issue: String?
+        public var result: JSONValue?
+        public var checkpointRecordId: String?
+        public var checkpoint: JSONValue?
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
     private var requests: [String: Request]
+    private var durablyPrepared: Set<String>
     private var isSynchronizing = false
     init(cache: PrivateBridgeCache, vaultId: String, data: Data?) throws {
         self.cache = cache; self.vaultId = vaultId
         requests = try data.map { try JSONDecoder.nodus.decode([String: Request].self, from: $0) } ?? [:]
+        durablyPrepared = Set(requests.keys)
     }
     public func all() -> [Request] { requests.values.sorted { $0.createdAt > $1.createdAt } }
     public func prepare(id: String, method: String, args: [JSONValue]) async throws -> Request {
         if let stored = requests[id] {
             guard stored.method == method, stored.args == args else { throw DesktopBridgeError.malformedResponse }
             try await persist()
+            durablyPrepared.insert(id)
             return stored
         }
         let request = Request(id: id, method: method, args: args, createdAt: Date(), jobId: nil, state: "pending", issue: nil)
         requests[id] = request
         try await persist()
+        durablyPrepared.insert(id)
         return request
+    }
+    public func preparePublication(_ publication: CompanionGenerationPublication) async throws {
+        var request: Request
+        if let stored = requests[publication.id] {
+            guard stored.method == publication.method, stored.args == publication.args,
+                  stored.checkpointRecordId == nil || stored.checkpointRecordId == publication.recordId
+            else { throw DesktopBridgeError.malformedResponse }
+            request = stored
+        } else {
+            request = Request(id: publication.id, method: publication.method, args: publication.args,
+                createdAt: Date(), jobId: nil, state: "pending", issue: nil)
+        }
+        if request.checkpoint == nil {
+            request.checkpointRecordId = publication.recordId; request.checkpoint = publication.checkpoint
+        }
+        // Never reset an acknowledged/failed publication when the renderer
+        // saves an older local checkpoint after losing its transport.
+        request.checkpoint = reconciledCheckpoint(request)
+        requests[request.id] = request
+        try await persist()
+        durablyPrepared.insert(request.id)
+    }
+    public func generationCheckpoint(recordId: String, generationId: String? = nil) -> JSONValue? {
+        guard let request = all().first(where: { $0.checkpointRecordId == recordId && (generationId == nil || $0.id == generationId) }) else { return nil }
+        return reconciledCheckpoint(request)
+    }
+    private func reconciledCheckpoint(_ request: Request) -> JSONValue? {
+        guard var value = request.checkpoint?.objectValue else { return nil }
+        switch request.state {
+        case "available":
+            value["state"] = .string("available"); value["error"] = nil
+            value["publicationPending"] = nil
+            if let result = request.result { value["result"] = result }
+        case "failed", "interrupted", "cancelled":
+            value["state"] = .string(request.state == "cancelled" ? "cancelled" : "failed")
+            value["error"] = request.issue.map(JSONValue.string)
+            value["publicationPending"] = nil
+        default:
+            value["state"] = .string("saved"); value["publicationPending"] = .bool(true)
+        }
+        return .object(value)
     }
     public func update(id: String, job: DesktopBridgeJob) async throws {
         guard var request = requests[id], job.vaultId == vaultId, job.method == request.method,
               request.jobId == nil || request.jobId == job.id else { throw DesktopBridgeError.malformedResponse }
-        if request.jobId == job.id, request.state == job.state.rawValue, request.issue == job.error { return }
-        request.jobId = job.id; request.state = job.state.rawValue; request.issue = job.error; requests[id] = request
+        // A poll and an in-flight submission acknowledgement can arrive out of
+        // order. An older accepted/running snapshot cannot undo a terminal save.
+        if request.state == "available", job.state != .available { return }
+        if ["failed", "cancelled"].contains(request.state), [.accepted, .running, .saved].contains(job.state) { return }
+        if request.jobId == job.id, request.state == job.state.rawValue, request.issue == job.error,
+           job.state != .available || request.result == job.result { return }
+        request.jobId = job.id; request.state = job.state.rawValue; request.issue = job.error
+        if job.state == .available { request.result = job.result }
+        request.checkpoint = reconciledCheckpoint(request); requests[id] = request
         try await persist()
     }
     public func disconnected(id: String, issue: String) async throws {
@@ -63,7 +118,7 @@ public actor DesktopJobLedger {
                 // become a new generation; retain its identity for explicit recovery.
                 continue
             }
-            guard requests[request.id]?.state == "pending" else { continue }
+            guard durablyPrepared.contains(request.id), requests[request.id]?.state == "pending" else { continue }
             guard await canSubmit(request) else { continue }
             do {
                 let job = try await submit(request)
