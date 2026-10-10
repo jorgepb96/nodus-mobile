@@ -442,7 +442,7 @@ struct DeepResearchTranslationSheet: View {
 
                     if let selected {
                         HStack {
-                            Text("Saved \(selected.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                            Text("Saved \((selected.updatedAt ?? selected.createdAt).formatted(date: .abbreviated, time: .shortened))")
                                 .font(.caption).foregroundStyle(.secondary)
                             Spacer()
                             Button(role: .destructive) { deleteTranslation() } label: {
