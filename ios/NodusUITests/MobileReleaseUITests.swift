@@ -1605,6 +1605,7 @@ final class MobileReleaseUITests: XCTestCase {
         let select = app.buttons["companion-download-select"]
         for _ in 0..<12 { if select.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(select.isHittable, app.debugDescription); select.tap()
+        XCTAssertTrue(app.navigationBars["Descargar para llevar"].waitForExistence(timeout: 15), "The download selector must open above Settings.\n\(app.debugDescription)")
         let noteId = "71af4d2a-74d1-4761-86ad-7df8b10f387e"
         let note = app.buttons["companion-download-note-" + noteId]
         XCTAssertTrue(note.waitForExistence(timeout: 30), app.debugDescription)

@@ -22,6 +22,7 @@ struct SpaceSettingsView: View {
     @State private var macConnectionResult: String?
     @State private var showingLegacyRecovery = false
     @State private var legacyRecoveryResult: String?
+    @State private var showingCompanionDownload = false
 
     private enum LibraryDeletion: Equatable { case space, everySpace }
 
@@ -188,7 +189,7 @@ struct SpaceSettingsView: View {
 
 
                 if let pairingId = session.connection.desktopPairingId {
-                    CompanionCopySettings(session: session, pairingId: pairingId)
+                    CompanionCopySettings(session: session, pairingId: pairingId, showingDownload: $showingCompanionDownload)
                 } else {
                 Section {
                     switch session.mirrorProgress {
@@ -306,6 +307,7 @@ struct SpaceSettingsView: View {
             }
         }
         .accessibilityIdentifier("settings-workspace")
+        .sheet(isPresented: $showingCompanionDownload) { CompanionDownloadsView(session: session) }
         .alert("Revoke Mac connection?", isPresented: $confirmingMacRevocation) {
             Button("Revoke Mac connection", role: .destructive) {
                 changingMacConnection = true; macConnectionResult = nil
@@ -666,7 +668,7 @@ private struct CompanionCopySettings: View {
     @State private var issue: String?
     @State private var clearing = false
     @State private var confirmClear = false
-    @State private var showingDownload = false
+    @Binding var showingDownload: Bool
     @State private var packs: [PrivateBridgeCache.ReadPack] = []
     var body: some View {
         Section {
@@ -699,7 +701,7 @@ private struct CompanionCopySettings: View {
             Text("Opened content is kept encrypted for offline reading. Older consulted copies are removed when the limit is reached. Drafts and pending work are always preserved.")
         }
         .task { await refresh() }
-        .sheet(isPresented: $showingDownload, onDismiss: { Task { await refresh() } }) { CompanionDownloadsView(session: session) }
+        .onChange(of: showingDownload) { _, shown in if !shown { Task { await refresh() } } }
         .confirmationDialog("Free space used by consulted content?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Free space", role: .destructive) {
                 clearing = true
