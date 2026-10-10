@@ -41,6 +41,11 @@ Settings → Jobs and results while awaiting the Mac. Transport loss preserves t
 source conflicts and provider failures remain explicit errors. Reconnection reconciles the
 original checkpoint with the Mac acknowledgement without regenerating the response. This new
 recovery path also awaits compilation and the deferred acceptance campaign.
+Companion-authored ideas retain their owning note and remain visible in Desktop's automatic
+academic catalogue and graph. A linked corpus revision refreshes mounted graph, dictionary,
+research and Scriptor catalogues without replacing the web view or editor. Graph source and
+background caches are invalidated together; saved camera, tabs and exploration are retained.
+These freshness and visibility changes also await the consolidated build and acceptance run.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;

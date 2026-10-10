@@ -71,7 +71,7 @@ final class AutonomousSurfaceProvider {
         guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
         try await queuePublication(kind: "dictionary", entity: entryId, checkpoint: args[2], scope: scope, session: session)
         try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key)
-        return .null
+        return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
     }
     func generationCheckpoint(_ args: [JSONValue], session: SpaceSession) async throws -> JSONValue {
         guard args.count >= 3, let action = args[0].stringValue,
@@ -91,7 +91,7 @@ final class AutonomousSurfaceProvider {
         guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
         try await queuePublication(kind: kind, entity: entity, checkpoint: args[3], scope: scope, session: session)
         try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key)
-        return .null
+        return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
     }
     private func queuePublication(kind: String, entity: String, checkpoint: JSONValue,
                                   scope: MobileSurfaceStorageScope, session: SpaceSession) async throws {

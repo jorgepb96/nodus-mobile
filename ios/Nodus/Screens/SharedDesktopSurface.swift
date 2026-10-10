@@ -60,7 +60,7 @@ struct SharedDesktopSurface: View {
     @State private var offlineCopy = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }) { kind, id, location, quote in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }) { kind, id, location, quote in
             let path = kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
@@ -185,6 +185,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let dark: Bool
     let textScale: Double
     let publicationRevision: Int
+    let corpusRevision: String?
     let onError: (String) -> Void
     let onExport: (URL) -> Void
     let onAutonomousStatus: (String?) -> Void
@@ -273,6 +274,7 @@ private struct DesktopWebView: UIViewRepresentable {
         view.isHidden = !routeActive
         context.coordinator.setRouteActive(routeActive)
         context.coordinator.sendPublicationUpdates()
+        context.coordinator.sendCorpusUpdate()
         view.evaluateJavaScript("document.documentElement.classList.toggle('dark',\(dark));document.documentElement.classList.toggle('light',\(!dark));document.documentElement.style.fontSize='\(16 * textScale)px';document.documentElement.style.setProperty('--nodus-mobile-text-scale','\(textScale)');", completionHandler: nil)
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
@@ -301,7 +303,7 @@ private struct DesktopWebView: UIViewRepresentable {
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             setRouteActive(routeActive)
-            surfaceReady = true; sendPublicationUpdates()
+            surfaceReady = true; sendPublicationUpdates(); sendCorpusUpdate()
         }
         let session: SpaceSession
         let autonomous: AutonomousSurfaceProvider
@@ -318,8 +320,15 @@ private struct DesktopWebView: UIViewRepresentable {
         private var publicationRevision = 0
         private var surfaceReady = false
         private var autonomousGenerationId: String?
+        private var corpusRevision: String?
+        func sendCorpusUpdate() {
+            guard surfaceReady, routeActive, session.connection.desktopPairingId != nil,
+                  corpusRevision != session.publishedRevision else { return }
+            corpusRevision = session.publishedRevision
+            webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:corpus:changed',args:[]});", completionHandler: nil)
+        }
         func sendPublicationUpdates() {
-            guard surfaceReady, publicationRevision != session.companionPublicationRevision,
+            guard surfaceReady, routeActive, publicationRevision != session.companionPublicationRevision,
                   let data = try? JSONEncoder.nodus.encode(session.companionPublicationUpdates) else { return }
             publicationRevision = session.companionPublicationRevision
             let payload = String(decoding: data, as: UTF8.self)
@@ -390,7 +399,7 @@ private struct DesktopWebView: UIViewRepresentable {
                         _ = try await running.0.cancelJob(vaultId: running.1, id: running.2); value = .null
                     } else if ["mobileDictionaryCheckpoint", "mobileGenerationCheckpoint"].contains(method) {
                         value = method == "mobileDictionaryCheckpoint" ? try await autonomous.dictionaryCheckpoint(args, session: session) : try await autonomous.generationCheckpoint(args, session: session)
-                        let checkpoint = args.first?.stringValue == "load" ? value.objectValue : args.last?.objectValue
+                        let checkpoint = value.objectValue ?? args.last?.objectValue
                         if let state = checkpoint?["state"]?.stringValue {
                             autonomousGenerationId = checkpoint?["id"]?.stringValue
                             switch state {

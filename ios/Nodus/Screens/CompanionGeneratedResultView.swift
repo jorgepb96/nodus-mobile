@@ -7,24 +7,26 @@ struct CompanionGeneratedResultView: View {
     let session: SpaceSession
     let request: DesktopJobLedger.Request
     let checkpoint: JSONValue
-    private var value: [String: JSONValue] { checkpoint.objectValue ?? [:] }
+    @State private var synchronizedRequest: DesktopJobLedger.Request?
+    private var current: DesktopJobLedger.Request { synchronizedRequest ?? request }
+    private var value: [String: JSONValue] { (current.checkpoint ?? checkpoint).objectValue ?? [:] }
     private var input: [String: JSONValue] { value["request"]?.objectValue ?? [:] }
     private var markdown: String? {
-        switch request.method {
+        switch current.method {
         case "saveDictionaryGeneratedVersion": return value["definition"]?.objectValue?["contentMarkdown"]?.stringValue
         case "saveContentTranslationFromMobile": return value["markdown"]?.stringValue
-        case "saveStudyImprovementFromMobile": return value["preview"]?.objectValue?["text"]?.stringValue ?? request.result?.objectValue?["text"]?.stringValue
+        case "saveStudyImprovementFromMobile": return value["preview"]?.objectValue?["text"]?.stringValue ?? current.result?.objectValue?["text"]?.stringValue
         default: return nil
         }
     }
     private var title: String {
         if let entry = value["context"]?.objectValue?["entry"]?.objectValue,
-           let term = entry["term"]?.stringValue ?? entry["title"]?.stringValue { return term }
+           let term = entry["name"]?.stringValue ?? entry["term"]?.stringValue ?? entry["title"]?.stringValue { return term }
         return input["sourceTitle"]?.stringValue ?? value["plan"]?.objectValue?["title"]?.stringValue ?? String(localized: "Resultado guardado")
     }
     var body: some View {
         Group {
-            if request.method == "saveImmersionGeneratedSession", let plan = value["plan"],
+            if current.method == "saveImmersionGeneratedSession", let plan = value["plan"],
                let itinerary = ImmersionPlan(Row(["plan": plan])) {
                 ImmersionView(session: session, sessionId: request.id, title: title, localPlan: itinerary)
             } else if let markdown {
@@ -42,12 +44,18 @@ struct CompanionGeneratedResultView: View {
         .navigationTitle("Resultado guardado").navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top, spacing: 0) {
-            if request.state != "available" {
-                Label(["failed", "interrupted", "cancelled"].contains(request.state)
+            if current.state != "available" {
+                Label(["failed", "interrupted", "cancelled"].contains(current.state)
                     ? "Resultado conservado · revisa la sincronización en Trabajos"
                     : "Guardado en este dispositivo · pendiente de sincronizar", systemImage: "iphone")
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial)
+            }
+        }
+        .task(id: session.companionPublicationRevision) {
+            if let pairing = session.connection.desktopPairingId, let vault = session.vaultId,
+               let ledger = try? await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault) {
+                synchronizedRequest = await ledger.all().first { $0.id == request.id }
             }
         }
         .accessibilityIdentifier("companion-generated-result-reader")
