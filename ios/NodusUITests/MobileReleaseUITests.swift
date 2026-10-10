@@ -244,6 +244,14 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertTrue(central.isHittable, app.debugDescription)
         }
         capture(app, "\(phone ? "phone" : "ipad")-argument-map-before-pinch")
+        if phone {
+            // Automatic zoom intentionally reframes a selected card. Check
+            // camera preservation while the user is exploring manually.
+            let automatic = web.switches["Zoom automático"].firstMatch
+            XCTAssertTrue(automatic.isHittable)
+            if automatic.value as? String == "1" { automatic.tap() }
+            XCTAssertEqual(automatic.value as? String, "0")
+        }
         let stage = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Canvas de ideas.")).firstMatch
         XCTAssertTrue(stage.exists, app.debugDescription)
         let zoom = web.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Zoom:"))
@@ -256,6 +264,12 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertFalse(web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch.exists, "Pinching must not accidentally select an idea.")
         if phone {
             web.buttons["Volver al inicio"].firstMatch.tap()
+            let reset = NSPredicate { _, _ in
+                zoom.allElementsBoundByIndex.contains(where: { $0.isHittable && Int($0.label.filter(\.isNumber)) == 100 })
+            }
+            let restored = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: reset, object: nil)], timeout: 5)
+            capture(app, "phone-argument-reset-after-native-pinch")
+            XCTAssertEqual(restored, .completed, "Back to start must restore the actual phone camera scale.")
             try verifyPhoneIdeaSheet(app: app, web: web, idea: central, name: "argument")
         } else { try verifyIPadIdeaPanel(app: app, web: web, idea: central, name: "argument") }
     }
@@ -285,6 +299,7 @@ final class MobileReleaseUITests: XCTestCase {
             capture(app, "phone-\(name)-idea-\(orientation == .portrait ? "portrait" : "landscape")")
             close.tap()
             XCTAssertTrue(sheet.waitForNonExistence(timeout: 10))
+            capture(app, "phone-\(name)-after-detail-\(orientation == .portrait ? "portrait" : "landscape")")
             XCTAssertTrue(idea.isHittable)
             XCTAssertEqual(idea.frame.minX, previous.minX, accuracy: 2, "Closing the detail must keep the camera position.")
             XCTAssertEqual(idea.frame.minY, previous.minY, accuracy: 2)
