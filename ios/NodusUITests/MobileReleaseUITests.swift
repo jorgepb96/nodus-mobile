@@ -81,6 +81,70 @@ final class MobileReleaseUITests: XCTestCase {
         return app
     }
     @MainActor
+    func testLivePhoneChatStreamsCopiesAndReopensFromHistory() throws {
+        let app = try openExistingPrincipal(destination: "researchChat")
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        let web = app.otherElements["shared-desktop-chat"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 35))
+        let history = web.buttons["Historial de chats"].firstMatch
+        XCTAssertTrue(history.waitForExistence(timeout: 30)); history.tap()
+        let newChat = web.buttons["Nueva conversación"].firstMatch
+        XCTAssertTrue(newChat.waitForExistence(timeout: 15)); newChat.tap()
+        let input = web.textViews["Pregunta al asistente..."].firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        let marker = "QAChat-\(UUID().uuidString.prefix(8))"
+        let question = "\(marker). Explica en unas 250 palabras cómo el corpus relaciona propaganda turística y fotografía. Incluye dos ideas y sus fuentes. Empieza la respuesta con el marcador \(marker)."
+        input.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        input.typeText(question)
+        let send = web.buttons["Enviar"].firstMatch
+        let ready = NSPredicate(format: "exists == true AND enabled == true")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: send)], timeout: 30), .completed, app.debugDescription)
+        XCTAssertTrue(send.isHittable); send.tap()
+        print("NODUS_CHAT_MARKER=\(marker)")
+        let stop = web.buttons["Detener generación"].firstMatch
+        XCTAssertTrue(stop.waitForExistence(timeout: 15), "A real live request must enter generation.")
+        let answer = web.otherElements["Respuesta del asistente"].firstMatch
+        XCTAssertTrue(answer.waitForExistence(timeout: 30), app.debugDescription)
+        let streamingCopy = answer.buttons["Copiar en Markdown"].firstMatch
+        XCTAssertTrue(streamingCopy.exists)
+        for action in answer.buttons.allElementsBoundByIndex {
+            XCTAssertGreaterThanOrEqual(action.frame.minX, answer.frame.minX - 1)
+            XCTAssertLessThanOrEqual(action.frame.maxX, answer.frame.maxX + 1, "Actions must stay inside the response while it streams.")
+            XCTAssertGreaterThanOrEqual(action.frame.minY, answer.frame.minY - 1)
+            XCTAssertLessThanOrEqual(action.frame.maxY, answer.frame.maxY + 1)
+        }
+        capture(app, "phone-chat-live-streaming-actions")
+        XCTAssertTrue(stop.waitForNonExistence(timeout: 240), app.debugDescription)
+        XCTAssertTrue(answer.buttons["Regenerar respuesta"].waitForExistence(timeout: 20), "The request must complete with a usable answer, not an error bubble.\n\(app.debugDescription)")
+        let text = answer.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n")
+        XCTAssertTrue(text.contains(marker)); XCTAssertGreaterThan(text.count, 120)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        let copy = answer.buttons["Copiar en Markdown"].firstMatch
+        for _ in 0..<10 { if copy.isHittable { break }; web.swipeUp() }
+        XCTAssertTrue(copy.isHittable)
+        XCTAssertGreaterThanOrEqual(copy.frame.width, 44); XCTAssertGreaterThanOrEqual(copy.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(copy.frame.minX, answer.frame.minX - 1)
+        XCTAssertLessThanOrEqual(copy.frame.maxX, answer.frame.maxX + 1)
+        copy.tap()
+        XCTAssertTrue(UIPasteboard.general.string?.contains(marker) == true, "Copy must contain this exact generated response.")
+        capture(app, "phone-chat-live-completed-copied")
+        app.terminate(); app.launch()
+        let principal = app.buttons["space-default"]
+        if principal.waitForExistence(timeout: 5) { principal.tap() }
+        let reopened = app.otherElements["shared-desktop-chat"].webViews.firstMatch
+        XCTAssertTrue(reopened.waitForExistence(timeout: 35))
+        reopened.buttons["Historial de chats"].firstMatch.tap()
+        let search = reopened.searchFields["Buscar en el historial"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 20), app.debugDescription)
+        search.tap(); search.typeText(marker + "\n")
+        let saved = reopened.buttons.containing(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 20)); saved.tap()
+        let restored = reopened.otherElements["Respuesta del asistente"].firstMatch
+        XCTAssertTrue(restored.waitForExistence(timeout: 20))
+        XCTAssertEqual(restored.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n"), text, "History must reopen the exact saved response after a full app restart.")
+        capture(app, "phone-chat-live-history-response-reopened")
+    }
+    @MainActor
     func testExistingMacPhoneReaderUsesOneSelectionRibbon() throws {
         let env = ProcessInfo.processInfo.environment
         let marker = try XCTUnwrap(env["NODUS_ACCEPTANCE_RESEARCH_MARKER"])
@@ -1669,7 +1733,26 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "autonomous-translation-reader")
         translate.tap()
         XCTAssertTrue(english.waitForExistence(timeout: 15)); XCTAssertTrue(english.isEnabled)
-        capture(app, "autonomous-translation-saved-reopened")
+        capture(app, "autonomous-translation-saved-menu")
+        app.terminate()
+        let relaunched = try openExistingPrincipal(destination: "deepResearch")
+        let reopened = relaunched.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
+        let reopenedSearch = reopened.textFields.firstMatch
+        XCTAssertTrue(reopenedSearch.waitForExistence(timeout: 35))
+        let loaded = NSPredicate { _, _ in !reopened.staticTexts["Cargando informes…"].exists }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 45), .completed)
+        reopenedSearch.tap(); reopenedSearch.typeText(String(title.prefix(42)) + "\n")
+        let saved = reopened.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 40))
+        for _ in 0..<5 { if saved.isHittable { break }; reopened.swipeUp() }; saved.tap()
+        let translationMenu = reopened.buttons["Traducir"].firstMatch
+        XCTAssertTrue(translationMenu.waitForExistence(timeout: 20)); translationMenu.tap()
+        let persistedEnglish = reopened.buttons["Leer traducción a English"].firstMatch
+        XCTAssertTrue(persistedEnglish.waitForExistence(timeout: 20)); XCTAssertTrue(persistedEnglish.isEnabled)
+        persistedEnglish.tap()
+        XCTAssertTrue(reopened.buttons["Aumentar texto"].waitForExistence(timeout: 20))
+        XCTAssertTrue(reopened.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Francoist")).firstMatch.waitForExistence(timeout: 20), "The actual saved translated document must load after a full app restart.")
+        capture(relaunched, "autonomous-translation-saved-reopened")
     }
     @MainActor private func pairLive(route: String, vaultId: String = "default") throws -> XCUIApplication {
         let link = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_LINK"], "A real HTTPS lab is required.")
