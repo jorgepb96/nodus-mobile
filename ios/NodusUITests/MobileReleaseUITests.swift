@@ -1827,6 +1827,47 @@ final class MobileReleaseUITests: XCTestCase {
         capture(reopened, "scriptor-offline-new-document-reopened")
     }
     @MainActor
+    func testCreatedCompanionDocumentSynchronizesAndReopens() throws {
+        let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_CREATED_DOCUMENT_MARKER"])
+        XCTAssertTrue(marker.hasPrefix("CompanionCreate-"))
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 45))
+        let editor = web.textViews["Editor del documento"]
+        if !editor.waitForExistence(timeout: 8) {
+            let search = web.textFields["Buscar en notas e ideas…"]
+            XCTAssertTrue(search.waitForExistence(timeout: 30)); search.tap()
+            if let previous = search.value as? String, previous != search.placeholderValue {
+                search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+            }
+            search.typeText(marker + "\n")
+            let row = web.buttons["Abrir Nota sin título"]
+            XCTAssertTrue(row.waitForExistence(timeout: 30)); XCTAssertTrue(row.isHittable); row.tap()
+        }
+        XCTAssertTrue(editor.waitForExistence(timeout: 30))
+        let confirmed = NSPredicate { _, _ in
+            (editor.value as? String)?.contains(marker) == true && web.staticTexts["Guardado"].exists &&
+            !web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Guardado en este dispositivo")).firstMatch.exists
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: confirmed, object: nil)], timeout: 60), .completed, app.debugDescription)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        capture(app, "scriptor-created-document-confirmed-by-mac")
+        app.terminate()
+        let reopened = try openExistingPrincipal(destination: "workspace")
+        defer { reopened.terminate() }
+        let restoredWeb = reopened.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(restoredWeb.waitForExistence(timeout: 45))
+        let row = restoredWeb.buttons["Abrir Nota sin título"]
+        if row.waitForExistence(timeout: 8) { row.tap() }
+        let restored = restoredWeb.textViews["Editor del documento"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 30))
+        XCTAssertTrue((restored.value as? String)?.contains(marker) == true)
+        XCTAssertTrue(restoredWeb.staticTexts["Guardado"].exists)
+        XCTAssertFalse(restoredWeb.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Guardado en este dispositivo")).firstMatch.exists)
+        capture(reopened, "scriptor-created-canonical-document-reopened")
+    }
+    @MainActor
     func testScriptorPreparesStructuredCompanionCopy() throws {
         let app = try openExistingPrincipal(destination: "workspace")
         defer { app.terminate() }
