@@ -107,8 +107,9 @@ final class CloudBackup {
         self.root = root
         self.makeTransport = makeTransport
         self.allowSync = allowSync
-        isEnabled = allowSync && defaults.bool(forKey: Key.enabled)
-        status = isEnabled ? .ready(nil) : .off
+        let enabled = allowSync && defaults.bool(forKey: Key.enabled)
+        isEnabled = enabled
+        status = enabled ? .ready(nil) : .off
     }
 
     // MARK: - The switch
