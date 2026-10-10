@@ -175,13 +175,24 @@ final class MobileReleaseUITests: XCTestCase {
         }
         if phone {
             let stage = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Canvas de ideas.")).firstMatch
-            let visible = labels.allElementsBoundByIndex.filter { $0.isHittable }
-            XCTAssertGreaterThanOrEqual(visible.count, 2, "A native graph pinch needs two visible idea captions to measure its scale.")
-            let a = web.buttons[visible[0].label].firstMatch
-            let b = web.buttons[visible[1].label].firstMatch
+            // Captions are intentionally culled when they collide after zooming.
+            // Measure the persistent node hit targets nearest the canvas centre.
+            let visible = labels.allElementsBoundByIndex.filter { $0.isHittable }.compactMap { caption -> XCUIElement? in
+                let parts = caption.label.components(separatedBy: " · ")
+                guard parts.count >= 3 else { return nil }
+                let node = web.buttons[parts.dropFirst(2).joined(separator: " · ")].firstMatch
+                return node.exists && node.isHittable ? node : nil
+            }.sorted {
+                hypot($0.frame.midX - stage.frame.midX, $0.frame.midY - stage.frame.midY)
+                    < hypot($1.frame.midX - stage.frame.midX, $1.frame.midY - stage.frame.midY)
+            }
+            XCTAssertGreaterThanOrEqual(visible.count, 2, "A native graph pinch needs two visible nodes to measure its scale.")
+            let a = visible[0], b = visible[1]
             let distance = hypot(a.frame.midX - b.frame.midX, a.frame.midY - b.frame.midY)
             XCTAssertGreaterThan(distance, 20)
+            capture(app, "phone-graph-before-native-pinch")
             stage.pinch(withScale: 1.2, velocity: 1)
+            capture(app, "phone-graph-after-native-pinch")
             let enlarged = NSPredicate { _, _ in
                 guard a.exists, b.exists else { return false }
                 return hypot(a.frame.midX - b.frame.midX, a.frame.midY - b.frame.midY) > distance * 1.05
@@ -191,7 +202,6 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertFalse(web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch.exists,
                            "Pinching the graph must not open an idea dossier.")
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 5), .completed)
-            capture(app, "phone-graph-after-native-pinch")
         }
         capture(app, "\(phone ? "phone" : "ipad")-graph-before-idea-selection")
         let idea = try XCTUnwrap(labels.allElementsBoundByIndex.first(where: { $0.isHittable }), "At least one idea must be readable and selectable on the phone.\n\(app.debugDescription)")
