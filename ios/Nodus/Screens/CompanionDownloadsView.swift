@@ -103,7 +103,7 @@ struct CompanionDownloadsView: View {
                 return .object(note)
             })
             var records = [PrivateBridgeCache.ReadPackRecord(domain: .corpus,
-                recordId: try CompanionDocumentOutbox.operationKey("getNotesTree", []), data: try JSONEncoder.nodus.encode(JSONValue.object(catalogue))) ]
+                recordId: try CompanionDocumentOutbox.operationKey("getNotesTree", []), data: try JSONEncoder.nodus.encode(JSONValue.object(catalogue)))]
             var bytes = records[0].data.count
             for (index, id) in selected.sorted().enumerated() {
                 try Task.checkCancellation()
@@ -116,7 +116,8 @@ struct CompanionDownloadsView: View {
                 progress = (index + 1, selected.count)
             }
             try Task.checkCancellation()
-            try await cache.saveReadPack(vaultId: vault, title: selected.count == 1 ? "1 documento de Scriptor" : "\(selected.count) documentos de Scriptor",
+            let id = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: selected.map { "scriptor:\($0)" })
+            try await cache.saveReadPack(id: id, vaultId: vault, title: selected.count == 1 ? "1 documento de Scriptor" : "\(selected.count) documentos de Scriptor",
                 expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: records)
             saved = true
         } catch is CancellationError { issue = "Descarga cancelada. No se ha creado una copia incompleta." }

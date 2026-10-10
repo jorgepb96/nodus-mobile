@@ -1599,6 +1599,23 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "autonomous-immersion-resumed-after-restart")
     }
     @MainActor
+    func testCompanionDeletesPreviouslyChosenDownloads() throws {
+        let app = try openExistingPrincipal(destination: "settings")
+        defer { app.terminate() }
+        let copies = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "companion-download-remove-"))
+        for _ in 0..<12 { if copies.firstMatch.isHittable { break }; app.swipeUp() }
+        XCTAssertGreaterThan(copies.count, 0, "This recovery case requires actual previous downloads in the isolated simulator.")
+        for _ in 0..<8 {
+            let count = copies.count
+            if count == 0 { break }
+            XCTAssertTrue(copies.firstMatch.isHittable); copies.firstMatch.tap()
+            let removed = NSPredicate { _, _ in copies.count < count }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: removed, object: nil)], timeout: 15), .completed)
+        }
+        XCTAssertEqual(copies.count, 0)
+        capture(app, "companion-old-downloads-removed-through-settings")
+    }
+    @MainActor
     func testCompanionDownloadsChosenScriptorDocument() throws {
         let app = try openExistingPrincipal(destination: "settings")
         defer { app.terminate() }
@@ -1620,6 +1637,16 @@ final class MobileReleaseUITests: XCTestCase {
         app.buttons["Cerrar"].tap()
         XCTAssertTrue(app.staticTexts["1 documento de Scriptor"].waitForExistence(timeout: 15))
         capture(app, "companion-download-size-and-expiry")
+        // Refresh the exact same selection. It must remain one complete copy.
+        select.tap()
+        XCTAssertTrue(app.navigationBars["Descargar para llevar"].waitForExistence(timeout: 15))
+        XCTAssertTrue(note.waitForExistence(timeout: 30)); note.tap()
+        app.buttons["companion-download-start"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["companion-download-ready"].firstMatch.waitForExistence(timeout: 45))
+        app.buttons["Cerrar"].tap()
+        XCTAssertTrue(app.staticTexts["1 documento de Scriptor"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "1 documento de Scriptor")).count, 1)
+        capture(app, "companion-repeated-selection-refreshes-one-copy")
         // Only disposable consulted copies are freed. The selected download
         // must remain available for the following actual offline run.
         let clear = app.buttons["companion-clear-read-copies"]
@@ -1644,7 +1671,7 @@ final class MobileReleaseUITests: XCTestCase {
     func testCompanionClearsConsultedCopiesAndKeepsChosenDownload() throws {
         let app = try openExistingPrincipal(destination: "settings")
         defer { app.terminate() }
-        let pack = app.staticTexts["1 documento de Scriptor"]
+        let pack = app.staticTexts["1 documento de Scriptor"].firstMatch
         for _ in 0..<12 { if pack.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(pack.exists, "A previously chosen download is required; missing setup is a failure.")
         let clear = app.buttons["companion-clear-read-copies"]

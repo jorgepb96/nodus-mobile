@@ -164,6 +164,24 @@ struct PrivateBridgeCacheTests {
         }
     }
 
+    @Test("repeating a selection refreshes one pack while vaults and different records remain separate")
+    func repeatSelection() async throws {
+        let f = try Fixture(limit: 4_096); defer { f.clean() }
+        let first = try PrivateBridgeCache.readPackSelectionId(vaultId: "a", recordIds: ["one", "two"])
+        let repeated = try PrivateBridgeCache.readPackSelectionId(vaultId: "a", recordIds: ["two", "one", "two"])
+        #expect(first == repeated)
+        #expect(first != (try PrivateBridgeCache.readPackSelectionId(vaultId: "b", recordIds: ["one", "two"])))
+        #expect(first != (try PrivateBridgeCache.readPackSelectionId(vaultId: "a", recordIds: ["other"])))
+        #expect(throws: PrivateBridgeCache.ReadPackError.self) { try PrivateBridgeCache.readPackSelectionId(vaultId: "a", recordIds: []) }
+        try await f.cache.saveReadPack(id: first, vaultId: "a", title: "Before", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "one", data: Data("before".utf8))])
+        try await f.cache.saveReadPack(id: repeated, vaultId: "a", title: "Refreshed", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "one", data: Data("after".utf8))])
+        #expect(try await f.cache.readPacks(vaultId: "a").count == 1)
+        #expect(try await f.cache.readPacks(vaultId: "a").first?.title == "Refreshed")
+        #expect(try await f.cache.data(vaultId: "a", domain: .corpus, recordId: "one") == Data("after".utf8))
+    }
+
     @Test("expiry removes chosen reading copies, never local writing, without relying on sleeps")
     func expiredDownload() async throws {
         let f = try Fixture(limit: 4_096); defer { f.clean() }

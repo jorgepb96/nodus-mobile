@@ -936,6 +936,17 @@ public actor PrivateBridgeCache {
     }
 
     private static func isDurable(_ domain: DesktopBridgeDomain) -> Bool { domain == .writing || domain == .researchGeneration }
+
+    /// The same chosen records refresh one download, independent of selection
+    /// order. Each vault and different selection retain separate copies.
+    public static func readPackSelectionId(vaultId: String, recordIds: [String]) throws -> UUID {
+        guard !vaultId.isEmpty, !recordIds.isEmpty, recordIds.allSatisfy({ !$0.isEmpty }) else { throw ReadPackError.invalidSelection }
+        let scope: JSONValue = .object(["vault": .string(vaultId), "records": .array(Set(recordIds).sorted().map(JSONValue.string))])
+        var bytes = Array(SHA256.hash(data: try JSONEncoder.nodus.encode(scope)).prefix(16))
+        bytes[6] = (bytes[6] & 0x0f) | 0x80 // UUID v8, application-specific hash.
+        bytes[8] = (bytes[8] & 0x3f) | 0x80
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
     private func cacheFiles() throws -> [(url: URL, size: Int, date: Date)] {
         try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey])
             .filter { $0.pathExtension == "bridgecache" }
