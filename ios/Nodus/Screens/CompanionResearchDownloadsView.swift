@@ -1,5 +1,6 @@
 import SwiftUI
 import NodusKit
+import NodusUI
 
 /// Downloads canonical query results, never a complete workspace backup.
 /// Nothing is advertised as available until the entire selected pack commits.

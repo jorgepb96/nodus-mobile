@@ -1,5 +1,6 @@
 import CryptoKit
 import NodusKit
+import NodusUI
 import SwiftUI
 import WebKit
 
@@ -66,9 +67,17 @@ struct SharedDesktopSurface: View {
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
         }
         .id("\(session.connection.id):\(surface.rawValue):\(session.aiExecutionMode.rawValue)")
-        .overlay(alignment: .top) { if let issue { Text(issue).font(.caption).padding().background(.background).foregroundStyle(.red).accessibilityIdentifier("shared-surface-error") } }
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
+            if let issue {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(issue).font(.caption).foregroundStyle(Color.nodusDanger)
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("shared-surface-error")
+                    Button { self.issue = nil } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                        .accessibilityLabel("Cerrar aviso")
+                }.padding(.leading, 12).padding(.vertical, 4).background(.thinMaterial)
+            }
             CompanionResultsButton(session: session, surface: surface, generationStatus: autonomousStatus)
             if offlineCopy {
                 Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
@@ -412,7 +421,7 @@ private struct DesktopWebView: UIViewRepresentable {
                             switch state {
                             case "accepted": onAutonomousStatus(String(localized: "Request accepted"))
                             case "running": onAutonomousStatus(String(localized: "Generating on this device"))
-                            case "saved": onAutonomousStatus(String(localized: "Guardado en este dispositivo · pendiente de sincronizar con Nodus"))
+                            case "saved": onAutonomousStatus(nil) // The native results row carries the pending state.
                             case "available": onAutonomousStatus(nil)
                             case "failed": onAutonomousStatus(checkpoint?["error"]?.stringValue ?? String(localized: "Generation failed"))
                             default: break

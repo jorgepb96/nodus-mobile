@@ -1,4 +1,5 @@
 import NodusKit
+import NodusUI
 import SwiftUI
 
 struct CompanionIdeaDownloadsView: View {

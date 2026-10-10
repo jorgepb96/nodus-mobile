@@ -1,4 +1,5 @@
 import NodusKit
+import NodusUI
 import SwiftUI
 
 /// A selected topic's real evidence lets the phone compose a new immersion

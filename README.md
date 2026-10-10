@@ -139,6 +139,11 @@ SQLite's bound-variable limit while preserving publication order. Prepared local
 regressions include 1,201 memberships, distinct themes with identical labels and
 a 35,001-id lookup; they have not yet been executed.
 
+Completed result writes notify the native results catalogue independently of Mac
+acknowledgements. A restored result therefore appears even when its generation
+status text did not change. Error and generation notices reserve layout space
+above shared surfaces, and stored-result read failures stay explicit and retryable.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

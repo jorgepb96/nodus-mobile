@@ -1,6 +1,7 @@
 import CryptoKit
 import SwiftUI
 import NodusKit
+import NodusUI
 
 /// Pin an explicitly chosen original/attachment/recording, with its actual file
 /// grant. Opening another file never downloads an entire source collection.

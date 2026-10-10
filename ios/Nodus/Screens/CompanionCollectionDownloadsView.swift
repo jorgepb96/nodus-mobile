@@ -1,4 +1,5 @@
 import NodusKit
+import NodusUI
 import SwiftUI
 
 /// Catalogue pages are read on demand; only the chosen full dossiers commit.

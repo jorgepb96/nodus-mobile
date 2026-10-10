@@ -41,7 +41,12 @@ final class SpaceSession {
     private var isCheckingPublishedContent = false
     private var isSynchronizingCompanionChanges = false
     private(set) var companionPublicationRevision = 0
+    private(set) var companionResultRevision = 0
     private(set) var companionPublicationUpdates: [JSONValue] = []
+
+    /// A durable device result refreshes native readers without reporting an
+    /// acknowledgement or invalidating the mounted editor/canvas.
+    func didSaveCompanionResult() { companionResultRevision += 1 }
 
     /// Told to `AppModel` so the space picker can say the same thing this screen says.
     private let onFailure: (ConnectionFailure) -> Void

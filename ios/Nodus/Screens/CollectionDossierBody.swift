@@ -11,6 +11,10 @@ struct CollectionDossierBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
+            if dossier.fromDevice {
+                Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             DossierValueView(session: session, value: .object(dossier.primary.columns), field: "", linkedCollection: nil, onOpenRelated: onOpenRelated)
             ForEach(dossier.sections.keys.sorted(), id: \.self) { key in
                 VStack(alignment: .leading, spacing: 10) {

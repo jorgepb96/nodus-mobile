@@ -103,6 +103,7 @@ final class AutonomousSurfaceProvider {
         else { throw DesktopBridgeError.permissionDenied }
         let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: scope.recordVaultId)
         try await ledger.preparePublication(publication)
+        session.didSaveCompanionResult()
     }
     private func loadCheckpoint(cache: PrivateBridgeCache, key: String, scope: MobileSurfaceStorageScope,
                                 session: SpaceSession) async throws -> JSONValue {

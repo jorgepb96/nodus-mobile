@@ -1,4 +1,5 @@
 import NodusKit
+import NodusUI
 import SwiftUI
 
 /// The section's own results remain one tap away when the Mac is asleep. This
@@ -9,9 +10,16 @@ struct CompanionResultsButton: View {
     let generationStatus: String?
     @State private var results: [DesktopJobLedger.Request] = []
     @State private var showing = false
+    @State private var issue: String?
 
     var body: some View {
         Group {
+            if let issue {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No se pudieron leer los resultados guardados: \(issue)").font(.caption).foregroundStyle(Color.nodusDanger)
+                    Button("Reintentar") { Task { await refresh() } }.frame(minHeight: 44)
+                }.padding(.horizontal, 12).accessibilityIdentifier("companion-surface-results-error")
+            }
             if !results.isEmpty {
                 Button { showing = true } label: {
                     HStack(spacing: 8) {
@@ -25,7 +33,7 @@ struct CompanionResultsButton: View {
                     .accessibilityIdentifier("companion-surface-results-\(surface.rawValue)")
             }
         }
-        .task(id: "\(session.companionPublicationRevision):\(generationStatus ?? "")") { await refresh() }
+        .task(id: "\(session.companionPublicationRevision):\(session.companionResultRevision):\(generationStatus ?? "")") { await refresh() }
         .sheet(isPresented: $showing) {
             NavigationStack {
                 List(results) { request in
@@ -45,14 +53,21 @@ struct CompanionResultsButton: View {
                     }
                 }
                 .navigationTitle("Resultados del móvil").navigationBarTitleDisplayMode(.inline)
+                .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 68) }
                 .nodusModalClose(accent: session.accent)
-                .task(id: session.companionPublicationRevision) { await refresh() }
+                .task(id: "\(session.companionPublicationRevision):\(session.companionResultRevision)") { await refresh() }
             }
+            .nodusTextHierarchy()
         }
     }
     private func refresh() async {
-        guard let pairingId = session.connection.desktopPairingId, let vaultId = session.vaultId,
-              let ledger = try? await DesktopJobLedgers.shared.ledger(pairingId: pairingId, vaultId: vaultId) else { results = []; return }
-        results = await ledger.all().filter { CompanionResultCatalogue.contains($0, in: surface.rawValue) }
+        guard let pairingId = session.connection.desktopPairingId, let vaultId = session.vaultId else { results = []; issue = nil; return }
+        do {
+            let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairingId, vaultId: vaultId)
+            let stored = await ledger.all()
+            try Task.checkCancellation()
+            results = stored.filter { CompanionResultCatalogue.contains($0, in: surface.rawValue) }; issue = nil
+        } catch where error.isCancellation { }
+        catch { issue = error.localizedDescription }
     }
 }

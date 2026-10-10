@@ -1,5 +1,6 @@
 import SwiftUI
 import NodusKit
+import NodusUI
 
 /// Selective companion copies use the same encrypted query keys as Scriptor.
 /// The tree and every chosen structured document must finish before committing.
