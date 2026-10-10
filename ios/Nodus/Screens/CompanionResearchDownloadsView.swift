@@ -214,14 +214,24 @@ struct CompanionResearchDownloadsView: View {
                     guard current == detail else { throw DesktopBridgeError.malformedResponse }
                 } else {
                     let entity = kind == .reports ? "deep_research" : "immersion"
+                    let readerMethod = kind == .reports ? "getWritingWorkshopDraft" : "getImmersionSession"
+                    let reader: JSONValue
                     if kind == .reports {
                         let report = try await fetch("getWritingWorkshopDraft", [.string(id)])
                         guard report.objectValue?["id"]?.stringValue == id, report.objectValue?["draft"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
                         reports.append(report)
+                        reader = report
                     } else {
                         let session = try await fetch("getImmersionSession", [.string(id)])
                         guard session.objectValue?["id"]?.stringValue == id, session.objectValue?["plan"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
+                        reader = session
                     }
+                    let target: JSONValue = .object(["entityKind": .string(entity), "entityId": .string(id)])
+                    let source = try await fetch("getContentTranslationOfflineSource", [target])
+                    guard source.objectValue?["version"] == .int(1), source.objectValue?["entityKind"] == .string(entity),
+                          source.objectValue?["entityId"] == .string(id), source.objectValue?["source"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
+                    let current = try await client.operation(vaultId: vault, method: readerMethod, args: [.string(id)])
+                    guard current == reader else { throw DesktopBridgeError.malformedResponse }
                     let annotationsId = kind == .reports ? id : "immersion:" + id
                     _ = try await fetch("listWritingDraftAnnotations", [.string(annotationsId)])
                     let translations = try await fetch("listContentTranslations", [.string(entity), .string(id)])

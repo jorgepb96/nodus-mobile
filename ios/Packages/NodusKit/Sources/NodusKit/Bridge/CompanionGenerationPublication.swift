@@ -39,6 +39,10 @@ public struct CompanionGenerationPublication: Sendable {
               revision.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
         else { throw DesktopBridgeError.malformedResponse }
         var input: [String: JSONValue] = ["request": .object(request), "revision": .string(revision), "requestId": .string(identity)]
+        if let version = context["offlineSourceVersion"] {
+            guard version == .int(1), ["translation", "writing"].contains(kind) else { throw DesktopBridgeError.malformedResponse }
+            input["offlineSourceVersion"] = version
+        }
         let operation: String
         switch kind {
         case "dictionary":

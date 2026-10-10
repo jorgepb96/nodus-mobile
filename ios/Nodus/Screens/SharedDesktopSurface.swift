@@ -437,6 +437,13 @@ private struct DesktopWebView: UIViewRepresentable {
                             let pairing = store.pairings().first(where: { $0.id == session.connection.desktopPairingId }),
                             let token = store.credential(for: pairing) else { throw DesktopBridgeError.permissionDenied }
                         let client = DesktopBridgeClient(pairing: pairing, token: token)
+                        if ["getContentTranslationOfflineSource", "getContentTranslationGenerationContext", "generateContentTranslation",
+                            "beginContentTranslationOnMobile", "saveContentTranslationFromMobile", "failContentTranslationOnMobile"].contains(method) {
+                            let target = method == "saveContentTranslationFromMobile" ? args.first?.objectValue?["request"]?.objectValue : args.first?.objectValue
+                            if target?["entityKind"] == .string("study_transcript"), !pairing.domains.contains(.studyRecordings) {
+                                throw DesktopBridgeError.permissionDenied
+                            }
+                        }
                         if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
                             let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
@@ -523,8 +530,24 @@ private struct DesktopWebView: UIViewRepresentable {
                             let authoredIdeas = CompanionIdeaCopy.operationMethods.contains(method)
                                 ? try await CompanionIdeaCopy.authored(cache: cache, vaultId: vaultId) : nil
                             let hasIdeas = hasDownloadedIdeas || authoredIdeas != nil
+                            // A new autonomous request has no exact cached
+                            // context yet. Its selected source still gives it
+                            // the same short offline deadline as a cached read.
+                            let portableSource: (String, [JSONValue])?
+                            if let request = args.first?.objectValue, method == "getStudyImprovementGenerationContext",
+                               let id = request["noteId"]?.stringValue ?? request["documentId"]?.stringValue {
+                                portableSource = ("getStudyImprovementOfflineSource", [.object([request["noteId"]?.stringValue != nil ? "noteId" : "documentId": .string(id)])])
+                            } else if let request = args.first?.objectValue, method == "getContentTranslationGenerationContext",
+                                      let kind = request["entityKind"]?.stringValue, let id = request["entityId"]?.stringValue {
+                                portableSource = ("getContentTranslationOfflineSource", [.object(["entityKind": .string(kind), "entityId": .string(id)])])
+                            } else { portableSource = nil }
+                            let hasPortableSource: Bool
+                            if let (sourceMethod, sourceArgs) = portableSource {
+                                hasPortableSource = try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus,
+                                    recordId: CompanionDocumentOutbox.operationKey(sourceMethod, sourceArgs))
+                            } else { hasPortableSource = false }
                             do {
-                                value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification && !hasIdeas ? nil : 4)
+                                value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification && !hasIdeas && !hasPortableSource ? nil : 4)
                                 onOfflineCopy(false)
                                 if Self.operationDomains[method] == "corpus" { try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key) }
                             } catch {

@@ -63,6 +63,14 @@ Only an actual pending authored identity can answer a Mac 404; deleted downloade
 records, permission failures and certificate errors remain failures. This new route awaits
 the deferred contracts and end-to-end campaign.
 
+Selected Scriptor notes and research/immersion readers now retain a portable autonomous source.
+The phone can prepare a new writing selection/style or translation language from that chosen
+copy, with its own provider, without first repeating the request on the Mac. Canonical versioned
+revision inputs survive native JSON key ordering; reconnect still rejects changed sources or
+styles. Older context/save contracts remain supported, and transcript sources retain their
+separate recordings permission. Downloads reject an editor/source change before committing.
+These contracts and their prepared regression scenarios await the final local build and tests.
+
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;
 `ios/scripts/test-reading-copy-parity.mjs` checks the reading contract.

@@ -50,6 +50,21 @@ struct CompanionGenerationPublicationTests {
         #expect(throws: DesktopBridgeError.self) { try CompanionGenerationPublication(kind: "translation", entity: "entity-a", checkpoint: checkpoint(kind: "writing")) }
     }
 
+    @Test("portable source versions survive the atomic publication and reject unknown contracts")
+    func offlineSourceVersion() throws {
+        for kind in ["writing", "translation"] {
+            var value = try #require(checkpoint(kind: kind).objectValue)
+            value["context"] = .object(["revision": .string(revision), "offlineSourceVersion": .int(1)])
+            let publication = try #require(CompanionGenerationPublication(kind: kind, entity: "entity-a", checkpoint: .object(value)))
+            #expect(publication.args[0].objectValue?["offlineSourceVersion"] == .int(1))
+            value["context"] = .object(["revision": .string(revision), "offlineSourceVersion": .int(2)])
+            #expect(throws: DesktopBridgeError.self) { try CompanionGenerationPublication(kind: kind, entity: "entity-a", checkpoint: .object(value)) }
+        }
+        var dictionary = try #require(checkpoint(kind: "dictionary").objectValue)
+        dictionary["context"] = .object(["revision": .string(revision), "offlineSourceVersion": .int(1)])
+        #expect(throws: DesktopBridgeError.self) { try CompanionGenerationPublication(kind: "dictionary", entity: "entity-a", checkpoint: .object(dictionary)) }
+    }
+
     @Test("termination before the second checkpoint write retains both completed content and its idempotent send")
     func atomicQueueAndRecovery() async throws {
         let pairing = UUID().uuidString, directory = URL.temporaryDirectory.appendingPathComponent("nodus-publication-\(pairing)")

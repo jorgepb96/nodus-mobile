@@ -153,6 +153,18 @@ struct CompanionDownloadsView: View {
                 let data = try JSONEncoder.nodus.encode(value); bytes += data.count
                 guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getWorkspaceNoteEditorData", args), data: data))
+                let sourceArgs: [JSONValue] = [.object(["noteId": .string(id)])]
+                let source = try await client.operation(vaultId: vault, method: "getStudyImprovementOfflineSource", args: sourceArgs)
+                guard source.objectValue?["version"] == .int(1), source.objectValue?["noteId"] == .string(id),
+                      source.objectValue?["source"]?.objectValue?["id"] == .string(id),
+                      source.objectValue?["styles"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
+                let sourceData = try JSONEncoder.nodus.encode(source); bytes += sourceData.count
+                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getStudyImprovementOfflineSource", sourceArgs), data: sourceData))
+                // The editor and autonomous source must describe one canonical
+                // revision. A concurrent Mac edit rejects the complete pack.
+                let current = try await client.operation(vaultId: vault, method: "getWorkspaceNoteEditorData", args: args)
+                guard current == value else { throw DesktopBridgeError.malformedResponse }
                 progress = (index + 1, selected.count)
             }
             try Task.checkCancellation()
