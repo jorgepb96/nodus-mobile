@@ -80,7 +80,7 @@ struct CompanionDownloadsView: View {
         do {
             let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
             guard !pairing.isExpired else { throw DesktopBridgeError.permissionDenied }
-            let value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getNotesTree", args: [])
+            let value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getNotesTree", args: [.bool(true)])
             guard value.objectValue?["notes"]?.arrayValue != nil, value.objectValue?["folders"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
             tree = value
         } catch { issue = error.localizedDescription }
@@ -102,9 +102,39 @@ struct CompanionDownloadsView: View {
                 if !selected.contains(note["id"]?.stringValue ?? "") { note["content"] = .string("") }
                 return .object(note)
             })
+            let catalogueData = try JSONEncoder.nodus.encode(JSONValue.object(catalogue))
+            // Scriptor opens the complete catalogue (including trash), while
+            // chapter navigation requests the default, untrashed catalogue.
             var records = [PrivateBridgeCache.ReadPackRecord(domain: .corpus,
-                recordId: try CompanionDocumentOutbox.operationKey("getNotesTree", []), data: try JSONEncoder.nodus.encode(JSONValue.object(catalogue)))]
-            var bytes = records[0].data.count
+                recordId: try CompanionDocumentOutbox.operationKey("getNotesTree", [.bool(true)]), data: catalogueData)]
+            var visibleCatalogue = catalogue
+            visibleCatalogue["notes"] = .array(catalogue["notes"]!.arrayValue!.filter { note in
+                note.objectValue?["trashedAt"] == nil || note.objectValue?["trashedAt"] == .null
+            })
+            records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getNotesTree", []),
+                                 data: try JSONEncoder.nodus.encode(JSONValue.object(visibleCatalogue))))
+            // These read-only queries bootstrap the shared editor. They must be
+            // part of the chosen copy, rather than depend on disposable cache.
+            for method in ["getSettings", "listStudyStyles", "listAllWorkspaceLibraryLinks"] {
+                try Task.checkCancellation()
+                var value = try await client.operation(vaultId: vault, method: method, args: [])
+                if method == "getSettings" {
+                    guard value.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
+                } else {
+                    guard let rows = value.arrayValue else { throw DesktopBridgeError.malformedResponse }
+                    if method == "listAllWorkspaceLibraryLinks" {
+                        let folders = Set((catalogue["folders"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue })
+                        value = .array(rows.filter { row in
+                            guard let object = row.objectValue, let owner = object["ownerId"]?.stringValue else { return false }
+                            return object["ownerKind"]?.stringValue == "note" ? selected.contains(owner) : folders.contains(owner)
+                        })
+                    }
+                }
+                records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey(method, []),
+                                     data: try JSONEncoder.nodus.encode(value)))
+            }
+            var bytes = records.reduce(0) { $0 + $1.data.count }
+            guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             for (index, id) in selected.sorted().enumerated() {
                 try Task.checkCancellation()
                 let args: [JSONValue] = [.string(id)]

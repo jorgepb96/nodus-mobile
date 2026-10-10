@@ -1733,6 +1733,44 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "scriptor-explicit-mobile-choice-saved")
     }
     @MainActor
+    func testScriptorResolvesRealCompanionConflictWithMacChoice() throws {
+        let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"])
+        let remote = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_MAC_CONFLICT_MARKER"])
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 45))
+        let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        if note.waitForExistence(timeout: 8) { note.tap() }
+        let editor = web.textViews["Editor del documento"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 30))
+        XCTAssertTrue((editor.value as? String)?.contains(marker) == true)
+        let keep = web.buttons["Usar la versión del Mac"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertTrue(keep.isHittable); XCTAssertGreaterThanOrEqual(keep.frame.height, 44); keep.tap()
+        let saved = NSPredicate { _, _ in
+            !web.buttons["Usar la versión del Mac"].exists && web.staticTexts["Guardado"].exists &&
+            (editor.value as? String)?.contains(remote) == true
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: saved, object: nil)], timeout: 45), .completed, app.debugDescription)
+        XCTAssertFalse((editor.value as? String)?.contains(marker) == true)
+        XCTAssertTrue(web.staticTexts["Libro"].firstMatch.exists && web.staticTexts["Cita"].firstMatch.exists)
+        capture(app, "scriptor-explicit-mac-choice-saved")
+        app.terminate()
+        let reopened = try openExistingPrincipal(destination: "workspace")
+        defer { reopened.terminate() }
+        let restoredWeb = reopened.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(restoredWeb.waitForExistence(timeout: 45))
+        let catalogue = restoredWeb.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        if catalogue.waitForExistence(timeout: 8) { catalogue.tap() }
+        let restored = restoredWeb.textViews["Editor del documento"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 30))
+        XCTAssertTrue((restored.value as? String)?.contains(remote) == true)
+        XCTAssertFalse((restored.value as? String)?.contains(marker) == true)
+        XCTAssertFalse(restoredWeb.buttons["Usar la versión del Mac"].exists)
+        capture(reopened, "scriptor-mac-choice-reopened")
+    }
+    @MainActor
     func testScriptorPreparesStructuredCompanionCopy() throws {
         let app = try openExistingPrincipal(destination: "workspace")
         defer { app.terminate() }
@@ -1756,12 +1794,12 @@ final class MobileReleaseUITests: XCTestCase {
         let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
         if note.waitForExistence(timeout: 8) { note.tap() }
         let editor = web.textViews["Editor del documento"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 30), app.debugDescription)
+        guard editor.waitForExistence(timeout: 30) else { XCTFail("The chosen offline document must open.\n\(app.debugDescription)"); return }
         let paragraph = web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Frase de prueba enviada desde Desktop al movil.")).firstMatch
-        XCTAssertTrue(paragraph.exists)
+        guard paragraph.exists else { XCTFail("The downloaded paragraph is missing."); return }
         for _ in 0..<8 { if paragraph.isHittable { break }; web.swipeUp() }
         XCTAssertTrue(paragraph.isHittable); paragraph.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.2)).tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        guard app.keyboards.firstMatch.waitForExistence(timeout: 10) else { XCTFail("The offline editor must accept native keyboard input."); return }
         let marker = "MobileOffline-\(UUID().uuidString.prefix(8))"
         editor.typeText(" \(marker).")
         print("NODUS_OFFLINE_SCRIPTOR_MARKER=\(marker)")
