@@ -1523,7 +1523,13 @@ final class MobileReleaseUITests: XCTestCase {
         let editor = web.textViews["Editor del documento"]
         XCTAssertTrue(editor.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(editor.isHittable, app.debugDescription)
-        for label in ["Contexto", "Foco", "Deshacer", "Rehacer", "Citar fuente", "Añadir comentario"] {
+        for label in ["Contexto", "Foco"] {
+            let control = web.switches[label].firstMatch
+            XCTAssertTrue(control.exists, label)
+            XCTAssertGreaterThanOrEqual(control.frame.width, 44, label)
+            XCTAssertGreaterThanOrEqual(control.frame.height, 44, label)
+        }
+        for label in ["Deshacer", "Rehacer", "Citar fuente", "Añadir comentario"] {
             let control = web.buttons[label].firstMatch
             XCTAssertTrue(control.exists, label)
             XCTAssertGreaterThanOrEqual(control.frame.width, 44, label)
@@ -1923,6 +1929,11 @@ final class MobileReleaseUITests: XCTestCase {
         let web = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
         let newReport = web.buttons["Nuevo informe"].firstMatch
         XCTAssertTrue(newReport.waitForExistence(timeout: 60))
+        let loaded = NSPredicate { _, _ in
+            !web.staticTexts["Cargando informes…"].exists &&
+                web.buttons["Descargar"].firstMatch.isEnabled
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 60), .completed, "The real saved report catalogue must finish loading before composing another report.")
         XCTAssertTrue(newReport.isHittable && web.frame.contains(newReport.frame))
         capture(app, "live-deep-research-new-report-before-touch")
         // WebKit supplied a stale activation point on iPad (inside Download),
