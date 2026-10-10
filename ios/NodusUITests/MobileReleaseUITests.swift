@@ -142,12 +142,14 @@ final class MobileReleaseUITests: XCTestCase {
         let app = try openExistingPrincipal(destination: "graph")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
         let web = app.otherElements["shared-desktop-graph"].webViews.firstMatch
+        let back = web.buttons["Volver a los temas"].firstMatch
+        if back.waitForExistence(timeout: 2) { back.tap() }
         let filter = web.searchFields["Filtrar temas"]
         XCTAssertTrue(filter.waitForExistence(timeout: 60), app.debugDescription)
         try focusResearchSearch(filter, in: web, app: app)
         filter.typeText(name)
         try dismissResearchKeyboard(app)
-        let theme = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "TEMA ·", name)).firstMatch
+        let theme = web.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] %@ AND label ENDSWITH %@", "Tema ·", name)).firstMatch
         XCTAssertTrue(theme.waitForExistence(timeout: 30)); theme.tap()
         let status = web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "ideas del tema")).firstMatch
         let loaded = NSPredicate { _, _ in
@@ -172,6 +174,8 @@ final class MobileReleaseUITests: XCTestCase {
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
         let web = app.otherElements["shared-desktop-argument"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 35))
+        let catalogue = web.buttons["Ideas"].firstMatch
+        if catalogue.waitForExistence(timeout: 2) { catalogue.tap() }
         XCTAssertTrue(web.buttons["Automático"].firstMatch.waitForExistence(timeout: 40))
         let routes = web.buttons
         let ready = NSPredicate { _, _ in routes.allElementsBoundByIndex.contains(where: { $0.label.count > 100 && $0.isHittable }) }
@@ -180,7 +184,7 @@ final class MobileReleaseUITests: XCTestCase {
         let route = try XCTUnwrap(routes.allElementsBoundByIndex.first(where: { $0.label.count > 100 && $0.isHittable }))
         XCTAssertLessThanOrEqual(route.frame.maxX, web.frame.maxX + 1, "Phone route cards must fit the width.")
         route.tap()
-        let central = web.switches.matching(NSPredicate(format: "label BEGINSWITH %@", "IDEA CENTRAL")).firstMatch
+        let central = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "IDEA CENTRAL")).firstMatch
         XCTAssertTrue(central.waitForExistence(timeout: 60), app.debugDescription)
         XCTAssertGreaterThanOrEqual(central.frame.width, 200, "The initial phone map must open at a readable scale.")
         capture(app, "phone-argument-map-before-pinch")
