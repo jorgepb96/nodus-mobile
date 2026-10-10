@@ -408,11 +408,12 @@ private struct DesktopWebView: UIViewRepresentable {
                             } else {
                                 let cache = try PrivateBridgeCache(pairingId: pairing.id)
                                 let key = try CompanionDocumentOutbox.operationKey(method, args)
+                                let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key)
                                 do {
-                                    value = try await client.operation(vaultId: vaultId, method: method, args: args)
+                                    value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil ? nil : 4)
                                     try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
                                 } catch {
-                                    guard isPrivateBridgeOffline(error), let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key) else { throw error }
+                                    guard isPrivateBridgeOffline(error), let cached else { throw error }
                                     value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached)
                                 }
                                 if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue { try await documents.seed(noteId: noteId, editorData: value) }
@@ -450,12 +451,13 @@ private struct DesktopWebView: UIViewRepresentable {
                         } else {
                             let cache = try PrivateBridgeCache(pairingId: pairing.id)
                             let key = "operation:\(method):" + SHA256.hash(data: try JSONEncoder.nodus.encode(args)).map { String(format: "%02x", $0) }.joined()
+                            let cached = Self.operationDomains[method] == "corpus" ? try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key) : nil
                             do {
-                                value = try await client.operation(vaultId: vaultId, method: method, args: args)
+                                value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil ? nil : 4)
                                 if Self.operationDomains[method] == "corpus" { try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key) }
                             } catch {
                                 guard Self.operationDomains[method] == "corpus", isPrivateBridgeOffline(error),
-                                    let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key) else { throw error }
+                                    let cached else { throw error }
                                 value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached)
                             }
                             if method == "getSettings", session.aiExecutionMode == .autonomous { value = try autonomous.portableSettings(value) }

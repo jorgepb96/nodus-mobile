@@ -46,6 +46,33 @@ struct DesktopBridgeQueryTests {
         #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: call.body) == body)
     }
 
+    @Test("a copied read can use a short network deadline without changing its authenticated payload")
+    func copiedReadDeadline() async throws {
+        let (bridge, session) = try fixture(); defer { session.invalidateAndCancel() }
+        let value = try await bridge.operation(vaultId: "Mac/vault", method: "getNotesTree", args: [.bool(true)], timeout: 4)
+        #expect(value == .object(["folders": .array([]), "notes": .array([])]))
+        let call = try #require(CorpusQueryProtocol.state.calls().first)
+        #expect(call.request.timeoutInterval == 4)
+        #expect(call.request.httpMethod == "POST")
+        #expect(call.request.value(forHTTPHeaderField: "Authorization") == "Bearer test-only-token")
+        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: call.body) == .object(["method": .string("getNotesTree"), "args": .array([.bool(true)])]))
+        #expect(CorpusQueryProtocol.state.calls().count == 1)
+    }
+
+    @Test("invalid read deadlines and another vault fail before transport")
+    func invalidReadDeadline() async throws {
+        let (bridge, session) = try fixture(); defer { session.invalidateAndCancel() }
+        for timeout in [Double.nan, .infinity, 0, -1, 121] {
+            await #expect(throws: DesktopBridgeError.malformedResponse) {
+                try await bridge.operation(vaultId: "Mac/vault", method: "getNotesTree", args: [], timeout: timeout)
+            }
+        }
+        await #expect(throws: DesktopBridgeError.permissionDenied) {
+            try await bridge.operation(vaultId: "another-vault", method: "getNotesTree", args: [], timeout: 4)
+        }
+        #expect(CorpusQueryProtocol.state.calls().isEmpty)
+    }
+
     @Test("other writes and encoded aliases fail before any transport")
     func forbiddenWrites() async throws {
         let (bridge, session) = try fixture(); defer { session.invalidateAndCancel() }
@@ -101,7 +128,9 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
             }
         }
         Self.state.record(request, body: bytes)
-        let result = request.url?.path.hasSuffix("/search/semantic") == true
+        let result = request.url?.path.hasSuffix("/operations") == true
+            ? #"{"result":{"folders":[],"notes":[]}}"#
+            : request.url?.path.hasSuffix("/search/semantic") == true
             ? #"{"indexed":false,"reason":"provider_mismatch","expected":{"provider":"fixture-provider","model":"fixture-model","dim":3},"results":[],"warning":"different provider"}"#
             : #"{"sections":[],"stats":{"chars":0,"budget":4096,"truncated":false,"matched":0}}"#
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)

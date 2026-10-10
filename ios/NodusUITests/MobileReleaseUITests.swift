@@ -1786,6 +1786,9 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testOfflineScriptorSavesStructuredEditAndReopens() async throws {
+        // XCTest's Objective-C interruption cannot unwind an async actor task.
+        // Explicit guards end failed setup without attempting nonexistent UI.
+        continueAfterFailure = true
         try await verifyOwningMacUnavailable()
         let app = try openExistingPrincipal(destination: "workspace")
         defer { app.terminate() }

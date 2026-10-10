@@ -364,11 +364,13 @@ public actor DesktopBridgeClient {
         return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
     }
 
-    public func operation(vaultId: String, method: String, args: [JSONValue]) async throws -> JSONValue {
+    public func operation(vaultId: String, method: String, args: [JSONValue], timeout: TimeInterval? = nil) async throws -> JSONValue {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
+        if let timeout, !timeout.isFinite || timeout <= 0 || timeout > 120 { throw DesktopBridgeError.malformedResponse }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed), let url = URL(string: pairing.origin + "/bridge/v2/vaults/\(vault)/operations") else { throw DesktopBridgeError.invalidOrigin }
         var request = URLRequest(url: url)
+        if let timeout { request.timeoutInterval = timeout }
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
