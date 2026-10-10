@@ -1465,8 +1465,9 @@ final class MobileReleaseUITests: XCTestCase {
     @MainActor
     func testLiveScriptorReadsDesktopEditAndReopens() throws {
         let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"], "A marker written through the real Desktop editor is required.")
-        let app = try pairLive(route: "workspace")
-        let web = app.webViews.firstMatch
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 45))
         let search = web.textFields["Buscar en notas e ideas…"]
         XCTAssertTrue(search.waitForExistence(timeout: 30))
@@ -1485,7 +1486,7 @@ final class MobileReleaseUITests: XCTestCase {
         app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK"); app.launch()
         let principal = app.buttons["space-default"]
         if principal.waitForExistence(timeout: 10) { principal.tap() }
-        let reopened = app.webViews.firstMatch
+        let reopened = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 45))
         let catalogue = reopened.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
         if catalogue.waitForExistence(timeout: 8) { catalogue.tap() }
@@ -1498,8 +1499,9 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testLiveScriptorEditsStructuredDocumentAndReopens() throws {
-        let app = try pairLive(route: "workspace")
-        let web = app.webViews.firstMatch
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 45))
         let search = web.textFields["Buscar en notas e ideas…"]
         XCTAssertTrue(search.waitForExistence(timeout: 30), app.debugDescription)
@@ -1523,7 +1525,7 @@ final class MobileReleaseUITests: XCTestCase {
         app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK"); app.launchEnvironment.removeValue(forKey: "NODUS_START_ROUTE"); app.launch()
         let principal = app.buttons["space-default"]
         if principal.waitForExistence(timeout: 10) { principal.tap() }
-        let reopened = app.webViews.firstMatch
+        let reopened = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 30))
         let catalogue = reopened.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
         if catalogue.waitForExistence(timeout: 10) { catalogue.tap() }
