@@ -175,30 +175,22 @@ final class MobileReleaseUITests: XCTestCase {
         }
         if phone {
             let stage = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Canvas de ideas.")).firstMatch
-            // Captions are intentionally culled when they collide after zooming.
-            // Measure the persistent node hit targets nearest the canvas centre.
-            let visible = labels.allElementsBoundByIndex.filter { $0.isHittable }.compactMap { caption -> XCUIElement? in
-                let parts = caption.label.components(separatedBy: " · ")
-                guard parts.count >= 3 else { return nil }
-                let node = web.buttons[parts.dropFirst(2).joined(separator: " · ")].firstMatch
-                return node.exists && node.isHittable ? node : nil
-            }.sorted {
-                hypot($0.frame.midX - stage.frame.midX, $0.frame.midY - stage.frame.midY)
-                    < hypot($1.frame.midX - stage.frame.midX, $1.frame.midY - stage.frame.midY)
-            }
-            XCTAssertGreaterThanOrEqual(visible.count, 2, "A native graph pinch needs two visible nodes to measure its scale.")
-            let a = visible[0], b = visible[1]
-            let distance = hypot(a.frame.midX - b.frame.midX, a.frame.midY - b.frame.midY)
-            XCTAssertGreaterThan(distance, 20)
+            // The accessible canvas announces its actual world-camera scale.
+            // Captions can disappear when they collide after zooming, and
+            // WebKit does not expose every empty node button to XCTest.
+            let before = try XCTUnwrap(stage.label.components(separatedBy: "Zoom: ").last.flatMap { Int($0.filter(\.isNumber)) })
+            let frame = stage.frame
             capture(app, "phone-graph-before-native-pinch")
             stage.pinch(withScale: 1.2, velocity: 1)
             capture(app, "phone-graph-after-native-pinch")
             let enlarged = NSPredicate { _, _ in
-                guard a.exists, b.exists else { return false }
-                return hypot(a.frame.midX - b.frame.midX, a.frame.midY - b.frame.midY) > distance * 1.05
+                let zoom = stage.label.components(separatedBy: "Zoom: ").last.flatMap { Int($0.filter(\.isNumber)) } ?? 0
+                return zoom > before
             }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enlarged, object: nil)], timeout: 10), .completed,
                            "Two native touches must enlarge the actual graph camera, not just the page text.")
+            XCTAssertEqual(stage.frame.width, frame.width, accuracy: 1)
+            XCTAssertEqual(stage.frame.height, frame.height, accuracy: 1)
             XCTAssertFalse(web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch.exists,
                            "Pinching the graph must not open an idea dossier.")
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 5), .completed)
@@ -305,7 +297,15 @@ final class MobileReleaseUITests: XCTestCase {
                 let frame = app.windows.firstMatch.frame
                 return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
             }
-            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+            let rotation = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15)
+            if rotation != .completed {
+                capture(app, "ipad-\(name)-rotation-failure")
+                let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.02)).press(forDuration: 0.1,
+                    thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)))
+                capture(springboard, "ipad-\(name)-rotation-control-center")
+            }
+            XCTAssertEqual(rotation, .completed)
             XCTAssertTrue(idea.isHittable, app.debugDescription)
             capture(app, "ipad-\(name)-before-detail-\(orientation == .portrait ? "portrait" : "landscape")")
             idea.tap()
@@ -313,6 +313,16 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertTrue(close.waitForExistence(timeout: 20), app.debugDescription)
             let works = web.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Obras que la desarrollan")).firstMatch
             XCTAssertTrue(works.waitForExistence(timeout: 30), "The saved dossier must load its evidence on iPad.")
+            if name == "graph" {
+                let status = web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "ideas del tema")).firstMatch
+                XCTAssertTrue(status.exists)
+                for control in [web.switches["Contexto"].firstMatch, web.buttons["Acercar"].firstMatch,
+                                web.buttons["Alejar"].firstMatch, web.buttons["Encuadrar"].firstMatch] {
+                    XCTAssertTrue(control.isHittable)
+                    XCTAssertFalse(status.frame.intersects(control.frame),
+                                   "Opening an iPad dossier must keep the graph status and its controls separate.")
+                }
+            }
             XCTAssertGreaterThan(close.frame.minX, web.frame.midX, "The iPad keeps the Desktop dossier at the right of the canvas.")
             XCTAssertFalse(web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch.exists)
             XCTAssertTrue(web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Canvas de ideas.")).firstMatch.exists,
