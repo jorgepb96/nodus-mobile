@@ -131,8 +131,10 @@ final class MobileReleaseUITests: XCTestCase {
             return
         }
         XCTAssertGreaterThanOrEqual(activity.frame.width, 44); XCTAssertGreaterThanOrEqual(activity.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(activity.frame.minX, web.frame.minX)
+        XCTAssertLessThanOrEqual(activity.frame.maxX, web.frame.maxX, "The activity action must fit inside the phone header.")
         activity.tap()
-        let activitySheet = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Actividad del Research chat,")).firstMatch
+        let activitySheet = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "Actividad del Research chat,", "diálogo")).firstMatch
         XCTAssertTrue(activitySheet.waitForExistence(timeout: 10), app.debugDescription)
         capture(app, "phone-chat-live-activity-sheet")
         XCTAssertTrue(activitySheet.buttons["Cerrar"].isHittable); activitySheet.buttons["Cerrar"].tap()
