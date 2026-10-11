@@ -160,7 +160,7 @@ final class MobileReleaseUITests: XCTestCase {
         try revealResearchControl(read, in: gallery, upwards: true); read.tap()
         let reader = app.scrollViews["report-native-reader"]
         XCTAssertTrue(reader.waitForExistence(timeout: 30), app.debugDescription)
-        let body = reader.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
+        let body = reader.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
         for _ in 0..<12 { if body.exists && body.isHittable { break }; reader.swipeUp() }
         XCTAssertTrue(body.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(body.isHittable)
@@ -2878,7 +2878,7 @@ final class MobileReleaseUITests: XCTestCase {
         let translations = app.buttons["report-tool-translations"]
         let loaded = NSPredicate(format: "exists == true AND enabled == true")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: translations)], timeout: 30), .completed)
-        let paragraph = reader.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
+        let paragraph = reader.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
         for _ in 0..<12 { if paragraph.exists && paragraph.isHittable { break }; reader.swipeUp() }
         XCTAssertTrue(paragraph.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(paragraph.isHittable, app.debugDescription)
