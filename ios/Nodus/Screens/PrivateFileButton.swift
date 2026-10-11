@@ -34,7 +34,8 @@ struct PrivateFileButton: View {
         .nodusSheet(item: $audio) { target in
             SavedAudioPlayer(target: target, accent: session.accent)
         }
-        .onDisappear { preview = nil; audio = nil; copy = nil }
+        // Presentation can temporarily hide this control. The retained lease
+        // must remain valid for Quick Look, playback and the explicit download.
     }
     @MainActor private func open() async {
         downloading = true; issue = nil; offline = false

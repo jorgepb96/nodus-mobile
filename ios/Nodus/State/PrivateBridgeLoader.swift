@@ -168,7 +168,7 @@ func loadPrivateBridgeTables(
     names: [String],
     fixture: [String: [Row]] = [:]
 ) async throws -> PrivateBridgeSnapshot {
-    if !fixture.isEmpty {
+    if session.connection.desktopPairingId == nil, !fixture.isEmpty {
         return PrivateBridgeSnapshot(
             tables: Dictionary(uniqueKeysWithValues: names.map { ($0, fixture[$0] ?? []) }),
             readFromEncryptedCache: false
