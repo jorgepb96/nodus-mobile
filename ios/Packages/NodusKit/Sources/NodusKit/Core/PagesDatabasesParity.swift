@@ -79,6 +79,8 @@ public enum PagesDatabasesParity {
         public var cells: [String: String]
         public let revision: Int
         public let updatedAt: String?
+        public var formulaErrors: [String: String] = [:]
+        public var formulaColors: [String: String] = [:]
     }
 
     public struct SavedView: Identifiable, Sendable, Hashable {
@@ -209,16 +211,19 @@ public enum PagesDatabasesParity {
     public static func rows(databaseId: String, in tables: [String: [Row]]) -> [DataRow] {
         let rawRows = (tables["db_rows"] ?? []).filter { $0.string("database_id") == databaseId }
         var cellsByRow: [String: [String: String]] = [:]
+        var errorsByRow: [String: [String: String]] = [:], colorsByRow: [String: [String: String]] = [:]
         for cell in tables["db_cells"] ?? [] where cell.string("database_id").map({ $0 == databaseId }) ?? true {
             guard let rowId = cell.string("row_id"), let columnId = cell.string("column_id") else { continue }
             if let value = rawCell(cell) { cellsByRow[rowId, default: [:]][columnId] = value }
+            if let error = cell.string("error"), !error.isEmpty { errorsByRow[rowId, default: [:]][columnId] = error }
+            if let color = cell.string("color"), !color.isEmpty { colorsByRow[rowId, default: [:]][columnId] = color }
         }
         return rawRows.compactMap { row in
             guard let id = row.string("id") else { return nil }
             return DataRow(
                 id: id, databaseId: databaseId, position: row.double("position") ?? 0,
                 cells: cellsByRow[id] ?? [:], revision: row.int("revision") ?? 1,
-                updatedAt: row.string("updated_at")
+                updatedAt: row.string("updated_at"), formulaErrors: errorsByRow[id] ?? [:], formulaColors: colorsByRow[id] ?? [:]
             )
         }.sorted { ($0.position, $0.id) < ($1.position, $1.id) }
     }
@@ -236,6 +241,7 @@ public enum PagesDatabasesParity {
     }
 
     public static func displayValue(column: Column, row: DataRow, allRows: [DataRow], columns: [Column]) -> String {
+        if let error = row.formulaErrors[column.id], !error.isEmpty { return error }
         if column.type == "formula", let formula = column.config["formula"]?.objectValue {
             // A canonical query may carry a computed value for expressions the
             // portable evaluator cannot execute. Never replace it with a guess.

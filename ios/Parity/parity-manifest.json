@@ -2295,6 +2295,12 @@
       "evidence": []
     },
     {
+      "id": "consultation.database.nativeComputedErrorAndCanonicalPropertyColour",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "sync.documents.parentsAppliedBeforeDependentContent",
       "category": "sync",
       "result": "pending",

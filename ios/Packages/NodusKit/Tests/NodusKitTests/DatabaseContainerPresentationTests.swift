@@ -23,4 +23,16 @@ struct DatabaseContainerPresentationTests {
         #expect(throws:DesktopBridgeError.self){try DatabaseContainerPresentation.rows(definition:definition,rows:[row("x"),row("x")],databaseId:"home")}
         #expect(throws:DesktopBridgeError.self){try DatabaseContainerPresentation.rows(definition:definition,rows:[],databaseId:"unlinked")}
     }
+    @Test("Canonical formula diagnostics and colours map to the real displayed property identities")
+    func derivedMetadata() throws {
+        var source = row("calculated").objectValue!
+        source["formulaErrors"] = .object(["year": .string("Referencia circular"), "title": .string("")])
+        source["formulaColors"] = .object(["year": .string("#115599")])
+        let result = try #require(DatabaseContainerPresentation.rows(definition: definition, rows: [.object(source)], databaseId: "home").first)
+        #expect(result.cells["home-year"] == nil)
+        #expect(result.formulaErrors == ["home-year": "Referencia circular"])
+        #expect(result.formulaColors == ["home-year": "#115599"])
+        source["formulaErrors"] = .object(["year": .int(37)])
+        #expect(throws: DesktopBridgeError.self) { try DatabaseContainerPresentation.rows(definition: definition, rows: [.object(source)], databaseId: "home") }
+    }
 }

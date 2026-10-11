@@ -607,7 +607,7 @@ struct DatabaseDetailWorkspace: View {
         let pending=Set((tables["db_cells"] ?? []).filter{$0.string("mobileSyncState") == "pending"}.compactMap{$0.string("row_id")})
         var result=canonicalRows.map{row in
             guard row.databaseId == database.id,pending.contains(row.id),let local=allRows.first(where:{$0.id == row.id}) else {return row}
-            var edited=row;edited.cells=local.cells;return edited
+            var edited=row;edited.cells=local.cells;edited.formulaErrors=local.formulaErrors;edited.formulaColors=local.formulaColors;return edited
         }
         let known=Set(result.map(\.id))
         result.append(contentsOf:allRows.filter{row in !known.contains(row.id) && tables["db_rows"]?.first(where:{$0.string("id") == row.id})?.string("mobileSyncState") != nil})
@@ -753,8 +753,13 @@ struct DatabaseDetailWorkspace: View {
                             ForEach(columns.filter { $0.type != "title" }.prefix(3)) { column in
                                 VStack(alignment: .leading, spacing: 3) {
                                     Label(column.name, systemImage: propertyIcon(column.type)).font(.caption).foregroundStyle(.secondary)
-                                    Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor")
-                                        .font(.subheadline).lineLimit(3).multilineTextAlignment(.leading)
+                                    if column.isReadOnly {
+                                        DatabaseComputedValue(value: PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id])
+                                            .font(.subheadline).lineLimit(3).multilineTextAlignment(.leading)
+                                    } else {
+                                        Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor")
+                                            .font(.subheadline).lineLimit(3).multilineTextAlignment(.leading)
+                                    }
                                 }
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).desktopContentRow(accent: session.accent)
@@ -794,7 +799,10 @@ struct DatabaseDetailWorkspace: View {
     }
 
     private func databaseTableCell(_ column: PagesDatabasesParity.Column, row: PagesDatabasesParity.DataRow) -> some View {
-        Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns))
+        Group {
+            if column.isReadOnly { DatabaseComputedValue(value: PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]) }
+            else { Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)) }
+        }
             .font(.caption).lineLimit(2)
             .frame(width: columnWidth(column), alignment: .leading)
             .frame(minHeight: 42)
@@ -1088,7 +1096,7 @@ private struct DatabaseRowInspector: View {
         ForEach(columns) { column in
             VStack(alignment: .leading, spacing: 5) {
                 Label(column.name, systemImage: propertyIcon(column.type)).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                if column.isReadOnly { Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "No computed value").font(.callout).frame(maxWidth: .infinity, alignment: .leading).padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7)) }
+                if column.isReadOnly { DatabaseComputedValue(value: PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7)) }
                 else if ["select", "status"].contains(column.type) {
                     Picker(column.name, selection: Binding(get: { drafts[column.id] ?? "" }, set: { drafts[column.id] = $0 })) { Text("No value").tag(""); ForEach(column.options) { Text($0.label).tag($0.id) } }.pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
                 } else if column.type == "checkbox" { Toggle("Checked", isOn: Binding(get: { ["1", "true"].contains((drafts[column.id] ?? "").lowercased()) }, set: { drafts[column.id] = $0 ? "1" : "0" })) }

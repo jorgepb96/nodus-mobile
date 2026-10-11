@@ -18,14 +18,23 @@ public enum DatabaseContainerPresentation {
                 let source=value["sourceId"]?.stringValue,let owner=mappings[source],value["databaseId"] == .string(owner),
                 value["id"] == .string("\(source):\(id)"),let cells=value["cells"]?.objectValue,
                 let revision=value["revision"]?.intValue,revision > 0 else {throw DesktopBridgeError.malformedResponse}
-            var physical:[String:String]=[:]
+            var physical:[String:String]=[:],errors:[String:String]=[:],colors:[String:String]=[:]
+            for field in ["formulaErrors", "formulaColors"] {
+                guard value[field] == nil || value[field] == .null || value[field]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
+            }
             for (canonical,column) in map {
                 guard let key=column.stringValue,!key.isEmpty else {throw DesktopBridgeError.malformedResponse}
                 if let content=cells[canonical],content != .null {
                     guard let text=content.stringValue else {throw DesktopBridgeError.malformedResponse};physical[key]=text
                 }
+                for field in ["formulaErrors", "formulaColors"] {
+                    if let metadata = value[field]?.objectValue?[canonical], metadata != .null {
+                        guard let text = metadata.stringValue else { throw DesktopBridgeError.malformedResponse }
+                        if !text.isEmpty { if field == "formulaErrors" { errors[key] = text } else { colors[key] = text } }
+                    }
+                }
             }
-            return PagesDatabasesParity.DataRow(id:id,databaseId:owner,position:Double(index),cells:physical,revision:revision,updatedAt:value["updatedAt"]?.stringValue)
+            return PagesDatabasesParity.DataRow(id:id,databaseId:owner,position:Double(index),cells:physical,revision:revision,updatedAt:value["updatedAt"]?.stringValue,formulaErrors:errors,formulaColors:colors)
         }
     }
 }

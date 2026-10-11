@@ -354,6 +354,7 @@ function operationMatrix(routes) {
       ['sync.downloads.sharedDependencyOverlapAndFinalUniqueStorageBudget', 'sync'],
       ['consultation.pages.linkedDatabaseAssociatedDocumentsAndChosenFiles', 'consultation'],
       ['sync.pages.linkedRowDependencyCyclesAndCompleteSourceEpoch', 'sync'],
+      ['consultation.database.nativeComputedErrorAndCanonicalPropertyColour', 'consultation'],
       ['sync.documents.parentsAppliedBeforeDependentContent', 'sync'],
       ['sync.jobs.keyedCancellationBeforeAcknowledgement', 'sync'],
       ['sync.jobs.cancelledReceiptPersistsAcrossMacRestart', 'sync'],

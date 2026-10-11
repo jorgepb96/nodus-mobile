@@ -3,6 +3,18 @@ import Testing
 
 @Suite("Pages and Databases parity")
 struct PagesDatabasesParityTests {
+    @Test("A canonical error remains queryable when its computed value is absent")
+    func canonicalComputedError() throws {
+        let tables: [String: [Row]] = [
+            "db_rows": [row(["id": "r", "database_id": "db"])],
+            "db_columns": [row(["id": "formula", "database_id": "db", "name": "Cálculo", "type": "formula", "config_json": #"{"formula":{"kind":"expression","source":"unavailable"}}"#])],
+            "db_cells": [row(["id": "cell", "row_id": "r", "column_id": "formula", "error": "Propiedad no disponible", "color": "#115599"])]]
+        let item = try #require(PagesDatabasesParity.rows(databaseId: "db", in: tables).first)
+        let column = try #require(PagesDatabasesParity.columns(databaseId: "db", in: tables).first)
+        #expect(item.formulaErrors["formula"] == "Propiedad no disponible")
+        #expect(item.formulaColors["formula"] == "#115599")
+        #expect(PagesDatabasesParity.displayValue(column: column, row: item, allRows: [item], columns: [column]) == "Propiedad no disponible")
+    }
     @Test("saved layouts select their actual properties instead of the first compatible field")
     func savedPresentationProperties() {
         let columns = PagesDatabasesParity.columns(databaseId: "db", in: ["db_columns": [
