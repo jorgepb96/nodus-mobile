@@ -145,59 +145,36 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testExistingMacPhoneReaderUsesOneSelectionRibbon() throws {
-        let env = ProcessInfo.processInfo.environment
-        let marker = try XCTUnwrap(env["NODUS_ACCEPTANCE_RESEARCH_MARKER"])
-        let snippet = try XCTUnwrap(env["NODUS_ACCEPTANCE_RESEARCH_BODY_SNIPPET"])
         let app = try openExistingPrincipal(destination: "deepResearch")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
-        let web = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
-        XCTAssertTrue(web.waitForExistence(timeout: 35), app.debugDescription)
-        let back = web.buttons["Volver a la galería"].firstMatch
-        if back.waitForExistence(timeout: 3) { back.tap() }
-        let search = web.textFields.firstMatch
-        try focusResearchSearch(search, in: web, app: app)
-        if let value = search.value as? String, value.contains("NodusQA-") {
+        let gallery = app.descendants(matching: .any)["shared-desktop-deepResearch"].webViews.firstMatch
+        let search = researchSearch(in: gallery)
+        XCTAssertTrue(search.waitForExistence(timeout: 35), app.debugDescription)
+        try focusResearchSearch(search, in: gallery, app: app)
+        if let value = search.value as? String, value != "Buscar entre tus informes…", !value.isEmpty {
             search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
         }
-        search.typeText(marker); try dismissResearchKeyboard(app)
-        let read = web.buttons["Leer"].firstMatch
+        search.typeText("La mirada extranjera"); try dismissResearchKeyboard(app)
+        let read = gallery.buttons["Leer"].firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 45), app.debugDescription)
-        try revealResearchControl(read, in: web, upwards: true); read.tap()
-        let body = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", snippet)).firstMatch
-        XCTAssertTrue(body.waitForExistence(timeout: 25), app.debugDescription)
-        try revealResearchControl(body, in: web, upwards: true)
-        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
-        XCTAssertFalse(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "does not grant access")).firstMatch.exists)
-        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
-            XCUIDevice.shared.orientation = orientation
-            let turned = NSPredicate { _, _ in
-                let frame = app.windows.firstMatch.frame
-                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
-            }
-            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
-            try revealResearchControl(body, in: web, upwards: true)
-            XCTAssertGreaterThanOrEqual(body.frame.minX, web.frame.minX - 1)
-            XCTAssertLessThanOrEqual(body.frame.maxX, web.frame.maxX + 1, "Reading text must fit the iPhone's width.")
-            capture(app, orientation == .portrait ? "phone-reader-portrait" : "phone-reader-landscape")
-        }
-        XCUIDevice.shared.orientation = .portrait
-        try revealResearchControl(body, in: web, upwards: true)
+        try revealResearchControl(read, in: gallery, upwards: true); read.tap()
+        let reader = app.scrollViews["report-native-reader"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 30), app.debugDescription)
+        let body = reader.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
+        XCTAssertTrue(body.waitForExistence(timeout: 30), app.debugDescription)
+        for _ in 0..<12 { if body.isHittable { break }; reader.swipeUp() }
+        XCTAssertTrue(body.isHittable)
         body.press(forDuration: 1.2)
-        let copy = web.buttons["Copiar"].firstMatch
-        XCTAssertTrue(copy.waitForExistence(timeout: 10), "Selecting a word must present the Nodus ribbon.\n\(app.debugDescription)")
-        for label in ["Subrayar 1", "Subrayar 2", "Subrayar 3", "Subrayar 4", "Subrayar 5", "Subrayar 6", "Copiar", "Añadir comentario", "Citar en Nodi"] {
-            let action = web.buttons[label].firstMatch
-            XCTAssertTrue(action.exists, label)
-            XCTAssertTrue(action.isHittable, "The unified ribbon must fit the phone: " + label)
-            XCTAssertGreaterThanOrEqual(action.frame.minX, web.frame.minX - 1)
-            XCTAssertLessThanOrEqual(action.frame.maxX, web.frame.maxX + 1)
+        for identifier in ["nodus-selection-copy", "nodus-selection-highlight", "nodus-selection-comment", "nodus-selection-bookmark", "nodus-selection-ask"] {
+            let action = app.descendants(matching: .any)[identifier].firstMatch
+            XCTAssertTrue(action.waitForExistence(timeout: 10), "Selecting text must present the single Nodus ribbon: " + identifier + "\n" + app.debugDescription)
+            XCTAssertTrue(action.isHittable)
+            XCTAssertGreaterThanOrEqual(action.frame.minX, reader.frame.minX - 1)
+            XCTAssertLessThanOrEqual(action.frame.maxX, reader.frame.maxX + 1)
         }
-        XCTAssertFalse(app.menuItems["Copiar"].exists)
-        XCTAssertFalse(app.menuItems["Copy"].exists)
-        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "Copiar")).count,
-                       web.buttons.matching(NSPredicate(format: "label == %@", "Copiar")).count,
-                       "There must not be a second native Copy action outside the Nodus ribbon.")
-        capture(app, "phone-reader-unified-selection")
+        let copies = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label == %@", "Copiar", "Copy"))
+        XCTAssertEqual(copies.count, 1, "A second system Copy action must not accompany the Nodus ribbon.")
+        capture(app, "phone-native-reader-unified-selection-ribbon")
     }
     @MainActor
     func testExistingMacPhoneGraphDetailReturnsToTheSameCanvas() throws {
@@ -2783,6 +2760,10 @@ final class MobileReleaseUITests: XCTestCase {
         let hidden = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.keyboards.firstMatch)
         XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 15), .completed)
     }
+    @MainActor private func researchSearch(in web: XCUIElement) -> XCUIElement {
+        web.descendants(matching: .any).matching(NSPredicate(format: "elementType == %d OR elementType == %d",
+            Int(XCUIElement.ElementType.searchField.rawValue), Int(XCUIElement.ElementType.textField.rawValue))).firstMatch
+    }
     @MainActor private func focusResearchSearch(_ field: XCUIElement, in web: XCUIElement, app: XCUIApplication) throws {
         try revealResearchControl(field, in: web, upwards: false)
         field.tap()
@@ -2800,7 +2781,7 @@ final class MobileReleaseUITests: XCTestCase {
         let web = app.webViews.firstMatch
         let existingReader = web.buttons["Volver a la galería"].firstMatch
         if existingReader.waitForExistence(timeout: 5) { existingReader.tap() }
-        let search = web.textFields.firstMatch
+        let search = researchSearch(in: web)
         try focusResearchSearch(search, in: web, app: app)
         if let previous = search.value as? String, previous.contains("NodusQA-") {
             search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
@@ -2836,7 +2817,7 @@ final class MobileReleaseUITests: XCTestCase {
         let restoredWeb = app.webViews.firstMatch
         let back = restoredWeb.buttons["Volver a la galería"].firstMatch
         if back.waitForExistence(timeout: 8) { back.tap() }
-        let restoredSearch = restoredWeb.textFields.firstMatch
+        let restoredSearch = researchSearch(in: restoredWeb)
         try focusResearchSearch(restoredSearch, in: restoredWeb, app: app)
         if let previous = restoredSearch.value as? String, previous.contains("NodusQA-") {
             restoredSearch.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
@@ -2862,6 +2843,7 @@ final class MobileReleaseUITests: XCTestCase {
     @MainActor
     func testLivePairingAndSavedReportsFromMac() throws {
         let app = try pairLive(route: "settings")
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.waitForExistence(timeout: 20), app.debugDescription)
@@ -2877,32 +2859,43 @@ final class MobileReleaseUITests: XCTestCase {
         research.tap()
         let reports = app.descendants(matching: .any)["shared-desktop-deepResearch"]
         XCTAssertTrue(reports.waitForExistence(timeout: 60), app.debugDescription)
-        let web = app.webViews.firstMatch
-        XCTAssertTrue(web.buttons.firstMatch.waitForExistence(timeout: 30))
-        let search = web.textFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 20)); search.tap()
-        capture(app, "live-deep-research-search-focus")
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        search.typeText("La mirada extranjera\n")
-        let report = web.buttons.containing(NSPredicate(format: "label CONTAINS %@", "La mirada extranjera sobre la España franquista")).firstMatch
+        let web = reports.webViews.firstMatch
+        let search = researchSearch(in: web)
+        let searchable = search.waitForExistence(timeout: 30)
+        capture(app, "live-deep-research-mounted")
+        XCTAssertTrue(searchable, app.debugDescription)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists, app.debugDescription)
+        try focusResearchSearch(search, in: web, app: app)
+        search.typeText("La mirada extranjera")
+        try dismissResearchKeyboard(app)
+        let report = web.buttons["Leer"].firstMatch
         XCTAssertTrue(report.waitForExistence(timeout: 90), app.debugDescription)
-        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
-        XCTAssertFalse(web.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "invalid_token")).firstMatch.exists)
-        for _ in 0..<6 { if report.isHittable { break }; web.swipeUp() }
-        XCTAssertTrue(report.isHittable, app.debugDescription)
+        try revealResearchControl(report, in: web, upwards: true)
         capture(app, "live-deep-research-catalogue")
         report.tap()
-        XCTAssertTrue(web.buttons["Aumentar texto"].waitForExistence(timeout: 25), app.debugDescription)
-        XCTAssertTrue(web.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "España")).firstMatch.exists)
-        capture(app, "live-deep-research-reader")
-        let paragraph = web.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
-        XCTAssertTrue(paragraph.waitForExistence(timeout: 25), app.debugDescription)
-        for _ in 0..<8 { if paragraph.isHittable { break }; web.swipeUp() }
+        let reader = app.scrollViews["report-native-reader"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 30), app.debugDescription)
+        let translations = app.buttons["report-tool-translations"]
+        let loaded = NSPredicate(format: "exists == true AND enabled == true")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: translations)], timeout: 30), .completed)
+        let paragraph = reader.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
+        XCTAssertTrue(paragraph.waitForExistence(timeout: 30), app.debugDescription)
+        for _ in 0..<12 { if paragraph.isHittable { break }; reader.swipeUp() }
         XCTAssertTrue(paragraph.isHittable, app.debugDescription)
-        capture(app, "live-deep-research-body-visible")
-        let readerError = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] %@", "operation_forbidden", "operation_unavailable", "Error:")).firstMatch
-        XCTAssertFalse(readerError.waitForExistence(timeout: 3), readerError.label)
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let turned = NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+            for _ in 0..<12 { if paragraph.isHittable { break }; reader.swipeUp() }
+            XCTAssertGreaterThanOrEqual(paragraph.frame.minX, reader.frame.minX - 1)
+            XCTAssertLessThanOrEqual(paragraph.frame.maxX, reader.frame.maxX + 1)
+            capture(app, orientation == .portrait ? "live-deep-research-native-reader-portrait" : "live-deep-research-native-reader-landscape")
+        }
         XCTAssertFalse(app.staticTexts["shared-surface-error"].exists, app.debugDescription)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "does not grant access")).firstMatch.exists)
     }
     @MainActor private func launch(_ route: String, style: String? = nil, textSize: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()

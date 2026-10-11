@@ -1322,6 +1322,7 @@ struct PublishedReportReader: View {
             .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
+        .accessibilityIdentifier("report-native-reader")
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
         .nodusPageFunctions(
             accent: session.accent,

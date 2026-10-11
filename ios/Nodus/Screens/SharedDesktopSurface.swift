@@ -71,6 +71,8 @@ struct SharedDesktopSurface: View {
     @State private var sourceDocument: SourceDocumentTarget?
     @State private var nativeReport: SurfaceDestination?
     @State private var issue: String?
+    @State private var surfaceMounted = false
+    @State private var reloadRevision = 0
     @State private var exportedURL: URL?
     @State private var exportedLease: PrivateBridgeFileLease?
     @State private var embeddedPreview: URL?
@@ -85,7 +87,7 @@ struct SharedDesktopSurface: View {
     @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, pageDownloadedOnly:pageDownloadedOnly, onError: { issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, pageDownloadedOnly:pageDownloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -133,7 +135,13 @@ struct SharedDesktopSurface: View {
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
         }
-        .id("\(session.connection.id):\(surface.rawValue):\(session.aiExecutionMode.rawValue)")
+        .id("\(session.connection.id):\(surface.rawValue):\(session.aiExecutionMode.rawValue):\(reloadRevision)")
+        .overlay {
+            if !surfaceMounted, issue == nil {
+                ProgressView("Cargando Nodus…").tint(session.accent)
+                    .accessibilityIdentifier("shared-surface-loading")
+            }
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
             if let issue {
@@ -141,6 +149,8 @@ struct SharedDesktopSurface: View {
                     Text(issue).font(.caption).foregroundStyle(Color.nodusDanger)
                         .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityIdentifier("shared-surface-error")
+                    Button("Reintentar") { self.issue = nil; surfaceMounted = false; reloadRevision += 1 }
+                        .frame(minHeight: 44).accessibilityIdentifier("shared-surface-retry")
                     Button { self.issue = nil } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
                         .accessibilityLabel("Cerrar aviso")
                 }.padding(.leading, 12).padding(.vertical, 4).background(.thinMaterial)
@@ -322,6 +332,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let initialArgumentSeed: String?
     let initialDatabasePresentation: JSONValue?
     let pageDownloadedOnly: Bool
+    let onReady: () -> Void
     let onError: (String) -> Void
     let onExport: (PrivateBridgeFileLease) -> Void
     let onAutonomousStatus: (String?) -> Void
@@ -332,7 +343,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let onImmersionSource: (String, JSONValue) -> Void
     let onNavigate: (String, String, String?, String?) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, pageDownloadedOnly:pageDownloadedOnly, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onImmersionSource: onImmersionSource, onNavigate: onNavigate) }
+    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, pageDownloadedOnly:pageDownloadedOnly, onReady: onReady, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onImmersionSource: onImmersionSource, onNavigate: onNavigate) }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-image")
@@ -401,8 +412,11 @@ private struct DesktopWebView: UIViewRepresentable {
                     })();
                     """
                     config.userContentController.addUserScript(WKUserScript(source: storage, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-                    let document = try await LocalSurfaceHost.shared.documentURL(); view.load(URLRequest(url: document))
+                    let document = try await LocalSurfaceHost.shared.documentURL()
+                    try Task.checkCancellation()
+                    view.load(URLRequest(url: document))
                 }
+                catch is CancellationError { }
                 catch { context.coordinator.onError(error.localizedDescription) }
             })
         } else {
@@ -449,13 +463,28 @@ private struct DesktopWebView: UIViewRepresentable {
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             setRouteActive(routeActive)
-            surfaceReady = true; sendPublicationUpdates(); sendCorpusUpdate(); sendDatabaseReadingUpdate()
+        }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+            navigationFailed(error)
+        }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+            navigationFailed(error)
+        }
+        private func navigationFailed(_ error: any Error) {
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
+            surfaceReady = false
+            onError("No se pudo cargar esta vista: \(error.localizedDescription)")
+        }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            surfaceReady = false
+            onError("La vista se ha interrumpido. Reintenta para recuperar el contenido guardado.")
         }
         let session: SpaceSession
         let pageDownloadedOnly:Bool
         let autonomous: AutonomousSurfaceProvider
         let onNavigate: (String, String, String?, String?) -> Void
-        let onError: (String) -> Void
+        let onReady: () -> Void
+    let onError: (String) -> Void
             let onExport: (PrivateBridgeFileLease) -> Void
         let onAutonomousStatus: (String?) -> Void
         let onOfflineCopy: (Bool) -> Void
@@ -495,12 +524,19 @@ private struct DesktopWebView: UIViewRepresentable {
             webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:publication:changed',args:[\(payload)]});", completionHandler: nil)
             if session.companionPublicationUpdates.contains(where: { $0.objectValue?["id"]?.stringValue == autonomousGenerationId && $0.objectValue?["state"] == .string("available") }) { onAutonomousStatus(nil) }
         }
-        init(session: SpaceSession, ai: AISettings, pageDownloadedOnly:Bool, onError: @escaping (String) -> Void, onExport: @escaping (PrivateBridgeFileLease) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; self.pageDownloadedOnly=pageDownloadedOnly; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
+        init(session: SpaceSession, ai: AISettings, pageDownloadedOnly:Bool, onReady: @escaping () -> Void, onError: @escaping (String) -> Void, onExport: @escaping (PrivateBridgeFileLease) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; self.pageDownloadedOnly=pageDownloadedOnly; autonomous = AutonomousSurfaceProvider(settings: ai); self.onReady = onReady; self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
                 let id = body["id"] as? String, let method = body["method"] as? String,
                 let input = body["args"] as? [Any], JSONSerialization.isValidJSONObject(input) else { return }
                         if method == "surfaceError", let error = input.first as? String { onError(error); return }
+            if method == "surfaceMounted" {
+                surfaceReady = true
+                onReady()
+                sendPublicationUpdates(); sendCorpusUpdate(); sendDatabaseReadingUpdate()
+                try? reply(id, value: .null, error: nil)
+                return
+            }
             tasks.append(Task {
                 do {
                     var args = try JSONDecoder.nodus.decode([JSONValue].self, from: JSONSerialization.data(withJSONObject: input))
