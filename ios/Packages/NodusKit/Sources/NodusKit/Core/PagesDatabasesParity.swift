@@ -93,6 +93,27 @@ public enum PagesDatabasesParity {
 
     public enum SortDirection: String, Sendable, Hashable, Codable { case ascending, descending }
 
+    public static func visibleColumns(_ columns: [Column], config: [String: JSONValue]) -> [Column] {
+        let properties = (config["properties"]?.arrayValue ?? []).compactMap(\.objectValue)
+        var known: Set<String> = [], ordered: [(Int, Int, Column)] = []
+        for (index, property) in properties.enumerated() {
+            guard let id = property["columnId"]?.stringValue, known.insert(id).inserted,
+                  let column = columns.first(where: { $0.id == id }) else { continue }
+            if property["visible"] != .bool(false) { ordered.append((property["order"]?.intValue ?? index, index, column)) }
+        }
+        return ordered.sorted { ($0.0, $0.1) < ($1.0, $1.1) }.map { $0.2 } + columns.filter { !known.contains($0.id) }
+    }
+    public static func cardColumns(_ columns: [Column], config: [String: JSONValue]) -> [Column] {
+        if let ids = config["cardPropertyIds"]?.arrayValue, !ids.isEmpty {
+            return ids.compactMap(\.stringValue).compactMap { id in columns.first { $0.id == id } }
+        }
+        return visibleColumns(columns, config: config).filter { $0.type != "title" }
+    }
+    public static func layoutColumn(_ columns: [Column], config: [String: JSONValue], field: String, types: Set<String>, fallback: Bool = true) -> Column? {
+        if let id = config[field]?.stringValue, let column = columns.first(where: { $0.id == id && types.contains($0.type) }) { return column }
+        return fallback ? columns.first { types.contains($0.type) } : nil
+    }
+
     public static func pages(in tables: [String: [Row]], includeTrashed: Bool = false) -> [Page] {
         let favorites = Set((tables["page_favorites"] ?? []).compactMap { $0.string("page_id") })
         let raw = (tables["pages"] ?? []).filter { includeTrashed || ($0.string("state") ?? "active") == "active" }
@@ -216,6 +237,9 @@ public enum PagesDatabasesParity {
 
     public static func displayValue(column: Column, row: DataRow, allRows: [DataRow], columns: [Column]) -> String {
         if column.type == "formula", let formula = column.config["formula"]?.objectValue {
+            // A canonical query may carry a computed value for expressions the
+            // portable evaluator cannot execute. Never replace it with a guess.
+            if let canonical = row.cells[column.id] { return canonical }
             return formulaValue(spec: formula, row: row, allRows: allRows, columns: columns) ?? ""
         }
         let raw = row.cells[column.id] ?? ""

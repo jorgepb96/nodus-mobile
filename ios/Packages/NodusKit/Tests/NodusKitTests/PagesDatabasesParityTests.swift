@@ -3,6 +3,23 @@ import Testing
 
 @Suite("Pages and Databases parity")
 struct PagesDatabasesParityTests {
+    @Test("saved layouts select their actual properties instead of the first compatible field")
+    func savedPresentationProperties() {
+        let columns = PagesDatabasesParity.columns(databaseId: "db", in: ["db_columns": [
+            row(["id": "title", "database_id": "db", "name": "Título", "type": "title", "position": 0]),
+            row(["id": "hidden", "database_id": "db", "name": "Privada", "type": "text", "position": 1]),
+            row(["id": "earlier-date", "database_id": "db", "name": "Creación", "type": "date", "position": 2]),
+            row(["id": "chosen-date", "database_id": "db", "name": "Entrega", "type": "date", "position": 3]),
+            row(["id": "new-property", "database_id": "db", "name": "Nueva", "type": "text", "position": 4])]])
+        let config: [String: JSONValue] = ["properties": .array([
+            .object(["columnId": .string("hidden"), "visible": .bool(false), "order": .int(0)]),
+            .object(["columnId": .string("chosen-date"), "visible": .bool(true), "order": .int(1)]),
+            .object(["columnId": .string("title"), "visible": .bool(true), "order": .int(2)])]),
+            "cardPropertyIds": .array([.string("chosen-date"), .string("new-property")]), "dateColumnId": .string("chosen-date")]
+        #expect(PagesDatabasesParity.visibleColumns(columns, config: config).map(\.id) == ["chosen-date", "title", "earlier-date", "new-property"])
+        #expect(PagesDatabasesParity.cardColumns(columns, config: config).map(\.id) == ["chosen-date", "new-property"])
+        #expect(PagesDatabasesParity.layoutColumn(columns, config: config, field: "dateColumnId", types: ["date"])?.id == "chosen-date")
+    }
     @Test("page hierarchy is stable and cyclic ancestry remains visible")
     func pageHierarchy() {
         let tables: [String: [Row]] = [

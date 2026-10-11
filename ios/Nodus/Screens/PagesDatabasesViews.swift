@@ -569,6 +569,7 @@ struct DatabaseDetailWorkspace: View {
     var downloadedOnly=false
 
     @State private var query = ""
+    @State private var selectedBoardGroup = ""
     @State private var activeViewId: String?
     @State private var adHocLayout = "table"
     @State private var selectedRowId: String?
@@ -605,6 +606,9 @@ struct DatabaseDetailWorkspace: View {
     private var views: [PagesDatabasesParity.SavedView] { PagesDatabasesParity.views(databaseId: database.id, in: tables) }
     private var activeView: PagesDatabasesParity.SavedView? { views.first { $0.id == activeViewId } }
     private var layout: String { activeView?.layout ?? adHocLayout }
+    private var viewConfig: [String: JSONValue] { activeView?.config ?? [:] }
+    private var visibleColumns: [PagesDatabasesParity.Column] { PagesDatabasesParity.visibleColumns(columns, config: viewConfig) }
+    private var cardColumns: [PagesDatabasesParity.Column] { PagesDatabasesParity.cardColumns(columns, config: viewConfig) }
     private var selectedRow: PagesDatabasesParity.DataRow? { viewRows.first { $0.id == selectedRowId && $0.databaseId == database.id } }
     private var csv: String {
         ([columns.map(\.name)] + rows.map { row in columns.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } })
@@ -735,7 +739,7 @@ struct DatabaseDetailWorkspace: View {
 
     private var databaseTableHeader: some View {
         HStack(spacing: 0) {
-            ForEach(columns) { column in
+            ForEach(visibleColumns) { column in
                 HStack {
                     Image(systemName: propertyIcon(column.type))
                     Text(column.name).lineLimit(1)
@@ -753,7 +757,7 @@ struct DatabaseDetailWorkspace: View {
     private func databaseTableRow(_ row: PagesDatabasesParity.DataRow) -> some View {
         Button { select(row) } label: {
             HStack(spacing: 0) {
-                ForEach(columns) { column in databaseTableCell(column, row: row) }
+                ForEach(visibleColumns) { column in databaseTableCell(column, row: row) }
             }
             .background(selectedRowId == row.id ? session.accent.opacity(0.11) : Color(uiColor: .systemBackground).opacity(0.35))
             .overlay(alignment: .bottom) { Divider() }
@@ -772,17 +776,57 @@ struct DatabaseDetailWorkspace: View {
     }
 
     private var gallery: some View {
-        ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) { ForEach(rows) { row in Button { select(row) } label: { VStack(alignment: .leading, spacing: 8) { RoundedRectangle(cornerRadius: 9).fill(session.accent.opacity(0.12)).frame(height: 92).overlay { Image(systemName: "doc.richtext").font(.largeTitle).foregroundStyle(session.accent) }; Text(rowTitle(row)).font(.headline).lineLimit(2); ForEach(columns.dropFirst().prefix(3)) { column in HStack { Text(column.name); Spacer(); Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)).lineLimit(1) }.font(.caption2).foregroundStyle(.secondary) } }.desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary) }.buttonStyle(NodusCardButtonStyle()) } }.padding(10) }
+        ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) { ForEach(rows) { row in Button { select(row) } label: { VStack(alignment: .leading, spacing: 8) { RoundedRectangle(cornerRadius: 9).fill(session.accent.opacity(0.12)).frame(height: 92).overlay { Image(systemName: "doc.richtext").font(.largeTitle).foregroundStyle(session.accent) }; Text(rowTitle(row)).font(.headline).lineLimit(2); ForEach(cardColumns) { column in HStack { Text(column.name); Spacer(); Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)).lineLimit(1) }.font(.caption2).foregroundStyle(.secondary) } }.desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary) }.buttonStyle(NodusCardButtonStyle()) } }.padding(10) }
     }
 
     private var board: some View {
-        let groupColumn = columns.first { ["status", "select"].contains($0.type) }
+        let configured = viewConfig["groupBy"]?.objectValue?["columnId"]?.stringValue
+        let groupColumn = configured.flatMap { id in columns.first { $0.id == id } } ?? columns.first { ["status", "select"].contains($0.type) }
         let groups = Dictionary(grouping: rows) { row in groupColumn.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } ?? "Uncategorized" }
-        return ScrollView(.horizontal) { HStack(alignment: .top, spacing: 10) { ForEach(groups.keys.sorted(), id: \.self) { group in VStack(alignment: .leading, spacing: 8) { HStack { Text(group.isEmpty ? "No value" : group).font(.caption.weight(.semibold)); Spacer(); CountBadge(count: groups[group]?.count ?? 0, accent: session.accent) }; ForEach(groups[group] ?? []) { row in Button { select(row) } label: { VStack(alignment: .leading, spacing: 5) { Text(rowTitle(row)).font(.caption.weight(.semibold)); ForEach(columns.filter { $0.id != groupColumn?.id }.dropFirst().prefix(2)) { column in Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)).font(.caption2).foregroundStyle(.secondary).lineLimit(1) } }.desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary) }.buttonStyle(NodusCardButtonStyle()) } }.frame(width: 245).padding(9).background(Color(uiColor: .secondarySystemBackground).opacity(0.45), in: RoundedRectangle(cornerRadius: 12)) } }.padding(10) }
+        let descending = viewConfig["groupBy"]?.objectValue?["dir"] == .string("desc")
+        let keys = groups.keys.sorted { descending ? $0 > $1 : $0 < $1 }
+        let selected = keys.contains(selectedBoardGroup) ? selectedBoardGroup : keys.first ?? ""
+        return Group {
+            if compactPresentation {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker(groupColumn?.name ?? "Grupo", selection: Binding(get: { selected }, set: { selectedBoardGroup = $0 })) {
+                            ForEach(keys, id: \.self) { key in Text("\(key.isEmpty ? "Sin valor" : key) · \(groups[key]?.count ?? 0)").tag(key) }
+                        }.pickerStyle(.menu).frame(minHeight: 44)
+                        LazyVStack(spacing: 10) { ForEach(groups[selected] ?? []) { row in boardCard(row, groupColumn: groupColumn) } }
+                        if keys.isEmpty { ContentUnavailableView("Sin filas", systemImage: "rectangle.split.3x1") }
+                    }.padding(12)
+                }
+            } else {
+                ScrollView([.horizontal, .vertical]) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(keys, id: \.self) { key in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack { Text(key.isEmpty ? "Sin valor" : key).font(.caption.weight(.semibold)); Spacer(); CountBadge(count: groups[key]?.count ?? 0, accent: session.accent) }
+                                ForEach(groups[key] ?? []) { row in boardCard(row, groupColumn: groupColumn) }
+                            }.frame(width: 260).padding(9).background(Color(uiColor: .secondarySystemBackground).opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }.padding(10)
+                }
+            }
+        }
+    }
+    private func boardCard(_ row: PagesDatabasesParity.DataRow, groupColumn: PagesDatabasesParity.Column?) -> some View {
+        Button { select(row) } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(rowTitle(row)).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                ForEach(cardColumns.filter { $0.id != groupColumn?.id }) { column in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(column.name).font(.caption2).foregroundStyle(.secondary)
+                        Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary)
+        }.buttonStyle(NodusCardButtonStyle()).frame(minHeight: 44)
     }
 
     private var calendar: some View {
-        let dateColumn = columns.first { $0.type == "date" }
+        let dateColumn = PagesDatabasesParity.layoutColumn(columns, config: viewConfig, field: "dateColumnId", types: ["date"])
         return ScrollView {
             VStack(alignment: .leading, spacing: 9) {
                 ForEach(rows.sorted { value(dateColumn, $0) < value(dateColumn, $1) }) { row in
@@ -803,7 +847,7 @@ struct DatabaseDetailWorkspace: View {
     }
 
     private var timeline: some View {
-        let dateColumn = columns.first { $0.type == "date" }
+        let dateColumn = PagesDatabasesParity.layoutColumn(columns, config: viewConfig, field: "startColumnId", types: ["date"])
         return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(rows.sorted { value(dateColumn, $0) < value(dateColumn, $1) }.enumerated()), id: \.element.id) { index, row in
@@ -843,7 +887,13 @@ struct DatabaseDetailWorkspace: View {
     }
     private func rowTitle(_ row: PagesDatabasesParity.DataRow) -> String { columns.first(where: { $0.type == "title" }).map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) }?.nonEmpty ?? "Untitled row" }
     private func value(_ column: PagesDatabasesParity.Column?, _ row: PagesDatabasesParity.DataRow) -> String { column.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } ?? "" }
-    private func columnWidth(_ column: PagesDatabasesParity.Column) -> CGFloat { column.type == "title" ? 250 : column.type == "formula" ? 125 : 160 }
+    private func columnWidth(_ column: PagesDatabasesParity.Column) -> CGFloat {
+        if let property = viewConfig["properties"]?.arrayValue?.first(where: { $0.objectValue?["columnId"] == .string(column.id) }),
+           let width = property.objectValue?["width"]?.doubleValue, width.isFinite, width > 0 {
+            return CGFloat(min(2_000, max(80, width)))
+        }
+        return column.type == "title" ? 250 : column.type == "formula" ? 125 : 160
+    }
 
     private func addRow() async {
         guard let outbox else { return }; let id = "drow_\(UUID().uuidString)", now = ISO8601DateFormatter.nodusFractional.string(from: Date())
