@@ -13,10 +13,41 @@ enum CompanionDatabasePresentationSource {
         return data
     }
     @MainActor static func download(client: DesktopBridgeClient, vault: String, database: String, maximumBytes: Int) async throws -> PrivateBridgeCache.ReadPackRecord {
-        let source = try await capture(vault: vault, database: database, maximumBytes: maximumBytes) { method, args in
+        let source = try await captureGraph(vault: vault, database: database, maximumBytes: maximumBytes) { method, args in
             try await client.operation(vaultId: vault, method: method, args: args)
         }
         return .init(domain: .corpus, recordId: key(database), data: try JSONEncoder.nodus.encode(source))
+    }
+    @MainActor static func captureGraph(vault: String, database: String, maximumBytes: Int,
+        fetch: (String, [JSONValue]) async throws -> JSONValue) async throws -> JSONValue {
+        var sources: [String: JSONValue] = [:], pending = [database], visited = Set<String>(), bytes = 0
+        while !pending.isEmpty {
+            try Task.checkCancellation()
+            let id = pending.removeFirst(); guard visited.insert(id).inserted else { continue }
+            let source = try await capture(vault: vault, database: id, maximumBytes: maximumBytes - bytes, fetch: fetch)
+            bytes += try JSONEncoder.nodus.encode(source).count
+            guard bytes <= maximumBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+            sources[id] = source
+            for dependency in source.objectValue?["derivedDatabaseIds"]?.arrayValue ?? [] {
+                guard let id = dependency.stringValue, !id.isEmpty else { throw DesktopBridgeError.malformedResponse }
+                if !visited.contains(id) { pending.append(id) }
+            }
+        }
+        // Recheck the entire dependency graph before publishing a selected copy.
+        for (id, source) in sources {
+            let response = try await fetch("getMobileDatabasePresentationRead", [.object(["action": .string("metadata"), "input": .object(["databaseId": .string(id)])])])
+            let metadata = try value(response, vault: vault, database: id, action: "metadata")
+            for field in ["database", "columns", "views", "revision", "columnRevisions", "derivedDatabaseIds"] {
+                guard metadata.objectValue?[field] == source.objectValue?[field] else {
+                    throw APIError(status: 409, code: "database_dependency_changed", message: "Una dependencia de cálculo cambió durante la descarga. Vuelve a intentarlo.")
+                }
+            }
+        }
+        guard var root = sources.removeValue(forKey: database)?.objectValue else { throw DesktopBridgeError.malformedResponse }
+        root["relatedSources"] = .object(sources)
+        let result = JSONValue.object(root)
+        guard try JSONEncoder.nodus.encode(result).count <= maximumBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+        return result
     }
     @MainActor static func capture(vault: String, database: String, maximumBytes: Int, fetch: (String, [JSONValue]) async throws -> JSONValue) async throws -> JSONValue {
         func read(_ action: String, _ input: [String: JSONValue]) async throws -> JSONValue {
@@ -27,7 +58,8 @@ enum CompanionDatabasePresentationSource {
         let metadata = try await read("metadata", ["databaseId": .string(database)])
         guard var source = metadata.objectValue, source["database"]?.objectValue?["id"] == .string(database),
               source["columns"]?.arrayValue != nil, source["views"]?.arrayValue != nil, let revision = source["revision"]?.intValue else { throw DesktopBridgeError.malformedResponse }
-        var rows: [JSONValue] = [], pages: [String: JSONValue] = [:], dependencies: [String: JSONValue] = [:]
+        var rows: [JSONValue] = [], pages: [String: JSONValue] = [:], dependencies: [String: JSONValue] = [:], relations: [JSONValue] = []
+        var relationFormat: Bool?, relationIDs = Set<String>()
         var cursor = JSONValue.null, seen = Set<String>(), cursors = Set<String>(), total: Int?, hash: String?, first: JSONValue?
         var budget = try JSONEncoder.nodus.encode(metadata).count
         repeat {
@@ -46,6 +78,16 @@ enum CompanionDatabasePresentationSource {
             let partIDs = Set(part.compactMap { $0.objectValue?["id"]?.stringValue })
             guard pageDates.keys.allSatisfy(partIDs.contains), targets.keys.allSatisfy(partIDs.contains) else { throw DesktopBridgeError.malformedResponse }
             rows += part; pages.merge(pageDates) { _, new in new }; dependencies.merge(targets) { _, new in new }
+            let links = page.objectValue?["relations"]?.arrayValue
+            guard relationFormat == nil || relationFormat == (links != nil) else { throw DesktopBridgeError.malformedResponse }
+            relationFormat = links != nil
+            for link in links ?? [] {
+                guard let fields = link.objectValue, let id = fields["id"]?.stringValue, !id.isEmpty, relationIDs.insert(id).inserted,
+                      fields["row_id"]?.stringValue.map(partIDs.contains) == true, fields["column_id"]?.stringValue?.isEmpty == false,
+                      fields["target_kind"]?.stringValue != nil, fields["target_id"]?.stringValue?.isEmpty == false,
+                      fields["position"]?.doubleValue?.isFinite == true, fields["created_at"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
+                relations.append(link)
+            }
             budget += try JSONEncoder.nodus.encode(page).count
             guard budget <= maximumBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             total = count; hash = queryHash; cursor = page.objectValue?["nextCursor"] ?? .null
@@ -59,6 +101,7 @@ enum CompanionDatabasePresentationSource {
         }
         source["version"] = .int(1); source["vaultId"] = .string(vault); source["databaseId"] = .string(database)
         source["rows"] = .array(rows); source["pages"] = .object(pages); source["dependencies"] = .object(dependencies)
+        if relationFormat == true { source["relations"] = .array(relations) }
         let data = try JSONEncoder.nodus.encode(JSONValue.object(source))
         guard data.count <= maximumBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
         return .object(source)
@@ -75,7 +118,21 @@ enum CompanionDatabasePresentationSource {
               value.objectValue?["columns"]?.arrayValue != nil, value.objectValue?["views"]?.arrayValue != nil,
               value.objectValue?["rows"]?.arrayValue != nil, value.objectValue?["pages"]?.objectValue != nil,
               value.objectValue?["dependencies"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
-        return try await overlay(value, session: session, database: database)
+        var root = try await overlay(value, session: session, database: database).objectValue!
+        if let related = value.objectValue?["relatedSources"]?.objectValue {
+            var projected: [String: JSONValue] = [:]
+            for (id, source) in related {
+                guard id != database, source.objectValue?["version"] == .int(1), source.objectValue?["vaultId"] == .string(vault),
+                      source.objectValue?["databaseId"] == .string(id), source.objectValue?["database"]?.objectValue?["id"] == .string(id),
+                      source.objectValue?["columns"]?.arrayValue != nil, source.objectValue?["views"]?.arrayValue != nil,
+                      source.objectValue?["rows"]?.arrayValue != nil, source.objectValue?["pages"]?.objectValue != nil,
+                      source.objectValue?["dependencies"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
+                projected[id] = try await overlay(source, session: session, database: id)
+            }
+            root["relatedSources"] = .object(projected)
+            root["localRevision"] = .string(SHA256.hash(data: try JSONEncoder.nodus.encode(JSONValue.object(root))).map { String(format: "%02x", $0) }.joined())
+        }
+        return .object(root)
     }
     @MainActor private static func overlay(_ value: JSONValue, session: SpaceSession, database: String) async throws -> JSONValue {
         guard var source = value.objectValue, let rows = source["rows"]?.arrayValue, let columns = source["columns"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
@@ -99,9 +156,25 @@ enum CompanionDatabasePresentationSource {
             for (column, cell) in cells { rawCells.append(Row(["row_id": .string(id), "column_id": .string(column), "database_id": .string(database), "value_text": cell])) }
         }
         let queue = try await MutationOutbox.open(spaceId: session.connection.storageId, directory: URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true))
-        let projection = try await queue.companionContentProjection(["db_rows": rawRows, "db_cells": rawCells, "db_columns": rawColumns])
+        let rawRelations = (source["relations"]?.arrayValue ?? []).compactMap { $0.objectValue.map(Row.init) }
+        let projection = try await queue.companionContentProjection(["db_rows": rawRows, "db_cells": rawCells, "db_columns": rawColumns, "db_relations": rawRelations])
         let local = PagesDatabasesParity.rows(databaseId: database, in: projection)
-        var changed = false
+        var changed = (projection["db_rows"] ?? []).filter { $0.string("database_id") == database }.count != rawRows.count
+        if source["relations"] != nil {
+            let known = Set(local.map(\.id))
+            let links = (projection["db_relations"] ?? []).filter { known.contains($0.string("row_id") ?? "") }
+            if links != rawRelations { changed = true }
+            source["relations"] = .array(links.map { .object($0.columns) })
+            var dependencies: [String: [String: [JSONValue]]] = [:]
+            for link in links.sorted(by: { left, right in
+                let a = left.double("position") ?? 0, b = right.double("position") ?? 0
+                return a == b ? (left.string("id") ?? "") < (right.string("id") ?? "") : a < b
+            }) where link.string("target_kind") == "db_row" {
+                guard let row = link.string("row_id"), let column = link.string("column_id"), let target = link.string("target_id") else { throw DesktopBridgeError.malformedResponse }
+                dependencies[row, default: [:]][column, default: []].append(.string(target))
+            }
+            source["dependencies"] = .object(dependencies.mapValues { .object($0.mapValues(JSONValue.array)) })
+        }
         source["columns"] = .array((projection["db_columns"] ?? []).filter { $0.string("database_id") == database }.sorted { ($0.double("position") ?? 0) < ($1.double("position") ?? 0) }.map { column in
             let id = column.string("id") ?? ""
             var object = originalColumns[id] ?? ["id": .string(id), "databaseId": .string(database), "options": .array([])]

@@ -51,4 +51,45 @@ struct CompanionDatabasePresentationSourceTests {
             }
         }
     }
+    private func dependencyRead(_ args: [JSONValue], changed: Bool = false) -> JSONValue {
+        let request = args[0].objectValue!, action = request["action"]!.stringValue!
+        let id = request["input"]!.objectValue!["databaseId"]!.stringValue!
+        let metadata: JSONValue = .object(["database": .object(["id": .string(id)]), "columns": .array([]), "views": .array([]),
+            "revision": .int(changed ? 8 : 7), "derivedDatabaseIds": .array([.string(id == "database" ? "target" : "database")])])
+        let data: JSONValue = action == "metadata" ? metadata : .object([
+            "rows": .array([.object(["id": .string("row-\(id)"), "databaseId": .string(id), "cells": .object([:])])]),
+            "pages": .object([:]), "dependencies": .object([:]), "relations": .array([]), "revision": .int(7),
+            "queryHash": .string("query-\(id)"), "totalCount": .int(1), "hasMore": .bool(false), "nextCursor": .null
+        ])
+        return .object(["version": .int(1), "vaultId": .string("vault"), "databaseId": .string(id), "action": .string(action), "data": data])
+    }
+    @Test("The selected dependency graph captures complete sources once and respects the aggregate byte limit")
+    func dependencyGraph() async throws {
+        var pageReads: [String: Int] = [:]
+        let source = try await CompanionDatabasePresentationSource.captureGraph(vault: "vault", database: "database", maximumBytes: 100_000) { _, args in
+            let request = args[0].objectValue!
+            if request["action"] == .string("sourceRows") {
+                let id = request["input"]!.objectValue!["databaseId"]!.stringValue!
+                pageReads[id, default: 0] += 1
+            }
+            return dependencyRead(args)
+        }
+        #expect(pageReads == ["database": 2, "target": 2])
+        #expect(source.objectValue?["relatedSources"]?.objectValue?.keys.sorted() == ["target"])
+        #expect(source.objectValue?["relatedSources"]?.objectValue?["target"]?.objectValue?["rows"]?.arrayValue?.count == 1)
+        let one = try await CompanionDatabasePresentationSource.capture(vault: "vault", database: "database", maximumBytes: 100_000) { _, args in dependencyRead(args) }
+        await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+            try await CompanionDatabasePresentationSource.captureGraph(vault: "vault", database: "database", maximumBytes: JSONEncoder.nodus.encode(one).count) { _, args in dependencyRead(args) }
+        }
+    }
+    @Test("A dependency changed after its own capture cannot publish a mixed-epoch graph")
+    func dependencyEpoch() async {
+        var metadataReads = 0
+        await #expect(throws: APIError.self) {
+            try await CompanionDatabasePresentationSource.captureGraph(vault: "vault", database: "database", maximumBytes: 100_000) { _, args in
+                if args[0].objectValue?["action"] == .string("metadata") { metadataReads += 1 }
+                return dependencyRead(args, changed: metadataReads > 4)
+            }
+        }
+    }
 }

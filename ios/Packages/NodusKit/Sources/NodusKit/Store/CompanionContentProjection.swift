@@ -4,7 +4,7 @@ import Foundation
 /// the Mac. A canonical row at the acknowledged revision supersedes its overlay.
 public enum CompanionContentProjection {
     static let keys:[String:[String]] = {
-        var value = ["db_databases":["id"],"db_columns":["id"],"db_rows":["id"],"db_cells":["row_id","column_id"],"pages":["id"],"page_favorites":["page_id"]]
+        var value = ["db_databases":["id"],"db_columns":["id"],"db_rows":["id"],"db_cells":["row_id","column_id"],"db_relations":["id"],"pages":["id"],"page_favorites":["page_id"]]
         for table in MutableTable.companionWorldTables { value[table.rawValue] = table.identityFields }
         return value
     }()
