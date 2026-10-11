@@ -34,6 +34,8 @@ struct ChatScreen: View {
         var mode: CorpusRetrieval.Mode?
         var warning: String?
         var delivery: ChatHistoryStore.Message.Delivery?
+        var studyCitations: [JSONValue] = []
+        var studyEvidence: JSONValue?
         /// The material the answer was built from, grouped by kind — ideas, temas, huecos —
         /// so it can be read beside the answer instead of taken on trust.
         var sections: [CorpusRetrieval.MaterialSection] = []
@@ -64,6 +66,8 @@ struct ChatScreen: View {
     @State private var showingHistory = false
     @State private var showingDatabases = false
     @State private var databaseIds: [String] = []
+    @State private var showingStudyOptions = false
+    @State private var studyOptions = CompanionStudyChatOptions()
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -119,6 +123,7 @@ struct ChatScreen: View {
         .nodusSheet(isPresented:$showingDatabases) {
             ChatDatabaseSelectionView(session:session,selection:$databaseIds).environment(ai)
         }
+        .nodusSheet(isPresented:$showingStudyOptions) { ChatStudyOptionsView(session:session,options:$studyOptions) }
         .task {
             // Lent to the chrome, not copied into it: the header ticks layers on and off in the
             // very object the next question is built from.
@@ -187,6 +192,10 @@ struct ChatScreen: View {
                 Button { composerFocused = false;showingDatabases = true } label: {
                     Label("\(databaseIds.count) databases",systemImage:"tablecells").font(.caption).lineLimit(1).padding(.horizontal,12).frame(minHeight:44)
                 }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+            } else if isStudy {
+                Button { composerFocused = false;showingStudyOptions = true } label: {
+                    Label("Fuentes y opciones de estudio",systemImage:"books.vertical").font(.caption).padding(.horizontal,12).frame(minHeight:44)
+                }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
             } else {
                 Menu {
                     ForEach(ContextSectionKind.allCases,id:\.self) { kind in
@@ -221,6 +230,7 @@ struct ChatScreen: View {
     private func contextLabel(_ kind: ContextSectionKind) -> LocalizedStringKey {
         switch kind { case .ideas:"Ideas";case .passages:"Passages";case .themes:"Themes";case .gaps:"Research gaps";case .works:"Works";case .sources:"Sources" }
     }
+    private var isStudy: Bool { session.vaultType == .estudio || session.vaultType == .docencia }
 
     // MARK: - Conversations
 
@@ -231,6 +241,7 @@ struct ChatScreen: View {
         conversationId = nil
         conversationTitle = ""
         databaseIds = []
+        studyOptions = CompanionStudyChatOptions()
     }
 
     private func open(_ conversation: ChatHistoryStore.Conversation) {
@@ -240,6 +251,7 @@ struct ChatScreen: View {
         conversationTitle = conversation.title
         conversationCreatedAt = conversation.createdAt
         databaseIds = conversation.databaseIds ?? []
+        studyOptions = conversation.study ?? CompanionStudyChatOptions()
         // The retrieved material is not kept — see `ChatHistoryStore` — so a re-opened
         // conversation shows what was said and what it cited, and does not pretend to still
         // hold the corpus rows the answer was built from.
@@ -251,7 +263,9 @@ struct ChatScreen: View {
                 citations: message.citations,
                 mode: message.wasSemantic.map { $0 ? .semantic : .lexical },
                 warning: message.delivery == .streaming ? String(localized:"This reply was interrupted. The received text is kept here."):message.warning,
-                delivery: message.delivery
+                delivery: message.delivery,
+                studyCitations:message.studyCitations ?? [],
+                studyEvidence:message.studyEvidence
             )
         }
     }
@@ -275,13 +289,16 @@ struct ChatScreen: View {
                     citations: turn.citations,
                     wasSemantic: turn.mode.map { $0 == .semantic },
                     warning: turn.warning,
-                    delivery: turn.delivery
+                    delivery: turn.delivery,
+                    studyCitations:turn.studyCitations.isEmpty ? nil:turn.studyCitations,
+                    studyEvidence:turn.studyEvidence
                 )
             },
             createdAt: conversationCreatedAt,
             updatedAt: Date(),
             isArchived: history.conversations.first(where:{$0.id == id})?.isArchived ?? false,
-            databaseIds: session.vaultType == .databases ? databaseIds:nil
+            databaseIds: session.vaultType == .databases ? databaseIds:nil,
+            study:isStudy ? studyOptions:nil
         ))
     }
     private func stopCurrentConversation() {
@@ -365,7 +382,14 @@ struct ChatScreen: View {
         let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
         if session.vaultType == .databases,databaseIds.isEmpty { error = String(localized:"Choose at least one database for this question.");showingDatabases = true;return }
+        if isStudy {
+            let selection = studyOptions.selection
+            if selection.scope == "manual" && selection.sourceKeys.isEmpty || selection.scope == "course" && selection.courseId == nil || selection.scope == "subject" && selection.subjectId == nil || selection.scope == "topic" && selection.topicId == nil {
+                error = "Elige las fuentes o el alcance de esta pregunta.";showingStudyOptions = true;return
+            }
+        }
         let selectedDatabases = databaseIds
+        let selectedStudy = studyOptions
         let prior = turns.map { ChatMessage(role:$0.role,content:$0.text) }
 
         draft = ""
@@ -390,10 +414,23 @@ struct ChatScreen: View {
             do {
                 let material: CorpusRetrieval.Result?
                 let request: ChatRequest
+                var studyContext: CompanionChatContext.StudyPrepared?
                 if session.vaultType == .databases {
                     let context = try await CompanionChatContext.database(session:session,settings:ai,ids:selectedDatabases,question:question,history:prior)
                     guard !Task.isCancelled,ownsAnswer() else { return }
                     material = nil
+                    request = ChatRequest(model:model,messages:[.init(role:.system,content:context.system),.init(role:.user,content:context.user)],temperature:context.temperature,maxTokens:context.maxTokens)
+                } else if isStudy {
+                    let context = try await CompanionChatContext.study(session:session,options:selectedStudy,question:question,history:prior)
+                    guard !Task.isCancelled,ownsAnswer() else { return }
+                    material = nil;studyContext = context
+                    turns[answerIndex].mode = .lexical
+                    turns[answerIndex].studyCitations = context.citations
+                    turns[answerIndex].studyEvidence = context.evidence
+                    if context.truncated { turns[answerIndex].warning = "Las fuentes completas siguen disponibles; esta respuesta utiliza los fragmentos que caben en el contexto." }
+                    if let immediate = context.immediateAnswer {
+                        turns[answerIndex].text = immediate;turns[answerIndex].delivery = .completed;return
+                    }
                     request = ChatRequest(model:model,messages:[.init(role:.system,content:context.system),.init(role:.user,content:context.user)],temperature:context.temperature,maxTokens:context.maxTokens)
                 } else {
                     let retrieval = CorpusRetrieval(
@@ -434,7 +471,12 @@ struct ChatScreen: View {
                 // The same guarantee the reports get: an invented source never reaches the
                 // screen, and what survived is listed so the user can open it.
                 guard ownsAnswer(),!Task.isCancelled else { return }
-                if let material {
+                if let studyContext {
+                    let validated = try await CompanionChatContext.validateStudyAnswer(text,citations:studyContext.citations)
+                    guard ownsAnswer(),!Task.isCancelled else { return }
+                    turns[answerIndex].text = validated.answer;turns[answerIndex].studyCitations = validated.citations
+                    if validated.citationWarning { turns[answerIndex].warning = "La respuesta no incluyó referencias a los fragmentos seleccionados." }
+                } else if let material {
                     let validated = CitationValidator.validate(prose:text,against:material.catalog)
                     turns[answerIndex].text = validated.prose
                     turns[answerIndex].citations = validated.accepted.compactMap(material.catalog.entry(for:))
@@ -553,6 +595,8 @@ private struct TurnBubble: View {
     let turn: ChatScreen.Turn
     let accent: Color
     let session: SpaceSession
+    @State private var studyCitation: JSONValue?
+    @State private var showingStudyCitation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -574,8 +618,23 @@ private struct TurnBubble: View {
                         turn.text,
                         accent: accent,
                         session: session,
-                        labels: Dictionary(turn.citations.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first })
+                        labels: Dictionary(turn.citations.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first }),
+                        onCitation: { url in
+                            guard url.scheme == "nodus",url.host == "study",url.pathComponents.count == 3,url.pathComponents[1] == "evidence",let citation = turn.studyCitations.first(where:{$0.objectValue?["id"]?.stringValue == url.lastPathComponent}) else { return false }
+                            studyCitation = citation;showingStudyCitation = true;return true
+                        }
                     )
+                }
+
+                if !turn.studyCitations.isEmpty {
+                    VStack(alignment:.leading,spacing:4) {
+                        Text("Fuentes de estudio").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        ForEach(turn.studyCitations,id:\.self) { citation in
+                            Button { studyCitation = citation;showingStudyCitation = true } label: {
+                                Label("\(citation.objectValue?["id"]?.stringValue ?? "") · \(citation.objectValue?["title"]?.stringValue ?? "Fuente")",systemImage:"text.quote").font(.caption).multilineTextAlignment(.leading).frame(minHeight:44)
+                            }.buttonStyle(.plain).foregroundStyle(accent)
+                        }
+                    }
                 }
 
                 if !turn.citations.isEmpty {
@@ -610,7 +669,7 @@ private struct TurnBubble: View {
                     }
                 }
             }
-        }
+        }.nodusSheet(isPresented:$showingStudyCitation) { if let studyCitation { StudyChatEvidenceView(citation:studyCitation,session:session) } }
     }
 
     private func icon(_ kind: String) -> String {

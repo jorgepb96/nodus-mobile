@@ -326,8 +326,20 @@ JavaScript host runs the deterministic context formatter without providers or cr
 The chosen source IDs persist and reconcile with the actual Desktop conversation. Native
 history/context controls are directly reachable. The comparison against real 650-row
 Desktop profiles in 15 languages and the native host contracts are prepared, not executed.
-The shared resources must be rebuilt during final local compilation. World and Study
-autonomous specialised context/controls still require implementation and acceptance.
+The shared resources must be rebuilt during final local compilation. World autonomous
+specialised context/controls still require implementation and acceptance.
+
+Autonomous Study/Teaching Chat now uses the shared Desktop lexical ranking, extractive
+source compression, task/level/tone/language prompt and citation validator. Its SwiftUI
+options sheet selects library, course, subject, topic or individual sources. Explicit
+encrypted temporary downloads retain only chosen already-indexed fragments, capped at
+50 MB; mobile queries never extract, index or invoke a Mac provider. Citation sheets show
+the exact excerpt and page/slide/timestamp, with owning-source navigation. Authored evidence
+retains opaque per-fragment Mac signatures so provider-free history reconciliation can
+verify real quotes even after reindexing, while rejecting forged or foreign-vault evidence.
+Task and source choices persist in the actual Desktop history. The isolated Study/Teaching
+contract campaign and native history/validator regressions are prepared but unexecuted;
+fresh shared resources, local compilation and actual-device acceptance remain required.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and

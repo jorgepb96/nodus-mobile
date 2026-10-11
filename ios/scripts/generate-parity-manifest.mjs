@@ -261,6 +261,15 @@ function operationMatrix(routes) {
       ['generation.databaseChat.chosenOfflineSources', 'generation'],
       ['sync.databaseChat.actualSourceSelection', 'sync'],
       ['consultation.chat.nativeHistoryControl', 'consultation'],
+      ['generation.studyChat.autonomousSharedContext', 'generation'],
+      ['generation.studyChat.allTasksAndScopes', 'generation'],
+      ['generation.studyChat.nativeControls', 'generation'],
+      ['generation.studyChat.chosenOfflineSources', 'generation'],
+      ['consultation.studyChat.extractiveCitations', 'consultation'],
+      ['consultation.studyChat.nativeEvidenceSheet', 'consultation'],
+      ['sync.studyChat.signedOfflineEvidence', 'sync'],
+      ['sync.studyChat.actualTaskSelection', 'sync'],
+      ['sync.studyChat.indexChangesAndForeignVaults', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

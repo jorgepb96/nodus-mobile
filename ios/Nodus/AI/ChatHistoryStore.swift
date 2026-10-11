@@ -29,6 +29,8 @@ final class ChatHistoryStore {
         /// Original rich Desktop turn. Portable edits preserve its attachments,
         /// tool output, citations and selection instead of flattening them.
         var desktopRecord: JSONValue?
+        var studyCitations: [JSONValue]?
+        var studyEvidence: JSONValue?
 
         enum Role: String, Codable { case user, assistant }
         enum Delivery: String, Codable { case streaming, completed, cancelled, failed }
@@ -47,6 +49,7 @@ final class ChatHistoryStore {
         var downloadedUntil: Date? = nil
         var isLocalRecovery: Bool? = nil
         var databaseIds: [String]? = nil
+        var study: CompanionStudyChatOptions? = nil
 
         var preview: String {
             messages.last(where: { $0.role == .assistant })?.text
@@ -288,14 +291,14 @@ final class ChatHistoryStore {
                 if candidate?.text == raw["content"]?.stringValue,candidate?.role.rawValue == raw["role"]?.stringValue { native = candidate }
             }
             let id = native?.id ?? raw["id"]?.stringValue.flatMap(UUID.init(uuidString:)) ?? UUID()
-            return Message(id:id,role:raw["role"] == .string("assistant") ? .assistant:.user,text:raw["content"]!.stringValue!,citations:native?.citations ?? [],wasSemantic:native?.wasSemantic,warning:native?.warning,delivery:native?.delivery,desktopRecord:record)
+            return Message(id:id,role:raw["role"] == .string("assistant") ? .assistant:.user,text:raw["content"]!.stringValue!,citations:native?.citations ?? [],wasSemantic:native?.wasSemantic,warning:native?.warning,delivery:native?.delivery,desktopRecord:record,studyCitations:document.kind == .study ? raw["citations"]?.arrayValue ?? native?.studyCitations:nil,studyEvidence:native?.studyEvidence)
         }
         func date(_ key: String,_ alternate: String) -> Date {
             let raw = object[key]?.stringValue ?? object[alternate]?.stringValue ?? ""
             let fractional = ISO8601DateFormatter();fractional.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
             return fractional.date(from:raw) ?? ISO8601DateFormatter().date(from:raw) ?? Date()
         }
-        return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved),databaseIds:object["databaseIds"]?.arrayValue?.compactMap(\.stringValue))
+        return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved),databaseIds:object["databaseIds"]?.arrayValue?.compactMap(\.stringValue),study:document.kind == .study ? try CompanionStudyChatOptions.desktop(document.data):nil)
     }
     private func request(_ conversation: Conversation,sync: DesktopSync) throws -> JSONValue {
         var fields: [String:JSONValue] = ["version":.int(1),"id":.string(UUID().uuidString),"conversationId":.string(conversation.id),"expectedRevision":sync.baseline.map { .string($0.revision) } ?? .null,"action":.string(sync.deleted ? "delete":"save")]
@@ -307,11 +310,25 @@ final class ChatHistoryStore {
                 if sync.kind == .study && raw["createdAt"] == nil { raw["createdAt"] = .string(ISO8601DateFormatter().string(from:conversation.createdAt)) }
                 if message.delivery == .failed { raw["error"] = .bool(true) }
                 if sync.kind == .study && message.delivery == .cancelled { raw["interrupted"] = .bool(true) }
+                if sync.kind == .study,message.desktopRecord == nil,let citations = message.studyCitations,!citations.isEmpty { raw["citations"] = .array(citations) }
                 return .object(raw)
             }
             fields["draft"] = .object(["title":.string(conversation.title),"archived":.bool(conversation.isArchived),"messages":.array(messages)])
             if sync.kind == .database,let ids = conversation.databaseIds {
                 var draft = fields["draft"]!.objectValue!;draft["databaseIds"] = .array(ids.map(JSONValue.string));fields["draft"] = .object(draft)
+            }
+            if sync.kind == .study {
+                var draft = fields["draft"]!.objectValue!
+                if let options = conversation.study { draft["study"] = try options.value }
+                var proofs: [String:JSONValue] = [:]
+                for message in conversation.messages where message.desktopRecord == nil {
+                    if let evidence = message.studyEvidence,let citations = message.studyCitations,!citations.isEmpty {
+                        let ids = Set(citations.compactMap { $0.objectValue?["id"]?.stringValue })
+                        proofs[message.id.uuidString] = .object((evidence.objectValue ?? [:]).filter { ids.contains($0.key) })
+                    }
+                }
+                if !proofs.isEmpty { draft["studyEvidence"] = .object(proofs) }
+                fields["draft"] = .object(draft)
             }
             var native = conversation.messages
             for index in native.indices { native[index].desktopRecord = nil }

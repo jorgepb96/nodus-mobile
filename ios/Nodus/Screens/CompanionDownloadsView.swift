@@ -16,6 +16,8 @@ struct CompanionDownloadsView: View {
     @State private var saved = false
     @State private var downloadTask: Task<Void, Never>?
     @State private var showingDownloadedDossiers = false
+    @State private var showingStudySources = false
+    @State private var studyOptions = CompanionStudyChatOptions()
 
     private var notes: [[String: JSONValue]] {
         (tree?.objectValue?["notes"]?.arrayValue ?? []).compactMap(\.objectValue)
@@ -26,6 +28,9 @@ struct CompanionDownloadsView: View {
         NavigationStack {
             List {
                 Section {
+                    if session.vaultType == .estudio || session.vaultType == .docencia {
+                        Button("Fuentes del chat de estudio") { showingStudySources = true }.frame(minHeight:44)
+                    }
                     if session.vaultType == .databases {
                         NavigationLink("Informes de bases de datos") { CompanionDatabaseResearchDownloadsView(session:session) }
                             .accessibilityIdentifier("companion-download-database-research")
@@ -103,6 +108,7 @@ struct CompanionDownloadsView: View {
             }
             .task { await load() }
             .nodusSheet(isPresented: $showingDownloadedDossiers) { CompanionDownloadedCollectionsView(session: session) }
+            .nodusSheet(isPresented:$showingStudySources) { ChatStudyOptionsView(session:session,options:$studyOptions,downloadOnly:true) }
             .onDisappear { downloadTask?.cancel() }
         }
     }

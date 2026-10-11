@@ -468,6 +468,7 @@ struct CorpusProse: View {
     /// A tap on a numbered reference — `[3]` — in an answer about a page. Only the report chat
     /// passes one; everywhere else a bracketed number is a bracketed number.
     private let onReference: ((Int) -> Void)?
+    private let onCitation: ((URL) -> Bool)?
 
     /// What this prose has asked to show, and the question it has asked.
     ///
@@ -511,11 +512,13 @@ struct CorpusProse: View {
         accent: Color,
         session: SpaceSession? = nil,
         labels: [String: String] = [:],
-        onReference: ((Int) -> Void)? = nil
+        onReference: ((Int) -> Void)? = nil,
+        onCitation: ((URL) -> Bool)? = nil
     ) {
         self.accent = accent
         self.session = session
         self.onReference = onReference
+        self.onCitation = onCitation
         // The text and the labels are not kept: everything that reads them is done here. What
         // survives is `blocks`, which is what they were for.
         blocks = Self.prepare(text, labels: labels)
@@ -701,6 +704,7 @@ struct CorpusProse: View {
                                 { id in annotations.open(id) }
                             },
                             onOpen: { [presenting] url in
+                                if onCitation?(url) == true { return true }
                                 if let number = PageChatReference.number(in: url) {
                                     onReference?(number)
                                     return true
@@ -752,6 +756,7 @@ struct CorpusProse: View {
         // The link is handled here rather than by the system: `nodus://` has no handler, so
         // letting it through opens nothing at all.
         .environment(\.openURL, OpenURLAction { [presenting] url in
+            if onCitation?(url) == true { return .handled }
             if let number = PageChatReference.number(in: url) {
                 onReference?(number)
                 return .handled
