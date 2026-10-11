@@ -7,6 +7,7 @@ from pathlib import Path
 import plistlib
 import re
 import signal
+import sqlite3
 import subprocess
 import time
 
@@ -17,6 +18,7 @@ parser.add_argument("--lab", required=True, type=Path)
 parser.add_argument("--bridge-pid", type=int)
 parser.add_argument("--style", choices=["light", "dark"], required=True)
 parser.add_argument("--source-citation", action="store_true")
+parser.add_argument("--dictionary", action="store_true")
 parser.add_argument("--text-size", choices=["standard", "accessibility3"])
 parser.add_argument("--mac-unavailable", action="store_true")
 parser.add_argument("--research-marker")
@@ -112,6 +114,35 @@ if args.source_citation:
     values.update(NODUS_ACCEPTANCE_SOURCE_ENTRY=fixture["name"],
                   NODUS_ACCEPTANCE_SOURCE_EVIDENCE=fixture["evidenceLabel"],
                   NODUS_ACCEPTANCE_SOURCE_PAGE_VALUE=f"Página {fixture['page']} de {pages}")
+
+if args.dictionary:
+    registry = json.loads((args.lab / "vaults.json").read_text())
+    vault = next(v for v in registry["vaults"] if v["id"] == "default")
+    database = Path(vault["path"]).resolve()
+    if not database.is_relative_to(args.lab.resolve()):
+        raise SystemExit("Dictionary expectations must come from the isolated copied vault")
+    fixture = json.loads((args.lab / "dictionary-snapshot-fixture.json").read_text())
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        connection.row_factory = sqlite3.Row
+        entry = connection.execute("SELECT * FROM dictionary_entries WHERE id=?", (fixture["entryId"],)).fetchone()
+        if entry is None:
+            raise SystemExit("The expected saved dictionary entry is missing")
+        version = connection.execute("SELECT * FROM dictionary_versions WHERE id=?", (entry["current_version_id"],)).fetchone()
+        related = connection.execute("SELECT name FROM dictionary_entries WHERE id IN (SELECT to_entry_id FROM dictionary_relations WHERE from_entry_id=?) ORDER BY name", (entry["id"],)).fetchone()
+        if version is None or related is None:
+            raise SystemExit("Actual saved dictionary versions and relationships are required")
+        authors = json.loads(version["author_summaries_json"])
+        evidence = json.loads(version["evidence_snapshot_json"])
+        work = next((item["workTitle"] for item in evidence if item.get("workTitle")), None)
+        paragraph = next((line for line in entry["content_markdown"].splitlines() if len(line) > 100 and not line.startswith(("#", "|", "-"))), "")
+        snippet = re.sub(r"[*_`]+", "", paragraph.split("[")[0]).strip()[:100]
+        if len(snippet) < 40 or not authors or not work:
+            raise SystemExit("Actual readable definition, author and work evidence are required")
+        values.update(NODUS_ACCEPTANCE_DICTIONARY_NAME=entry["name"],
+                      NODUS_ACCEPTANCE_DICTIONARY_RELATED_NAME=related["name"],
+                      NODUS_ACCEPTANCE_DICTIONARY_BODY_SNIPPET=snippet,
+                      NODUS_ACCEPTANCE_DICTIONARY_AUTHOR_NAME=authors[0]["name"],
+                      NODUS_ACCEPTANCE_DICTIONARY_WORK_TITLE=work)
 
 configuration = plistlib.loads(args.base.read_bytes())
 target = configuration["NodusUITests"]
