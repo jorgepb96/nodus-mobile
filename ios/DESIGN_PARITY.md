@@ -329,3 +329,7 @@ mutates vault data.
 ### Pages: documento completo y dependencias
 
 El editor compartido mantiene BlockNote, metadatos académicos y bloques anteriores. El borrador íntegro se cifra y sincroniza con dos revisiones, recibos idempotentes y resolución explícita de conflictos. Las descargas seleccionadas incluyen bloques sincronizados, páginas originales, vistas enlazadas paginadas y dossiers de sus bases de datos, dentro del presupuesto temporal. La lectura explícita de una descarga no consulta el Mac. Los archivos mantienen su permiso y verificación de integridad. Los contratos de Pages están preparados; compilación, ejecución y pruebas de iPhone/iPad pendientes de la campaña local final.
+
+### Bases de datos: escritura canónica y reapertura
+
+Las creaciones de base, propiedad y fila conservan sus identidades móviles y pasan por las funciones reales de Desktop. Las celdas comprueban revisión y valor anterior; los rechazos se conservan y se muestran. La proyección de la cola permite reabrir cambios pendientes y da paso a revisiones canónicas confirmadas. Contratos preparados; ejecución y aceptación visual pendientes.

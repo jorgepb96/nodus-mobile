@@ -166,6 +166,15 @@ public actor MutationOutbox {
         )
     }
 
+    public func companionContentProjection(_ source:[String:[Row]]) throws -> [String:[Row]] {
+        let states=Dictionary(uniqueKeysWithValues:try items().map{($0.id,$0.state)})
+        var retained:[Mutation]=[]
+        for name in CompanionContentProjection.keys.keys.sorted() where source[name] != nil {
+            if let table=MutableTable(rawValue:name){retained.append(contentsOf:try retainedMutations(table:table))}
+        }
+        return CompanionContentProjection.apply(source,mutations:retained,states:states)
+    }
+
     /// Pending changes the user has already asked to send.
     ///
     /// The background flush reads this and never `pending(limit:)`, which is the whole
@@ -176,7 +185,7 @@ public actor MutationOutbox {
         try mutations(sql: """
             SELECT payload FROM outbox
             WHERE state = ? AND authorised = 1
-            ORDER BY created_at LIMIT ?
+            ORDER BY created_at, rowid LIMIT ?
             """, arguments: [State.pending.rawValue, limit])
     }
 

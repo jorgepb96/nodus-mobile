@@ -231,6 +231,7 @@ final class OutboxController {
             try await outbox.recordReceipt(receipt, for: [mutation])
             if let rejection = receipt.rejected.first(where: { $0.id == mutation.id }) {
                 lastError = rejection.errorDescription ?? rejection.reason
+                await refresh(); return false
             } else {
                 lastError = nil
             }
@@ -238,6 +239,7 @@ final class OutboxController {
             lastError = error.requiredNeed == .write
                 ? "Your access to this space is read only."
                 : error.localizedDescription
+            await refresh(); return false
         } catch {
             // A network failure is not data loss: this exact idempotent mutation stays
             // authorised in the device outbox and is retried by the normal sync path.

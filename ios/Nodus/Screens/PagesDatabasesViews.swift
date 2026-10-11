@@ -167,8 +167,8 @@ struct PagesWorkspaceView: View {
             "created_at": .string(now), "updated_at": .string(now),
         ]
         row["parent_page_id"] = parentId.map(JSONValue.string) ?? .null
-        tables["pages", default: []].append(Row(row)); rebuild()
-        _ = await outbox.syncMutation(kind: .upsert, table: .pages, key: [id], row: row, title: "Create page")
+        guard await outbox.syncMutation(kind:.upsert,table:.pages,key:[id],row:row,title:"Crear página") else {error=outbox.lastError;return}
+        tables["pages",default:[]].append(Row(row));rebuild()
         if let page = pages.first(where: { $0.id == id }) { open(page) }
     }
 
@@ -462,6 +462,7 @@ struct DatabasesWorkspaceView: View {
     private var workspace: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Databases", catalogueImage: "tablecells", accent: session.accent)
+            PagesDatabaseSyncNotice(outbox:outbox)
             if !compactPresentation {
                 HStack(spacing: 0) {
                     databaseSidebar.frame(width: 250)
@@ -550,8 +551,8 @@ struct DatabasesWorkspaceView: View {
         tables["db_databases", default: []].append(Row(row))
         let columnId = "dcol_\(UUID().uuidString)", column: [String: JSONValue] = ["id": .string(columnId), "database_id": .string(id), "name": .string("Name"), "type": .string("title"), "position": .int(0), "config_json": .string("{}"), "revision": .int(1), "created_at": .string(now), "updated_at": .string(now)]
         tables["db_columns", default: []].append(Row(column)); databases = PagesDatabasesParity.databases(in: tables)
-        _ = await outbox.syncMutation(kind: .upsert, table: .databases, key: [id], row: row, title: "Create database")
-        _ = await outbox.syncMutation(kind: .upsert, table: .databaseColumns, key: [columnId], row: column, title: "Create title property")
+        guard await outbox.syncMutation(kind:.upsert,table:.databases,key:[id],row:row,title:"Crear base de datos") else {tables["db_databases"]?.removeAll{$0.string("id") == id};tables["db_columns"]?.removeAll{$0.string("id") == columnId};databases=PagesDatabasesParity.databases(in:tables);return}
+        if !((await outbox.syncMutation(kind:.upsert,table:.databaseColumns,key:[columnId],row:column,title:"Crear propiedad de título"))) {tables["db_columns"]?.removeAll{$0.string("id") == columnId}}
         if let database = databases.first(where: { $0.id == id }) { open(database) }
     }
 }
@@ -591,6 +592,7 @@ private struct DatabaseDetailWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             header.padding(NodusSpace.page)
+            PagesDatabaseSyncNotice(outbox:outbox)
             Divider()
             viewStrip
             Divider()
@@ -803,7 +805,8 @@ private struct DatabaseDetailWorkspace: View {
     private func addRow() async {
         guard let outbox else { return }; let id = "drow_\(UUID().uuidString)", now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let row: [String: JSONValue] = ["id": .string(id), "database_id": .string(database.id), "position": .double((allRows.last?.position ?? -1) + 1), "unique_sequence": .int(Int64(allRows.count + 1)), "revision": .int(1), "created_by": .string("mobile"), "updated_by": .string("mobile"), "created_at": .string(now), "updated_at": .string(now)]
-        tables["db_rows", default: []].append(Row(row)); _ = await outbox.syncMutation(kind: .upsert, table: .databaseRows, key: [id], row: row, title: "Add database row"); selectedRowId = id
+        guard await outbox.syncMutation(kind:.upsert,table:.databaseRows,key:[id],row:row,title:"Crear fila") else {return}
+        tables["db_rows",default:[]].append(Row(row));selectedRowId=id
         if compactPresentation { showInspector = true }
     }
 
@@ -856,6 +859,7 @@ private struct DatabaseRowInspector: View {
         VStack(spacing: 0) {
             HStack(alignment: .top) { VStack(alignment: .leading, spacing: 4) { Text(rowTitle).font(.headline).fixedSize(horizontal: false, vertical: true); Text(database.name).font(.caption).foregroundStyle(.secondary) }; Spacer(minLength: 8); Button { Task { await save() } } label: { if saving { ProgressView() } else { Label("Guardar", systemImage: "checkmark") } }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving).accessibilityIdentifier("database-row-save") }.padding(12)
             Picker("Detalle de la fila", selection: $tab) { Text("Propiedades").tag("Properties"); Text("Enlaces").tag("Relations"); Text("Página").tag("Page") }.pickerStyle(.segmented).padding(.horizontal, 10).padding(.bottom, 10)
+            PagesDatabaseSyncNotice(outbox:outbox)
             Divider()
             ScrollView { VStack(alignment: .leading, spacing: 16) { if tab == "Relations" { relationsPanel } else if tab == "Page" { pagePanel } else { propertiesPanel } }.padding(NodusSpace.page) }.scrollDismissesKeyboard(.interactively)
         }.background(Color(uiColor: .secondarySystemBackground).opacity(0.42)).onAppear { seed() }.onChange(of: row.id) { _, _ in seed() }.accessibilityIdentifier("database-row-inspector")
@@ -930,8 +934,11 @@ private struct DatabaseRowInspector: View {
             let value = drafts[column.id] ?? "", existing = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
             var cell = existing?.columns ?? ["database_id": .string(database.id), "row_id": .string(row.id), "column_id": .string(column.id), "created_by": .string("mobile"), "created_at": .string(now), "revision": .int(1)]
             cell["value_type"] = .string(databaseCellType(column.type)); cell["value_text"] = .string(value); cell["value_reference"] = ["select", "status"].contains(column.type) ? .string(value) : .null; cell["value_number"] = column.type == "number" ? Double(value).map(JSONValue.double) ?? .null : .null; cell["updated_by"] = .string("mobile"); cell["updated_at"] = .string(now)
-            tables["db_cells"]?.removeAll { $0.string("row_id") == row.id && $0.string("column_id") == column.id }; tables["db_cells", default: []].append(Row(cell))
-            _ = await outbox.syncMutation(kind: value.isEmpty ? .delete : .upsert, table: .databaseCells, key: [row.id, column.id], row: value.isEmpty ? nil : cell, title: "Update \(column.name)")
+            let paired=session.connection.desktopPairingId != nil
+            if paired {let expected=existing?.columns["revision"]?.intValue ?? 0;cell["_mobileExpectedRevision"] = .int(Int64(expected));cell["_mobileExpectedValue"] = .string(row.cells[column.id] ?? "");cell["_mobileBaseRowRevision"] = .int(Int64(row.revision));cell["revision"] = .int(Int64(expected+1))}
+            guard await outbox.syncMutation(kind:paired ? .upsert:value.isEmpty ? .delete:.upsert,table:.databaseCells,key:[row.id,column.id],row:paired || !value.isEmpty ? cell:nil,title:"Actualizar \(column.name)") else {continue}
+            tables["db_cells"]?.removeAll{$0.string("row_id") == row.id && $0.string("column_id") == column.id}
+            if !value.isEmpty {tables["db_cells",default:[]].append(Row(cell))}
         }
     }
 }
@@ -951,6 +958,7 @@ private struct NewDatabaseColumnSheet: View {
                 TextField("Property name", text: $name)
                 Picker("Type", selection: $type) { ForEach(["text", "number", "date", "status", "multi_select", "checkbox", "person", "url", "email", "files", "relation", "rollup", "formula"], id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ").capitalized).tag($0) } }
                 Text(["formula", "rollup"].contains(type) ? "Computed properties are configured safely on Desktop and their materialized values remain queryable here." : "The property is written through the same typed mutation ledger as Desktop.").font(.caption).foregroundStyle(.secondary)
+                PagesDatabaseSyncNotice(outbox:outbox)
             }.navigationTitle("New property").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Create") { Task { await create() } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || outbox == nil) } }
         }.nodusModalClose(accent: session.accent)
     }
@@ -958,7 +966,8 @@ private struct NewDatabaseColumnSheet: View {
     private func create() async {
         guard let outbox else { return }; let id = "dcol_\(UUID().uuidString)", now = ISO8601DateFormatter.nodusFractional.string(from: Date()), position = (tables["db_columns"] ?? []).filter { $0.string("database_id") == databaseId }.count
         let row: [String: JSONValue] = ["id": .string(id), "database_id": .string(databaseId), "name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)), "type": .string(type), "position": .int(Int64(position)), "config_json": .string("{}"), "revision": .int(1), "created_by": .string("mobile"), "updated_by": .string("mobile"), "created_at": .string(now), "updated_at": .string(now)]
-        tables["db_columns", default: []].append(Row(row)); _ = await outbox.syncMutation(kind: .upsert, table: .databaseColumns, key: [id], row: row, title: "Create \(name)"); dismiss()
+        guard await outbox.syncMutation(kind:.upsert,table:.databaseColumns,key:[id],row:row,title:"Crear \(name)") else {return}
+        tables["db_columns",default:[]].append(Row(row));dismiss()
     }
 }
 
@@ -1045,14 +1054,20 @@ private struct DatabaseAnalysisSurface: View {
 @MainActor
 func databaseParityTables(_ session: SpaceSession, _ names: [String]) async throws -> [String: [Row]] {
     let fixture = session.connection.desktopPairingId == nil ? debugDatabasesFixture() : [:]
-    if let mirror = session.mirror {
-        var result: [String: [Row]] = [:]
-        for name in names { result[name] = try await mirror.allRows(table: name) }
-        for name in names where fixture[name] != nil { result[name] = fixture[name] }
-        return result
+    var result:[String:[Row]]
+    if let mirror=session.mirror {
+        result=[:];for name in names {result[name]=try await mirror.allRows(table:name)}
+        for name in names where fixture[name] != nil {result[name]=fixture[name]}
+    } else {
+        let snapshot=try await session.client.snapshot(in:session.connection.spaceId)
+        result=Dictionary(uniqueKeysWithValues:names.map{($0,fixture[$0] ?? snapshot.tables[$0] ?? [])})
     }
-    let snapshot = try await session.client.snapshot(in: session.connection.spaceId)
-    return Dictionary(uniqueKeysWithValues: names.map { ($0, fixture[$0] ?? snapshot.tables[$0] ?? []) })
+    if session.connection.desktopPairingId != nil {
+        try ConnectionStorage.prepare(for:session.connection)
+        let queue=try await MutationOutbox.open(spaceId:session.connection.storageId,directory:URL.applicationSupportDirectory.appendingPathComponent("spaces",isDirectory:true))
+        result=try await queue.companionContentProjection(result)
+    }
+    return result
 }
 
 private func debugDatabasesFixture() -> [String: [Row]] {
@@ -1122,4 +1137,15 @@ private func inferredDatabaseTypes(headers: [String], rows: [[String]]) -> [Stri
 
 private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+private struct PagesDatabaseSyncNotice:View {
+    let outbox:OutboxController?
+    var body:some View {
+        if let issue=outbox?.lastError {
+            NodusNotice(tone:.caution,title:"Sincronización pendiente de revisión",message:LocalizedStringKey(issue)).padding(.horizontal,NodusSpace.page)
+        } else if let pending=outbox?.pending,pending > 0 {
+            Label("Guardado en este dispositivo · pendiente de sincronizar",systemImage:"iphone").font(.caption).foregroundStyle(.secondary).padding(.horizontal,NodusSpace.page).fixedSize(horizontal:false,vertical:true)
+        }
+    }
 }

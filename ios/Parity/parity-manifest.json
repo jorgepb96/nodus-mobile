@@ -2099,6 +2099,27 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "writing.databases.canonicalDatabasePropertyAndRowCreation",
+      "route": "database-grid",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "writing.databases.typedCellValuesAndRevisionConflicts",
+      "route": "database-grid",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "writing.databases.offlineReopenAndAcknowledgedProjection",
+      "route": "database-grid",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {
