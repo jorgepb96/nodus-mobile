@@ -38,6 +38,7 @@ struct ChatScreen: View {
         var studyEvidence: JSONValue?
         var worldFacts: JSONValue?
         var createdAt: Date? = Date()
+        var desktopRecord:JSONValue?
         /// The material the answer was built from, grouped by kind — ideas, temas, huecos —
         /// so it can be read beside the answer instead of taken on trust.
         var sections: [CorpusRetrieval.MaterialSection] = []
@@ -83,7 +84,7 @@ struct ChatScreen: View {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         if turns.isEmpty { emptyState }
                         ForEach(turns) { turn in
-                            TurnBubble(turn: turn, accent: session.accent, session: session)
+                            TurnBubble(turn: turn, accent: session.accent, session: session, conversationId:conversationId)
                                 .id(turn.id)
                         }
                         // Only while nothing has arrived: once the first token lands the
@@ -278,7 +279,8 @@ struct ChatScreen: View {
                 studyCitations:message.studyCitations ?? [],
                 studyEvidence:message.studyEvidence,
                 worldFacts:message.worldFacts,
-                createdAt:message.createdAt
+                createdAt:message.createdAt,
+                desktopRecord:message.desktopRecord
             )
         }
     }
@@ -303,6 +305,7 @@ struct ChatScreen: View {
                     wasSemantic: turn.mode.map { $0 == .semantic },
                     warning: turn.warning,
                     delivery: turn.delivery,
+                    desktopRecord:turn.desktopRecord,
                     studyCitations:turn.studyCitations.isEmpty ? nil:turn.studyCitations,
                     studyEvidence:turn.studyEvidence,
                     worldFacts:turn.worldFacts,
@@ -631,11 +634,13 @@ private struct TurnBubble: View {
     let turn: ChatScreen.Turn
     let accent: Color
     let session: SpaceSession
+    let conversationId:String?
     @State private var studyCitation: JSONValue?
     @State private var showingStudyCitation = false
     @State private var showingWorldFacts = false
     @State private var worldSourceKey: String?
     @State private var showingWorldSource = false
+    @State private var showingRichAnswer = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -644,6 +649,7 @@ private struct TurnBubble: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .nodusGlass(NodusGlass(.regular, tint: accent))
+                if hasSavedDetails { Button { showingRichAnswer=true } label: { Label("Ver adjuntos y detalles",systemImage:"paperclip").frame(minHeight:44) }.buttonStyle(.plain).foregroundStyle(accent) }
             } else {
                 if let warning = turn.warning {
                     NodusNotice(tone: .caution, title: "Lexical retrieval", message: LocalizedStringKey(warning))
@@ -654,7 +660,7 @@ private struct TurnBubble: View {
                     // The same citations the report gets, in the same shape: the source's name,
                     // and a tap opens it.
                     CorpusProse(
-                        turn.text,
+                        bubbleProse,
                         accent: accent,
                         session: session,
                         labels: Dictionary(turn.citations.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first }),
@@ -666,6 +672,11 @@ private struct TurnBubble: View {
                             studyCitation = citation;showingStudyCitation = true;return true
                         }
                     )
+                    if hasRichContent || hasSavedDetails {
+                        Button { showingRichAnswer=true } label: {
+                            Label("Leer respuesta completa",systemImage:"doc.richtext").font(.body.weight(.medium)).frame(minHeight:44)
+                        }.buttonStyle(.plain).foregroundStyle(accent)
+                    }
                 }
 
                 if !turn.studyCitations.isEmpty {
@@ -715,6 +726,22 @@ private struct TurnBubble: View {
         }.nodusSheet(isPresented:$showingStudyCitation) { if let studyCitation { StudyChatEvidenceView(citation:studyCitation,session:session) } }
             .nodusSheet(isPresented:$showingWorldFacts) { if let facts = turn.worldFacts { WorldChatFactsView(facts:facts,session:session) } }
             .nodusSheet(isPresented:$showingWorldSource) { if let key = worldSourceKey { WorldChatSourceView(key:key,session:session) } }
+            .nodusSheet(isPresented:$showingRichAnswer) { RichChatAnswerView(session:session,content:turn.text,conversationId:conversationId,studyCitations:turn.studyCitations,desktopRecord:turn.desktopRecord) }
+    }
+
+    private var hasRichContent:Bool {
+        turn.text.contains("```") || turn.text.contains("$$") || turn.text.contains("\\[") || turn.text.contains("<svg") || turn.text.contains("<img") || turn.text.contains("|---") || turn.text.contains("| ---") || turn.text.range(of:#"\$[^$\n]+\$"#,options:.regularExpression) != nil
+    }
+    private var hasSavedDetails:Bool {
+        guard let record=turn.desktopRecord?.objectValue else { return false }
+        return !(record["attachments"]?.arrayValue ?? []).isEmpty || record["concilium"]?.objectValue != nil || !(record["skills"]?.arrayValue ?? []).isEmpty
+    }
+    private var bubbleProse:String {
+        guard hasRichContent else { return turn.text }
+        // A compact native entry opens the full ordered document, rather than
+        // exposing JSON fences or squeezing an interactive result into a bubble.
+        let prose=turn.text.components(separatedBy:"```").first ?? ""
+        return prose.isEmpty ? String(localized:"Respuesta con contenido enriquecido"):String(prose.prefix(1200))
     }
 
     private func icon(_ kind: String) -> String {

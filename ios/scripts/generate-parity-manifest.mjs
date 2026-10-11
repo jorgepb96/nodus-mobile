@@ -289,6 +289,15 @@ function operationMatrix(routes) {
       ['sync.chat.archivePinLimitAndUnavailableDestination', 'sync'],
       ['sync.chat.offlineOrganizationLostAcknowledgement', 'sync'],
       ['generation.chat.sharedProjectPreferences', 'generation'],
+      ['consultation.chat.mobileRichAnswerReader', 'consultation'],
+      ['consultation.chat.sharedMathTablesChartsAndModels', 'consultation'],
+      ['consultation.chat.originalAttachmentsAndConcilium', 'consultation'],
+      ['consultation.chat.storedAndLegacyCapabilityResults', 'consultation'],
+      ['consultation.chat.nativeClipboardAndProtectedFilePreview', 'consultation'],
+      ['consultation.chat.owningVaultResultFilesAndGrants', 'consultation'],
+      ['sync.chat.selectedRichAnswerDownloadsAndExpiry', 'sync'],
+      ['consultation.chat.readOnlyCapabilityAdapters', 'consultation'],
+      ['generation.databaseChat.newestChosenCapture', 'generation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

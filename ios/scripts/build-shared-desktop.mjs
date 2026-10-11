@@ -9,6 +9,12 @@ const mobile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..
 const desktop = path.resolve(process.argv.slice(2).find(argument => !argument.startsWith('--')) ?? path.join(mobile, '../nodus'));
 const output = path.join(mobile, 'ios/Nodus/Resources/SharedDesktop');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+function outputFiles(relative='') {
+  return fs.readdirSync(path.join(output,relative),{withFileTypes:true}).flatMap(entry=>{
+    const file=path.join(relative,entry.name);
+    return entry.isDirectory()?outputFiles(file):entry.isFile()&&file!=='build.json'?[file]:[];
+  }).sort();
+}
 function sourceDigest() {
   const files = [];
   const walk = relative => {
@@ -19,13 +25,14 @@ function sourceDigest() {
       else if (entry.isFile()) files.push(name);
     }
   };
-  walk('src'); walk('shared');
+  walk('src'); walk('shared'); walk('packages/capability-api/src');
   walk('server/lib/core'); walk('skill-capabilities');
   // These provider-free cores are imported by the renderer and therefore belong
   // to the exact source revision represented by this bundle.
   files.push('electron/ai/deepResearchCore.ts', 'electron/ai/immersionCore.ts');
   files.push('package.json', 'package-lock.json', 'vite.mobile-web.config.ts', 'tailwind.config.js', 'postcss.config.js');
   const digest = createHash('sha256');
+  digest.update('mobile-build-script\0');digest.update(fs.readFileSync(fileURLToPath(import.meta.url)));digest.update('\0');
   for (const file of files.sort()) { digest.update(file); digest.update('\0'); digest.update(fs.readFileSync(path.join(desktop, file))); digest.update('\0'); }
   return digest.digest('hex');
 }
@@ -33,11 +40,14 @@ const digest = sourceDigest();
 if (process.argv.includes('--verify')) {
   const metadata = JSON.parse(fs.readFileSync(path.join(output, 'build.json'), 'utf8'));
   if (metadata.sourceDigest !== digest) throw new Error('Shared Desktop sources changed. Rebuild the mobile surfaces before release.');
+  if(JSON.stringify(outputFiles())!==JSON.stringify(Object.keys(metadata.files).sort()))throw new Error('Shared bundle file inventory changed. Rebuild before release.');
   for (const [file, sha] of Object.entries(metadata.files)) if (hash(fs.readFileSync(path.join(output, file))) !== sha) throw new Error(`Shared bundle changed: ${file}`);
   console.log('Shared Desktop bundle matches its recorded source and output digests.');
 } else {
   execFileSync(process.execPath, [path.join(desktop, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'vite.mobile-web.config.ts'],
-    { cwd: desktop, env: { ...process.env, NODUS_MOBILE_SURFACE_OUT: output }, stdio: 'inherit' });
+    { cwd: desktop, env: { ...process.env, NODUS_MOBILE_SURFACE_OUT: output, NODUS_MOBILE_CHAT_READ:'0' }, stdio: 'inherit' });
+  execFileSync(process.execPath,[path.join(desktop,'node_modules/vite/bin/vite.js'),'build','--config','vite.mobile-web.config.ts'],
+    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'1'},stdio:'inherit'});
   execFileSync(path.join(desktop, 'node_modules/esbuild/bin/esbuild'), [path.join(desktop, 'shared/deepResearchReport.ts'),
     '--bundle', '--platform=browser', '--format=iife', '--global-name=NodusReport', '--target=es2020',
     '--outfile='+path.join(output,'report-renderer.js')], {cwd:desktop,stdio:'inherit'});
@@ -45,6 +55,6 @@ if (process.argv.includes('--verify')) {
     '--bundle','--platform=browser','--format=iife','--global-name=NodusCompanionChat','--target=es2020',
     '--outfile='+path.join(output,'companion-chat.js')],{cwd:desktop,stdio:'inherit'});
   if (sourceDigest() !== digest) throw new Error('Shared sources changed during the build. Repeat the build before accepting it.');
-  const files = Object.fromEntries(fs.readdirSync(output).filter(file => file !== 'build.json' && fs.statSync(path.join(output, file)).isFile()).map(file => [file, hash(fs.readFileSync(path.join(output, file)))]));
+  const files = Object.fromEntries(outputFiles().map(file => [file, hash(fs.readFileSync(path.join(output, file)))]));
   fs.writeFileSync(path.join(output, 'build.json'), JSON.stringify({ version: 1, desktopCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: desktop, encoding: 'utf8' }).trim(), sourceDigest: digest, files }, null, 2) + '\n');
 }

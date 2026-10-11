@@ -1825,6 +1825,60 @@
       "category": "generation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.chat.mobileRichAnswerReader",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.sharedMathTablesChartsAndModels",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.originalAttachmentsAndConcilium",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.storedAndLegacyCapabilityResults",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.nativeClipboardAndProtectedFilePreview",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.owningVaultResultFilesAndGrants",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.selectedRichAnswerDownloadsAndExpiry",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.readOnlyCapabilityAdapters",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.databaseChat.newestChosenCapture",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

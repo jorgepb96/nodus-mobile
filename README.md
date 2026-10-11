@@ -105,7 +105,7 @@ conflicts have an explicit mobile/Mac comparison and export of device annotation
 changed or malformed report is an error, never a partial empty report. Live generation records
 the request before submission, returns after acceptance, and observes the actual Mac queue.
 Atomic run/Bridge identity receipts recover the same execution after restart; completion requires
-a persisted, queryable report. Autonomous query execution remains pending. These changes and their prepared
+a persisted, queryable report. Autonomous query execution is implemented below and awaits local acceptance. These changes and their prepared
 Desktop/Swift regressions have not run or passed acceptance.
 Live chats select the actual World, Study/Teaching or Database adapter for their vault rather
 than the academic adapter. The scoped bridge carries their histories, projects, notebooks and
@@ -382,6 +382,21 @@ archiving releases a pin and deletion confirmations describe synchronization to 
 Autonomous replies inherit the project's actual shared preference composer, with application
 source/citation rules retaining precedence. Metadata, pin-limit, offline restart and lost-ACK
 fixtures are prepared but unexecuted; history visual acceptance remains pending.
+
+Rich native chat answers now open one isolated local reader using Desktop's actual Markdown,
+math, charts, SVG, media, models and validated declarative capability views. Wide tables use
+labelled rows on narrow iPhones, with the usual table on wider displays. Saved attachments,
+skills and individual Concilium assessments retain their original record; opaque owning-chat
+files open in native Quick Look and export through protected leases. Original image metadata
+comes from the Mac. Stored and legacy result readers have separate worker scope and no model,
+vision, attachment-creation or SVG-refinement lane. Unknown actions remain rejected.
+Selected 7/30-day answer copies include actual views and original assets within a 50 MB budget;
+the parent selected conversation retains its matching lifetime. Only consulted IIIF tiles are
+kept; uncached regions still require the Mac. Permission, missing-reader and format failures
+remain visible and cannot become an empty answer or stale offline fallback. Database Chat
+also chooses the newest complete profile when selected source downloads overlap. Prepared
+ownership, original-file, recording-grant and profile-order regressions have **not run**. The
+new reader resources are **not built** yet; compilation and native visual acceptance remain pending.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and

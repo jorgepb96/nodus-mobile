@@ -56,7 +56,7 @@ struct ReaderImageViewer: View {
     }
 }
 
-private struct ReaderImageShareSheet: UIViewControllerRepresentable {
+struct ReaderImageShareSheet: UIViewControllerRepresentable {
     let lease: PrivateBridgeFileLease
     final class Coordinator { let lease: PrivateBridgeFileLease;init(_ lease: PrivateBridgeFileLease) { self.lease = lease } }
     func makeCoordinator() -> Coordinator { Coordinator(lease) }

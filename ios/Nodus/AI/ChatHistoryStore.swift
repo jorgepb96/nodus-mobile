@@ -332,6 +332,14 @@ final class ChatHistoryStore {
         try FileManager.default.removeItem(at:directory.appendingPathComponent("\(id).json"))
         backup?.forget(.chat,spaceId:spaceId,id:id);conversations.removeAll{$0.id == id}
     }
+    func retainTemporaryDownload(_ id:String,until:Date) throws {
+        guard var conversation=conversations.first(where:{$0.id == id}),until>Date() else { throw DesktopBridgeError.malformedResponse }
+        // Authored conversations are already durable. Extending a chosen copy
+        // does not turn it into a device edit or enqueue an unnecessary Mac save.
+        guard let existing=conversation.downloadedUntil else { return }
+        conversation.downloadedUntil=max(existing,until);try write(conversation)
+        if let index=conversations.firstIndex(where:{$0.id == id}) { conversations[index]=conversation }
+    }
     private static func conversation(_ document: CompanionChatDocument) throws -> Conversation {
         let object = document.data.objectValue!
         let preserved = document.companion?.objectValue?["messages"]?.arrayValue ?? []

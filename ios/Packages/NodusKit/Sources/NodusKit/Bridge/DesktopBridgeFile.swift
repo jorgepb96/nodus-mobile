@@ -3,10 +3,10 @@ import Foundation
 
 public enum DesktopBridgeFileKind: String, Codable, Sendable {
     case studyMaterial, studyMaterialVersion, studyRecording, testimonyMedia, archiveItem, archiveFile
-    case libraryOriginal, libraryAttachment, audioClip, corpusImage
+    case libraryOriginal, libraryAttachment, audioClip, corpusImage, chatCapability
     public var domain: DesktopBridgeDomain {
         switch self {
-        case .studyMaterial, .studyMaterialVersion, .libraryOriginal, .libraryAttachment, .audioClip, .corpusImage: .corpus
+        case .studyMaterial, .studyMaterialVersion, .libraryOriginal, .libraryAttachment, .audioClip, .corpusImage, .chatCapability: .corpus
         case .studyRecording: .studyRecordings
         case .testimonyMedia: .testimonies
         case .archiveItem, .archiveFile: .primarySourceFiles
