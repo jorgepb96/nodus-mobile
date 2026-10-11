@@ -341,6 +341,8 @@ function operationMatrix(routes) {
       ['consultation.databases.formulaErrorRecoveryAndInvalidCellVisibility', 'consultation'],
       ['sync.arguments.completeInspectorDependencyEpoch', 'sync'],
       ['sync.pages.newOfflineDocumentStructuredDraftAndReopening', 'sync'],
+      ['sync.pages.appliedAuthoredDocumentSurvivesReadCopyExpiry', 'sync'],
+      ['sync.pages.legacyDraftStorageAndLatestAuthoredCatalogue', 'sync'],
       ['sync.documents.parentsAppliedBeforeDependentContent', 'sync'],
       ['sync.jobs.keyedCancellationBeforeAcknowledgement', 'sync'],
       ['sync.jobs.cancelledReceiptPersistsAcrossMacRestart', 'sync'],

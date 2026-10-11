@@ -19,18 +19,29 @@ public actor CompanionPageDocuments {
         var remote: JSONValue?
         var issue: String?
     }
+    private struct StoredState: Codable {
+        var version: Int
+        var records: [String: Record]
+        var authored: [String: JSONValue]
+    }
     static let storageKey = "companion-page-documents-v1"
     private let cache: PrivateBridgeCache
     private let vaultId: String
     private var records: [String: Record]
+    private var authored: [String: JSONValue] = [:]
     private var baselines: [String: JSONValue] = [:]
     private var acknowledged: [String: Int] = [:]
     private var synchronizing = false
+    private var diskTask: Task<Void, any Error>?
+    private var diskTaskId: UUID?
     public private(set) var revision = 0
 
     init(cache: PrivateBridgeCache, vaultId: String, data: Data?) throws {
         self.cache = cache; self.vaultId = vaultId
-        records = try data.map { try JSONDecoder.nodus.decode([String: Record].self, from: $0) } ?? [:]
+        if let data, let state = try? JSONDecoder.nodus.decode(StoredState.self, from: data), state.version == 2 {
+            records = state.records; authored = state.authored
+            for (id, source) in authored { _ = try Self.document(source, vaultId: vaultId, pageId: id) }
+        } else { records = try data.map { try JSONDecoder.nodus.decode([String: Record].self, from: $0) } ?? [:] }
     }
     public static func document(_ source: JSONValue, vaultId: String, pageId: String) throws -> JSONValue {
         guard source.objectValue?["version"] == .int(1), source.objectValue?["vaultId"] == .string(vaultId),
@@ -55,6 +66,28 @@ public actor CompanionPageDocuments {
         baselines[pageId] = document
     }
     public func hasDraft(pageId:String)->Bool { records[pageId] != nil }
+    /// Only documents actually authored on this device enter durable storage.
+    /// Other consulted Mac pages remain disposable/selected read copies.
+    public func authoredSource(pageId: String) -> JSONValue? { authored[pageId] }
+    public func authoredPageRows() -> [Row] {
+        var documents = authored.compactMapValues { $0.objectValue?["document"] }
+        for id in records.keys { documents[id] = document(pageId: id) }
+        return documents.keys.sorted().compactMap { id in
+            guard let document = documents[id]?.objectValue, let page = document["page"]?.objectValue else { return nil }
+            var row: [String: JSONValue] = [:]
+            for (portable, raw) in ["id":"id", "title":"title", "origin":"origin", "state":"state", "rowId":"row_id", "noteId":"note_id", "parentPageId":"parent_page_id", "icon":"icon", "coverBlobHash":"cover_blob_hash", "locked":"locked", "fullWidth":"full_width", "revision":"revision", "createdBy":"created_by", "updatedBy":"updated_by", "createdAt":"created_at", "updatedAt":"updated_at"] { row[raw] = page[portable] ?? .null }
+            row["mobileSyncState"] = document["mobileSyncState"] ?? .string("available")
+            return Row(row)
+        }
+    }
+    public func refreshAuthoredSource(pageId: String, source: JSONValue) async throws {
+        guard let previous = authored[pageId] else { return }
+        let document = try Self.document(source, vaultId: vaultId, pageId: pageId)
+        let old = try Self.document(previous, vaultId: vaultId, pageId: pageId)
+        guard let revision = document.objectValue?["revision"]?.intValue, let prior = old.objectValue?["revision"]?.intValue,
+              revision > prior || revision == prior && (document.objectValue?["page"]?.objectValue?["revision"]?.intValue ?? 0) >= (old.objectValue?["page"]?.objectValue?["revision"]?.intValue ?? 0) else { return }
+        guard source != previous else { return }; authored[pageId] = source; try await persist()
+    }
     /// Called only for the new standalone page just authored through the typed
     /// mutation outbox. Revision one is its empty creation baseline; it never
     /// substitutes an existing Mac page. A later Mac edit still causes a conflict.
@@ -65,7 +98,7 @@ public actor CompanionPageDocuments {
               page.bool("locked") != true, let title = page.string("title"), title.utf8.count <= 4096,
               page.string("created_at") != nil, page.string("updated_at") != nil else { throw DesktopBridgeError.malformedResponse }
         if let document = document(pageId: id) { return document }
-        guard baselines[id] == nil else { throw DesktopBridgeError.malformedResponse }
+        guard baselines[id] == nil, authored[id] == nil else { throw DesktopBridgeError.malformedResponse }
         var metadata: [String: JSONValue] = ["id": .string(id), "origin": .string("standalone"), "title": .string(title),
             "state": .string("active"), "revision": .int(1), "locked": .bool(false), "fullWidth": .bool(page.bool("full_width") == true)]
         for (raw, portable) in ["row_id":"rowId", "note_id":"noteId", "parent_page_id":"parentPageId", "icon":"icon", "cover_blob_hash":"coverBlobHash", "created_by":"createdBy", "updated_by":"updatedBy", "created_at":"createdAt", "updated_at":"updatedAt"] {
@@ -139,6 +172,9 @@ public actor CompanionPageDocuments {
                 guard response.objectValue?["id"] == .string(request.id), let committed = response.objectValue?["document"] else { throw DesktopBridgeError.malformedResponse }
                 try Self.validate(committed, id: pageId, local: false)
                 let source = JSONValue.object(["version": .int(1), "vaultId": .string(vaultId), "document": committed,"assets":response.objectValue?["assets"] ?? .array([]),"dependencies":response.objectValue?["dependencies"] ?? .array([])])
+                // Persist the confirmed authored result before retiring its sending
+                // draft. Disposable cache overflow must not strand an applied save.
+                authored[pageId] = source; try await persist()
                 try await cache.store(JSONEncoder.nodus.encode(source), vaultId: vaultId, domain: .corpus,
                     recordId: CompanionDocumentOutbox.operationKey("getMobilePageDocument", [.string(pageId)]))
                 guard var latest = records[pageId], latest.sending?.id == request.id else { throw DesktopBridgeError.malformedResponse }
@@ -153,6 +189,7 @@ public actor CompanionPageDocuments {
         guard var record = records[pageId], record.state == "conflict", let remote = record.remote else { throw DesktopBridgeError.malformedResponse }
         try Self.validate(remote, id: pageId, local: false)
         let source = JSONValue.object(["version": .int(1), "vaultId": .string(vaultId), "document": remote])
+        authored[pageId] = source; try await persist()
         try await cache.store(JSONEncoder.nodus.encode(source), vaultId: vaultId, domain: .corpus,
             recordId: CompanionDocumentOutbox.operationKey("getMobilePageDocument", [.string(pageId)]))
         baselines[pageId] = remote; acknowledged[pageId] = nil
@@ -161,7 +198,16 @@ public actor CompanionPageDocuments {
         try await persist(); return document(pageId: pageId) ?? remote
     }
     private func persist() async throws {
-        try await cache.store(JSONEncoder.nodus.encode(records), vaultId: vaultId, domain: .writing, recordId: Self.storageKey)
+        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, records: records, authored: authored))
+        let previous = diskTask, id = UUID(), cache = self.cache, vault = vaultId
+        let task = Task {
+            if let previous { _ = try? await previous.value }
+            _ = try await cache.store(bytes, vaultId: vault, domain: .writing, recordId: Self.storageKey)
+        }
+        diskTask = task; diskTaskId = id
+        do { try await task.value }
+        catch { if diskTaskId == id { diskTask = nil; diskTaskId = nil }; throw error }
+        if diskTaskId == id { diskTask = nil; diskTaskId = nil }
         revision += 1
     }
     private static func transportLoss(_ error: Error) -> Bool {

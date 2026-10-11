@@ -1280,6 +1280,16 @@ func databaseParityTables(_ session: SpaceSession, _ names: [String]) async thro
         try ConnectionStorage.prepare(for:session.connection)
         let queue=try await MutationOutbox.open(spaceId:session.connection.storageId,directory:URL.applicationSupportDirectory.appendingPathComponent("spaces",isDirectory:true))
         result=try await queue.companionContentProjection(result)
+        if names.contains("pages") {
+            let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+            let documents = try await CompanionPageDocumentStores.shared.store(pairingId: pairing.id, vaultId: vault)
+            for owned in await documents.authoredPageRows() {
+                if let index = result["pages"]?.firstIndex(where: { $0.string("id") == owned.string("id") }) {
+                    let remote = result["pages"]![index]
+                    if owned.string("mobileSyncState") != "available" || (owned.int("revision") ?? 0) > (remote.int("revision") ?? 0) { result["pages"]![index] = owned }
+                } else { result["pages", default: []].append(owned) }
+            }
+        }
     }
     return result
 }

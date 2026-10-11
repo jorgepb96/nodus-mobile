@@ -2217,6 +2217,18 @@
       "evidence": []
     },
     {
+      "id": "sync.pages.appliedAuthoredDocumentSurvivesReadCopyExpiry",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.pages.legacyDraftStorageAndLatestAuthoredCatalogue",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "sync.documents.parentsAppliedBeforeDependentContent",
       "category": "sync",
       "result": "pending",

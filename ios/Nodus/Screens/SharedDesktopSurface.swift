@@ -516,8 +516,25 @@ private struct DesktopWebView: UIViewRepresentable {
                         if method == "getPageDocument", args.count == 1, let page = args[0].stringValue {
                             if await pages.hasDraft(pageId:page),let owned = await pages.document(pageId: page) { value = owned }
                             else {
-                                let source = try await loadPrivateBridgeValue(session, method: "getMobilePageDocument", args: [.string(page)],downloadedOnly:selectedPageOnly)
+                                let authored = await pages.authoredSource(pageId: page)
+                                let source: JSONValue
+                                if selectedPageOnly, let authored { source = authored; onOfflineCopy(true) }
+                                else {
+                                    do {
+                                        let consulted = try await loadPrivateBridgeValue(session, method: "getMobilePageDocument", args: [.string(page)],downloadedOnly:selectedPageOnly)
+                                        let ownRevision = authored?.objectValue?["document"]?.objectValue?["revision"]?.intValue ?? 0
+                                        let consultedRevision = consulted.objectValue?["document"]?.objectValue?["revision"]?.intValue ?? 0
+                                        let ownPageRevision = authored?.objectValue?["document"]?.objectValue?["page"]?.objectValue?["revision"]?.intValue ?? 0
+                                        let consultedPageRevision = consulted.objectValue?["document"]?.objectValue?["page"]?.objectValue?["revision"]?.intValue ?? 0
+                                        if let authored, ownRevision > consultedRevision || ownRevision == consultedRevision && ownPageRevision > consultedPageRevision { source = authored; onOfflineCopy(true) }
+                                        else { source = consulted }
+                                    } catch {
+                                        guard isPrivateBridgeOffline(error), let authored else { throw error }
+                                        source = authored; onOfflineCopy(true)
+                                    }
+                                }
                                 value = try CompanionPageDocuments.document(source, vaultId: vault, pageId: page)
+                                try await pages.refreshAuthoredSource(pageId: page, source: source)
                                 try await pages.seed(pageId: page, document: value)
                                 value = await pages.document(pageId:page) ?? value
                             }

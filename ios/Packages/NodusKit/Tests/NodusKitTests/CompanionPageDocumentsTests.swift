@@ -55,6 +55,45 @@ struct CompanionPageDocumentsTests {
         await #expect(throws: DesktopBridgeError.self) { try await store.createLocal(page: page) }
         #expect(await store.hasDraft(pageId: "page") == false)
     }
+    @Test("Applied authored documents survive reopening after disposable read copies are unavailable")
+    func committedOwnership() async throws {
+        let id = UUID().uuidString, directory = URL.temporaryDirectory.appendingPathComponent("page-owned-\(id)")
+        let keychain = KeychainStore(service: "nodus.tests.page.owned.\(id)")
+        defer { try? FileManager.default.removeItem(at: directory); try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }
+        let cache = try PrivateBridgeCache(pairingId: id, directory: directory, keychain: keychain, readLimitBytes: 0)
+        let store = try await open(cache)
+        try await store.seed(pageId: "page", document: document())
+        #expect(await store.authoredSource(pageId: "page") == nil, "Consulting a Mac document does not turn it into a permanent download")
+        _ = try await store.save(pageId: "page", input: input(3))
+        var saved = document(4, title: "Título móvil").objectValue!
+        saved["markdown"] = .string("Móvil"); saved["nativeDocument"] = input(3).objectValue?["nativeDocument"]
+        let confirmed = JSONValue.object(saved), probe = PageProbe(document: confirmed)
+        try await store.synchronize { request in try await probe.send(request, lose: false) }
+        let reopened = try await open(cache), source = try #require(await reopened.authoredSource(pageId: "page"))
+        #expect(await reopened.hasDraft(pageId: "page") == false)
+        #expect(try CompanionPageDocuments.document(source, vaultId: "vault", pageId: "page") == confirmed)
+        #expect(try await cache.data(vaultId: "vault", domain: .corpus, recordId: CompanionDocumentOutbox.operationKey("getMobilePageDocument", [.string("page")])) == nil)
+        #expect(await reopened.authoredPageRows().first?.string("title") == "Título móvil")
+        #expect(try await cache.data(vaultId: "other", domain: .writing, recordId: CompanionPageDocuments.storageKey) == nil)
+        let old: JSONValue = .object(["version": .int(1), "vaultId": .string("vault"), "document": document(3)])
+        try await reopened.refreshAuthoredSource(pageId: "page", source: old)
+        #expect(await reopened.authoredSource(pageId: "page") == source)
+        let newer: JSONValue = .object(["version": .int(1), "vaultId": .string("vault"), "document": document(5, title: "Actualizado en Nodus")])
+        try await reopened.refreshAuthoredSource(pageId: "page", source: newer)
+        #expect(await reopened.authoredSource(pageId: "page") == newer)
+    }
+    @Test("Existing draft storage migrates without inventing a confirmed authored document")
+    func legacyDraftStorage() async throws {
+        let (cache,directory,keychain,id)=try setup();defer{try? FileManager.default.removeItem(at:directory);try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId:id))}
+        let store = try await open(cache); try await store.seed(pageId: "page", document: document())
+        _ = try await store.save(pageId: "page", input: input(3))
+        let bytes = try #require(try await cache.data(vaultId: "vault", domain: .writing, recordId: CompanionPageDocuments.storageKey))
+        let state = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes), legacy = try #require(state.objectValue?["records"])
+        let migrated = try CompanionPageDocuments(cache: cache, vaultId: "vault", data: JSONEncoder.nodus.encode(legacy))
+        let expected = await store.document(pageId: "page")
+        #expect(await migrated.document(pageId: "page") == expected)
+        #expect(await migrated.authoredSource(pageId: "page") == nil)
+    }
     @Test("Lost reply freezes the request and later edits cannot be retired by its acknowledgement")
     func lostReply() async throws {
         let (cache,directory,keychain,id)=try setup();defer{try? FileManager.default.removeItem(at:directory);try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId:id))}
