@@ -23,12 +23,12 @@ const version = JSON.parse(fs.readFileSync(path.join(desktop, 'package.json'), '
 const env = { ...process.env, NODUS_USERDATA: lab, NODUS_DISABLE_AUTO_UPDATE: '1',
   NODUS_E2E_UPDATE_STATUS: 'not-available', NODUS_E2E_DISABLE_STUDY_BACKGROUND_AI: '1' };
 delete env.ELECTRON_RUN_AS_NODE;
-let application;
+let application, page;
 try {
   application = await _electron.launch({ executablePath: nodusRequire('electron'), args: [desktop], env, timeout: 60_000 });
   assert.equal(await application.evaluate(({ app }) => app.getPath('userData')), lab);
   assert.equal(await application.evaluate(({ app }) => app.getVersion()), version);
-  const page = await application.firstWindow(); page.setDefaultTimeout(30_000);
+  page = await application.firstWindow(); page.setDefaultTimeout(30_000);
   const rendererErrors = []; page.on('pageerror', error => rendererErrors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 1024 });
   await page.waitForFunction(() => Boolean(document.getElementById('root')?.children.length));
@@ -52,9 +52,11 @@ try {
   const search = page.getByPlaceholder('Buscar en notas e ideas…');
   await search.fill(fixture.title);
   await page.getByRole('button', { name: `Abrir ${fixture.title}`, exact: true }).click();
+  await page.screenshot({ path: path.join(output, 'desktop-scriptor-opened.png') });
+  const before = await page.evaluate(id => window.nodus.getWorkspaceNoteEditorData(id), fixture.noteId);
+  fs.writeFileSync(path.join(output, 'desktop-scriptor-before.json'), JSON.stringify(before), { mode: 0o600 });
   const paragraph = page.getByText('Párrafo escrito en el Mac para comprobar la edición móvil.', { exact: true });
   await paragraph.waitFor({ state: 'visible' });
-  const before = await page.evaluate(id => window.nodus.getWorkspaceNoteEditorData(id), fixture.noteId);
   assert(before.nativeDocument.some(block => block.type === 'table'));
   assert(JSON.stringify(before.nativeDocument).includes('E=mc^2'));
   await page.screenshot({ path: path.join(output, 'desktop-scriptor-before-edit.png') });
@@ -79,4 +81,10 @@ try {
   fs.writeFileSync(path.join(lab, 'scriptor-desktop-edit-acceptance-result.json'), JSON.stringify(result), { mode: 0o600 });
   fs.writeFileSync(path.join(output, 'desktop-scriptor-result.json'), JSON.stringify(result), { mode: 0o600 });
   console.log(JSON.stringify(result));
+} catch (error) {
+  if (page) {
+    await page.screenshot({ path: path.join(output, 'desktop-scriptor-failure.png') }).catch(() => {});
+    fs.writeFileSync(path.join(output, 'desktop-scriptor-failure-text.txt'), await page.locator('body').innerText().catch(() => 'Renderer unavailable'), { mode: 0o600 });
+  }
+  throw error;
 } finally { await application?.close(); }
