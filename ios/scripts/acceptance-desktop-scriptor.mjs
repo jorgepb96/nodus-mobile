@@ -55,7 +55,14 @@ try {
   await page.screenshot({ path: path.join(output, 'desktop-scriptor-opened.png') });
   const before = await page.evaluate(id => window.nodus.getWorkspaceNoteEditorData(id), fixture.noteId);
   fs.writeFileSync(path.join(output, 'desktop-scriptor-before.json'), JSON.stringify(before), { mode: 0o600 });
-  const paragraph = page.getByText('Párrafo escrito en el Mac para comprobar la edición móvil.', { exact: true });
+  const firstParagraph = before.nativeDocument.find(block => block.type === 'paragraph');
+  function inlineText(content) {
+    return typeof content === 'string' ? content : Array.isArray(content)
+      ? content.map(item => typeof item.text === 'string' ? item.text : inlineText(item.content)).join('') : '';
+  }
+  const paragraphText = inlineText(firstParagraph?.content);
+  assert(paragraphText.length > 40, 'An actual editable paragraph is required, including earlier acceptance edits');
+  const paragraph = page.getByText(paragraphText, { exact: true });
   await paragraph.waitFor({ state: 'visible' });
   assert(before.nativeDocument.some(block => block.type === 'table'));
   assert(JSON.stringify(before.nativeDocument).includes('E=mc^2'));
