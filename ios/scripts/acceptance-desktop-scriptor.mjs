@@ -13,8 +13,14 @@ for (const vault of registry.vaults) {
   const relative = path.relative(lab, fs.realpathSync(vault.path));
   assert(relative && !relative.startsWith('..') && !path.isAbsolute(relative), 'Every writable vault must belong to the laboratory');
 }
-const fixture = JSON.parse(fs.readFileSync(path.join(lab, 'scriptor-fixture.json'), 'utf8'));
+let fixture = JSON.parse(fs.readFileSync(path.join(lab, 'scriptor-fixture.json'), 'utf8'));
 assert(fixture.noteId && fixture.title === 'Aceptación Scriptor móvil 0.1.0');
+const createdMarker = process.env.NODUS_ACCEPTANCE_CREATED_DOCUMENT_MARKER;
+const createdKind = process.env.NODUS_ACCEPTANCE_CREATED_DOCUMENT_KIND;
+if (createdMarker) {
+  assert(/^CompanionCreate-[A-Fa-f0-9]{8}$/.test(createdMarker));
+  assert(['markdown', 'idea'].includes(createdKind));
+}
 const output = path.resolve(process.argv[2] ?? '');
 assert(output.includes('/artifacts/acceptance-0.1.0/'), 'Desktop evidence needs a private acceptance folder');
 fs.mkdirSync(output, { recursive: true, mode: 0o700 });
@@ -48,9 +54,18 @@ try {
   }
   const active = await page.evaluate(() => window.nodus.getActiveVault());
   assert.equal(active.id, 'default', 'The real Desktop renderer must own the same vault as the phone');
+  if (createdMarker) {
+    const tree = await page.evaluate(() => window.nodus.getNotesTree(true));
+    const matching = tree.notes.filter(note => note.content?.includes(createdMarker));
+    assert.equal(matching.length, 1, 'A mobile creation must arrive once in the canonical Mac catalogue');
+    assert.equal(matching[0].kind, createdKind, 'A manual idea must retain its original document kind');
+    assert.equal(matching[0].trashedAt ?? null, null);
+    fixture = { noteId: matching[0].id, title: matching[0].title };
+  }
   await page.locator('[data-tour="nav-workspace"]').click();
   const search = page.getByPlaceholder('Buscar en notas e ideas…');
-  await search.fill(fixture.title);
+  await search.fill(createdMarker ?? fixture.title);
+  assert.equal(await page.getByRole('button', { name: `Abrir ${fixture.title}`, exact: true }).count(), 1);
   await page.getByRole('button', { name: `Abrir ${fixture.title}`, exact: true }).click();
   await page.screenshot({ path: path.join(output, 'desktop-scriptor-opened.png') });
   const before = await page.evaluate(id => window.nodus.getWorkspaceNoteEditorData(id), fixture.noteId);
@@ -64,14 +79,17 @@ try {
   assert(paragraphText.length > 40, 'An actual editable paragraph is required, including earlier acceptance edits');
   const paragraph = page.getByText(paragraphText, { exact: true });
   await paragraph.waitFor({ state: 'visible' });
-  assert(before.nativeDocument.some(block => block.type === 'table'));
-  assert(JSON.stringify(before.nativeDocument).includes('E=mc^2'));
+  if (!createdMarker) {
+    assert(before.nativeDocument.some(block => block.type === 'table'));
+    assert(JSON.stringify(before.nativeDocument).includes('E=mc^2'));
+  }
   await page.screenshot({ path: path.join(output, 'desktop-scriptor-before-edit.png') });
-  const expectedMobileEdit = process.env.NODUS_ACCEPTANCE_EXPECTED_EDIT;
+  const expectedMobileEdit = createdMarker ?? process.env.NODUS_ACCEPTANCE_EXPECTED_EDIT;
   if (expectedMobileEdit) {
     assert(before.contentMarkdown.includes(expectedMobileEdit) && JSON.stringify(before.nativeDocument).includes(expectedMobileEdit), 'The real Mac document must contain the exact mobile edit');
     const result = { result: 'passed', desktopVersion: version, noteId: fixture.noteId, expectedMobileEdit,
-      revision: before.revision, versions: before.versions.length, structuredTablePreserved: true, formulaPreserved: true,
+      revision: before.revision, versions: before.versions.length,
+      ...(createdMarker ? { creationKind: createdKind, duplicateCount: 0 } : { structuredTablePreserved: true, formulaPreserved: true }),
       interaction: 'actual Desktop BlockNote consultation after mobile editing', skipped: 0 };
     await page.screenshot({ path: path.join(output, 'desktop-scriptor-mobile-edit-visible.png') });
     fs.writeFileSync(path.join(output, 'desktop-scriptor-result.json'), JSON.stringify(result), { mode: 0o600 });
