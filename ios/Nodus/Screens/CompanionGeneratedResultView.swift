@@ -1,4 +1,5 @@
 import NodusKit
+import NodusUI
 import SwiftUI
 
 /// Completed device content remains readable before the Mac acknowledges it.

@@ -6,6 +6,12 @@ import WebKit
 
 enum DesktopSurface: String { case graph, dictionary, workspace, argument, deepResearch, immersion, chat }
 
+private struct MobileWritingResultTarget: Identifiable {
+    let request: DesktopJobLedger.Request
+    let checkpoint: JSONValue
+    var id: String { request.id }
+}
+
 enum MobileSurfaceVaultContext {
     static func descriptor(connection: AppModel.Connection, vault: VaultDescriptor?) -> VaultDescriptor {
         if connection.desktopPairingId != nil {
@@ -57,11 +63,12 @@ struct SharedDesktopSurface: View {
     @State private var issue: String?
     @State private var exportedURL: URL?
     @State private var savedAudio: SavedAudioTarget?
+    @State private var writingResult: MobileWritingResultTarget?
     @State private var autonomousStatus: String?
     @State private var offlineCopy = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }) { kind, id, location, quote in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }) { kind, id, location, quote in
             let path = kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
@@ -93,6 +100,16 @@ struct SharedDesktopSurface: View {
             }
         }
         .sheet(item: $exportedURL) { ActivityShareSheet(items: [$0]) }
+        .sheet(item: $writingResult) { target in
+            NavigationStack {
+                CompanionGeneratedResultView(session: session, request: target.request, checkpoint: target.checkpoint)
+                    .nodusModalClose(accent: session.accent)
+            }
+            .presentationDetents([.fraction(0.68), .large])
+            .presentationDragIndicator(.visible)
+            .environment(\.dynamicTypeSize, textSize)
+            .nodusTextHierarchy()
+        }
         .sheet(item: $savedAudio) { target in
             NavigationStack { SavedAudioPlayer(target: target, accent: session.accent).nodusModalClose(accent: session.accent) }
                 .environment(\.dynamicTypeSize, textSize)
@@ -208,9 +225,10 @@ private struct DesktopWebView: UIViewRepresentable {
     let onOfflineCopy: (Bool) -> Void
     let onOpenSource: (SourceDocumentTarget) -> Void
     let onOpenAudio: (SavedAudioTarget) -> Void
+    let onOpenWritingResult: (MobileWritingResultTarget) -> Void
     let onNavigate: (String, String, String?, String?) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onNavigate: onNavigate) }
+    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onNavigate: onNavigate) }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "nodus")
@@ -330,6 +348,7 @@ private struct DesktopWebView: UIViewRepresentable {
         let onOfflineCopy: (Bool) -> Void
         let onOpenSource: (SourceDocumentTarget) -> Void
         let onOpenAudio: (SavedAudioTarget) -> Void
+        let onOpenWritingResult: (MobileWritingResultTarget) -> Void
         var tasks: [Task<Void, Never>] = []
         var runningJobs: [String: (DesktopBridgeClient, String, String)] = [:]
         private var persistedSurfaceCache: PrivateBridgeCache?
@@ -351,7 +370,7 @@ private struct DesktopWebView: UIViewRepresentable {
             webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:publication:changed',args:[\(payload)]});", completionHandler: nil)
             if session.companionPublicationUpdates.contains(where: { $0.objectValue?["id"]?.stringValue == autonomousGenerationId && $0.objectValue?["state"] == .string("available") }) { onAutonomousStatus(nil) }
         }
-        init(session: SpaceSession, ai: AISettings, onError: @escaping (String) -> Void, onExport: @escaping (URL) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onNavigate = onNavigate }
+        init(session: SpaceSession, ai: AISettings, onError: @escaping (String) -> Void, onExport: @escaping (URL) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onNavigate = onNavigate }
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
                 let id = body["id"] as? String, let method = body["method"] as? String,
@@ -363,6 +382,19 @@ private struct DesktopWebView: UIViewRepresentable {
                     var value: JSONValue
                     if method == "persistSurfaceStorage" {
                         try await persistSurfaceStorage(args.first ?? .null); value = .null
+                    } else if method == "openMobileWritingResult", args.count == 1 {
+                        guard let identity = args[0].stringValue, UUID(uuidString: identity) != nil,
+                              let pairing = session.connection.desktopPairingId, let vault = session.vaultId
+                        else { throw DesktopBridgeError.malformedResponse }
+                        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault)
+                        guard let request = await ledger.all().first(where: { $0.id == identity }),
+                              request.method == "saveStudyImprovementFromMobile",
+                              CompanionResultCatalogue.contains(request, in: "workspace"),
+                              let checkpoint = request.checkpoint,
+                              checkpoint.objectValue?["id"]?.stringValue == identity
+                        else { throw DesktopBridgeError.malformedResponse }
+                        onOpenWritingResult(MobileWritingResultTarget(request: request, checkpoint: checkpoint))
+                        value = .bool(true)
                     } else if method == "companionDictionaryCopy", args.isEmpty {
                         value = try await companionDictionaryCopy(session)
                     } else if method == "surfaceOfflineCopy", args.isEmpty {

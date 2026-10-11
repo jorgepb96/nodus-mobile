@@ -184,6 +184,8 @@ format and cancellation failures do not trigger offline fallback. Research check
 reports and Markdown retain the downloaded/mixed material scope. Native source contracts
 and persistence regressions are prepared and remain pending execution. Selected specialised
 study/world content and workshop generation still require their own autonomous contracts.
+Completed autonomous writing assistance opens its durable native result directly from Scriptor
+while publication is pending; it does not fabricate a Mac log ID or replace the original document.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
@@ -197,9 +199,8 @@ parity or TestFlight. Private fixtures, screenshots, logs and `.xcresult` bundle
 
 GitHub Actions remains enabled in both repositories. At the user's request, implementation
 continues without running workflows or an intermediate test campaign. Defer the complete checks
-until implementation is ready; use `[skip ci]` on pushes to the open draft PRs. The privileged CLA
-workflow uses the default branch and does not respect that marker, so consolidate remote updates
-and cancel any automatic CLA runs for this branch rather than disabling repository Actions.
+until implementation is ready. Changes are committed locally without pushing or editing the
+draft PRs: the privileged CLA workflow also runs on PR updates and ignores `[skip ci]`.
 
 ## Licence
 
