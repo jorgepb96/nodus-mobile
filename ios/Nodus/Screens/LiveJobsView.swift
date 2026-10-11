@@ -80,6 +80,7 @@ struct LiveJobsView: View {
         catch { await refresh(); issue = error.localizedDescription }
     }
     private func title(_ method: String, args: [JSONValue]) -> String {
+        if method == "localAcademicGeneration" { return "Respuesta anterior del móvil" }
         if method == "runMobileSpaceAction", let kind = args.first?.objectValue?["kind"]?.stringValue {
             return ["idea.delete": "Eliminar idea", "idea.saveToNotes": "Guardar idea en notas", "deepResearch.saveToNotes": "Guardar investigación en notas", "hypothesis.saveToNotes": "Guardar hipótesis", "projects.create": "Crear proyecto", "projects.update": "Guardar proyecto", "projects.section.update": "Guardar sección", "projects.chapter.import": "Importar capítulo", "pages.restoreRevision": "Restaurar versión", "databases.importCSV": "Importar CSV", "worldbuilding.entityDelete": "Eliminar entidad", "worldbuilding.continuity": "Revisar continuidad", "author.synthesis.generate": "Síntesis de autor", "authors.matrix.generate": "Matriz de autores", "argumentMap.generate": "Mapa de argumentos", "writing.generate": "Asistencia de escritura", "worldbuilding.proseReview": "Revisión de prosa"][kind] ?? "Cambios de contenido"
         }

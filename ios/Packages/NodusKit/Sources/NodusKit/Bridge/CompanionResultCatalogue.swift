@@ -7,7 +7,7 @@ public enum CompanionResultCatalogue {
         guard let checkpoint = request.checkpoint?.objectValue else { return false }
         let original = checkpoint["request"]?.objectValue ?? [:]
         switch request.method {
-        case "saveMobileAcademicResult":
+        case "saveMobileAcademicResult", "localAcademicGeneration":
             guard checkpoint["preview"]?.objectValue != nil else { return false }
             switch original["source"]?.objectValue?["kind"]?.stringValue {
             case "author", "matrix": return surface == "authors"
@@ -39,7 +39,7 @@ public enum CompanionResultCatalogue {
 
     public static func title(_ request: DesktopJobLedger.Request) -> String {
         let checkpoint = request.checkpoint?.objectValue ?? [:]
-        if request.method == "saveMobileAcademicResult" {
+        if ["saveMobileAcademicResult", "localAcademicGeneration"].contains(request.method) {
             switch checkpoint["request"]?.objectValue?["source"]?.objectValue?["kind"]?.stringValue {
             case "author": return "Síntesis de autor"
             case "matrix": return "Síntesis de autor y tema"

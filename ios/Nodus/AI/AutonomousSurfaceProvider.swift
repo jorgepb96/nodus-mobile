@@ -174,6 +174,14 @@ final class AutonomousSurfaceProvider {
             object["entityKey"]?.stringValue == entity, let id = object["id"]?.stringValue, UUID(uuidString: id) != nil else { throw DesktopBridgeError.permissionDenied }
         let bytes = try JSONEncoder.nodus.encode(args[3])
         guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
+        if kind == "academic", session.connection.desktopPairingId != nil,
+           let old = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key) {
+            let previous = try JSONDecoder.nodus.decode(JSONValue.self, from: old)
+            if previous.objectValue?["id"] != .string(id) {
+                let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: vault)
+                try await ledger.archiveAcademicCheckpoint(recordId: key, checkpoint: previous)
+            }
+        }
         try await queuePublication(kind: kind, entity: entity, checkpoint: args[3], scope: scope, session: session)
         if kind == "academic" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:academic:index:v1",entity:entity) }
         else if kind == "database" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:database:index:v1",entity:entity) }
@@ -237,12 +245,13 @@ final class AutonomousSurfaceProvider {
                 let key = try CompanionGenerationPublication.recordId(kind: "academic", entity: entity)
                 let checkpoint = try await loadCheckpoint(cache: cache, key: key, scope: session.surfaceStorageScope(), session: session)
                 if let value = checkpoint.objectValue, value["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument"),
-                   let id = value["id"]?.stringValue, let map = value["result"] ?? value["preview"], map.objectValue?["root"]?.objectValue != nil { maps[id] = map }
+                   let id = value["id"]?.stringValue,
+                   let map = value["result"]?.objectValue?["root"] != nil ? value["result"] : value["preview"], map.objectValue?["root"]?.objectValue != nil { maps[id] = map }
             }
         }
-        for request in await ledger.all() where request.method == "saveMobileAcademicResult" {
+        for request in await ledger.all() where ["saveMobileAcademicResult", "localAcademicGeneration"].contains(request.method) {
             guard request.checkpoint?.objectValue?["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument"),
-                  let map = request.result ?? request.checkpoint?.objectValue?["preview"], map.objectValue?["root"]?.objectValue != nil else { continue }
+                  let map = request.result?.objectValue?["root"] != nil ? request.result : request.checkpoint?.objectValue?["preview"], map.objectValue?["root"]?.objectValue != nil else { continue }
             maps[request.id] = map
         }
         return .array(maps.sorted { $0.key < $1.key }.map { .object(["id": .string($0.key), "map": $0.value]) })

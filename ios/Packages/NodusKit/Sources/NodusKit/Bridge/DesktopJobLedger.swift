@@ -73,6 +73,22 @@ public actor DesktopJobLedger {
         try await persist()
         durablyPrepared.insert(request.id)
     }
+    /// Preserve even an unparseable paid response before an explicit retry
+    /// replaces the active checkpoint. This record is never a sendable Mac job.
+    public func archiveAcademicCheckpoint(recordId: String, checkpoint: JSONValue) async throws {
+        guard var value = checkpoint.objectValue, let id = value["id"]?.stringValue,
+              UUID(uuidString: id) != nil, value["request"]?.objectValue?["source"]?.objectValue != nil,
+              let raw = value["raw"]?.stringValue, !raw.isEmpty,
+              try JSONEncoder.nodus.encode(checkpoint).count <= 20_000_000 else { return }
+        if requests[id] != nil { return }
+        value["kind"] = .string("academic")
+        value["state"] = .string("failed")
+        value["error"] = value["error"] ?? .string("Respuesta anterior conservada. La nueva generación usa otra solicitud.")
+        requests[id] = Request(id: id, method: "localAcademicGeneration", args: [], createdAt: Date(),
+            jobId: nil, state: "failed", issue: value["error"]?.stringValue,
+            checkpointRecordId: recordId, checkpoint: .object(value))
+        try await persist()
+    }
     public func generationCheckpoint(recordId: String, generationId: String? = nil) -> JSONValue? {
         guard let request = all().first(where: { $0.checkpointRecordId == recordId && (generationId == nil || $0.id == generationId) }) else { return nil }
         return reconciledCheckpoint(request)

@@ -13,6 +13,7 @@ struct CompanionGeneratedResultView: View {
     private var value: [String: JSONValue] { (current.checkpoint ?? checkpoint).objectValue ?? [:] }
     private var markdown: String? {
         switch current.method {
+        case "localAcademicGeneration": return value["raw"]?.stringValue
         case "saveMobileAcademicResult":
             guard let preview = value["preview"]?.objectValue else { return nil }
             if let thesis = preview["thesis"]?.stringValue {
@@ -36,9 +37,14 @@ struct CompanionGeneratedResultView: View {
         }
     }
     private var title: String { CompanionResultCatalogue.title(current) }
+    private var argumentMap: JSONValue? {
+        guard ["saveMobileAcademicResult", "localAcademicGeneration"].contains(current.method),
+              value["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument") else { return nil }
+        return current.result?.objectValue?["root"] != nil ? current.result : value["preview"]
+    }
     var body: some View {
         Group {
-            if current.method == "saveMobileAcademicResult", value["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument"), let map = current.result ?? value["preview"] {
+            if let map = argumentMap {
                 SharedDesktopSurface(session: session, surface: .argument, initialArgumentMap: map)
             } else if current.method == "saveMobileDatabaseResearchReport",let id = current.result?.objectValue?["id"]?.stringValue ?? value["detail"]?.objectValue?["report"]?.objectValue?["id"]?.stringValue {
                 SharedDesktopSurface(session:session,surface:.databaseResearch,initialDatabaseReportId:id)

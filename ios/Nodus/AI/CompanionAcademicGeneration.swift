@@ -24,13 +24,21 @@ final class CompanionAcademicGeneration {
     private static func entity(_ request: JSONValue) throws -> String {
         SHA256.hash(data: try JSONEncoder.nodus.encode(request)).map { String(format: "%02x", $0) }.joined()
     }
-    static func saved(session: SpaceSession, request: JSONValue) async throws -> JSONValue? {
+    static func saved(session: SpaceSession, request: JSONValue, onlyUnpublished: Bool = false) async throws -> JSONValue? {
         let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
         let key = try CompanionGenerationPublication.recordId(kind: "academic", entity: entity(request))
         let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
-        if let checkpoint = await ledger.generationCheckpoint(recordId: key) { return checkpoint.objectValue?["preview"] }
         let cache = try PrivateBridgeCache(pairingId: pairing.id)
-        return try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key).map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0).objectValue?["preview"] } ?? nil
+        let local = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key).map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) }
+        let entries = await ledger.all().filter { $0.method == "saveMobileAcademicResult" && $0.checkpointRecordId == key && $0.checkpoint?.objectValue?["preview"]?.objectValue != nil }
+        let checkpoint: JSONValue?
+        if let local, local.objectValue?["preview"]?.objectValue != nil {
+            checkpoint = await ledger.generationCheckpoint(recordId: key, generationId: local.objectValue?["id"]?.stringValue) ?? local
+        } else if let entry = entries.first {
+            checkpoint = await ledger.generationCheckpoint(recordId: key, generationId: entry.id)
+        } else { checkpoint = nil }
+        if onlyUnpublished, checkpoint?.objectValue?["state"] == .string("available") { return nil }
+        return checkpoint?.objectValue?["preview"]
     }
     static func download(session: SpaceSession, request: JSONValue, days: Int) async throws {
         guard [7, 30].contains(days) else { throw PrivateBridgeCache.ReadPackError.invalidSelection }
@@ -42,10 +50,16 @@ final class CompanionAcademicGeneration {
         var records: [PrivateBridgeCache.ReadPackRecord] = [.init(domain: .corpus, recordId: record, data: try JSONEncoder.nodus.encode(value))]
         if request.objectValue?["kind"] == .string("argument"), let ideas = value.objectValue?["source"]?.objectValue?["ideas"]?.arrayValue {
             let client = DesktopBridgeClient(pairing: pairing, token: token)
-            var bytes = records[0].data.count
+            let args: [JSONValue] = [.object(["seedIdeaId": request.objectValue?["seedIdeaId"] ?? .null, "language": request.objectValue?["language"] ?? .null])]
+            let structural = try await client.operation(vaultId: vault, method: "getMobileStructuralArgumentMap", args: args)
+            var ids = try CompanionArgumentDownload.ideaIDs(structural)
             for idea in ideas {
-                try Task.checkCancellation()
                 guard let id = idea.objectValue?["global_id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                ids.insert(id)
+            }
+            var bytes = records[0].data.count
+            for id in ids.sorted() {
+                try Task.checkCancellation()
                 for method in ["getIdeaDetail", "getIdeaEdges"] {
                     let args: [JSONValue] = [.string(id)], result = try await client.operation(vaultId: vault, method: method, args: args)
                     guard result != .null else { throw DesktopBridgeError.malformedResponse }
@@ -54,11 +68,12 @@ final class CompanionAcademicGeneration {
                     records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey(method, args), data: data))
                 }
             }
-            let args: [JSONValue] = [.object(["seedIdeaId": request.objectValue?["seedIdeaId"] ?? .null, "language": request.objectValue?["language"] ?? .null])]
-            let structural = try await client.operation(vaultId: vault, method: "getMobileStructuralArgumentMap", args: args)
             records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getMobileStructuralArgumentMap", args), data: try JSONEncoder.nodus.encode(structural)))
             let current = try await client.operation(vaultId: vault, method: "getMobileAcademicSource", args: [request])
-            guard current.objectValue?["revision"] == value.objectValue?["revision"] else { throw APIError(status: 409, code: "argument_download_changed", message: "Las fuentes del mapa han cambiado durante la descarga. Reintenta para guardar una copia consistente.") }
+            let latestMap = try await client.operation(vaultId: vault, method: "getMobileStructuralArgumentMap", args: args)
+            guard current.objectValue?["revision"] == value.objectValue?["revision"],
+                  try CompanionArgumentDownload.semanticMap(latestMap) == CompanionArgumentDownload.semanticMap(structural)
+            else { throw APIError(status: 409, code: "argument_download_changed", message: "Las fuentes del mapa han cambiado durante la descarga. Reintenta para guardar una copia consistente.") }
         }
         try Task.checkCancellation()
         try await PrivateBridgeCache(pairingId: pairing.id).saveReadPack(id: selection, vaultId: vault, title: "Fuentes de síntesis y revisión",
@@ -102,12 +117,15 @@ final class CompanionAcademicGeneration {
         let modelJSON = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(model))
         let work: JSONValue = .object(["source": request, "model": modelJSON])
         let previous = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key).map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0).objectValue } ?? nil
-        // A result awaiting acknowledgement is reused. A deliberate generation
-        // after an acknowledged result starts a new identity and preserves the old ledger entry.
+        // A complete result awaiting acknowledgement resumes its provider-free
+        // publication. A rejected/finished attempt never reuses stale sources.
         var value: [String: JSONValue]
-        if let previous, let id = previous["id"]?.stringValue, previous["request"] == work,
-           previous["state"] != .string("cancelled"), await ledger.all().first(where: { $0.id == id })?.state != "available" { value = previous }
-        else { value = ["id": .string(UUID().uuidString.lowercased()), "entityKey": .string(entity), "request": work, "state": .string("accepted")] }
+        let receipt = await ledger.all().first { $0.id == previous?["id"]?.stringValue }
+        if let previous, CompanionGenerationRecovery.resumeAcademic(checkpoint: .object(previous), work: work, receiptState: receipt?.state) { value = previous }
+        else {
+            if let previous { try await ledger.archiveAcademicCheckpoint(recordId: key, checkpoint: .object(previous)) }
+            value = ["id": .string(UUID().uuidString.lowercased()), "entityKey": .string(entity), "request": work, "state": .string("accepted")]
+        }
         guard let id = value["id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
         func save() async throws { try await cache.store(JSONEncoder.nodus.encode(JSONValue.object(value)), vaultId: vault, domain: .researchGeneration, recordId: key) }
         do {

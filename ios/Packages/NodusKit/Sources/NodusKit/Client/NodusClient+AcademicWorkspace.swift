@@ -287,8 +287,12 @@ public extension NodusClient {
     }
 
     func synthesisMatrix(in spaceId: String) async throws -> SynthesisMatrix {
+        try await synthesisMatrixSnapshot(in: spaceId).matrix
+    }
+
+    func synthesisMatrixSnapshot(in spaceId: String) async throws -> (matrix: SynthesisMatrix, fromCache: Bool) {
         let response = try await perform(.init(path: address.spacePath(spaceId, "/authors/matrix"), cacheable: true))
-        return try decode(SynthesisMatrixEnvelope.self, from: response).matrix
+        return (try decode(SynthesisMatrixEnvelope.self, from: response).matrix, response.fromCache)
     }
 
     func argumentRoutes(in spaceId: String) async throws -> [ArgumentRouteSuggestion] {

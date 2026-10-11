@@ -711,7 +711,7 @@ private struct AuthorSynthesisMatrixView: View {
             else { ProgressView().tint(session.accent) }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: "\(session.publishedRevision ?? ""):\(session.companionResultRevision):\(session.companionPublicationRevision)") { await load() }
     }
 
     private func matrixBody(_ matrix: SynthesisMatrix) -> some View {
@@ -772,11 +772,15 @@ private struct AuthorSynthesisMatrixView: View {
     private func load() async {
         isLoading = true; defer { isLoading = false }
         do {
-            let value = try await session.client.synthesisMatrix(in: session.connection.spaceId); matrix = value
+            let snapshot = try await session.client.synthesisMatrixSnapshot(in: session.connection.spaceId)
+            let value = snapshot.matrix; matrix = value
+            localCells = [:]
             if selectedTheme.isEmpty { selectedTheme = value.themes.first?.themeId ?? "" }
             if session.connection.desktopPairingId != nil {
                 for cell in value.cells {
-                    if let saved = try await CompanionAcademicGeneration.saved(session: session, request: sourceRequest(cell.authorId, cell.themeId)) {
+                    // A fresh canonical Mac cell wins over an acknowledged
+                    // local preview, including later edits on another device.
+                    if let saved = try await CompanionAcademicGeneration.saved(session: session, request: sourceRequest(cell.authorId, cell.themeId), onlyUnpublished: !snapshot.fromCache) {
                         localCells[cell.id] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(saved))
                     }
                 }
