@@ -759,11 +759,13 @@ struct ChatModelMenu: View {
             .foregroundStyle(accent.nodusReadable)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
+            .frame(minHeight: 44)
             // A control, so it is lit: this is the one thing on the strip that acts, and the
             // strip itself is now the page's own colour.
             .nodusGlass(NodusGlass(.thin, tint: accent, interactive: true), in: Capsule())
         }
         .accessibilityLabel("Model")
+        .accessibilityIdentifier("nodus-chat-model")
         .accessibilityValue(current.map { "\($0.model), \($0.provider.label)" } ?? "")
     }
 }

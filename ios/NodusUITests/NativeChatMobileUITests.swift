@@ -16,6 +16,7 @@ final class NativeChatMobileUITests: XCTestCase {
             let composer = app.descendants(matching: .any)["nodus-chat-composer"].firstMatch
             let history = app.buttons["nodus-chat-history"]
             let send = app.buttons["nodus-chat-send"]
+            let model = app.buttons["nodus-chat-model"]
             XCTAssertTrue(composer.waitForExistence(timeout: 25)); XCTAssertTrue(composer.isHittable)
             composer.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
@@ -33,6 +34,9 @@ final class NativeChatMobileUITests: XCTestCase {
                 XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
                 XCTAssertEqual(composer.value as? String, draft)
                 XCTAssertTrue(composer.isHittable); XCTAssertTrue(send.isHittable); XCTAssertTrue(history.isHittable)
+                XCTAssertTrue(model.isHittable)
+                XCTAssertGreaterThanOrEqual(model.frame.width, 44)
+                XCTAssertGreaterThanOrEqual(model.frame.height, 44)
                 XCTAssertTrue(app.windows.firstMatch.frame.contains(composer.frame))
                 capture(app, "native-chat-\(style)-\(orientation == .portrait ? "portrait" : "landscape")")
             }
