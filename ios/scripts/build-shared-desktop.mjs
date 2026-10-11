@@ -58,6 +58,10 @@ if (process.argv.includes('--verify')) {
   execFileSync(path.join(desktop, 'node_modules/esbuild/bin/esbuild'), [path.join(desktop,'shared/companionChatContext.ts'),
     '--bundle','--platform=browser','--format=iife','--global-name=NodusCompanionChat','--target=es2020',
     '--outfile='+path.join(output,'companion-chat.js')],{cwd:desktop,stdio:'inherit'});
+  execFileSync(path.join(desktop,'node_modules/esbuild/bin/esbuild'),[path.join(desktop,'shared/companionDatabaseContainer.ts'),
+    '--bundle','--platform=browser','--format=iife','--global-name=NodusDatabaseQuery','--target=es2020',
+    '--outfile='+path.join(output,'database-query.js')],{cwd:desktop,stdio:'inherit'});
+  fs.writeFileSync(path.join(output,'database-query.html'),"<!doctype html><meta charset='utf-8'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'\"><script src='./database-query.js'></script>");
   if (sourceDigest() !== digest) throw new Error('Shared sources changed during the build. Repeat the build before accepting it.');
   const files = Object.fromEntries(outputFiles().map(file => [file, hash(fs.readFileSync(path.join(output, file)))]));
   fs.writeFileSync(path.join(output, 'build.json'), JSON.stringify({ version: 1, desktopCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: desktop, encoding: 'utf8' }).trim(), sourceDigest: digest, files }, null, 2) + '\n');

@@ -581,6 +581,7 @@ struct DatabaseDetailWorkspace: View {
     @State private var importMessage: String?
     @State private var phoneTable = false
     @State private var canonicalRows:[PagesDatabasesParity.DataRow]?
+    @State private var usingDownloadedView = false
     @State private var viewIssue:String?
     @State private var loadingView=false
     @State private var viewAttempt=0
@@ -594,6 +595,8 @@ struct DatabaseDetailWorkspace: View {
     private var viewRows:[PagesDatabasesParity.DataRow] {
         guard session.connection.desktopPairingId != nil,activeViewId != nil else {return allRows}
         guard let canonicalRows else {return []}
+        // The local engine has already applied pending edits, filters and sorts.
+        if usingDownloadedView { return canonicalRows }
         let pending=Set((tables["db_cells"] ?? []).filter{$0.string("mobileSyncState") == "pending"}.compactMap{$0.string("row_id")})
         var result=canonicalRows.map{row in
             guard row.databaseId == database.id,pending.contains(row.id),let local=allRows.first(where:{$0.id == row.id}) else {return row}
@@ -632,7 +635,7 @@ struct DatabaseDetailWorkspace: View {
         .onAppear { if activeViewId == nil { activeViewId = views.first?.id; adHocLayout = views.first?.layout ?? "table" } }
         .onChange(of: database.id) { _, _ in activeViewId = views.first?.id; selectedRowId = nil }
         .onChange(of: tables) { _, _ in presentationRevision += 1 }
-        .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(viewAttempt)") {await loadSavedView()}
+        .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(presentationRevision)|\(viewAttempt)") {await loadSavedView()}
         .nodusSheet(item:$foreignRow){target in NavigationStack{DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:downloadedOnly).nodusModalClose(accent:session.accent)}}
         .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
         .nodusSheet(isPresented: $creatingColumn) { NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox) }
@@ -956,16 +959,28 @@ struct DatabaseDetailWorkspace: View {
         selectedRowId=row.id;if compactPresentation {showInspector=true}
     }
     private func loadSavedView() async {
-        canonicalRows=nil;viewIssue=nil;selectedRowId=nil
+        canonicalRows=nil;usingDownloadedView=false;viewIssue=nil;selectedRowId=nil
         if sharedPresentation { loadingView = false; return }
         guard session.connection.desktopPairingId != nil,let view=activeViewId else {loadingView=false;return}
         loadingView=true;defer{loadingView=false}
         do {
-            let (vault,_,_)=try privateBridgeConnection(session,domain:.corpus)
-            let reads=PrivateBridgeReadBatch(session:session,downloadedOnly:downloadedOnly)
-            let source=try await CompanionDatabaseViewSource.load(vault:vault,viewId:view){method,args in try await reads.operation(method,args)}
+            let (vault,pairing,token)=try privateBridgeConnection(session,domain:.corpus)
+            let source: CompanionDatabaseViewSource
+            var local = downloadedOnly
+            if downloadedOnly { source = try await CompanionDatabaseViewSource.loadDownloaded(session: session, viewId: view) }
+            else {
+                do {
+                    let client = DesktopBridgeClient(pairing: pairing, token: token)
+                    source = try await CompanionDatabaseViewSource.load(vault: vault, viewId: view) { method, args in
+                        try await client.operation(vaultId: vault, method: method, args: args)
+                    }
+                } catch {
+                    guard isPrivateBridgeOffline(error) else { throw error }
+                    source = try await CompanionDatabaseViewSource.loadDownloaded(session: session, viewId: view); local = true
+                }
+            }
             let loaded=try DatabaseContainerPresentation.rows(definition:source.definition,rows:source.rows,databaseId:database.id)
-            try Task.checkCancellation();canonicalRows=loaded
+            try Task.checkCancellation();usingDownloadedView=local;canonicalRows=loaded
         }catch where error.isCancellation {}
         catch{viewIssue=error.localizedDescription}
     }

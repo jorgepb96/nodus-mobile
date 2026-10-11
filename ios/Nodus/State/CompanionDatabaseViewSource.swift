@@ -7,6 +7,28 @@ struct CompanionDatabaseViewSource {
     let definition: JSONValue
     let rows: [JSONValue]
     let revision: String
+    @MainActor static func loadDownloaded(session: SpaceSession, viewId: String) async throws -> Self {
+        let (vault, _, _) = try privateBridgeConnection(session, domain: .corpus)
+        let reads = PrivateBridgeReadBatch(session: session, downloadedOnly: true)
+        let response = try await reads.operation("getMobileLinkedDatabaseRead", [.object(["action": .string("definition"), "input": .string(viewId)])])
+        guard response.objectValue?["version"] == .int(1), response.objectValue?["vaultId"] == .string(vault),
+              response.objectValue?["action"] == .string("definition"), let definition = response.objectValue?["data"],
+              definition.objectValue?["viewId"] == .string(viewId), let linked = definition.objectValue?["sources"]?.arrayValue,
+              !linked.isEmpty, definition.objectValue?["properties"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
+        var sources: [String: JSONValue] = [:]
+        for source in linked {
+            try Task.checkCancellation()
+            guard let id = source.objectValue?["databaseId"]?.stringValue, !id.isEmpty else { throw DesktopBridgeError.malformedResponse }
+            if sources[id] == nil { sources[id] = try await CompanionDatabasePresentationSource.downloaded(session: session, database: id) }
+        }
+        let value = try await CompanionDatabaseQueryRuntime.query(.object(["version": .int(1), "vaultId": .string(vault),
+            "viewId": .string(viewId), "definition": definition, "sources": .object(sources)]))
+        guard value.objectValue?["version"] == .int(1), value.objectValue?["vaultId"] == .string(vault),
+              value.objectValue?["viewId"] == .string(viewId), value.objectValue?["definition"] == definition,
+              let rows = value.objectValue?["rows"]?.arrayValue, let revision = value.objectValue?["revision"]?.stringValue,
+              revision.hasPrefix("offline:") else { throw DesktopBridgeError.malformedResponse }
+        return .init(definition: definition, rows: rows, revision: revision)
+    }
     @MainActor static func load(vault:String,viewId:String,
         fetch:(String,[JSONValue]) async throws -> JSONValue) async throws -> Self {
         let definitionArgs=[JSONValue.object(["action":.string("definition"),"input":.string(viewId)])]
