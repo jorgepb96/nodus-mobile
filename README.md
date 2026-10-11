@@ -95,6 +95,12 @@ details preserve the saved charts, sections, evidence and annotations. Native ex
 the scoped file bridge. The isolated 241-report regression scenario is prepared but has not
 run. Autonomous query execution, durable database research mutations and chosen offline
 report packs remain pending; none of these operations is certified by this implementation.
+Live chats select the actual World, Study/Teaching or Database adapter for their vault rather
+than the academic adapter. The scoped bridge carries their histories, projects, notebooks and
+stream events; source links retain page, slide, transcript version and recording timestamp.
+Study transcript context and saved private replies require the recordings grant. Mobile reads
+use the stored Desktop study index and cannot rebuild it. The specialised transport/grant
+regression is prepared, not executed; current UI, provider and reconnect acceptance is pending.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;
 `ios/scripts/test-reading-copy-parity.mjs` checks the reading contract.
 

@@ -211,6 +211,10 @@ function operationMatrix(routes) {
       ['consultation.databaseResearch.annotations', 'consultation'], ['consultation.databaseResearch.export', 'consultation'],
       ['generation.databaseResearch.live', 'generation'], ['generation.databaseResearch.autonomous', 'generation'],
       ['sync.selectedDatabaseResearch', 'sync'],
+      ['consultation.chat.specialisedHistory', 'consultation'], ['consultation.chat.specialisedNotebooks', 'consultation'],
+      ['consultation.chat.studyCitationLocators', 'consultation'], ['consultation.chat.recordingsGrant', 'consultation'],
+      ['generation.worldChat.live', 'generation'], ['generation.studyChat.live', 'generation'], ['generation.databaseChat.live', 'generation'],
+      ['generation.specialisedChat.cancellation', 'generation'], ['consultation.study.desktopOnlyIndex', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

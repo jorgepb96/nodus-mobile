@@ -59,6 +59,7 @@ struct SharedDesktopSurface: View {
     @Environment(\.colorScheme) private var theme
     @Environment(\.dynamicTypeSize) private var textSize
     @State private var destination: SurfaceDestination?
+    @State private var citation: CorpusReference?
     @State private var sourceDocument: SourceDocumentTarget?
     @State private var issue: String?
     @State private var exportedURL: URL?
@@ -79,6 +80,14 @@ struct SharedDesktopSurface: View {
                 Task { await controller.load(fetchMacProgress: false) }
             } catch { issue = error.localizedDescription }
         }) { kind, id, location, quote in
+            if kind == "citation" {
+                guard let url = URL(string:id), let reference = CorpusReference(url) else { issue = "No se pudo abrir la fuente de esta cita."; return }
+                citation = reference; return
+            }
+            if kind == "section" {
+                guard NodusRoute(rawValue:id) != nil else { issue = "La sección solicitada no está disponible."; return }
+                NotificationCenter.default.post(name:.nodusMobileNavigate,object:nil,userInfo:["connectionId":session.connection.id,"route":id]); return
+            }
             let path = kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
@@ -160,6 +169,10 @@ struct SharedDesktopSurface: View {
             }
             .environment(\.dynamicTypeSize, textSize)
             .nodusTextHierarchy()
+        }
+        .sheet(item:$citation) { reference in
+            NavigationStack { CorpusReferenceView(session:session,reference:reference).nodusModalClose(accent:session.accent) }
+                .environment(\.dynamicTypeSize,textSize).nodusTextHierarchy()
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("shared-desktop-\(surface.rawValue)")
@@ -573,7 +586,7 @@ private struct DesktopWebView: UIViewRepresentable {
                             }
                         } else if DesktopBridgeClient.jobMethods.contains(method) {
                             let first = input.first as? String
-                            let streamMethod = ["generateImmersionSession", "researchChatStream", "improveStudyText", "exportDeepResearchArchive"].contains(method)
+                            let streamMethod = ["generateImmersionSession", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "exportDeepResearchArchive"].contains(method)
                             let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
                             let requestId = (persistedId ?? (streamMethod ? first : nil)).flatMap { UUID(uuidString: $0) == nil ? nil : $0 } ?? UUID().uuidString
                             let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vaultId)

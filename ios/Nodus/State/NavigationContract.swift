@@ -1,6 +1,8 @@
 import NodusKit
 import SwiftUI
 
+extension Notification.Name { static let nodusMobileNavigate = Notification.Name("nodus.mobile.navigate") }
+
 /// The route vocabulary of the current desktop app.
 ///
 /// Keeping every Desktop route here makes drift measurable. Visibility is a presentation

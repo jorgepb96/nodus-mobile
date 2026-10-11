@@ -169,6 +169,11 @@ struct SpaceShell: View {
             await session.probeEmbedding()
         }
         .task { await session.monitorPublishedContent() }
+        .onReceive(NotificationCenter.default.publisher(for:.nodusMobileNavigate)) { event in
+            guard event.userInfo?["connectionId"] as? String == session.connection.id,
+                  let value = event.userInfo?["route"] as? String, let target = NodusRoute(rawValue:value) else { return }
+            showingAssistant = false; select(target)
+        }
         .nodusSheet(isPresented: $showingAssistant) {
             NavigationStack { ChatTab(session: session, showsModalDone: true) }
         }
