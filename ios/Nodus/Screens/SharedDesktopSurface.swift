@@ -58,6 +58,8 @@ struct SharedDesktopSurface: View {
     let surface: DesktopSurface
     var initialDatabaseReportId: String? = nil
     var initialPageId: String? = nil
+    var initialArgumentMap: JSONValue? = nil
+    var initialArgumentSeed: String? = nil
     var pageDownloadedOnly = false
     @Environment(AISettings.self) private var ai
     @Environment(\.colorScheme) private var theme
@@ -81,7 +83,7 @@ struct SharedDesktopSurface: View {
     @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, pageDownloadedOnly:pageDownloadedOnly, onError: { issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, pageDownloadedOnly:pageDownloadedOnly, onError: { issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -313,6 +315,8 @@ private struct DesktopWebView: UIViewRepresentable {
     let databaseReadingRevision:Int
     let initialDatabaseReportId: String?
     let initialPageId: String?
+    let initialArgumentMap: JSONValue?
+    let initialArgumentSeed: String?
     let pageDownloadedOnly: Bool
     let onError: (String) -> Void
     let onExport: (PrivateBridgeFileLease) -> Void
@@ -331,9 +335,11 @@ private struct DesktopWebView: UIViewRepresentable {
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
         config.userContentController.add(context.coordinator, name: "nodus")
-        let data: [String: Any] = ["surface": surface.rawValue, "pageDownloadedOnly":pageDownloadedOnly, "initialPageId":initialPageId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+        var data: [String: Any] = ["surface": surface.rawValue, "pageDownloadedOnly":pageDownloadedOnly, "initialPageId":initialPageId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
             "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
+        if let initialArgumentMap, let bytes = try? JSONEncoder.nodus.encode(initialArgumentMap), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialArgumentMap"] = value }
+        if let initialArgumentSeed { data["initialArgumentSeed"] = initialArgumentSeed }
         if let json = try? JSONSerialization.data(withJSONObject: data), let text = String(data: json, encoding: .utf8) {
             let bootstrap = """
             window.nodusMobileConfig=\(text);
@@ -630,6 +636,12 @@ private struct DesktopWebView: UIViewRepresentable {
                         onNavigate(kind, record, position?["location"] as? String, position?["quote"] as? String); value = .null
                     } else if method == "cancelLiveJob", let requestId = input.first as? String, let running = runningJobs[requestId] {
                         _ = try await running.0.cancelJob(vaultId: running.1, id: running.2); value = .null
+                    } else if method == "mobileArgumentMaps", args.isEmpty {
+                        value = try await autonomous.argumentMaps(session: session)
+                    } else if method == "mobileAcademicSource", args.count == 1 {
+                        value = try await CompanionAcademicGeneration.source(session: session, request: args[0])
+                    } else if method == "mobileAcademicDownload", args.count == 2, let days = args[1].intValue, [7, 30].contains(days) {
+                        try await CompanionAcademicGeneration.download(session: session, request: args[0], days: days); value = .null
                     } else if ["mobileDictionaryCheckpoint", "mobileGenerationCheckpoint"].contains(method) {
                         value = method == "mobileDictionaryCheckpoint" ? try await autonomous.dictionaryCheckpoint(args, session: session) : try await autonomous.generationCheckpoint(args, session: session)
                         let checkpoint = value.objectValue ?? args.last?.objectValue
@@ -750,7 +762,7 @@ private struct DesktopWebView: UIViewRepresentable {
                         } else if DesktopBridgeClient.jobMethods.contains(method) {
                             let first = input.first as? String
                             let streamMethod = ["generateImmersionSession", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "exportDeepResearchArchive"].contains(method)
-                            let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
+                            let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveMobileAcademicResult"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
                             let requestId = (persistedId ?? (streamMethod ? first : nil)).flatMap { UUID(uuidString: $0) == nil ? nil : $0 } ?? UUID().uuidString
                             let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vaultId)
                             _ = try await ledger.prepare(id: requestId, method: method, args: args)

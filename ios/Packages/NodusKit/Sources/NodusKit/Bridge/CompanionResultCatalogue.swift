@@ -12,6 +12,7 @@ public enum CompanionResultCatalogue {
             switch original["source"]?.objectValue?["kind"]?.stringValue {
             case "author", "matrix": return surface == "authors"
             case "prose": return surface == "manuscript"
+            case "argument": return surface == "argument"
             default: return false
             }
         case "saveDictionaryGeneratedVersion":
@@ -43,6 +44,7 @@ public enum CompanionResultCatalogue {
             case "author": return "Síntesis de autor"
             case "matrix": return "Síntesis de autor y tema"
             case "prose": return "Revisión de escena"
+            case "argument": return "Mapa de argumentos"
             default: return "Resultado de investigación"
             }
         }

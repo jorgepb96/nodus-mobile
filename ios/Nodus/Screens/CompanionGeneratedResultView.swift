@@ -38,7 +38,9 @@ struct CompanionGeneratedResultView: View {
     private var title: String { CompanionResultCatalogue.title(current) }
     var body: some View {
         Group {
-            if current.method == "saveMobileDatabaseResearchReport",let id = current.result?.objectValue?["id"]?.stringValue ?? value["detail"]?.objectValue?["report"]?.objectValue?["id"]?.stringValue {
+            if current.method == "saveMobileAcademicResult", value["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument"), let map = current.result ?? value["preview"] {
+                SharedDesktopSurface(session: session, surface: .argument, initialArgumentMap: map)
+            } else if current.method == "saveMobileDatabaseResearchReport",let id = current.result?.objectValue?["id"]?.stringValue ?? value["detail"]?.objectValue?["report"]?.objectValue?["id"]?.stringValue {
                 SharedDesktopSurface(session:session,surface:.databaseResearch,initialDatabaseReportId:id)
             } else if current.method == "saveImmersionGeneratedSession", let plan = value["plan"],
                let itinerary = ImmersionPlan(Row(["plan": plan])) {

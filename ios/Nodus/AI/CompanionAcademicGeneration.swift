@@ -39,10 +39,45 @@ final class CompanionAcademicGeneration {
         _ = try CompanionAcademicSource(value, request: request)
         let record = try CompanionDocumentOutbox.operationKey("getMobileAcademicSource", [request])
         let selection = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: [record])
+        var records: [PrivateBridgeCache.ReadPackRecord] = [.init(domain: .corpus, recordId: record, data: try JSONEncoder.nodus.encode(value))]
+        if request.objectValue?["kind"] == .string("argument"), let ideas = value.objectValue?["source"]?.objectValue?["ideas"]?.arrayValue {
+            let client = DesktopBridgeClient(pairing: pairing, token: token)
+            var bytes = records[0].data.count
+            for idea in ideas {
+                try Task.checkCancellation()
+                guard let id = idea.objectValue?["global_id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                for method in ["getIdeaDetail", "getIdeaEdges"] {
+                    let args: [JSONValue] = [.string(id)], result = try await client.operation(vaultId: vault, method: method, args: args)
+                    guard result != .null else { throw DesktopBridgeError.malformedResponse }
+                    let data = try JSONEncoder.nodus.encode(result); bytes += data.count
+                    guard bytes <= 50 * 1024 * 1024 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey(method, args), data: data))
+                }
+            }
+            let args: [JSONValue] = [.object(["seedIdeaId": request.objectValue?["seedIdeaId"] ?? .null, "language": request.objectValue?["language"] ?? .null])]
+            let structural = try await client.operation(vaultId: vault, method: "getMobileStructuralArgumentMap", args: args)
+            records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getMobileStructuralArgumentMap", args), data: try JSONEncoder.nodus.encode(structural)))
+            let current = try await client.operation(vaultId: vault, method: "getMobileAcademicSource", args: [request])
+            guard current.objectValue?["revision"] == value.objectValue?["revision"] else { throw APIError(status: 409, code: "argument_download_changed", message: "Las fuentes del mapa han cambiado durante la descarga. Reintenta para guardar una copia consistente.") }
+        }
         try Task.checkCancellation()
         try await PrivateBridgeCache(pairingId: pairing.id).saveReadPack(id: selection, vaultId: vault, title: "Fuentes de síntesis y revisión",
-            expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: [.init(domain: .corpus, recordId: record, data: try JSONEncoder.nodus.encode(value))])
+            expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: records)
         session.didChangeCompanionDownloads()
+    }
+    static func source(session: SpaceSession, request: JSONValue) async throws -> JSONValue {
+        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+        let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        let key = try CompanionDocumentOutbox.operationKey("getMobileAcademicSource", [request])
+        let chosen = try await cache.downloadedData(vaultId: vault, domain: .corpus, recordId: key)
+        let value: JSONValue
+        do { value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileAcademicSource", args: [request], timeout: chosen.isEmpty ? nil : 4) }
+        catch {
+            guard isPrivateBridgeOffline(error) else { throw error }
+            guard let bytes = chosen.first else { throw APIError(status: 409, code: "academic_sources_not_downloaded", message: "Descarga estas fuentes para llevar mientras tu Mac esté conectado.") }
+            value = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+        }
+        _ = try CompanionAcademicSource(value, request: request); return value
     }
 
     func run(session: SpaceSession, request: JSONValue, onStatus: @escaping (String) -> Void) async throws -> JSONValue {
@@ -56,7 +91,7 @@ final class CompanionAcademicGeneration {
         return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
     }
     private func execute(session: SpaceSession, request: JSONValue, onStatus: (String) -> Void) async throws -> JSONValue {
-        guard session.aiExecutionMode == .autonomous, let model = settings.model(for: .synthesis) else {
+        guard session.aiExecutionMode == .autonomous, ["author", "matrix", "prose"].contains(request.objectValue?["kind"]?.stringValue ?? ""), let model = settings.model(for: .synthesis) else {
             throw APIError(status: 409, code: "mobile_synthesis_model_missing", message: "Elige un modelo de síntesis y configura su proveedor en los ajustes del móvil.")
         }
         let (vault, pairing, token) = try privateBridgeConnection(session, domain: .writing)

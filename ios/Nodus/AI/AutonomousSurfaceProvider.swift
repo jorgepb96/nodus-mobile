@@ -161,7 +161,7 @@ final class AutonomousSurfaceProvider {
     func generationCheckpoint(_ args: [JSONValue], session: SpaceSession) async throws -> JSONValue {
         guard args.count >= 3, let action = args[0].stringValue,
             action == "load" || session.aiExecutionMode == .autonomous,
-            let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument", "database"].contains(kind),
+            let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument", "database", "academic"].contains(kind),
             let entity = args[2].stringValue, entity.utf8.count <= 256, !entity.isEmpty else { throw DesktopBridgeError.permissionDenied }
         let scope = try session.surfaceStorageScope()
         let vault = scope.recordVaultId
@@ -175,7 +175,8 @@ final class AutonomousSurfaceProvider {
         let bytes = try JSONEncoder.nodus.encode(args[3])
         guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
         try await queuePublication(kind: kind, entity: entity, checkpoint: args[3], scope: scope, session: session)
-        if kind == "database" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:database:index:v1",entity:entity) }
+        if kind == "academic" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:academic:index:v1",entity:entity) }
+        else if kind == "database" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:database:index:v1",entity:entity) }
         else { try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key) }
         return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
     }
@@ -225,6 +226,26 @@ final class AutonomousSurfaceProvider {
                 "error": job.issue.map(JSONValue.string) ?? .null]))
         }
         return .array(progress)
+    }
+    func argumentMaps(session: SpaceSession) async throws -> JSONValue {
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+        let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
+        var maps: [String: JSONValue] = [:]
+        if let bytes = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: "autonomous:academic:index:v1") {
+            for entity in try JSONDecoder.nodus.decode([String].self, from: bytes) {
+                let key = try CompanionGenerationPublication.recordId(kind: "academic", entity: entity)
+                let checkpoint = try await loadCheckpoint(cache: cache, key: key, scope: session.surfaceStorageScope(), session: session)
+                if let value = checkpoint.objectValue, value["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument"),
+                   let id = value["id"]?.stringValue, let map = value["result"] ?? value["preview"], map.objectValue?["root"]?.objectValue != nil { maps[id] = map }
+            }
+        }
+        for request in await ledger.all() where request.method == "saveMobileAcademicResult" {
+            guard request.checkpoint?.objectValue?["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument"),
+                  let map = request.result ?? request.checkpoint?.objectValue?["preview"], map.objectValue?["root"]?.objectValue != nil else { continue }
+            maps[request.id] = map
+        }
+        return .array(maps.sorted { $0.key < $1.key }.map { .object(["id": .string($0.key), "map": $0.value]) })
     }
     func complete(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
         guard let generation = input.objectValue?["generationId"]?.stringValue, UUID(uuidString: generation) != nil,

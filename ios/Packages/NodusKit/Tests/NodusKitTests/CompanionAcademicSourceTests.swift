@@ -45,4 +45,16 @@ struct CompanionAcademicSourceTests {
         #expect(output[0].objectValue?["threadId"] == .string("real-0"))
         #expect(output[0].objectValue?["note"] == .string("Está en la escena."))
     }
+    @Test("argument sources bind the actual seed and cannot disguise duplicate source identities")
+    func argumentIdentity() throws {
+        let request: JSONValue = .object(["kind": .string("argument"), "seedIdeaId": .string("real-seed"), "language": .string("es")])
+        let idea: JSONValue = .object(["global_id": .string("real-seed"), "label": .string("Real seed"), "statement": .string("Original"), "type": .string("claim")])
+        var fields: [String: JSONValue] = ["seedIdeaId": .string("real-seed"), "ideas": .array([idea]), "noMaterial": .bool(true), "prompt": .object(["system": .string("Original system"), "user": .string("Original sources")])]
+        func envelope() -> JSONValue { .object(["version": .int(1), "request": request, "revision": .string(String(repeating: "a", count: 64)), "source": .object(fields)]) }
+        #expect(try CompanionAcademicSource(envelope(), request: request).needsModel == false)
+        fields["seedIdeaId"] = .string("another-seed")
+        #expect(throws: DesktopBridgeError.malformedResponse) { try CompanionAcademicSource(envelope(), request: request) }
+        fields["seedIdeaId"] = .string("real-seed"); fields["ideas"] = .array([idea, idea])
+        #expect(throws: DesktopBridgeError.malformedResponse) { try CompanionAcademicSource(envelope(), request: request) }
+    }
 }

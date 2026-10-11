@@ -10,22 +10,30 @@ public struct CompanionAcademicSource: Sendable {
     public let kind: String
     public let completion: [String: JSONValue]
     private let source: [String: JSONValue]
-    public var needsModel: Bool { kind == "prose" ? source["noMaterial"] != .bool(true) : kind != "matrix" || source["ideas"]?.arrayValue?.isEmpty == false }
+    public var needsModel: Bool { ["prose", "argument"].contains(kind) ? source["noMaterial"] != .bool(true) : kind != "matrix" || source["ideas"]?.arrayValue?.isEmpty == false }
 
     public init(_ value: JSONValue, request: JSONValue) throws {
         guard let fields = value.objectValue, fields["version"] == .int(1), fields["request"] == request,
-              let kind = request.objectValue?["kind"]?.stringValue, ["author", "matrix", "prose"].contains(kind),
+              let kind = request.objectValue?["kind"]?.stringValue, ["author", "matrix", "prose", "argument"].contains(kind),
               let revision = fields["revision"]?.stringValue, revision.count == 64,
               revision.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
               let source = fields["source"]?.objectValue, let prompt = source["prompt"]?.objectValue,
               let system = prompt["system"]?.stringValue, let user = prompt["user"]?.stringValue,
               system.utf8.count + user.utf8.count <= 1_000_000 else { throw DesktopBridgeError.malformedResponse }
         self.value = value; self.request = request; self.source = source; self.kind = kind; self.revision = revision
+        if kind == "argument" {
+            guard source["seedIdeaId"] == request.objectValue?["seedIdeaId"], let ideas = source["ideas"]?.arrayValue,
+                  !ideas.isEmpty, Set(ideas.compactMap { $0.objectValue?["global_id"]?.stringValue }).count == ideas.count,
+                  ideas.contains(where: { $0.objectValue?["global_id"] == source["seedIdeaId"] }) else { throw DesktopBridgeError.malformedResponse }
+        }
         completion = ["system": .string(system), "user": .string(user), "temperature": .double(0.2),
-                      "maxTokens": kind == "prose" ? .int(600) : .int(4000), "format": .string(kind == "prose" ? "text" : "json")]
+                      "maxTokens": kind == "prose" ? .int(600) : kind == "argument" ? .int(8000) : .int(4000), "format": .string(kind == "prose" ? "text" : "json")]
     }
 
     public func preview(raw: String, model: JSONValue, generatedAt: String) throws -> JSONValue {
+        // Argument trees are grounded by shared/argumentGeneration.ts in both
+        // renderers. This native parser only owns the other academic responses.
+        guard kind != "argument" else { throw DesktopBridgeError.malformedResponse }
         if kind == "prose" {
             guard var result = value.objectValue?["emptyPreview"]?.objectValue, let original = result["beats"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
             let verdicts = try Self.verdicts(raw)
