@@ -12,7 +12,7 @@ public struct CompanionGenerationPublication: Sendable {
     public let checkpoint: JSONValue
 
     public static func recordId(kind: String, entity: String) throws -> String {
-        guard ["dictionary", "immersion", "translation", "writing", "argument", "workshop"].contains(kind),
+        guard ["dictionary", "immersion", "translation", "writing", "argument", "workshop", "database"].contains(kind),
               !entity.isEmpty, entity.utf8.count <= 256 else { throw DesktopBridgeError.malformedResponse }
         let hash = SHA256.hash(data: Data(entity.utf8)).map { String(format: "%02x", $0) }.joined()
         return "autonomous:\(kind):\(hash)"
@@ -71,6 +71,13 @@ public struct CompanionGenerationPublication: Sendable {
             _ = try CompanionWorkshopSource(copies: [source]).selected(request["selection"] ?? .null)
             operation = "saveWritingWorkshopFromMobile"
             input["raw"] = .string(raw); input["source"] = source; input["sourceScope"] = .string(scope)
+        case "database":
+            guard let packs = context["packs"]?.arrayValue,!packs.isEmpty,
+                  let detail = value["detail"]?.objectValue,let run = detail["run"]?.objectValue,
+                  run["id"] == .string("dbr_mobile_\(identity)"),["completed","partial"].contains(run["status"]?.stringValue ?? ""),
+                  detail["report"]?.objectValue?["runId"] == run["id"] else { throw DesktopBridgeError.malformedResponse }
+            operation = "saveMobileDatabaseResearchReport"
+            input = ["request":.object(request),"sourcePacks":.array(packs),"detail":.object(detail),"requestId":.string(identity)]
         default: throw DesktopBridgeError.malformedResponse
         }
         guard try JSONEncoder.nodus.encode(checkpoint).count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }

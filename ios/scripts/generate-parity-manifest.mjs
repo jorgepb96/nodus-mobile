@@ -225,6 +225,15 @@ function operationMatrix(routes) {
       ['consultation.scriptor.embeddedLibraryResources', 'consultation'],
       ['consultation.scriptor.embeddedArchiveGrant', 'consultation'],
       ['sync.scriptor.selectedEmbeddedResources', 'sync'],
+      ['generation.databaseResearch.signedSources', 'generation'],
+      ['generation.databaseResearch.exactSavedViews', 'generation'],
+      ['generation.databaseResearch.deviceWorker', 'generation'],
+      ['generation.databaseResearch.sharedPreflight', 'generation'],
+      ['sync.databaseResearch.verifiedPublication', 'sync'],
+      ['sync.databaseResearch.publicationLostAcknowledgement', 'sync'],
+      ['sync.databaseResearch.ownReportAnnotationAnchors', 'sync'],
+      ['sync.databaseResearch.annotationsAwaitPublication', 'sync'],
+      ['sync.databaseResearch.releaseAcknowledgedSourceRows', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

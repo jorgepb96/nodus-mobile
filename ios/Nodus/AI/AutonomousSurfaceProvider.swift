@@ -73,10 +73,91 @@ final class AutonomousSurfaceProvider {
         try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key)
         return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
     }
+    func databaseCheckpoints(session: SpaceSession,includeSource: Bool = false) async throws -> JSONValue {
+        if session.connection.desktopPairingId != nil { _ = try privateBridgeConnection(session,domain:.corpus) }
+        let scope = try session.surfaceStorageScope(),cache = try PrivateBridgeCache(pairingId:scope.cacheId)
+        let bytes = try await cache.data(vaultId:scope.recordVaultId,domain:.researchGeneration,recordId:"autonomous:database:index:v1")
+        let entities = try bytes.map { try JSONDecoder.nodus.decode([String].self,from:$0) } ?? []
+        var readMarkers: [String:JSONValue] = [:]
+        if !includeSource,let pairingId = session.connection.desktopPairingId,
+           DesktopBridgePairingStore().pairings().first(where:{$0.id == pairingId})?.domains.contains(.writing) == true {
+            let outbox = try await CompanionDatabaseReadingOutboxes.shared.outbox(pairingId:scope.cacheId,vaultId:scope.recordVaultId)
+            readMarkers = Dictionary(uniqueKeysWithValues:await outbox.all().map { ($0.key,$0.value.draft.readAt.map(JSONValue.string) ?? .null) })
+        }
+        var records: [JSONValue] = []
+        for entity in entities {
+            let value = try await loadCheckpoint(cache:cache,key:CompanionGenerationPublication.recordId(kind:"database",entity:entity),scope:scope,session:session)
+            if value != .null {
+                if includeSource { records.append(value) }
+                else if var fields = value.objectValue {
+                    fields["context"] = nil;fields["reader"] = nil;fields["reading"] = nil
+                    func summary(_ report: JSONValue?) -> JSONValue? {
+                        guard let data = report?.objectValue else { return nil }
+                        var result = data.filter { ["id","runId","title","summary","createdAt","updatedAt","reportType","readAt","metadata","quality"].contains($0.key) }
+                        if let id = data["id"]?.stringValue,let readAt = readMarkers[id] { result["readAt"] = readAt }
+                        return .object(result)
+                    }
+                    fields["result"] = summary(fields["result"])
+                    if var detail = fields["detail"]?.objectValue {
+                        detail["steps"] = .array([]);detail["claims"] = .array([]);detail["report"] = summary(detail["report"]);fields["detail"] = .object(detail)
+                    }
+                    records.append(.object(fields))
+                }
+            }
+        }
+        return .array(records)
+    }
+    func databaseLocalReader(_ id: String,session: SpaceSession) async throws -> JSONValue? {
+        guard session.connection.desktopPairingId != nil else { return nil }
+        _ = try privateBridgeConnection(session,domain:.corpus)
+        guard let values = try await databaseCheckpoints(session:session,includeSource:true).arrayValue else { throw DesktopBridgeError.malformedResponse }
+        for value in values {
+            guard let reader = value.objectValue?["reader"]?.objectValue,reader["report"]?.objectValue?["id"] == .string(id),
+                  let reading = value.objectValue?["reading"],
+                  ["saved","available","failed"].contains(value.objectValue?["state"]?.stringValue ?? "") else { continue }
+            return .object(["source":.object(reader),"reading":reading,"published":.bool(value.objectValue?["state"] == .string("available"))])
+        }
+        return nil
+    }
+    func databaseOfflineSource(_ args: [JSONValue],session: SpaceSession) async throws -> JSONValue {
+        guard args.count == 1,
+              let ids = args[0].objectValue?["databaseIds"]?.arrayValue?.compactMap(\.stringValue),!ids.isEmpty,ids.count <= 30 else { throw DesktopBridgeError.permissionDenied }
+        let (vault,pairing,_) = try privateBridgeConnection(session,domain:.corpus),cache = try PrivateBridgeCache(pairingId:pairing.id)
+        var copies: [Data] = []
+        for id in ids { copies += try await cache.downloadedData(vaultId:vault,domain:.corpus,recordId:"companion:database-source:v1:\(id)") }
+        var packs: [JSONValue] = [],remaining = Set(ids),seen = Set<String>(),bytes = 0
+        for data in copies {
+            let value = try JSONDecoder.nodus.decode(JSONValue.self,from:data)
+            guard let pack = value.objectValue,pack["version"] == .int(1),pack["vaultId"] == .string(vault),
+                  let identity = pack["id"]?.stringValue,let databases = pack["databases"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
+            let owned = Set(databases.compactMap { $0.objectValue?["snapshot"]?.objectValue?["databaseId"]?.stringValue })
+            if !remaining.isDisjoint(with:owned),seen.insert(identity).inserted {
+                bytes += data.count;guard bytes <= 16_000_000 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                packs.append(value);remaining.subtract(owned)
+            }
+            if remaining.isEmpty { break }
+        }
+        guard remaining.isEmpty else { throw APIError(status:409,code:"database_source_not_downloaded",message:"Descarga las bases seleccionadas desde Para llevar antes de investigarlas sin el Mac.") }
+        return .object(["version":.int(1),"packs":.array(packs)])
+    }
+    func databaseOfflineCatalogue(session: SpaceSession) async throws -> JSONValue {
+        let (vault,pairing,_) = try privateBridgeConnection(session,domain:.corpus),cache = try PrivateBridgeCache(pairingId:pairing.id)
+        let copies = try await cache.downloadedData(vaultId:vault,domain:.corpus,recordId:CompanionCollectionCopy.recordId(path:"databases"))
+        guard !copies.isEmpty else { throw APIError(status:409,code:"database_source_not_downloaded",message:"No has elegido bases de datos para llevar. Descárgalas mientras el Mac esté conectado.") }
+        let collection = try CompanionCollectionCopy(path:"databases",copies:copies.map { try JSONDecoder.nodus.decode(JSONValue.self,from:$0) })
+        var sources: [JSONValue] = []
+        for row in collection.selectedRows {
+            guard let id = row.columns["id"]?.stringValue,let data = try await cache.downloadedData(vaultId:vault,domain:.corpus,recordId:"companion:database-source:v1:\(id)").first else { throw DesktopBridgeError.malformedResponse }
+            let pack = try JSONDecoder.nodus.decode(JSONValue.self,from:data)
+            guard pack.objectValue?["vaultId"] == .string(vault),let source = pack.objectValue?["databases"]?.arrayValue?.first(where:{ $0.objectValue?["snapshot"]?.objectValue?["databaseId"] == .string(id) })?.objectValue else { throw DesktopBridgeError.malformedResponse }
+            sources.append(.object(source.filter { ["database","columns","views","profiles"].contains($0.key) }))
+        }
+        return .array(sources)
+    }
     func generationCheckpoint(_ args: [JSONValue], session: SpaceSession) async throws -> JSONValue {
         guard args.count >= 3, let action = args[0].stringValue,
             action == "load" || session.aiExecutionMode == .autonomous,
-            let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument"].contains(kind),
+            let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument", "database"].contains(kind),
             let entity = args[2].stringValue, entity.utf8.count <= 256, !entity.isEmpty else { throw DesktopBridgeError.permissionDenied }
         let scope = try session.surfaceStorageScope()
         let vault = scope.recordVaultId
@@ -90,7 +171,8 @@ final class AutonomousSurfaceProvider {
         let bytes = try JSONEncoder.nodus.encode(args[3])
         guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
         try await queuePublication(kind: kind, entity: entity, checkpoint: args[3], scope: scope, session: session)
-        try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key)
+        if kind == "database" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:database:index:v1",entity:entity) }
+        else { try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key) }
         return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
     }
     private func queuePublication(kind: String, entity: String, checkpoint: JSONValue,
@@ -115,6 +197,10 @@ final class AutonomousSurfaceProvider {
               var value = reconciled.objectValue else { return local ?? .null }
         if value["state"] == .string("available"), local?.objectValue?["state"] != .string("available") {
             value["recoveredPublication"] = .bool(true)
+        }
+        if value["state"] == .string("available"),key.hasPrefix("autonomous:database:") {
+            value["context"] = nil
+            try await cache.store(JSONEncoder.nodus.encode(JSONValue.object(value)),vaultId:scope.recordVaultId,domain:.researchGeneration,recordId:key)
         }
         return .object(value)
     }

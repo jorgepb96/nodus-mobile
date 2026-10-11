@@ -24,7 +24,9 @@ struct CompanionGeneratedResultView: View {
     private var title: String { CompanionResultCatalogue.title(current) }
     var body: some View {
         Group {
-            if current.method == "saveImmersionGeneratedSession", let plan = value["plan"],
+            if current.method == "saveMobileDatabaseResearchReport",let id = current.result?.objectValue?["id"]?.stringValue ?? value["detail"]?.objectValue?["report"]?.objectValue?["id"]?.stringValue {
+                SharedDesktopSurface(session:session,surface:.databaseResearch,initialDatabaseReportId:id)
+            } else if current.method == "saveImmersionGeneratedSession", let plan = value["plan"],
                let itinerary = ImmersionPlan(Row(["plan": plan])) {
                 ImmersionView(session: session, sessionId: request.id, title: title, localPlan: itinerary, publicationId: current.id)
             } else if let markdown {

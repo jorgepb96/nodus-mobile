@@ -1441,6 +1441,60 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.signedSources",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.exactSavedViews",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.deviceWorker",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.sharedPreflight",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.databaseResearch.verifiedPublication",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.databaseResearch.publicationLostAcknowledgement",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.databaseResearch.ownReportAnnotationAnchors",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.databaseResearch.annotationsAwaitPublication",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.databaseResearch.releaseAcknowledgedSourceRows",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

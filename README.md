@@ -210,8 +210,8 @@ and persistence regressions are prepared and remain pending execution. Selected 
 Public study, world, genealogy, archive and testimony records now have a closed, provider-free
 citable context contract for autonomous research and chat. Chosen device dossiers use fresh
 lexical retrieval, actual Desktop citation routes and complete selected text, with metadata-only
-materials explicitly identified. Database research still requires its specialised autonomous
-source contract. Private prosopography, recording and testimony source contracts now preserve
+materials explicitly identified. Database research uses its specialised signed source contract
+described below. Private prosopography, recording and testimony source contracts now preserve
 complete literal text under their own grants, with exact stored transcript versions. Neither
 private SQLite text nor media enters the public snapshot. Offline retrieval requires selected,
 unexpired source packs and a current domain grant; context budgets omit whole oversized sources.
@@ -271,6 +271,19 @@ downloads include complete verified image bytes and figure manifests within thei
 budget, without rewriting structured URLs. Unsupported internal sources reject the download.
 The image contracts are prepared but actual WK rendering and physical-device acceptance
 remain pending; the shared resources still need their final rebuild.
+
+Autonomous database research now uses the same deterministic engine, verified narrative
+pipeline, prompts, report types and source validation as Desktop. Chosen, bounded downloads
+retain complete rows and the exact SQLite-filtered order of saved views. Calculations run in
+a device Web Worker; only the mobile's explicitly selected provider generates the narrative.
+Each stage and finished structured reader is durable before publication. Reconnecting sends
+the same run identity and Mac-signed source; the Mac recomputes artifacts and validates the
+narrative without invoking a provider before an atomic save. Own annotations wait for that
+save, retain their original source anchors, and reconcile through the existing conflict journal.
+After acknowledgement, raw source rows leave the generation ledger and checkpoint; reports,
+annotations and receipts remain durable. Prepared source, SQLite publication and Swift
+persistence regressions are not executed evidence. The autonomous queue controls, offline
+export and final device/visual/network acceptance still require completion.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and

@@ -64,6 +64,33 @@ struct CompanionDatabaseResearchTests {
         let saved = try await store.entry(id:"report")
         #expect(saved?.state == .saved);#expect(saved?.draft.annotations[0].objectValue?["comment"] == .string("Edición posterior"))
     }
+    @Test("Annotations wait for their own report without losing edits or request identity")
+    func publicationDependency() async throws {
+        let (cache,directory,keychain,id) = try setup()
+        defer { try? FileManager.default.removeItem(at:directory);try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId:id)) }
+        let store = try await outbox(cache);try await store.seed(snapshot())
+        let own = CompanionDatabaseResearch.Reading(readAt:nil,annotations:[annotation()])
+        try await store.edit(id:"report",sourceRevision:sourceRevision,reading:own)
+        actor Requests {
+            var value:CompanionDatabaseResearch.Request?
+            func capture(_ request:CompanionDatabaseResearch.Request) { value = request }
+            func get() -> CompanionDatabaseResearch.Request? { value }
+        }
+        let requests = Requests()
+        try await store.synchronize { _,request in
+            await requests.capture(request)
+            throw CompanionDatabaseResearch.Dependency.waitingForReportPublication
+        }
+        let reopened = try await outbox(cache),expected = await requests.get()
+        #expect(try await reopened.entry(id:"report")?.state == .pending)
+        #expect(try await reopened.entry(id:"report")?.draft == own)
+        try await reopened.synchronize { _,request in
+            #expect(request == expected)
+            return .init(id:request.id,snapshot:snapshot(reading:request.reading,revision:String(repeating:"c",count:64)))
+        }
+        #expect(try await reopened.entry(id:"report")?.state == .saved)
+        #expect(try await reopened.entry(id:"report")?.draft == own)
+    }
     @Test("A remote conflict preserves own work until an explicit choice")
     func conflicts() async throws {
         let (cache,directory,keychain,id) = try setup()

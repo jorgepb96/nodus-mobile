@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Persist the user's intent before sending it. Lost acknowledgements are recovered
 /// with the same idempotency key; reopening never silently creates a second job.
@@ -6,7 +7,8 @@ public actor DesktopJobLedger {
     public struct Request: Codable, Sendable, Identifiable {
         public let id: String
         public let method: String
-        public let args: [JSONValue]
+        public var args: [JSONValue]
+        public var argsFingerprint: String? = nil
         public let createdAt: Date
         public var jobId: String?
         public var state: String
@@ -26,9 +28,16 @@ public actor DesktopJobLedger {
         durablyPrepared = Set(requests.keys)
     }
     public func all() -> [Request] { requests.values.sorted { $0.createdAt > $1.createdAt } }
+    private func fingerprint(_ args: [JSONValue]) throws -> String {
+        SHA256.hash(data:try JSONEncoder.nodus.encode(args)).map { String(format:"%02x",$0) }.joined()
+    }
+    private func sameArguments(_ request: Request,_ args: [JSONValue]) throws -> Bool {
+        if let expected = request.argsFingerprint { return try fingerprint(args) == expected }
+        return request.args == args
+    }
     public func prepare(id: String, method: String, args: [JSONValue]) async throws -> Request {
         if let stored = requests[id] {
-            guard stored.method == method, stored.args == args else { throw DesktopBridgeError.malformedResponse }
+            guard stored.method == method, try sameArguments(stored,args) else { throw DesktopBridgeError.malformedResponse }
             try await persist()
             durablyPrepared.insert(id)
             return stored
@@ -42,7 +51,7 @@ public actor DesktopJobLedger {
     public func preparePublication(_ publication: CompanionGenerationPublication) async throws {
         var request: Request
         if let stored = requests[publication.id] {
-            guard stored.method == publication.method, stored.args == publication.args,
+            guard stored.method == publication.method, try sameArguments(stored,publication.args),
                   stored.checkpointRecordId == nil || stored.checkpointRecordId == publication.recordId
             else { throw DesktopBridgeError.malformedResponse }
             request = stored
@@ -71,6 +80,7 @@ public actor DesktopJobLedger {
             value["state"] = .string("available"); value["error"] = nil
             value["publicationPending"] = nil
             if let result = request.result { value["result"] = result }
+            if request.method == "saveMobileDatabaseResearchReport" { value["context"] = nil }
         case "failed", "interrupted", "cancelled":
             value["state"] = .string(request.state == "cancelled" ? "cancelled" : "failed")
             value["error"] = request.issue.map(JSONValue.string)
@@ -91,6 +101,11 @@ public actor DesktopJobLedger {
            job.state != .available || request.result == job.result { return }
         request.jobId = job.id; request.state = job.state.rawValue; request.issue = job.error
         if job.state == .available { request.result = job.result }
+        if job.state == .available, request.method == "saveMobileDatabaseResearchReport", request.argsFingerprint == nil {
+            // Keep the receipt identity and the user's finished report. The
+            // signed raw rows are needed only until the Mac acknowledges them.
+            request.argsFingerprint = try fingerprint(request.args);request.args = []
+        }
         request.checkpoint = reconciledCheckpoint(request); requests[id] = request
         try await persist()
     }

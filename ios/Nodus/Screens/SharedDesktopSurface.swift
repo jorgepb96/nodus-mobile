@@ -56,6 +56,7 @@ extension SpaceSession {
 struct SharedDesktopSurface: View {
     let session: SpaceSession
     let surface: DesktopSurface
+    var initialDatabaseReportId: String? = nil
     @Environment(AISettings.self) private var ai
     @Environment(\.colorScheme) private var theme
     @Environment(\.dynamicTypeSize) private var textSize
@@ -76,7 +77,7 @@ struct SharedDesktopSurface: View {
     @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -281,6 +282,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let publicationRevision: Int
     let corpusRevision: String?
     let databaseReadingRevision:Int
+    let initialDatabaseReportId: String?
     let onError: (String) -> Void
     let onExport: (URL) -> Void
     let onAutonomousStatus: (String?) -> Void
@@ -298,7 +300,7 @@ private struct DesktopWebView: UIViewRepresentable {
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
         config.userContentController.add(context.coordinator, name: "nodus")
-        let data: [String: Any] = ["surface": surface.rawValue, "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+        let data: [String: Any] = ["surface": surface.rawValue, "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
             "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
         if let json = try? JSONSerialization.data(withJSONObject: data), let text = String(data: json, encoding: .utf8) {
@@ -419,7 +421,9 @@ private struct DesktopWebView: UIViewRepresentable {
         let onOpenWritingResult: (MobileWritingResultTarget) -> Void
         let onImmersionSource: (String, JSONValue) -> Void
         private lazy var immersionProgress = ImmersionSurfaceProgressBridge(session: session)
-        private lazy var databaseReading = DatabaseResearchSurfaceBridge(session:session)
+        private lazy var databaseReading = DatabaseResearchSurfaceBridge(session:session,localReader:{ [weak self] id in
+            guard let self else { return nil };return try await self.autonomous.databaseLocalReader(id,session:self.session)
+        })
         private var databaseReadingRevision = 0
         func sendDatabaseReadingUpdate() {
             guard surfaceReady,routeActive,databaseReadingRevision != session.companionDatabaseReadingRevision else { return }
@@ -540,6 +544,12 @@ private struct DesktopWebView: UIViewRepresentable {
                         }
                     } else if method == "mobileDictionaryGenerationJobs", args.isEmpty {
                         value = try await autonomous.dictionaryPublications(session: session)
+                    } else if method == "mobileDatabaseResearchCheckpoints",args.isEmpty {
+                        value = try await autonomous.databaseCheckpoints(session:session)
+                    } else if method == "getDatabaseResearchOfflineSource" {
+                        value = try await autonomous.databaseOfflineSource(args,session:session)
+                    } else if method == "getDatabaseResearchOfflineCatalogue",args.isEmpty {
+                        value = try await autonomous.databaseOfflineCatalogue(session:session)
                     } else if method == "mobileStructuredCompletion" {
                         value = try await autonomous.complete(args.first ?? .null, session: session)
                     } else if method == "cancelAutonomousGeneration", let generation = args.first?.stringValue {

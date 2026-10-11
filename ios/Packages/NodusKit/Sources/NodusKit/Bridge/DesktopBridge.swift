@@ -1023,6 +1023,25 @@ public actor PrivateBridgeCache {
         }
     }
 
+    /// One process-wide disk transaction prevents independently opened cache
+    /// actors from losing entries in the autonomous result catalogue. The index
+    /// is written first, so a crash never leaves completed work undiscoverable.
+    public func storeIndexedGeneration(_ data: Data,vaultId: String,recordId: String,indexId: String,entity: String) throws {
+        guard !entity.isEmpty,entity.utf8.count <= 256 else { throw DesktopBridgeError.malformedResponse }
+        try Self.diskLock.withLock {
+            let indexURL = fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:indexId)
+            var entries: [String] = []
+            if FileManager.default.fileExists(atPath:indexURL.path) {
+                entries = try JSONDecoder.nodus.decode([String].self,from:AES.GCM.open(AES.GCM.SealedBox(combined:Data(contentsOf:indexURL)),using:key))
+            }
+            entries = Array(Set(entries + [entity])).sorted()
+            guard entries.count <= 10_000 else { throw DesktopBridgeError.malformedResponse }
+            for (url,bytes) in [(indexURL,try JSONEncoder.nodus.encode(entries)),(fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:recordId),data)] {
+                guard let sealed = try AES.GCM.seal(bytes,using:key).combined else { throw DesktopBridgeError.malformedResponse }
+                try sealed.write(to:url,options:[.atomic,.completeFileProtection]);BackupPolicy.apply(.excluded,to:url)
+            }
+        }
+    }
     public func data(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Data? {
         try Self.diskLock.withLock {
             try cleanReadPacks()

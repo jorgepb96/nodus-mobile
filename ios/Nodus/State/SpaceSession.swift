@@ -372,7 +372,11 @@ final class SpaceSession {
             if let pairingId = connection.desktopPairingId,
                let reading = try? await CompanionDatabaseReadingOutboxes.shared.outbox(pairingId:pairingId,vaultId:vaultId) {
                 let before = await reading.revision
-                try? await reading.synchronize { id,request in try await bridge.saveDatabaseResearchReading(vaultId:vaultId,reportId:id,request:request) }
+                let dependencies = try? await DesktopJobLedgers.shared.ledger(pairingId:pairingId,vaultId:vaultId)
+                try? await reading.synchronize { id,request in
+                    if let dependencies,await dependencies.all().contains(where:{ $0.method == "saveMobileDatabaseResearchReport" && $0.state != "available" && $0.checkpoint?.objectValue?["detail"]?.objectValue?["report"]?.objectValue?["id"] == .string(id) }) { throw CompanionDatabaseResearch.Dependency.waitingForReportPublication }
+                    return try await bridge.saveDatabaseResearchReading(vaultId:vaultId,reportId:id,request:request)
+                }
                 if await reading.revision != before { companionDatabaseReadingRevision += 1 }
             }
             // Portable results synchronize in either mode. New Mac generation

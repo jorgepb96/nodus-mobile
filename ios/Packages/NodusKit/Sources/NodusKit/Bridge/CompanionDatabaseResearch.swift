@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 
 public enum CompanionDatabaseResearch {
+    public enum Dependency: Error, Sendable { case waitingForReportPublication }
     public struct Source: Codable, Sendable, Equatable {
         public let version: Int, sourceRevision: String
         public let report: JSONValue
@@ -149,6 +150,7 @@ public actor CompanionDatabaseReadingOutbox {
                     if latest.generation == sending.generation { latest.draft = receipt.snapshot.reading; latest.state = .saved }
                     try await store(id:id,entry:latest)
                 } catch {
+                    if error is CompanionDatabaseResearch.Dependency { break }
                     guard var latest = records[id] else { throw error }
                     if error is CancellationError || (error as? URLError).map({ [.notConnectedToInternet,.networkConnectionLost,.timedOut,.cannotConnectToHost,.cannotFindHost,.dnsLookupFailed].contains($0.code) }) == true { throw error }
                     if let api = error as? APIError,let code = api.code,["database_reading_conflict","database_report_changed"].contains(code),let value = api.details["remote"] {

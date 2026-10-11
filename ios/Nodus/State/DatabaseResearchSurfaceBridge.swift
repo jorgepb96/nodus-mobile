@@ -5,8 +5,9 @@ import NodusKit
 final class DatabaseResearchSurfaceBridge {
     static let methods:Set<String> = ["getDatabaseDeepResearchReport","listMobileDatabaseDeepResearchReports","listDatabaseDeepResearchReportAnnotations","createDatabaseDeepResearchReportAnnotation","updateDatabaseDeepResearchReportComment","deleteDatabaseDeepResearchReportAnnotation","setDatabaseDeepResearchReportRead"]
     private let session:SpaceSession
+    private let localReader:(String) async throws -> JSONValue?
     private var sources:[String:CompanionDatabaseResearch.Source] = [:]
-    init(session:SpaceSession) { self.session = session }
+    init(session:SpaceSession,localReader:@escaping (String) async throws -> JSONValue? = { _ in nil }) { self.session = session;self.localReader = localReader }
     private func journal(_ pairing:DesktopBridgePairing,_ vault:String) async throws -> CompanionDatabaseReadingOutbox {
         guard !pairing.isExpired,pairing.vaultIds.contains(vault),pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
         return try await CompanionDatabaseReadingOutboxes.shared.outbox(pairingId:pairing.id,vaultId:vault)
@@ -85,8 +86,22 @@ final class DatabaseResearchSurfaceBridge {
         return result
     }
     private func load(_ id:String,client:DesktopBridgeClient,pairing:DesktopBridgePairing,vault:String,cache:PrivateBridgeCache,onOffline:(Bool)->Void) async throws -> CompanionDatabaseResearch.Source {
+        let local = try await localReader(id)
+        if let local,local.objectValue?["published"] == .bool(false),let value = local.objectValue?["source"],let reading = local.objectValue?["reading"] {
+            var source = try JSONDecoder.nodus.decode(CompanionDatabaseResearch.Source.self,from:JSONEncoder.nodus.encode(value));try source.validate(id:id)
+            if pairing.domains.contains(.writing) {
+                let store = try await journal(pairing,vault),before = await store.revision
+                try await store.seed(JSONDecoder.nodus.decode(CompanionDatabaseResearch.Snapshot.self,from:JSONEncoder.nodus.encode(reading)))
+                if let entry = try await store.entry(id:id,sourceRevision:source.sourceRevision),var fields = source.report.objectValue,var wrapper = value.objectValue {
+                    fields["readAt"] = entry.draft.readAt.map(JSONValue.string) ?? .null;wrapper["report"] = .object(fields)
+                    source = try JSONDecoder.nodus.decode(CompanionDatabaseResearch.Source.self,from:JSONEncoder.nodus.encode(JSONValue.object(wrapper)))
+                }
+                if await store.revision != before { session.didChangeDatabaseReading() }
+            }
+            sources[id] = source;return source
+        }
         let key = try CompanionDocumentOutbox.operationKey("getMobileDatabaseResearchReader",[.string(id)])
-        let cached = try await cache.data(vaultId:vault,domain:.corpus,recordId:key)
+        let cached = try await cache.data(vaultId:vault,domain:.corpus,recordId:key) ?? local?.objectValue?["source"].map { try JSONEncoder.nodus.encode($0) }
         let selected = try await cache.hasDownloadedData(vaultId:vault,domain:.corpus,recordId:CompanionDatabaseResearchCopy.recordId)
         let value:JSONValue,online:Bool
         do {

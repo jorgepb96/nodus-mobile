@@ -11,6 +11,8 @@ public enum CompanionResultCatalogue {
             return surface == "dictionary" && !(checkpoint["definition"]?.objectValue?["contentMarkdown"]?.stringValue ?? "").isEmpty
         case "saveStudyImprovementFromMobile":
             return surface == "workspace" && !(checkpoint["preview"]?.objectValue?["text"]?.stringValue ?? "").isEmpty
+        case "saveMobileDatabaseResearchReport":
+            return surface == "databaseResearch" && !(checkpoint["detail"]?.objectValue?["report"]?.objectValue?["markdown"]?.stringValue ?? "").isEmpty
         case "saveWritingWorkshopFromMobile":
             return surface == "writingWorkshop" && !(checkpoint["preview"]?.objectValue?["draftMarkdown"]?.stringValue ?? "").isEmpty
         case "saveImmersionGeneratedSession":
@@ -29,6 +31,7 @@ public enum CompanionResultCatalogue {
 
     public static func title(_ request: DesktopJobLedger.Request) -> String {
         let checkpoint = request.checkpoint?.objectValue ?? [:]
+        if request.method == "saveMobileDatabaseResearchReport",let title = checkpoint["detail"]?.objectValue?["report"]?.objectValue?["title"]?.stringValue,!title.isEmpty { return title }
         if request.method == "saveWritingWorkshopFromMobile",
            let title = checkpoint["preview"]?.objectValue?["title"]?.stringValue, !title.isEmpty { return title }
         if let entry = checkpoint["context"]?.objectValue?["entry"]?.objectValue,

@@ -182,6 +182,15 @@ struct CompanionCollectionDownloadsView: View {
                 bytes += try JSONEncoder.nodus.encode(entry).count
                 guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 entries.append(entry); progress = (index + 1, chosen.count)
+                if collection.path == "databases" {
+                    let pack = try await client.operation(vaultId:vault,method:"getMobileDatabaseResearchSourcePack",args:[.object(["databaseIds":.array([.string(id)])])])
+                    guard pack.objectValue?["version"] == .int(1),pack.objectValue?["vaultId"] == .string(vault),
+                          pack.objectValue?["databases"]?.arrayValue?.count == 1,
+                          pack.objectValue?["databases"]?.arrayValue?.first?.objectValue?["snapshot"]?.objectValue?["databaseId"] == .string(id) else { throw DesktopBridgeError.malformedResponse }
+                    let data = try JSONEncoder.nodus.encode(pack);bytes += data.count
+                    guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    sources.append(.init(domain:.corpus,recordId:"companion:database-source:v1:\(id)",data:data))
+                }
                 if collection.path == "study-docs" {
                     let args: [JSONValue] = [.object(["documentId": .string(id)])]
                     let source = try await client.operation(vaultId: vault, method: "getStudyImprovementOfflineSource", args: args)
