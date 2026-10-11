@@ -24,6 +24,8 @@ parser.add_argument("--research-body-snippet")
 parser.add_argument("--research-title")
 parser.add_argument("--research-markdown-sha256")
 parser.add_argument("--scriptor-marker")
+parser.add_argument("--offline-scriptor-marker")
+parser.add_argument("--created-document-marker")
 parser.add_argument("--pairing-by-code", action="store_true")
 parser.add_argument("--phone-graph", action="store_true")
 args = parser.parse_args()
@@ -58,6 +60,14 @@ if args.scriptor_marker:
     if not re.fullmatch(r"DesktopQA-[A-Za-z0-9-]{8,80}", args.scriptor_marker):
         raise SystemExit("A Desktop editor request marker is required")
     values["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"] = args.scriptor_marker
+if args.offline_scriptor_marker:
+    if not re.fullmatch(r"MobileOffline-[A-Fa-f0-9]{8}", args.offline_scriptor_marker):
+        raise SystemExit("An exact marker from an executed offline edit is required")
+    values["NODUS_ACCEPTANCE_OFFLINE_SCRIPTOR_MARKER"] = args.offline_scriptor_marker
+if args.created_document_marker:
+    if not re.fullmatch(r"CompanionCreate-[A-Fa-f0-9]{8}", args.created_document_marker):
+        raise SystemExit("An exact marker from an executed offline creation is required")
+    values["NODUS_ACCEPTANCE_CREATED_DOCUMENT_MARKER"] = args.created_document_marker
 if args.text_size:
     values["NODUS_ACCEPTANCE_DYNAMIC_TYPE"] = args.text_size
 if args.phone_graph:

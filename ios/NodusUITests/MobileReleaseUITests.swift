@@ -1946,6 +1946,43 @@ final class MobileReleaseUITests: XCTestCase {
         capture(relaunched, "offline-scriptor-structured-document-reopened")
     }
     @MainActor
+    func testOfflineStructuredEditSynchronizesAndReopens() throws {
+        let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_OFFLINE_SCRIPTOR_MARKER"])
+        let app = try openExistingPrincipal(destination: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 45))
+        let search = web.textFields["Buscar en notas e ideas…"]
+        XCTAssertTrue(search.waitForExistence(timeout: 30))
+        search.tap(); search.typeText("Aceptación Scriptor móvil 0.1.0\n")
+        let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        XCTAssertTrue(note.waitForExistence(timeout: 30)); note.tap()
+        let editor = web.textViews["Editor del documento"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 30))
+        let confirmed = NSPredicate { _, _ in
+            (editor.value as? String)?.contains(marker) == true && web.staticTexts["Guardado"].exists &&
+            !web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "pendiente de sincronizar")).firstMatch.exists
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: confirmed, object: nil)], timeout: 60), .completed, app.debugDescription)
+        XCTAssertTrue(web.staticTexts["Libro"].firstMatch.exists && web.staticTexts["Cita"].firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        capture(app, "scriptor-offline-edit-confirmed-by-mac")
+        app.terminate()
+        let reopened = try openExistingPrincipal(destination: "workspace")
+        defer { reopened.terminate() }
+        let restoredWeb = reopened.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        XCTAssertTrue(restoredWeb.waitForExistence(timeout: 45))
+        let catalogue = restoredWeb.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+        if catalogue.waitForExistence(timeout: 8) { catalogue.tap() }
+        let restored = restoredWeb.textViews["Editor del documento"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 30))
+        XCTAssertTrue((restored.value as? String)?.contains(marker) == true)
+        XCTAssertTrue(restoredWeb.staticTexts["Guardado"].exists)
+        XCTAssertFalse(restoredWeb.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "pendiente de sincronizar")).firstMatch.exists)
+        XCTAssertTrue(restoredWeb.staticTexts["Libro"].firstMatch.exists && restoredWeb.staticTexts["Cita"].firstMatch.exists)
+        capture(reopened, "scriptor-synchronized-structured-edit-reopened")
+    }
+    @MainActor
     func testLiveScriptorReadsDesktopEditAndReopens() throws {
         let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"], "A marker written through the real Desktop editor is required.")
         let app = try openExistingPrincipal(destination: "workspace")
