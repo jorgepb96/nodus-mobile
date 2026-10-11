@@ -352,6 +352,8 @@ function operationMatrix(routes) {
       ['consultation.database.rowDocumentsBoundedBatchAndLegacyCapabilityPath', 'consultation'],
       ['sync.database.rowDocumentBatchEpochIdentityAndAssetCatalogue', 'sync'],
       ['sync.downloads.sharedDependencyOverlapAndFinalUniqueStorageBudget', 'sync'],
+      ['consultation.pages.linkedDatabaseAssociatedDocumentsAndChosenFiles', 'consultation'],
+      ['sync.pages.linkedRowDependencyCyclesAndCompleteSourceEpoch', 'sync'],
       ['sync.documents.parentsAppliedBeforeDependentContent', 'sync'],
       ['sync.jobs.keyedCancellationBeforeAcknowledgement', 'sync'],
       ['sync.jobs.cancelledReceiptPersistsAcrossMacRestart', 'sync'],

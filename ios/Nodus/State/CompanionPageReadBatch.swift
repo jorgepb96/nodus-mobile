@@ -3,6 +3,24 @@ import NodusKit
 
 /// Read only explicit page identities, preserving order and the Mac's bounded cursor.
 enum CompanionPageReadBatch {
+    @MainActor static func read(client: DesktopBridgeClient, vault: String, pageIds: [String], supportsBatch: Bool) async throws -> [String: JSONValue] {
+        if supportsBatch {
+            return try await read(vault: vault, pageIds: pageIds, maximumBytes: PrivateBridgeCache.maximumSelectedCopyBytes) { input in
+                try await client.operation(vaultId: vault, method: "getMobilePageDocuments", args: [input])
+            }
+        }
+        var result: [String: JSONValue] = [:], bytes = 0
+        for id in pageIds {
+            try Task.checkCancellation()
+            let source = try await client.operation(vaultId: vault, method: "getMobilePageDocument", args: [.string(id)])
+            _ = try CompanionPageDocuments.document(source, vaultId: vault, pageId: id)
+            guard result[id] == nil else { throw DesktopBridgeError.malformedResponse }
+            bytes += try JSONEncoder.nodus.encode(source).count
+            guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+            result[id] = source
+        }
+        return result
+    }
     @MainActor static func read(vault: String, pageIds: [String], maximumBytes: Int,
         fetch: (JSONValue) async throws -> JSONValue) async throws -> [String: JSONValue] {
         guard Set(pageIds).count == pageIds.count, pageIds.allSatisfy({ !$0.isEmpty && $0.count <= 1024 }) else { throw DesktopBridgeError.malformedResponse }

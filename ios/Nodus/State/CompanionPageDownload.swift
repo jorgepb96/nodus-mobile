@@ -12,6 +12,16 @@ enum CompanionPageDownload {
         var pending = [root], pages = Set<String>(), synced = Set<String>(), views = Set<String>()
         var queries:[([JSONValue],JSONValue)]=[]
         var documents: [(String, JSONValue)] = [], databases: [String: JSONValue] = [:]
+        var supportsBatch: Bool?
+        func readPages(_ ids: [String]) async throws -> [String: JSONValue] {
+            if supportsBatch == nil { supportsBatch = try await client.liveCapabilities().operations.contains("getMobilePageDocuments") }
+            return try await CompanionPageReadBatch.read(client: client, vault: vault, pageIds: ids, supportsBatch: supportsBatch!)
+        }
+        func retainRecord(_ record: PrivateBridgeCache.ReadPackRecord) throws {
+            guard record.recordId == linkedDatabaseKey || seen.insert(record.recordId).inserted else { return }
+            try CompanionReadPackRecords.merge(record, into: &output, vault: vault, bytes: &used, maximumBytes: maximumBytes)
+            seen.insert(record.recordId)
+        }
         func retain(_ method: String, _ args: [JSONValue], _ value: JSONValue) throws {
             let key = try CompanionDocumentOutbox.operationKey(method, args)
             guard seen.insert(key).inserted else { return }
@@ -24,7 +34,6 @@ enum CompanionPageDownload {
             let source = pending.removeFirst()
             guard let pageId = source.objectValue?["document"]?.objectValue?["page"]?.objectValue?["id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
             guard pages.insert(pageId).inserted else { continue }
-            guard pages.count <= 256 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             _ = try CompanionPageDocuments.document(source, vaultId: vault, pageId: pageId)
             guard let assets = source.objectValue?["assets"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
             documents.append((pageId, source))
@@ -64,9 +73,27 @@ enum CompanionPageDownload {
                             let count = try JSONEncoder.nodus.encode(payload).count
                             guard count <= maximumBytes - used else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                             used += count; databases[databaseId] = payload
-                            if seen.insert(CompanionDatabasePresentationSource.key(databaseId)).inserted {
-                                let presentation = try await CompanionDatabasePresentationSource.download(client: client, vault: vault, database: databaseId, maximumBytes: maximumBytes - used)
-                                used += presentation.data.count; output.append(presentation)
+                            let presentationKey = CompanionDatabasePresentationSource.key(databaseId)
+                            let needsPresentation = !seen.contains(presentationKey)
+                            if needsPresentation || !seen.contains(CompanionDatabasePageDownload.key(databaseId)) {
+                                let presentation = try await CompanionDatabasePresentationSource.download(client: client, vault: vault, database: databaseId,
+                                    maximumBytes: needsPresentation ? maximumBytes - used : PrivateBridgeCache.maximumSelectedCopyBytes)
+                                if needsPresentation { seen.insert(presentationKey); used += presentation.data.count; output.append(presentation) }
+                                let source = try JSONDecoder.nodus.decode(JSONValue.self, from: presentation.data)
+                                let attachments = try await CompanionDossierDownload.records(client: client, vault: vault, domains: domains,
+                                    collection: "databases", id: databaseId, detail: payload, images: images, files: files, existing: seen, maximumBytes: maximumBytes - used)
+                                for record in attachments { try retainRecord(record) }
+                                if !seen.contains(CompanionDatabasePageDownload.key(databaseId)) {
+                                    let rowPages = try await CompanionDatabasePageDownload.capture(vault: vault, presentation: source, existing: seen,
+                                        maximumBytes: maximumBytes - used, batch: readPages,
+                                        fetch: { id in try await client.operation(vaultId: vault, method: "getMobilePageDocument", args: [.string(id)]) },
+                                        dependencies: { source, _, _ in
+                                            guard let id = source.objectValue?["document"]?.objectValue?["page"]?.objectValue?["id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                                            if !pages.contains(id) { pending.append(source) }
+                                            return []
+                                        })
+                                    for record in rowPages { try retainRecord(record) }
+                                }
                             }
                         }
                     }
@@ -100,11 +127,12 @@ enum CompanionPageDownload {
             let final=try await client.operation(vaultId:vault,method:"getMobileLinkedDatabaseRead",args:args)
             guard final == first else {throw APIError(status:409,code:"page_dependency_changed",message:"Los datos de la vista enlazada cambiaron durante la descarga. Vuelve a intentarlo.")}
         }
-        for (id, source) in documents {
-            // Row-page captures verify all roots together in their final batch.
-            if !recheckRoot, id == root.objectValue?["document"]?.objectValue?["page"]?.objectValue?["id"]?.stringValue { continue }
-            let final = try await client.operation(vaultId: vault, method: "getMobilePageDocument", args: [.string(id)])
-            guard final == source else { throw APIError(status: 409, code: "page_dependency_changed", message: "Una página cambió durante la descarga. Vuelve a intentarlo.") }
+        let toVerify = documents.filter { recheckRoot || $0.0 != root.objectValue?["document"]?.objectValue?["page"]?.objectValue?["id"]?.stringValue }
+        if !toVerify.isEmpty {
+            let final = try await readPages(toVerify.map(\.0))
+            for (id, source) in toVerify {
+                guard final[id] == source else { throw APIError(status: 409, code: "page_dependency_changed", message: "Una página cambió durante la descarga. Vuelve a intentarlo.") }
+            }
         }
         if !databases.isEmpty {
             let data = try JSONEncoder.nodus.encode(JSONValue.object(["version": .int(1), "vaultId": .string(vault), "databases": .object(databases)]))
