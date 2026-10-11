@@ -63,6 +63,29 @@ public struct CompanionCollectionCopy: Sendable {
         return data.isEmpty ? nil : try Self(path: path, copies: data.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) })
     }
 
+    /// Native downloaded catalogues use the same source without opening a socket.
+    /// Exact domain filters (for example faction versus culture) run before paging.
+    public func page(query: String = "", matching: [String: JSONValue] = [:], limit: Int? = nil, offset: Int? = nil) -> Page<Row> {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let rows = entries.map { Row($0.objectValue!["summary"]!.objectValue!) }.filter { row in
+            matching.allSatisfy { row[$0.key] == $0.value } && (needle.isEmpty || row.columns.values.contains { value in
+                guard case .string(let text) = value else { return false }
+                return text.lowercased().contains(needle)
+            })
+        }
+        let offset = PageBounds.clampedOffset(offset), limit = PageBounds.clampedLimit(limit)
+        let start = min(offset, rows.count), end = min(rows.count, start + limit)
+        return Page(items: Array(rows[start..<end]), total: rows.count, limit: limit, offset: offset, hasMore: end < rows.count,
+            revision: revision, fromDevice: true)
+    }
+
+    public func dossier(id: String) throws -> CollectionDossier {
+        guard let entry = entries.first(where: { $0.objectValue?["summary"]?.objectValue?[collection.idField] == .string(id) }),
+              var detail = entry.objectValue?["detail"]?.objectValue else { throw CopyError.dossierNotDownloaded }
+        detail["revision"] = .string(revision)
+        return try CollectionDossier(collection: collection, id: id, payload: .object(detail), fromDevice: true)
+    }
+
     public func nativeResponse(path: String, query: [URLQueryItem], percentEncoded: Bool) throws -> DesktopBridgeResponse? {
         let parts = try path.split(separator: "/").map { part -> String in
             guard !percentEncoded || String(part).removingPercentEncoding != nil else { throw DesktopBridgeError.invalidOrigin }
@@ -76,16 +99,9 @@ public struct CompanionCollectionCopy: Sendable {
         let result: JSONValue
         if parts.count == 1 {
             guard query.allSatisfy({ ["limit", "offset", "q"].contains($0.name) }) else { return nil }
-            let needle = (argument("q") ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let rows = entries.compactMap { $0.objectValue?["summary"] }.filter { row in
-                needle.isEmpty || row.objectValue!.values.contains { value in
-                    guard case .string(let text) = value else { return false }
-                    return text.lowercased().contains(needle)
-                }
-            }
-            let start = min(offset, rows.count), end = min(rows.count, start + limit)
-            result = .object([collection.listKey: .array(Array(rows[start..<end])), "total": .int(Int64(rows.count)),
-                "limit": .int(Int64(limit)), "offset": .int(Int64(offset)), "hasMore": .bool(end < rows.count), "revision": .string(revision)])
+            let page = self.page(query: argument("q") ?? "", limit: limit, offset: offset)
+            result = .object([collection.listKey: .array(page.items.map { .object($0.columns) }), "total": .int(Int64(page.total)),
+                "limit": .int(Int64(page.limit)), "offset": .int(Int64(page.offset)), "hasMore": .bool(page.hasMore), "revision": .string(page.revision)])
         } else {
             guard let entry = entries.first(where: { $0.objectValue?["summary"]?.objectValue?[collection.idField] == .string(parts[1]) }),
                   var detail = entry.objectValue?["detail"]?.objectValue else {

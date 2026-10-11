@@ -4,6 +4,29 @@ import Testing
 
 @Suite("Selected public collection dossiers")
 struct CompanionCollectionCopyTests {
+    @Test("native selected readers filter entity kinds before paging and preserve complete linked context")
+    func nativeDomainReaders() throws {
+        let entries: [JSONValue] = (0..<603).map { index in
+            let kind = index.isMultiple(of: 2) ? "culture" : "faction"
+            let row: JSONValue = .object(["group_id": .string("group-\(index)"), "kind": .string(kind), "name": .string("Grupo \(index)")])
+            return .object(["summary": row, "detail": .object(["group": row,
+                "members": .array([.object(["person_id": .string("linked-only"), "display_name": .string("Persona contextual")])]),
+                "futureSection": .object(["note": .string("Contexto completo")])])])
+        }
+        let copy = try CompanionCollectionCopy(path: "world-groups", copies: [.object(["version": .int(1), "path": .string("world-groups"), "entries": .array(entries)])])
+        let page = copy.page(matching: ["kind": .string("faction")], limit: 200, offset: 200)
+        #expect(page.fromDevice); #expect(page.total == 301); #expect(page.items.count == 101); #expect(!page.hasMore)
+        #expect(page.items.first?.string("group_id") == "group-401")
+        #expect(page.items.allSatisfy { $0.string("kind") == "faction" })
+        let dossier = try copy.dossier(id: "group-601")
+        #expect(dossier.fromDevice)
+        #expect(dossier.sections["futureSection"]?.objectValue?["note"] == .string("Contexto completo"))
+        #expect(dossier.sections["members"]?.arrayValue?.first?.objectValue?["person_id"] == .string("linked-only"))
+        #expect(throws: CompanionCollectionCopy.CopyError.self) { try copy.dossier(id: "linked-only") }
+        #expect(copy.page(matching: ["kind": .string("missing")]).total == 0)
+        #expect(copy.page(offset: 1000).items.isEmpty)
+    }
+
     static func questions(count: Int = 241) -> JSONValue {
         .object(["version": .int(1), "path": .string("study-questions"), "entries": .array((0..<count).map { index in
             let row: JSONValue = .object(["id": .string("question-\(index)"), "prompt": .string("Pregunta \(index)"),

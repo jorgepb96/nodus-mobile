@@ -707,7 +707,11 @@ private struct CompanionCopySettings: View {
                         }
                         Button("Eliminar copia descargada", role: .destructive) {
                             Task {
-                                do { try await PrivateBridgeCache(pairingId: pairingId).removeReadPack(id: pack.id, vaultId: pack.vaultId); await refresh() }
+                                do {
+                                    try await PrivateBridgeCache(pairingId: pairingId).removeReadPack(id: pack.id, vaultId: pack.vaultId)
+                                    session.didChangeCompanionDownloads()
+                                    await refresh()
+                                }
                                 catch { issue = error.localizedDescription }
                             }
                         }.accessibilityIdentifier("companion-download-remove-\(pack.id)")

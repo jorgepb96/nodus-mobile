@@ -331,6 +331,7 @@ struct CompanionResearchDownloadsView: View {
             let packId = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: selected.map { "\(kind.rawValue):\($0)" })
             try await cache.saveReadPack(id: packId, vaultId: vault, title: "\(kind.title) · \(chosen.count)",
                 expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: records)
+            session.didChangeCompanionDownloads()
             saved = true
         } catch is CancellationError { issue = "Descarga cancelada. No se ha creado una copia incompleta." }
         catch let error as URLError where error.code == .cancelled { issue = "Descarga cancelada. No se ha creado una copia incompleta." }

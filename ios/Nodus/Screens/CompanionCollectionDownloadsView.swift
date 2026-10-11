@@ -209,6 +209,7 @@ struct CompanionCollectionDownloadsView: View {
             sources = Array(sources.reversed().filter { keys.insert($0.recordId).inserted }.reversed())
             try await cache.saveReadPack(id: id, vaultId: vault, title: "\(collection.label) · \(entries.count)",
                 expiresAt: Date().addingTimeInterval(Double(selectedDays) * 86_400), records: sources)
+            session.didChangeCompanionDownloads()
             saved = true
         } catch is CancellationError { issue = "Descarga cancelada. No se ha creado una copia incompleta." }
         catch let error as URLError where error.code == .cancelled { issue = "Descarga cancelada. No se ha creado una copia incompleta." }

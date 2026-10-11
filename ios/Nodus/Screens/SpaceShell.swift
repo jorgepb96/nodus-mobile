@@ -225,7 +225,9 @@ struct SpaceShell: View {
         ZStack {
             ForEach(residentRoutes) { resident in
                 NavigationStack {
-                    routeView(resident).toolbar(.hidden, for: .navigationBar)
+                    routeView(resident)
+                        .modifier(CompanionCollectionAccess(session: session, route: resident))
+                        .toolbar(.hidden, for: .navigationBar)
                 }
                 .environment(\.nodusResidentRouteActive, resident == route)
                 .frame(

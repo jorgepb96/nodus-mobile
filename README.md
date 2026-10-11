@@ -162,6 +162,17 @@ Prepared regressions cover pagination, provenance changes, removals, reserved id
 image integrity, exports, unselected reports, permission/certificate/format failures and
 removal of the read pack. Execution and visual acceptance remain pending.
 
+Specialised native workspaces now offer a separate native stack for their chosen
+downloaded public dossiers, available without requesting a full snapshot or opening a
+Mac connection. This includes world entities, archive dossiers, public prosopography,
+testimonies, study/teaching records and database pages. Related records open only if their
+own dossier was downloaded; contextual summaries do not become independent copies.
+Entity-kind filters run before paging, and downloaded databases use the native grid
+with all stored row pages and each page's cells, relations and attachments. Committed
+downloads and deletion notify the visible access controls. This is consultation of selected
+public dossiers, not a substitute for private-domain permissions or full specialised offline
+editing. Native contracts are prepared; compilation and acceptance remain pending.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

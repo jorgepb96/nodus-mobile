@@ -16,6 +16,7 @@ import SwiftUI
 struct DatabaseGridView: View {
     let session: SpaceSession
     let database: Row
+    var downloadedOnly = false
 
     @State private var detail: DatabaseDetail?
     @State private var offset = 0
@@ -33,7 +34,10 @@ struct DatabaseGridView: View {
             } else if isLoading {
                 ProgressView().tint(session.accent)
             } else if let error {
-                NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(error)).padding(16)
+                VStack(alignment: .leading, spacing: 16) {
+                    NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(error))
+                    Button("Reintentar") { Task { await load(offset: offset) } }.frame(minHeight: 44)
+                }.padding(16)
             } else {
                 ContentUnavailableView("Empty database", systemImage: "tablecells")
             }
@@ -215,15 +219,25 @@ struct DatabaseGridView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            detail = try await session.client.database(
-                databaseId,
-                in: session.connection.spaceId,
-                limit: pageSize,
-                offset: newOffset
-            )
+            let loaded: DatabaseDetail
+            if downloadedOnly {
+                let copy = try await downloadedCollection(session, path: "databases")
+                let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+                guard let escaped = databaseId.addingPercentEncoding(withAllowedCharacters: allowed),
+                      let response = try copy.nativeResponse(path: "databases/\(escaped)",
+                        query: [.init(name: "limit", value: String(pageSize)), .init(name: "offset", value: String(newOffset))], percentEncoded: true)
+                else { throw DesktopBridgeError.malformedResponse }
+                loaded = try JSONDecoder.nodus.decode(DatabaseDetail.self, from: response.data)
+            } else {
+                loaded = try await session.client.database(databaseId, in: session.connection.spaceId, limit: pageSize, offset: newOffset)
+            }
+            try Task.checkCancellation()
+            detail = loaded
             offset = newOffset
             error = nil
+        } catch where error.isCancellation {
         } catch {
+            detail = nil
             self.error = error.localizedDescription
         }
     }

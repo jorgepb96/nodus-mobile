@@ -15,6 +15,7 @@ struct CompanionDownloadsView: View {
     @State private var loading = true
     @State private var saved = false
     @State private var downloadTask: Task<Void, Never>?
+    @State private var showingDownloadedDossiers = false
 
     private var notes: [[String: JSONValue]] {
         (tree?.objectValue?["notes"]?.arrayValue ?? []).compactMap(\.objectValue)
@@ -25,6 +26,9 @@ struct CompanionDownloadsView: View {
         NavigationStack {
             List {
                 Section {
+                    Button { showingDownloadedDossiers = true } label: {
+                        Label("Consultar dossiers descargados", systemImage: "arrow.down.circle")
+                    }.frame(minHeight: 44).accessibilityIdentifier("companion-open-downloaded-dossiers")
                     NavigationLink("Biblioteca y otros dossiers") {
                         CompanionCollectionDownloadsView(session: session)
                     }.accessibilityIdentifier("companion-download-collections")
@@ -94,6 +98,7 @@ struct CompanionDownloadsView: View {
                 }
             }
             .task { await load() }
+            .nodusSheet(isPresented: $showingDownloadedDossiers) { CompanionDownloadedCollectionsView(session: session) }
             .onDisappear { downloadTask?.cancel() }
         }
     }

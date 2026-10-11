@@ -25,6 +25,17 @@ func isPrivateBridgeOffline(_ error: Error) -> Bool {
             .cannotFindHost, .dnsLookupFailed, .timedOut].contains(transport.code)
 }
 
+/// Explicit selected reads never consult the Mac or disposable query caches.
+@MainActor
+func downloadedCollection(_ session: SpaceSession, path: String) async throws -> CompanionCollectionCopy {
+    let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+    guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+    let cache = try PrivateBridgeCache(pairingId: pairing.id)
+    guard let copy = try await CompanionCollectionCopy.downloaded(cache: cache, vaultId: vault, path: path)
+    else { throw CompanionCollectionCopy.CopyError.dossierNotDownloaded }
+    return copy
+}
+
 /// Combine independent selected downloads without including disposable,
 /// previously consulted catalogues. Newer copies win for a repeated identity.
 func companionDownloadedCatalogue(_ cache: PrivateBridgeCache, vaultId: String, method: String) async throws -> JSONValue? {
