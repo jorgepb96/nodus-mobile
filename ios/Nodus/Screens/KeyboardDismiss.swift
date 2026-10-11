@@ -149,7 +149,9 @@ private struct KeyboardDismissInstaller: UIViewRepresentable {
             // empty background resigns its responder immediately after the input focuses.
             var ancestor: UIView? = touched
             while let candidate = ancestor {
-                if candidate is WKWebView { return false }
+                // Native editing-menu actions sit outside the input row. Resigning on
+                // their taps closes the keyboard before Select All can finish editing.
+                if candidate is WKWebView || candidate is UIControl || candidate.accessibilityTraits.contains(.button) { return false }
                 ancestor = candidate.superview
             }
             if let window = installed, window.containsWebContent(at: touch.location(in: window), in: window) { return false }
