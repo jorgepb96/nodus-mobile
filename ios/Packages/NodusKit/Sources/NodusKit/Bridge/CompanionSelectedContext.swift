@@ -5,7 +5,9 @@ import Foundation
 /// Graph neighbours, linked summaries and orientation profiles are not promoted
 /// to citable records. No documents are extracted, indexed or derived on iOS.
 public struct CompanionSelectedContext: Sendable {
-    public static let paths = ["ideas", "passages", "themes", "gaps", "works"]
+    private static let academicPaths = ["ideas", "passages", "themes", "gaps", "works"]
+    public static let paths = academicPaths + CorpusSourceMaterial.paths
+    private static let sectionKinds = academicPaths + ["sources"]
     private let rows: [String: [Row]]
     private let revision: String
 
@@ -18,6 +20,13 @@ public struct CompanionSelectedContext: Sendable {
         for copy in collections {
             guard Self.paths.contains(copy.collection.path) else { throw DesktopBridgeError.permissionDenied }
             let path = copy.collection.path
+            if !Self.academicPaths.contains(path) {
+                for row in try CorpusSourceMaterial.selected(copy: copy) {
+                    guard let token = row.string("citation") else { throw DesktopBridgeError.malformedResponse }
+                    if ids["sources", default: []].insert(token).inserted { rows["sources", default: []].append(row) }
+                }
+                continue
+            }
             for row in copy.selectedRows {
                 guard let id = row.string(copy.collection.idField), !id.isEmpty else { throw DesktopBridgeError.malformedResponse }
                 if ids[path, default: []].insert(id).inserted { rows[path, default: []].append(row) }
@@ -52,12 +61,12 @@ public struct CompanionSelectedContext: Sendable {
               request["budget"] == nil || request["budget"]?.intValue != nil,
               request["include"] == nil || request["include"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
         let requested = request["include"]?.arrayValue
-        guard requested?.allSatisfy({ $0.stringValue.map(Self.paths.contains) ?? false }) != false else { throw DesktopBridgeError.malformedResponse }
-        let wanted = Set(requested == nil || requested!.isEmpty ? Self.paths : requested!.map { $0.stringValue! })
+        guard requested?.allSatisfy({ $0.stringValue.map(Self.sectionKinds.contains) ?? false }) != false else { throw DesktopBridgeError.malformedResponse }
+        let wanted = Set(requested == nil || requested!.isEmpty ? Self.sectionKinds : requested!.map { $0.stringValue! })
         let budget = min(120_000, max(1000, request["budget"]?.intValue ?? 120_000))
         let tokens = Self.tokens(query)
         var sections: [JSONValue] = [], used = 0, matched = 0, truncated = false
-        for path in Self.paths where wanted.contains(path) {
+        for path in Self.sectionKinds where wanted.contains(path) {
             let ranked = (rows[path] ?? []).enumerated().compactMap { ordinal, row -> (Int, Int, Row)? in
                 let text = Self.fold(row.searchableText)
                 let score = tokens.reduce(0) { $0 + (text.contains($1) ? 1 : 0) }

@@ -1129,6 +1129,18 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "generation.specialisedSourceContext.linked",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.specialisedSourceContext.downloaded",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

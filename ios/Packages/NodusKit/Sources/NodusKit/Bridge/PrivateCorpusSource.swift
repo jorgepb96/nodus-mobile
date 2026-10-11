@@ -80,7 +80,7 @@ public struct PrivateCorpusSource: Codable, Sendable {
         public let hasMore: Bool
         public let revision: String
         public func validate(offset expected: Int) throws {
-            guard offset == expected, total >= 0, limit > 0, limit <= 100, Self.isRevision(revision),
+            guard offset == expected, offset >= 0, total >= 0, limit > 0, limit <= 100, Self.isRevision(revision),
                   Set(items.map(\.id)).count == items.count, items.allSatisfy({ !$0.id.isEmpty }),
                   items.count == min(limit, max(0, total - offset)), hasMore == (offset + items.count < total) else { throw DesktopBridgeError.malformedResponse }
         }
@@ -107,6 +107,12 @@ public struct PrivateCorpusSource: Codable, Sendable {
         guard version == 1, kind == reference.kind, id == reference.id, root.string(kind.primaryKey) == id,
               groups.map(\.key) == kind.groups, Self.isRevision(revision),
               groups.allSatisfy({ $0.total >= 0 && Self.isRevision($0.revision) }) else { throw DesktopBridgeError.malformedResponse }
+        var total = 0
+        for group in groups {
+            let next = total.addingReportingOverflow(group.total)
+            guard !next.overflow else { throw DesktopBridgeError.malformedResponse }
+            total = next.partialValue
+        }
     }
     private static func isRevision(_ value: String) -> Bool {
         value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }

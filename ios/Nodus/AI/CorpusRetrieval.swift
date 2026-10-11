@@ -25,6 +25,7 @@ struct CorpusRetrieval: Sendable {
     enum Mode: String, Sendable {
         case semantic
         case lexical
+        case hybrid
     }
 
     struct Result: Sendable {
@@ -52,6 +53,7 @@ struct CorpusRetrieval: Sendable {
             case .gaps: return String(localized: "Gaps")
             case .works: return String(localized: "Works")
             case .passages: return String(localized: "Passages")
+            case .sources: return String(localized: "Fuentes del vault")
             }
         }
 
@@ -62,6 +64,7 @@ struct CorpusRetrieval: Sendable {
             case .gaps: return "questionmark.diamond"
             case .works: return "book.closed"
             case .passages: return "text.quote"
+            case .sources: return "doc.text.magnifyingglass"
             }
         }
     }
@@ -79,6 +82,15 @@ struct CorpusRetrieval: Sendable {
         if let identity,
            let semantic = try? await semanticMaterial(query: query, identity: identity, include: include),
            !semantic.catalog.isEmpty {
+            if include.contains(.sources) {
+                let sources = try await lexicalMaterial(query: query, budget: max(1000, budget / 2), include: [.sources])
+                if !sources.catalog.isEmpty {
+                    return Result(catalog: semantic.catalog.merging(sources.catalog), mode: .hybrid,
+                        truncated: semantic.truncated || sources.truncated,
+                        warning: [semantic.warning, sources.warning, String(localized: "Las fuentes especializadas se recuperan mediante búsqueda textual.")].compactMap { $0 }.joined(separator: " "),
+                        sections: semantic.sections + sources.sections)
+                }
+            }
             return semantic
         }
         return try await lexicalMaterial(query: query, budget: budget, include: include)
@@ -128,6 +140,9 @@ struct CorpusRetrieval: Sendable {
 
     private func lexicalMaterial(query: String, budget: Int, include: [ContextSectionKind]) async throws -> Result {
         let package = try await client.context(query: query, in: spaceId, budget: budget, include: include)
+        for section in package.sections where section.kind == "sources" {
+            for row in section.items { _ = try CorpusSourceMaterial(row: row) }
+        }
         scopeTracker?.observe(package.sourceScope == "device_downloads" ? "device_downloads" : "linked_corpus")
         let sections = package.sections.compactMap { section -> MaterialSection? in
             guard let kind = ContextSectionKind(rawValue: section.kind), !section.items.isEmpty else { return nil }

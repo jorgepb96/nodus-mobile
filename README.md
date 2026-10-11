@@ -183,7 +183,11 @@ retrieval; a local copy is never presented as a vector index. Permission, certif
 format and cancellation failures do not trigger offline fallback. Research checkpoints,
 reports and Markdown retain the downloaded/mixed material scope. Native source contracts
 and persistence regressions are prepared and remain pending execution. Selected specialised
-Specialised study/world content still requires its own autonomous source contracts. The native
+Public study, world, genealogy, archive and testimony records now have a closed, provider-free
+citable context contract for autonomous research and chat. Chosen device dossiers use fresh
+lexical retrieval, actual Desktop citation routes and complete selected text, with metadata-only
+materials explicitly identified. Private prosopography, recording and database research still
+require their specialised autonomous source contracts and executed acceptance. The native
 writing workshop now supports all six formats, Desktop languages and seven source categories,
 with paged source selection, selected-source downloads, structured device results and idempotent
 provider-free publication. Its new contract and native tests are prepared, not executed.

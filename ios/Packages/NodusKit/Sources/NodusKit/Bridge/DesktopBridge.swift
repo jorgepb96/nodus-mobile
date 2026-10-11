@@ -566,7 +566,7 @@ public actor DesktopBridgeClient {
             URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "revision", value: group.revision),
         ], method: "GET", timeout: 10)
         let page = try JSONDecoder.nodus.decode(PrivateCorpusSource.Page.self, from: response.data)
-        guard page.revision == group.revision, page.total == group.total,
+        guard page.revision == group.revision, page.total == group.total, page.rows.count <= 100, page.cursor >= cursor,
               !page.hasMore || (!page.rows.isEmpty && page.cursor > cursor) else { throw DesktopBridgeError.malformedResponse }
         return page
     }

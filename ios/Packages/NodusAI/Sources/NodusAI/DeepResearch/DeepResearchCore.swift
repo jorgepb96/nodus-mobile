@@ -337,6 +337,10 @@ public struct CitationCatalog: Sendable {
         for section in package.sections {
             for row in section.items {
                 switch section.kind {
+                case "sources":
+                    guard let source = try? CorpusSourceMaterial(row: row) else { continue }
+                    entries.append(Entry(token: source.citation, kind: source.kind, id: source.id, label: source.label,
+                        detail: source.text, locator: row.text("locator")))
                 case "ideas":
                     guard let id = row.string("global_id") else { continue }
                     entries.append(Entry(

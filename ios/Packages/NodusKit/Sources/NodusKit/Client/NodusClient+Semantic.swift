@@ -197,7 +197,7 @@ public extension NodusClient {
 }
 
 public enum ContextSectionKind: String, Sendable, Codable, CaseIterable {
-    case ideas, passages, themes, gaps, works
+    case ideas, passages, themes, gaps, works, sources
 }
 
 public struct ContextPackage: Sendable, Decodable {

@@ -685,14 +685,21 @@ private struct MaterialBrowser: View {
         case .works: return Collections["works"]
         case .themes: return Collections["themes"]
         case .gaps: return Collections["gaps"]
-        case .passages: return nil
+        case .passages, .sources: return nil
         }
     }
 
     @ViewBuilder
     private func materialRow(_ row: Row, kind: ContextSectionKind) -> some View {
         let collection = Self.collection(for: kind)
-        if let collection, row.string(collection.idField) != nil {
+        if kind == .sources, let token = row.string("citation"), let url = URL(string: token), let reference = CorpusReference(url) {
+            NavigationLink { CorpusReferenceView(session: session, reference: reference) } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(row.text("label") ?? "Fuente").font(.headline)
+                    Text(row.text("text") ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                }.frame(minHeight: 44)
+            }.buttonStyle(.plain)
+        } else if let collection, row.string(collection.idField) != nil {
             NavigationLink {
                 RowDetailView(session: session, collection: collection, row: row)
             } label: {

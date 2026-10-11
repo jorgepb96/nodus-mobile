@@ -72,6 +72,10 @@ actor CorpusCitations {
             let work = workId(for: entry).flatMap { works[$0] ?? nil }
             inline[entry.token] = label(for: entry, work: work)
 
+            if work == nil, !["idea", "passage", "gap", "theme", "work"].contains(entry.kind), referenced.insert(entry.token).inserted {
+                references.append(entry)
+                continue
+            }
             guard let work, referenced.insert(work.id).inserted else { continue }
             references.append(CitationCatalog.Entry(
                 token: "nodus://work/\(work.id)",
