@@ -54,6 +54,13 @@ public struct CompanionGenerationPublication: Sendable {
             operation = "saveMobileAcademicResult"
             input = ["request": sourceRequest, "revision": .string(revision), "raw": .string(raw), "model": model,
                      "requestId": .string(identity), "generatedAt": .string(generatedAt)]
+            if let localScene=captured.value.objectValue?["localScene"] {
+                guard captured.kind == "prose", let proof=localScene.objectValue,
+                      Set(proof.keys) == ["creationMutationId","baselineDraft"],
+                      let creation=proof["creationMutationId"]?.stringValue, UUID(uuidString:creation) != nil,
+                      proof["baselineDraft"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
+                input["localScene"] = localScene
+            }
         case "dictionary":
             guard let definition = value["definition"]?.objectValue,
                   definition["entryId"]?.stringValue == entity,

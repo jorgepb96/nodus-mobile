@@ -26,6 +26,8 @@ public struct Mutation: Sendable, Hashable, Codable {
     public let assets: [AssetReference]
     public let schemaVersion: Int
     public let createdAt: Date
+    /// Local authoring provenance; the Mac independently confirms actual creation.
+    public let companionCreation: Bool?
 
     public init(
         id: String = UUID().uuidString,
@@ -36,7 +38,8 @@ public struct Mutation: Sendable, Hashable, Codable {
         row: [String: JSONValue]? = nil,
         assets: [AssetReference] = [],
         schemaVersion: Int,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        companionCreation: Bool = false
     ) {
         self.id = id
         self.clientId = clientId
@@ -47,6 +50,7 @@ public struct Mutation: Sendable, Hashable, Codable {
         self.assets = assets
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
+        self.companionCreation = companionCreation ? true : nil
     }
 
     public struct AssetReference: Sendable, Hashable, Codable {

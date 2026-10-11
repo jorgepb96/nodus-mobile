@@ -4,6 +4,34 @@ import CryptoKit
 /// Rebuild the exact portable Desktop prose prompt for the current local draft.
 /// The template is captured from Desktop, including its language vocabulary.
 public enum CompanionProseDraft {
+    /// Only a durable, locally-created scene can use this provisional baseline.
+    /// Publication independently checks the Mac's creation receipt and sources.
+    public static func localSceneSource(request:JSONValue, creationMutationId:String, baselineDraft:JSONValue) throws -> JSONValue {
+        guard UUID(uuidString:creationMutationId) != nil, var requested=request.objectValue,
+              requested["kind"] == .string("prose"), requested["draft"]?.objectValue != nil,
+              let sceneId=requested["sceneId"]?.stringValue, !sceneId.isEmpty,
+              let language=requested["language"]?.stringValue,
+              let url=Bundle.module.url(forResource:"prose-draft-templates",withExtension:"json") else { throw DesktopBridgeError.malformedResponse }
+        let templates=try JSONDecoder.nodus.decode(JSONValue.self,from:Data(contentsOf:url))
+        guard templates.objectValue?["version"] == .int(1), let template=templates.objectValue?["templates"]?.objectValue?[language]?.objectValue,
+              let templateRevision=template["templateRevision"]?.stringValue, templateRevision.count == 64,
+              var source=template["source"]?.objectValue else { throw DesktopBridgeError.malformedResponse }
+        source["sceneId"] = .string(sceneId); requested["draft"] = nil
+        let seed=hash(["mobile-prose-local-scene-v1",sceneId,language,creationMutationId,templateRevision])
+        var baseline:[String:JSONValue] = ["version":.int(1),"request":.object(requested),"revision":.string(seed),"source":.object(source),"emptyPreview":.object(["beats":.array([]),"noMaterial":.bool(true)])]
+        var baseRequest=requested;baseRequest["draft"] = baselineDraft
+        guard var captured=try self.source(.object(baseline),request:.object(baseRequest)).objectValue else { throw DesktopBridgeError.malformedResponse }
+        captured["request"] = .object(requested);baseline=captured
+        guard var result=try self.source(.object(baseline),request:request).objectValue else { throw DesktopBridgeError.malformedResponse }
+        result["localScene"] = .object(["creationMutationId":.string(creationMutationId),"baselineDraft":baselineDraft])
+        return .object(result)
+    }
+
+    private static func hash(_ fields:[String]) -> String {
+        let framed=fields.map{ "\($0.utf8.count):\($0)" }.joined()
+        return SHA256.hash(data:Data(framed.utf8)).map{String(format:"%02x",$0)}.joined()
+    }
+
     public static func source(_ baseline: JSONValue, request: JSONValue) throws -> JSONValue {
         guard var requested = request.objectValue, let draft = requested["draft"]?.objectValue,
               Set(draft.keys) == ["sceneTitle", "text", "beats"], let sceneTitle = draft["sceneTitle"]?.stringValue, sceneTitle.utf16.count <= 4096,

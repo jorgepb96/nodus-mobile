@@ -25,6 +25,7 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
+            resources: [.copy("Resources/prose-draft-templates.json")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         // GRDB is here as well as in the target above so a test can write a database in the

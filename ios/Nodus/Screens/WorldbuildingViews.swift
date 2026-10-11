@@ -378,7 +378,7 @@ struct WorldEntityWorkspaceView: View {
             columns["narrative_order"] = .int(Int64((rows.compactMap { $0.int("narrative_order") }.max() ?? -1) + 1))
         }
         let saved = Row(columns)
-        guard await outbox.syncMutation(kind: .upsert, table: definition.table, key: [id], row: columns, title: "Save \(definition.title(of: saved))") else {
+        guard await outbox.syncMutation(kind: .upsert, table: definition.table, key: [id], row: columns, companionCreation: isNew && definition.table == .worldScenes, title: "Save \(definition.title(of: saved))") else {
             error = outbox.lastError ?? "No se pudo guardar el cambio. El borrador sigue abierto."; return
         }
         if let index = rows.firstIndex(where: { $0.string(definition.idField) == id }) { rows[index] = saved }

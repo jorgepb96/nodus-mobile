@@ -43,4 +43,34 @@ struct CompanionProseDraftTests {
         #expect(try source.preview(raw: "LATIDO: sí — inventado", model: .null, generatedAt: "date").objectValue?["beats"] == .array([]))
         #expect(throws: DesktopBridgeError.malformedResponse) { try CompanionProseDraft.source(baseline, request: request("Texto", beats: [beat, beat])) }
     }
+
+    @Test("A durable fresh scene uses the shared template and keeps its unsaved draft separate")
+    func localScene() throws {
+        let identity=UUID().uuidString.lowercased(),requested=request("Ada paga por cruzar la puerta.")
+        let saved:JSONValue = .object(["sceneTitle":.string("Título local"),"text":.string(""),"beats":.array([beat])])
+        let value=try CompanionProseDraft.localSceneSource(request:requested,creationMutationId:identity,baselineDraft:saved)
+        let captured=try CompanionAcademicSource(value,request:requested)
+        #expect(captured.needsModel)
+        #expect(captured.completion["user"]?.stringValue?.contains("Ada paga por cruzar la puerta.")==true)
+        #expect(value.objectValue?["localScene"]?.objectValue?["baselineDraft"]==saved)
+        #expect(try CompanionProseDraft.localSceneSource(request:requested,creationMutationId:UUID().uuidString,baselineDraft:saved).objectValue?["revision"] != value.objectValue?["revision"])
+        let model:JSONValue = .object(["provider":.string("phone"),"model":.string("model")])
+        let preview=try captured.preview(raw:"LATIDO: sí — Se paga.",model:model,generatedAt:"2026-10-11T12:00:00Z")
+        let checkpoint:JSONValue = .object(["id":.string(UUID().uuidString),"state":.string("saved"),"entityKey":.string("scene"),
+            "request":.object(["source":requested,"model":model]),"context":.object(["source":value,"revision":.string(captured.revision)]),
+            "raw":.string("LATIDO: sí — Se paga."),"preview":preview,"generatedAt":.string("2026-10-11T12:00:00Z")])
+        let publication=try #require(CompanionGenerationPublication(kind:"academic",entity:"scene",checkpoint:checkpoint))
+        #expect(publication.args.first?.objectValue?["localScene"] == value.objectValue?["localScene"])
+        #expect(publication.method=="saveMobileAcademicResult")
+        #expect(throws:DesktopBridgeError.malformedResponse) { try CompanionProseDraft.localSceneSource(request:requested,creationMutationId:"unconfirmed",baselineDraft:saved) }
+    }
+
+    @Test("Every bundled Desktop language preserves the exact current prose source")
+    func languages() throws {
+        for language in ["es","en","fr","tr","de","pt","pt-BR","it","vi","ja","ru","uk","ko","zh-Hans","zh-Hant"] {
+            var requested=request("Texto presente").objectValue!;requested["language"] = .string(language)
+            let current=try CompanionProseDraft.localSceneSource(request:.object(requested),creationMutationId:UUID().uuidString,baselineDraft:requested["draft"]!)
+            #expect(try CompanionAcademicSource(current,request:.object(requested)).needsModel)
+        }
+    }
 }

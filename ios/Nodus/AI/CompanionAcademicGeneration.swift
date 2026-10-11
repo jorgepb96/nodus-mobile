@@ -13,6 +13,7 @@ final class CompanionAcademicGeneration {
     static var language: String {
         let code = Locale.current.language.languageCode?.identifier ?? "es"
         if code == "zh" { return Locale.current.language.script?.identifier == "Hant" ? "zh-Hant" : "zh-Hans" }
+        if code == "pt", Locale.current.region?.identifier == "BR" { return "pt-BR" }
         return ["es", "en", "fr", "tr", "de", "pt", "it", "vi", "ja", "ru", "uk", "ko"].contains(code) ? code : "es"
     }
 
@@ -88,15 +89,49 @@ final class CompanionAcademicGeneration {
         let baselineRequest = JSONValue.object(baseline)
         let key = try CompanionDocumentOutbox.operationKey("getMobileAcademicSource", [baselineRequest])
         let chosen = try await cache.downloadedData(vaultId: vault, domain: .corpus, recordId: key)
+        let localScene = chosen.isEmpty ? try await localSceneSource(session:session,request:request) : nil
+        if let localScene, localScene.pending { return localScene.value }
         let value: JSONValue
         do { value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileAcademicSource", args: [request], timeout: chosen.isEmpty ? nil : 4) }
         catch {
             guard isPrivateBridgeOffline(error) else { throw error }
+            if let localScene { return localScene.value }
             guard let bytes = chosen.first else { throw APIError(status: 409, code: "academic_sources_not_downloaded", message: "Descarga estas fuentes para llevar mientras tu Mac esté conectado.") }
             let downloaded = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
             value = request.objectValue?["draft"] == nil ? downloaded : try CompanionProseDraft.source(downloaded, request: request)
         }
         _ = try CompanionAcademicSource(value, request: request); return value
+    }
+
+    /// A fresh scene can be reviewed using this device's own durable edits, even
+    /// before it has ever been visible on the Mac. Existing scenes require a copy.
+    private static func localSceneSource(session:SpaceSession,request:JSONValue) async throws -> (value:JSONValue,pending:Bool)? {
+        guard session.vaultType == .worldbuilding, request.objectValue?["kind"] == .string("prose"),
+              let scene=request.objectValue?["sceneId"]?.stringValue, let draft=request.objectValue?["draft"]?.objectValue,
+              let declared=draft["beats"]?.arrayValue else { return nil }
+        let queue=try MutationOutbox(spaceId:session.connection.storageId,directory:ConnectionClient.spacesDirectory)
+        let changes=try await queue.retainedMutations(table:.worldScenes)
+        guard let creation=changes.first(where:{$0.kind == .upsert && $0.key == [scene] && $0.companionCreation == true}) else { return nil }
+        let states=try await queue.items()
+        let names=["world_scenes","world_scene_text","world_beats","world_threads","world_rules"]
+        let tables:[String:[Row]]
+        do { tables=try await worldTables(session,names) }
+        catch {
+            guard isPrivateBridgeOffline(error) else { throw error }
+            tables=try await queue.companionContentProjection(Dictionary(uniqueKeysWithValues:names.map{($0,[Row]())}))
+        }
+        guard let row=tables["world_scenes"]?.first(where:{$0.string("scene_id")==scene}), let title=row.string("title") else { throw DesktopBridgeError.malformedResponse }
+        let beats=(tables["world_beats"] ?? []).filter{$0.string("scene_id")==scene}
+        let baselineBeats: [JSONValue] = try beats.map { row in
+            guard let kind=row.string("thread_kind"),let id=row.string("thread_id"),let mark=row.string("mark") else { throw DesktopBridgeError.malformedResponse }
+            let original=declared.first{$0.objectValue?["threadKind"] == .string(kind) && $0.objectValue?["threadId"] == .string(id)}?.objectValue
+            let owner=(tables[kind == "rule" ? "world_rules":"world_threads"] ?? []).first{$0.string(kind == "rule" ? "rule_id":"thread_id")==id}
+            guard let label=owner?.string("title") ?? original?["threadTitle"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+            return .object(["threadKind":.string(kind),"threadId":.string(id),"threadTitle":.string(label),"mark":.string(mark),"text":row["text"] ?? .null])
+        }
+        let prose=tables["world_scene_text"]?.first(where:{$0.string("scene_id")==scene})?.string("text") ?? ""
+        let baseline:JSONValue = .object(["sceneTitle":.string(title),"text":.string(prose),"beats":.array(baselineBeats)])
+        return (try CompanionProseDraft.localSceneSource(request:request,creationMutationId:creation.id,baselineDraft:baseline),states.first{$0.id==creation.id}?.state != .delivered)
     }
 
     func run(session: SpaceSession, request: JSONValue, onStatus: @escaping (String) -> Void) async throws -> JSONValue {

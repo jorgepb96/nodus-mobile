@@ -210,6 +210,7 @@ final class OutboxController {
         key: [String],
         row: [String: JSONValue]? = nil,
         assets: [Mutation.AssetReference] = [],
+        companionCreation: Bool = false,
         title: String
     ) async -> Bool {
         var canonicalRow = row
@@ -221,7 +222,8 @@ final class OutboxController {
             key: key,
             row: canonicalRow,
             assets: assets,
-            schemaVersion: schemaVersion
+            schemaVersion: schemaVersion,
+            companionCreation: companionCreation
         )
         lastSavedMutationID = mutation.id
         if let refusal = refusal(for: mutation) {
