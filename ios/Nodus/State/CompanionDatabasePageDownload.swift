@@ -71,7 +71,8 @@ enum CompanionDatabasePageDownload {
                 throw APIError(status: 409, code: "database_page_changed", message: "Una página de esta base de datos cambió durante la descarga. Vuelve a intentarlo.")
             }
             try retain(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getMobilePageDocument", [.string(id)]), data: JSONEncoder.nodus.encode(source)))
-            for record in try await dependencies(source, seen, maximumBytes - bytes) { try retain(record) }
+            let readBudget = try CompanionReadPackRecords.readBudget(records: output, vault: vault, remaining: maximumBytes - bytes)
+            for record in try await dependencies(source, seen, readBudget) { try retain(record) }
             metadata.append(.object([
                 "id": .string(id), "row_id": .string(rowId), "title": page["title"] ?? .string(""), "state": page["state"] ?? .string("active"),
                 "parent_page_id": page["parentPageId"] ?? .null, "icon": page["icon"] ?? .null, "cover_blob_hash": page["coverBlobHash"] ?? .null,

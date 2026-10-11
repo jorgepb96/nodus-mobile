@@ -130,4 +130,26 @@ struct CompanionDatabasePageDownloadTests {
         #expect(throws: DesktopBridgeError.self) { try CompanionReadPackRecords.merge(linked("third", vault: "other"), into: &records, vault: "vault", bytes: &bytes, maximumBytes: 1_000_000) }
         #expect(records.count == 1); #expect(bytes == records[0].data.count)
     }
+
+    @Test("Repeated large linked dependencies fit their actual union while new bytes still obey the pack ceiling")
+    func repeatedDependencyBudget() async throws {
+        let common = try linked("common", title: String(repeating: "x", count: 20_000))
+        let result = try await CompanionDatabasePageDownload.capture(vault: "vault", presentation: presentation(), existing: [], maximumBytes: 25_000,
+            fetch: { document($0) }, dependencies: { _, _, remaining in
+                #expect(remaining >= common.data.count)
+                return [common]
+            })
+        #expect(result.filter { $0.recordId == CompanionPageDownload.linkedDatabaseKey }.count == 1)
+        #expect(result.reduce(0) { $0 + $1.data.count } <= 25_000)
+        var calls = 0
+        await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+            try await CompanionDatabasePageDownload.capture(vault: "vault", presentation: presentation(2), existing: [], maximumBytes: 25_000,
+                fetch: { document($0) }, dependencies: { _, _, _ in
+                    calls += 1
+                    return [calls == 1 ? common : try linked("new", title: String(repeating: "x", count: 20_000))]
+                })
+        }
+        #expect(throws: DesktopBridgeError.self) { try CompanionReadPackRecords.readBudget(records: [linked("common", vault: "other")], vault: "vault", remaining: 1) }
+        #expect(throws: PrivateBridgeCache.ReadPackError.self) { try CompanionReadPackRecords.readBudget(records: [], vault: "vault", remaining: -1) }
+    }
 }

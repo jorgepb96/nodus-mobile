@@ -179,6 +179,9 @@ struct CompanionCollectionDownloadsView: View {
                     try CompanionReadPackRecords.merge(record, into: &sources, vault: vault, bytes: &bytes, maximumBytes: Self.maximumDownloadBytes)
                 }
             }
+            func dependencyReadBudget() throws -> Int {
+                try CompanionReadPackRecords.readBudget(records: sources, vault: vault, remaining: Self.maximumDownloadBytes - bytes)
+            }
             if ["study-docs", "study-subjects", "study-questions"].contains(collection.path) {
                 let settings = try await client.operation(vaultId: vault, method: "getSettings", args: [])
                 guard settings.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
@@ -214,7 +217,7 @@ struct CompanionCollectionDownloadsView: View {
                     _ = try CompanionPageDocuments.document(source, vaultId: vault, pageId: id)
                     try retain("getMobilePageDocument", [.string(id)], source)
                     let linked = try await CompanionPageDownload.records(client:client,vault:vault,root:source,domains:pairing.domains,
-                        images:downloadImages,files:downloadFiles,existing:Set(sources.map(\.recordId)),maximumBytes:Self.maximumDownloadBytes - bytes) { databaseId, remaining in
+                        images:downloadImages,files:downloadFiles,existing:Set(sources.map(\.recordId)),maximumBytes:try dependencyReadBudget()) { databaseId, remaining in
                         guard let databaseCollection=Collections["databases"],let escaped=databaseId.addingPercentEncoding(withAllowedCharacters:allowed) else {throw DesktopBridgeError.malformedResponse}
                         return .object(try await dossier(client,vault:vault,collection:databaseCollection,id:escaped,maxBytes:remaining))
                     }
@@ -230,9 +233,9 @@ struct CompanionCollectionDownloadsView: View {
                     let source = try JSONDecoder.nodus.decode(JSONValue.self, from: presentation.data)
                     try appendDependencies(try await CompanionDatabasePageDownload.resources(client: client, vault: vault, databaseId: id,
                         dossier: .object(detail), presentation: source, domains: pairing.domains, images: downloadImages, files: downloadFiles,
-                        existing: Set(sources.map(\.recordId)), maximumBytes: Self.maximumDownloadBytes - bytes, database: relatedDatabase))
+                        existing: Set(sources.map(\.recordId)), maximumBytes: try dependencyReadBudget(), database: relatedDatabase))
                     guard let views=detail["views"]?.arrayValue else {throw DesktopBridgeError.malformedResponse}
-                    let viewRecords=try await CompanionDatabaseViewSource.download(client:client,vault:vault,views:views,maximumBytes:Self.maximumDownloadBytes - bytes,existing:Set(sources.map(\.recordId)),ownerDatabase:id,
+                    let viewRecords=try await CompanionDatabaseViewSource.download(client:client,vault:vault,views:views,maximumBytes:try dependencyReadBudget(),existing:Set(sources.map(\.recordId)),ownerDatabase:id,
                         resources: { databaseId, dossier, presentation, seen, remaining in
                             try await CompanionDatabasePageDownload.resources(client: client, vault: vault, databaseId: databaseId, dossier: dossier,
                                 presentation: presentation, domains: pairing.domains, images: downloadImages, files: downloadFiles,

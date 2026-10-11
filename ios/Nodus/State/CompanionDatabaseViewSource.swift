@@ -139,7 +139,8 @@ struct CompanionDatabaseViewSource {
                         if seen.insert(presentation.recordId).inserted { bytes += presentation.data.count; output.append(presentation) }
                         if let resources {
                             let source = try JSONDecoder.nodus.decode(JSONValue.self, from: presentation.data)
-                            for record in try await resources(id, payload, source, seen, maximumBytes - bytes) {
+                            let readBudget = try CompanionReadPackRecords.readBudget(records: output, vault: vault, remaining: maximumBytes - bytes)
+                            for record in try await resources(id, payload, source, seen, readBudget) {
                                 guard record.recordId == CompanionPageDownload.linkedDatabaseKey || seen.insert(record.recordId).inserted else { continue }
                                 try CompanionReadPackRecords.merge(record, into: &output, vault: vault, bytes: &bytes, maximumBytes: maximumBytes)
                                 seen.insert(record.recordId)

@@ -4,6 +4,21 @@ import NodusKit
 /// Explicit page references can share a database. Merge their scoped dossiers;
 /// never drop the later page's dependencies because its envelope key repeats.
 enum CompanionReadPackRecords {
+    /// A nested capture may return a shared envelope already retained by its
+    /// parent. Allow reading that overlap; the parent's merge still charges
+    /// only the actual final union and enforces the unchanged storage ceiling.
+    static func readBudget(records: [PrivateBridgeCache.ReadPackRecord], vault: String, remaining: Int) throws -> Int {
+        guard remaining >= 0, remaining <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+        let envelopes = records.filter { $0.domain == .corpus && $0.recordId == CompanionPageDownload.linkedDatabaseKey }
+        guard envelopes.count <= 1 else { throw DesktopBridgeError.malformedResponse }
+        guard let envelope = envelopes.first else { return remaining }
+        guard envelope.data.count <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+        let value = try JSONDecoder.nodus.decode(JSONValue.self, from: envelope.data)
+        guard value.objectValue?["version"] == .int(1), value.objectValue?["vaultId"] == .string(vault),
+              let databases = value.objectValue?["databases"]?.objectValue,
+              databases.allSatisfy({ $0.value.objectValue?["database"]?.objectValue?["id"] == .string($0.key) }) else { throw DesktopBridgeError.malformedResponse }
+        return min(PrivateBridgeCache.maximumSelectedCopyBytes, remaining + envelope.data.count)
+    }
     static func merge(_ record: PrivateBridgeCache.ReadPackRecord, into records: inout [PrivateBridgeCache.ReadPackRecord],
         vault: String, bytes: inout Int, maximumBytes: Int) throws {
         func databases(_ data: Data) throws -> [String: JSONValue] {
