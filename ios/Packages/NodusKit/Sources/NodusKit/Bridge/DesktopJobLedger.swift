@@ -17,6 +17,9 @@ public actor DesktopJobLedger {
         public var checkpointRecordId: String?
         public var checkpoint: JSONValue?
         public var cancellationRequested:Bool? = nil
+        public var actionSequence: Int? = nil
+        public var macCreatedAt: Date? = nil
+        public var macUpdatedAt: Date? = nil
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
@@ -101,8 +104,10 @@ public actor DesktopJobLedger {
         if request.state == "available", job.state != .available { return }
         if ["failed", "cancelled"].contains(request.state), [.accepted, .running, .saved].contains(job.state) { return }
         if request.jobId == job.id, request.state == job.state.rawValue, request.issue == job.error,
+           request.actionSequence == job.actionSequence, request.macUpdatedAt == job.updatedAt,
            job.state != .available || request.result == job.result { return }
         request.jobId = job.id; request.state = job.state.rawValue; request.issue = job.error
+        request.actionSequence = job.actionSequence; request.macCreatedAt = job.createdAt; request.macUpdatedAt = job.updatedAt
         if job.state == .available { request.result = job.result }
         if job.state == .available, request.method == "saveMobileDatabaseResearchReport", request.argsFingerprint == nil {
             // Keep the receipt identity and the user's finished report. The
@@ -116,14 +121,21 @@ public actor DesktopJobLedger {
         guard var request = requests[id] else { return }
         request.issue = issue; requests[id] = request; try await persist()
     }
+    /// A definite pre-acceptance rejection is different from a lost reply.
+    /// Keeping it pending would silently retry a forbidden or conflicting write.
+    public func rejectUnsubmitted(id: String, issue: String) async throws {
+        guard var request = requests[id], request.jobId == nil, request.state == "pending" else { return }
+        request.state = "failed"; request.issue = issue; requests[id] = request; try await persist()
+    }
     public func requestCancellation(id:String) async throws {
         guard var request=requests[id] else { throw DesktopBridgeError.malformedResponse }
+        if ["available", "failed", "interrupted", "cancelled"].contains(request.state) { return }
         request.cancellationRequested=true;requests[id]=request;try await persist()
     }
     /// Only after the Mac confirms no request with this identity exists.
     public func cancelUnsubmitted(id:String) async throws {
         guard var request=requests[id],request.jobId == nil,request.cancellationRequested == true,request.state == "pending" else { throw DesktopBridgeError.malformedResponse }
-        request.state="cancelled";requests[id]=request;try await persist()
+        request.state="cancelled";request.issue=nil;requests[id]=request;try await persist()
     }
     public func releaseLivePayload(id:String) async throws {
         guard var request=requests[id],request.method == "streamMobileCompanionChat",["available","failed","interrupted","cancelled"].contains(request.state) else { throw DesktopBridgeError.malformedResponse }
@@ -158,7 +170,9 @@ public actor DesktopJobLedger {
                 try await update(id: request.id, job: job)
             } catch is CancellationError { throw CancellationError() }
             catch {
-                try await disconnected(id: request.id, issue: error.localizedDescription)
+                if let api = error as? APIError, [400,403,404,409,422].contains(api.status) {
+                    try await rejectUnsubmitted(id: request.id, issue: error.localizedDescription)
+                } else { try await disconnected(id: request.id, issue: error.localizedDescription) }
                 throw error
             }
         }

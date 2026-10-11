@@ -104,6 +104,10 @@ public extension NodusClient {
             inputFingerprint: inputFingerprint,
             executionMode:hasDesktopBridge ? executionMode:nil
         )
+        if let bridge = companionBridge {
+            return try await bridge.client.createCompanionAction(vaultId: bridge.vaultId,
+                body: JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(body)))
+        }
         let response = try await perform(.init(
             method: "POST",
             path: address.spacePath(spaceId, "/actions"),
@@ -114,6 +118,9 @@ public extension NodusClient {
     }
 
     func spaceActions(in spaceId: String, since: Int = 0, limit: Int = 50) async throws -> SpaceActionPage {
+        if let bridge = companionBridge {
+            return try await bridge.client.companionActions(vaultId: bridge.vaultId, since: since, limit: limit)
+        }
         let response = try await perform(.init(
             path: address.spacePath(spaceId, "/actions"),
             query: [
@@ -125,11 +132,17 @@ public extension NodusClient {
     }
 
     func spaceAction(id: String, in spaceId: String) async throws -> SpaceAction {
+        if let bridge = companionBridge {
+            return try await bridge.client.companionAction(vaultId: bridge.vaultId, id: id)
+        }
         let response = try await perform(.init(path: address.spacePath(spaceId, "/actions/\(escape(id))")))
         return try decode(SpaceActionEnvelope.self, from: response).action
     }
 
     func cancelSpaceAction(id: String, in spaceId: String) async throws -> SpaceAction {
+        if let bridge = companionBridge {
+            return try await bridge.client.cancelCompanionAction(vaultId: bridge.vaultId, id: id)
+        }
         let response = try await perform(.init(
             method: "POST",
             path: address.spacePath(spaceId, "/actions/\(escape(id))/cancel"),

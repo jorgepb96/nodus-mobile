@@ -15,10 +15,13 @@ public struct DesktopBridgeJob: Decodable, Sendable, Identifiable {
     public let events: [Event]
     public let result: JSONValue
     public let error: String?
+    public var actionSequence: Int? = nil
+    public var createdAt: Date? = nil
+    public var updatedAt: Date? = nil
 }
 
 public extension DesktopBridgeClient {
-    static let jobMethods: Set<String> = ["streamMobileCompanionChat", "saveMobileAcademicResult", "saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "saveMobileDatabaseResearchReport", "startDictionaryGeneration", "enqueueDeepResearchJob", "enqueueDatabaseDeepResearch", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport", "generateImmersionSession", "generateWritingWorkshopDraft", "generateContentTranslation", "researchChat", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "buildArgumentMap", "scanDictionaryNewEvidence", "generateConversationTitle"]
+    static let jobMethods: Set<String> = ["runMobileSpaceAction", "streamMobileCompanionChat", "saveMobileAcademicResult", "saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "saveMobileDatabaseResearchReport", "startDictionaryGeneration", "enqueueDeepResearchJob", "enqueueDatabaseDeepResearch", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport", "generateImmersionSession", "generateWritingWorkshopDraft", "generateContentTranslation", "researchChat", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "buildArgumentMap", "scanDictionaryNewEvidence", "generateConversationTitle"]
     /// Synchronizing an already generated device result or exporting a saved
     /// document does not select or invoke the Mac's research model.
     static let providerFreeJobMethods: Set<String> = ["saveMobileAcademicResult", "saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "saveMobileDatabaseResearchReport", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport"]
@@ -27,9 +30,14 @@ public extension DesktopBridgeClient {
     /// existing job instead of generating and saving the same content twice.
     func submitJob(vaultId: String, method: String, args: [JSONValue], idempotencyKey: String) async throws -> DesktopBridgeJob {
         guard Self.jobMethods.contains(method) else { throw DesktopBridgeError.permissionDenied }
+        var key = idempotencyKey
+        if method == "runMobileSpaceAction" {
+            key = try DesktopCompanionActions.validateJob(args: args, domains: pairing.domains)
+        }
         let response = try await jobRequest(vaultId: vaultId, method: "POST", body: .object([
-            "method": .string(method), "args": .array(args), "idempotencyKey": .string(idempotencyKey)
+            "method": .string(method), "args": .array(args), "idempotencyKey": .string(key)
         ]))
+        guard response.job.vaultId == vaultId, response.job.method == method else { throw DesktopBridgeError.malformedResponse }
         return response.job
     }
     func readJob(vaultId: String, id: String, cursor: Int = 0) async throws -> DesktopBridgeJob {
@@ -39,6 +47,21 @@ public extension DesktopBridgeClient {
         guard UUID(uuidString:requestId) != nil else { throw DesktopBridgeError.malformedResponse }
         do { return try await jobRequest(vaultId:vaultId,query:[URLQueryItem(name:"requestId",value:requestId)],method:"GET").job }
         catch let error as APIError where error.status == 404 { return nil }
+    }
+    func jobForSpaceAction(vaultId: String, idempotencyKey: String) async throws -> DesktopBridgeJob? {
+        guard !idempotencyKey.isEmpty, idempotencyKey.count <= 4096 else { throw DesktopBridgeError.malformedResponse }
+        do {
+            let job = try await jobRequest(vaultId: vaultId,
+                query: [URLQueryItem(name: "requestId", value: DesktopCompanionActions.key(idempotencyKey))], method: "GET").job
+            guard job.vaultId == vaultId, job.method == "runMobileSpaceAction" else { throw DesktopBridgeError.malformedResponse }
+            return job
+        } catch let error as APIError where error.status == 404 { return nil }
+    }
+    static func isProviderFreeJob(method: String, args: [JSONValue]) -> Bool {
+        if providerFreeJobMethods.contains(method) { return true }
+        guard method == "runMobileSpaceAction", args.count == 1,
+              let kind = args[0].objectValue?["kind"]?.stringValue else { return false }
+        return DesktopCompanionActions.content.contains(kind)
     }
     func cancelJob(vaultId: String, id: String) async throws -> DesktopBridgeJob {
         try await jobRequest(vaultId: vaultId, id: id, method: "DELETE").job

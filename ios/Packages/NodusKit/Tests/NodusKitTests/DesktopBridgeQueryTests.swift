@@ -129,9 +129,11 @@ struct DesktopBridgeQueryTests {
         #expect(created.action.status == .queued)
         #expect(created.action.sequence == 7)
         let request = try #require(CorpusQueryProtocol.state.calls().first)
-        #expect(request.request.url?.absoluteString == "https://mac.nodus.test:7443/bridge/v2/vaults/Mac%2Fvault/corpus/actions")
+        #expect(request.request.url?.absoluteString == "https://mac.nodus.test:7443/bridge/v2/vaults/Mac%2Fvault/jobs")
         #expect(request.request.httpMethod == "POST")
-        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: request.body).objectValue?["executionMode"] == .string("autonomous"))
+        let submitted = try JSONDecoder.nodus.decode(JSONValue.self, from: request.body).objectValue
+        #expect(submitted?["args"]?.arrayValue?.first?.objectValue?["executionMode"] == .string("autonomous"))
+        #expect(submitted?["idempotencyKey"] == .string(DesktopCompanionActions.key("restore:page-owned:2")))
         #expect(CorpusQueryProtocol.state.calls().count == 1)
     }
 
@@ -153,6 +155,75 @@ struct DesktopBridgeQueryTests {
         let extra = JSONValue.object(input)
         await #expect(throws: DesktopBridgeError.malformedResponse) { try await bridge.corpus(vaultId: "Mac/vault", path: "actions", method: "POST", body: extra) }
         #expect(CorpusQueryProtocol.state.calls().isEmpty)
+    }
+
+    @Test("offline action intent survives reopen and reuses the same Mac key")
+    func durableActionReopen() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing]); defer { session.invalidateAndCancel() }
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = NodusClient(address: try ServerAddress(validating: "https://mac.nodus.test:7443"), cache: ResponseCache(directory: root), desktopBridge: bridge, vaultId: "Mac/vault")
+        let key = "restore:page-owned:2", payload: [String: JSONValue] = ["pageId": .string("page-owned"), "revision": .int(2)]
+        CorpusQueryProtocol.state.respond(.offline)
+        let queued = try await client.createSpaceAction(idempotencyKey: key, kind: .pageRestoreRevision, payload: payload, in: "publication")
+        #expect(queued.action.sequence == 0)
+        #expect(queued.action.status == .queued)
+        #expect(queued.action.spaceId == "Mac/vault")
+        #expect(queued.action.id == DesktopCompanionActions.identity(key))
+        let pair = await bridge.pairing
+        await DesktopJobLedgers.shared.forget(pairingId: pair.id)
+        CorpusQueryProtocol.state.respond(.offline)
+        let reopened = try await client.spaceAction(id: queued.action.id, in: "publication")
+        #expect(reopened.status == .queued)
+        #expect(CorpusQueryProtocol.state.calls().last?.request.httpMethod == "GET")
+        let accepted = try await client.createSpaceAction(idempotencyKey: key, kind: .pageRestoreRevision, payload: payload, in: "publication")
+        #expect(accepted.duplicate)
+        #expect(accepted.action.sequence == 7)
+        let posts = CorpusQueryProtocol.state.calls().filter { $0.request.httpMethod == "POST" }
+        #expect(posts.count == 2)
+        let keys = try posts.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0.body).objectValue?["idempotencyKey"] }
+        #expect(keys[0] == keys[1])
+        CorpusQueryProtocol.state.respond(.available)
+        #expect(try await client.spaceAction(id: accepted.action.id, in: "publication").status == .applied)
+    }
+
+    @Test("a lost acknowledgement can be cancelled without ever resubmitting the action")
+    func cancelLostAcknowledgement() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing]); defer { session.invalidateAndCancel() }
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = NodusClient(address: try ServerAddress(validating: "https://mac.nodus.test:7443"), cache: ResponseCache(directory: root), desktopBridge: bridge, vaultId: "Mac/vault")
+        let payload: [String: JSONValue] = ["pageId": .string("page-owned"), "revision": .int(2)]
+        CorpusQueryProtocol.state.respond(.offline)
+        let queued = try await client.createSpaceAction(idempotencyKey: "restore:page-owned:2", kind: .pageRestoreRevision, payload: payload, in: "publication")
+        CorpusQueryProtocol.state.respond(.offline)
+        #expect(try await client.cancelSpaceAction(id: queued.action.id, in: "publication").status == .queued)
+        let pair = await bridge.pairing
+        await DesktopJobLedgers.shared.forget(pairingId: pair.id)
+        CorpusQueryProtocol.state.respond(.notFound)
+        try await bridge.reconcileDurableCancellations(vaultId: "Mac/vault")
+        #expect(try await client.spaceAction(id: queued.action.id, in: "publication").status == .cancelled)
+        let again = try await client.createSpaceAction(idempotencyKey: "restore:page-owned:2", kind: .pageRestoreRevision, payload: payload, in: "publication")
+        #expect(again.action.status == .cancelled)
+        #expect(CorpusQueryProtocol.state.calls().filter { $0.request.httpMethod == "POST" }.count == 1)
+        let lookup = try #require(CorpusQueryProtocol.state.calls().last?.request.url)
+        #expect(URLComponents(url: lookup, resolvingAgainstBaseURL: false)?.queryItems?.first?.value == DesktopCompanionActions.key("restore:page-owned:2"))
+    }
+
+    @Test("recovering cancellation preserves an operation already applied on the Mac")
+    func cancelAlreadyApplied() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing]); defer { session.invalidateAndCancel() }
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = NodusClient(address: try ServerAddress(validating: "https://mac.nodus.test:7443"), cache: ResponseCache(directory: root), desktopBridge: bridge, vaultId: "Mac/vault")
+        CorpusQueryProtocol.state.respond(.offline)
+        let queued = try await client.createSpaceAction(idempotencyKey: "restore:page-owned:2", kind: .pageRestoreRevision,
+            payload: ["pageId": .string("page-owned"), "revision": .int(2)], in: "publication")
+        CorpusQueryProtocol.state.respond(.available)
+        #expect(try await client.cancelSpaceAction(id: queued.action.id, in: "publication").status == .applied)
+        #expect(!CorpusQueryProtocol.state.calls().contains { $0.request.httpMethod == "DELETE" })
+        #expect(!DesktopBridgeClient.isProviderFreeJob(method: "runMobileSpaceAction", args: [.object(["kind": .string("author.synthesis.generate")])]))
+        #expect(DesktopBridgeClient.isProviderFreeJob(method: "runMobileSpaceAction", args: [.object(["kind": .string("pages.restoreRevision")])]))
     }
 
     @Test("research actions require explicit live mode and content actions still require writing")
@@ -190,7 +261,16 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
             }
         }
         Self.state.record(request, body: bytes)
-        let result = request.url?.path.hasSuffix("/actions") == true
+        let outcome = Self.state.nextResponse()
+        if outcome == .offline { client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost)); return }
+        if outcome == .notFound {
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(#"{"error":"job_not_found"}"#.utf8))
+            client?.urlProtocolDidFinishLoading(self); return
+        }
+        let result = request.url?.path.hasSuffix("/jobs") == true
+            ? #"{"job":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","vaultId":"Mac/vault","method":"runMobileSpaceAction","state":"accepted","actionSequence":7,"createdAt":"2026-10-11T08:00:00.000Z","updatedAt":"2026-10-11T08:00:00.000Z","nextSequence":0,"events":[],"result":null,"error":null}}"#
+            : request.url?.path.hasSuffix("/actions") == true
             ? #"{"action":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","sequence":7,"spaceId":"Mac/vault","idempotencyKey":"restore:page-owned:2","kind":"pages.restoreRevision","schemaVersion":1,"payload":{"pageId":"page-owned","revision":2},"actorUserId":"phone","createdByDevice":"phone","status":"queued","createdAt":"2026-10-11T08:00:00.000Z","updatedAt":"2026-10-11T08:00:00.000Z"},"duplicate":false}"#
             : request.url?.path.hasSuffix("/operations") == true
             ? #"{"result":{"folders":[],"notes":[]}}"#
@@ -198,16 +278,24 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
             ? #"{"indexed":false,"reason":"provider_mismatch","expected":{"provider":"fixture-provider","model":"fixture-model","dim":3},"results":[],"warning":"different provider"}"#
             : #"{"sections":[],"stats":{"chars":0,"budget":4096,"truncated":false,"matched":0}}"#
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(result.utf8))
+        let current = outcome == .available ? result.replacingOccurrences(of: "\"state\":\"accepted\"", with: "\"state\":\"available\"") : result
+        // Individual job reads use the same receipt fixture as collection POSTs.
+        let receipt = outcome == .available && request.url?.path.contains("/jobs/") == true
+            ? #"{"job":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","vaultId":"Mac/vault","method":"runMobileSpaceAction","state":"available","actionSequence":7,"nextSequence":0,"events":[],"result":{},"error":null}}"# : current
+        client?.urlProtocol(self, didLoad: Data(receipt.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
 }
 private final class CorpusQueryState: @unchecked Sendable {
+    enum Outcome { case accepted, offline, notFound, available }
     struct Call { let request: URLRequest; let body: Data }
     private let lock = NSLock()
     private var values: [Call] = []
-    func reset() { lock.withLock { values = [] } }
+    private var responses: [Outcome] = []
+    func reset() { lock.withLock { values = []; responses = [] } }
+    func respond(_ outcome: Outcome) { lock.withLock { responses.append(outcome) } }
+    func nextResponse() -> Outcome { lock.withLock { responses.isEmpty ? .accepted : responses.removeFirst() } }
     func record(_ request: URLRequest, body: Data) { lock.withLock { values.append(Call(request: request, body: body)) } }
     func calls() -> [Call] { lock.withLock { values } }
 }

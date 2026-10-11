@@ -396,11 +396,12 @@ final class SpaceSession {
             if let pairingId = connection.desktopPairingId,
                let ledger = try? await DesktopJobLedgers.shared.ledger(pairingId: pairingId, vaultId: vaultId) {
                 let before = Dictionary(uniqueKeysWithValues: await ledger.all().map { ($0.id, $0.state) })
+                try? await bridge.reconcileDurableCancellations(vaultId: vaultId)
                 try? await ledger.synchronize(list: { try await bridge.listJobs(vaultId: vaultId) }, canSubmit: { request in
                     // Native chat serializes submit/cancel/recovery with its
                     // durable conversation; this ledger only observes its jobs.
                     if request.method == "streamMobileCompanionChat" { return false }
-                    if DesktopBridgeClient.providerFreeJobMethods.contains(request.method) { return true }
+                    if DesktopBridgeClient.isProviderFreeJob(method: request.method, args: request.args) { return true }
                     return await MainActor.run { self.aiExecutionMode == .live }
                 }, submit: { request in
                     try await bridge.submitJob(vaultId: vaultId, method: request.method, args: request.args, idempotencyKey: request.id)

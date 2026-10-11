@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// A closed content boundary alongside the read-only corpus transport. Action
 /// receipts belong to the Mac job store, never to a published-space identity.
@@ -14,6 +15,29 @@ enum DesktopCompanionActions {
     ]
 
     static func isIdentity(_ value: String) -> Bool { value.count == 36 && UUID(uuidString: value) != nil }
+
+    /// Share the receipt namespace with corpus/actions when recovering an old
+    /// intent through /jobs; changing transports cannot duplicate the operation.
+    static func key(_ value: String) -> String {
+        SHA256.hash(data: Data("companion-action:\(value)".utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    static func identity(_ value: String) -> String {
+        let bytes = Array(key(value).prefix(32))
+        return [String(bytes[0..<8]), String(bytes[8..<12]), String(bytes[12..<16]),
+                String(bytes[16..<20]), String(bytes[20..<32])].joined(separator: "-")
+    }
+    static func validateJob(args: [JSONValue], domains: Set<DesktopBridgeDomain>) throws -> String {
+        guard args.count == 1, var action = args[0].objectValue, action["id"] == nil,
+              let key = action["idempotencyKey"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+        action["id"] = .string(identity(key))
+        _ = try validateWrite(path: "actions", query: [], body: .object(action), domains: domains)
+        return Self.key(key)
+    }
+    static func isOffline(_ error: any Error) -> Bool {
+        guard let url = error as? URLError else { return false }
+        return [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost,
+                .cannotFindHost, .dnsLookupFailed, .timedOut].contains(url.code)
+    }
 
     static func validateWrite(path: String, query: [URLQueryItem], body: JSONValue?, domains: Set<DesktopBridgeDomain>) throws -> Bool {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)

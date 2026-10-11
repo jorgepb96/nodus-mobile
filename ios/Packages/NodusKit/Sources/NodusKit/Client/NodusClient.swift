@@ -34,6 +34,7 @@ public actor NodusClient {
     private let local: LocalCorpus?
     private var bridge: (client: DesktopBridgeClient, vaultId: String)?
     var hasDesktopBridge: Bool { bridge != nil }
+    var companionBridge: (client: DesktopBridgeClient, vaultId: String)? { bridge }
 
     public func useDesktopBridge(_ client: DesktopBridgeClient, vaultId: String) {
         bridge = (client, vaultId)

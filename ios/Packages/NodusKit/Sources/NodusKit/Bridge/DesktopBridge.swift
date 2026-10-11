@@ -122,13 +122,21 @@ extension DesktopBridgeError: LocalizedError {
 /// pairing and blocks redirects, so a DNS or captive-portal change cannot move a private
 /// request to another host.
 public actor DesktopBridgeClient {
-    private let pairing: DesktopBridgePairing
+    let pairing: DesktopBridgePairing
     private var directOrigin: String
     private let session: URLSession
     private var token: String
     private let relay: DesktopRelayConfiguration?
     private let store: DesktopBridgePairingStore
     private let requiresStoredCredential: Bool
+
+    func validateCompanionScope(vaultId: String, domains: Set<DesktopBridgeDomain>) throws {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), domains.isSubset(of: pairing.domains) else { throw DesktopBridgeError.permissionDenied }
+        if requiresStoredCredential {
+            guard store.pairings().contains(where: { $0.id == pairing.id }) else { throw DesktopBridgeError.permissionDenied }
+            guard store.credential(for: pairing) != nil else { throw DesktopBridgeError.locked }
+        }
+    }
 
     public init(pairing: DesktopBridgePairing, token: String, keychain: KeychainStore = KeychainStore()) {
         self.pairing = pairing
