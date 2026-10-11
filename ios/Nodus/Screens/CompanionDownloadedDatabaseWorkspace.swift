@@ -26,6 +26,7 @@ struct CompanionDownloadedDatabaseWorkspace:View {
                 guard let values=object[key]?.arrayValue else {throw DesktopBridgeError.malformedResponse}
                 source[table]=try values.map{value in guard let row=value.objectValue else {throw DesktopBridgeError.malformedResponse};return Row(row)}
             }
+            source = try await CompanionDatabaseDownloadedMetadata.merge(session: session, into: source)
             let queue=try await MutationOutbox.open(spaceId:session.connection.storageId,directory:URL.applicationSupportDirectory.appendingPathComponent("spaces",isDirectory:true))
             source=try await queue.companionContentProjection(source)
             guard let identity=dossier.primary.string(dossier.collection.idField),let parent=PagesDatabasesParity.databases(in:source).first(where:{$0.id == identity}) else {throw DesktopBridgeError.malformedResponse}

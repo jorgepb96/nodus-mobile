@@ -7,7 +7,7 @@ struct CompanionDatabaseViewSource {
     let definition: JSONValue
     let rows: [JSONValue]
     let revision: String
-    @MainActor static func loadDownloaded(session: SpaceSession, viewId: String) async throws -> Self {
+    @MainActor static func loadDownloaded(session: SpaceSession, viewId: String, sourceId: String? = nil, localFilter: JSONValue = .null) async throws -> Self {
         let (vault, _, _) = try privateBridgeConnection(session, domain: .corpus)
         let reads = PrivateBridgeReadBatch(session: session, downloadedOnly: true)
         let response = try await reads.operation("getMobileLinkedDatabaseRead", [.object(["action": .string("definition"), "input": .string(viewId)])])
@@ -22,12 +22,61 @@ struct CompanionDatabaseViewSource {
             if sources[id] == nil { sources[id] = try await CompanionDatabasePresentationSource.downloaded(session: session, database: id) }
         }
         let value = try await CompanionDatabaseQueryRuntime.query(.object(["version": .int(1), "vaultId": .string(vault),
-            "viewId": .string(viewId), "definition": definition, "sources": .object(sources)]))
+            "viewId": .string(viewId), "definition": definition, "sources": .object(sources),
+            "sourceId": sourceId.map(JSONValue.string) ?? .null, "localFilter": localFilter]))
         guard value.objectValue?["version"] == .int(1), value.objectValue?["vaultId"] == .string(vault),
               value.objectValue?["viewId"] == .string(viewId), value.objectValue?["definition"] == definition,
               let rows = value.objectValue?["rows"]?.arrayValue, let revision = value.objectValue?["revision"]?.stringValue,
               revision.hasPrefix("offline:") else { throw DesktopBridgeError.malformedResponse }
         return .init(definition: definition, rows: rows, revision: revision)
+    }
+    /// Linked database blocks inside a page use the same complete selected query
+    /// as the native database destination, including pending edits and cursors.
+    @MainActor static func linkedRead(session: SpaceSession, action: String, input: JSONValue, downloadedOnly: Bool) async throws -> JSONValue {
+        guard ["definition", "rows"].contains(action) else { throw DesktopBridgeError.permissionDenied }
+        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+        let request = JSONValue.object(["action": .string(action), "input": input])
+        if !downloadedOnly {
+            do {
+                let value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileLinkedDatabaseRead", args: [request])
+                return value
+            } catch { guard isPrivateBridgeOffline(error) else { throw error } }
+        }
+        if action == "definition" { return try await PrivateBridgeReadBatch(session: session, downloadedOnly: true).operation("getMobileLinkedDatabaseRead", [request]) }
+        let args = try Self.rowsInput(input)
+        let view = args["viewId"]!.stringValue!
+        let source = try await loadDownloaded(session: session, viewId: view, sourceId: args["sourceId"]?.stringValue, localFilter: args["localFilter"] ?? .null)
+        return try source.linkedRowsPage(vault: vault, input: input)
+    }
+    static func rowsInput(_ input: JSONValue) throws -> [String: JSONValue] {
+        guard let args = input.objectValue, args.keys.allSatisfy({ ["viewId", "sourceId", "localFilter", "cursor", "limit"].contains($0) }),
+              let view = args["viewId"]?.stringValue, !view.isEmpty,
+              args["sourceId"] == nil || args["sourceId"] == .null || args["sourceId"]?.stringValue?.isEmpty == false,
+              args["limit"] == nil || args["limit"] == .null || args["limit"]?.doubleValue?.isFinite == true else { throw DesktopBridgeError.malformedResponse }
+        return args
+    }
+    func linkedRowsPage(vault: String, input: JSONValue) throws -> JSONValue {
+        let args = try Self.rowsInput(input)
+        guard definition.objectValue?["viewId"] == args["viewId"], revision.hasPrefix("offline:") else { throw DesktopBridgeError.malformedResponse }
+        let rawLimit = args["limit"]?.doubleValue ?? 50
+        let limit = Int(min(500, max(1, rawLimit.rounded(.towardZero))))
+        var offset = 0
+        if let cursor = args["cursor"], cursor != .null {
+            guard let encoded = cursor.stringValue, encoded.utf8.count <= 2048, let bytes = Data(base64Encoded: encoded),
+                  let value = try? JSONDecoder.nodus.decode(JSONValue.self, from: bytes),
+                  value.objectValue?.keys.allSatisfy({ ["version", "revision", "offset"].contains($0) }) == true,
+                  value.objectValue?["version"] == .int(1), value.objectValue?["revision"] == .string(revision),
+                  let start = value.objectValue?["offset"]?.intValue, start >= 0, start <= rows.count else {
+                throw APIError(status: 409, code: "database_offline_cursor_changed", message: "Esta vista o sus cambios locales han cambiado. Reinicia su consulta.")
+            }
+            offset = start
+        }
+        let end = min(rows.count, offset + limit), more = end < rows.count
+        let cursor = try JSONEncoder.nodus.encode(JSONValue.object(["version": .int(1), "revision": .string(revision), "offset": .int(Int64(end))])).base64EncodedString()
+        let data = JSONValue.object(["rows": .array(Array(rows[offset..<end])), "totalCount": .int(Int64(rows.count)),
+            "nextCursor": more ? .string(cursor) : .null, "hasMore": .bool(more), "revision": .string(revision), "queryHash": .string(revision),
+            "sources": definition.objectValue?["sources"] ?? .array([]), "properties": definition.objectValue?["properties"] ?? .array([])])
+        return .object(["version": .int(1), "vaultId": .string(vault), "action": .string("rows"), "data": data])
     }
     @MainActor static func load(vault:String,viewId:String,
         fetch:(String,[JSONValue]) async throws -> JSONValue) async throws -> Self {
@@ -61,7 +110,9 @@ struct CompanionDatabaseViewSource {
         guard final == firstPage else {throw APIError(status:409,code:"database_view_changed",message:"La vista cambió mientras se cargaba. Vuelve a intentarlo.")}
         return .init(definition:definition,rows:rows,revision:revision!)
     }
-    @MainActor static func download(client:DesktopBridgeClient,vault:String,views:[JSONValue],maximumBytes:Int,existing:Set<String>,ownerDatabase:String,database:(String,Int) async throws -> JSONValue) async throws -> [PrivateBridgeCache.ReadPackRecord] {
+    @MainActor static func download(client:DesktopBridgeClient,vault:String,views:[JSONValue],maximumBytes:Int,existing:Set<String>,ownerDatabase:String,
+        resources:((String,JSONValue,JSONValue,Set<String>,Int) async throws -> [PrivateBridgeCache.ReadPackRecord])? = nil,
+        database:(String,Int) async throws -> JSONValue) async throws -> [PrivateBridgeCache.ReadPackRecord] {
         var output:[PrivateBridgeCache.ReadPackRecord]=[],seen=existing,bytes=0,databases:[String:JSONValue]=[:]
         for view in views {
             guard let id=view.objectValue?["id"]?.stringValue,!id.isEmpty else {throw DesktopBridgeError.malformedResponse}
@@ -83,9 +134,17 @@ struct CompanionDatabaseViewSource {
                     let count=try JSONEncoder.nodus.encode(payload).count
                     guard count <= maximumBytes - bytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
                     bytes += count;databases[id]=payload
-                    if seen.insert(CompanionDatabasePresentationSource.key(id)).inserted {
+                    if !seen.contains(CompanionDatabasePresentationSource.key(id)) || resources != nil {
                         let presentation = try await CompanionDatabasePresentationSource.download(client: client, vault: vault, database: id, maximumBytes: maximumBytes - bytes)
-                        bytes += presentation.data.count; output.append(presentation)
+                        if seen.insert(presentation.recordId).inserted { bytes += presentation.data.count; output.append(presentation) }
+                        if let resources {
+                            let source = try JSONDecoder.nodus.decode(JSONValue.self, from: presentation.data)
+                            for record in try await resources(id, payload, source, seen, maximumBytes - bytes) {
+                                guard record.recordId == CompanionPageDownload.linkedDatabaseKey || seen.insert(record.recordId).inserted else { continue }
+                                try CompanionReadPackRecords.merge(record, into: &output, vault: vault, bytes: &bytes, maximumBytes: maximumBytes)
+                                seen.insert(record.recordId)
+                            }
+                        }
                     }
                 }
             }
@@ -93,8 +152,9 @@ struct CompanionDatabaseViewSource {
         if !databases.isEmpty {
             let data=try JSONEncoder.nodus.encode(JSONValue.object(["version":.int(1),"vaultId":.string(vault),"databases":.object(databases)]))
             let reserved=try databases.values.reduce(0){$0 + (try JSONEncoder.nodus.encode($1).count)}
-            guard data.count - reserved <= maximumBytes - bytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
-            output.append(.init(domain:.corpus,recordId:CompanionPageDownload.linkedDatabaseKey,data:data))
+            bytes -= reserved
+            try CompanionReadPackRecords.merge(.init(domain:.corpus,recordId:CompanionPageDownload.linkedDatabaseKey,data:data),
+                into: &output, vault: vault, bytes: &bytes, maximumBytes: maximumBytes)
         }
         return output
     }

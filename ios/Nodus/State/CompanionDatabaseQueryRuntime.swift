@@ -16,7 +16,12 @@ import NodusKit
 
     static func query(_ input: JSONValue) async throws -> JSONValue {
         let runtime = CompanionDatabaseQueryRuntime()
-        return try await runtime.run(input)
+        return try await runtime.run(.object(["kind": .string("container"), "input": input]))
+    }
+
+    static func derived(_ source: JSONValue) async throws -> JSONValue {
+        let runtime = CompanionDatabaseQueryRuntime()
+        return try await runtime.run(.object(["kind": .string("derived"), "source": source]))
     }
 
     private func run(_ input: JSONValue) async throws -> JSONValue {
@@ -61,7 +66,7 @@ import NodusKit
         evaluation = Task { @MainActor [weak self] in
             do {
                 let output = try await webView.callAsyncJavaScript(
-                    "return JSON.stringify(await NodusDatabaseQuery.queryCompanionDatabaseContainer(JSON.parse(payload)));",
+                    "const request = JSON.parse(payload); if (request.kind === 'container') return JSON.stringify(await NodusDatabaseQuery.queryCompanionDatabaseContainer(request.input)); if (request.kind === 'derived') return JSON.stringify(NodusDatabaseQuery.prepareCompanionDatabaseDerived(request.source)); throw new Error('Invalid local query kind');",
                     arguments: ["payload": input], in: nil, contentWorld: .page)
                 try Task.checkCancellation()
                 guard let text = output as? String, let data = text.data(using: .utf8) else { throw DesktopBridgeError.malformedResponse }

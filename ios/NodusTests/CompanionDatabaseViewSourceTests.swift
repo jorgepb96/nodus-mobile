@@ -42,4 +42,22 @@ struct CompanionDatabaseViewSourceTests {
             return wrapper("rows",page(0,cursor:"loop"))
         }}
     }
+    @Test("Offline page blocks expose every row with revision-bound pagination")
+    func offlinePages() throws {
+        let rows: [JSONValue] = (0..<523).map { .object(["id": .string("source:row-\($0)")]) }
+        let source = CompanionDatabaseViewSource(definition: definition, rows: rows, revision: "offline:pending-revision")
+        var cursor = JSONValue.null, output: [JSONValue] = [], pages = 0
+        repeat {
+            let result = try source.linkedRowsPage(vault: "vault", input: .object(["viewId": .string("view"), "limit": .int(200), "cursor": cursor]))
+            let data = try #require(result.objectValue?["data"]?.objectValue)
+            output += try #require(data["rows"]?.arrayValue); cursor = data["nextCursor"] ?? .null; pages += 1
+            #expect(data["totalCount"] == .int(523)); #expect(data["hasMore"] == .bool(cursor != .null))
+        } while cursor != .null
+        #expect(output == rows); #expect(pages == 3)
+        let first = try source.linkedRowsPage(vault: "vault", input: .object(["viewId": .string("view"), "limit": .int(2)]))
+        let changed = CompanionDatabaseViewSource(definition: definition, rows: rows, revision: "offline:new-local-edits")
+        #expect(throws: APIError.self) { try changed.linkedRowsPage(vault: "vault", input: .object(["viewId": .string("view"), "cursor": first.objectValue!["data"]!.objectValue!["nextCursor"]!])) }
+        #expect(throws: DesktopBridgeError.self) { try source.linkedRowsPage(vault: "vault", input: .object(["viewId": .string("view"), "limit": .string("invalid")])) }
+        #expect(throws: DesktopBridgeError.self) { try source.linkedRowsPage(vault: "vault", input: .object(["viewId": .string("other")])) }
+    }
 }

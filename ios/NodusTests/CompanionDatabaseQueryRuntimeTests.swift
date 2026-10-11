@@ -56,4 +56,20 @@ struct CompanionDatabaseQueryRuntimeTests {
         value["definition"] = .object(definition)
         await #expect(throws: (any Error).self) { try await CompanionDatabaseQueryRuntime.query(.object(value)) }
     }
+    @Test("The bundled derived engine uses the complete local table and clears stale inspector values")
+    func derivedInspector() async throws {
+        var source = try #require(input().objectValue?["sources"]?.objectValue?["primary"]?.objectValue)
+        var columns = try #require(source["columns"]?.arrayValue)
+        columns.append(.object(["id": .string("amount"), "type": .string("number"), "config": .object([:]), "options": .array([])]))
+        columns.append(.object(["id": .string("sum"), "type": .string("formula"), "config": .object([
+            "formula": .object(["kind": .string("columnStat"), "fn": .string("sum"), "columnId": .string("amount")])]), "options": .array([])]))
+        source["columns"] = .array(columns)
+        source["rows"] = .array(try #require(source["rows"]?.arrayValue).enumerated().map { index, value in
+            var row = value.objectValue!, cells = row["cells"]!.objectValue!
+            cells["amount"] = .string(index == 0 ? "12" : "30"); cells["sum"] = .string("old")
+            row["cells"] = .object(cells); return .object(row)
+        })
+        let result = try await CompanionDatabaseQueryRuntime.derived(.object(source))
+        #expect(result.objectValue?["rows"]?.arrayValue?.allSatisfy { $0.objectValue?["cells"]?.objectValue?["sum"] == .string("42") } == true)
+    }
 }

@@ -2151,6 +2151,30 @@
       "evidence": []
     },
     {
+      "id": "consultation.databases.associatedPageDocumentsAndCovers",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.linkedPageBlocksUsePendingEditsAndCompleteCursors",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.offlineLinkedInspectorShowsLocalAndDerivedValues",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.databases.rowPageOwnersAndMergedDependencyEpochs",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "consultation.databases.canonicalRollupsAndRelatedFormulaValues",
       "category": "consultation",
       "result": "pending",

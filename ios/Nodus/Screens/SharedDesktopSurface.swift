@@ -537,8 +537,7 @@ private struct DesktopWebView: UIViewRepresentable {
                             guard original == .null || original.objectValue?["block"]?.objectValue?["id"] == .string(block) else {throw DesktopBridgeError.malformedResponse};value=original
                         } else if ["getDatabaseContainer","queryDatabaseContainerRows"].contains(method),args.count == 1 {
                             let action=method == "getDatabaseContainer" ? "definition":"rows"
-                            let request=JSONValue.object(["action":.string(action),"input":args[0]])
-                            let source=try await loadPrivateBridgeValue(session,method:"getMobileLinkedDatabaseRead",args:[request],downloadedOnly:selectedPageOnly)
+                            let source=try await CompanionDatabaseViewSource.linkedRead(session:session,action:action,input:args[0],downloadedOnly:selectedPageOnly)
                             let view=action == "definition" ? args[0].stringValue:args[0].objectValue?["viewId"]?.stringValue
                             guard source.objectValue?["version"] == .int(1),source.objectValue?["vaultId"] == .string(vault),source.objectValue?["action"] == .string(action),let data=source.objectValue?["data"],view != nil else {throw DesktopBridgeError.malformedResponse}
                             if action == "definition" {guard data == .null || data.objectValue?["viewId"]?.stringValue == view else {throw DesktopBridgeError.malformedResponse}}

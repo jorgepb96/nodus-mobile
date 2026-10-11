@@ -71,6 +71,8 @@ struct DatabaseLinkedRowReader: View {
     var downloadedOnly=false
     @State private var detail: DatabaseDetail?
     @State private var row: Row?
+    @State private var pageId: String?
+    @State private var pageOpen = false
     @State private var offline = false
     @State private var issue: String?
     @State private var attempt = 0
@@ -79,6 +81,12 @@ struct DatabaseLinkedRowReader: View {
             if let detail, row != nil {
                 DatabaseRowView(session: session, databaseName: detail.database.text("name"), columns: detail.columns,
                     context: DatabaseCell.Context(detail: detail, rowId: id), downloadedOnly: offline)
+                    .safeAreaInset(edge: .bottom) {
+                        if pageId != nil {
+                            Button { pageOpen = true } label: { Label("Abrir página de la fila", systemImage: "doc.richtext").frame(maxWidth: .infinity, minHeight: 44) }
+                                .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).padding(.horizontal).padding(.bottom, 8)
+                        }
+                    }
             } else if let issue {
                 VStack(alignment: .leading, spacing: 16) {
                     NodusNotice(tone: .caution, title: "Fila no disponible", message: LocalizedStringKey(issue))
@@ -86,9 +94,14 @@ struct DatabaseLinkedRowReader: View {
                 }.padding(NodusSpace.page)
             } else { ProgressView("Cargando fila vinculada…") }
         }.task(id: attempt) { await load() }
+        .nodusSheet(isPresented: $pageOpen) {
+            if let pageId {
+                NavigationStack { SharedDesktopSurface(session: session, surface: .page, initialPageId: pageId, pageDownloadedOnly: offline).nodusModalClose(accent: session.accent) }
+            }
+        }
     }
     private func load() async {
-        detail = nil; row = nil; issue = nil; offline = false
+        detail = nil; row = nil; pageId = nil; issue = nil; offline = false
         do {
             let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
             guard !pairing.isExpired, let collection = Collections["databases"] else { throw DesktopBridgeError.permissionDenied }
@@ -97,6 +110,7 @@ struct DatabaseLinkedRowReader: View {
                 let location = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDatabaseRowLocation", args: [.string(id)])
                 guard location.objectValue?["version"] == .int(1), location.objectValue?["vaultId"] == .string(vault),
                       location.objectValue?["rowId"] == .string(id), let database = location.objectValue?["databaseId"]?.stringValue, !database.isEmpty else { throw DesktopBridgeError.malformedResponse }
+                pageId = location.objectValue?["pageId"]?.stringValue
                 var offset = 0, revision: String?, total: Int?
                 repeat {
                     try Task.checkCancellation()
@@ -137,16 +151,28 @@ struct DatabaseLinkedRowReader: View {
                         guard payload.objectValue?["database"]?.objectValue?["id"] == .string(databaseId) else {throw DesktopBridgeError.malformedResponse};payloads[databaseId]=payload
                     }
                 }
-                var match:(DatabaseDetail,Row)?
+                var match: (String, JSONValue, Row)?
                 for (databaseId,payload) in payloads {
-                    let dossier=try CollectionDossier(collection:collection,id:databaseId,payload:payload,fromDevice:true)
-                    if let found=payload.objectValue?["rows"]?.arrayValue?.first(where:{$0.objectValue?["id"] == .string(id)}) {
+                    let projected: JSONValue
+                    do { projected = try await CompanionDatabaseDownloadedMetadata.projectedDossier(session: session, database: databaseId, payload: payload) }
+                    catch let error as APIError where error.code == "database_deleted_locally" { continue }
+                    if let found=projected.objectValue?["rows"]?.arrayValue?.first(where:{$0.objectValue?["id"] == .string(id)}) {
                         guard match == nil else {throw DesktopBridgeError.malformedResponse}
-                        match=(try dossier.decode(DatabaseDetail.self),Row(found.objectValue!))
+                        match = (databaseId, projected, Row(found.objectValue!))
                     }
                 }
                 guard let match else { throw APIError(status: 409, code: "relation_row_not_downloaded", message: "La fila está en una base de datos que no has descargado. Elige esa base de datos en Descargas cuando Nodus esté conectado.") }
-                try Task.checkCancellation(); detail = match.0; row = match.1; offline = true
+                let captured = try await CompanionDatabasePresentationSource.downloaded(session: session, database: match.0)
+                let calculated = try await CompanionDatabaseQueryRuntime.derived(captured)
+                let payload = try CompanionDatabaseDownloadedMetadata.calculatedRow(payload: match.1, source: calculated, rowId: id)
+                let dossier = try CollectionDossier(collection: collection, id: match.0, payload: payload, fromDevice: true)
+                if let bytes = try await cache.downloadedData(vaultId: vault, domain: .corpus, recordId: CompanionDatabasePageDownload.key(match.0)).first {
+                    let pages = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+                    guard pages.objectValue?["version"] == .int(1), pages.objectValue?["vaultId"] == .string(vault),
+                          pages.objectValue?["databaseId"] == .string(match.0), let rows = pages.objectValue?["pages"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
+                    pageId = rows.first(where: { $0.objectValue?["row_id"] == .string(id) })?.objectValue?["id"]?.stringValue
+                }
+                try Task.checkCancellation(); detail = try dossier.decode(DatabaseDetail.self); row = match.2; offline = true
             }
         } catch where error.isCancellation {}
         catch { issue = error.localizedDescription }

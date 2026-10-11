@@ -1,0 +1,9 @@
+# Selected database row pages — source stage
+
+A selected database now retains every active row-associated page document, its raw page metadata and the image/original-file resources selected by the user. Each document must belong to the actual vault and row and match the title/timestamp captured with the complete presentation. Its explicit synced-block and linked-database references follow the existing bounded page dependency capture. All records share the atomic selected pack and its aggregate 50 MiB limit. This is scoped consultation content, not a backup of the workspace.
+
+Shared linked-dossier envelopes merge by real physical database identity. Different source epochs, foreign owners, duplicate page identities and budget failures abort the copy. Native inspectors can open the downloaded BlockNote document. The live row locator returns the actual active associated page, retaining compatibility with older Macs without this optional field.
+
+Linked database blocks in page documents now run complete saved/source/local filters through the same isolated local query engine as the native database view, including pending edits. Their local cursors are bound to the computed query revision. A change during pagination requires restarting the query instead of returning a frozen first page. Foreign row inspectors project pending content and recalculate derived values using the full selected calculation graph.
+
+Prepared coverage includes three associated documents with shared dependencies, wrong row/vault, changed page, duplicate page, exact merged byte accounting and failed capture budget; 523-row block pagination and stale cursors; and the real canonical SQLite row/page locator. **These tests, the updated bundles and Apple runtime have not been executed or compiled for this revision.** Actual image/cover rendering, row-page editing/reopening, large-database performance and physical iPhone/iPad acceptance remain required.
