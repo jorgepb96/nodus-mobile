@@ -109,15 +109,19 @@ extension DesktopBridgeClient {
 }
 
 public extension DesktopBridgeClient {
-    func cancelDurableJob(vaultId: String, requestId: String) async throws {
+    func cancelDurableJob(vaultId: String, requestId: String, method: String? = nil, args: [JSONValue]? = nil) async throws {
         try validateCompanionScope(vaultId: vaultId, domains: [.writing])
         let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vaultId)
+        if let method, let args {
+            guard Self.jobMethods.contains(method) else { throw DesktopBridgeError.permissionDenied }
+            _ = try await ledger.prepare(id: requestId, method: method, args: args)
+        }
         try await ledger.requestCancellation(id: requestId)
         try await reconcileDurableCancellations(vaultId: vaultId, requestId: requestId)
     }
     /// Resolve a lost submission acknowledgement before honouring cancellation.
-    /// Only a real 404 for the same Mac key permits local cancellation; offline
-    /// intent remains durable and is never accidentally submitted on reconnect.
+    /// A missing receipt requires a Mac-side cancellation receipt too: a POST
+    /// may still be in flight. Offline intent remains durable on the phone.
     func reconcileDurableCancellations(vaultId: String, requestId: String? = nil) async throws {
         try validateCompanionScope(vaultId: vaultId, domains: [.writing])
         let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vaultId)
@@ -135,7 +139,10 @@ public extension DesktopBridgeClient {
                     guard found.method == request.method, found.vaultId == vaultId else { throw DesktopBridgeError.malformedResponse }
                     if [.accepted, .running, .saved].contains(found.state) { job = try await cancelJob(vaultId: vaultId, id: found.id) }
                     try await ledger.update(id: request.id, job: job!)
-                } else { try await ledger.cancelUnsubmitted(id: request.id) }
+                } else {
+                    let cancelled = try await cancelJobRequest(vaultId: vaultId, method: request.method, args: request.args, idempotencyKey: request.id)
+                    try await ledger.update(id: request.id, job: cancelled)
+                }
             } catch {
                 try await ledger.disconnected(id: request.id, issue: error.localizedDescription)
                 throw error

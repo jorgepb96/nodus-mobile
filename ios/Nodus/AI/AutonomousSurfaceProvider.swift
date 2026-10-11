@@ -160,7 +160,6 @@ final class AutonomousSurfaceProvider {
     }
     func generationCheckpoint(_ args: [JSONValue], session: SpaceSession) async throws -> JSONValue {
         guard args.count >= 3, let action = args[0].stringValue,
-            action == "load" || session.aiExecutionMode == .autonomous,
             let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument", "database", "academic"].contains(kind),
             let entity = args[2].stringValue, entity.utf8.count <= 256, !entity.isEmpty else { throw DesktopBridgeError.permissionDenied }
         let scope = try session.surfaceStorageScope()
@@ -172,6 +171,13 @@ final class AutonomousSurfaceProvider {
         }
         guard action == "save", args.count == 4, let object = args[3].objectValue,
             object["entityKey"]?.stringValue == entity, let id = object["id"]?.stringValue, UUID(uuidString: id) != nil else { throw DesktopBridgeError.permissionDenied }
+        // A mode change cannot discard a response to a generation already
+        // authorised on the device. It still cannot start a new device request.
+        if session.aiExecutionMode != .autonomous {
+            guard let bytes = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key),
+                  let previous = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes).objectValue,
+                  previous["id"] == .string(id), previous["request"] == object["request"] else { throw DesktopBridgeError.permissionDenied }
+        }
         let bytes = try JSONEncoder.nodus.encode(args[3])
         guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
         if kind == "academic", session.connection.desktopPairingId != nil,
@@ -253,6 +259,9 @@ final class AutonomousSurfaceProvider {
             guard request.checkpoint?.objectValue?["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument"),
                   let map = request.result?.objectValue?["root"] != nil ? request.result : request.checkpoint?.objectValue?["preview"], map.objectValue?["root"]?.objectValue != nil else { continue }
             maps[request.id] = map
+        }
+        for request in await ledger.all() where request.method == "buildArgumentMap" && request.state == "available" {
+            if let map = request.result, map.objectValue?["root"]?.objectValue != nil { maps[request.jobId ?? request.id] = map }
         }
         return .array(maps.sorted { $0.key < $1.key }.map { .object(["id": .string($0.key), "map": $0.value]) })
     }

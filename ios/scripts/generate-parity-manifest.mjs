@@ -176,6 +176,14 @@ function operationMatrix(routes) {
     'pairing.qr', 'pairing.code', 'pairing.link', 'pairing.expiry', 'pairing.renew', 'pairing.revoke', 'pairing.permissions',
     'transport.lan', 'transport.vpn', 'transport.serverRelay', 'transport.cloudRelay', 'transport.disconnect', 'transport.relaunch',
     'jobs.progress', 'jobs.cancel', 'jobs.retry', 'jobs.persistence', 'jobs.noDuplicates',
+    'sync.actions.durableIntent', 'sync.actions.lostAcknowledgement', 'sync.actions.cancelBeforeAcknowledgement',
+    'sync.actions.actualReceiptStatus', 'generation.academic.explicitConflictRetry', 'generation.academic.paidResponseRecovery',
+    'consultation.matrix.canonicalAcknowledgedCells', 'sync.argumentMaps.fullStructuralSourceDownload',
+    'generation.proseReview.currentLocalDraft.live', 'generation.proseReview.currentLocalDraft.autonomous',
+    'consultation.actions.savedResults', 'sync.argumentMaps.livePersistedCatalogue', 'generation.argumentMap.inlineCancellation',
+    'sync.generation.modeChangePreservesAuthorizedResult', 'consultation.databases.savedPresentationProperties',
+    'visual.databases.phoneBoardGroups', 'consultation.databases.chart', 'consultation.databases.map',
+    'consultation.databases.feed', 'consultation.databases.dashboard', 'consultation.databases.temporalConfiguration',
     'visual.iphone', 'visual.ipad', 'visual.physicalIphone', 'visual.lightDark', 'visual.rotation', 'visual.accessibility',
   ];
   return [

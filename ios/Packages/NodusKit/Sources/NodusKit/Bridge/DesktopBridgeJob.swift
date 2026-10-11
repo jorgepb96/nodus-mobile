@@ -67,6 +67,19 @@ public extension DesktopBridgeClient {
     func cancelJob(vaultId: String, id: String) async throws -> DesktopBridgeJob {
         try await jobRequest(vaultId: vaultId, id: id, method: "DELETE").job
     }
+    /// Register cancellation by the original request key even if its POST has
+    /// not reached the Mac yet. The Mac persists a receipt before replying.
+    func cancelJobRequest(vaultId: String, method: String, args: [JSONValue], idempotencyKey: String) async throws -> DesktopBridgeJob {
+        guard Self.jobMethods.contains(method) else { throw DesktopBridgeError.permissionDenied }
+        try validateCompanionScope(vaultId: vaultId, domains: [.writing])
+        var key = idempotencyKey
+        if method == "runMobileSpaceAction" { key = try DesktopCompanionActions.validateJob(args: args, domains: pairing.domains) }
+        let response = try await jobRequest(vaultId: vaultId, method: "DELETE", body: .object([
+            "method": .string(method), "args": .array(args), "idempotencyKey": .string(key)
+        ]))
+        guard response.job.vaultId == vaultId, response.job.method == method else { throw DesktopBridgeError.malformedResponse }
+        return response.job
+    }
     func awaitJob(vaultId: String, job: DesktopBridgeJob, onState: @Sendable (DesktopBridgeJob) async throws -> Void = { _ in }, onEvents: @Sendable ([DesktopBridgeJob.Event]) async -> Void) async throws -> JSONValue {
         var current = job
         var cursor = 0

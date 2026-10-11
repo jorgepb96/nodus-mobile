@@ -40,6 +40,7 @@ struct CompanionGeneratedResultView: View {
     }
     private var title: String { CompanionResultCatalogue.title(current) }
     private var argumentMap: JSONValue? {
+        if current.method == "buildArgumentMap" { return current.result }
         if current.method == "runMobileSpaceAction", current.args.first?.objectValue?["kind"] == .string("argumentMap.generate") { return current.result }
         guard ["saveMobileAcademicResult", "localAcademicGeneration"].contains(current.method),
               value["request"]?.objectValue?["source"]?.objectValue?["kind"] == .string("argument") else { return nil }

@@ -634,8 +634,15 @@ private struct DesktopWebView: UIViewRepresentable {
                     } else if method == "navigate", (2...3).contains(input.count), let kind = input[0] as? String, let record = input[1] as? String {
                         let position = input.count == 3 ? input[2] as? [String: Any] : nil
                         onNavigate(kind, record, position?["location"] as? String, position?["quote"] as? String); value = .null
-                    } else if method == "cancelLiveJob", let requestId = input.first as? String, let running = runningJobs[requestId] {
-                        _ = try await running.0.cancelJob(vaultId: running.1, id: running.2); value = .null
+                    } else if method == "cancelLiveJob", let requestId = input.first as? String {
+                        let jobMethod = args.count == 3 ? args[1].stringValue : nil
+                        let jobArgs = args.count == 3 ? args[2].arrayValue : nil
+                        if let running = runningJobs[requestId] { try await running.0.cancelDurableJob(vaultId: running.1, requestId: requestId) }
+                        else {
+                            let (vault, pairing, token) = try privateBridgeConnection(session, domain: .writing)
+                            try await DesktopBridgeClient(pairing: pairing, token: token).cancelDurableJob(vaultId: vault, requestId: requestId, method: jobMethod, args: jobArgs)
+                        }
+                        value = .null
                     } else if method == "mobileArgumentMaps", args.isEmpty {
                         value = try await autonomous.argumentMaps(session: session)
                     } else if method == "mobileAcademicSource", args.count == 1 {
@@ -761,7 +768,8 @@ private struct DesktopWebView: UIViewRepresentable {
                             }
                         } else if DesktopBridgeClient.jobMethods.contains(method) {
                             let first = input.first as? String
-                            let streamMethod = ["generateImmersionSession", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "exportDeepResearchArchive"].contains(method)
+                            if method == "buildArgumentMap", first.flatMap({ UUID(uuidString: $0) }) != nil { args.removeFirst() }
+                            let streamMethod = ["buildArgumentMap", "generateImmersionSession", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "exportDeepResearchArchive"].contains(method)
                             let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveMobileAcademicResult"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
                             let requestId = (persistedId ?? (streamMethod ? first : nil)).flatMap { UUID(uuidString: $0) == nil ? nil : $0 } ?? UUID().uuidString
                             let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vaultId)

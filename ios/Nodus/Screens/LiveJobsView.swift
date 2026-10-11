@@ -25,7 +25,7 @@ struct LiveJobsView: View {
                         NavigationLink("Abrir resultado guardado") {
                             CompanionGeneratedResultView(session: session, request: request, checkpoint: checkpoint)
                         }.frame(minHeight: 44).accessibilityIdentifier("companion-generated-result-\(request.id)")
-                    } else if request.method == "runMobileSpaceAction", let result = request.result, result != .null {
+                    } else if ["runMobileSpaceAction", "buildArgumentMap"].contains(request.method), let result = request.result, result != .null {
                         NavigationLink("Consultar resultado") {
                             CompanionGeneratedResultView(session: session, request: request, checkpoint: .object(["preview": result]))
                         }.frame(minHeight: 44).accessibilityIdentifier("companion-action-result-\(request.id)")

@@ -148,7 +148,8 @@ public actor DesktopJobLedger {
         if ["available", "failed", "interrupted", "cancelled"].contains(request.state) { return }
         request.cancellationRequested=true;requests[id]=request;try await persist()
     }
-    /// Only after the Mac confirms no request with this identity exists.
+    /// Local-only cleanup for a request never sent. A remote 404 cannot justify
+    /// this transition: an in-flight POST needs a durable Mac cancellation receipt.
     public func cancelUnsubmitted(id:String) async throws {
         guard var request=requests[id],request.jobId == nil,request.cancellationRequested == true,request.state == "pending" else { throw DesktopBridgeError.malformedResponse }
         request.state="cancelled";request.issue=nil;requests[id]=request;try await persist()

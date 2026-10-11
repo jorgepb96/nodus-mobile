@@ -201,13 +201,43 @@ struct DesktopBridgeQueryTests {
         let pair = await bridge.pairing
         await DesktopJobLedgers.shared.forget(pairingId: pair.id)
         CorpusQueryProtocol.state.respond(.notFound)
+        CorpusQueryProtocol.state.respond(.cancelled)
         try await bridge.reconcileDurableCancellations(vaultId: "Mac/vault")
         #expect(try await client.spaceAction(id: queued.action.id, in: "publication").status == .cancelled)
         let again = try await client.createSpaceAction(idempotencyKey: "restore:page-owned:2", kind: .pageRestoreRevision, payload: payload, in: "publication")
         #expect(again.action.status == .cancelled)
         #expect(CorpusQueryProtocol.state.calls().filter { $0.request.httpMethod == "POST" }.count == 1)
-        let lookup = try #require(CorpusQueryProtocol.state.calls().last?.request.url)
+        let lookup = try #require(CorpusQueryProtocol.state.calls().last { $0.request.httpMethod == "GET" }?.request.url)
         #expect(URLComponents(url: lookup, resolvingAgainstBaseURL: false)?.queryItems?.first?.value == DesktopCompanionActions.key("restore:page-owned:2"))
+        let cancellation = try #require(CorpusQueryProtocol.state.calls().last { $0.request.httpMethod == "DELETE" })
+        let body = try JSONDecoder.nodus.decode(JSONValue.self, from: cancellation.body)
+        #expect(body.objectValue?["idempotencyKey"]?.stringValue == DesktopCompanionActions.key("restore:page-owned:2"))
+        #expect(body.objectValue?["method"]?.stringValue == "runMobileSpaceAction")
+        #expect(body.objectValue?["args"]?.arrayValue?.first?.objectValue?["kind"]?.stringValue == "pages.restoreRevision")
+    }
+
+    @Test("a Mac without durable cancellation leaves the intent pending and never submits it")
+    func cancellationNeedsMacReceipt() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing]); defer { session.invalidateAndCancel() }
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = NodusClient(address: try ServerAddress(validating: "https://mac.nodus.test:7443"), cache: ResponseCache(directory: root), desktopBridge: bridge, vaultId: "Mac/vault")
+        CorpusQueryProtocol.state.respond(.offline)
+        let queued = try await client.createSpaceAction(idempotencyKey: "restore:page-owned:2", kind: .pageRestoreRevision,
+            payload: ["pageId": .string("page-owned"), "revision": .int(2)], in: "publication")
+        CorpusQueryProtocol.state.respond(.notFound)
+        CorpusQueryProtocol.state.respond(.notFound)
+        do { _ = try await client.cancelSpaceAction(id: queued.action.id, in: "publication"); Issue.record("Cancellation without a Mac receipt must remain unresolved") }
+        catch let error as APIError { #expect(error.status == 404) }
+        let pair = await bridge.pairing
+        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pair.id, vaultId: "Mac/vault")
+        let saved = try #require(await ledger.all().first)
+        #expect(saved.cancellationRequested == true)
+        #expect(saved.state == "pending")
+        let again = try await client.createSpaceAction(idempotencyKey: "restore:page-owned:2", kind: .pageRestoreRevision,
+            payload: ["pageId": .string("page-owned"), "revision": .int(2)], in: "publication")
+        #expect(again.action.status == .queued)
+        #expect(CorpusQueryProtocol.state.calls().filter { $0.request.httpMethod == "POST" }.count == 1)
     }
 
     @Test("recovering cancellation preserves an operation already applied on the Mac")
@@ -278,7 +308,8 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
             ? #"{"indexed":false,"reason":"provider_mismatch","expected":{"provider":"fixture-provider","model":"fixture-model","dim":3},"results":[],"warning":"different provider"}"#
             : #"{"sections":[],"stats":{"chars":0,"budget":4096,"truncated":false,"matched":0}}"#
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-        let current = outcome == .available ? result.replacingOccurrences(of: "\"state\":\"accepted\"", with: "\"state\":\"available\"") : result
+        let current = outcome == .available ? result.replacingOccurrences(of: "\"state\":\"accepted\"", with: "\"state\":\"available\"")
+            : outcome == .cancelled ? result.replacingOccurrences(of: "\"state\":\"accepted\"", with: "\"state\":\"cancelled\"") : result
         // Individual job reads use the same receipt fixture as collection POSTs.
         let receipt = outcome == .available && request.url?.path.contains("/jobs/") == true
             ? #"{"job":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","vaultId":"Mac/vault","method":"runMobileSpaceAction","state":"available","actionSequence":7,"nextSequence":0,"events":[],"result":{},"error":null}}"# : current
@@ -288,7 +319,7 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 private final class CorpusQueryState: @unchecked Sendable {
-    enum Outcome { case accepted, offline, notFound, available }
+    enum Outcome { case accepted, offline, notFound, available, cancelled }
     struct Call { let request: URLRequest; let body: Data }
     private let lock = NSLock()
     private var values: [Call] = []
