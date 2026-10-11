@@ -172,8 +172,9 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(action.frame.minX, reader.frame.minX - 1)
             XCTAssertLessThanOrEqual(action.frame.maxX, reader.frame.maxX + 1)
         }
-        let copies = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label == %@", "Copiar", "Copy"))
-        XCTAssertEqual(copies.count, 1, "A second system Copy action must not accompany the Nodus ribbon.")
+        XCTAssertEqual(app.menuItems.matching(identifier: "nodus-selection-copy").count, 1)
+        let systemCopies = app.menuItems.matching(NSPredicate(format: "(label == %@ OR label == %@) AND identifier != %@", "Copiar", "Copy", "nodus-selection-copy"))
+        XCTAssertEqual(systemCopies.count, 0, "A second system Copy action must not accompany the Nodus ribbon.")
         capture(app, "phone-native-reader-unified-selection-ribbon")
     }
     @MainActor
