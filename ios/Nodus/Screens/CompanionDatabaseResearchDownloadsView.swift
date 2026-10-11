@@ -58,7 +58,7 @@ struct CompanionDatabaseResearchDownloadsView: View {
                 let value = try await client.operation(vaultId:vault,method:"getMobileDatabaseResearchReader",args:[.string(id)])
                 let source = try JSONDecoder.nodus.decode(CompanionDatabaseResearch.Source.self,from:JSONEncoder.nodus.encode(value)); try source.validate(id:id)
                 reports.append(value); bytes += try JSONEncoder.nodus.encode(value).count
-                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 if pairing.domains.contains(.writing) {
                     let reading = try await client.databaseResearchReading(vaultId:vault,reportId:id)
                     guard reading.sourceRevision == source.sourceRevision else { throw DesktopBridgeError.malformedResponse }
@@ -68,7 +68,7 @@ struct CompanionDatabaseResearchDownloadsView: View {
                 for image in try CompanionCorpusImage.sources(in:source.report) where images.insert(image).inserted {
                     let file = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:image,domains:Array(pairing.domains))
                     let data = try JSONEncoder.nodus.encode(file); bytes += data.count
-                    guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     records.append(.init(domain:.corpus,recordId:CompanionCorpusImage.recordId(source:image),data:data))
                 }
                 let latest = try await client.operation(vaultId:vault,method:"getMobileDatabaseResearchReader",args:[.string(id)])
@@ -80,11 +80,11 @@ struct CompanionDatabaseResearchDownloadsView: View {
             let data = try JSONEncoder.nodus.encode(copy)
             // Replace the provisional body count with the complete serialized pack.
             let imageBytes = records.reduce(0) { $0 + $1.data.count }
-            guard data.count + imageBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+            guard data.count + imageBytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             records.append(.init(domain:.corpus,recordId:CompanionDatabaseResearchCopy.recordId,data:data))
             let jobs = try await client.operation(vaultId:vault,method:"listDatabaseDeepResearchJobs",args:[])
             let jobData = try JSONEncoder.nodus.encode(jobs)
-            guard data.count + imageBytes + jobData.count <= PrivateBridgeCache.defaultReadLimitBytes,jobs.arrayValue != nil else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+            guard data.count + imageBytes + jobData.count <= PrivateBridgeCache.maximumSelectedCopyBytes,jobs.arrayValue != nil else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             records.append(.init(domain:.corpus,recordId:try CompanionDocumentOutbox.operationKey("listDatabaseDeepResearchJobs",[]),data:jobData))
             try Task.checkCancellation()
             let final = try await CompanionDatabaseResearchCopy.catalogue(client:client,vaultId:vault)

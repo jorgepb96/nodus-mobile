@@ -46,7 +46,7 @@ func saveCompanionFileCopy(_ session: SpaceSession, copy: PrivateBridgeFileCopy,
     let descriptor = copy.descriptor
     let (vault, pairing, token) = try privateBridgeConnection(session, domain: descriptor.kind.domain)
     guard !pairing.isExpired else { throw DesktopBridgeError.permissionDenied }
-    guard descriptor.byteSize <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+    guard descriptor.byteSize <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
     let size = try copy.url.resourceValues(forKeys: [.fileSizeKey]).fileSize
     guard size == descriptor.byteSize else { throw DesktopBridgeError.malformedResponse }
     let bytes = try Data(contentsOf: copy.url)

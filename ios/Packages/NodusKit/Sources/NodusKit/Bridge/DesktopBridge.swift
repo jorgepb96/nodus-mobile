@@ -1014,6 +1014,7 @@ final class DesktopBridgeSessionDelegate: NSObject, URLSessionDelegate, URLSessi
 /// Drafts and accepted jobs are durable work and never participate in eviction.
 public actor PrivateBridgeCache {
     public static let defaultReadLimitBytes = 250 * 1_024 * 1_024
+    public static let maximumSelectedCopyBytes = 50 * 1_024 * 1_024
     public struct Usage: Sendable, Equatable {
         public let reusableBytes: Int
         public let downloadedBytes: Int
@@ -1216,10 +1217,11 @@ public actor PrivateBridgeCache {
         fileprivate let files: [String]
     }
     public enum ReadPackError: LocalizedError {
-        case tooLarge, invalidSelection
+        case tooLarge, perDownloadLimit, invalidSelection
         public var errorDescription: String? {
             switch self {
             case .tooLarge: "La selección supera el espacio disponible para descargas. Selecciona menos documentos o elimina otra descarga."
+            case .perDownloadLimit: "Cada descarga admite hasta 50 MB, incluidos sus archivos y metadatos. Selecciona menos contenidos o conserva los archivos por separado."
             case .invalidSelection: "La selección de descarga está incompleta o no es válida."
             }
         }
@@ -1230,6 +1232,11 @@ public actor PrivateBridgeCache {
     public func saveReadPack(id: UUID = UUID(), vaultId: String, title: String, expiresAt: Date, records: [ReadPackRecord], primaryFile: DesktopBridgeFileDescriptor? = nil) throws -> ReadPack {
         guard !vaultId.isEmpty, !title.isEmpty, expiresAt > Date(), !records.isEmpty,
               records.allSatisfy({ !Self.isDurable($0.domain) }) else { throw ReadPackError.invalidSelection }
+        var payloadBytes = 0
+        for record in records {
+            guard record.data.count <= Self.maximumSelectedCopyBytes - payloadBytes else { throw ReadPackError.perDownloadLimit }
+            payloadBytes += record.data.count
+        }
         if let file = primaryFile {
             try file.validate()
             let record = "file:\(file.kind.rawValue):\(file.id)"
@@ -1254,6 +1261,7 @@ public actor PrivateBridgeCache {
                 let name = legacyURL(vaultId: vaultId, domain: record.domain, recordId: record.recordId).lastPathComponent
                 guard names.insert(name).inserted, let sealed = try AES.GCM.seal(record.data, using: key).combined else { throw ReadPackError.invalidSelection }
                 bytes += sealed.count
+                guard bytes <= Self.maximumSelectedCopyBytes else { throw ReadPackError.perDownloadLimit }
                 guard bytes + otherBytes <= readLimitBytes else { throw ReadPackError.tooLarge }
                 try sealed.write(to: staged.appendingPathComponent(name), options: [.atomic, .completeFileProtection])
             }
@@ -1271,6 +1279,7 @@ public actor PrivateBridgeCache {
                 pack = manifest(bytes + pointer.count)
             }
             guard pack.bytes == bytes + pointer.count else { throw ReadPackError.invalidSelection }
+            guard pack.bytes <= Self.maximumSelectedCopyBytes else { throw ReadPackError.perDownloadLimit }
             guard pack.bytes + otherBytes <= readLimitBytes else { throw ReadPackError.tooLarge }
             try pointer.write(to: readPackPointer(id), options: [.atomic, .completeFileProtection])
             BackupPolicy.apply(.excluded, to: readPackPointer(id))

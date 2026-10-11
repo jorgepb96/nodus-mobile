@@ -126,7 +126,7 @@ struct CompanionResearchDownloadsView: View {
     }
     /// A capped page is still traversed. A changing or incomplete catalogue is
     /// rejected rather than producing a download with missing evidence.
-    private func completePages(client: DesktopBridgeClient, vault: String, method: String, request: [String: JSONValue], maxBytes: Int = PrivateBridgeCache.defaultReadLimitBytes) async throws -> [JSONValue] {
+    private func completePages(client: DesktopBridgeClient, vault: String, method: String, request: [String: JSONValue], maxBytes: Int = PrivateBridgeCache.maximumSelectedCopyBytes) async throws -> [JSONValue] {
         var rows: [JSONValue] = [], ids = Set<String>(), total: Int?, bytes = 0
         repeat {
             try Task.checkCancellation()
@@ -187,7 +187,7 @@ struct CompanionResearchDownloadsView: View {
             func add(_ method: String, _ args: [JSONValue], _ value: JSONValue) throws {
                 let data = try JSONEncoder.nodus.encode(value)
                 bytes += data.count
-                guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes + dictionaryBytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey(method, args), data: data))
             }
             func fetch(_ method: String, _ args: [JSONValue]) async throws -> JSONValue {
@@ -209,7 +209,7 @@ struct CompanionResearchDownloadsView: View {
                     guard selectedImages.insert(sourceURL).inserted else { continue }
                     let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:Array(pairing.domains))
                     let data = try JSONEncoder.nodus.encode(image); bytes += data.count
-                    guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    guard bytes + dictionaryBytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     records.append(.init(domain:.corpus,recordId:CompanionCorpusImage.recordId(source:sourceURL),data:data))
                 }
                 if !["getDecorativeImageDataUrl", "getSettings"].contains(method) { collectCitations(value) }
@@ -229,14 +229,14 @@ struct CompanionResearchDownloadsView: View {
                 if kind == .dictionary {
                     let detail = try await fetch("getDictionaryEntry", [.string(id)])
                     guard detail.objectValue?["entry"]?.objectValue?["id"]?.stringValue == id else { throw DesktopBridgeError.malformedResponse }
-                    let evidence = try await completePages(client: client, vault: vault, method: "listDictionaryEvidence", request: ["entryId": .string(id)], maxBytes: max(0, PrivateBridgeCache.defaultReadLimitBytes - bytes - dictionaryBytes))
+                    let evidence = try await completePages(client: client, vault: vault, method: "listDictionaryEvidence", request: ["entryId": .string(id)], maxBytes: max(0, PrivateBridgeCache.maximumSelectedCopyBytes - bytes - dictionaryBytes))
                     let versions = try await fetch("listDictionaryVersions", [.string(id)])
                     guard let versionRows = versions.arrayValue,
                           versionRows.allSatisfy({ $0.objectValue?["entryId"]?.stringValue == id }),
                           evidence.allSatisfy({ $0.objectValue?["entryId"]?.stringValue == id }) else { throw DesktopBridgeError.malformedResponse }
                     let entry: JSONValue = .object(["detail": detail, "evidence": .array(evidence), "versions": versions])
                     dictionaryBytes += try JSONEncoder.nodus.encode(entry).count
-                    guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    guard bytes + dictionaryBytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     dictionaryEntries.append(entry)
                     collectCitations(entry)
                     // The Mac prepares the read-only, revision-bound evidence
@@ -271,7 +271,7 @@ struct CompanionResearchDownloadsView: View {
                         }
                         let retained: JSONValue = .object(nativeEntry)
                         bytes += try JSONEncoder.nodus.encode(retained).count
-                        guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                        guard bytes + dictionaryBytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                         nativeReports.append(retained)
                         collectCitations(nativeDetail)
                     } else {
@@ -316,7 +316,7 @@ struct CompanionResearchDownloadsView: View {
                 // Entries were counted while downloading; include the envelope too.
                 let entryBytes = try nativeReports.reduce(0) { try $0 + JSONEncoder.nodus.encode($1).count }
                 bytes += data.count - entryBytes
-                guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes + dictionaryBytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 records.append(.init(domain: .corpus, recordId: CompanionResearchCorpusCopy.recordId, data: data))
             }
             if !citations.isEmpty {
@@ -328,7 +328,7 @@ struct CompanionResearchDownloadsView: View {
                 guard let map = verified.objectValue,
                       refs.allSatisfy({ map[($0.objectValue!["kind"]!.stringValue!) + ":" + ($0.objectValue!["id"]!.stringValue!)]?.boolValue != nil }) else { throw DesktopBridgeError.malformedResponse }
                 let data = try JSONEncoder.nodus.encode(verified); bytes += data.count
-                guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes + dictionaryBytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 records.append(.init(domain: .corpus, recordId: "companion:citations:v1", data: data))
                 for ref in refs {
                     _ = try await fetch("getCitationPreview", [ref])
@@ -343,7 +343,7 @@ struct CompanionResearchDownloadsView: View {
                 }
                 let data = try JSONEncoder.nodus.encode(JSONValue.object(["version": .int(1), "entries": .array(dictionaryEntries)]))
                 dictionaryBytes = 0; bytes += data.count
-                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 records.append(.init(domain: .corpus, recordId: "companion:dictionary:v1", data: data))
             }
             try Task.checkCancellation()

@@ -70,7 +70,7 @@ func savePrivateCorpusSource(_ session: SpaceSession, reference: PrivateCorpusRe
     try copy.validate(for: reference)
     let bytes = try JSONEncoder.nodus.encode(copy)
     let index = try JSONEncoder.nodus.encode(CompanionPrivateSourceCopy.CatalogueEntry(source: copy.source))
-    guard bytes.count <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+    guard bytes.count + index.count <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
     let cache = try PrivateBridgeCache(pairingId: pairing.id)
     let id = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: [reference.recordKey])
     try await cache.saveReadPack(id: id, vaultId: vault, title: copy.source.title,

@@ -177,7 +177,7 @@ struct CompanionDownloadsView: View {
                                      data: try JSONEncoder.nodus.encode(value)))
             }
             var bytes = records.reduce(0) { $0 + $1.data.count }
-            guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+            guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             var selectedImages = Set<String>()
             for (index, id) in selected.sorted().enumerated() {
                 try Task.checkCancellation()
@@ -185,20 +185,20 @@ struct CompanionDownloadsView: View {
                 let value = try await client.operation(vaultId: vault, method: "getWorkspaceNoteEditorData", args: args)
                 guard value.objectValue?["revision"]?.intValue != nil, value.objectValue?["nativeDocument"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
                 let data = try JSONEncoder.nodus.encode(value); bytes += data.count
-                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getWorkspaceNoteEditorData", args), data: data))
                 for sourceURL in try CompanionCorpusImage.sourceURLs(in:value) {
                     guard selectedImages.insert(sourceURL).inserted else { continue }
                     let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:Array(pairing.domains))
                     let data = try JSONEncoder.nodus.encode(image); bytes += data.count
-                    guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     records.append(.init(domain:.corpus,recordId:CompanionCorpusImage.recordId(source:sourceURL),data:data))
                 }
                 for sourceURL in try CompanionEmbeddedResource.sourceURLs(in:value) {
                     guard selectedImages.insert(sourceURL).inserted else { continue }
                     let resource = try await CompanionEmbeddedResource.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:Array(pairing.domains))
                     let data = try JSONEncoder.nodus.encode(resource); bytes += data.count
-                    guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     records.append(.init(domain:.corpus,recordId:CompanionEmbeddedResource.recordId(source:sourceURL),data:data))
                 }
                 let sourceArgs: [JSONValue] = [.object(["noteId": .string(id)])]
@@ -207,7 +207,7 @@ struct CompanionDownloadsView: View {
                       source.objectValue?["source"]?.objectValue?["id"] == .string(id),
                       source.objectValue?["styles"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
                 let sourceData = try JSONEncoder.nodus.encode(source); bytes += sourceData.count
-                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getStudyImprovementOfflineSource", sourceArgs), data: sourceData))
                 // The editor and autonomous source must describe one canonical
                 // revision. A concurrent Mac edit rejects the complete pack.

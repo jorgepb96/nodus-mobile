@@ -2329,6 +2329,12 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "sync.selectedCopy.protectedManifestAndAtomicPerDownloadCeiling",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

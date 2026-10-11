@@ -122,6 +122,27 @@ struct PrivateBridgeCacheTests {
         #expect(try await f.cache.data(vaultId: "a", domain: .corpus, recordId: "editor") == nil)
         #expect(try await f.cache.data(vaultId: "a", domain: .writing, recordId: "draft") == Data("Unsynced draft".utf8))
     }
+    @Test("The per-download ceiling includes encryption and its manifest without replacing an older valid copy")
+    func perDownloadCeiling() async throws {
+        let f = try Fixture(limit: PrivateBridgeCache.defaultReadLimitBytes); defer { f.clean() }
+        let original = Data("Original selected content".utf8)
+        let pack = try await f.cache.saveReadPack(vaultId: "a", title: "Original", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "document", data: original)])
+        let before = try await f.cache.usage().downloadedBytes
+        for size in [PrivateBridgeCache.maximumSelectedCopyBytes + 1, PrivateBridgeCache.maximumSelectedCopyBytes - 128] {
+            await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+                try await f.cache.saveReadPack(id: pack.id, vaultId: "a", title: "Replacement", expiresAt: .distantFuture,
+                    records: [.init(domain: .corpus, recordId: "document", data: Data(repeating: 7, count: size))])
+            }
+            #expect(try await f.cache.downloadedData(vaultId: "a", domain: .corpus, recordId: "document") == [original])
+            #expect(try await f.cache.usage().downloadedBytes == before)
+        }
+        let accepted = try await f.cache.saveReadPack(id: pack.id, vaultId: "a", title: "Within actual protected budget", expiresAt: .distantFuture,
+            records: [.init(domain: .corpus, recordId: "document", data: Data(repeating: 7, count: PrivateBridgeCache.maximumSelectedCopyBytes - 2_048))])
+        #expect(accepted.bytes <= PrivateBridgeCache.maximumSelectedCopyBytes)
+        #expect(accepted.bytes > PrivateBridgeCache.maximumSelectedCopyBytes - 2_048)
+        #expect(try await f.cache.usage().downloadedBytes == accepted.bytes)
+    }
 
     @Test("failed or duplicate selections never replace the previous complete download")
     func failedDownload() async throws {

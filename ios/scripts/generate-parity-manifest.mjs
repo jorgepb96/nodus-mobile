@@ -360,6 +360,7 @@ function operationMatrix(routes) {
       ['consultation.manuscript.mobileVersionComparison', 'consultation'],
       ['consultation.downloads.actualImageDescriptorsAcrossCollections', 'consultation'],
       ['sync.selectedCopy.enforcedPerDownloadBudget', 'sync'],
+      ['sync.selectedCopy.protectedManifestAndAtomicPerDownloadCeiling', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

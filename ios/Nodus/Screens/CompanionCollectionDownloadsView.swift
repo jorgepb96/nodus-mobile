@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Catalogue pages are read on demand; only the chosen full dossiers commit.
 struct CompanionCollectionDownloadsView: View {
-    static let maximumDownloadBytes = 50 * 1024 * 1024
+    static let maximumDownloadBytes = PrivateBridgeCache.maximumSelectedCopyBytes
     let session: SpaceSession
     @State private var path = ""
     @State private var query = ""

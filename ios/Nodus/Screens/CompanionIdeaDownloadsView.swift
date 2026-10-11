@@ -91,7 +91,7 @@ struct CompanionIdeaDownloadsView: View {
                 try Task.checkCancellation()
                 let response = try await client.operation(vaultId: vault, method: "listIdeasPage", args: [.object(["offset": .int(Int64(items.count)), "limit": .int(200), "sort": .string("label")])])
                 bytes += try JSONEncoder.nodus.encode(response).count
-                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 guard let page = response.objectValue, let rows = page["items"]?.arrayValue,
                       let count = page["total"]?.intValue, count >= 0, total == nil || count == total,
                       page["offset"]?.intValue == items.count, rows.count <= count - items.count,
@@ -128,7 +128,7 @@ struct CompanionIdeaDownloadsView: View {
             var bytes = 0
             func account(_ value: JSONValue) throws {
                 bytes += try JSONEncoder.nodus.encode(value).count
-                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             }
             let settings = try await client.operation(vaultId: vault, method: "getSettings", args: [])
             try account(settings)
@@ -195,7 +195,7 @@ struct CompanionIdeaDownloadsView: View {
                 "themes": themes, "edgeDetails": .array(edgeDetails)])
             _ = try CompanionIdeaCopy(copies: [copy])
             let data = try JSONEncoder.nodus.encode(copy)
-            guard data.count + records.reduce(0, { $0 + $1.data.count }) <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+            guard data.count + records.reduce(0, { $0 + $1.data.count }) <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             guard try await session.client.snapshotRevision(in: session.connection.spaceId) == revision else {
                 issue = "El contenido del Mac cambió durante la descarga. Vuelve a descargar las ideas."; return
             }
