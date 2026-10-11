@@ -838,8 +838,17 @@ private struct DatabaseRowInspector: View {
             if relations.isEmpty { Text("No linked rows, pages or Nodus entities.").font(.caption).foregroundStyle(.secondary) }
             ForEach(relations, id: \.columns) { relation in HStack { Image(systemName: "link"); VStack(alignment: .leading) { Text(relation.text("last_known_label") ?? relation.string("target_id") ?? "Linked item").font(.caption.weight(.semibold)); Text(relation.string("target_kind") ?? "entity").font(.caption2).foregroundStyle(.secondary) }; Spacer() }.desktopContentRow(accent: session.accent) }
             Label("Files", systemImage: "paperclip").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 6)
-            if attachments.isEmpty { Text("Files use the secure object channel and download on demand.").font(.caption).foregroundStyle(.secondary) }
-            ForEach(attachments, id: \.columns) { file in Label(file.text("file_name") ?? "Attachment", systemImage: "doc").desktopContentRow(accent: session.accent) }
+            if attachments.isEmpty { Text("Sin archivos adjuntos").font(.caption).foregroundStyle(.secondary) }
+            ForEach(attachments, id: \.columns) { file in
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(file.text("file_name") ?? "Attachment", systemImage: "doc")
+                    if let bytes = file.int("bytes") { Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)).font(.caption).foregroundStyle(.secondary) }
+                    if session.connection.desktopPairingId != nil, let id = file.string("id") { PrivateFileButton(session: session, kind: .databaseAttachment, id: id) }
+                    else { Text("El original se consulta al vincular este dispositivo con Nodus.").font(.caption).foregroundStyle(.secondary) }
+                    if let description = file.text("description") { CorpusProse(description, accent: session.accent, session: session) }
+                    if let text = file.text("extracted_text") { DisclosureGroup("Texto del archivo") { CorpusProse(text, accent: session.accent, session: session) } }
+                }.desktopContentRow(accent: session.accent)
+            }
         }
     }
 

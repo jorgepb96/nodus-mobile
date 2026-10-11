@@ -140,7 +140,7 @@ enum RichChatSource:Identifiable {
         let (vault,pairing,client,cache)=try connection()
         guard let conversationId else { throw DesktopBridgeError.permissionDenied }
         let request=CompanionChatAssetRequest(kind:kind,conversationId:conversationId,source:source)
-        let result=try await CompanionChatAsset.load(client:client,cache:cache,vaultId:vault,request:request,domains:pairing.domains)
+        let result=try await CompanionChatAsset.load(client:client,cache:cache,vaultId:vault,request:request,domains:Array(pairing.domains))
         records[try request.recordId]=try JSONEncoder.nodus.encode(result).count;return result
     }
     private func image(_ source:String) async throws -> ReaderImageSource.Content {

@@ -20,10 +20,10 @@ import WebKit
                 let cache = try PrivateBridgeCache(pairingId:pairing.id)
                 let descriptor: DesktopBridgeFileDescriptor, data: Data
                 if url.scheme == "nodus-image" {
-                    let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:url.absoluteString,domains:pairing.domains)
+                    let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:url.absoluteString,domains:Array(pairing.domains))
                     descriptor = image.descriptor; data = image.data
                 } else {
-                    let resource = try await CompanionEmbeddedResource.load(client:client,cache:cache,vaultId:vault,source:url.absoluteString,domains:pairing.domains)
+                    let resource = try await CompanionEmbeddedResource.load(client:client,cache:cache,vaultId:vault,source:url.absoluteString,domains:Array(pairing.domains))
                     descriptor = resource.descriptor; data = resource.data
                 }
                 try Task.checkCancellation()

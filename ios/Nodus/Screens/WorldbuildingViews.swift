@@ -1,6 +1,8 @@
 import NodusKit
 import NodusUI
 import PhotosUI
+import ImageIO
+import UniformTypeIdentifiers
 import SwiftUI
 
 private struct WorldEntityField: Identifiable, Hashable {
@@ -851,6 +853,8 @@ private struct WorldEntityDossier: View {
                                 ForEach(images, id: \.columns) { image in
                                     WorldRemoteImage(
                                         session: session,
+                                        imageId: image.string("image_id"),
+                                        caption: image.text("caption") ?? image.text("title") ?? String(localized: "Image"),
                                         reference: assetRefs.first { $0.table == "world_images" && $0.key.first == image.string("image_id") },
                                         pending: image.string("image_id").flatMap { pendingImageData[$0] }
                                     )
@@ -943,23 +947,79 @@ private struct WorldEntityDossier: View {
 
 private struct WorldRemoteImage: View {
     let session: SpaceSession
+    let imageId: String?
+    let caption: String
     let reference: SnapshotAssetRef?
     let pending: Data?
     @State private var image: UIImage?
-
+    @State private var vector: ReaderImageSource.Content?
+    @State private var issue: String?
+    @State private var attempt = 0
+    @State private var opening = false
+    @State private var original: RichCorpusProse.OpenImage?
     var body: some View {
-        Group {
-            if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else { ZStack { Color(uiColor: .secondarySystemBackground); ProgressView().tint(session.accent) } }
+        VStack(alignment: .leading, spacing: 6) {
+            Group {
+                if let image {
+                    Button { Task { await open() } } label: { Image(uiImage: image).resizable().scaledToFill().frame(width: 190, height: 130).clipped() }
+                        .buttonStyle(.plain).disabled(opening).accessibilityLabel(caption)
+                } else if let vector {
+                    ReaderVectorImage(content: vector).frame(width: 190, height: 130)
+                        .overlay { Button { Task { await open() } } label: { Color.clear.contentShape(Rectangle()) }.buttonStyle(.plain).disabled(opening).accessibilityLabel(caption) }
+                } else if issue != nil {
+                    VStack(spacing: 4) { Image(systemName: "photo.badge.exclamationmark"); Text("No se pudo cargar la imagen").font(.caption); Button("Retry") { attempt += 1 }.frame(minHeight: 44) }
+                        .frame(width: 190, height: 130).background(Color(uiColor: .secondarySystemBackground))
+                } else { ProgressView().tint(session.accent).frame(width: 190, height: 130).background(Color(uiColor: .secondarySystemBackground)) }
+            }.clipShape(RoundedRectangle(cornerRadius: 10))
+            if opening { ProgressView("Abriendo original…").font(.caption) }
+            if let issue { Text(issue).font(.caption2).foregroundStyle(.secondary).lineLimit(3).frame(width: 190, alignment: .leading) }
         }
-        .frame(width: 190, height: 130).clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay { RoundedRectangle(cornerRadius: 10).stroke(session.accent.opacity(0.24)) }
-        .task(id: reference?.hash ?? "pending") {
-            if let pending { image = UIImage(data: pending); return }
-            guard let reference else { return }
-            let hash = reference.thumbHash ?? reference.hash
-            if let data = try? await session.client.asset(hash: hash, in: session.connection.spaceId) { image = UIImage(data: data) }
+        .task(id: "\(imageId ?? reference?.hash ?? "pending")|\(attempt)") {
+            issue = nil; image = nil; vector = nil
+            do {
+                let data: Data, mime: String?
+                if let pending { data = pending; mime = nil }
+                else if session.connection.desktopPairingId != nil, let source = source(thumbnail: true) {
+                    let content: ReaderImageSource.Content
+                    do { content = try await ReaderImageSource.load(source, session: session) }
+                    catch {
+                        guard isPrivateBridgeOffline(error), let original = self.source(thumbnail: false) else { throw error }
+                        content = try await ReaderImageSource.load(original, session: session)
+                    }
+                    data = content.data; mime = content.mime
+                } else if let reference { data = try await session.client.asset(hash: reference.thumbHash ?? reference.hash, in: session.connection.spaceId); mime = reference.thumbHash != nil ? reference.thumbMime ?? reference.mime : reference.mime }
+                else { throw APIError(status: 404, code: "image_unavailable", message: "La imagen no está disponible en esta copia.") }
+                guard data.count <= ReaderImageSource.maximumBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                if mime == "image/svg+xml" { try Task.checkCancellation(); vector = .init(data: data, mime: "image/svg+xml"); return }
+                let decoded = try ReaderRasterImage.preview(data, maxPixelSize: 768)
+                try Task.checkCancellation(); image = decoded
+            } catch where error.isCancellation {}
+            catch { issue = error.localizedDescription }
         }
+        .nodusSheet(item: $original) { item in ReaderImageViewer(content: item.content, image: item.preview, title: item.title, accent: session.accent) }
+    }
+    private func source(thumbnail: Bool) -> String? {
+        guard let imageId, !imageId.isEmpty else { return nil }
+        var url = URLComponents(); url.scheme = "nodus-image"; url.host = thumbnail ? "world-thumbnail" : "world"; url.path = "/" + imageId
+        return url.url?.absoluteString
+    }
+    private func open() async {
+        opening = true; defer { opening = false }
+        do {
+            let content: ReaderImageSource.Content
+            if let pending {
+                guard pending.count <= ReaderImageSource.maximumBytes, let decoder = CGImageSourceCreateWithData(pending as CFData, nil), let type = CGImageSourceGetType(decoder), let mime = UTType(type as String)?.preferredMIMEType, ReaderImageSource.supported(mime) else { throw DesktopBridgeError.malformedResponse }
+                content = .init(data: pending, mime: mime)
+            } else if session.connection.desktopPairingId != nil, let source = source(thumbnail: false) { content = try await ReaderImageSource.load(source, session: session) }
+            else if let reference {
+                let data = try await session.client.asset(hash: reference.hash, in: session.connection.spaceId)
+                guard data.count <= ReaderImageSource.maximumBytes, ReaderImageSource.supported(reference.mime) else { throw DesktopBridgeError.malformedResponse }
+                content = .init(data: data, mime: reference.mime)
+            } else { throw DesktopBridgeError.malformedResponse }
+            let preview = content.mime == "image/svg+xml" || content.mime == "image/gif" ? nil : try ReaderRasterImage.preview(content.data)
+            try Task.checkCancellation(); original = .init(content: content, preview: preview, title: caption); issue = nil
+        } catch where error.isCancellation {}
+        catch { issue = error.localizedDescription }
     }
 }
 

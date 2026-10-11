@@ -15,6 +15,8 @@ struct CompanionCollectionDownloadsView: View {
     @State private var hasMore = false
     @State private var loading = false
     @State private var days = 7
+    @State private var includeImages = true
+    @State private var includeFiles = false
     @State private var issue: String?
     @State private var saved = false
     @State private var progress: (done: Int, total: Int)?
@@ -33,8 +35,10 @@ struct CompanionCollectionDownloadsView: View {
                 Picker("Conservar la descarga", selection: $days) {
                     Text("7 días").tag(7); Text("30 días").tag(30)
                 }.disabled(progress != nil)
+                Toggle("Incluir imágenes", isOn: $includeImages).disabled(progress != nil)
+                Toggle("Incluir archivos originales", isOn: $includeFiles).disabled(progress != nil)
             } footer: {
-                Text("Se conserva el dossier completo de cada registro elegido. Las fuentes enlazadas necesitan su propia descarga para abrirlas sin el Mac. Una base de datos incluye todas sus filas y celdas, dentro del límite de espacio del dispositivo. Los archivos e imágenes se descargan por separado.")
+                Text("Se conserva el dossier completo de cada registro elegido y los recursos que marques, hasta 50 MB por descarga. Una base de datos incluye todas sus filas y celdas. Las fuentes enlazadas necesitan su propia descarga; no se copia automáticamente el vault entero. Los originales que faltan en el Mac no se incluyen.")
             }
             if let issue {
                 Section {
@@ -152,11 +156,12 @@ struct CompanionCollectionDownloadsView: View {
 
     private func download() async {
         guard let collection else { return }
-        let chosen = selected, selectedDays = days
+        let chosen = selected, selectedDays = days, downloadImages = includeImages, downloadFiles = includeFiles
         issue = nil; progress = (0, chosen.count)
         defer { progress = nil }
         do {
             let (vault, client, cache) = try connection()
+            let (_, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
             let revision = try await session.client.snapshotRevision(in: session.connection.spaceId)
             guard revision == catalogueRevision else { throw DesktopBridgeError.malformedResponse }
             var entries: [JSONValue] = [], sources: [PrivateBridgeCache.ReadPackRecord] = [], bytes = 0
@@ -181,7 +186,18 @@ struct CompanionCollectionDownloadsView: View {
                 let entry = JSONValue.object(["summary": .object(chosen[id]!.columns), "detail": .object(detail)])
                 bytes += try JSONEncoder.nodus.encode(entry).count
                 guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
-                entries.append(entry); progress = (index + 1, chosen.count)
+                entries.append(entry)
+                let resources = try await CompanionDossierDownload.records(client: client, vault: vault, domains: pairing.domains,
+                    collection: collection.path, id: id, detail: .object(detail), images: downloadImages, files: downloadFiles,
+                    existing: Set(sources.map(\.recordId)), maximumBytes: PrivateBridgeCache.defaultReadLimitBytes - bytes)
+                sources.append(contentsOf: resources); bytes += resources.reduce(0) { $0 + $1.data.count }
+                if collection.path == "study-questions" {
+                    let args: [JSONValue] = [.object(["kind": .string("question"), "sourceId": .string(id)])]
+                    let original = try await client.operation(vaultId: vault, method: "getMobileStudyChatOriginal", args: args)
+                    guard original.objectValue?["kind"] == .string("question"), original.objectValue?["sourceId"] == .string(id) else { throw DesktopBridgeError.malformedResponse }
+                    try await CompanionChatContext.validateStudyOriginal(original)
+                    try retain("getMobileStudyChatOriginal", args, original)
+                }
                 if collection.path == "databases" {
                     let pack = try await client.operation(vaultId:vault,method:"getMobileDatabaseResearchSourcePack",args:[.object(["databaseIds":.array([.string(id)])])])
                     guard pack.objectValue?["version"] == .int(1),pack.objectValue?["vaultId"] == .string(vault),
@@ -206,6 +222,7 @@ struct CompanionCollectionDownloadsView: View {
                           source.objectValue?["entityKind"] == .string(kind), source.objectValue?["source"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
                     try retain("getContentTranslationOfflineSource", args, source)
                 }
+                progress = (index + 1, chosen.count)
             }
             let current = try await session.client.snapshotRevision(in: session.connection.spaceId)
             guard current == revision else { throw DesktopBridgeError.malformedResponse }

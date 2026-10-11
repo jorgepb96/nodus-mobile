@@ -21,6 +21,7 @@ struct RowDetailView: View {
     @State private var relationLimits: [String: Int] = [:]
     @State private var evidenceLimit = 40
     @State private var supplement: CollectionDossier?
+    @State private var resourceDossier: CollectionDossier?
     @State private var fromDevice = false
 
     init(
@@ -154,6 +155,7 @@ struct RowDetailView: View {
                         fields(of: row)
                     }
                 }
+                if let resourceDossier { DossierOriginalResourcesView(session: session, dossier: resourceDossier) }
                 if let supplement {
                     CollectionDossierBody(session: session, dossier: supplement, displayPrimary: false, showConnectionState: false, onOpenRelated: onOpenRelated)
                 }
@@ -860,6 +862,7 @@ struct RowDetailView: View {
             let dossier = try await session.client.dossier(collection, id: id, in: session.connection.spaceId, query: query)
             try Task.checkCancellation()
             fromDevice = dossier.fromDevice
+            resourceDossier = dossier
             supplement = nil
             switch collection.path {
             case "ideas":

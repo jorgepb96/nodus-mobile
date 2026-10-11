@@ -8,6 +8,7 @@ struct ReaderInlineImage: View {
     let reference: ReaderImageSource.Reference
     let session: SpaceSession?
     let accent: Color
+    var downloadedOnly = false
     @State private var content: ReaderImageSource.Content?
     @State private var preview: UIImage?
     @State private var issue: String?
@@ -27,7 +28,7 @@ struct ReaderInlineImage: View {
         .task(id:"\(reference.id)|\(attempt)") {
             content = nil;preview = nil;issue = nil
             do {
-                let loaded = try await ReaderImageSource.load(reference.source,session:session)
+                let loaded = try await ReaderImageSource.load(reference.source,session:session,downloadedOnly:downloadedOnly)
                 guard ReaderImageSource.supported(loaded.mime) else { throw DesktopBridgeError.malformedResponse }
                 let decoded = loaded.mime == "image/svg+xml" ? nil:try ReaderRasterImage.preview(loaded.data)
                 let image = loaded.mime == "image/gif" ? nil:decoded

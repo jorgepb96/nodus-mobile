@@ -463,3 +463,15 @@ Prepared local catalogue and real-store Study history cases are **unexecuted**.
 Four new acceptance operations remain pending; current local compilation,
 large-catalogue/device navigation and offline original-history acceptance are
 still required. These source changes are not a parity certification.
+
+Selected dossiers now offer explicit image and original-file downloads. A private
+Mac catalogue resolves registered library, archive, Study and database originals
+without exposing file paths or starting extraction. Database attachments support
+inline and deduplicated storage. Descriptors and verified bytes are retained in
+the same bounded, expiring read pack; cancellation or any unavailable requested
+resource fails the selection before commit. Library reader metadata and selected
+Study question history are included. Native dossier file controls and gallery
+original zoom/retry use these identities; explicit downloaded views do not fetch
+originals from the Mac. Prepared contract cases are **unexecuted**; five added
+acceptance operations remain pending. No current build or device validation is
+claimed, and Actions remain unchanged and unused.

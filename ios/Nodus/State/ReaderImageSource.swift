@@ -64,7 +64,7 @@ enum ReaderImageSource {
     }
     static let maximumBytes = 40 * 1024 * 1024
     struct Content { let data: Data;let mime: String }
-    @MainActor static func load(_ source: String,session: SpaceSession?) async throws -> Content {
+    @MainActor static func load(_ source: String,session: SpaceSession?, downloadedOnly: Bool = false) async throws -> Content {
         guard source.utf8.count <= 56 * 1024 * 1024,let url = URL(string:source) else { throw DesktopBridgeError.malformedResponse }
         if ["nodus-image","nodus-library","nodus-archive"].contains(url.scheme) {
             guard let session else { throw DesktopBridgeError.permissionDenied }
@@ -72,10 +72,21 @@ enum ReaderImageSource {
             guard !pairing.isExpired else { throw DesktopBridgeError.expired }
             let cache = try PrivateBridgeCache(pairingId:pairing.id),client = DesktopBridgeClient(pairing:pairing,token:token)
             if url.scheme == "nodus-image" {
-                let content = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:source,domains:pairing.domains)
+                if downloadedOnly {
+                    guard let data = try await cache.downloadedData(vaultId:vault,domain:.corpus,recordId:CompanionCorpusImage.recordId(source:source)).first else { throw APIError(status:409,code:"image_not_downloaded",message:"Esta imagen no está incluida en la descarga. Actualiza el dossier con «Incluir imágenes» cuando Nodus esté conectado.") }
+                    let image = try JSONDecoder.nodus.decode(CompanionCorpusImage.self,from:data)
+                    try image.validate(source:source,domains:Array(pairing.domains))
+                    return Content(data:image.data,mime:image.descriptor.mime)
+                }
+                let content = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:source,domains:Array(pairing.domains))
                 return Content(data:content.data,mime:content.descriptor.mime)
             }
-            let content = try await CompanionEmbeddedResource.load(client:client,cache:cache,vaultId:vault,source:source,domains:pairing.domains)
+            let content: CompanionEmbeddedResource
+            if downloadedOnly {
+                guard let data = try await cache.downloadedData(vaultId:vault,domain:.corpus,recordId:CompanionEmbeddedResource.recordId(source:source)).first else { throw APIError(status:409,code:"resource_not_downloaded",message:"Este original no está incluido en la descarga. Actualiza el dossier con «Incluir archivos originales» cuando Nodus esté conectado.") }
+                content = try JSONDecoder.nodus.decode(CompanionEmbeddedResource.self,from:data)
+                try content.validate(source:source,domains:Array(pairing.domains))
+            } else { content = try await CompanionEmbeddedResource.load(client:client,cache:cache,vaultId:vault,source:source,domains:Array(pairing.domains)) }
             guard supported(content.descriptor.mime) else { throw DesktopBridgeError.malformedResponse }
             return Content(data:content.data,mime:content.descriptor.mime)
         }
@@ -87,6 +98,7 @@ enum ReaderImageSource {
             guard supported(mime) else { throw DesktopBridgeError.malformedResponse }
             return Content(data:data,mime:mime)
         }
+        if downloadedOnly { throw APIError(status:409,code:"external_image_not_downloaded",message:"Esta imagen externa necesita conexión a Internet.") }
         guard url.scheme == "https",url.host != nil,url.user == nil,url.password == nil else { throw DesktopBridgeError.malformedResponse }
         let config = URLSessionConfiguration.ephemeral;config.urlCache = nil
         let client = URLSession(configuration:config);defer { client.invalidateAndCancel() }

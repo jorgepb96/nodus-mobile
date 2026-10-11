@@ -1987,6 +1987,36 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.files.registeredDatabaseOriginalAndDeduplicatedBlob",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.files.nativeDossierOriginalCatalogueAndGalleryZoom",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.dossiers.optionalImagesOriginalsAndAtomicBudget",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.dossiers.downloadedLibraryMetadataAndStudyHistory",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.world.originalGalleryRetryAndVectorPreview",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

@@ -101,7 +101,7 @@ struct SharedDesktopSurface: View {
                     defer { openingEmbeddedResource = false }
                     do {
                         let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus)
-                        let resource = try await CompanionEmbeddedResource.load(client:DesktopBridgeClient(pairing:pairing,token:token),cache:PrivateBridgeCache(pairingId:pairing.id),vaultId:vault,source:id,domains:pairing.domains)
+                        let resource = try await CompanionEmbeddedResource.load(client:DesktopBridgeClient(pairing:pairing,token:token),cache:PrivateBridgeCache(pairingId:pairing.id),vaultId:vault,source:id,domains:Array(pairing.domains))
                         let lease = try PrivateBridgeFileLease.write(resource.data,filename:resource.descriptor.filename)
                         embeddedLease = lease; embeddedPreview = lease.url
                     } catch { issue = error.localizedDescription }

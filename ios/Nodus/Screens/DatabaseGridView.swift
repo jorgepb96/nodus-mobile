@@ -73,7 +73,8 @@ struct DatabaseGridView: View {
                                     session: session,
                                     databaseName: database.text("name"),
                                     columns: columns,
-                                    context: context
+                                    context: context,
+                                    downloadedOnly: downloadedOnly
                                 )
                             } label: {
                                 HStack(spacing: 0) {
@@ -253,6 +254,7 @@ struct DatabaseRowView: View {
     let databaseName: String?
     let columns: [Row]
     let context: DatabaseCell.Context
+    var downloadedOnly = false
 
     /// The title column is the row's name, and repeating it as a field below its own heading
     /// is the kind of thing a generic renderer does and a person notices.
@@ -358,7 +360,9 @@ struct DatabaseRowView: View {
                                     .font(.caption2).foregroundStyle(.tertiary)
                             }
                         }
-                        if DatabaseCell.imageHash(file) == nil {
+                        if session.connection.desktopPairingId != nil, let id = file.string("id") {
+                            PrivateFileButton(session: session, kind: .databaseAttachment, id: id, downloadedOnly: downloadedOnly)
+                        } else if DatabaseCell.imageHash(file) == nil {
                             // Said once per file rather than as a footnote: the reason this is
                             // a name and not a picture is a rule, not a failure.
                             Text("Only images travel to the server. This file stays on the desktop.")

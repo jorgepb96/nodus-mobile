@@ -198,6 +198,7 @@ private struct DownloadedCollectionDossier: View {
                                 onOpenRelated: { collection, row in
                                     if let id = row.string(collection.idField) { open(.init(collectionPath: collection.path, id: id)) }
                                 })
+                            DossierOriginalResourcesView(session: session, dossier: dossier, downloadedOnly: true)
                         }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity)
                     }
                     .navigationTitle(Text(dossier.collection.presenter.title(dossier.primary)))

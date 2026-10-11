@@ -189,14 +189,14 @@ struct CompanionDownloadsView: View {
                 records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getWorkspaceNoteEditorData", args), data: data))
                 for sourceURL in try CompanionCorpusImage.sourceURLs(in:value) {
                     guard selectedImages.insert(sourceURL).inserted else { continue }
-                    let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:pairing.domains)
+                    let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:Array(pairing.domains))
                     let data = try JSONEncoder.nodus.encode(image); bytes += data.count
                     guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     records.append(.init(domain:.corpus,recordId:CompanionCorpusImage.recordId(source:sourceURL),data:data))
                 }
                 for sourceURL in try CompanionEmbeddedResource.sourceURLs(in:value) {
                     guard selectedImages.insert(sourceURL).inserted else { continue }
-                    let resource = try await CompanionEmbeddedResource.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:pairing.domains)
+                    let resource = try await CompanionEmbeddedResource.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:Array(pairing.domains))
                     let data = try JSONEncoder.nodus.encode(resource); bytes += data.count
                     guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     records.append(.init(domain:.corpus,recordId:CompanionEmbeddedResource.recordId(source:sourceURL),data:data))
