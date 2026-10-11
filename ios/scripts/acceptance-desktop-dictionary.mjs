@@ -57,7 +57,7 @@ try {
   assert.equal((await page.evaluate(() => window.nodus.getActiveVault())).id, 'default');
   await page.locator('[data-tour="nav-dictionary"]').click();
   const catalogue = page.getByTestId('dictionary-workspace');
-  await catalogue.getByPlaceholder('Buscar concepto, alias, descripción, etiqueta, autor u obra…').fill(name);
+  await catalogue.getByRole('textbox').first().fill(name);
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   await catalogue.getByRole('button', { name: new RegExp('^' + escaped) }).first().click();
   const detail = page.getByTestId('dictionary-entry-detail');
@@ -86,6 +86,7 @@ try {
   if (page) {
     await page.screenshot({ path: path.join(output, 'desktop-dictionary-failed.png') }).catch(() => {});
     fs.writeFileSync(path.join(output, 'desktop-dictionary-failed.txt'), await page.locator('body').innerText().catch(() => ''), { mode: 0o600 });
+    fs.writeFileSync(path.join(output, 'desktop-dictionary-inputs.json'), JSON.stringify(await page.locator('input').evaluateAll(inputs => inputs.map(input => ({ type: input.type, placeholder: input.placeholder }))).catch(() => [])), { mode: 0o600 });
   }
   throw error;
 } finally { await application?.close(); }
