@@ -173,6 +173,7 @@ struct WorldEntityWorkspaceView: View {
     @State private var query = ""
     @State private var loading = true
     @State private var error: String?
+    @State private var actionMessage: String?
     @State private var outbox: OutboxController?
     @State private var editorRow: Row?
     @State private var isCreating = false
@@ -269,7 +270,8 @@ struct WorldEntityWorkspaceView: View {
                     description: Text(query.isEmpty ? "Create the first entry in this world." : "No entry contains “\(query)”.")
                 ).padding(.vertical, 42)
             }
-            if let error { NodusNotice(tone: .blocked, title: "Could not load the world", message: LocalizedStringKey(error)) }
+            if let error { NodusNotice(tone: .blocked, title: "No se pudo completar la operación", message: LocalizedStringKey(error)) }
+            if let actionMessage { NodusNotice(tone: .info, title: "Solicitud de borrado", message: LocalizedStringKey(actionMessage)) }
         }
         .padding(NodusSpace.page)
         .safeAreaInset(edge: .top) {
@@ -343,6 +345,7 @@ struct WorldEntityWorkspaceView: View {
                 tables = snapshot.tables
             }
             if session.connection.desktopPairingId == nil { tables.merge(debugWorldbuildingFixture()) { _, fixture in fixture } }
+            if session.connection.desktopPairingId != nil { tables = try await projectedCompanionWorldTables(session, tables) }
             relatedTables = tables
             rows = tables[definition.table.rawValue] ?? []
             error = nil
@@ -375,14 +378,13 @@ struct WorldEntityWorkspaceView: View {
             columns["narrative_order"] = .int(Int64((rows.compactMap { $0.int("narrative_order") }.max() ?? -1) + 1))
         }
         let saved = Row(columns)
+        guard await outbox.syncMutation(kind: .upsert, table: definition.table, key: [id], row: columns, title: "Save \(definition.title(of: saved))") else {
+            error = outbox.lastError ?? "No se pudo guardar el cambio. El borrador sigue abierto."; return
+        }
         if let index = rows.firstIndex(where: { $0.string(definition.idField) == id }) { rows[index] = saved }
         else { rows.append(saved) }
         editorRow = nil; self.isCreating = false
         open(saved)
-        _ = await outbox.syncMutation(
-            kind: .upsert, table: definition.table, key: [id], row: columns,
-            title: "Save \(definition.title(of: saved))"
-        )
         if isNew { await createWorldOverlayIfNeeded(id: id, now: now, outbox: outbox) }
     }
 
@@ -403,20 +405,23 @@ struct WorldEntityWorkspaceView: View {
 
     private func delete(_ row: Row, tabId: String) async {
         guard let outbox, let id = row.string(definition.idField) else { return }
-        rows.removeAll { $0.string(definition.idField) == id }
-        workspaceTabs.close(tabId, in: definition.section)
-
         if let entity = canonicalDeleteEntity {
             do {
-                _ = try await session.client.createSpaceAction(
+                let ready = try await session.prepareCompanionContentSubmission()
+                let creation = try await session.client.createSpaceAction(
                     idempotencyKey: "world-delete:\(definition.table.rawValue):\(id)".prefix(128).description,
                     kind: .worldbuildingEntityDelete,
                     payload: ["entity": .string(entity), "id": .string(id)],
                     inputRevision: session.publishedRevision,
-                    executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
+                    executionMode:session.aiExecutionMode.rawValue, deferCompanionSubmission:!ready, in:session.connection.spaceId
                 )
+                guard ![.failed, .refused, .cancelled].contains(creation.action.status) else { error = creation.action.receiptMessage; return }
+                error = nil; actionMessage = creation.action.receiptMessage
+                rows.removeAll { $0.string(definition.idField) == id }
+                workspaceTabs.close(tabId, in: definition.section)
                 return
             } catch {
+                if session.connection.desktopPairingId != nil { self.error = error.localizedDescription; return }
                 // Older/offline servers cannot queue the typed repository operation. The
                 // generated mutation lane below is durable and mirrors every owned child,
                 // so the edit still works without silently leaking polymorphic records.
@@ -424,18 +429,20 @@ struct WorldEntityWorkspaceView: View {
             }
         }
 
-        await reparentRuleChildrenIfNeeded(deleting: row, outbox: outbox)
+        guard await reparentRuleChildrenIfNeeded(deleting: row, outbox: outbox) else { error = outbox.lastError; return }
         for dependency in dependentDeletes(for: id) {
-            _ = await outbox.syncMutation(
+            guard await outbox.syncMutation(
                 kind: .delete, table: dependency.table, key: dependency.key,
                 title: dependency.title
-            )
+            ) else { error = outbox.lastError; return }
             relatedTables[dependency.table.rawValue]?.removeAll { dependency.key(for: $0) == dependency.key }
         }
-        _ = await outbox.syncMutation(
+        guard await outbox.syncMutation(
             kind: .delete, table: definition.table, key: [id],
             title: "Delete \(definition.title(of: row))"
-        )
+        ) else { error = outbox.lastError; return }
+        rows.removeAll { $0.string(definition.idField) == id }
+        workspaceTabs.close(tabId, in: definition.section)
     }
 
     private var canonicalDeleteEntity: String? {
@@ -528,20 +535,21 @@ struct WorldEntityWorkspaceView: View {
         return result
     }
 
-    private func reparentRuleChildrenIfNeeded(deleting row: Row, outbox: OutboxController) async {
-        guard definition.table == .worldRules, let id = row.string("rule_id") else { return }
+    private func reparentRuleChildrenIfNeeded(deleting row: Row, outbox: OutboxController) async -> Bool {
+        guard definition.table == .worldRules, let id = row.string("rule_id") else { return true }
         let parent = row["parent_rule_id"] ?? .null
         for index in rows.indices where rows[index].string("parent_rule_id") == id {
             var columns = rows[index].columns
             columns["parent_rule_id"] = parent
             columns["updated_at"] = .string(ISO8601DateFormatter.nodusFractional.string(from: Date()))
-            rows[index] = Row(columns)
             guard let childId = rows[index].string("rule_id") else { continue }
-            _ = await outbox.syncMutation(
+            guard await outbox.syncMutation(
                 kind: .upsert, table: .worldRules, key: [childId], row: columns,
                 title: "Preserve rule exception"
-            )
+            ) else { return false }
+            rows[index] = Row(columns)
         }
+        return true
     }
 
     private var supportsImages: Bool {
@@ -1174,10 +1182,21 @@ func worldTables(_ session: SpaceSession, _ names: [String]) async throws -> [St
         var result: [String: [Row]] = [:]
         for name in names { result[name] = try await mirror.allRows(table: name) }
         for name in names where fixture[name] != nil { result[name] = fixture[name] }
-        return result
+        return try await projectedCompanionWorldTables(session, result)
     }
     let snapshot = try await session.client.snapshot(in: session.connection.spaceId)
-    return Dictionary(uniqueKeysWithValues: names.map { ($0, fixture[$0] ?? snapshot.tables[$0] ?? []) })
+    return try await projectedCompanionWorldTables(session, Dictionary(uniqueKeysWithValues: names.map { ($0, fixture[$0] ?? snapshot.tables[$0] ?? []) }))
+}
+
+@MainActor
+func projectedCompanionWorldTables(_ session: SpaceSession, _ tables: [String: [Row]]) async throws -> [String: [Row]] {
+    guard session.connection.desktopPairingId != nil else { return tables }
+    let queue = try await MutationOutbox.open(spaceId: session.connection.storageId,
+        directory: URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true))
+    let projected = try await queue.companionContentProjection(tables)
+    guard let pairing = session.connection.desktopPairingId, let vault = session.vaultId else { return projected }
+    let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault)
+    return CompanionContentProjection.applyWorldDeletions(projected, requests: await ledger.all())
 }
 
 private func debugWorldbuildingFixture() -> [String: [Row]] {

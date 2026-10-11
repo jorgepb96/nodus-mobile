@@ -26,7 +26,7 @@ extension DesktopBridgeClient {
             result: request.result, errorCode: request.issue, createdAt: request.macCreatedAt ?? request.createdAt,
             updatedAt: updated, claimedAt: nil, finishedAt: status.isTerminal ? updated : nil)
     }
-    func createCompanionAction(vaultId: String, body: JSONValue) async throws -> SpaceActionCreation {
+    func createCompanionAction(vaultId: String, body: JSONValue, submitNow:Bool = true) async throws -> SpaceActionCreation {
         let ledger = try await actionLedger(vaultId: vaultId, writing: true)
         _ = try DesktopCompanionActions.validateWrite(path: "actions", query: [], body: body, domains: pairing.domains)
         guard var value = body.objectValue, let key = value["idempotencyKey"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
@@ -34,7 +34,7 @@ extension DesktopBridgeClient {
         let id = DesktopCompanionActions.identity(key)
         let previous = await ledger.all().first { $0.id == id }
         let prepared = try await ledger.prepare(id: id, method: "runMobileSpaceAction", args: [.object(value)])
-        if ["pending", "accepted", "running", "saved"].contains(prepared.state), prepared.cancellationRequested != true {
+        if submitNow, ["pending", "accepted", "running", "saved"].contains(prepared.state), prepared.cancellationRequested != true {
             do {
                 let job = try await submitJob(vaultId: vaultId, method: prepared.method, args: prepared.args, idempotencyKey: id)
                 try await ledger.update(id: id, job: job)

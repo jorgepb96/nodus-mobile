@@ -132,14 +132,14 @@ struct WorldContinuityView: View {
             "headline": .string(finding.headline), "reason_code": .string("deliberate"),
             "created_at": .string(now), "updated_at": .string(now),
         ]
+        guard await outbox.syncMutation(kind: .upsert, table: .worldNoticeMutes, key: [finding.id], row: row, title: "Mute continuity finding") else { error = outbox.lastError; return }
         muted.insert(finding.id); findings.removeAll { $0.id == finding.id }
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldNoticeMutes, key: [finding.id], row: row, title: "Mute continuity finding")
     }
 
     private func unmute(_ fingerprint: String) async {
         guard let outbox else { return }
+        guard await outbox.syncMutation(kind: .delete, table: .worldNoticeMutes, key: [fingerprint], title: "Restore continuity finding") else { error = outbox.lastError; return }
         muted.remove(fingerprint)
-        _ = await outbox.syncMutation(kind: .delete, table: .worldNoticeMutes, key: [fingerprint], title: "Restore continuity finding")
         await load()
     }
 }
@@ -370,9 +370,9 @@ struct WorldManuscriptView: View {
             "scene_id": .string(scene.id), "text": .string(draft), "word_count": .int(Int64(newCount)),
             "created_at": old?["created_at"] ?? .string(now), "updated_at": .string(now),
         ]
-        textRows[scene.id] = Row(row); rebuild()
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Save scene \(scene.title)")
-        message = outbox.lastError == nil ? String(localized: "Saved to the sync outbox.") : String(localized: "Saved locally; sync will retry.")
+        guard await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Save scene \(scene.title)") else { error = outbox.lastError; return }
+        error = nil; textRows[scene.id] = Row(row); rebuild()
+        message = outbox.lastSaveMessage
     }
 
     private func snapshot(scene: WorldbuildingParity.ManuscriptScene, text: String, reason: String, outbox: OutboxController) async {
@@ -389,23 +389,23 @@ struct WorldManuscriptView: View {
         guard let scene = selected, let outbox else { return }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         if chapter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard await outbox.syncMutation(kind: .delete, table: .worldChapterBreaks, key: [scene.id], title: "Remove chapter break") else { error = outbox.lastError; return }
             chapterRows[scene.id] = nil
-            _ = await outbox.syncMutation(kind: .delete, table: .worldChapterBreaks, key: [scene.id], title: "Remove chapter break")
         } else {
             let old = chapterRows[scene.id]
             let row: [String: JSONValue] = ["scene_id": .string(scene.id), "title": .string(chapter), "created_at": old?["created_at"] ?? .string(now), "updated_at": .string(now)]
+            guard await outbox.syncMutation(kind: .upsert, table: .worldChapterBreaks, key: [scene.id], row: row, title: "Set chapter break") else { error = outbox.lastError; return }
             chapterRows[scene.id] = Row(row)
-            _ = await outbox.syncMutation(kind: .upsert, table: .worldChapterBreaks, key: [scene.id], row: row, title: "Set chapter break")
         }
         if book.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard await outbox.syncMutation(kind: .delete, table: .worldManuscriptStarts, key: [scene.id], title: "Remove book start") else { error = outbox.lastError; return }
             bookRows[scene.id] = nil
-            _ = await outbox.syncMutation(kind: .delete, table: .worldManuscriptStarts, key: [scene.id], title: "Remove book start")
         } else {
             let old = bookRows[scene.id]
             var row: [String: JSONValue] = ["scene_id": .string(scene.id), "title": .string(book), "created_at": old?["created_at"] ?? .string(now), "updated_at": .string(now)]
             if let targetWords { row["target_words"] = .int(Int64(targetWords)) }
+            guard await outbox.syncMutation(kind: .upsert, table: .worldManuscriptStarts, key: [scene.id], row: row, title: "Set manuscript start") else { error = outbox.lastError; return }
             bookRows[scene.id] = Row(row)
-            _ = await outbox.syncMutation(kind: .upsert, table: .worldManuscriptStarts, key: [scene.id], row: row, title: "Set manuscript start")
         }
         rebuild(); structureEditor = false
     }
@@ -684,10 +684,10 @@ private struct WorldManuscriptInspector: View {
         guard let outbox else { return }
         let key = [kind, id, scene.id]
         if mark == nil {
+            guard await outbox.syncMutation(kind: .delete, table: .worldBeats, key: key, title: "Remove scene beat") else { reviewMessage = outbox.lastError; return }
             tables["world_beats"]?.removeAll {
                 $0.string("thread_kind") == kind && $0.string("thread_id") == id && $0.string("scene_id") == scene.id
             }
-            _ = await outbox.syncMutation(kind: .delete, table: .worldBeats, key: key, title: "Remove scene beat")
             return
         }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
@@ -697,17 +697,17 @@ private struct WorldManuscriptInspector: View {
         ]
         columns["mark"] = .string(mark!); columns["updated_at"] = .string(now)
         if mark != "breaks" { columns["paid"] = .null }
+        guard await outbox.syncMutation(kind: .upsert, table: .worldBeats, key: key, row: columns, title: "Update scene beat") else { reviewMessage = outbox.lastError; return }
         upsertLocal(table: "world_beats", row: Row(columns), keyFields: ["thread_kind", "thread_id", "scene_id"])
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldBeats, key: key, row: columns, title: "Update scene beat")
     }
 
     private func setPaid(value: Bool?, row: Row) async {
         guard let outbox, let kind = row.string("thread_kind"), let id = row.string("thread_id") else { return }
         var columns = row.columns
-        columns["paid"] = value.map(JSONValue.bool) ?? .null
+        columns["paid"] = value.map { .int($0 ? 1 : 0) } ?? .null
         columns["updated_at"] = .string(ISO8601DateFormatter.nodusFractional.string(from: Date()))
+        guard await outbox.syncMutation(kind: .upsert, table: .worldBeats, key: [kind, id, scene.id], row: columns, title: "Judge rule cost") else { reviewMessage = outbox.lastError; return }
         upsertLocal(table: "world_beats", row: Row(columns), keyFields: ["thread_kind", "thread_id", "scene_id"])
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldBeats, key: [kind, id, scene.id], row: columns, title: "Judge rule cost")
     }
 
     private func createThread(kind: String) async {
@@ -722,15 +722,15 @@ private struct WorldManuscriptInspector: View {
             "scope": .string("external"), "status": .string("open"), "origin": .string("author"),
             "created_at": .string(now), "updated_at": .string(now),
         ]
-        tables["world_threads", default: []].append(Row(row))
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldThreads, key: [id], row: row, title: "Create \(title)")
+        guard await outbox.syncMutation(kind: .upsert, table: .worldThreads, key: [id], row: row, title: "Create \(title)") else { reviewMessage = outbox.lastError; return }
+        upsertLocal(table: "world_threads", row: Row(row), keyFields: ["thread_id"])
         for personId in castIds.sorted() {
             let party: [String: JSONValue] = [
                 "thread_id": .string(id), "party_kind": .string("character"), "party_id": .string(personId),
                 "side": .string(kind == "arc" ? "subject" : "wants"), "created_at": .string(now), "updated_at": .string(now),
             ]
-            tables["thread_parties", default: []].append(Row(party))
-            _ = await outbox.syncMutation(kind: .upsert, table: .threadParties, key: [id, "character", personId], row: party, title: "Add story-thread participant")
+            guard await outbox.syncMutation(kind: .upsert, table: .threadParties, key: [id, "character", personId], row: party, title: "Add story-thread participant") else { reviewMessage = outbox.lastError; return }
+            upsertLocal(table: "thread_parties", row: Row(party), keyFields: ["thread_id", "party_kind", "party_id"])
         }
         await setBeat(kind: kind, id: id, mark: kind == "arc" ? "step" : "raise")
         newThreadTitle = ""; creatingKind = nil
@@ -744,8 +744,8 @@ private struct WorldManuscriptInspector: View {
             "word_count": .int(Int64(WorldbuildingParity.wordCount(draft))), "reason": .string(reason),
             "created_at": .string(ISO8601DateFormatter.nodusFractional.string(from: Date())),
         ]
+        guard await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)") else { reviewMessage = outbox.lastError; return }
         tables["world_scene_snapshots", default: []].insert(Row(row), at: 0)
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)")
     }
 
     private func restore(_ snapshot: Row) async {
@@ -758,9 +758,9 @@ private struct WorldManuscriptInspector: View {
             "word_count": .int(Int64(WorldbuildingParity.wordCount(text))),
             "created_at": .string(now), "updated_at": .string(now),
         ]
+        guard await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Restore \(scene.title)") else { reviewMessage = outbox.lastError; return }
         tables["world_scene_text"] = (tables["world_scene_text"] ?? []).filter { $0.string("scene_id") != scene.id } + [Row(row)]
         onTextChanged(Row(row))
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Restore \(scene.title)")
     }
 
     private func reviewProse() async {
@@ -775,10 +775,11 @@ private struct WorldManuscriptInspector: View {
                 applyReview(object); return
             }
             activeReviewKey = key; defer { activeReviewKey = nil }
+            let ready = try await session.prepareCompanionContentSubmission()
             let creation = try await session.client.createSpaceAction(
                 idempotencyKey: key,
                 kind: .worldbuildingProseReview, payload: ["sceneId": .string(scene.id), "language": .string(CompanionAcademicGeneration.language), "draft": currentDraft],
-                inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
+                inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, deferCompanionSubmission:!ready, in:session.connection.spaceId
             )
             var action = creation.action
             try Task.checkCancellation()

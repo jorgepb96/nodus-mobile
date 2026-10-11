@@ -19,6 +19,15 @@ final class OutboxController {
     private(set) var delivered = 0
     private(set) var isFlushing = false
     private(set) var lastError: String?
+    private var lastSavedMutationID: String?
+    var lastSaveMessage: String {
+        switch items.first(where: { $0.id == lastSavedMutationID })?.state {
+        case .delivered: "Guardado y aplicado en Nodus."
+        case .accepted: "Aceptado · pendiente de que Nodus aplique el cambio."
+        case .rejected: "Nodus ha rechazado el cambio. Consulta Cambios para ver el motivo."
+        default: "Guardado en el móvil · pendiente de sincronizar con Nodus."
+        }
+    }
 
     private let outbox: MutationOutbox
     private let client: NodusClient
@@ -152,6 +161,7 @@ final class OutboxController {
             row: row,
             schemaVersion: schemaVersion
         )
+        lastSavedMutationID = mutation.id
         do {
             try await outbox.enqueue(mutation, title: title)
             try await outbox.authorise(ids: [mutation.id])
@@ -202,15 +212,18 @@ final class OutboxController {
         assets: [Mutation.AssetReference] = [],
         title: String
     ) async -> Bool {
+        var canonicalRow = row
+        canonicalRow?["mobileSyncState"] = nil
         let mutation = Mutation(
             clientId: clientId,
             kind: kind,
             table: table,
             key: key,
-            row: row,
+            row: canonicalRow,
             assets: assets,
             schemaVersion: schemaVersion
         )
+        lastSavedMutationID = mutation.id
         if let refusal = refusal(for: mutation) {
             lastError = refusal
             await refresh()
@@ -227,10 +240,11 @@ final class OutboxController {
         }
 
         do {
-            let receipt = try await client.send(mutations: [mutation], in: spaceId)
-            try await outbox.recordReceipt(receipt, for: [mutation])
-            if let rejection = receipt.rejected.first(where: { $0.id == mutation.id }) {
-                lastError = rejection.errorDescription ?? rejection.reason
+            // A child saved as the network returns must follow its already-authorised
+            // parent. Sending only this new row could permanently reject the child.
+            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, limits: limits)
+            if let item = try await outbox.items().first(where: { $0.id == mutation.id && $0.state == .rejected }) {
+                lastError = item.detail
                 await refresh(); return false
             } else {
                 lastError = nil

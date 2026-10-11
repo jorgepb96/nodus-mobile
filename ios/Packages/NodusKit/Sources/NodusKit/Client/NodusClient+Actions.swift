@@ -104,6 +104,7 @@ public extension NodusClient {
         inputRevision: String? = nil,
         inputFingerprint: String? = nil,
         executionMode:String? = nil,
+        deferCompanionSubmission:Bool = false,
         in spaceId: String
     ) async throws -> SpaceActionCreation {
         let body = SpaceActionCreateBody(
@@ -118,7 +119,7 @@ public extension NodusClient {
         )
         if let bridge = companionBridge {
             return try await bridge.client.createCompanionAction(vaultId: bridge.vaultId,
-                body: JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(body)))
+                body: JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(body)), submitNow:!deferCompanionSubmission)
         }
         let response = try await perform(.init(
             method: "POST",

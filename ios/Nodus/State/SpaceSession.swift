@@ -354,11 +354,22 @@ final class SpaceSession {
 
     /// A successful direct probe is the reconnection signal. Finish only work
     /// already authorised by its save/send action, preserving stable mutation IDs.
+    func prepareCompanionContentSubmission() async throws -> Bool {
+        guard connection.desktopPairingId != nil else { return true }
+        await synchronizeCompanionChanges()
+        let queue = try MutationOutbox(spaceId:connection.storageId, directory:mirrorDirectory)
+        return try await queue.authorisedPending(limit:1).isEmpty
+    }
+
     func synchronizeCompanionChanges() async {
         guard connection.desktopPairingId != nil, connection.role.canSendChanges,
               !isSynchronizingCompanionChanges else { return }
         isSynchronizingCompanionChanges = true
         defer { isSynchronizingCompanionChanges = false }
+        // Canonical parent rows must arrive before their document edits and jobs.
+        // This drains only saves the user already authorised, never unsent drafts.
+        let mutationQueue = try? MutationOutbox(spaceId: connection.storageId, directory: mirrorDirectory)
+        if let mutationQueue { try? await OutboxDelivery.send(from: mutationQueue, using: client, in: connection.spaceId) }
         if let vaultId, let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
             let chats = ChatHistoryStore.shared(spaceId:connection.storageId)
             do {
@@ -398,6 +409,9 @@ final class SpaceSession {
                 let before = Dictionary(uniqueKeysWithValues: await ledger.all().map { ($0.id, $0.state) })
                 try? await bridge.reconcileDurableCancellations(vaultId: vaultId)
                 try? await ledger.synchronize(list: { try await bridge.listJobs(vaultId: vaultId) }, canSubmit: { request in
+                    if let mutationQueue {
+                        guard let pending = try? await mutationQueue.authorisedPending(limit: 1), pending.isEmpty else { return false }
+                    }
                     // Native chat serializes submit/cancel/recovery with its
                     // durable conversation; this ledger only observes its jobs.
                     if request.method == "streamMobileCompanionChat" { return false }
@@ -434,16 +448,6 @@ final class SpaceSession {
                     companionPublicationRevision += 1
                 }
             }
-        }
-        let directory = mirrorDirectory
-        guard MutationOutbox.exists(spaceId: connection.storageId, directory: directory),
-              let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: directory),
-              let pending = try? await outbox.authorisedPending(limit: 1), !pending.isEmpty else { return }
-        do {
-            try await OutboxDelivery.send(from: outbox, using: client, in: connection.spaceId, limits: .unstated)
-        } catch {
-            // The durable queue retains rejected/conflicting changes and transport
-            // failures. Reconnection never reports a failed write as synchronized.
         }
     }
 
