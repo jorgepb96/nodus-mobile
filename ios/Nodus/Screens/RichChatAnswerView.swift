@@ -22,6 +22,7 @@ struct RichChatAnswerView: View {
     @State private var attempt=0
     @State private var downloading=false
     @State private var downloadMessage:String?
+    @State private var downloadTask:Task<Void,Never>?
     var body:some View {
         NavigationStack {
             VStack(spacing:0) {
@@ -56,7 +57,7 @@ struct RichChatAnswerView: View {
                 .sheet(isPresented:Binding(get:{reader?.previewLease != nil},set:{ if !$0 { reader?.previewLease=nil } })) { if let lease=reader?.previewLease { RichChatFileView(lease:lease,accent:session.accent) } }
         }.tint(session.accent)
             .task { if reader == nil { reader=makeReader() } }
-            .onDisappear { reader?.stop() }
+            .onDisappear { downloadTask?.cancel();reader?.stop() }
     }
     private var textScale:Double {
         switch dynamicTypeSize { case .xSmall:0.85;case .small:0.92;case .large:1;case .xLarge:1.12;case .xxLarge:1.24;case .xxxLarge:1.35;case .accessibility1:1.55;case .accessibility2:1.75;case .accessibility3:2;case .accessibility4:2.25;case .accessibility5:2.5;default:1 }
@@ -64,7 +65,7 @@ struct RichChatAnswerView: View {
     private func makeReader()->RichChatReader { RichChatReader(session:session,content:content,conversationId:conversationId,studyCitations:studyCitations,desktopRecord:desktopRecord) }
     private func download(days:Int) {
         guard let reader else { return };downloading=true;downloadMessage=nil
-        Task { defer { downloading=false };do { try await reader.download(days:days);downloadMessage="Respuesta y archivos guardados durante \(days) días. Los mosaicos de imágenes descargan las zonas que hayas consultado; otras zonas requieren conexión." } catch { downloadMessage=error.localizedDescription } }
+        downloadTask=Task { defer { downloading=false;downloadTask=nil };do { try await reader.download(days:days);downloadMessage="Respuesta y archivos guardados durante \(days) días. Los mosaicos de imágenes descargan las zonas que hayas consultado; otras zonas requieren conexión." } catch { if !Task.isCancelled { downloadMessage=error.localizedDescription } } }
     }
 }
 
@@ -76,12 +77,16 @@ enum RichChatSource:Identifiable {
 @Observable @MainActor final class RichChatReader {
     let session:SpaceSession,content:String,conversationId:String?,studyCitations:[JSONValue]
     let desktopRecord:JSONValue?
-    var loading=true,issue:String?,shareLease:PrivateBridgeFileLease?,previewLease:PrivateBridgeFileLease?,source:RichChatSource?
-    weak var webView:WKWebView?
-    private var records:[String:Int]=[:]
-    private var originalImages:[String:ReaderImageSource.Content]=[:]
-    private var tasks:[String:Task<Void,Never>]=[:]
-    private var stopped=false
+    var loading=true
+    var issue:String?
+    var shareLease:PrivateBridgeFileLease?
+    var previewLease:PrivateBridgeFileLease?
+    var source:RichChatSource?
+    @ObservationIgnored weak var webView:WKWebView?
+    @ObservationIgnored private var records:[String:Int]=[:]
+    @ObservationIgnored private var originalImages:[String:ReaderImageSource.Content]=[:]
+    @ObservationIgnored private var tasks:[String:Task<Void,Never>]=[:]
+    @ObservationIgnored private var stopped=false
     init(session:SpaceSession,content:String,conversationId:String?,studyCitations:[JSONValue],desktopRecord:JSONValue? = nil) { self.session=session;self.content=content;self.conversationId=conversationId;self.studyCitations=studyCitations;self.desktopRecord=desktopRecord }
     var kind:CompanionChatKind { CompanionChatKind(vaultType:session.vaultType) }
     func stop() { stopped=true;tasks.values.forEach{$0.cancel()};tasks.removeAll();webView?.stopLoading();webView=nil;originalImages.removeAll() }
