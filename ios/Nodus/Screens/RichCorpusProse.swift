@@ -223,6 +223,8 @@ private struct RichProseWebView: UIViewRepresentable {
                 if parent.onOpen(url) { clearSelection(); return }
                 if ["https", "http"].contains(url.scheme), url.user == nil, url.password == nil { Task { await UIApplication.shared.open(url) } }
             case "image", "openImage": image(payload, requestId: fields["id"]?.stringValue, opening: method == "openImage")
+            case "cancelImage":
+                if let id = payload.stringValue, id.count <= 32 { tasks[id]?.cancel() }
             case "issue": if let message = payload.stringValue { parent.issue = String(message.prefix(2000)) }
             default: break
             }
