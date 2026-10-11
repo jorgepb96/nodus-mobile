@@ -799,22 +799,32 @@ private struct DesktopWebView: UIViewRepresentable {
                                 let cache = try PrivateBridgeCache(pairingId: pairing.id)
                                 let key = try CompanionDocumentOutbox.operationKey(method, args)
                                 let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key)
+                                let ownedEditor = method == "getWorkspaceNoteEditorData" && args.count == 1 ? await documents.confirmedEditorData(noteId: args[0].stringValue ?? "") : nil
+                                let includeTrashed = args.first == .bool(true)
+                                let ownedTree = method == "getNotesTree" ? await documents.confirmedTree(includeTrashed: includeTrashed) : nil
+                                var privateReadFromDevice = false
                                 let hasIdeas = CompanionIdeaCopy.operationMethods.contains(method)
                                     ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
                                 do {
-                                    value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasIdeas ? nil : 4)
+                                    value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasIdeas && ownedEditor == nil && ownedTree == nil ? nil : 4)
                                     onOfflineCopy(false)
                                     try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
                                 } catch {
                                     guard isPrivateBridgeOffline(error) else { throw error }
+                                    privateReadFromDevice = true
                                     let ideaCopy = hasIdeas ? try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId) : nil
                                     if let local = try ideaCopy?.operation(method, args: args) { value = local }
+                                    else if let ownedEditor, (ownedEditor.objectValue?["revision"]?.intValue ?? 0) >= (cached.flatMap { try? JSONDecoder.nodus.decode(JSONValue.self, from: $0) }.flatMap { $0.objectValue?["revision"]?.intValue } ?? -1) { value = ownedEditor }
                                     else if let cached { value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached) }
+                                    else if let ownedTree { value = ownedTree }
                                     else { throw error }
                                     onOfflineCopy(true)
                                 }
                                 if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue { try await documents.seed(noteId: noteId, editorData: value) }
-                                if method == "getNotesTree" { value = await documents.overlayTree(value) }
+                                if method == "getNotesTree" {
+                                    try await documents.rememberTree(value, authoritative: !privateReadFromDevice)
+                                    value = await documents.overlayTree(value, includeConfirmedEdits: privateReadFromDevice, includeTrashed: includeTrashed)
+                                }
                             }
                         } else if DesktopBridgeClient.jobMethods.contains(method) {
                             let first = input.first as? String

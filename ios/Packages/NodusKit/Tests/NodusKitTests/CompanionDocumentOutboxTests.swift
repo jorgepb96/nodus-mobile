@@ -64,9 +64,80 @@ struct CompanionDocumentOutboxTests {
             return .object(["id":.string(request.id),"editorData":.object(confirmed)])
         }
         #expect(await reopened.pendingCount() == 0)
-        let confirmed = await reopened.editorData(noteId:"note")
+        let confirmed = await reopened.confirmedEditorData(noteId:"note")
         #expect(confirmed?.objectValue?["contentMarkdown"] == .string(markdown))
         #expect(confirmed?.objectValue?["nativeDocument"] == input["nativeDocument"])
+    }
+
+    @Test("confirmed authored documents retain structured content and only their real folder ancestors without a reusable cache")
+    func confirmedAuthorship() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        let folders: [JSONValue] = [
+            .object(["id": .string("folder-a"), "parentId": .string("root"), "title": .string("Writing")]),
+            .object(["id": .string("root"), "parentId": .null, "title": .string("Root")]),
+            .object(["id": .string("unrelated"), "parentId": .null, "title": .string("Unrelated private folder")])]
+        try await queue.rememberTree(.object(["folders": .array(folders), "notes": .array([])]))
+        let note = try await queue.create(input: Self.creationInput), id = try #require(note.objectValue?["id"]?.stringValue)
+        _ = try await queue.save(noteId: id, input: Self.input(-1, text: "Table and citation"))
+        try await queue.synchronize { request in
+            var response = Self.receipt(request, revision: 8).objectValue!, canonical = note.objectValue!
+            canonical["title"] = .string("Private document"); canonical["content"] = .string("Table and citation")
+            response["note"] = .object(canonical); return .object(response)
+        }
+        try await fixture.cache.removeReusableCopies()
+        let reopened = try await fixture.open()
+        #expect(await reopened.editorData(noteId: id) == nil)
+        #expect(await reopened.pendingCount() == 0)
+        #expect(await reopened.confirmedEditorData(noteId: id) == Self.editor(8, text: "Table and citation"))
+        let tree = try #require(await reopened.confirmedTree())
+        #expect(tree.objectValue?["notes"]?.arrayValue?.map { $0.objectValue?["id"]?.stringValue } == [id])
+        #expect(Set(tree.objectValue?["folders"]?.arrayValue?.compactMap { $0.objectValue?["id"]?.stringValue } ?? []) == ["root", "folder-a"])
+        #expect(tree.objectValue?["mobileSourceScope"] == .string("authoredDocuments"))
+        let bytes = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        #expect(throws: DesktopBridgeError.self) { try CompanionDocumentOutbox(cache: fixture.cache, vaultId: "vault-b", data: bytes) }
+        #expect(await reopened.confirmedEditorData(noteId: "unrelated") == nil)
+    }
+
+    @Test("a stale offline tree cannot replace authored metadata or structured edits and a live tree cannot resurrect missing notes")
+    func confirmedTreeEpoch() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }; let queue = try await fixture.open()
+        let original = try await queue.create(input: Self.creationInput), id = try #require(original.objectValue?["id"]?.stringValue)
+        try await queue.synchronize { request in
+            var response = Self.receipt(request, revision: 8).objectValue!
+            response["note"] = original; return .object(response)
+        }
+        var canonical = original.objectValue!; canonical["folderId"] = .string("new-folder")
+        let folder: JSONValue = .object(["id": .string("new-folder"), "parentId": .null, "title": .string("Current folder")])
+        try await queue.rememberTree(.object(["notes": .array([.object(canonical)]), "folders": .array([folder])]))
+        try await queue.seed(noteId: id, editorData: Self.editor(9, text: "Latest confirmed text"))
+        let stale: JSONValue = .object(["notes": .array([original]), "folders": .array([])])
+        try await queue.rememberTree(stale, authoritative: false)
+        try await queue.seed(noteId: id, editorData: Self.editor(8, text: "Stale cache"))
+        let overlay = await queue.overlayTree(stale, includeConfirmedEdits: true)
+        #expect(overlay.objectValue?["notes"]?.arrayValue?.first?.objectValue?["folderId"] == .string("new-folder"))
+        #expect(overlay.objectValue?["notes"]?.arrayValue?.first?.objectValue?["content"] == .string("Latest confirmed text"))
+        #expect(overlay.objectValue?["folders"] == .array([folder]))
+        let live = await queue.overlayTree(.object(["notes": .array([]), "folders": .array([])]))
+        #expect(live.objectValue?["notes"] == .array([]))
+        canonical["trashedAt"] = .string("2026-10-11T09:00:00Z")
+        try await queue.rememberTree(.object(["notes": .array([.object(canonical)]), "folders": .array([folder])]))
+        #expect(await queue.confirmedTree() == nil)
+        #expect(await queue.confirmedTree(includeTrashed: true)?.objectValue?["notes"]?.arrayValue?.count == 1)
+    }
+
+    @Test("legacy durable queues migrate without losing in-flight identity or content")
+    func legacyStorage() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }; let queue = try await fixture.open()
+        try await queue.seed(noteId: "legacy", editorData: Self.editor())
+        _ = try await queue.save(noteId: "legacy", input: Self.input(7, text: "Legacy table"))
+        let stored = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        let records = try #require(try JSONDecoder.nodus.decode(JSONValue.self, from: stored).objectValue?["records"])
+        _ = try await fixture.cache.store(JSONEncoder.nodus.encode(records), vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey)
+        let reopened = try await fixture.open()
+        #expect(await reopened.editorData(noteId: "legacy")?.objectValue?["contentMarkdown"] == .string("Legacy table"))
+        try await reopened.synchronize { Self.receipt($0, revision: 8) }
+        #expect(try await fixture.open().confirmedEditorData(noteId: "legacy") == Self.editor(8, text: "Legacy table"))
     }
 
     @Test("authored ideas retain both identities, source ownership and local dossier after offline restart")
@@ -122,6 +193,8 @@ struct CompanionDocumentOutboxTests {
             }
         }
         #expect(await reopened.pendingCount() == 1); #expect(await reopened.editorData(noteId: id) != nil)
+        #expect(await reopened.confirmedEditorData(noteId: id) == nil)
+        #expect(await reopened.confirmedTree() == nil)
         try await reopened.synchronize { request in
             await requests.append(request)
             var response = Self.receipt(request, revision: 8).objectValue!; response["note"] = note
@@ -346,6 +419,8 @@ struct CompanionDocumentOutboxTests {
         await #expect(throws: APIError.self) { try await queue.synchronize { _ in throw APIError(status: 409, code: "revision_conflict", details: ["remote": remote]) } }
         #expect(try await queue.resolve(noteId: "note-a", keepMobile: false) == remote)
         #expect(await queue.editorData(noteId: "note-a") == nil)
-        #expect(try await fixture.open().pendingCount() == 0)
+        let reopened = try await fixture.open()
+        #expect(await reopened.pendingCount() == 0)
+        #expect(await reopened.confirmedEditorData(noteId: "note-a") == remote)
     }
 }

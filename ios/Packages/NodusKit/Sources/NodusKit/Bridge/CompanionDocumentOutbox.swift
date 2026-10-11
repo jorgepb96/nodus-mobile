@@ -26,22 +26,50 @@ public actor CompanionDocumentOutbox {
         var creation: JSONValue?
         var createdNote: JSONValue?
     }
+    private struct Authored: Codable {
+        var editorData: JSONValue
+        var note: JSONValue?
+    }
+    private struct StoredState: Codable {
+        var version: Int
+        var vaultId: String
+        var records: [String: Record]
+        var authored: [String: Authored]
+        var folders: [String: JSONValue]?
+    }
     private let cache: PrivateBridgeCache
     private let vaultId: String
     private var records: [String: Record]
+    private var authored: [String: Authored] = [:]
+    private var knownFolders: [String: JSONValue] = [:]
+    private var knownNotes: [String: JSONValue] = [:]
     private var baselines: [String: JSONValue] = [:]
     private var acknowledgedLocalRevisions: [String: Int] = [:]
     private var synchronizing = false
+    private var diskTask: Task<Void, any Error>?
+    private var diskTaskId: UUID?
     static let storageKey = "companion-documents-v1"
 
     init(cache: PrivateBridgeCache, vaultId: String, data: Data?) throws {
         self.cache = cache; self.vaultId = vaultId
-        records = try data.map { try JSONDecoder.nodus.decode([String: Record].self, from: $0) } ?? [:]
+        if let data, let state = try? JSONDecoder.nodus.decode(StoredState.self, from: data), state.version == 2 {
+            guard state.vaultId == vaultId else { throw DesktopBridgeError.malformedResponse }
+            records = state.records; authored = state.authored; knownFolders = state.folders ?? [:]
+            for (id, source) in authored {
+                guard source.editorData.objectValue?["revision"]?.intValue.map({ $0 >= 0 }) == true,
+                      source.editorData.objectValue?["documentTitle"]?.stringValue != nil,
+                      source.editorData.objectValue?["contentMarkdown"]?.stringValue != nil,
+                      source.note == nil || source.note?.objectValue?["id"] == .string(id) else { throw DesktopBridgeError.malformedResponse }
+            }
+            for (id, folder) in knownFolders {
+                guard !id.isEmpty, folder.objectValue?["id"] == .string(id), Self.validParent(folder.objectValue?["parentId"]) else { throw DesktopBridgeError.malformedResponse }
+            }
+        } else { records = try data.map { try JSONDecoder.nodus.decode([String: Record].self, from: $0) } ?? [:] }
     }
     public static func operationKey(_ method: String, _ args: [JSONValue]) throws -> String {
         "operation:\(method):" + SHA256.hash(data: try JSONEncoder.nodus.encode(args)).map { String(format: "%02x", $0) }.joined()
     }
-    public func seed(noteId: String, editorData: JSONValue) throws {
+    public func seed(noteId: String, editorData: JSONValue) async throws {
         guard let revision = editorData.objectValue?["revision"]?.intValue, revision >= 0,
               editorData.objectValue?["documentTitle"]?.stringValue != nil,
               editorData.objectValue?["contentMarkdown"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
@@ -50,6 +78,55 @@ public actor CompanionDocumentOutbox {
             if revision != previous { acknowledgedLocalRevisions[noteId] = nil }
         }
         baselines[noteId] = editorData
+        if var owned = authored[noteId], editorData != owned.editorData,
+           revision >= (owned.editorData.objectValue?["revision"]?.intValue ?? 0) {
+            owned.editorData = editorData; authored[noteId] = owned; try await persist()
+        }
+    }
+    public func confirmedEditorData(noteId: String) -> JSONValue? { authored[noteId]?.editorData }
+    private static func validParent(_ parent: JSONValue?) -> Bool {
+        parent == nil || parent == .null || parent?.stringValue.map({ !$0.isEmpty }) == true
+    }
+    public func rememberTree(_ tree: JSONValue, authoritative: Bool = true) async throws {
+        guard let folders = tree.objectValue?["folders"]?.arrayValue, let notes = tree.objectValue?["notes"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
+        var folderIds = Set<String>(), noteIds = Set<String>()
+        for folder in folders {
+            guard let id = folder.objectValue?["id"]?.stringValue, !id.isEmpty, folderIds.insert(id).inserted,
+                  Self.validParent(folder.objectValue?["parentId"]) else { throw DesktopBridgeError.malformedResponse }
+        }
+        for note in notes {
+            guard let id = note.objectValue?["id"]?.stringValue, !id.isEmpty, noteIds.insert(id).inserted,
+                  Self.validParent(note.objectValue?["folderId"]) else { throw DesktopBridgeError.malformedResponse }
+        }
+        var changed = false
+        for folder in folders {
+            let id = folder.objectValue!["id"]!.stringValue!
+            if (authoritative || knownFolders[id] == nil), knownFolders[id] != folder { knownFolders[id] = folder; changed = true }
+        }
+        for note in notes {
+            let id = note.objectValue!["id"]!.stringValue!
+            if authoritative || knownNotes[id] == nil { knownNotes[id] = note }
+            if authoritative, var source = authored[id], source.note != note {
+                source.note = note; authored[id] = source; changed = true
+            }
+        }
+        if changed, !authored.isEmpty { try await persist() }
+    }
+    private func authoredFolders() -> [String: JSONValue] {
+        var result: [String: JSONValue] = [:]
+        for note in authored.values.compactMap(\.note) + records.values.compactMap(\.createdNote) {
+            var next = note.objectValue?["folderId"]?.stringValue, seen = Set<String>()
+            while let id = next, seen.insert(id).inserted, seen.count <= 256, let folder = knownFolders[id] {
+                result[id] = folder; next = folder.objectValue?["parentId"]?.stringValue
+            }
+        }
+        return result
+    }
+    public func confirmedTree(includeTrashed: Bool = false) -> JSONValue? {
+        let notes = authored.keys.sorted().compactMap { authored[$0]?.note }.filter { includeTrashed || Self.isVisibleNote($0) }
+        guard !notes.isEmpty else { return nil }
+        let folders = authoredFolders()
+        return overlayTree(.object(["notes": .array(notes), "folders": .array(folders.keys.sorted().compactMap { folders[$0] }), "mobileSourceScope": .string("authoredDocuments")]), includeConfirmedEdits: true, includeTrashed: includeTrashed)
     }
     public func editorData(noteId: String) -> JSONValue? {
         guard let record = records[noteId] else { return nil }
@@ -63,17 +140,25 @@ public actor CompanionDocumentOutbox {
         if let remote = record.remote { editor["mobileConflictRemote"] = remote }
         return .object(editor)
     }
-    public func overlayTree(_ tree: JSONValue) -> JSONValue {
+    private static func isVisibleNote(_ note: JSONValue) -> Bool { note.objectValue?["trashedAt"] == nil || note.objectValue?["trashedAt"] == .null }
+    public func overlayTree(_ tree: JSONValue, includeConfirmedEdits: Bool = false, includeTrashed: Bool = false) -> JSONValue {
         guard var object = tree.objectValue, let notes = object["notes"]?.arrayValue else { return tree }
         let present = Set(notes.compactMap { $0.objectValue?["id"]?.stringValue })
-        let created = records.keys.sorted().filter { !present.contains($0) }.compactMap { records[$0]?.createdNote }
+        var additions: [String: JSONValue] = includeConfirmedEdits ? authored.compactMapValues(\.note) : [:]
+        for id in records.keys { if let note = records[id]?.createdNote { additions[id] = note } }
+        let created = additions.keys.sorted().filter { !present.contains($0) }.compactMap { additions[$0] }.filter { includeTrashed || Self.isVisibleNote($0) }
         object["notes"] = .array((notes + created).map { note in
-            guard var value = note.objectValue, let id = value["id"]?.stringValue,
-                  let editor = editorData(noteId: id)?.objectValue else { return note }
+            guard let id = note.objectValue?["id"]?.stringValue,
+                  let editor = (editorData(noteId: id) ?? (includeConfirmedEdits || !present.contains(id) ? confirmedEditorData(noteId: id) : nil))?.objectValue else { return note }
+            var value = (includeConfirmedEdits ? authored[id]?.note : nil)?.objectValue ?? note.objectValue!
             value["title"] = editor["documentTitle"]; value["content"] = editor["contentMarkdown"]
-            value["editorRevision"] = editor["revision"]; value["mobileSyncState"] = editor["mobileSyncState"]
+            value["editorRevision"] = editor["revision"]; value["mobileSyncState"] = editor["mobileSyncState"] ?? .string("available")
             return .object(value)
         })
+        if includeConfirmedEdits, let folders = object["folders"]?.arrayValue {
+            let retained = authoredFolders(), presentFolders = Set(folders.compactMap { $0.objectValue?["id"]?.stringValue })
+            object["folders"] = .array(folders.map { retained[$0.objectValue?["id"]?.stringValue ?? ""] ?? $0 } + retained.keys.sorted().filter { !presentFolders.contains($0) }.compactMap { retained[$0] })
+        }
         return .object(object)
     }
     /// A new authored document has a stable identity before any Mac request.
@@ -229,6 +314,8 @@ public actor CompanionDocumentOutbox {
                       let committed = response.objectValue?["editorData"],
                       let revision = committed.objectValue?["revision"]?.intValue, revision >= 0,
                       records[noteId] != nil else { throw DesktopBridgeError.malformedResponse }
+                guard committed.objectValue?["documentTitle"]?.stringValue != nil, committed.objectValue?["contentMarkdown"]?.stringValue != nil,
+                      response.objectValue?["note"] == nil || response.objectValue?["note"]?.objectValue?["id"] == .string(noteId) else { throw DesktopBridgeError.malformedResponse }
                 if request.creation != nil || records[noteId]?.createdNote != nil {
                     guard let note = response.objectValue?["note"], note.objectValue?["id"]?.stringValue == noteId else { throw DesktopBridgeError.malformedResponse }
                     if let globalId = request.creation?.objectValue?["globalId"] {
@@ -236,6 +323,7 @@ public actor CompanionDocumentOutbox {
                               note.objectValue?["source"]?.objectValue?["ref"] == globalId,
                               note.objectValue?["source"]?.objectValue?["note"] == .string("manual-idea") else { throw DesktopBridgeError.malformedResponse }
                     }
+                    authored[noteId] = Authored(editorData: committed, note: note); try await persist()
                     // A confirmed new document must remain discoverable after the
                     // queue retires, including when its selected catalogue predates it.
                     for args: [JSONValue] in [[], [.bool(true)]] {
@@ -248,6 +336,9 @@ public actor CompanionDocumentOutbox {
                             try await cache.store(JSONEncoder.nodus.encode(JSONValue.object(tree)), vaultId: vaultId, domain: .corpus, recordId: key)
                         }
                     }
+                } else {
+                    authored[noteId] = Authored(editorData: committed, note: response.objectValue?["note"] ?? authored[noteId]?.note ?? knownNotes[noteId])
+                    try await persist()
                 }
                 // Make a confirmed document consultable before retiring its
                 // durable queue. Failure here leaves the same replayable receipt.
@@ -272,7 +363,10 @@ public actor CompanionDocumentOutbox {
     /// identity. Neither side silently overwrites the other's changes.
     public func resolve(noteId: String, keepMobile: Bool) async throws -> JSONValue {
         guard var record = records[noteId], record.state == .conflict, let remote = record.remote,
-              let revision = remote.objectValue?["revision"]?.intValue, revision >= 0 else { throw DesktopBridgeError.malformedResponse }
+              let revision = remote.objectValue?["revision"]?.intValue, revision >= 0,
+              remote.objectValue?["documentTitle"]?.stringValue != nil,
+              remote.objectValue?["contentMarkdown"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
+        authored[noteId] = Authored(editorData: remote, note: authored[noteId]?.note ?? record.createdNote ?? knownNotes[noteId])
         try await cache.store(JSONEncoder.nodus.encode(remote), vaultId: vaultId, domain: .corpus,
                               recordId: Self.operationKey("getWorkspaceNoteEditorData", [.string(noteId)]))
         baselines[noteId] = remote
@@ -286,7 +380,16 @@ public actor CompanionDocumentOutbox {
         return result
     }
     private func persist() async throws {
-        try await cache.store(JSONEncoder.nodus.encode(records), vaultId: vaultId, domain: .writing, recordId: Self.storageKey)
+        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders()))
+        let previous = diskTask, id = UUID(), cache = self.cache, vault = vaultId
+        let task = Task {
+            if let previous { _ = try? await previous.value }
+            _ = try await cache.store(bytes, vaultId: vault, domain: .writing, recordId: Self.storageKey)
+        }
+        diskTask = task; diskTaskId = id
+        do { try await task.value }
+        catch { if diskTaskId == id { diskTask = nil; diskTaskId = nil }; throw error }
+        if diskTaskId == id { diskTask = nil; diskTaskId = nil }
     }
     private static func isTransportLoss(_ error: any Error) -> Bool {
         if error is CancellationError { return true }

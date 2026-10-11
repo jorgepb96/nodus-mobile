@@ -2229,6 +2229,24 @@
       "evidence": []
     },
     {
+      "id": "sync.scriptor.confirmedStructuredAuthorshipSurvivesReadCacheExpiry",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.scriptor.actualOwnedFolderAncestryAndOfflineCatalogue",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.scriptor.authoredVaultIsolationAndLegacyQueueMigration",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "sync.documents.parentsAppliedBeforeDependentContent",
       "category": "sync",
       "result": "pending",
