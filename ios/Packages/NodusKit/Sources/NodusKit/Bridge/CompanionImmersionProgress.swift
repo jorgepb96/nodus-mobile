@@ -89,6 +89,7 @@ public actor CompanionImmersionProgressOutbox {
         public let state: State
         public let issue: String?
         public let remote: CompanionImmersionProgress.Snapshot?
+        public let hasMacBaseline: Bool
     }
     private struct Sending: Codable { let request: CompanionImmersionProgress.Request, generation: Int }
     private struct Record: Codable {
@@ -114,7 +115,7 @@ public actor CompanionImmersionProgressOutbox {
     public func entry(sessionId: String, sourceRevision: String) throws -> Entry? {
         guard let record = records[key(sessionId)] else { return nil }
         guard record.sourceRevision == sourceRevision else { throw APIError(status: 409, code: "immersion_plan_changed", message: "El itinerario ha cambiado. Tus respuestas anteriores siguen conservadas en este dispositivo.") }
-        return .init(progress: record.draft, state: record.state, issue: record.issue, remote: record.remote)
+        return .init(progress: record.draft, state: record.state, issue: record.issue, remote: record.remote, hasMacBaseline: record.baselineRevision != nil)
     }
     public func seed(_ snapshot: CompanionImmersionProgress.Snapshot) async throws {
         try snapshot.validate(sessionId: snapshot.sessionId)
@@ -170,6 +171,17 @@ public actor CompanionImmersionProgressOutbox {
     public func restart(sessionId: String, sourceRevision: String) async throws {
         var record = try writable(sessionId: sessionId, sourceRevision: sourceRevision)
         record.draft = .init(); try await save(sessionId: sessionId, record: record)
+    }
+    /// Renderer navigation may carry an older answer array. Responses are
+    /// authored through `answer`; only an explicit restart clears them.
+    public func navigate(sessionId: String, sourceRevision: String, progress: CompanionImmersionProgress.Progress) async throws {
+        var record = try writable(sessionId: sessionId, sourceRevision: sourceRevision)
+        record.draft.currentStep = progress.currentStep
+        record.draft.furthestStep = max(record.draft.furthestStep, progress.furthestStep)
+        record.draft.completedSteps = Array(Set(record.draft.completedSteps + progress.completedSteps)).sorted()
+        record.draft.startedAt = record.draft.startedAt ?? progress.startedAt
+        record.draft.finishedAt = record.draft.finishedAt ?? progress.finishedAt
+        try await save(sessionId: sessionId, record: record)
     }
     public func retry(sessionId: String) async throws {
         let identity = key(sessionId)

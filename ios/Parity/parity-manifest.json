@@ -1201,6 +1201,24 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "sync.immersion.sharedPlayerProgress",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.immersion.progressGrant",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.immersion.completeCatalogue",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

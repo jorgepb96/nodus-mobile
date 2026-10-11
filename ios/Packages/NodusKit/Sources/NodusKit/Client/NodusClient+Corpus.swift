@@ -298,6 +298,28 @@ public extension NodusClient {
     func immersionSession(_ id: String, in spaceId: String) async throws -> Row {
         try await special(.immersion, id: id, in: spaceId)
     }
+    /// Metadata only, with every page from the same current publication.
+    func allImmersionSessions(in spaceId: String) async throws -> [Row] {
+        var result: [Row] = [], ids = Set<String>()
+        var revision: String?, total: Int?
+        while true {
+            try Task.checkCancellation()
+            let page = try await immersionSessions(in: spaceId, limit: 100, offset: result.count)
+            guard page.offset == result.count, page.total >= result.count + page.items.count,
+                  revision == nil || revision == page.revision, total == nil || total == page.total,
+                  !page.hasMore || !page.items.isEmpty else {
+                throw APIError(status: 409, code: "immersion_catalogue_changed", message: "El catálogo de inmersión cambió durante la carga. Vuelve a intentarlo.")
+            }
+            revision = page.revision; total = page.total
+            for row in page.items {
+                guard let id = row.string("id"), !id.isEmpty, ids.insert(id).inserted else { throw DesktopBridgeError.malformedResponse }
+                result.append(row)
+            }
+            if !page.hasMore {
+                guard result.count == page.total else { throw DesktopBridgeError.malformedResponse }; return result
+            }
+        }
+    }
 
     /// `GET .../search?q=&limit=` — lexical, across seventeen tables including the
     /// worldbuilding ones that have no collection of their own. Limit defaults to 20, caps

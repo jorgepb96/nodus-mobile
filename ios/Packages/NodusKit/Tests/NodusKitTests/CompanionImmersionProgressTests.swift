@@ -86,6 +86,23 @@ struct CompanionImmersionProgressTests {
         #expect(await probe.first?.expectedProgressRevision == remote.progressRevision)
         #expect(try await reopened.entry(sessionId: "session", sourceRevision: sourceRevision)?.state == .saved)
     }
+    @Test("shared player navigation preserves a newer authored answer")
+    func staleNavigation() async throws {
+        let (cache, directory, keychain, id) = try setup()
+        defer { try? FileManager.default.removeItem(at: directory); try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }
+        let store = try await outbox(cache)
+        try await store.prepare(sessionId: "session", sourceRevision: sourceRevision)
+        try await store.answer(sessionId: "session", sourceRevision: sourceRevision, record: answer("1"))
+        var navigation = CompanionImmersionProgress.Progress()
+        navigation.currentStep = 2; navigation.furthestStep = 2; navigation.completedSteps = [1]
+        try await store.navigate(sessionId: "session", sourceRevision: sourceRevision, progress: navigation)
+        let reopened = try await outbox(cache)
+        let entry = try await reopened.entry(sessionId: "session", sourceRevision: sourceRevision)
+        #expect(entry?.progress.answers.first?.answer == "1")
+        #expect(entry?.progress.currentStep == 2)
+        #expect(entry?.progress.completedSteps == [1])
+    }
+
     @Test("pending autonomous sessions wait for their canonical generation receipt")
     func pendingGeneration() async throws {
         let (cache, directory, keychain, id) = try setup()

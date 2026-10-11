@@ -158,10 +158,7 @@ struct ImmersionLibraryView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            rows = try await session.client.immersionSessions(
-                in: session.connection.spaceId,
-                limit: 100
-            ).items
+            rows = try await session.client.allImmersionSessions(in: session.connection.spaceId)
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             rows = []
@@ -756,7 +753,7 @@ private struct ImmersionStepControl: View {
     }
 }
 
-private struct ImmersionProgressStatus: View {
+struct ImmersionProgressStatus: View {
     let controller: ImmersionProgressController
     let questions: [ImmersionPlan.Question]
     let totalSteps: Int
@@ -767,7 +764,7 @@ private struct ImmersionProgressStatus: View {
         if controller.state == .conflict { return "El progreso cambió en el Mac" }
         if controller.state == .blocked { return "Progreso conservado · sincronización bloqueada" }
         if controller.state == .pending { return controller.canSync ? "Guardado en este dispositivo · pendiente de sincronizar" : "Guardado en este dispositivo" }
-        return controller.canSync && !controller.offline ? "Progreso guardado" : "Guardado en este dispositivo"
+        return controller.canSync && controller.hasMacBaseline && !controller.offline ? "Progreso guardado" : "Guardado en este dispositivo"
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

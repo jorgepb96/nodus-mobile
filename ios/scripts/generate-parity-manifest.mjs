@@ -200,6 +200,8 @@ function operationMatrix(routes) {
       ['consultation.immersion.privateProgress', 'consultation'], ['consultation.immersion.quizPersistence', 'consultation'],
       ['consultation.immersion.restart', 'consultation'], ['sync.immersion.answers', 'sync'],
       ['sync.immersion.conflicts', 'sync'], ['sync.immersion.pendingGenerationProgress', 'sync'],
+      ['sync.immersion.sharedPlayerProgress', 'sync'], ['consultation.immersion.progressGrant', 'consultation'],
+      ['consultation.immersion.completeCatalogue', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

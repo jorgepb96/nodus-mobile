@@ -221,6 +221,11 @@ progress exposes both answer sets for explicit review. Pending autonomous sessio
 progress under the generation identity until its canonical session receipt arrives. Reflections
 are never evaluated by or sent to a model, matching Desktop. Full station evidence, commentary
 and source links remain available in the native reader. The new contracts are prepared, not run.
+The shared immersion player uses the same private journal for navigation, answers and restart.
+Read-only grants omit private progress, and reusable reading downloads retain only the plan;
+selected private progress stays in durable authored storage. Metadata catalogues include every
+page. Navigation messages preserve newer answers rather than replaying stale answer arrays.
+These additional contracts are prepared for the final local campaign, not yet executed.
 Completed autonomous writing assistance opens its durable native result directly from Scriptor
 while publication is pending; it does not fabricate a Mac log ID or replace the original document.
 

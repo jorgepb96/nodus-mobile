@@ -66,9 +66,19 @@ struct SharedDesktopSurface: View {
     @State private var writingResult: MobileWritingResultTarget?
     @State private var autonomousStatus: String?
     @State private var offlineCopy = false
+    @State private var immersionController: ImmersionProgressController?
+    @State private var immersionPlan: ImmersionPlan?
+    @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }) { kind, id, location, quote in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+            do {
+                guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
+                let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
+                immersionPlan = plan; immersionController = controller
+                Task { await controller.load(fetchMacProgress: false) }
+            } catch { issue = error.localizedDescription }
+        }) { kind, id, location, quote in
             let path = kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
@@ -86,6 +96,13 @@ struct SharedDesktopSurface: View {
                 }.padding(.leading, 12).padding(.vertical, 4).background(.thinMaterial)
             }
             CompanionResultsButton(session: session, surface: surface, generationStatus: autonomousStatus)
+            if surface == .immersion, let controller = immersionController {
+                Button { showImmersionProgress = true } label: {
+                    Label(controller.state == .conflict ? "Revisar progreso de inmersión" : controller.state == .pending ? "Progreso guardado · pendiente de sincronizar" : "Progreso de inmersión",
+                        systemImage: controller.state == .conflict || controller.state == .blocked ? "exclamationmark.arrow.triangle.2.circlepath" : "checkmark.circle")
+                        .font(.caption).fixedSize(horizontal: false, vertical: true).frame(minHeight: 44).frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(.horizontal, 12).background(.thinMaterial).accessibilityIdentifier("shared-immersion-private-progress")
+            }
             if offlineCopy {
                 Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
@@ -100,6 +117,16 @@ struct SharedDesktopSurface: View {
             }
         }
         .sheet(item: $exportedURL) { ActivityShareSheet(items: [$0]) }
+        .sheet(isPresented: $showImmersionProgress) {
+            NavigationStack {
+                if let controller = immersionController, let plan = immersionPlan {
+                    ScrollView { ImmersionProgressStatus(controller: controller, questions: plan.stations.flatMap(\.quiz) + plan.exam,
+                        totalSteps: plan.stations.count + 4, accent: session.accent).padding() }
+                        .navigationTitle(plan.title).navigationBarTitleDisplayMode(.inline).nodusModalClose(accent: session.accent)
+                }
+            }.presentationDetents([.large]).presentationDragIndicator(.visible)
+        }
+        .onChange(of: session.companionImmersionProgressRevision) { _, _ in Task { await immersionController?.reloadLocal() } }
         .sheet(item: $writingResult) { target in
             NavigationStack {
                 CompanionGeneratedResultView(session: session, request: target.request, checkpoint: target.checkpoint)
@@ -226,9 +253,10 @@ private struct DesktopWebView: UIViewRepresentable {
     let onOpenSource: (SourceDocumentTarget) -> Void
     let onOpenAudio: (SavedAudioTarget) -> Void
     let onOpenWritingResult: (MobileWritingResultTarget) -> Void
+    let onImmersionSource: (String, JSONValue) -> Void
     let onNavigate: (String, String, String?, String?) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onNavigate: onNavigate) }
+    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onImmersionSource: onImmersionSource, onNavigate: onNavigate) }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "nodus")
@@ -349,6 +377,8 @@ private struct DesktopWebView: UIViewRepresentable {
         let onOpenSource: (SourceDocumentTarget) -> Void
         let onOpenAudio: (SavedAudioTarget) -> Void
         let onOpenWritingResult: (MobileWritingResultTarget) -> Void
+        let onImmersionSource: (String, JSONValue) -> Void
+        private lazy var immersionProgress = ImmersionSurfaceProgressBridge(session: session)
         var tasks: [Task<Void, Never>] = []
         var runningJobs: [String: (DesktopBridgeClient, String, String)] = [:]
         private var persistedSurfaceCache: PrivateBridgeCache?
@@ -370,7 +400,7 @@ private struct DesktopWebView: UIViewRepresentable {
             webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:publication:changed',args:[\(payload)]});", completionHandler: nil)
             if session.companionPublicationUpdates.contains(where: { $0.objectValue?["id"]?.stringValue == autonomousGenerationId && $0.objectValue?["state"] == .string("available") }) { onAutonomousStatus(nil) }
         }
-        init(session: SpaceSession, ai: AISettings, onError: @escaping (String) -> Void, onExport: @escaping (URL) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onNavigate = onNavigate }
+        init(session: SpaceSession, ai: AISettings, onError: @escaping (String) -> Void, onExport: @escaping (URL) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
                 let id = body["id"] as? String, let method = body["method"] as? String,
@@ -380,6 +410,7 @@ private struct DesktopWebView: UIViewRepresentable {
                 do {
                     let args = try JSONDecoder.nodus.decode([JSONValue].self, from: JSONSerialization.data(withJSONObject: input))
                     var value: JSONValue
+                    var immersionDefinitionFromDevice = false
                     if method == "persistSurfaceStorage" {
                         try await persistSurfaceStorage(args.first ?? .null); value = .null
                     } else if method == "openMobileWritingResult", args.count == 1 {
@@ -492,7 +523,9 @@ private struct DesktopWebView: UIViewRepresentable {
                                 throw DesktopBridgeError.permissionDenied
                             }
                         }
-                        if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
+                        if ImmersionSurfaceProgressBridge.writeMethods.contains(method) {
+                            value = try await immersionProgress.write(method: method, args: args, pairing: pairing, vaultId: vaultId)
+                        } else if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
                             let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
                             if localCreation, args.count == 1 {
@@ -600,7 +633,13 @@ private struct DesktopWebView: UIViewRepresentable {
                             do {
                                 value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification && !hasIdeas && !hasPortableSource ? nil : 4)
                                 onOfflineCopy(false)
-                                if Self.operationDomains[method] == "corpus" { try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key) }
+                                if Self.operationDomains[method] == "corpus" {
+                                    var reusable = value
+                                    if method == "getImmersionSession", var definition = value.objectValue {
+                                        definition["progress"] = nil; reusable = .object(definition)
+                                    }
+                                    try await cache.store(JSONEncoder.nodus.encode(reusable), vaultId: vaultId, domain: .corpus, recordId: key)
+                                }
                             } catch {
                                 guard Self.operationDomains[method] == "corpus", isPrivateBridgeOffline(error) else { throw error }
                                 let catalogue = hasCatalogue ? try await companionDownloadedCatalogue(cache, vaultId: vaultId, method: method) : nil
@@ -612,9 +651,14 @@ private struct DesktopWebView: UIViewRepresentable {
                                 else if let cached { value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached) }
                                 else if let verification { value = verification }
                                 else { throw error }
+                                if method == "getImmersionSession" { immersionDefinitionFromDevice = true }
                                 onOfflineCopy(true)
                             }
                             if method == "getSettings", session.aiExecutionMode == .autonomous { value = try autonomous.portableSettings(value) }
+                        }
+                        if method == "getImmersionSession", args.count == 1, let id = args[0].stringValue {
+                            value = try await immersionProgress.read(value, id: id, client: client, pairing: pairing, vaultId: vaultId, fetchMacProgress: !immersionDefinitionFromDevice)
+                            if pairing.domains.contains(.writing), let plan = value.objectValue?["plan"] { onImmersionSource(id, plan) }
                         }
                         if ["exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf"].contains(method), case .object(var file) = value,
                            let exportId = file["exportId"]?.stringValue, let name = file["filename"]?.stringValue, let hash = file["sha256"]?.stringValue {

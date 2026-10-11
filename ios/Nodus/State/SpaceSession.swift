@@ -50,6 +50,7 @@ final class SpaceSession {
     /// acknowledgement or invalidating the mounted editor/canvas.
     func didSaveCompanionResult() { companionResultRevision += 1 }
     func didChangeCompanionDownloads() { companionDownloadRevision += 1 }
+    func didChangeImmersionProgress() { companionImmersionProgressRevision += 1 }
 
     /// Told to `AppModel` so the space picker can say the same thing this screen says.
     private let onFailure: (ConnectionFailure) -> Void

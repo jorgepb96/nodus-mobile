@@ -190,7 +190,18 @@ struct CompanionResearchDownloadsView: View {
             }
             func fetch(_ method: String, _ args: [JSONValue]) async throws -> JSONValue {
                 try Task.checkCancellation()
-                let value = try await client.operation(vaultId: vault, method: method, args: args)
+                var value = try await client.operation(vaultId: vault, method: method, args: args)
+                if method == "getImmersionSession", let id = args.first?.stringValue, var definition = value.objectValue, let plan = definition["plan"] {
+                    let (_, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+                    if pairing.domains.contains(.writing) {
+                        let progress = try await client.immersionProgress(vaultId: vault, sessionId: id)
+                        let expected = try CompanionImmersionProgress.sourceRevision(plan: plan)
+                        guard progress.sourceRevision == expected else { throw DesktopBridgeError.malformedResponse }
+                        let store = try await CompanionImmersionProgressOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault)
+                        try await store.seed(progress)
+                    }
+                    definition["progress"] = nil; value = .object(definition)
+                }
                 try add(method, args, value)
                 if !["getDecorativeImageDataUrl", "getSettings"].contains(method) { collectCitations(value) }
                 return value

@@ -17,6 +17,7 @@ final class ImmersionProgressController {
     private(set) var loading = true
     private(set) var saving = false
     private(set) var offline = false
+    private(set) var hasMacBaseline = false
     private(set) var canSync = false
 
     init(session: SpaceSession, sessionId: String, plan: ImmersionPlan, publicationId: String? = nil) throws {
@@ -25,7 +26,7 @@ final class ImmersionProgressController {
         sourceRevision = try CompanionImmersionProgress.sourceRevision(plan: plan.source)
         totalSteps = plan.stations.count + 4
     }
-    func load() async {
+    func load(fetchMacProgress: Bool = true) async {
         loading = true; issue = nil; offline = false; canSync = false
         defer { loading = false }
         do {
@@ -44,7 +45,7 @@ final class ImmersionProgressController {
                        let plan = result.result?.objectValue?["plan"], let revision = try? CompanionImmersionProgress.sourceRevision(plan: plan) {
                         try await store.associate(publicationId: publicationId, sessionId: id, sourceRevision: revision)
                     }
-                } else {
+                } else if fetchMacProgress {
                     do {
                         let snapshot = try await client.immersionProgress(vaultId: vault, sessionId: sessionId)
                         guard snapshot.sourceRevision == sourceRevision else { throw APIError(status: 409, code: "immersion_plan_changed", message: "El itinerario cambió en el Mac. Vuelve a abrir su versión actual antes de sincronizar las respuestas.") }
@@ -63,6 +64,7 @@ final class ImmersionProgressController {
         do {
             if let entry = try await outbox.entry(sessionId: sessionId, sourceRevision: sourceRevision) {
                 progress = entry.progress; state = entry.state; remote = entry.remote; issue = entry.issue
+                hasMacBaseline = entry.hasMacBaseline
             }
         } catch { issue = error.localizedDescription }
     }
