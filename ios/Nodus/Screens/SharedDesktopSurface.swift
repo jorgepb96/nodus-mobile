@@ -4,7 +4,7 @@ import NodusUI
 import SwiftUI
 import WebKit
 
-enum DesktopSurface: String { case graph, dictionary, workspace, argument, deepResearch, immersion, chat }
+enum DesktopSurface: String { case graph, dictionary, workspace, argument, deepResearch, immersion, chat, writingWorkshop }
 
 private struct MobileWritingResultTarget: Identifiable {
     let request: DesktopJobLedger.Request

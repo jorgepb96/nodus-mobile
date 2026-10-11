@@ -1,10 +1,13 @@
+import CryptoKit
 import NodusKit
+import NodusAI
 import NodusUI
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct WritingWorkshopMobileView: View {
     let session: SpaceSession
+    @Environment(\.horizontalSizeClass) private var horizontalSize
 
     @State private var tables: [String: [Row]] = [:]
     @State private var drafts: [AcademicWritingDraftSummary] = []
@@ -13,6 +16,8 @@ struct WritingWorkshopMobileView: View {
     @State private var loading = true
     @State private var message: String?
     @State private var error: String?
+    @State private var reading: AcademicWritingDraftSummary?
+    @State private var usingDownloads = false
 
     private var selected: AcademicWritingDraftSummary? {
         drafts.first { $0.id == selectedId } ?? drafts.first
@@ -31,6 +36,7 @@ struct WritingWorkshopMobileView: View {
                             .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
                     }
                 )
+                CompanionResultsButton(session: session, surface: .writingWorkshop, generationStatus: nil)
                 if let error { NodusNotice(tone: .blocked, title: "Writing Workshop unavailable", message: LocalizedStringKey(error)) }
                 if let message { NodusNotice(tone: .info, title: "Desktop action", message: LocalizedStringKey(message)) }
                 if loading && drafts.isEmpty { HStack { Spacer(); ProgressView().tint(session.accent); Spacer() }.padding(40) }
@@ -42,7 +48,10 @@ struct WritingWorkshopMobileView: View {
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 9)], spacing: 9) {
                         ForEach(drafts) { draft in
-                            Button { selectedId = draft.id } label: {
+                            Button {
+                                selectedId = draft.id
+                                if UIDevice.current.userInterfaceIdiom == .phone || horizontalSize == .compact { reading = draft }
+                            } label: {
                                 VStack(alignment: .leading, spacing: 7) {
                                     HStack { NodusChip(key: draft.kind.replacingOccurrences(of: "_", with: " "), tint: session.accent); Spacer(); Image(systemName: selected?.id == draft.id ? "checkmark.circle.fill" : "doc.text").foregroundStyle(session.accent.nodusReadable) }
                                     Text(draft.title).font(.headline).lineLimit(2)
@@ -53,7 +62,7 @@ struct WritingWorkshopMobileView: View {
                             }.buttonStyle(NodusCardButtonStyle())
                         }
                     }
-                    if let selected { WritingDraftReader(draft: selected, session: session) }
+                    if UIDevice.current.userInterfaceIdiom != .phone, horizontalSize != .compact, let selected { WritingDraftReader(draft: selected, session: session, document: draftValue(selected.id)) }
                 }
             }
             .padding(NodusSpace.page).frame(maxWidth: 1120).frame(maxWidth: .infinity)
@@ -61,14 +70,25 @@ struct WritingWorkshopMobileView: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("academic-writing")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: "\(session.publishedRevision ?? ""): \(session.companionPublicationRevision):\(session.companionDownloadRevision)") { await load() }
+        .sheet(item: $reading) { draft in
+            NavigationStack {
+                ScrollView { WritingDraftReader(draft: draft, session: session, document: draftValue(draft.id)).padding(16) }
+                    .navigationTitle("Borrador").navigationBarTitleDisplayMode(.inline)
+                    .nodusModalClose(accent: session.accent)
+            }.nodusTextHierarchy()
+        }
         .nodusSheet(isPresented: $showingComposer) {
             NavigationStack {
-                WritingComposer(session: session, tables: tables) { status in
+                WritingComposer(session: session, tables: tables, usingDownloads: usingDownloads) { status in
                     message = status; showingComposer = false
                 }
             }.nodusModalClose(accent: session.accent)
         }
+    }
+
+    private func draftValue(_ id: String) -> JSONValue? {
+        tables["writing_saved_drafts"]?.first(where: { $0.string("id") == id })?.embeddedJSON("draft_json")
     }
 
     private func load() async {
@@ -77,8 +97,12 @@ struct WritingWorkshopMobileView: View {
             tables = try await session.client.snapshot(in: session.connection.spaceId).tables
             drafts = AcademicAuthoredProjection.writingDrafts(from: tables)
             if selectedId == nil { selectedId = drafts.first?.id }
+            usingDownloads = false
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            self.error = error.localizedDescription
+            if isPrivateBridgeOffline(error) { usingDownloads = true; tables = [:]; drafts = [] }
+        }
         loading = false
     }
 }
@@ -86,6 +110,7 @@ struct WritingWorkshopMobileView: View {
 private struct WritingDraftReader: View {
     let draft: AcademicWritingDraftSummary
     let session: SpaceSession
+    var document: JSONValue? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -106,6 +131,7 @@ private struct WritingDraftReader: View {
             }
             CorpusProse(draft.markdown, accent: session.accent, session: session)
                 .frame(maxWidth: 760, alignment: .leading).frame(maxWidth: .infinity)
+            if let document { WorkshopDraftSections(draft: document, session: session) }
         }
         .desktopContentRow(accent: session.accent)
     }
@@ -114,99 +140,212 @@ private struct WritingDraftReader: View {
 private struct WritingComposer: View {
     let session: SpaceSession
     let tables: [String: [Row]]
+    let usingDownloads: Bool
     let onQueued: (String) -> Void
-
+    @Environment(AISettings.self) private var ai
     @State private var title = ""
     @State private var objective = ""
+    @State private var audience = ""
     @State private var kind = "literature_review"
     @State private var tone = "academic"
-    @State private var selectedWorks: Set<String> = []
-    @State private var selectedIdeas: Set<String> = []
+    @State private var language = "es"
+    @State private var selections: [String: Set<String>] = [:]
+    @State private var limits: [String: Int] = [:]
     @State private var query = ""
     @State private var sending = false
+    @State private var status: String?
     @State private var error: String?
-
-    private var works: [Row] {
-        filtered(tables["works"] ?? [], keys: ["title", "authors_json"])
+    @State private var downloadedSource: CompanionWorkshopSource?
+    @State private var sourceRows: [String: [Row]] = [:]
+    @State private var sourcePages: [String: Page<Row>] = [:]
+    @State private var sourceOffline = false
+    @State private var readingSources = false
+    @State private var generationTask: Task<Void, Never>?
+    @State private var completed: DesktopJobLedger.Request?
+    private var autonomous: Bool { session.aiExecutionMode == .autonomous }
+    private let categories: [(key: String, table: String, id: String, title: String)] = [
+        ("workIds", "works", "nodus_id", "Obras"), ("ideaIds", "ideas", "global_id", "Ideas"),
+        ("themeIds", "themes", "theme_id", "Temas"), ("gapIds", "gaps", "id", "Huecos"),
+        ("passageIds", "passages", "passage_id", "Pasajes"),
+        ("contradictionIds", "global_edges", "id", "Contradicciones"), ("tutorRouteIds", "tutor_routes", "id", "Rutas")]
+    private let languages = [("es", "Español"), ("en", "English"), ("fr", "Français"), ("tr", "Türkçe"),
+        ("de", "Deutsch"), ("pt", "Português (Portugal)"), ("pt-BR", "Português (Brasil)"), ("it", "Italiano"),
+        ("zh-Hans", "简体中文"), ("zh-Hant", "繁體中文"), ("vi", "Tiếng Việt"), ("ja", "日本語"),
+        ("ru", "Русский"), ("uk", "Українська"), ("ko", "한국어")]
+    private var selection: JSONValue {
+        .object(Dictionary(uniqueKeysWithValues: CompanionWorkshopSource.groups.keys.map {
+            ($0, .array((selections[$0] ?? []).sorted().map(JSONValue.string)))
+        }))
     }
-    private var ideas: [Row] {
-        filtered(tables["ideas"] ?? [], keys: ["label", "statement"])
-    }
-
     var body: some View {
         Form {
-            Section("Brief") {
-                TextField("Draft title", text: $title)
-                TextField("Objective, argument or research question", text: $objective, axis: .vertical).lineLimit(3...7)
-                Picker("Format", selection: $kind) {
-                    Text("State of the question").tag("literature_review")
-                    Text("Theoretical framework").tag("theoretical_framework")
-                    Text("Debate synthesis").tag("debate")
-                    Text("Gap justification").tag("gap_justification")
-                    Text("Chapter section").tag("chapter_section")
-                    Text("Research question").tag("research_question")
+            Section("Encargo") {
+                TextField("Título del borrador", text: $title)
+                TextField("Objetivo, argumento o pregunta", text: $objective, axis: .vertical).lineLimit(3...7)
+                TextField("Audiencia (opcional)", text: $audience)
+                Picker("Formato", selection: $kind) {
+                    Text("Estado de la cuestión").tag("literature_review")
+                    Text("Marco teórico").tag("theoretical_framework")
+                    Text("Síntesis del debate").tag("debate")
+                    Text("Justificación de un hueco").tag("gap_justification")
+                    Text("Sección de capítulo").tag("chapter_section")
+                    Text("Pregunta de investigación").tag("research_question")
                 }
-                Picker("Tone", selection: $tone) {
-                    Text("Academic").tag("academic"); Text("Synthetic").tag("synthetic")
-                    Text("Critical").tag("critical"); Text("Exploratory").tag("exploratory")
+                Picker("Tono", selection: $tone) {
+                    Text("Académico").tag("academic"); Text("Sintético").tag("synthetic")
+                    Text("Crítico").tag("critical"); Text("Exploratorio").tag("exploratory")
                 }
-            }
-            Section("Grounded material") {
-                TextField("Filter published material", text: $query)
-                DisclosureGroup("Works · \(selectedWorks.count) selected") {
-                    ForEach(Array(works.prefix(80).enumerated()), id: \.offset) { _, row in
-                        selectionRow(row.text("title") ?? row.string("nodus_id") ?? "Work", id: row.string("nodus_id"), selection: $selectedWorks)
-                    }
-                }
-                DisclosureGroup("Ideas · \(selectedIdeas.count) selected") {
-                    ForEach(Array(ideas.prefix(80).enumerated()), id: \.offset) { _, row in
-                        selectionRow(row.text("label") ?? row.string("global_id") ?? "Idea", id: row.string("global_id"), selection: $selectedIdeas)
-                    }
+                Picker("Idioma", selection: $language) {
+                    ForEach(languages, id: \.0) { code, label in Text(label).tag(code) }
                 }
             }
-            if let error { Section { Text(error).foregroundStyle(.red) } }
+            Section(autonomous ? "Modelo del móvil" : "Modelo de Nodus") {
+                if autonomous {
+                    NavigationLink { ModelPickerView(task: .writing, accent: session.accent) } label: {
+                        LabeledContent("Modelo", value: ai.model(for: .writing)?.model ?? "Seleccionar")
+                    }
+                    Text("Se utiliza el proveedor configurado en este dispositivo. Si el Mac está desconectado, el borrador se basa en las fuentes descargadas que selecciones.")
+                } else { Text("Nodus genera con la configuración del Mac. El modo se cambia expresamente desde los ajustes de conexión.") }
+            }.font(.subheadline)
+            Section(sourceOffline ? "Fuentes descargadas" : "Elegir fuentes") {
+                TextField("Buscar fuentes", text: $query)
+                if readingSources { ProgressView("Consultando fuentes") }
+                ForEach(categories, id: \.key) { category in
+                    let available = rows(category)
+                    let limit = limits[category.key] ?? 60
+                    DisclosureGroup("\(category.title) · \(selections[category.key]?.count ?? 0) seleccionadas") {
+                        ForEach(Array(available.prefix(limit).enumerated()), id: \.offset) { _, row in
+                            selectionRow(row, category: category)
+                        }
+                        if available.count > limit {
+                            Button("Mostrar más (\(available.count - limit))") { limits[category.key] = limit + 60 }
+                                .frame(minHeight: 44)
+                        } else if sourcePages[category.key]?.hasMore == true {
+                            Button("Cargar más fuentes") { Task { await loadSourcePage(category.key, reset: false) } }
+                                .frame(minHeight: 44).disabled(readingSources)
+                        }
+                    }
+                }
+            }
+            if let error { Section { Text(error).foregroundStyle(Color.nodusDanger).fixedSize(horizontal: false, vertical: true) } }
+            if let status { Section { Text(status).fixedSize(horizontal: false, vertical: true) } }
             Section {
-                Button { Task { await queue() } } label: {
-                    HStack { Spacer(); if sending { ProgressView() } else { Label("Generate in Desktop", systemImage: "desktopcomputer") }; Spacer() }
+                if sending {
+                    HStack { ProgressView(); Text(status ?? "Preparando") }
+                    Button("Cancelar", role: .cancel) { generationTask?.cancel() }.frame(minHeight: 44)
+                } else {
+                    Button { generationTask = Task { await queue() } } label: {
+                        Label(autonomous ? "Generar en el móvil" : "Generar con Nodus", systemImage: autonomous ? "iphone" : "desktopcomputer")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .disabled(objective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.isDemo || !session.connection.role.canSendChanges
+                        || (autonomous && (ai.model(for: .writing) == nil || selections.values.allSatisfy(\.isEmpty))))
                 }
-                .disabled(sending || objective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.isDemo || !session.connection.role.canSendChanges)
             }
         }
-        .navigationTitle("New grounded draft").navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func selectionRow(_ label: String, id: String?, selection: Binding<Set<String>>) -> some View {
-        Button {
-            guard let id else { return }
-            if selection.wrappedValue.contains(id) { selection.wrappedValue.remove(id) } else { selection.wrappedValue.insert(id) }
-        } label: {
-            HStack { Text(label).foregroundStyle(.primary); Spacer(); Image(systemName: id.map(selection.wrappedValue.contains) == true ? "checkmark.circle.fill" : "circle").foregroundStyle(session.accent.nodusReadable) }
+        .navigationTitle("Nuevo borrador").navigationBarTitleDisplayMode(.inline)
+        .onChange(of: query) { _, _ in limits = [:] }
+        .onDisappear { generationTask?.cancel() }
+        .task(id: "\(query):\(session.companionDownloadRevision):\(session.publishedRevision ?? "")") {
+            if !query.isEmpty {
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            }
+            do {
+                let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+                guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+                downloadedSource = try await CompanionWorkshopSource.downloaded(cache: PrivateBridgeCache(pairingId: pairing.id), vaultId: vault)
+            } catch { if usingDownloads { self.error = error.localizedDescription } }
+            sourceOffline = usingDownloads
+            sourceRows = [:]; sourcePages = [:]
+            if session.connection.desktopPairingId != nil, !sourceOffline {
+                for category in categories {
+                    await loadSourcePage(category.key, reset: true)
+                    if sourceOffline || Task.isCancelled { break }
+                }
+            }
+        }
+        .sheet(item: $completed) { result in
+            NavigationStack {
+                if let checkpoint = result.checkpoint {
+                    CompanionGeneratedResultView(session: session, request: result, checkpoint: checkpoint)
+                        .nodusModalClose(accent: session.accent)
+                }
+            }.nodusTextHierarchy()
         }
     }
-
-    private func filtered(_ rows: [Row], keys: [String]) -> [Row] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
-        guard !needle.isEmpty else { return rows }
-        return rows.filter { row in keys.compactMap { row.text($0) }.joined(separator: " ").localizedLowercase.contains(needle) }
+    private func rows(_ category: (key: String, table: String, id: String, title: String)) -> [Row] {
+        var rows = sourceOffline ? [] : (session.connection.desktopPairingId != nil ? sourceRows[category.key] ?? [] : tables[category.table] ?? [])
+        if category.key == "contradictionIds", session.connection.desktopPairingId == nil { rows = rows.filter { $0.string("type") == "contradiction" } }
+        var seen = Set(rows.compactMap { $0.string("selection_id") ?? $0.string(category.id) ?? $0.columns[category.id]?.intValue.map { String($0) } })
+        for row in (sourceOffline ? downloadedSource?.rows(for: category.key) ?? [] : []) {
+            if let id = row.string("selection_id"), seen.insert(id).inserted { rows.append(row) }
+        }
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return needle.isEmpty ? rows : rows.filter { $0.searchableText.localizedStandardContains(needle) }
     }
-
-    private func queue() async {
-        sending = true; defer { sending = false }
-        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let keySource = "\(kind)|\(objective)|\(selectedWorks.sorted())|\(selectedIdeas.sorted())|\(session.publishedRevision ?? "local")"
+    private func loadSourcePage(_ key: String, reset: Bool) async {
+        readingSources = true
+        defer { readingSources = false }
+        let currentQuery = query, offset = reset ? 0 : sourceRows[key]?.count ?? 0
         do {
-            _ = try await session.client.createSpaceAction(
-                idempotencyKey: "writing:\(stableActionFingerprint(keySource))", kind: .writingGenerate,
-                payload: [
-                    "title": .string(normalizedTitle.isEmpty ? "Grounded draft" : normalizedTitle),
-                    "kind": .string(kind), "objective": .string(objective), "tone": .string(tone), "language": .string("es"),
-                    "workIds": .array(selectedWorks.sorted().map(JSONValue.string)),
-                    "ideaIds": .array(selectedIdeas.sorted().map(JSONValue.string)),
-                ],
-                inputRevision: session.publishedRevision, in: session.connection.spaceId
-            )
-            onQueued("Generation queued once. It will appear here after Desktop saves and publishes the draft.")
-        } catch { self.error = error.localizedDescription }
+            let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+            let result = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault,
+                method: "getWritingWorkshopMobileCatalogue", args: [.object(["selectionKey": .string(key),
+                    "query": .string(currentQuery), "limit": .int(100), "offset": .int(offset)])], timeout: 4)
+            let page = try CompanionWorkshopSource.cataloguePage(result)
+            try Task.checkCancellation()
+            guard currentQuery == query else { return }
+            guard page.offset == offset, page.items.allSatisfy({ $0.string("selection_id") != nil }),
+                  reset || sourcePages[key]?.revision == page.revision else {
+                sourceRows[key] = []; sourcePages[key] = nil
+                throw DesktopBridgeError.malformedResponse
+            }
+            sourceRows[key] = (reset ? [] : sourceRows[key] ?? []) + page.items
+            sourcePages[key] = page; limits[key] = sourceRows[key]?.count ?? 60
+        } catch where error.isCancellation { }
+        catch {
+            guard currentQuery == query else { return }
+            if isPrivateBridgeOffline(error) { sourceOffline = true; sourceRows = [:]; sourcePages = [:] }
+            else { self.error = error.localizedDescription }
+        }
+    }
+    private func selectionRow(_ row: Row, category: (key: String, table: String, id: String, title: String)) -> some View {
+        let identity = row.string("selection_id") ?? row.string(category.id) ?? row.columns[category.id]?.intValue.map { String($0) }
+        let label = ["title", "label", "statement", "text", "titulo", "etiqueta", "enunciado", "texto", "desde", "prompt"].compactMap { row.text($0) }.first ?? identity ?? "Fuente"
+        return Button {
+            guard let identity else { return }
+            if selections[category.key, default: []].contains(identity) { selections[category.key]?.remove(identity) }
+            else { selections[category.key, default: []].insert(identity) }
+        } label: {
+            HStack { Text(label).foregroundStyle(.primary).lineLimit(4); Spacer(minLength: 8)
+                Image(systemName: identity.map { selections[category.key]?.contains($0) == true } == true ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(session.accent.nodusReadable)
+            }.frame(minHeight: 44).contentShape(Rectangle())
+        }.disabled(identity == nil || sending)
+    }
+    private func queue() async {
+        sending = true; error = nil; defer { sending = false }
+        do {
+            let brief: JSONValue = .object(["kind": .string(kind), "objective": .string(objective),
+                "audience": .string(audience), "tone": .string(tone), "language": .string(language)])
+            if autonomous {
+                guard let model = ai.model(for: .writing) else { error = "Selecciona un modelo de escritura del móvil."; return }
+                let modelJSON = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(model))
+                let request = JSONValue.object(["brief": brief, "selection": selection, "title": .string(title), "model": modelJSON])
+                let generator = CompanionWorkshopGeneration(settings: ai)
+                completed = try await generator.run(session: session, request: request) { status = $0 }
+            } else {
+                var payload = brief.objectValue!
+                payload["title"] = .string(title)
+                payload.merge(selection.objectValue!) { _, new in new }
+                let fingerprint = try JSONEncoder.nodus.encode(JSONValue.object(payload))
+                let stable = SHA256.hash(data: fingerprint).map { String(format: "%02x", $0) }.joined()
+                _ = try await session.client.createSpaceAction(idempotencyKey: "writing:\(stable)", kind: .writingGenerate,
+                    payload: payload, inputRevision: session.publishedRevision, in: session.connection.spaceId)
+                onQueued("Nodus ha aceptado la generación. El borrador aparecerá cuando esté guardado y disponible para consultar.")
+            }
+        } catch where error.isCancellation { status = "Generación cancelada. El original permanece intacto." }
+        catch { self.error = error.localizedDescription }
     }
 }
 

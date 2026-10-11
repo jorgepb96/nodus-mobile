@@ -18,10 +18,10 @@ public struct DesktopBridgeJob: Decodable, Sendable, Identifiable {
 }
 
 public extension DesktopBridgeClient {
-    static let jobMethods: Set<String> = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "startDictionaryGeneration", "enqueueDeepResearchJob", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "generateImmersionSession", "generateWritingWorkshopDraft", "generateContentTranslation", "researchChat", "researchChatStream", "improveStudyText", "buildArgumentMap", "scanDictionaryNewEvidence", "generateConversationTitle"]
+    static let jobMethods: Set<String> = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "startDictionaryGeneration", "enqueueDeepResearchJob", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "generateImmersionSession", "generateWritingWorkshopDraft", "generateContentTranslation", "researchChat", "researchChatStream", "improveStudyText", "buildArgumentMap", "scanDictionaryNewEvidence", "generateConversationTitle"]
     /// Synchronizing an already generated device result or exporting a saved
     /// document does not select or invoke the Mac's research model.
-    static let providerFreeJobMethods: Set<String> = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf"]
+    static let providerFreeJobMethods: Set<String> = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf"]
 
     /// A stable key can be resubmitted after transport failure; the Mac returns the
     /// existing job instead of generating and saving the same content twice.

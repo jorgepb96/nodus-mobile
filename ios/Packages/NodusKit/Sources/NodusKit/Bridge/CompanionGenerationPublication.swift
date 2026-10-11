@@ -12,7 +12,7 @@ public struct CompanionGenerationPublication: Sendable {
     public let checkpoint: JSONValue
 
     public static func recordId(kind: String, entity: String) throws -> String {
-        guard ["dictionary", "immersion", "translation", "writing", "argument"].contains(kind),
+        guard ["dictionary", "immersion", "translation", "writing", "argument", "workshop"].contains(kind),
               !entity.isEmpty, entity.utf8.count <= 256 else { throw DesktopBridgeError.malformedResponse }
         let hash = SHA256.hash(data: Data(entity.utf8)).map { String(format: "%02x", $0) }.joined()
         return "autonomous:\(kind):\(hash)"
@@ -62,6 +62,15 @@ public struct CompanionGenerationPublication: Sendable {
         case "writing":
             guard let raw = value["raw"]?.stringValue, !raw.isEmpty else { throw DesktopBridgeError.malformedResponse }
             operation = "saveStudyImprovementFromMobile"; input["raw"] = .string(raw)
+        case "workshop":
+            guard let raw = value["raw"]?.stringValue, !raw.isEmpty,
+                  value["preview"]?.objectValue?["draftMarkdown"]?.stringValue?.isEmpty == false,
+                  let source = context["source"], let scope = value["sourceScope"]?.stringValue,
+                  ["linked_corpus", "device_downloads"].contains(scope)
+            else { throw DesktopBridgeError.malformedResponse }
+            _ = try CompanionWorkshopSource(copies: [source]).selected(request["selection"] ?? .null)
+            operation = "saveWritingWorkshopFromMobile"
+            input["raw"] = .string(raw); input["source"] = source; input["sourceScope"] = .string(scope)
         default: throw DesktopBridgeError.malformedResponse
         }
         guard try JSONEncoder.nodus.encode(checkpoint).count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }

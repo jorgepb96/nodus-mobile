@@ -16,6 +16,8 @@ struct CompanionGeneratedResultView: View {
         case "saveDictionaryGeneratedVersion": return value["definition"]?.objectValue?["contentMarkdown"]?.stringValue
         case "saveContentTranslationFromMobile": return value["markdown"]?.stringValue
         case "saveStudyImprovementFromMobile": return value["preview"]?.objectValue?["text"]?.stringValue ?? current.result?.objectValue?["text"]?.stringValue
+        case "saveWritingWorkshopFromMobile": return current.result?.objectValue?["draft"]?.objectValue?["draftMarkdown"]?.stringValue
+            ?? value["preview"]?.objectValue?["draftMarkdown"]?.stringValue
         default: return nil
         }
     }
@@ -31,6 +33,10 @@ struct CompanionGeneratedResultView: View {
                         Text(title).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                         ReportCopyButtons(markdown: markdown, title: title, accent: session.accent)
                         CorpusProse(markdown, accent: session.accent, session: session)
+                        if current.method == "saveWritingWorkshopFromMobile",
+                           let draft = current.result?.objectValue?["draft"] ?? value["preview"] {
+                            WorkshopDraftSections(draft: draft, session: session)
+                        }
                     }.padding(16).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
                 }.nodusPageFunctions(accent: session.accent)
             } else {

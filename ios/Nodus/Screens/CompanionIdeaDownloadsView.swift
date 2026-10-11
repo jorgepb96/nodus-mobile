@@ -123,6 +123,7 @@ struct CompanionIdeaDownloadsView: View {
             let chosen = catalogue.filter { selection.contains($0.ideaDownloadId) }
             guard chosen.count == selection.count, !chosen.isEmpty else { throw PrivateBridgeCache.ReadPackError.invalidSelection }
             var records: [PrivateBridgeCache.ReadPackRecord] = [], entries: [JSONValue] = []
+            if let workshop = try await workshopDownloadRecord(client: client, vault: vault, path: "ideas", ids: selection.sorted()) { records.append(workshop) }
             var nodes: [String: JSONValue] = [:], edges: [String: JSONValue] = [:], edgeDetails: [JSONValue] = []
             var bytes = 0
             func account(_ value: JSONValue) throws {
@@ -203,6 +204,7 @@ struct CompanionIdeaDownloadsView: View {
             let packId = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: selection.map { "idea:\($0)" })
             try await cache.saveReadPack(id: packId, vaultId: vault, title: "\(chosen.count) ideas y conexiones",
                 expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: records)
+            session.didChangeCompanionDownloads()
             saved = true
         } catch is CancellationError { issue = "Descarga cancelada. No se ha creado una copia incompleta." }
         catch let error as URLError where error.code == .cancelled { issue = "Descarga cancelada. No se ha creado una copia incompleta." }

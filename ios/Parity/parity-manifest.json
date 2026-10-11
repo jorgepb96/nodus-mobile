@@ -1081,6 +1081,30 @@
       "category": "desktopExclusive",
       "result": "notApplicable",
       "evidence": []
+    },
+    {
+      "id": "generation.writingWorkshop.live",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.writingWorkshop.autonomous",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.writingWorkshop.sourcePagination",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.writingWorkshop.structuredReading",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

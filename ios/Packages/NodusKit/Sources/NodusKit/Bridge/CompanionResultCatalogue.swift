@@ -11,6 +11,8 @@ public enum CompanionResultCatalogue {
             return surface == "dictionary" && !(checkpoint["definition"]?.objectValue?["contentMarkdown"]?.stringValue ?? "").isEmpty
         case "saveStudyImprovementFromMobile":
             return surface == "workspace" && !(checkpoint["preview"]?.objectValue?["text"]?.stringValue ?? "").isEmpty
+        case "saveWritingWorkshopFromMobile":
+            return surface == "writingWorkshop" && !(checkpoint["preview"]?.objectValue?["draftMarkdown"]?.stringValue ?? "").isEmpty
         case "saveImmersionGeneratedSession":
             return surface == "immersion" && checkpoint["plan"]?.objectValue != nil
         case "saveContentTranslationFromMobile":
@@ -27,11 +29,13 @@ public enum CompanionResultCatalogue {
 
     public static func title(_ request: DesktopJobLedger.Request) -> String {
         let checkpoint = request.checkpoint?.objectValue ?? [:]
+        if request.method == "saveWritingWorkshopFromMobile",
+           let title = checkpoint["preview"]?.objectValue?["title"]?.stringValue, !title.isEmpty { return title }
         if let entry = checkpoint["context"]?.objectValue?["entry"]?.objectValue,
            let term = entry["name"]?.stringValue ?? entry["term"]?.stringValue ?? entry["title"]?.stringValue, !term.isEmpty { return term }
         if let title = checkpoint["request"]?.objectValue?["sourceTitle"]?.stringValue, !title.isEmpty { return title }
         if let title = checkpoint["plan"]?.objectValue?["title"]?.stringValue, !title.isEmpty { return title }
         return ["saveDictionaryGeneratedVersion": "Definición del diccionario", "saveContentTranslationFromMobile": "Traducción",
-                "saveStudyImprovementFromMobile": "Asistencia de escritura", "saveImmersionGeneratedSession": "Inmersión"][request.method] ?? "Resultado guardado"
+                "saveStudyImprovementFromMobile": "Asistencia de escritura", "saveImmersionGeneratedSession": "Inmersión", "saveWritingWorkshopFromMobile": "Taller de escritura"][request.method] ?? "Resultado guardado"
     }
 }

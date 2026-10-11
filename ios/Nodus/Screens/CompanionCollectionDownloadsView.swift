@@ -160,6 +160,9 @@ struct CompanionCollectionDownloadsView: View {
             let revision = try await session.client.snapshotRevision(in: session.connection.spaceId)
             guard revision == catalogueRevision else { throw DesktopBridgeError.malformedResponse }
             var entries: [JSONValue] = [], sources: [PrivateBridgeCache.ReadPackRecord] = [], bytes = 0
+            if let workshop = try await workshopDownloadRecord(client: client, vault: vault, path: collection.path, ids: chosen.keys.sorted()) {
+                sources.append(workshop); bytes += workshop.data.count
+            }
             func retain(_ method: String, _ args: [JSONValue], _ value: JSONValue) throws {
                 let data = try JSONEncoder.nodus.encode(value); bytes += data.count
                 guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }

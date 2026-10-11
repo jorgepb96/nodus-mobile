@@ -183,7 +183,10 @@ retrieval; a local copy is never presented as a vector index. Permission, certif
 format and cancellation failures do not trigger offline fallback. Research checkpoints,
 reports and Markdown retain the downloaded/mixed material scope. Native source contracts
 and persistence regressions are prepared and remain pending execution. Selected specialised
-study/world content and workshop generation still require their own autonomous contracts.
+Specialised study/world content still requires its own autonomous source contracts. The native
+writing workshop now supports all six formats, Desktop languages and seven source categories,
+with paged source selection, selected-source downloads, structured device results and idempotent
+provider-free publication. Its new contract and native tests are prepared, not executed.
 Completed autonomous writing assistance opens its durable native result directly from Scriptor
 while publication is pending; it does not fabricate a Mac log ID or replace the original document.
 
