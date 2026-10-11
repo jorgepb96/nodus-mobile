@@ -100,20 +100,23 @@ struct CompanionDownloadsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Buscar notas e ideas")
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                Button("Descargar") { downloadTask = Task { await download() } }
-                    .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                    .disabled(selected.isEmpty || tree == nil || progress != nil || saved)
-                    .accessibilityIdentifier("companion-download-start")
-                    .padding(.horizontal, NodusSpace.page)
-                    .padding(.vertical, 10)
-                    .background { NodusBackdrop(accent: session.accent) }
-            }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(progress == nil ? "Cerrar" : "Cancelar") {
-                        if progress != nil { downloadTask?.cancel() } else { dismiss() }
+                HStack(spacing: 12) {
+                    if saved {
+                        Button("Cerrar") { dismiss() }
+                            .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
+                    } else {
+                        Button(progress == nil ? "Cerrar" : "Cancelar") {
+                            if progress != nil { downloadTask?.cancel() } else { dismiss() }
+                        }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                        Button("Descargar") { downloadTask = Task { await download() } }
+                            .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
+                            .disabled(selected.isEmpty || tree == nil || progress != nil)
+                            .accessibilityIdentifier("companion-download-start")
                     }
                 }
+                .padding(.horizontal, NodusSpace.page)
+                .padding(.vertical, 10)
+                .background { NodusBackdrop(accent: session.accent) }
             }
             .task { await load() }
             .nodusSheet(isPresented: $showingDownloadedDossiers) { CompanionDownloadedCollectionsView(session: session) }
