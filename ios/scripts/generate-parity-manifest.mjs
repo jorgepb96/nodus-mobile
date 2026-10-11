@@ -240,6 +240,10 @@ function operationMatrix(routes) {
       ['consultation.databaseResearch.rawSnapshotIdentity', 'consultation'],
       ['consultation.databaseResearch.protectedShareFiles', 'consultation'],
       ['consultation.databaseResearch.cancelExport', 'consultation'],
+      ['generation.chat.autonomousHistoryContext', 'generation'],
+      ['sync.chat.autonomousPartialRecovery', 'sync'],
+      ['generation.chat.conversationIsolation', 'generation'],
+      ['consultation.chat.storageFailures', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

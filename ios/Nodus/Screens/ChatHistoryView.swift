@@ -19,6 +19,10 @@ struct ChatHistoryView: View {
     @State private var pendingDeletion: ChatHistoryStore.Conversation?
     @State private var pendingBulkDeletion: ChatHistoryStore.Scope?
     @State private var showsArchived = false
+    @State private var mutationIssue: String?
+    private func mutate(_ action: () throws -> Void) {
+        do { try action();mutationIssue = nil } catch { mutationIssue = error.localizedDescription }
+    }
 
     /// The tab's conversations before the filter — what "all" means on this screen.
     private var listedSource: [ChatHistoryStore.Conversation] {
@@ -38,6 +42,10 @@ struct ChatHistoryView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let issue = mutationIssue ?? store.issue {
+                    NodusNotice(tone:.blocked,title:"History needs attention",message:LocalizedStringKey(issue))
+                        .listRowSeparator(.hidden).listRowBackground(Color.clear)
+                }
                 Picker("", selection: $showsArchived) {
                     Text("Conversations").tag(false)
                     Text("Archived").tag(true)
@@ -62,7 +70,7 @@ struct ChatHistoryView: View {
                             Label("Delete", systemImage: "trash")
                         }
                         Button {
-                            store.setArchived(!conversation.isArchived, for: conversation.id)
+                            mutate { try store.setArchived(!conversation.isArchived,for:conversation.id) }
                         } label: {
                             Label(
                                 conversation.isArchived ? "Unarchive" : "Archive",
@@ -76,7 +84,7 @@ struct ChatHistoryView: View {
                     // a list you only ever scroll never reveals it.
                     .contextMenu {
                         Button {
-                            store.setArchived(!conversation.isArchived, for: conversation.id)
+                            mutate { try store.setArchived(!conversation.isArchived,for:conversation.id) }
                         } label: {
                             Label(
                                 conversation.isArchived ? "Unarchive" : "Archive",
@@ -147,7 +155,7 @@ struct ChatHistoryView: View {
                 isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } })
             ) {
                 Button("Delete", role: .destructive) {
-                    if let pendingDeletion { store.delete(pendingDeletion.id) }
+                    if let pendingDeletion { mutate { try store.delete(pendingDeletion.id) } }
                     pendingDeletion = nil
                 }
                 Button("Cancel", role: .cancel) { pendingDeletion = nil }
@@ -159,7 +167,7 @@ struct ChatHistoryView: View {
                 isPresented: Binding(get: { pendingBulkDeletion != nil }, set: { if !$0 { pendingBulkDeletion = nil } })
             ) {
                 Button("Delete", role: .destructive) {
-                    if let pendingBulkDeletion { store.deleteAll(pendingBulkDeletion) }
+                    if let pendingBulkDeletion { mutate { try store.deleteAll(pendingBulkDeletion) } }
                     pendingBulkDeletion = nil
                 }
                 Button("Cancel", role: .cancel) { pendingBulkDeletion = nil }
@@ -170,6 +178,7 @@ struct ChatHistoryView: View {
             }
         }
         .tint(accent)
+        .onAppear { store.reload() }
     }
 
     private func row(_ conversation: ChatHistoryStore.Conversation) -> some View {

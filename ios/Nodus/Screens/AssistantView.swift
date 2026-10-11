@@ -27,12 +27,13 @@ struct ChatScreen: View {
     }
 
     struct Turn: Identifiable {
-        let id = UUID()
+        var id = UUID()
         let role: ChatMessage.Role
         var text: String
         var citations: [CitationCatalog.Entry] = []
         var mode: CorpusRetrieval.Mode?
         var warning: String?
+        var delivery: ChatHistoryStore.Message.Delivery?
         /// The material the answer was built from, grouped by kind — ideas, temas, huecos —
         /// so it can be read beside the answer instead of taken on trust.
         var sections: [CorpusRetrieval.MaterialSection] = []
@@ -43,6 +44,7 @@ struct ChatScreen: View {
     @State private var isThinking = false
     @State private var error: String?
     @State private var running: Task<Void, Never>?
+    @State private var generationId: UUID?
     /// The two controls the header draws — which corpus layers a question carries, and the way
     /// into the conversation list. Held as an object rather than as `@State` values so the
     /// header can read and write the same ones the screen does.
@@ -124,6 +126,7 @@ struct ChatScreen: View {
             // Only if they are still ours. On iPad the detail column really does swap screens,
             // and a chat that has been replaced should not leave its controls on the header.
             if chrome?.chat === controls { chrome?.chat = nil }
+            stopCurrentConversation()
         }
     }
 
@@ -192,7 +195,7 @@ struct ChatScreen: View {
     // MARK: - Conversations
 
     private func startNewConversation() {
-        running?.cancel()
+        stopCurrentConversation()
         turns = []
         error = nil
         conversationId = nil
@@ -200,7 +203,7 @@ struct ChatScreen: View {
     }
 
     private func open(_ conversation: ChatHistoryStore.Conversation) {
-        running?.cancel()
+        stopCurrentConversation()
         error = nil
         conversationId = conversation.id
         conversationTitle = conversation.title
@@ -210,39 +213,50 @@ struct ChatScreen: View {
         // hold the corpus rows the answer was built from.
         turns = conversation.messages.map { message in
             Turn(
+                id: message.id,
                 role: message.role == .user ? .user : .assistant,
                 text: message.text,
                 citations: message.citations,
                 mode: message.wasSemantic.map { $0 ? .semantic : .lexical },
-                warning: message.warning
+                warning: message.delivery == .streaming ? String(localized:"This reply was interrupted. The received text is kept here."):message.warning,
+                delivery: message.delivery
             )
         }
     }
 
-    /// Write the exchange down. Called when a turn finishes, not while it streams.
-    private func persist() {
+    /// Save the accepted question, periodic received text and terminal state.
+    private func persist() throws {
         guard !turns.isEmpty else { return }
         let id = conversationId ?? UUID().uuidString
         conversationId = id
         if conversationTitle.isEmpty {
             conversationTitle = ChatHistoryStore.title(from: turns.first?.text ?? "")
         }
-        history.save(ChatHistoryStore.Conversation(
+        try history.save(ChatHistoryStore.Conversation(
             id: id,
             title: conversationTitle,
             messages: turns.map { turn in
                 ChatHistoryStore.Message(
+                    id: turn.id,
                     role: turn.role == .user ? .user : .assistant,
                     text: turn.text,
                     citations: turn.citations,
                     wasSemantic: turn.mode.map { $0 == .semantic },
-                    warning: turn.warning
+                    warning: turn.warning,
+                    delivery: turn.delivery
                 )
             },
             createdAt: conversationCreatedAt,
             updatedAt: Date(),
-            isArchived: false
+            isArchived: history.conversations.first(where:{$0.id == id})?.isArchived ?? false
         ))
+    }
+    private func stopCurrentConversation() {
+        if isThinking {
+            if let index = turns.indices.last,turns[index].role == .assistant { turns[index].delivery = .cancelled;turns[index].warning = String(localized:"Cancelled.") }
+            do { try persist() } catch { self.error = error.localizedDescription }
+        }
+        generationId = nil;running?.cancel();running = nil;isThinking = false
     }
 
     private var emptyState: some View {
@@ -284,7 +298,7 @@ struct ChatScreen: View {
                 .nodusGlass(NodusGlass(.regular, tint: session.accent), in: Capsule())
 
             Button {
-                if isThinking { running?.cancel() } else { ask() }
+                if isThinking { stopCurrentConversation() } else { ask() }
             } label: {
                 Image(systemName: isThinking ? "stop.circle.fill" : "arrow.up.circle.fill")
                     .font(.system(size: 30))
@@ -310,27 +324,33 @@ struct ChatScreen: View {
     }
 
     private func ask() {
+        guard !isThinking,session.aiExecutionMode == .autonomous else { return }
         guard let model = ai.model(for: .chat) else {
             error = String(localized: "Choose a chat model under Providers.")
             return
         }
         let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
+        let prior = turns.map { ChatMessage(role:$0.role,content:$0.text) }
 
         draft = ""
         error = nil
         turns.append(Turn(role: .user, text: question))
         let answerIndex = turns.count
-        turns.append(Turn(role: .assistant, text: ""))
-        isThinking = true
-
+        turns.append(Turn(role: .assistant, text: "",delivery:.streaming))
         if conversationId == nil { conversationCreatedAt = Date() }
+        do { try persist() } catch { self.error = error.localizedDescription;return }
+        let identity = UUID(),answerId = turns[answerIndex].id
+        generationId = identity;isThinking = true
+        func ownsAnswer() -> Bool { generationId == identity && turns.indices.contains(answerIndex) && turns[answerIndex].id == answerId }
         running = Task {
             defer {
-                isThinking = false
                 // Saved on every ending — finished, cancelled or failed. A turn that cost a
                 // retrieval and a model call should not depend on how it stopped.
-                persist()
+                if ownsAnswer() {
+                    isThinking = false;running = nil;generationId = nil
+                    do { try persist() } catch { self.error = error.localizedDescription }
+                }
             }
             do {
                 let retrieval = CorpusRetrieval(
@@ -343,48 +363,52 @@ struct ChatScreen: View {
                     for: question,
                     include: ContextSectionKind.allCases.filter(controls.include.contains)
                 )
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled,ownsAnswer() else { return }
 
                 turns[answerIndex].mode = material.mode
                 turns[answerIndex].warning = material.warning
                 turns[answerIndex].sections = material.sections
 
                 let provider = ProviderClient(keyProvider: ai.keyProvider)
+                let context = NativeChatPrompt.make(history:prior,system:Prompts.system(language:Prompts.interfaceLanguage),question:question,citations:Prompts.citationPolicy(catalog:material.catalog))
+                if context.omittedTurns > 0 {
+                    let warning = String(localized:"Earlier turns remain in history but do not fit in this question's context.")
+                    turns[answerIndex].warning = [material.warning,warning].compactMap{$0}.joined(separator:" ")
+                }
                 let request = ChatRequest(
                     model: model,
-                    messages: [
-                        .init(role: .system, content: Prompts.system(language: Prompts.interfaceLanguage)),
-                        .init(role: .user, content: """
-                        \(question)
-
-                        \(Prompts.citationPolicy(catalog: material.catalog))
-                        """),
-                    ],
+                    messages: context.messages,
                     temperature: 0.4
                 )
 
                 var text = ""
+                var savedAt = Date()
                 for try await delta in provider.stream(request) {
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled,ownsAnswer() else { return }
                     if case .content(let chunk) = delta {
                         text += chunk
                         turns[answerIndex].text = text
+                        if Date().timeIntervalSince(savedAt) >= 1 { try persist();savedAt = Date() }
                     }
                 }
 
                 // The same guarantee the reports get: an invented source never reaches the
                 // screen, and what survived is listed so the user can open it.
                 let validated = CitationValidator.validate(prose: text, against: material.catalog)
+                guard ownsAnswer(),!Task.isCancelled else { return }
                 turns[answerIndex].text = validated.prose
                 turns[answerIndex].citations = validated.accepted.compactMap(material.catalog.entry(for:))
+                turns[answerIndex].delivery = .completed
             } catch is CancellationError {
-                turns[answerIndex].text += "\n\n_Cancelled._"
+                if ownsAnswer() { turns[answerIndex].delivery = .cancelled;turns[answerIndex].text += "\n\n_" + String(localized:"Cancelled.") + "_" }
             } catch {
+                guard ownsAnswer() else { return }
                 if case ProviderError.missingKey(let provider) = error { ai.markRejected(provider) }
                 if case ProviderError.http(let status, let provider, _) = error, status == 401 || status == 403 {
                     ai.markRejected(provider)
                 }
-                turns.removeLast()
+                turns[answerIndex].warning = error.localizedDescription
+                turns[answerIndex].delivery = .failed
                 self.error = error.localizedDescription
             }
         }

@@ -1531,6 +1531,30 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "generation.chat.autonomousHistoryContext",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.autonomousPartialRecovery",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.chat.conversationIsolation",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.storageFailures",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

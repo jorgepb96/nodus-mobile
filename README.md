@@ -290,6 +290,15 @@ Nodus printer, and ZIP members share the Desktop redaction and snapshot-fingerpr
 Native sharing holds protected files only while open. Browser-bundled export and native
 cancellation regressions are prepared; final device/visual/network acceptance remains pending.
 
+The native autonomous chat now saves accepted questions before retrieval or provider work,
+checkpoints partial streamed replies, and reopens stable message identities with explicit
+interrupted/cancelled/failed states. Follow-ups carry complete recent turns within a bounded
+context, with omissions shown rather than silently truncating a turn. Navigating between
+conversations cancels the owning response and prevents stale callbacks from changing another
+thread. Storage failures and unreadable files remain visible. Prepared context and persistence
+regressions still need execution. Desktop reconciliation of this native history and the full
+autonomous behaviour of specialised chats are unfinished parity work.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

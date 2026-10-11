@@ -26956,6 +26956,70 @@
           }
         }
       }
+    },
+    "Some conversations could not be read. Their files are kept on this device.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some conversations could not be read. Their files are kept on this device."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron leer algunas conversaciones. Sus archivos se conservan en este dispositivo."
+          }
+        }
+      }
+    },
+    "Earlier turns remain in history but do not fit in this question's context.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Earlier turns remain in history but do not fit in this question's context."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los turnos anteriores siguen en el historial, pero no caben en el contexto de esta pregunta."
+          }
+        }
+      }
+    },
+    "This reply was interrupted. The received text is kept here.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This reply was interrupted. The received text is kept here."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta respuesta se interrumpió. El texto recibido se conserva aquí."
+          }
+        }
+      }
+    },
+    "History needs attention": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History needs attention"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisa el historial"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
