@@ -333,3 +333,7 @@ El editor compartido mantiene BlockNote, metadatos académicos y bloques anterio
 ### Bases de datos: escritura canónica y reapertura
 
 Las creaciones de base, propiedad y fila conservan sus identidades móviles y pasan por las funciones reales de Desktop. Las celdas comprueban revisión y valor anterior; los rechazos se conservan y se muestran. La proyección de la cola permite reabrir cambios pendientes y da paso a revisiones canónicas confirmadas. Contratos preparados; ejecución y aceptación visual pendientes.
+
+### Vistas guardadas y fuentes enlazadas
+
+El workspace nativo consulta el filtro y la ordenación reales de Desktop, con todos los cursores y fuentes enlazadas. Las filas ajenas conservan su base de datos original al abrirse. Las descargas incluyen las consultas completas y dossiers de las fuentes necesarias; un cambio de revisión cancela la copia, y las dependencias repetidas se combinan sin duplicar registros. La consulta paginada sin red evita repetir un timeout por cada página. Contratos preparados: `DatabaseContainerPresentationTests`, `CompanionDatabaseViewSourceTests` y filtros/ordenación en el contrato real de Pages. Ejecución y aceptación pendientes de la campaña local.

@@ -10,6 +10,7 @@ enum CompanionPageDownload {
         database: (String, Int) async throws -> JSONValue) async throws -> [PrivateBridgeCache.ReadPackRecord] {
         var output: [PrivateBridgeCache.ReadPackRecord] = [], seen = existing, used = 0
         var pending = [root], pages = Set<String>(), synced = Set<String>(), views = Set<String>()
+        var queries:[([JSONValue],JSONValue)]=[]
         var documents: [(String, JSONValue)] = [], databases: [String: JSONValue] = [:]
         func retain(_ method: String, _ args: [JSONValue], _ value: JSONValue) throws {
             let key = try CompanionDocumentOutbox.operationKey(method, args)
@@ -75,6 +76,7 @@ enum CompanionPageDownload {
                                 let current = page["revision"]?.stringValue, revision == nil || revision == current,
                                 let count = page["totalCount"]?.intValue, count >= 0, total == nil || total == count,
                                 let rows = page["rows"]?.arrayValue, rows.count <= 30 else { throw DesktopBridgeError.malformedResponse }
+                            if revision == nil {queries.append((args,response))}
                             revision = current; total = count
                             for row in rows { guard let id = row.objectValue?["id"]?.stringValue, ids.insert(id).inserted else { throw DesktopBridgeError.malformedResponse } }
                             cursor = page["nextCursor"] ?? .null
@@ -88,6 +90,10 @@ enum CompanionPageDownload {
                     guard definition == final else { throw APIError(status: 409, code: "page_dependency_changed", message: "La vista enlazada cambió durante la descarga. Vuelve a intentarlo.") }
                 } else { throw DesktopBridgeError.malformedResponse }
             }
+        }
+        for (args,first) in queries {
+            let final=try await client.operation(vaultId:vault,method:"getMobileLinkedDatabaseRead",args:args)
+            guard final == first else {throw APIError(status:409,code:"page_dependency_changed",message:"Los datos de la vista enlazada cambiaron durante la descarga. Vuelve a intentarlo.")}
         }
         for (id, source) in documents {
             let final = try await client.operation(vaultId: vault, method: "getMobilePageDocument", args: [.string(id)])

@@ -173,6 +173,26 @@ struct CompanionCollectionDownloadsView: View {
                 guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 sources.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey(method, args), data: data))
             }
+            func appendDependencies(_ incoming:[PrivateBridgeCache.ReadPackRecord]) throws {
+                for record in incoming {
+                    if let index=sources.firstIndex(where:{$0.domain == record.domain && $0.recordId == record.recordId}) {
+                        guard record.recordId == CompanionPageDownload.linkedDatabaseKey else {
+                            guard sources[index].data == record.data else {throw DesktopBridgeError.malformedResponse};continue
+                        }
+                        let before=try JSONDecoder.nodus.decode(JSONValue.self,from:sources[index].data),after=try JSONDecoder.nodus.decode(JSONValue.self,from:record.data)
+                        guard before.objectValue?["vaultId"] == .string(vault),after.objectValue?["vaultId"] == .string(vault),
+                            var merged=before.objectValue?["databases"]?.objectValue,let addition=after.objectValue?["databases"]?.objectValue else {throw DesktopBridgeError.malformedResponse}
+                        for (id,payload) in addition {guard merged[id] == nil || merged[id] == payload else {throw APIError(status:409,code:"page_dependency_changed",message:"La base de datos cambió durante la descarga. Vuelve a intentarlo.")};merged[id]=payload}
+                        let data=try JSONEncoder.nodus.encode(JSONValue.object(["version":.int(1),"vaultId":.string(vault),"databases":.object(merged)]))
+                        let next=bytes - sources[index].data.count + data.count
+                        guard next <= PrivateBridgeCache.defaultReadLimitBytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
+                        bytes=next;sources[index] = .init(domain:record.domain,recordId:record.recordId,data:data)
+                    } else {
+                        guard record.data.count <= PrivateBridgeCache.defaultReadLimitBytes - bytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
+                        bytes += record.data.count;sources.append(record)
+                    }
+                }
+            }
             if ["study-docs", "study-subjects", "study-questions"].contains(collection.path) {
                 let settings = try await client.operation(vaultId: vault, method: "getSettings", args: [])
                 guard settings.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
@@ -212,9 +232,15 @@ struct CompanionCollectionDownloadsView: View {
                         guard let databaseCollection=Collections["databases"],let escaped=databaseId.addingPercentEncoding(withAllowedCharacters:allowed) else {throw DesktopBridgeError.malformedResponse}
                         return .object(try await dossier(client,vault:vault,collection:databaseCollection,id:escaped,maxBytes:remaining))
                     }
-                    sources.append(contentsOf:linked);bytes += linked.reduce(0){$0 + $1.data.count}
+                    try appendDependencies(linked)
                 }
                 if collection.path == "databases" {
+                    guard let views=detail["views"]?.arrayValue else {throw DesktopBridgeError.malformedResponse}
+                    let viewRecords=try await CompanionDatabaseViewSource.download(client:client,vault:vault,views:views,maximumBytes:PrivateBridgeCache.defaultReadLimitBytes - bytes,existing:Set(sources.map(\.recordId)),ownerDatabase:id) { databaseId,remaining in
+                        guard let descriptor=Collections["databases"],let escaped=databaseId.addingPercentEncoding(withAllowedCharacters:allowed) else {throw DesktopBridgeError.malformedResponse}
+                        return .object(try await dossier(client,vault:vault,collection:descriptor,id:escaped,maxBytes:remaining))
+                    }
+                    try appendDependencies(viewRecords)
                     let pack = try await client.operation(vaultId:vault,method:"getMobileDatabaseResearchSourcePack",args:[.object(["databaseIds":.array([.string(id)])])])
                     guard pack.objectValue?["version"] == .int(1),pack.objectValue?["vaultId"] == .string(vault),
                           pack.objectValue?["databases"]?.arrayValue?.count == 1,

@@ -557,12 +557,13 @@ struct DatabasesWorkspaceView: View {
     }
 }
 
-private struct DatabaseDetailWorkspace: View {
+struct DatabaseDetailWorkspace: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let session: SpaceSession
     let database: PagesDatabasesParity.Database
     @Binding var tables: [String: [Row]]
     let outbox: OutboxController?
+    var downloadedOnly=false
 
     @State private var query = ""
     @State private var activeViewId: String?
@@ -575,15 +576,33 @@ private struct DatabaseDetailWorkspace: View {
     @State private var importingCSV = false
     @State private var importMessage: String?
     @State private var phoneTable = false
+    @State private var canonicalRows:[PagesDatabasesParity.DataRow]?
+    @State private var viewIssue:String?
+    @State private var loadingView=false
+    @State private var viewAttempt=0
+    @State private var foreignRow:DatabaseForeignRow?
+
     private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var columns: [PagesDatabasesParity.Column] { PagesDatabasesParity.columns(databaseId: database.id, in: tables) }
     private var allRows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.rows(databaseId: database.id, in: tables) }
-    private var rows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.filteredRows(allRows, columns: columns, query: query, sortColumnId: sortColumnId, direction: sortDirection) }
+    private var viewRows:[PagesDatabasesParity.DataRow] {
+        guard session.connection.desktopPairingId != nil,activeViewId != nil else {return allRows}
+        guard let canonicalRows else {return []}
+        let pending=Set((tables["db_cells"] ?? []).filter{$0.string("mobileSyncState") == "pending"}.compactMap{$0.string("row_id")})
+        var result=canonicalRows.map{row in
+            guard row.databaseId == database.id,pending.contains(row.id),let local=allRows.first(where:{$0.id == row.id}) else {return row}
+            var edited=row;edited.cells=local.cells;return edited
+        }
+        let known=Set(result.map(\.id))
+        result.append(contentsOf:allRows.filter{row in !known.contains(row.id) && tables["db_rows"]?.first(where:{$0.string("id") == row.id})?.string("mobileSyncState") != nil})
+        return result
+    }
+    private var rows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.filteredRows(viewRows, columns: columns, query: query, sortColumnId: sortColumnId, direction: sortDirection) }
     private var views: [PagesDatabasesParity.SavedView] { PagesDatabasesParity.views(databaseId: database.id, in: tables) }
     private var activeView: PagesDatabasesParity.SavedView? { views.first { $0.id == activeViewId } }
     private var layout: String { activeView?.layout ?? adHocLayout }
-    private var selectedRow: PagesDatabasesParity.DataRow? { allRows.first { $0.id == selectedRowId } }
+    private var selectedRow: PagesDatabasesParity.DataRow? { viewRows.first { $0.id == selectedRowId && $0.databaseId == database.id } }
     private var csv: String {
         ([columns.map(\.name)] + rows.map { row in columns.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } })
             .map { $0.map(csvCell).joined(separator: ",") }.joined(separator: "\n")
@@ -603,6 +622,8 @@ private struct DatabaseDetailWorkspace: View {
         }
         .onAppear { if activeViewId == nil { activeViewId = views.first?.id; adHocLayout = views.first?.layout ?? "table" } }
         .onChange(of: database.id) { _, _ in activeViewId = views.first?.id; selectedRowId = nil }
+        .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(viewAttempt)") {await loadSavedView()}
+        .nodusSheet(item:$foreignRow){target in NavigationStack{DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:downloadedOnly).nodusModalClose(accent:session.accent)}}
         .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
         .nodusSheet(isPresented: $creatingColumn) { NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox) }
         .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
@@ -613,7 +634,7 @@ private struct DatabaseDetailWorkspace: View {
     }
 
     private var header: some View {
-        DesktopPageHeader(title: LocalizedStringKey(database.name), subtitle: "\(database.shortId) · \(rows.count) of \(allRows.count) rows", systemImage: database.icon ?? "tablecells", accent: session.accent, trailing: {
+        DesktopPageHeader(title: LocalizedStringKey(database.name), subtitle: loadingView ? "Cargando vista…":"\(database.shortId) · \(rows.count) filas", systemImage: database.icon ?? "tablecells", accent: session.accent, trailing: {
             HStack(spacing: 7) {
                 Menu {
                     Button { creatingColumn = true } label: { Label("New property", systemImage: "rectangle.split.1x2") }
@@ -650,15 +671,18 @@ private struct DatabaseDetailWorkspace: View {
     private var content: some View {
         VStack(spacing: 0) {
             NodusSearchField(text: $query, prompt: "Filter rows and properties", accent: session.accent).padding(10)
+            if loadingView {ProgressView("Cargando la vista guardada de Nodus…").padding(12)}
+            if let viewIssue {NodusNotice(tone:.caution,title:"No se pudo consultar esta vista",message:LocalizedStringKey(viewIssue)).padding(.horizontal,12);Button("Reintentar"){viewAttempt += 1}.frame(minHeight:44)}
             if let importMessage { Text(importMessage).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 12).frame(maxWidth: .infinity, alignment: .leading) }
             Group {
-                switch layout {
+                if session.connection.desktopPairingId != nil,activeViewId != nil,canonicalRows == nil {Color.clear}
+                else {switch layout {
                 case "gallery": gallery
                 case "board", "kanban": board
                 case "calendar": calendar
                 case "timeline": timeline
                 default: if compactPresentation && !phoneTable { phoneRows } else { table }
-                }
+                }}
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
@@ -797,7 +821,23 @@ private struct DatabaseDetailWorkspace: View {
         }
     }
 
-    private func select(_ row: PagesDatabasesParity.DataRow) { selectedRowId = row.id; if compactPresentation { showInspector = true } }
+    private func select(_ row: PagesDatabasesParity.DataRow) {
+        if row.databaseId != database.id {foreignRow=DatabaseForeignRow(id:row.id);return}
+        selectedRowId=row.id;if compactPresentation {showInspector=true}
+    }
+    private func loadSavedView() async {
+        canonicalRows=nil;viewIssue=nil;selectedRowId=nil
+        guard session.connection.desktopPairingId != nil,let view=activeViewId else {loadingView=false;return}
+        loadingView=true;defer{loadingView=false}
+        do {
+            let (vault,_,_)=try privateBridgeConnection(session,domain:.corpus)
+            let reads=PrivateBridgeReadBatch(session:session,downloadedOnly:downloadedOnly)
+            let source=try await CompanionDatabaseViewSource.load(vault:vault,viewId:view){method,args in try await reads.operation(method,args)}
+            let loaded=try DatabaseContainerPresentation.rows(definition:source.definition,rows:source.rows,databaseId:database.id)
+            try Task.checkCancellation();canonicalRows=loaded
+        }catch where error.isCancellation {}
+        catch{viewIssue=error.localizedDescription}
+    }
     private func rowTitle(_ row: PagesDatabasesParity.DataRow) -> String { columns.first(where: { $0.type == "title" }).map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) }?.nonEmpty ?? "Untitled row" }
     private func value(_ column: PagesDatabasesParity.Column?, _ row: PagesDatabasesParity.DataRow) -> String { column.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } ?? "" }
     private func columnWidth(_ column: PagesDatabasesParity.Column) -> CGFloat { column.type == "title" ? 250 : column.type == "formula" ? 125 : 160 }
@@ -806,7 +846,8 @@ private struct DatabaseDetailWorkspace: View {
         guard let outbox else { return }; let id = "drow_\(UUID().uuidString)", now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let row: [String: JSONValue] = ["id": .string(id), "database_id": .string(database.id), "position": .double((allRows.last?.position ?? -1) + 1), "unique_sequence": .int(Int64(allRows.count + 1)), "revision": .int(1), "created_by": .string("mobile"), "updated_by": .string("mobile"), "created_at": .string(now), "updated_at": .string(now)]
         guard await outbox.syncMutation(kind:.upsert,table:.databaseRows,key:[id],row:row,title:"Crear fila") else {return}
-        tables["db_rows",default:[]].append(Row(row));selectedRowId=id
+        var staged=row;staged["mobileSyncState"] = .string(outbox.pending > 0 ? "pending":"available")
+        tables["db_rows",default:[]].append(Row(staged));selectedRowId=id
         if compactPresentation { showInspector = true }
     }
 
@@ -1149,3 +1190,5 @@ private struct PagesDatabaseSyncNotice:View {
         }
     }
 }
+
+private struct DatabaseForeignRow:Identifiable {let id:String}

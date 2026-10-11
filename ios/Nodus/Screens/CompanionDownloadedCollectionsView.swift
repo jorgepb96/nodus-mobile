@@ -188,7 +188,7 @@ private struct DownloadedCollectionDossier: View {
         Group {
             if let dossier {
                 if target.collectionPath == "databases" {
-                    DatabaseGridView(session: session, database: dossier.primary, downloadedOnly: true)
+                    CompanionDownloadedDatabaseWorkspace(session:session,dossier:dossier)
                 } else if target.collectionPath == "pages" {
                     SharedDesktopSurface(session:session,surface:.page,initialPageId:target.id,pageDownloadedOnly:true)
                 } else {
