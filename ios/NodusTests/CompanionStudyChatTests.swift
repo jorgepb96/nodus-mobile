@@ -26,7 +26,7 @@ struct CompanionStudyChatTests {
         let store = ChatHistoryStore(spaceId:UUID().uuidString,root:root,backup:nil),id = UUID().uuidString
         var options = CompanionStudyChatOptions();options.selection.scope = "manual";options.selection.sourceKeys = ["material:source"];options.task = "compare";options.level = "advanced";options.tone = "academic";options.language = "fr"
         var data = try options.value.objectValue!
-        data["title"] = .string("Estudio");data["archived"] = .bool(false)
+        data["id"] = .string(id);data["title"] = .string("Estudio");data["archived"] = .bool(false)
         data["messages"] = .array([.object(["id":.string(UUID().uuidString),"role":.string("assistant"),"content":.string("Intercambio [S1](nodus://study/evidence/S1)"),"citations":.array([citation()])])])
         let document = CompanionChatDocument(version:1,kind:.study,id:id,revision:String(repeating:"a",count:64),data:.object(data),companion:nil)
         let imported = try store.importDesktop(document)
@@ -55,7 +55,7 @@ struct CompanionStudyChatTests {
             #expect(draft["study"] == (try options.value))
             #expect(draft["studyEvidence"]?.objectValue?[reply.id.uuidString] == proof)
             #expect(draft["messages"]?.arrayValue?.last?.objectValue?["citations"] == .array([citation()]))
-            var data = try options.value.objectValue!;data["title"] = .string("Estudio");data["archived"] = .bool(false);data["messages"] = draft["messages"]
+            var data = try options.value.objectValue!;data["id"] = .string(conversation.id);data["title"] = .string("Estudio");data["archived"] = .bool(false);data["messages"] = draft["messages"]
             let snapshot = CompanionChatDocument(version:1,kind:.study,id:conversation.id,revision:String(repeating:"b",count:64),data:.object(data),companion:request.objectValue?["companion"])
             return .object(["id":request.objectValue!["id"]!,"snapshot":try JSONDecoder.nodus.decode(JSONValue.self,from:JSONEncoder.nodus.encode(snapshot))])
         }

@@ -724,7 +724,7 @@ func debugPrivateRecordingCopies() throws -> [CompanionPrivateSourceCopy] {
             "segments": (tables["study_transcript_segments"] ?? []).filter { $0.string("transcript_id").map(transcriptIds.contains) == true },
             "markers": (tables["study_audio_markers"] ?? []).filter { $0.string("recording_id") == id }]
         let rows = owned.mapValues { records in records.enumerated().map { ordinal, row in
-            var row = row; row.columns["_bridge_cursor"] = .int(ordinal + 1)
+            var row = row; row.columns["_bridge_cursor"] = .int(Int64(ordinal + 1))
             if let seconds = row.columns["seconds"], row.columns["t_seconds"] == nil { row.columns["t_seconds"] = seconds }
             return row
         } }
@@ -733,7 +733,7 @@ func debugPrivateRecordingCopies() throws -> [CompanionPrivateSourceCopy] {
         }
         let groups: [JSONValue] = try reference.kind.groups.map { key in
             let records = JSONValue.array((rows[key] ?? []).map { .object($0.columns) })
-            return .object(["key": .string(key), "title": .string(key), "total": .int(rows[key]?.count ?? 0), "revision": .string(try digest(records))])
+            return .object(["key": .string(key), "title": .string(key), "total": .int(Int64(rows[key]?.count ?? 0)), "revision": .string(try digest(records))])
         }
         let json: JSONValue = .object(["version": .int(1), "kind": .string(reference.kind.rawValue), "id": .string(id),
             "root": .object(root.columns), "groups": .array(groups), "revision": .string(try digest(.object(root.columns)))])

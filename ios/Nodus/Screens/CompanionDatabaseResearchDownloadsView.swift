@@ -65,7 +65,7 @@ struct CompanionDatabaseResearchDownloadsView: View {
                     let journal = try await CompanionDatabaseReadingOutboxes.shared.outbox(pairingId:pairing.id,vaultId:vault)
                     try await journal.seed(reading)
                 }
-                for image in try CompanionCorpusImage.sources(in:source.report) where images.insert(image).inserted {
+                for image in try CompanionCorpusImage.sourceURLs(in:source.report) where images.insert(image).inserted {
                     let file = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:image,domains:Array(pairing.domains))
                     let data = try JSONEncoder.nodus.encode(file); bytes += data.count
                     guard bytes <= PrivateBridgeCache.maximumSelectedCopyBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }

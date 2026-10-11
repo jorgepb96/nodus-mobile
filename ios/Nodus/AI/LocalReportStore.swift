@@ -258,7 +258,7 @@ final class LocalReportStore {
 extension JSONDecoder {
     nonisolated static var nodusReports: JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = JSONDecoder.nodus.dateDecodingStrategy
         return decoder
     }
 }
@@ -266,7 +266,7 @@ extension JSONDecoder {
 extension JSONEncoder {
     nonisolated static var nodusReports: JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = JSONEncoder.nodus.dateEncodingStrategy
         return encoder
     }
 }

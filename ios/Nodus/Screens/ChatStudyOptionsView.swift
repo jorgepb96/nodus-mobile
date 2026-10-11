@@ -21,7 +21,7 @@ struct ChatStudyOptionsView: View {
         NavigationStack {
             Form {
                 if !downloadOnly {
-                    Section("Respuesta") {
+                    Section {
                         Picker("Tarea",selection:$options.task) {
                             Text("Responder").tag("answer");Text("Resumir").tag("summary");Text("Explicar").tag("explain")
                             Text("Comparar").tag("compare");Text("Esquema").tag("outline");Text("Cronología").tag("timeline")
@@ -32,7 +32,7 @@ struct ChatStudyOptionsView: View {
                         Picker("Tono",selection:$options.tone) { Text("Claro").tag("clear");Text("Académico").tag("academic");Text("Conciso").tag("concise");Text("Guiado").tag("guided") }
                         Picker("Idioma",selection:$options.language) { Text("Idioma de la app").tag("auto");Text("Español").tag("es");Text("English").tag("en");Text("Français").tag("fr") }
                         Toggle("Permitir conocimiento externo",isOn:$options.allowExternalKnowledge)
-                    } footer: { Text("El conocimiento externo se distingue de las fuentes elegidas. Las citas siempre apuntan a sus fragmentos reales.") }
+                    } header: { Text("Respuesta") } footer: { Text("El conocimiento externo se distingue de las fuentes elegidas. Las citas siempre apuntan a sus fragmentos reales.") }
                 }
                 Section("Fuentes") {
                     if offline { Text("Nodus no está disponible. El chat utilizará únicamente las fuentes que elegiste descargar.").font(.footnote).foregroundStyle(.secondary) }

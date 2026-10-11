@@ -1,12 +1,24 @@
 {
   "version": 1,
-  "desktopCommit": "023eb45493732dbbee35bf300425e0d31163356f",
-  "sourceDigest": "82b22d656d3a60fb697e00d46fe94c267215dd7db069f9e899bff0ff8ce9eb83",
+  "desktopCommit": "13d390c51a16043fc0facaa402042480bed97e0a",
+  "sourceDigest": "4633124cc283109d07feebc89442a574c13c08a5aa9a34a534ee4faa3a53a1ec",
   "files": {
-    "index.html": "7db9ed662f53ca86dadacb30f5319b7008a136a28c590a2b6e8ed451ef5914fd",
-    "operations.json": "ac9a312f91dac7c4555867078e7977ecdeefcb35c4cf6d10a1f97e4813db038f",
+    "chat-read.css": "6b81a44ca1103c6a3033973474103d21c1066feea9c2f4745a11dee6943560e8",
+    "chat-read.html": "f11bc0e21820903b7539c97d81a490ef1871ad6ddfadbd50c8032297b59b5118",
+    "chat-read.iife.js": "24bdaee5fc9a338c3996440325c893c2fee390c3eb7e996aad00d47bc7430f6e",
+    "companion-chat.js": "06d0274716465c05840bc53582c11f24e6ebd42a16089fdaa2f5815964dc103d",
+    "database-query.html": "96dfd67373e6212d1698fb8f5799d4c2f6e77b1a28fbd34345879e379a422d2f",
+    "database-query.js": "4fdaacaa0dfbb65562deb8b72b45b7f2ea2737536129bd2360242a17ba54ba53",
+    "index.html": "67a42d1126272372cef667c00edcda63985e9463a1ed679b561afbeae274c3b3",
+    "map-read.css": "95d8c5473048f5f1c348c74b5a56c345493f5618b3a323de5a7c976e4e4dbf26",
+    "map-read.html": "d775be14af882fe629320de04aa3df9d8f063c258c78e2a09a31436bff7f8cc9",
+    "map-read.iife.js": "7c7bd64e3c1e7502bad677422f0bac5df59d12b369c416aa9b010fce8a7e1531",
+    "operations.json": "fd19788e4e084cf74a32b62eaf2d7b0d23e4ad9a388d8c36927d08d8e58d123f",
+    "prose-read.css": "57d020197ae433bfc1dca9ba5a73293285a12e3d132aa733af204bb1204a039a",
+    "prose-read.html": "54ec56e83b05cde7ace8b3ccce99f9cbb2917b9a8253eff4f6bc12cb38804327",
+    "prose-read.iife.js": "e3e63d7a4784ff1d90123f43292dcf165a5d51bbdc4468750784206e22f384df",
     "report-renderer.js": "b96aec3cfb12c0a61014938e670fa89651bb63e585dd03f5b06e04a02e698a84",
-    "surface.css": "1532f9138f1eae11d32b5340537a6a49728a412564e032e83deb7c598d986625",
-    "surface.iife.js": "6447ea7aea0cc504ce808e05a2d717c7c538c0cdabf085b81c31793257a3ebf8"
+    "surface.css": "85866b091de8b5965ba9b203929a579959c3f39f9cf8fe002b9c71b10a0bb21c",
+    "surface.iife.js": "53bac4ff75580a5867793a816288e9202425fec2940d83d3d1aaa3feb1a8e6e3"
   }
 }

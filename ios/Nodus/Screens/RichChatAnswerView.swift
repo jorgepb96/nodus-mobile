@@ -100,12 +100,12 @@ enum RichChatSource:Identifiable {
         return .object(values.merging(["kind":.string(kind.rawValue),"conversationId":.string(conversationId)]) { _,new in new })
     }
     private func key(_ request:JSONValue,method:String) throws -> String {
-        "companion:chat-reader:v1:"+SHA256.hash(data:try JSONEncoder.nodus.encode(.object(["request":request,"method":.string(method),"language":.string(Prompts.interfaceLanguage)]))).map{String(format:"%02x",$0)}.joined()
+        "companion:chat-reader:v1:"+SHA256.hash(data:try JSONEncoder.nodus.encode(JSONValue.object(["request":request,"method":.string(method),"language":.string(Prompts.interfaceLanguage)]))).map{String(format:"%02x",$0)}.joined()
     }
     private func read(_ request:JSONValue,method:String) async throws -> JSONValue {
         let (vault,pairing,client,cache)=try connection(),key=try key(request,method:method)
         let prior=try await cache.data(vaultId:vault,domain:.corpus,recordId:key)
-        let value:JSONValue
+        var value:JSONValue
         do {
             value=try await client.operation(vaultId:vault,method:method,args:[request,.string(Prompts.interfaceLanguage)],timeout:request.objectValue?["action"] == .string("metadata") ? 4:75)
             guard try JSONEncoder.nodus.encode(value).count<=12*1024*1024 else { throw DesktopBridgeError.malformedResponse }
@@ -134,7 +134,7 @@ enum RichChatSource:Identifiable {
             }
         }
         let fields=desktopRecord?.objectValue ?? [:],record=JSONValue.object(fields.filter{["attachments","concilium","skills"].contains($0.key)})
-        return .object(["content":.string(content),"language":.string(Prompts.interfaceLanguage),"dark":.bool(dark),"accent":.string(session.vaultType?.accentHex ?? "#6366f1"),"textScale":.number(textScale),"owner":.string(owner),"legacyFences":.array(legacy),"desktopRecord":record])
+        return .object(["content":.string(content),"language":.string(Prompts.interfaceLanguage),"dark":.bool(dark),"accent":.string(session.vaultType?.accentHex ?? "#6366f1"),"textScale":.double(textScale),"owner":.string(owner),"legacyFences":.array(legacy),"desktopRecord":record])
     }
     private func asset(_ source:String) async throws -> CompanionChatAsset {
         let (vault,pairing,client,cache)=try connection()

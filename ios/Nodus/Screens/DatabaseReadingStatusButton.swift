@@ -47,7 +47,7 @@ struct DatabaseReadingStatusButton:View {
                         }
                     }.navigationTitle("Anotaciones de informes").navigationBarTitleDisplayMode(.inline).nodusModalClose(accent:session.accent)
                         .task(id:session.companionDatabaseReadingRevision) { await refresh() }
-                }.nodusTextHierarchy().sheet(item:$exported) { ShareSheet(items:[$0]) }
+                }.nodusTextHierarchy().sheet(item:$exported) { ActivityShareSheet(items:[$0]) }
             }
     }
     private func label(_ state:CompanionDatabaseReadingOutbox.State)->String {

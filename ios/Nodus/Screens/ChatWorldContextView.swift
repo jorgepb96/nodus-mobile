@@ -30,7 +30,7 @@ struct ChatWorldOptionsView: View {
                 if loading { ProgressView("Cargando elementos…") }
                 if let issue { NodusNotice(tone:.blocked,title:"No se ha podido cargar el mundo",message:LocalizedStringKey(issue));Button("Reintentar") { task = Task { await load() } } }
                 if options.selection.scope == "manual" || downloadOnly {
-                    Section("Elementos del mundo") {
+                    Section {
                         ForEach(entries.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }) { entry in
                             Button {
                                 if options.selection.entryKeys.contains(entry.key) { options.selection.entryKeys.removeAll { $0 == entry.key } }
@@ -42,7 +42,7 @@ struct ChatWorldOptionsView: View {
                                 }.frame(minHeight:44)
                             }.buttonStyle(.plain).disabled(saving || saved)
                         }
-                    } footer: { Text(downloadOnly ? "Descarga juntos los personajes, lugares o escenas que quieras comparar sin conexión.":"Hasta seis elementos por pregunta, como en Nodus. Las referencias a sus reglas y conexiones se incluyen en el contexto.") }
+                    } header: { Text("Elementos del mundo") } footer: { Text(downloadOnly ? "Descarga juntos los personajes, lugares o escenas que quieras comparar sin conexión.":"Hasta seis elementos por pregunta, como en Nodus. Las referencias a sus reglas y conexiones se incluyen en el contexto.") }
                 }
                 if entries.isEmpty,!loading,issue == nil { Text("Todavía no hay elementos en este mundo.").foregroundStyle(.secondary) }
                 if downloadOnly {

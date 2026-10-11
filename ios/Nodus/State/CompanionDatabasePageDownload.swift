@@ -20,11 +20,14 @@ enum CompanionDatabasePageDownload {
         domains: Set<DesktopBridgeDomain>, images: Bool, files: Bool, existing: Set<String>, maximumBytes: Int,
         database: (String, Int) async throws -> JSONValue) async throws -> [PrivateBridgeCache.ReadPackRecord] {
         let supportsBatch = try await client.liveCapabilities().operations.contains("getMobilePageDocuments")
-        let batch: (([String]) async throws -> [String: JSONValue])? = supportsBatch ? { ids in
-            try await CompanionPageReadBatch.read(vault: vault, pageIds: ids, maximumBytes: PrivateBridgeCache.maximumSelectedCopyBytes) { input in
-                try await client.operation(vaultId: vault, method: "getMobilePageDocuments", args: [input])
+        let batch: (([String]) async throws -> [String: JSONValue])?
+        if supportsBatch {
+            batch = { ids in
+                try await CompanionPageReadBatch.read(vault: vault, pageIds: ids, maximumBytes: PrivateBridgeCache.maximumSelectedCopyBytes) { input in
+                    try await client.operation(vaultId: vault, method: "getMobilePageDocuments", args: [input])
+                }
             }
-        } : nil
+        } else { batch = nil }
         return try await capture(vault: vault, presentation: presentation, existing: existing, maximumBytes: maximumBytes,
             batch: batch,
             fetch: { id in try await client.operation(vaultId: vault, method: "getMobilePageDocument", args: [.string(id)]) },

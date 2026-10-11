@@ -169,7 +169,7 @@ private nonisolated final class CompanionReconnectProtocol: URLProtocol, @unchec
 struct AppWiringTests {
     @Test("NodusKit is linked into the app and its contract table is intact")
     func linksNodusKit() {
-        #expect(Collections.all.count == 23)
+        #expect(Collections.all.count == 49)
         #expect(Collections["deep-research"] == nil, "deep-research is a special resource, not a collection")
         #expect(SpecialResource.deepResearch.listKey == "reports")
     }
@@ -320,7 +320,7 @@ struct AppWiringTests {
         let studyAndTeaching = Collections.all.filter {
             $0.table.hasPrefix("study_") || $0.table.hasPrefix("teaching_")
         }
-        #expect(studyAndTeaching.count == 12)
+        #expect(studyAndTeaching.count == 14)
         for collection in studyAndTeaching {
             #expect(collection.idField == "id", "\(collection.path) is keyed on \(collection.idField)")
         }

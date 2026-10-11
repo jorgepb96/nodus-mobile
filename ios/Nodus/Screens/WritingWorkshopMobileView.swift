@@ -145,7 +145,7 @@ struct WritingWorkshopMobileView: View {
             if session.connection.desktopPairingId != nil {
                 let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
                 let offset = reset ? 0 : drafts.count
-                var input: [String: JSONValue] = ["offset": .int(offset), "limit": .int(100), "query": .string(currentQuery), "sort": .string(currentSort)]
+                var input: [String: JSONValue] = ["offset": .int(Int64(offset)), "limit": .int(100), "query": .string(currentQuery), "sort": .string(currentSort)]
                 if !currentKind.isEmpty { input["kind"] = .string(currentKind) }
                 let value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault,
                     method: "getWritingWorkshopMobileDraftCatalogue", args: [.object(input)], timeout: 4)
@@ -412,7 +412,7 @@ private struct WritingComposer: View {
             let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
             let result = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault,
                 method: "getWritingWorkshopMobileCatalogue", args: [.object(["selectionKey": .string(key),
-                    "query": .string(currentQuery), "limit": .int(100), "offset": .int(offset)])], timeout: 4)
+                    "query": .string(currentQuery), "limit": .int(100), "offset": .int(Int64(offset))])], timeout: 4)
             let page = try CompanionWorkshopSource.cataloguePage(result)
             try Task.checkCancellation()
             guard currentQuery == query else { return }

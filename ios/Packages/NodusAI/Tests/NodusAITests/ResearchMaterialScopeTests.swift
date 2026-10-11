@@ -35,9 +35,11 @@ struct ResearchMaterialScopeTests {
     @Test("device and mixed scope survives persisted reports and exports without discarding support or audit")
     func durableScope() throws {
         let report = DeepResearchReport(objective: "Fotografía", sections: [.init(title: "Fuente", prose: "Prosa guardada", citations: [], rejectedCitations: [])],
-            references: [], words: 2, pages: 1, citationsChecked: 0, citationsRejected: 0, stoppedReason: nil)
+            references: [], words: 2, pages: 1, citationsChecked: 0, citationsRejected: 0, stoppedReason: nil,
+            audit: .init(citationsChecked: 0, citationsRejected: 0, citedSourceCount: 0, generatedAt: Date(timeIntervalSince1970: 1_700_000_000)))
         #expect(report.materialNotice == nil)
         let selected = report.withMaterialScopes(["device_downloads"])
+        #expect(selected.audit == report.audit)
         let decoded = try JSONDecoder.nodus.decode(DeepResearchReport.self, from: JSONEncoder.nodus.encode(selected))
         #expect(decoded.materialScopes == ["device_downloads"]); #expect(decoded.markdown.contains("no representa el vault completo"))
         #expect(decoded.audit == report.audit); #expect(decoded.supportMatrix == report.supportMatrix); #expect(decoded.sections == report.sections)

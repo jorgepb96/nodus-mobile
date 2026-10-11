@@ -199,7 +199,7 @@ struct ChatScreen: View {
                 .frame(maxWidth: .infinity)
                 .overlay(alignment:.leading) {
                     Button(action:openHistory) { Image(systemName:"clock.arrow.circlepath").frame(width:44,height:44) }
-                        .buttonStyle(.plain).foregroundStyle(session.accent).accessibilityLabel("Conversation history")
+                        .buttonStyle(.plain).foregroundStyle(session.accent).accessibilityLabel("Conversation history").accessibilityIdentifier("nodus-chat-history")
                 }
                 .overlay(alignment: .trailing) {
                     if !turns.isEmpty {
@@ -462,6 +462,7 @@ struct ChatScreen: View {
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
             TextField("", text: $draft, prompt: placeholder, axis: .vertical)
+                .accessibilityIdentifier("nodus-chat-composer")
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
@@ -481,7 +482,7 @@ struct ChatScreen: View {
             }
             .buttonStyle(.plain)
             .disabled(!isThinking && draft.trimmingCharacters(in: .whitespaces).isEmpty)
-            .accessibilityLabel(isThinking ? "Stop" : "Send")
+            .accessibilityLabel(isThinking ? "Stop" : "Send").accessibilityIdentifier("nodus-chat-send")
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, NodusSpace.page)

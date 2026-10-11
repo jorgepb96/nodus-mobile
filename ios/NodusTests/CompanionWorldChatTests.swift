@@ -13,8 +13,9 @@ struct CompanionWorldChatTests {
         let store = ChatHistoryStore(spaceId:UUID().uuidString,root:root,backup:nil)
         var options = CompanionWorldChatOptions();options.selection.scope = "manual";options.selection.entryKeys = ["character:kaelen"];options.selection.keepFocus = true
         options.focus = [.init(kind:"character",id:"kaelen",title:"Kaelen 🌊")]
-        var data = try options.value.objectValue!;data["title"] = .string("Mundo");data["archived"] = .bool(false);data["messages"] = .array([])
-        let document = CompanionChatDocument(version:1,kind:.world,id:UUID().uuidString,revision:String(repeating:"a",count:64),data:.object(data),companion:nil)
+        let id = UUID().uuidString
+        var data = try options.value.objectValue!;data["id"] = .string(id);data["title"] = .string("Mundo");data["archived"] = .bool(false);data["messages"] = .array([])
+        let document = CompanionChatDocument(version:1,kind:.world,id:id,revision:String(repeating:"a",count:64),data:.object(data),companion:nil)
         let imported = try store.importDesktop(document)
         #expect(imported.world == options);#expect(imported.world?.focusKeys == ["character:kaelen"])
     }

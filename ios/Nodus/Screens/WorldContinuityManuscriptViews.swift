@@ -339,7 +339,7 @@ struct WorldManuscriptView: View {
                     }
                     if let message { Text(message).font(.caption).foregroundStyle(session.accent.nodusReadable) }
                     if let error { Text(error).font(.caption).foregroundStyle(.red) }
-                    if let selected, manuscriptDrafts[selected.id]?.conflicts(with: textRows[selected.id]?.string("text") ?? "") == true {
+                    if manuscriptDrafts[selected.id]?.conflicts(with: textRows[selected.id]?.string("text") ?? "") == true {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("La escena cambió en Nodus. Tu borrador está conservado en este dispositivo.").font(.callout)
                             Button("Comparar versiones") { comparingDraft = true }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
@@ -399,7 +399,7 @@ struct WorldManuscriptView: View {
         guard let store = draftStore else { return }
         Task {
             do { try await store.set(record) }
-            catch { error = "No se pudo conservar el borrador: \(error.localizedDescription)" }
+            catch { self.error = "No se pudo conservar el borrador: \(error.localizedDescription)" }
         }
     }
     private func adoptRemoteDraft() {

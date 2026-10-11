@@ -18,13 +18,13 @@ struct NativeLiveChatOptionsView:View {
     var body:some View {
         NavigationStack {
             Form {
-                Section("Modelos del Mac") {
+                Section {
                     Text(options.modelName(options.effectiveModel)).font(.callout).textSelection(.enabled)
                     NavigationLink("Elegir modelo") { modelList(council:false) }
                     Button("Usar la elección actual del Mac") { options.preferences.model=nil;options.preferences.thinkingEffort="standard";Task { await options.load(session:session,conversationId:conversationId) } }
                     if options.loading { ProgressView("Consultando Nodus…") }
                     if let issue=options.issue { Text(issue).font(.footnote).foregroundStyle(.red);Button("Reintentar") { Task { await options.load(session:session,conversationId:conversationId) } } }
-                } footer: { Text("La generación se ejecuta en tu Mac con sus proveedores, modelos locales y sesiones de suscripción. La pregunta quedará pendiente si se pierde la conexión.") }
+                } header: { Text("Modelos del Mac") } footer: { Text("La generación se ejecuta en tu Mac con sus proveedores, modelos locales y sesiones de suscripción. La pregunta quedará pendiente si se pierde la conexión.") }
                 Section("Respuesta") {
                     Picker("Prompt",selection:Binding(get:{options.preferences.systemPromptId},set:{options.preferences.systemPromptId=$0;options.preferences.useMacPrompt=false})) {
                         Text("Predeterminado").tag(nil as String?)
@@ -50,7 +50,7 @@ struct NativeLiveChatOptionsView:View {
         }.tint(session.accent)
     }
     @ViewBuilder private var researchSections:some View {
-        Section("Contexto") {
+        Section {
             Toggle("Ideas y relaciones",isOn:layer("ideas"))
             Toggle("Documentos y pasajes",isOn:layer("documents"))
             Picker("Cuaderno",selection:Binding<String?>(get:{options.preferences.selection.objectValue?["notebookId"]?.stringValue},set:{setSelection("notebookId",$0.map(JSONValue.string) ?? .null)})) {
@@ -73,11 +73,11 @@ struct NativeLiveChatOptionsView:View {
                 NavigationLink("Obras") { sourceList(options.works,key:"workIds",title:"Obras") }
             }
             NavigationLink("Profundidad de consulta") { retrievalForm }
-        } footer: { Text("Un filtro activo sin fuentes seleccionadas no consulta ninguna obra. El cuaderno conserva sus restricciones y las fuentes preparadas por el Mac.") }
-        Section("Skills") {
+        } header: { Text("Contexto") } footer: { Text("Un filtro activo sin fuentes seleccionadas no consulta ninguna obra. El cuaderno conserva sus restricciones y las fuentes preparadas por el Mac.") }
+        Section {
             ForEach(options.skills) { skill in Toggle(skill.name,isOn:selected(skill.id,\NativeLiveChatOptions.Preferences.skillIds)) }
-        } footer: { Text("Las skills elegidas se invocan para esta pregunta, además de las que Nodus tenga activadas en el Mac.") }
-        Section("Concilium") {
+        } header: { Text("Skills") } footer: { Text("Las skills elegidas se invocan para esta pregunta, además de las que Nodus tenga activadas en el Mac.") }
+        Section {
             NavigationLink(options.preferences.council.isEmpty ? "Elegir consejo":"\(options.preferences.council.count) modelos") { modelList(council:true) }
             if !options.preferences.council.isEmpty {
                 Picker("Presidente",selection:$bound.preferences.chairman) {
@@ -85,7 +85,7 @@ struct NativeLiveChatOptionsView:View {
                 }
                 Button("Desactivar Concilium") { options.preferences.council=[];options.preferences.chairman=0 }
             }
-        } footer: { Text("Entre dos y cinco modelos distintos. El presidente redacta la síntesis final.") }
+        } header: { Text("Concilium") } footer: { Text("Entre dos y cinco modelos distintos. El presidente redacta la síntesis final.") }
     }
     private func modelList(council:Bool) -> some View {
         List {
@@ -122,7 +122,7 @@ struct NativeLiveChatOptionsView:View {
     }
     private var retrievalForm:some View {
         Form {
-            Picker("Profundidad",selection:Binding(get:{options.preferences.selection.objectValue?["retrieval"]?.objectValue?["preset"]?.stringValue ?? "agent"},set:chooseRetrieval)) {
+            Picker("Profundidad",selection:Binding(get:{options.preferences.selection.objectValue?["retrieval"]?.objectValue?["preset"]?.stringValue ?? "agent"},set:{ chooseRetrieval($0) })) {
                 Text("Según el agente").tag("agent");Text("Rápida").tag("fast");Text("Equilibrada").tag("balanced");Text("Profunda").tag("deep");Text("Personalizada").tag("custom")
             }
             if let raw=options.preferences.selection.objectValue?["retrieval"]?.objectValue {
@@ -133,14 +133,14 @@ struct NativeLiveChatOptionsView:View {
                     Stepper("Rondas: \(raw["rounds"]?.intValue ?? 3)",value:limit("rounds",3),in:1...16)
                     Toggle("Ampliar automáticamente",isOn:Binding(get:{raw["autoExpand"] == .bool(true)},set:{setRetrieval("autoExpand",.bool($0))}))
                 }
-                Section("Umbral de similitud") {
+                Section {
                     Toggle("Umbral manual",isOn:Binding(get:{raw["threshold"]?.objectValue?["mode"] == .string("manual")},set:{ enabled in setRetrieval("threshold",enabled ? .object(["mode":.string("manual"),"value":.double(0.5),"embeddingSpace":.string(""),"metric":.string("cosine")]):.object(["mode":.string("automatic")])) }))
                     if raw["threshold"]?.objectValue?["mode"] == .string("manual") {
                         TextField("Espacio de embeddings",text:Binding(get:{raw["threshold"]?.objectValue?["embeddingSpace"]?.stringValue ?? ""},set:{setThreshold("embeddingSpace",.string($0))})).textInputAutocapitalization(.never).autocorrectionDisabled()
                         Slider(value:Binding(get:{raw["threshold"]?.objectValue?["value"]?.doubleValue ?? 0.5},set:{setThreshold("value",.double($0))}),in:-1...1)
                         Text("\(raw["threshold"]?.objectValue?["value"]?.doubleValue ?? 0.5,format:.number.precision(.fractionLength(2)))").font(.caption).monospacedDigit()
                     }
-                } footer: { Text("El umbral manual debe corresponder al mismo espacio de embeddings preparado en el Mac.") }
+                } header: { Text("Umbral de similitud") } footer: { Text("El umbral manual debe corresponder al mismo espacio de embeddings preparado en el Mac.") }
             }
         }.navigationTitle("Profundidad de consulta")
     }
