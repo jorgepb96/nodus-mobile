@@ -1249,6 +1249,24 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.internalImages.scopedRendering",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.selectedInternalImages",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.internalImages.privateGrant",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

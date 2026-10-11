@@ -259,6 +259,7 @@ private struct DesktopWebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onImmersionSource: onImmersionSource, onNavigate: onNavigate) }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-image")
         config.userContentController.add(context.coordinator, name: "nodus")
         let data: [String: Any] = ["surface": surface.rawValue, "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
             "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
@@ -342,6 +343,7 @@ private struct DesktopWebView: UIViewRepresentable {
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
         view.configuration.userContentController.removeScriptMessageHandler(forName: "nodus")
         coordinator.tasks.forEach { $0.cancel() }
+        coordinator.images.cancelAll()
         coordinator.finishJavaScriptPanel()
         coordinator.session.isSurfaceFullscreen = false
     }
@@ -379,6 +381,7 @@ private struct DesktopWebView: UIViewRepresentable {
         let onOpenWritingResult: (MobileWritingResultTarget) -> Void
         let onImmersionSource: (String, JSONValue) -> Void
         private lazy var immersionProgress = ImmersionSurfaceProgressBridge(session: session)
+        lazy var images = MobileCorpusImageScheme(session:session,onError:onError)
         var tasks: [Task<Void, Never>] = []
         var runningJobs: [String: (DesktopBridgeClient, String, String)] = [:]
         private var persistedSurfaceCache: PrivateBridgeCache?

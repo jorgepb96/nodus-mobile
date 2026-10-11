@@ -164,6 +164,7 @@ struct CompanionDownloadsView: View {
             }
             var bytes = records.reduce(0) { $0 + $1.data.count }
             guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+            var selectedImages = Set<String>()
             for (index, id) in selected.sorted().enumerated() {
                 try Task.checkCancellation()
                 let args: [JSONValue] = [.string(id)]
@@ -172,6 +173,13 @@ struct CompanionDownloadsView: View {
                 let data = try JSONEncoder.nodus.encode(value); bytes += data.count
                 guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getWorkspaceNoteEditorData", args), data: data))
+                for sourceURL in try CompanionCorpusImage.sourceURLs(in:value) {
+                    guard selectedImages.insert(sourceURL).inserted else { continue }
+                    let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:pairing.domains)
+                    let data = try JSONEncoder.nodus.encode(image); bytes += data.count
+                    guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    records.append(.init(domain:.corpus,recordId:CompanionCorpusImage.recordId(source:sourceURL),data:data))
+                }
                 let sourceArgs: [JSONValue] = [.object(["noteId": .string(id)])]
                 let source = try await client.operation(vaultId: vault, method: "getStudyImprovementOfflineSource", args: sourceArgs)
                 guard source.objectValue?["version"] == .int(1), source.objectValue?["noteId"] == .string(id),

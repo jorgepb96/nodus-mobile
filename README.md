@@ -238,6 +238,15 @@ BlockNote and Markdown without exceeding the former transport cap. Device and Ma
 same wire bound before sending or applying; the original structured image remains in durable
 authored storage and revision history. The prepared large-image roundtrip contracts have not
 been executed and still require actual visual/HTTP acceptance.
+Shared iOS readers now resolve registered `nodus-image` originals and thumbnails through
+the typed, chunked image bridge. Current-vault conversations, stored report/immersion figure
+manifests and vault-linked library readers establish ownership for chat images; foreign
+vault owners and arbitrary URL/filesystem requests fail. Private portrait grants travel
+with each image and remain mandatory for offline copies. Selected Scriptor/report/immersion
+downloads include complete verified image bytes and figure manifests within their shared
+budget, without rewriting structured URLs. Unsupported internal sources reject the download.
+The image contracts are prepared but actual WK rendering and physical-device acceptance
+remain pending; the shared resources still need their final rebuild.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and

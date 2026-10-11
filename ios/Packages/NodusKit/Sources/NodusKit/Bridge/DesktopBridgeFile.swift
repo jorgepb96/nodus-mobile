@@ -3,10 +3,10 @@ import Foundation
 
 public enum DesktopBridgeFileKind: String, Codable, Sendable {
     case studyMaterial, studyMaterialVersion, studyRecording, testimonyMedia, archiveItem, archiveFile
-    case libraryOriginal, libraryAttachment, audioClip
+    case libraryOriginal, libraryAttachment, audioClip, corpusImage
     public var domain: DesktopBridgeDomain {
         switch self {
-        case .studyMaterial, .studyMaterialVersion, .libraryOriginal, .libraryAttachment, .audioClip: .corpus
+        case .studyMaterial, .studyMaterialVersion, .libraryOriginal, .libraryAttachment, .audioClip, .corpusImage: .corpus
         case .studyRecording: .studyRecordings
         case .testimonyMedia: .testimonies
         case .archiveItem, .archiveFile: .primarySourceFiles
@@ -29,6 +29,7 @@ public struct DesktopBridgeFileDescriptor: Codable, Sendable, Equatable {
     public let byteSize: Int
     public let sha256: String
     public let chunkSize: Int
+    public var requiredDomains: [DesktopBridgeDomain]? = nil
     func validate() throws {
         guard !id.isEmpty, byteSize >= 0, chunkSize > 0, chunkSize <= 4 * 1024 * 1024,
               sha256.count == 64, sha256.allSatisfy(\.isHexDigit),
@@ -38,8 +39,8 @@ public struct DesktopBridgeFileDescriptor: Codable, Sendable, Equatable {
 }
 
 extension DesktopBridgeClient {
-    public func fileDescriptor(vaultId: String, kind: DesktopBridgeFileKind, id: String) async throws -> DesktopBridgeFileDescriptor {
-        let response = try await fileRequest(vaultId: vaultId, kind: kind, id: id, action: "descriptor")
+    public func fileDescriptor(vaultId: String, kind: DesktopBridgeFileKind, id: String, timeout: TimeInterval? = nil) async throws -> DesktopBridgeFileDescriptor {
+        let response = try await fileRequest(vaultId: vaultId, kind: kind, id: id, action: "descriptor", timeout: timeout)
         let descriptor = try JSONDecoder.nodus.decode(DesktopBridgeFileDescriptor.self, from: response.data)
         try descriptor.validate()
         guard descriptor.kind == kind, descriptor.id == id else { throw DesktopBridgeError.malformedResponse }

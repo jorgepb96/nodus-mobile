@@ -498,13 +498,13 @@ public actor DesktopBridgeClient {
         return try await raw(path: Self.corpusPath(vaultId: vaultId, path: path, percentEncoded: percentEncoded), query: query, method: method, body: body, timeout: timeout)
     }
 
-    func fileRequest(vaultId: String, kind: DesktopBridgeFileKind, id: String, action: String, query: [URLQueryItem] = []) async throws -> DesktopBridgeResponse {
+    func fileRequest(vaultId: String, kind: DesktopBridgeFileKind, id: String, action: String, query: [URLQueryItem] = [], timeout: TimeInterval? = nil) async throws -> DesktopBridgeResponse {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(kind.domain),
               !id.isEmpty, id != ".", id != "..", ["descriptor", "content"].contains(action) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed),
               let record = id.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
-        return try await raw(path: "/bridge/v2/vaults/\(vault)/files/\(kind.rawValue)/\(record)/\(action)", query: query, method: "GET")
+        return try await raw(path: "/bridge/v2/vaults/\(vault)/files/\(kind.rawValue)/\(record)/\(action)", query: query, method: "GET", timeout: timeout)
     }
 
     static func corpusPath(vaultId: String, path: String, percentEncoded: Bool) throws -> String {

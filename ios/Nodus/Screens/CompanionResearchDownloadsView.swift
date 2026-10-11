@@ -159,6 +159,8 @@ struct CompanionResearchDownloadsView: View {
             let chosen = catalogue.filter { selected.contains($0.objectValue?["id"]?.stringValue ?? "") }
             guard chosen.count == selected.count, !chosen.isEmpty else { throw PrivateBridgeCache.ReadPackError.invalidSelection }
             var records: [PrivateBridgeCache.ReadPackRecord] = [], bytes = 0, dictionaryBytes = 0
+            var selectedImages = Set<String>()
+            let (_, pairing, _) = try privateBridgeConnection(session,domain:.corpus)
             var citations = Set<JSONValue>()
             func collectCitations(_ value: JSONValue) {
                 let kinds: Set<String> = ["idea", "work", "gap", "contradiction", "passage"]
@@ -203,6 +205,13 @@ struct CompanionResearchDownloadsView: View {
                     definition["progress"] = nil; value = .object(definition)
                 }
                 try add(method, args, value)
+                for sourceURL in try CompanionCorpusImage.sourceURLs(in:value) {
+                    guard selectedImages.insert(sourceURL).inserted else { continue }
+                    let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:pairing.domains)
+                    let data = try JSONEncoder.nodus.encode(image); bytes += data.count
+                    guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    records.append(.init(domain:.corpus,recordId:CompanionCorpusImage.recordId(source:sourceURL),data:data))
+                }
                 if !["getDecorativeImageDataUrl", "getSettings"].contains(method) { collectCitations(value) }
                 return value
             }
@@ -238,6 +247,7 @@ struct CompanionResearchDownloadsView: View {
                 } else {
                     let entity = kind == .reports ? "deep_research" : "immersion"
                     let readerMethod = kind == .reports ? "getWritingWorkshopDraft" : "getImmersionSession"
+                    _ = try await fetch("getDocumentVisuals",[.object(["kind":.string(kind == .reports ? "deep-research" : "immersion"),"id":.string(id)])])
                     let reader: JSONValue
                     if kind == .reports {
                         let report = try await fetch("getWritingWorkshopDraft", [.string(id)])
