@@ -157,6 +157,10 @@ struct WorldManuscriptView: View {
     @State private var supportTables: [String: [Row]] = [:]
     @State private var selectedId: String?
     @State private var draft = ""
+    @State private var draftSceneId: String?
+    @State private var manuscriptDrafts: [String: CompanionManuscriptDraftStore.Draft] = [:]
+    @State private var draftStore: CompanionManuscriptDraftStore?
+    @State private var comparingDraft = false
     @State private var loading = true
     @State private var saving = false
     @State private var message: String?
@@ -209,6 +213,21 @@ struct WorldManuscriptView: View {
         .accessibilityIdentifier("world-manuscript")
         .task(id: session.publishedRevision) { await load() }
         .onChange(of: selectedId) { _, _ in selectDraft() }
+        .onChange(of: draft) { _, text in
+            guard let id = draftSceneId, id == selectedId else { return }
+            let baseline = manuscriptDrafts[id]?.baseline ?? textRows[id]?.string("text") ?? ""
+            retainDraft(.init(sceneId: id, baseline: baseline, text: text))
+        }
+        .nodusSheet(isPresented: $comparingDraft) {
+            if let selected {
+                NavigationStack {
+                    ManuscriptDraftComparison(title: selected.title, local: draft, remote: textRows[selected.id]?.string("text") ?? "", accent: session.accent,
+                        useRemote: { adoptRemoteDraft(); comparingDraft = false },
+                        keepLocal: { rebaseLocalDraft(); comparingDraft = false })
+                    .nodusModalClose(accent: session.accent)
+                }
+            }
+        }
         .nodusSheet(isPresented: $structureEditor) {
             if let selected {
                 NavigationStack {
@@ -227,6 +246,9 @@ struct WorldManuscriptView: View {
             systemImage: "square.and.pencil", accent: session.accent,
             trailing: {
                 HStack(spacing: 8) {
+                    Button { Task { await load() } } label: { manuscriptActionLabel("Actualizar", systemImage: "arrow.clockwise") }
+                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(loading || saving)
+                        .accessibilityLabel("Actualizar manuscrito y conservar borradores")
                     ShareLink(item: exportMarkdown) { manuscriptActionLabel("Export", systemImage: "square.and.arrow.up") }
                         .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                         .accessibilityLabel("Export manuscript")
@@ -295,6 +317,8 @@ struct WorldManuscriptView: View {
                 session: session, scene: selected, draft: $draft, tables: $supportTables,
                 outbox: outbox, onTextChanged: { row in
                     textRows[selected.id] = row
+                    let saved = row.string("text") ?? ""
+                    retainDraft(.init(sceneId: selected.id, baseline: saved, text: draft))
                     rebuild()
                 }
             )
@@ -315,6 +339,12 @@ struct WorldManuscriptView: View {
                     }
                     if let message { Text(message).font(.caption).foregroundStyle(session.accent.nodusReadable) }
                     if let error { Text(error).font(.caption).foregroundStyle(.red) }
+                    if let selected, manuscriptDrafts[selected.id]?.conflicts(with: textRows[selected.id]?.string("text") ?? "") == true {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("La escena cambió en Nodus. Tu borrador está conservado en este dispositivo.").font(.callout)
+                            Button("Comparar versiones") { comparingDraft = true }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                        }.padding(12).background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                    }
                     TextEditor(text: $draft)
                         .font(.system(.body, design: .serif)).lineSpacing(5).scrollContentBackground(.hidden)
                         .padding(14).background(Color(uiColor: .secondarySystemBackground).opacity(0.62), in: RoundedRectangle(cornerRadius: 12))
@@ -340,6 +370,12 @@ struct WorldManuscriptView: View {
             textRows = keyed(tables["world_scene_text"] ?? [], "scene_id")
             chapterRows = keyed(tables["world_chapter_breaks"] ?? [], "scene_id")
             bookRows = keyed(tables["world_manuscript_starts"] ?? [], "scene_id")
+            if session.connection.desktopPairingId != nil, draftStore == nil {
+                let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+                let store = try await CompanionManuscriptDraftStores.shared.store(pairingId: pairing.id, vaultId: vault)
+                manuscriptDrafts.merge(await store.records()) { current, recovered in current.updatedAt >= recovered.updatedAt ? current : recovered }
+                draftStore = store
+            }
             rebuild()
             if selectedId == nil { selectedId = scenes.first?.id }
             selectDraft()
@@ -354,7 +390,28 @@ struct WorldManuscriptView: View {
             chapters: Array(chapterRows.values), books: Array(bookRows.values)
         )
     }
-    private func selectDraft() { draft = selected.map { textRows[$0.id]?.string("text") ?? $0.text } ?? "" }
+    private func selectDraft() {
+        draftSceneId = selected?.id
+        draft = selected.map { manuscriptDrafts[$0.id]?.text ?? textRows[$0.id]?.string("text") ?? $0.text } ?? ""
+    }
+    private func retainDraft(_ record: CompanionManuscriptDraftStore.Draft) {
+        manuscriptDrafts[record.sceneId] = record
+        guard let store = draftStore else { return }
+        Task {
+            do { try await store.set(record) }
+            catch { error = "No se pudo conservar el borrador: \(error.localizedDescription)" }
+        }
+    }
+    private func adoptRemoteDraft() {
+        guard let id = selectedId else { return }
+        let remote = textRows[id]?.string("text") ?? ""
+        retainDraft(.init(sceneId: id, baseline: remote, text: remote)); draft = remote
+    }
+    private func rebaseLocalDraft() {
+        guard let id = selectedId else { return }
+        retainDraft(.init(sceneId: id, baseline: textRows[id]?.string("text") ?? "", text: draft))
+        message = "Borrador conservado. Guarda para enviar esta versión; Nodus comprobará de nuevo si hubo cambios."
+    }
     private func keyed(_ rows: [Row], _ field: String) -> [String: Row] { Dictionary(uniqueKeysWithValues: rows.compactMap { row in row.string(field).map { ($0, row) } }) }
 
     private func save() async {
@@ -362,27 +419,33 @@ struct WorldManuscriptView: View {
         saving = true; defer { saving = false }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let old = textRows[scene.id]
-        let oldText = old?.string("text") ?? ""
+        let oldText = manuscriptDrafts[scene.id]?.baseline ?? old?.string("text") ?? ""
+        let submitted = draft
         let oldCount = WorldbuildingParity.wordCount(oldText)
-        let newCount = WorldbuildingParity.wordCount(draft)
-        if oldCount > 80 && newCount < Int(Double(oldCount) * 0.7) { await snapshot(scene: scene, text: oldText, reason: "shrink", outbox: outbox) }
+        let newCount = WorldbuildingParity.wordCount(submitted)
+        if oldCount >= 40 && newCount * 2 < oldCount {
+            guard await snapshot(scene: scene, text: oldText, reason: "shrink", outbox: outbox) else { error = outbox.lastError; return }
+        }
         let row: [String: JSONValue] = [
-            "scene_id": .string(scene.id), "text": .string(draft), "word_count": .int(Int64(newCount)),
+            "scene_id": .string(scene.id), "text": .string(submitted), "word_count": .int(Int64(newCount)),
             "created_at": old?["created_at"] ?? .string(now), "updated_at": .string(now),
+            "_mobileExpectedText": .string(oldText),
         ]
         guard await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Save scene \(scene.title)") else { error = outbox.lastError; return }
         error = nil; textRows[scene.id] = Row(row); rebuild()
+        let saved = row["text"]!.stringValue!
+        retainDraft(.init(sceneId: scene.id, baseline: saved, text: selectedId == scene.id ? draft : manuscriptDrafts[scene.id]?.text ?? saved))
         message = outbox.lastSaveMessage
     }
 
-    private func snapshot(scene: WorldbuildingParity.ManuscriptScene, text: String, reason: String, outbox: OutboxController) async {
+    private func snapshot(scene: WorldbuildingParity.ManuscriptScene, text: String, reason: String, outbox: OutboxController) async -> Bool {
         let id = UUID().uuidString
         let row: [String: JSONValue] = [
             "snapshot_id": .string(id), "scene_id": .string(scene.id), "text": .string(text),
             "word_count": .int(Int64(WorldbuildingParity.wordCount(text))), "reason": .string(reason),
             "created_at": .string(ISO8601DateFormatter.nodusFractional.string(from: Date())),
         ]
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)")
+        return await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)")
     }
 
     private func saveStructure(chapter: String, book: String, targetWords: Int?) async {
@@ -736,27 +799,31 @@ private struct WorldManuscriptInspector: View {
         newThreadTitle = ""; creatingKind = nil
     }
 
-    private func takeSnapshot(reason: String) async {
-        guard let outbox else { return }
+    @discardableResult private func takeSnapshot(reason: String) async -> Bool {
+        guard let outbox else { return false }
         let id = "wss_\(UUID().uuidString)"
         let row: [String: JSONValue] = [
             "snapshot_id": .string(id), "scene_id": .string(scene.id), "text": .string(draft),
             "word_count": .int(Int64(WorldbuildingParity.wordCount(draft))), "reason": .string(reason),
             "created_at": .string(ISO8601DateFormatter.nodusFractional.string(from: Date())),
         ]
-        guard await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)") else { reviewMessage = outbox.lastError; return }
+        guard await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)") else { reviewMessage = outbox.lastError; return false }
         tables["world_scene_snapshots", default: []].insert(Row(row), at: 0)
+        return true
     }
 
     private func restore(_ snapshot: Row) async {
         guard let outbox, let text = snapshot.string("text") else { return }
-        await takeSnapshot(reason: "manual")
+        let previous = draft
+        guard await takeSnapshot(reason: "manual") else { return }
+        guard draft == previous else { reviewMessage = "El borrador cambió durante la restauración. Se ha conservado tu texto; vuelve a elegir la copia si quieres restaurarla."; return }
         draft = text
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let row: [String: JSONValue] = [
             "scene_id": .string(scene.id), "text": .string(text),
             "word_count": .int(Int64(WorldbuildingParity.wordCount(text))),
             "created_at": .string(now), "updated_at": .string(now),
+            "_mobileExpectedText": .string(tables["world_scene_text"]?.first(where: { $0.string("scene_id") == scene.id })?.string("text") ?? ""),
         ]
         guard await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Restore \(scene.title)") else { reviewMessage = outbox.lastError; return }
         tables["world_scene_text"] = (tables["world_scene_text"] ?? []).filter { $0.string("scene_id") != scene.id } + [Row(row)]

@@ -1,0 +1,9 @@
+# Manuscript draft continuity — source stage
+
+Scene text saves and restores include the exact text baseline seen by the mobile editor. Desktop compares it with the current canonical text after the same authored-link promotion. A changed scene returns a specific conflict description without writing the scene or a successful receipt. The local mutation and authored draft remain available. A replay whose current text already equals its requested text remains idempotent.
+
+The native manuscript retains each scene's unsent draft and baseline in the existing protected, encrypted Mac/vault writing storage, outside temporary read-cache eviction. Returning to a scene or reopening the surface restores that authored text. Ordered disk writes and update timestamps prevent a delayed earlier update from replacing a later draft. Refresh updates consultation data while retaining drafts. A changed remote scene offers a mobile comparison with explicit choices: retain/rebase the local draft or use the consulted Nodus text. Choosing prepares the editor; a subsequent save checks the Mac baseline again.
+
+Shrink protection now matches Desktop's 40-word floor and loss of more than half the text. A phone preimage must be durably saved before its dependent scene change; the canonical shrink hook avoids a duplicate latest preimage. Restoration preserves the current draft first and stops if the user types while that snapshot is being saved.
+
+Prepared local contract coverage checks stale-baseline rejection, absence of a successful conflict receipt, explicit rebase and snapshot deduplication. Prepared Swift coverage checks encrypted reopening, vault isolation, zero read-cache budget and older/newer write ordering. **Unexecuted for this source revision.** UI compilation, process termination, per-keystroke persistence cost, background suspension, conflict comparison and iPhone/iPad acceptance remain pending.
