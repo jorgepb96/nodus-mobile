@@ -34,6 +34,9 @@ struct PrivateCorpusSourceTests {
         #expect(PrivateCorpusReference(URL(string: "nodus://user@study/recording/x")!) == nil)
         #expect(PrivateCorpusReference(URL(string: "nodus://study/recording/..")!) == nil)
         #expect(PrivateCorpusReference(URL(string: "nodus://prosop/public/private-id")!) == nil)
+        let participant = try reference("nodus://testimonios/participant/private-id")
+        #expect(participant.kind == .participant); #expect(participant.kind.domain == .testimonies)
+        #expect(participant.kind.primaryKey == "person_id"); #expect(participant.recordKey != literal.recordKey)
     }
 
     @Test("partial or foreign dossiers never become complete downloaded sources")

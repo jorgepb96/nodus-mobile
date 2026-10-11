@@ -291,7 +291,11 @@ struct CorpusReferenceView: View {
                         .sourceCitationTarget(reference.specialised)
                 }
             case .privateSource:
-                if let source = reference.privateSource { PrivateCorpusSourceView(session: session, reference: source) }
+                if let source = reference.privateSource {
+                    if source.kind == .participant, session.connection.desktopPairingId == nil, let collection = Collections["persons"] {
+                        RowByIdView(session: session, collection: collection, id: source.id)
+                    } else { PrivateCorpusSourceView(session: session, reference: source) }
+                }
             case .unsupported:
                 ContentUnavailableView(
                     "This citation points outside the corpus",

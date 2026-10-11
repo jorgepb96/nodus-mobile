@@ -95,7 +95,7 @@ struct CompanionDownloadedCollectionsView: View {
             available = found
             var foundPrivate: [PrivateCorpusReference.Kind] = []
             if paths == nil {
-                for kind in [PrivateCorpusReference.Kind.recording, .person, .source, .factoid, .mention] where pairing.domains.contains(kind.domain) {
+                for kind in [PrivateCorpusReference.Kind.recording, .person, .source, .factoid, .mention, .participant] where pairing.domains.contains(kind.domain) {
                     if !(try await CompanionPrivateSourceCopy.downloadedCatalogue(cache: cache, vaultId: vault, kind: kind)).isEmpty { foundPrivate.append(kind) }
                 }
             }
@@ -107,6 +107,7 @@ struct CompanionDownloadedCollectionsView: View {
         switch kind {
         case .recording: "Grabaciones"; case .person: "Personas prosopográficas"; case .source: "Fuentes prosopográficas"
         case .factoid: "Observaciones prosopográficas"; case .mention: "Menciones prosopográficas"
+        case .participant: "Participantes de testimonios"
         }
     }
 }

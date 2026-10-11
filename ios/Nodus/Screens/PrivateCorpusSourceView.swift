@@ -38,7 +38,7 @@ struct PrivateCorpusSourceView: View {
                             .frame(maxWidth: .infinity, minHeight: 120)
                     } else if let copy {
                         DesktopPageHeader(title: LocalizedStringKey(copy.source.title),
-                            subtitle: reference.kind == .recording ? "Grabación y transcripciones" : "Dossier prosopográfico",
+                            subtitle: reference.kind == .recording ? "Grabación y transcripciones" : reference.kind == .participant ? "Participante de testimonios" : "Dossier prosopográfico",
                             systemImage: reference.kind == .recording ? "waveform" : "person.text.rectangle", accent: session.accent)
                         if offline { Label("Copia descargada · los cambios del Mac se consultarán al reconectar", systemImage: "wifi.slash").font(.caption).foregroundStyle(.secondary) }
                         rootDetails(copy.source.root)
@@ -82,7 +82,7 @@ struct PrivateCorpusSourceView: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .navigationTitle(reference.kind == .recording ? "Grabación" : "Fuente privada")
+        .navigationTitle(reference.kind == .recording ? "Grabación" : reference.kind == .participant ? "Participante" : "Fuente privada")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: loadKey) { await load() }
         .accessibilityIdentifier("private-corpus-source-\(reference.kind.rawValue)")
@@ -133,10 +133,11 @@ struct PrivateCorpusSourceView: View {
 
     private func relatedRecord(_ row: Row) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let title = row.text("title") ?? row.text("display_name") ?? row.text("literal_name") { Text(title).font(.headline) }
+            if let title = row.text("title") ?? row.text("interview_title") ?? row.text("display_name") ?? row.text("literal_name") { Text(title).font(.headline) }
             fields(row, keys: ["summary", "quoted_text", "locator_display", "citation", "description", "context", "role_or_title",
                 "literal_value", "value_text", "value_date_display", "unit", "rationale", "scope_note", "representativeness_note",
-                "known_bias_note", "preferred_name_basis", "identity_status", "review_status", "privacy_status", "reliability_status", "status"])
+                "known_bias_note", "preferred_name_basis", "identity_status", "review_status", "privacy_status", "reliability_status", "status",
+                "public_name", "identity_mode", "pronunciation", "biographical_note", "attribution_note", "role", "speaker_label"])
             if let number = row.double("value_number") { Text(number.formatted()) }
             if let boolean = row.int("value_boolean") { Text(boolean == 0 ? "No" : "Sí") }
             ForEach(relatedLinks(row), id: \.id) { link in
@@ -150,6 +151,7 @@ struct PrivateCorpusSourceView: View {
         var id: String { reference.recordKey }
     }
     private func relatedLinks(_ row: Row) -> [RelatedLink] {
+        guard reference.kind != .participant else { return [] }
         let fields = [("person_id", "person", "Abrir persona"), ("source_id", "source", "Abrir fuente"),
             ("factoid_id", "factoid", "Abrir observación"), ("attestation_id", "mention", "Abrir mención")]
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))

@@ -7,14 +7,18 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Hashable, Sendable {
         case recording = "study-recording", person = "prosop-person", source = "prosop-source"
         case factoid = "prosop-factoid", mention = "prosop-mention"
-        public var domain: DesktopBridgeDomain { self == .recording ? .studyRecordings : .prosopographyPrivate }
+        case participant = "testimony-participant"
+        public var domain: DesktopBridgeDomain {
+            switch self { case .recording: .studyRecordings; case .participant: .testimonies; default: .prosopographyPrivate }
+        }
         public var primaryKey: String {
-            switch self { case .recording: "id"; case .person: "person_id"; case .source: "source_id"
+            switch self { case .recording: "id"; case .person, .participant: "person_id"; case .source: "source_id"
             case .factoid: "factoid_id"; case .mention: "attestation_id" }
         }
         public var groups: [String] {
             switch self {
             case .recording: ["transcripts", "segments", "markers"]
+            case .participant: ["profile", "participation"]
             case .person: ["profile", "mentions", "authorities", "factoids", "statements", "membership"]
             case .source: ["segments", "factoids", "mentions", "assessments"]
             case .factoid: ["source", "segments", "statements", "entities", "mentions"]
@@ -41,6 +45,7 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
         let target: Kind?
         switch parts.host?.lowercased() {
         case "study" where segments[0] == "recording": target = .recording
+        case "testimonios" where segments[0] == "participant": target = .participant
         case "prosop": target = ["person": .person, "source": .source, "factoid": .factoid, "mention": .mention][segments[0]]
         default: target = nil
         }

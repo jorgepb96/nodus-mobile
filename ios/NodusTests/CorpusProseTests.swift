@@ -20,6 +20,9 @@ struct CorpusProseTests {
         let recording = try #require(CorpusReference(URL(string: "nodus://study/recording/recording?t=37.4")!))
         #expect(recording.destination == .privateSource); #expect(recording.privateSource?.timestamp == 37.4)
         #expect(recording.id != CorpusReference(URL(string: "nodus://study/recording/recording?t=12")!)?.id)
+        let participant = try #require(CorpusReference(URL(string: "nodus://testimonios/participant/participant")!))
+        #expect(participant.privateSource?.kind == .participant)
+        #expect(participant.privateSource?.kind.domain == .testimonies)
     }
     @Test("specialised references use their Desktop route and retain an excerpt's owner")
     func specialisedReferences() throws {
