@@ -222,6 +222,9 @@ function operationMatrix(routes) {
       ['generation.databaseResearch.persistedAvailability', 'generation'],
       ['generation.databaseResearch.offlineRequest', 'generation'],
       ['consultation.databaseResearch.evidenceSheet', 'consultation'],
+      ['consultation.scriptor.embeddedLibraryResources', 'consultation'],
+      ['consultation.scriptor.embeddedArchiveGrant', 'consultation'],
+      ['sync.scriptor.selectedEmbeddedResources', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

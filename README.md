@@ -89,6 +89,10 @@ specialised mirror-based surfaces, binary assets and final visual/contract accep
 part of the unfinished parity campaign.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
+Scriptor also preserves `nodus-library`/`nodus-archive` URLs. Their opaque identities use the
+existing vault-scoped file contracts, verified bytes and current file grants; chosen note packs
+include their bounded embedded resources. File links open in native Quick Look with a retained
+protected lease, and media requests support byte ranges. These changes await local validation.
 Database Deep Research now opens its actual structured report component through a separate
 mobile route. Its stable, paginated gallery transfers metadata instead of every report body;
 details preserve the saved charts, sections, evidence and annotations. Native export uses

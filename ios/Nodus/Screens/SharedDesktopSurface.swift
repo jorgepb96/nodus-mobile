@@ -3,6 +3,7 @@ import NodusKit
 import NodusUI
 import SwiftUI
 import WebKit
+import QuickLook
 
 enum DesktopSurface: String { case graph, dictionary, workspace, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
 
@@ -63,6 +64,9 @@ struct SharedDesktopSurface: View {
     @State private var sourceDocument: SourceDocumentTarget?
     @State private var issue: String?
     @State private var exportedURL: URL?
+    @State private var embeddedPreview: URL?
+    @State private var embeddedLease: PrivateBridgeFileLease?
+    @State private var openingEmbeddedResource = false
     @State private var savedAudio: SavedAudioTarget?
     @State private var writingResult: MobileWritingResultTarget?
     @State private var autonomousStatus: String?
@@ -87,6 +91,20 @@ struct SharedDesktopSurface: View {
             if kind == "section" {
                 guard NodusRoute(rawValue:id) != nil else { issue = "La sección solicitada no está disponible."; return }
                 NotificationCenter.default.post(name:.nodusMobileNavigate,object:nil,userInfo:["connectionId":session.connection.id,"route":id]); return
+            }
+            if kind == "embeddedResource" {
+                guard !openingEmbeddedResource else { return }
+                openingEmbeddedResource = true
+                Task { @MainActor in
+                    defer { openingEmbeddedResource = false }
+                    do {
+                        let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus)
+                        let resource = try await CompanionEmbeddedResource.load(client:DesktopBridgeClient(pairing:pairing,token:token),cache:PrivateBridgeCache(pairingId:pairing.id),vaultId:vault,source:id,domains:pairing.domains)
+                        let lease = try PrivateBridgeFileLease.write(resource.data,filename:resource.descriptor.filename)
+                        embeddedLease = lease; embeddedPreview = lease.url
+                    } catch { issue = error.localizedDescription }
+                }
+                return
             }
             let path = kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
@@ -127,6 +145,8 @@ struct SharedDesktopSurface: View {
             }
         }
         .sheet(item: $exportedURL) { ActivityShareSheet(items: [$0]) }
+        .quickLookPreview($embeddedPreview)
+        .onChange(of:embeddedPreview) { _, value in if value == nil { embeddedLease = nil } }
         .sheet(isPresented: $showImmersionProgress) {
             NavigationStack {
                 if let controller = immersionController, let plan = immersionPlan {
@@ -275,6 +295,8 @@ private struct DesktopWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-image")
+        config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
+        config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
         config.userContentController.add(context.coordinator, name: "nodus")
         let data: [String: Any] = ["surface": surface.rawValue, "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
             "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
@@ -794,6 +816,11 @@ private struct DesktopWebView: UIViewRepresentable {
             guard let url = action.request.url else { return .cancel }
             if LocalSurfaceHost.shared.owns(url) { return .allow }
             if url.scheme == "about" { return .allow }
+            if ["nodus-library","nodus-archive"].contains(url.scheme ?? "") {
+                guard (try? CompanionEmbeddedResource.identity(url.absoluteString)) != nil else { return .cancel }
+                if action.targetFrame?.isMainFrame == false { return .allow }
+                onNavigate("embeddedResource",url.absoluteString,nil,nil); return .cancel
+            }
             if ["https", "http"].contains(url.scheme ?? "") { _ = await UIApplication.shared.open(url) }
             return .cancel
         }
