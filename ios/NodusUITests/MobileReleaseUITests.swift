@@ -87,6 +87,11 @@ final class MobileReleaseUITests: XCTestCase {
         let input = app.descendants(matching: .any)["nodus-chat-composer"].firstMatch
         XCTAssertTrue(input.waitForExistence(timeout: 35))
         if app.buttons["nodus-chat-new"].exists { app.buttons["nodus-chat-new"].tap() }
+        app.buttons["nodus-chat-live-options"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "deepseek-flash")).firstMatch.waitForExistence(timeout: 30), "The real Mac configuration must load its configured DeepSeek model.\n" + app.debugDescription)
+        XCTAssertTrue(app.buttons["Elegir modelo"].exists)
+        capture(app, "phone-chat-live-mac-configuration")
+        app.buttons["nodus-chat-options-close"].tap()
         let marker = "QAChat-\(UUID().uuidString.prefix(8))"
         input.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         input.typeText("\(marker). Explica en unas 250 palabras cómo el corpus relaciona propaganda turística y fotografía. Incluye dos ideas y sus fuentes. Empieza la respuesta con el marcador \(marker).")
@@ -96,7 +101,12 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(send.isHittable); send.tap()
         print("NODUS_CHAT_MARKER=\(marker)")
         let running = NSPredicate(format: "value == %@", "running")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: running, object: send)], timeout: 15), .completed)
+        let started = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: running, object: send)], timeout: 15)
+        capture(app, "phone-chat-live-submission")
+        guard started == .completed else {
+            XCTFail("The live request did not start.\n" + app.debugDescription)
+            throw NSError(domain: "NodusAcceptance", code: 2, userInfo: [NSLocalizedDescriptionKey: "The actual live chat request was not running."])
+        }
         let answer = app.descendants(matching: .any)["nodus-chat-answer"].firstMatch
         XCTAssertTrue(answer.waitForExistence(timeout: 30))
         let activity = app.buttons["nodus-chat-activity"].firstMatch
