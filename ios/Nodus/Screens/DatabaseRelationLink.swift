@@ -65,9 +65,10 @@ private struct DatabaseRelationDestination: View {
     }
 }
 
-private struct DatabaseLinkedRowReader: View {
+struct DatabaseLinkedRowReader: View {
     let session: SpaceSession
     let id: String
+    var downloadedOnly=false
     @State private var detail: DatabaseDetail?
     @State private var row: Row?
     @State private var offline = false
@@ -92,6 +93,7 @@ private struct DatabaseLinkedRowReader: View {
             let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
             guard !pairing.isExpired, let collection = Collections["databases"] else { throw DesktopBridgeError.permissionDenied }
             do {
+                if downloadedOnly {throw URLError(.notConnectedToInternet)}
                 let location = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDatabaseRowLocation", args: [.string(id)])
                 guard location.objectValue?["version"] == .int(1), location.objectValue?["vaultId"] == .string(vault),
                       location.objectValue?["rowId"] == .string(id), let database = location.objectValue?["databaseId"]?.stringValue, !database.isEmpty else { throw DesktopBridgeError.malformedResponse }
@@ -119,14 +121,28 @@ private struct DatabaseLinkedRowReader: View {
                 throw APIError(status: 404, code: "relation_row_missing", message: "La fila vinculada se eliminó o cambió de base de datos. Actualiza el enlace en Nodus.")
             } catch {
                 guard isPrivateBridgeOffline(error) else { throw error }
-                let copy = try await downloadedCollection(session, path: "databases")
-                var match: (DatabaseDetail, Row)?
-                for database in copy.selectedRows {
-                    guard let databaseId = database.string("id") else { throw DesktopBridgeError.malformedResponse }
-                    let dossier = try copy.dossier(id: databaseId)
-                    if let found = dossier.payload.objectValue?["rows"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(id) }) {
-                        guard match == nil else { throw DesktopBridgeError.malformedResponse }
-                        match = (try dossier.decode(DatabaseDetail.self), Row(found.objectValue!))
+                var payloads: [String: JSONValue] = [:]
+                do {
+                    let copy=try await downloadedCollection(session,path:"databases")
+                    for database in copy.selectedRows {
+                        guard let databaseId=database.string("id") else {throw DesktopBridgeError.malformedResponse}
+                        payloads[databaseId]=try copy.dossier(id:databaseId).payload
+                    }
+                } catch CompanionCollectionCopy.CopyError.dossierNotDownloaded {}
+                let cache=try PrivateBridgeCache(pairingId:pairing.id)
+                for bytes in try await cache.downloadedData(vaultId:vault,domain:.corpus,recordId:CompanionPageDownload.linkedDatabaseKey) {
+                    let source=try JSONDecoder.nodus.decode(JSONValue.self,from:bytes)
+                    guard source.objectValue?["version"] == .int(1),source.objectValue?["vaultId"] == .string(vault),let databases=source.objectValue?["databases"]?.objectValue else {throw DesktopBridgeError.malformedResponse}
+                    for (databaseId,payload) in databases where payloads[databaseId] == nil {
+                        guard payload.objectValue?["database"]?.objectValue?["id"] == .string(databaseId) else {throw DesktopBridgeError.malformedResponse};payloads[databaseId]=payload
+                    }
+                }
+                var match:(DatabaseDetail,Row)?
+                for (databaseId,payload) in payloads {
+                    let dossier=try CollectionDossier(collection:collection,id:databaseId,payload:payload,fromDevice:true)
+                    if let found=payload.objectValue?["rows"]?.arrayValue?.first(where:{$0.objectValue?["id"] == .string(id)}) {
+                        guard match == nil else {throw DesktopBridgeError.malformedResponse}
+                        match=(try dossier.decode(DatabaseDetail.self),Row(found.objectValue!))
                     }
                 }
                 guard let match else { throw APIError(status: 409, code: "relation_row_not_downloaded", message: "La fila está en una base de datos que no has descargado. Elige esa base de datos en Descargas cuando Nodus esté conectado.") }

@@ -189,6 +189,8 @@ private struct DownloadedCollectionDossier: View {
             if let dossier {
                 if target.collectionPath == "databases" {
                     DatabaseGridView(session: session, database: dossier.primary, downloadedOnly: true)
+                } else if target.collectionPath == "pages" {
+                    SharedDesktopSurface(session:session,surface:.page,initialPageId:target.id,pageDownloadedOnly:true)
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: NodusSpace.block) {

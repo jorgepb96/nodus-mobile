@@ -32,8 +32,8 @@ enum CompanionDossierDownload {
             let catalog = try CompanionDossierResources(value: value, collection: collection, id: id)
             try append(.corpus, CompanionDocumentOutbox.operationKey("getMobileDossierFiles", args), JSONEncoder.nodus.encode(value))
             if let reader = catalog.reader { try append(.corpus, CompanionDocumentOutbox.operationKey("getLibraryReaderDocument", [.string(id)]), JSONEncoder.nodus.encode(reader)) }
-            if files {
-                for file in catalog.files where file.available {
+            if files || (collection == "pages" && images) {
+                for file in catalog.files where file.available && (files || file.mime?.hasPrefix("image/") == true) {
                     try Task.checkCancellation()
                     let key = "file:\(file.kind.rawValue):\(file.fileId)"
                     guard !seen.contains(key) else { continue }

@@ -2071,6 +2071,34 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.pages.completeNativeAndLegacyDocument",
+      "route": "database-pages",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "writing.pages.completeDocumentDraftAndExplicitConflict",
+      "route": "database-pages",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.pages.syncedBlocksAndLinkedViewPagination",
+      "route": "database-pages",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.pages.boundedSelectedDependenciesAndOriginals",
+      "route": "database-pages",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

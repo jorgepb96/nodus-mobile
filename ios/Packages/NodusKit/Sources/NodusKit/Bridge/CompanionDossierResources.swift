@@ -8,9 +8,10 @@ public struct CompanionDossierResources: Sendable {
         public let fileId: String
         public let title: String
         public let available: Bool
+        public let mime: String?
         public var id: String { kind.rawValue + ":" + fileId }
     }
-    public static let fileCollections = Set(["works", "study-materials", "archive-items", "databases"])
+    public static let fileCollections = Set(["works", "study-materials", "archive-items", "databases", "pages"])
     public let files: [File]
     public let reader: JSONValue?
     public let value: JSONValue
@@ -26,6 +27,7 @@ public struct CompanionDossierResources: Sendable {
         case "study-materials": allowed = [.studyMaterial, .studyMaterialVersion]
         case "archive-items": allowed = [.archiveItem, .archiveFile]
         case "databases": allowed = [.databaseAttachment]
+        case "pages": allowed = [.pageAsset]
         default: throw DesktopBridgeError.permissionDenied
         }
         var seen = Set<String>(), files: [File] = []
@@ -38,7 +40,8 @@ public struct CompanionDossierResources: Sendable {
             if kind == .libraryAttachment {
                 guard let pair = try? JSONDecoder.nodus.decode([String].self, from: Data(fileId.utf8)), pair.count == 2, pair[0] == id, !pair[1].isEmpty else { throw DesktopBridgeError.malformedResponse }
             }
-            let file = File(kind: kind, fileId: fileId, title: title, available: available)
+            if kind == .pageAsset, fileId.count != 64 || !fileId.allSatisfy(\.isHexDigit) { throw DesktopBridgeError.malformedResponse }
+            let file = File(kind: kind, fileId: fileId, title: title, available: available, mime: row["mime"]?.stringValue)
             guard seen.insert(file.id).inserted else { throw DesktopBridgeError.malformedResponse }
             files.append(file)
         }

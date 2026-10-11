@@ -496,6 +496,7 @@ final class AppModel {
         try store.revokeLocally(pairing)
         await DesktopJobLedgers.shared.forget(pairingId: pairing.id)
         await CompanionDocumentOutboxes.shared.forget(pairingId: pairing.id)
+        await CompanionPageDocumentStores.shared.forget(pairingId: pairing.id)
         await CompanionImmersionProgressOutboxes.shared.forget(pairingId: pairing.id)
         await CompanionDatabaseReadingOutboxes.shared.forget(pairingId:pairing.id)
         var cleanupIssue: (any Error)?

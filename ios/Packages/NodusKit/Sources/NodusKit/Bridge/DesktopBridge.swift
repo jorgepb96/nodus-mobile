@@ -405,6 +405,16 @@ public actor DesktopBridgeClient {
         return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
     }
 
+    public func savePageDocument(vaultId: String, request: CompanionPageDocuments.Request) async throws -> JSONValue {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+        let body = JSONValue.object(["id": .string(request.id), "input": request.input])
+        guard try JSONEncoder.nodus.encode(body).count <= CompanionPageDocuments.maximumRequestBytes else { throw DesktopBridgeError.malformedResponse }
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/page-edits", method: "POST", body: body)
+        return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
+    }
+
     public func operation(vaultId: String, method: String, args: [JSONValue], timeout: TimeInterval? = nil) async throws -> JSONValue {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
         if let timeout, !timeout.isFinite || timeout <= 0 || timeout > 120 { throw DesktopBridgeError.malformedResponse }

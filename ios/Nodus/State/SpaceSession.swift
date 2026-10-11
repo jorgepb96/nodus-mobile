@@ -367,6 +367,12 @@ final class SpaceSession {
             } catch { /* The store retains its actual write issue and pending drafts. */ }
             try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) }
             if let pairingId = connection.desktopPairingId,
+               let pages = try? await CompanionPageDocumentStores.shared.store(pairingId: pairingId, vaultId: vaultId) {
+                let before = await pages.revision
+                try? await pages.synchronize { request in try await bridge.savePageDocument(vaultId: vaultId, request: request) }
+                if await pages.revision != before { companionPublicationRevision += 1 }
+            }
+            if let pairingId = connection.desktopPairingId,
                let progress = try? await CompanionImmersionProgressOutboxes.shared.outbox(pairingId: pairingId, vaultId: vaultId) {
                 let before = await progress.revision
                 try? await progress.synchronize { sessionId, request in

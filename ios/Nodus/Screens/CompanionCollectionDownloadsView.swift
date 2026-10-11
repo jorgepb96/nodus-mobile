@@ -203,6 +203,17 @@ struct CompanionCollectionDownloadsView: View {
                     try WorldMapReadSource.validate(source, vault: vault, mapId: id)
                     try retain("getMobileWorldMapReadSource", [.string(id)], source)
                 }
+                if collection.path == "pages" {
+                    let source = try await client.operation(vaultId: vault, method: "getMobilePageDocument", args: [.string(id)])
+                    _ = try CompanionPageDocuments.document(source, vaultId: vault, pageId: id)
+                    try retain("getMobilePageDocument", [.string(id)], source)
+                    let linked = try await CompanionPageDownload.records(client:client,vault:vault,root:source,domains:pairing.domains,
+                        images:downloadImages,files:downloadFiles,existing:Set(sources.map(\.recordId)),maximumBytes:PrivateBridgeCache.defaultReadLimitBytes - bytes) { databaseId, remaining in
+                        guard let databaseCollection=Collections["databases"],let escaped=databaseId.addingPercentEncoding(withAllowedCharacters:allowed) else {throw DesktopBridgeError.malformedResponse}
+                        return .object(try await dossier(client,vault:vault,collection:databaseCollection,id:escaped,maxBytes:remaining))
+                    }
+                    sources.append(contentsOf:linked);bytes += linked.reduce(0){$0 + $1.data.count}
+                }
                 if collection.path == "databases" {
                     let pack = try await client.operation(vaultId:vault,method:"getMobileDatabaseResearchSourcePack",args:[.object(["databaseIds":.array([.string(id)])])])
                     guard pack.objectValue?["version"] == .int(1),pack.objectValue?["vaultId"] == .string(vault),

@@ -95,7 +95,7 @@ func companionCitationVerification(_ cache: PrivateBridgeCache, vaultId: String,
 
 @MainActor
 func loadPrivateBridgeValue(_ session: SpaceSession, method: String, args: [JSONValue], downloadedOnly: Bool = false) async throws -> JSONValue {
-    guard ["getLibraryReaderDocument", "getGlobalLibraryItem", "getMobileDossierFiles", "getMobileWorldMapReadSource"].contains(method) else { throw DesktopBridgeError.permissionDenied }
+    guard ["getLibraryReaderDocument", "getGlobalLibraryItem", "getMobileDossierFiles", "getMobileWorldMapReadSource", "getMobilePageDocument", "getMobileSyncedBlockSource", "getMobileLinkedDatabaseRead"].contains(method) else { throw DesktopBridgeError.permissionDenied }
     let (vaultId, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
     guard !pairing.isExpired else { throw DesktopBridgeError.expired }
     if method == "getMobileDossierFiles", args.first?.objectValue?["collection"] == .string("archive-items"), !pairing.domains.contains(.primarySourceFiles) { throw DesktopBridgeError.permissionDenied }
@@ -103,7 +103,7 @@ func loadPrivateBridgeValue(_ session: SpaceSession, method: String, args: [JSON
     let key = try CompanionDocumentOutbox.operationKey(method, args)
     if downloadedOnly {
         guard let data = try await cache.downloadedData(vaultId: vaultId, domain: .corpus, recordId: key).first else {
-            throw APIError(status: 409, code: "dossier_resources_not_downloaded", message: "Esta descarga no incluye el catálogo de originales. Actualízala con Nodus conectado para elegir los archivos que quieras llevar.")
+            throw APIError(status: 409, code: "dossier_resources_not_downloaded", message: "Esta descarga no incluye el contenido solicitado. Actualízala con Nodus conectado.")
         }
         return try JSONDecoder.nodus.decode(JSONValue.self, from: data)
     }

@@ -325,3 +325,7 @@ xcodebuild -project ios/Nodus.xcodeproj -scheme Nodus \
 Debug simulator launches may set `NODUS_START_ROUTE` to open a route directly. Visual QA may also
 set `NODUS_VAULT_TYPE_OVERRIDE`; it changes navigation presentation only and never fabricates or
 mutates vault data.
+
+### Pages: documento completo y dependencias
+
+El editor compartido mantiene BlockNote, metadatos académicos y bloques anteriores. El borrador íntegro se cifra y sincroniza con dos revisiones, recibos idempotentes y resolución explícita de conflictos. Las descargas seleccionadas incluyen bloques sincronizados, páginas originales, vistas enlazadas paginadas y dossiers de sus bases de datos, dentro del presupuesto temporal. La lectura explícita de una descarga no consulta el Mac. Los archivos mantienen su permiso y verificación de integridad. Los contratos de Pages están preparados; compilación, ejecución y pruebas de iPhone/iPad pendientes de la campaña local final.

@@ -245,7 +245,7 @@ private struct PageDocumentWorkspace: View {
                     Button { compactInspector = true } label: { Image(systemName: "info.circle") }
                         .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Detalles de la página")
                 }
-                Menu {
+                if session.connection.desktopPairingId == nil { Menu {
                     Button { Task { await addBlock(type: "paragraph") } } label: { Label("Paragraph", systemImage: "text.alignleft") }
                     Button { Task { await addBlock(type: "heading_2") } } label: { Label("Heading", systemImage: "textformat.size") }
                     Button { Task { await addBlock(type: "task") } } label: { Label("Task", systemImage: "checkmark.square") }
@@ -254,12 +254,16 @@ private struct PageDocumentWorkspace: View {
                 } label: { Label("Block", systemImage: "plus") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(outbox == nil)
                 Button { Task { await save() } } label: { if saving { ProgressView() } else { Label("Save", systemImage: "checkmark") } }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving)
+                }
             }
         })
     }
 
     private var editor: some View {
-        ScrollView {
+        Group {
+        if session.connection.desktopPairingId != nil {
+            SharedDesktopSurface(session: session, surface: .page, initialPageId: page.id).id(page.id)
+        } else { ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Page title", text: $title, axis: .vertical).font(.largeTitle.bold()).textFieldStyle(.plain)
                 ForEach(blocks) { block in blockEditor(block) }
@@ -267,6 +271,8 @@ private struct PageDocumentWorkspace: View {
                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(outbox == nil)
             }.padding(NodusSpace.page).frame(maxWidth: page.fullWidth ? .infinity : 850).frame(maxWidth: .infinity, alignment: .top).nodusTopAnchor()
         }.background(Color(uiColor: .systemBackground).opacity(0.34))
+        }
+        }
     }
 
     private func blockEditor(_ block: PagesDatabasesParity.Block) -> some View {

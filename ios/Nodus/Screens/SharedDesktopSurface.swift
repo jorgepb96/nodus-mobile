@@ -5,7 +5,7 @@ import SwiftUI
 import WebKit
 import QuickLook
 
-enum DesktopSurface: String { case graph, dictionary, workspace, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
+enum DesktopSurface: String { case graph, dictionary, workspace, page, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
 
 private struct MobileWritingResultTarget: Identifiable {
     let request: DesktopJobLedger.Request
@@ -57,6 +57,8 @@ struct SharedDesktopSurface: View {
     let session: SpaceSession
     let surface: DesktopSurface
     var initialDatabaseReportId: String? = nil
+    var initialPageId: String? = nil
+    var pageDownloadedOnly = false
     @Environment(AISettings.self) private var ai
     @Environment(\.colorScheme) private var theme
     @Environment(\.dynamicTypeSize) private var textSize
@@ -79,7 +81,7 @@ struct SharedDesktopSurface: View {
     @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, onError: { issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, pageDownloadedOnly:pageDownloadedOnly, onError: { issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -87,6 +89,15 @@ struct SharedDesktopSurface: View {
                 Task { await controller.load(fetchMacProgress: false) }
             } catch { issue = error.localizedDescription }
         }) { kind, id, location, quote in
+            if kind == "pageAsset" {
+                guard id.count == 64, id.allSatisfy(\.isHexDigit), !openingEmbeddedResource else { return }
+                openingEmbeddedResource = true
+                Task { @MainActor in
+                    defer { openingEmbeddedResource = false }
+                    do { let copy = try await loadPrivateBridgeFile(session, kind: .pageAsset, id: id, downloadedOnly:pageDownloadedOnly); embeddedLease = copy.lease; embeddedPreview = copy.url }
+                    catch { issue = error.localizedDescription }
+                }; return
+            }
             if kind == "deepResearchReport" {
                 guard surface == .deepResearch, !id.isEmpty, id.utf8.count <= 1024 else { issue = "El informe solicitado no tiene una identidad válida."; return }
                 nativeReport = SurfaceDestination(path: "deep-research", id: id, location: nil, quote: nil); return
@@ -113,7 +124,7 @@ struct SharedDesktopSurface: View {
                 }
                 return
             }
-            let path = kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
+            let path = kind == "databaseRow" ? "database-rows" : kind == "page" ? "pages" : kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
         }
@@ -195,7 +206,11 @@ struct SharedDesktopSurface: View {
         .sheet(item: $destination) { target in
             NavigationStack {
                 Group {
-                    if target.path == "study-docs" {
+                    if target.path == "pages" {
+                        SharedDesktopSurface(session: session, surface: .page, initialPageId: target.id, pageDownloadedOnly:pageDownloadedOnly)
+                    } else if target.path == "database-rows" {
+                        DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:pageDownloadedOnly)
+                    } else if target.path == "study-docs" {
                         StudyEvidenceDocument(session: session, id: target.id, location: target.location, quote: target.quote)
                     } else {
                         RowDetailView(session: session, collection: Collections.byPath[target.path],
@@ -297,6 +312,8 @@ private struct DesktopWebView: UIViewRepresentable {
     let corpusRevision: String?
     let databaseReadingRevision:Int
     let initialDatabaseReportId: String?
+    let initialPageId: String?
+    let pageDownloadedOnly: Bool
     let onError: (String) -> Void
     let onExport: (PrivateBridgeFileLease) -> Void
     let onAutonomousStatus: (String?) -> Void
@@ -307,14 +324,14 @@ private struct DesktopWebView: UIViewRepresentable {
     let onImmersionSource: (String, JSONValue) -> Void
     let onNavigate: (String, String, String?, String?) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onImmersionSource: onImmersionSource, onNavigate: onNavigate) }
+    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, pageDownloadedOnly:pageDownloadedOnly, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onImmersionSource: onImmersionSource, onNavigate: onNavigate) }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-image")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
         config.userContentController.add(context.coordinator, name: "nodus")
-        let data: [String: Any] = ["surface": surface.rawValue, "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+        let data: [String: Any] = ["surface": surface.rawValue, "pageDownloadedOnly":pageDownloadedOnly, "initialPageId":initialPageId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
             "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
         if let json = try? JSONSerialization.data(withJSONObject: data), let text = String(data: json, encoding: .utf8) {
@@ -424,6 +441,7 @@ private struct DesktopWebView: UIViewRepresentable {
             surfaceReady = true; sendPublicationUpdates(); sendCorpusUpdate(); sendDatabaseReadingUpdate()
         }
         let session: SpaceSession
+        let pageDownloadedOnly:Bool
         let autonomous: AutonomousSurfaceProvider
         let onNavigate: (String, String, String?, String?) -> Void
         let onError: (String) -> Void
@@ -466,7 +484,7 @@ private struct DesktopWebView: UIViewRepresentable {
             webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:publication:changed',args:[\(payload)]});", completionHandler: nil)
             if session.companionPublicationUpdates.contains(where: { $0.objectValue?["id"]?.stringValue == autonomousGenerationId && $0.objectValue?["state"] == .string("available") }) { onAutonomousStatus(nil) }
         }
-        init(session: SpaceSession, ai: AISettings, onError: @escaping (String) -> Void, onExport: @escaping (PrivateBridgeFileLease) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
+        init(session: SpaceSession, ai: AISettings, pageDownloadedOnly:Bool, onError: @escaping (String) -> Void, onExport: @escaping (PrivateBridgeFileLease) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; self.pageDownloadedOnly=pageDownloadedOnly; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
                 let id = body["id"] as? String, let method = body["method"] as? String,
@@ -474,10 +492,61 @@ private struct DesktopWebView: UIViewRepresentable {
                         if method == "surfaceError", let error = input.first as? String { onError(error); return }
             tasks.append(Task {
                 do {
-                    let args = try JSONDecoder.nodus.decode([JSONValue].self, from: JSONSerialization.data(withJSONObject: input))
+                    var args = try JSONDecoder.nodus.decode([JSONValue].self, from: JSONSerialization.data(withJSONObject: input))
+                    let pageReads=["getPageDocument","getPageAsset","getSyncedBlockSource","getDatabaseContainer","queryDatabaseContainerRows"]
+                    var selectedPageOnly=pageDownloadedOnly
+                    if pageReads.contains(method),args.count == 2,let selected=args.last?.boolValue {selectedPageOnly=selectedPageOnly || selected;args.removeLast()}
                     var value: JSONValue
                     var immersionDefinitionFromDevice = false
-                    if method == "persistSurfaceStorage" {
+                    if ["getPageDocument", "savePageDocument", "resolveMobilePageConflict", "getPageAsset", "getSyncedBlockSource", "getDatabaseContainer", "queryDatabaseContainerRows"].contains(method) {
+                        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+                        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+                        let pages = try await CompanionPageDocumentStores.shared.store(pairingId: pairing.id, vaultId: vault)
+                        if method == "getPageDocument", args.count == 1, let page = args[0].stringValue {
+                            if await pages.hasDraft(pageId:page),let owned = await pages.document(pageId: page) { value = owned }
+                            else {
+                                let source = try await loadPrivateBridgeValue(session, method: "getMobilePageDocument", args: [.string(page)],downloadedOnly:selectedPageOnly)
+                                value = try CompanionPageDocuments.document(source, vaultId: vault, pageId: page)
+                                try await pages.seed(pageId: page, document: value)
+                                value = await pages.document(pageId:page) ?? value
+                            }
+                        } else if method == "savePageDocument", args.count == 1, let page = args[0].objectValue?["pageId"]?.stringValue {
+                            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+                            value = try await pages.save(pageId: page, input: args[0]); Task { await session.synchronizeCompanionChanges() }
+                        } else if method == "resolveMobilePageConflict", args.count == 2, let page = args[0].stringValue, let keep = args[1].boolValue {
+                            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+                            value = try await pages.resolve(pageId: page, keepMobile: keep); Task { await session.synchronizeCompanionChanges() }
+                        } else if method == "getPageAsset", args.count == 1, let hash = args[0].stringValue, hash.count == 64, hash.allSatisfy(\.isHexDigit) {
+                            let copy = try await loadPrivateBridgeFile(session, kind: .pageAsset, id: hash,downloadedOnly:selectedPageOnly)
+                            let bytes = try Data(contentsOf: copy.url)
+                            value = .object(["base64": .string(bytes.base64EncodedString()), "mime": .string(copy.descriptor.mime)])
+                        } else if method == "getSyncedBlockSource",args.count == 1,let block=args[0].stringValue {
+                            let source=try await loadPrivateBridgeValue(session,method:"getMobileSyncedBlockSource",args:[.string(block)],downloadedOnly:selectedPageOnly)
+                            guard source.objectValue?["version"] == .int(1),source.objectValue?["vaultId"] == .string(vault),let original=source.objectValue?["source"] else {throw DesktopBridgeError.malformedResponse}
+                            guard original == .null || original.objectValue?["block"]?.objectValue?["id"] == .string(block) else {throw DesktopBridgeError.malformedResponse};value=original
+                        } else if ["getDatabaseContainer","queryDatabaseContainerRows"].contains(method),args.count == 1 {
+                            let action=method == "getDatabaseContainer" ? "definition":"rows"
+                            let request=JSONValue.object(["action":.string(action),"input":args[0]])
+                            let source=try await loadPrivateBridgeValue(session,method:"getMobileLinkedDatabaseRead",args:[request],downloadedOnly:selectedPageOnly)
+                            let view=action == "definition" ? args[0].stringValue:args[0].objectValue?["viewId"]?.stringValue
+                            guard source.objectValue?["version"] == .int(1),source.objectValue?["vaultId"] == .string(vault),source.objectValue?["action"] == .string(action),let data=source.objectValue?["data"],view != nil else {throw DesktopBridgeError.malformedResponse}
+                            if action == "definition" {guard data == .null || data.objectValue?["viewId"]?.stringValue == view else {throw DesktopBridgeError.malformedResponse}}
+                            else {guard data.objectValue?["rows"]?.arrayValue != nil,data.objectValue?["revision"]?.stringValue != nil else {throw DesktopBridgeError.malformedResponse}}
+                            value=data
+                        } else { throw DesktopBridgeError.malformedResponse }
+                    } else if method == "openMobileDatabaseRow",args.count == 1,let row=args[0].stringValue,!row.isEmpty,row.utf8.count <= 1024 {
+                        onNavigate("databaseRow",row,nil,nil);value = .null
+                    } else if method == "openPageResource", args.count == 1, let resource = args[0].objectValue, let source = resource["source"]?.stringValue, let url = URL(string: source) {
+                        if url.scheme == "nodus-blob", let hash = url.host, hash.count == 64, hash.allSatisfy(\.isHexDigit) { onNavigate("pageAsset", hash, nil, nil); value = .null }
+                        else if CorpusReference(url) != nil { onNavigate("citation", source, nil, nil); value = .null }
+                        else if ["https", "http"].contains(url.scheme ?? "") { _ = await UIApplication.shared.open(url); value = .null }
+                        else if url.scheme == "data", source.utf8.count <= 4_000_000, let comma = source.firstIndex(of: ",") {
+                            let header = String(source[source.startIndex..<comma]), encoded = String(source[source.index(after: comma)...])
+                            guard header.hasSuffix(";base64"), let bytes = Data(base64Encoded: encoded), bytes.count <= 2_000_000,
+                                  let filename = resource["name"]?.stringValue, !filename.isEmpty, filename.utf8.count <= 200, !filename.contains("/"), !filename.contains("\\"), ![".", ".."].contains(filename) else { throw DesktopBridgeError.malformedResponse }
+                            onExport(try PrivateBridgeFileLease.write(bytes, filename: filename)); value = .null
+                        } else { throw DesktopBridgeError.permissionDenied }
+                    } else if method == "persistSurfaceStorage" {
                         try await persistSurfaceStorage(args.first ?? .null); value = .null
                     } else if method == "openMobileWritingResult", args.count == 1 {
                         guard let identity = args[0].stringValue, UUID(uuidString: identity) != nil,
