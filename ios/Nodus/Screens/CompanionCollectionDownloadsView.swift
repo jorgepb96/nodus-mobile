@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Catalogue pages are read on demand; only the chosen full dossiers commit.
 struct CompanionCollectionDownloadsView: View {
+    static let maximumDownloadBytes = 50 * 1024 * 1024
     let session: SpaceSession
     @State private var path = ""
     @State private var query = ""
@@ -170,7 +171,7 @@ struct CompanionCollectionDownloadsView: View {
             }
             func retain(_ method: String, _ args: [JSONValue], _ value: JSONValue) throws {
                 let data = try JSONEncoder.nodus.encode(value); bytes += data.count
-                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes <= Self.maximumDownloadBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 sources.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey(method, args), data: data))
             }
             func appendDependencies(_ incoming:[PrivateBridgeCache.ReadPackRecord]) throws {
@@ -185,10 +186,10 @@ struct CompanionCollectionDownloadsView: View {
                         for (id,payload) in addition {guard merged[id] == nil || merged[id] == payload else {throw APIError(status:409,code:"page_dependency_changed",message:"La base de datos cambió durante la descarga. Vuelve a intentarlo.")};merged[id]=payload}
                         let data=try JSONEncoder.nodus.encode(JSONValue.object(["version":.int(1),"vaultId":.string(vault),"databases":.object(merged)]))
                         let next=bytes - sources[index].data.count + data.count
-                        guard next <= PrivateBridgeCache.defaultReadLimitBytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
+                        guard next <= Self.maximumDownloadBytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
                         bytes=next;sources[index] = .init(domain:record.domain,recordId:record.recordId,data:data)
                     } else {
-                        guard record.data.count <= PrivateBridgeCache.defaultReadLimitBytes - bytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
+                        guard record.data.count <= Self.maximumDownloadBytes - bytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
                         bytes += record.data.count;sources.append(record)
                     }
                 }
@@ -202,14 +203,14 @@ struct CompanionCollectionDownloadsView: View {
                 try Task.checkCancellation()
                 let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
                 guard let escaped = id.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
-                let detail = try await dossier(client, vault: vault, collection: collection, id: escaped, maxBytes: PrivateBridgeCache.defaultReadLimitBytes - bytes)
+                let detail = try await dossier(client, vault: vault, collection: collection, id: escaped, maxBytes: Self.maximumDownloadBytes - bytes)
                 let entry = JSONValue.object(["summary": .object(chosen[id]!.columns), "detail": .object(detail)])
                 bytes += try JSONEncoder.nodus.encode(entry).count
-                guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                guard bytes <= Self.maximumDownloadBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                 entries.append(entry)
                 let resources = try await CompanionDossierDownload.records(client: client, vault: vault, domains: pairing.domains,
                     collection: collection.path, id: id, detail: .object(detail), images: downloadImages, files: downloadFiles,
-                    existing: Set(sources.map(\.recordId)), maximumBytes: PrivateBridgeCache.defaultReadLimitBytes - bytes)
+                    existing: Set(sources.map(\.recordId)), maximumBytes: Self.maximumDownloadBytes - bytes)
                 sources.append(contentsOf: resources); bytes += resources.reduce(0) { $0 + $1.data.count }
                 if collection.path == "study-questions" {
                     let args: [JSONValue] = [.object(["kind": .string("question"), "sourceId": .string(id)])]
@@ -228,16 +229,16 @@ struct CompanionCollectionDownloadsView: View {
                     _ = try CompanionPageDocuments.document(source, vaultId: vault, pageId: id)
                     try retain("getMobilePageDocument", [.string(id)], source)
                     let linked = try await CompanionPageDownload.records(client:client,vault:vault,root:source,domains:pairing.domains,
-                        images:downloadImages,files:downloadFiles,existing:Set(sources.map(\.recordId)),maximumBytes:PrivateBridgeCache.defaultReadLimitBytes - bytes) { databaseId, remaining in
+                        images:downloadImages,files:downloadFiles,existing:Set(sources.map(\.recordId)),maximumBytes:Self.maximumDownloadBytes - bytes) { databaseId, remaining in
                         guard let databaseCollection=Collections["databases"],let escaped=databaseId.addingPercentEncoding(withAllowedCharacters:allowed) else {throw DesktopBridgeError.malformedResponse}
                         return .object(try await dossier(client,vault:vault,collection:databaseCollection,id:escaped,maxBytes:remaining))
                     }
                     try appendDependencies(linked)
                 }
                 if collection.path == "databases" {
-                    try appendDependencies([try await CompanionDatabasePresentationSource.download(client: client, vault: vault, database: id, maximumBytes: PrivateBridgeCache.defaultReadLimitBytes - bytes)])
+                    try appendDependencies([try await CompanionDatabasePresentationSource.download(client: client, vault: vault, database: id, maximumBytes: Self.maximumDownloadBytes - bytes)])
                     guard let views=detail["views"]?.arrayValue else {throw DesktopBridgeError.malformedResponse}
-                    let viewRecords=try await CompanionDatabaseViewSource.download(client:client,vault:vault,views:views,maximumBytes:PrivateBridgeCache.defaultReadLimitBytes - bytes,existing:Set(sources.map(\.recordId)),ownerDatabase:id) { databaseId,remaining in
+                    let viewRecords=try await CompanionDatabaseViewSource.download(client:client,vault:vault,views:views,maximumBytes:Self.maximumDownloadBytes - bytes,existing:Set(sources.map(\.recordId)),ownerDatabase:id) { databaseId,remaining in
                         guard let descriptor=Collections["databases"],let escaped=databaseId.addingPercentEncoding(withAllowedCharacters:allowed) else {throw DesktopBridgeError.malformedResponse}
                         return .object(try await dossier(client,vault:vault,collection:descriptor,id:escaped,maxBytes:remaining))
                     }
@@ -247,7 +248,7 @@ struct CompanionCollectionDownloadsView: View {
                           pack.objectValue?["databases"]?.arrayValue?.count == 1,
                           pack.objectValue?["databases"]?.arrayValue?.first?.objectValue?["snapshot"]?.objectValue?["databaseId"] == .string(id) else { throw DesktopBridgeError.malformedResponse }
                     let data = try JSONEncoder.nodus.encode(pack);bytes += data.count
-                    guard bytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                    guard bytes <= Self.maximumDownloadBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     sources.append(.init(domain:.corpus,recordId:"companion:database-source:v1:\(id)",data:data))
                 }
                 if collection.path == "study-docs" {
@@ -271,14 +272,16 @@ struct CompanionCollectionDownloadsView: View {
             guard current == revision else { throw DesktopBridgeError.malformedResponse }
             let copy = JSONValue.object(["version": .int(1), "path": .string(collection.path), "entries": .array(entries)])
             _ = try CompanionCollectionCopy(path: collection.path, copies: [copy])
+            let copyData = try JSONEncoder.nodus.encode(copy)
             try Task.checkCancellation()
             let id = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: chosen.keys.map { "\(collection.path):\($0)" })
-            sources.append(.init(domain: .corpus, recordId: try CompanionCollectionCopy.recordId(path: collection.path), data: try JSONEncoder.nodus.encode(copy)))
+            sources.append(.init(domain: .corpus, recordId: try CompanionCollectionCopy.recordId(path: collection.path), data: copyData))
             // Several selected documents share the same style bootstrap. Keep
             // one exact query record; the individual revision-bound sources
             // retain their own style snapshots for conflict checks.
             var keys = Set<String>()
             sources = Array(sources.reversed().filter { keys.insert($0.recordId).inserted }.reversed())
+            guard sources.reduce(0, { $0 + $1.data.count }) <= Self.maximumDownloadBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             try await cache.saveReadPack(id: id, vaultId: vault, title: "\(collection.label) · \(entries.count)",
                 expiresAt: Date().addingTimeInterval(Double(selectedDays) * 86_400), records: sources)
             session.didChangeCompanionDownloads()

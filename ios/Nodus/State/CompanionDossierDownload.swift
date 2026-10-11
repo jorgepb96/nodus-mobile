@@ -32,12 +32,13 @@ enum CompanionDossierDownload {
             let catalog = try CompanionDossierResources(value: value, collection: collection, id: id)
             try append(.corpus, CompanionDocumentOutbox.operationKey("getMobileDossierFiles", args), JSONEncoder.nodus.encode(value))
             if let reader = catalog.reader { try append(.corpus, CompanionDocumentOutbox.operationKey("getLibraryReaderDocument", [.string(id)]), JSONEncoder.nodus.encode(reader)) }
-            if files || (collection == "pages" && images) {
-                for file in catalog.files where file.available && (files || file.mime?.hasPrefix("image/") == true) {
+            if files || images {
+                for file in catalog.files where file.available && (files || file.mime == nil || file.mime?.lowercased().hasPrefix("image/") == true) {
                     try Task.checkCancellation()
                     let key = "file:\(file.kind.rawValue):\(file.fileId)"
                     guard !seen.contains(key) else { continue }
                     let info = try await descriptor(file.kind, file.fileId)
+                    if !files && !info.mime.lowercased().hasPrefix("image/") { continue }
                     let metadata = try JSONEncoder.nodus.encode(info)
                     guard metadata.count + info.byteSize <= maximumBytes - used else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                     let data = try await client.fileData(vaultId: vault, descriptor: info)

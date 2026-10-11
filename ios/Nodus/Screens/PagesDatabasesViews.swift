@@ -614,6 +614,10 @@ struct DatabaseDetailWorkspace: View {
     private var viewConfig: [String: JSONValue] { activeView?.config ?? [:] }
     private var visibleColumns: [PagesDatabasesParity.Column] { PagesDatabasesParity.visibleColumns(columns, config: viewConfig) }
     private var cardColumns: [PagesDatabasesParity.Column] { PagesDatabasesParity.cardColumns(columns, config: viewConfig) }
+    private var galleryCardColumns: [PagesDatabasesParity.Column] {
+        let selected = !(viewConfig["cardPropertyIds"]?.arrayValue ?? []).isEmpty
+        return Array(cardColumns.filter { selected || ["select", "status", "multi_select"].contains($0.type) }.prefix(4))
+    }
     private var selectedRow: PagesDatabasesParity.DataRow? { viewRows.first { $0.id == selectedRowId && $0.databaseId == database.id } }
     private var csv: String {
         ([columns.map(\.name)] + rows.map { row in columns.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } })
@@ -801,7 +805,7 @@ struct DatabaseDetailWorkspace: View {
                         VStack(alignment:.leading,spacing:8) {
                             galleryCover(row).frame(height:size == "small" ? 100:size == "large" ? 210:150).clipShape(RoundedRectangle(cornerRadius:9))
                             Text(rowTitle(row)).font(.headline).fixedSize(horizontal:false,vertical:true)
-                            ForEach(cardColumns) { column in
+                            ForEach(galleryCardColumns) { column in
                                 VStack(alignment:.leading,spacing:2) {
                                     Text(column.name).font(.caption2).foregroundStyle(.secondary)
                                     Text(PagesDatabasesParity.displayValue(column:column,row:row,allRows:allRows,columns:columns)).font(.caption).fixedSize(horizontal:false,vertical:true)
@@ -834,7 +838,7 @@ struct DatabaseDetailWorkspace: View {
 
     private var board: some View {
         let configured = viewConfig["groupBy"]?.objectValue?["columnId"]?.stringValue
-        let groupColumn = configured.flatMap { id in columns.first { $0.id == id } } ?? columns.first { ["status", "select", "person"].contains($0.type) }
+        let groupColumn = configured.flatMap { id in columns.first { $0.id == id && ["status", "select", "person"].contains($0.type) } } ?? columns.first { ["status", "select", "person"].contains($0.type) }
         let lanes = DatabaseCardPresentation.lanes(column:groupColumn,rows:rows,config:viewConfig)
         let selected = lanes.first{$0.id == selectedBoardGroup} ?? lanes.first
         return Group {
@@ -881,7 +885,15 @@ struct DatabaseDetailWorkspace: View {
     @ViewBuilder private func boardLaneRows(_ lane:DatabaseCardPresentation.Lane,groupColumn:PagesDatabasesParity.Column?) -> some View {
         let subgroupId=viewConfig["subgroupBy"]?.objectValue?["columnId"]?.stringValue
         let subgroup=subgroupId.flatMap{id in columns.first{$0.id==id && id != groupColumn?.id}}
-        if let subgroup {
+        if let subgroup, ["status", "select", "person"].contains(subgroup.type) {
+            let config: [String: JSONValue] = ["groupBy": viewConfig["subgroupBy"] ?? .null, "hideEmptyGroups": .bool(true)]
+            ForEach(DatabaseCardPresentation.lanes(column: subgroup, rows: lane.rows, config: config)) { group in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(group.label) · \(group.rows.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    LazyVStack(spacing: 10) { ForEach(group.rows) { row in boardCard(row, groupColumn: groupColumn) } }
+                }
+            }
+        } else if let subgroup {
             let groups=Dictionary(grouping:lane.rows){$0.cells[subgroup.id] ?? ""}
             let descending=viewConfig["subgroupBy"]?.objectValue?["dir"] == .string("desc")
             let keys=groups.keys.sorted{descending ? $0 > $1:$0 < $1}
@@ -898,16 +910,18 @@ struct DatabaseDetailWorkspace: View {
         if lane.rows.isEmpty { Text("Sin filas en este grupo").font(.caption).foregroundStyle(.secondary).padding(.vertical,16) }
     }
     private func boardCard(_ row: PagesDatabasesParity.DataRow, groupColumn: PagesDatabasesParity.Column?) -> some View {
-        Button { select(row) } label: {
-            VStack(alignment: .leading, spacing: 8) {
+        let size = viewConfig["cardSize"]?.stringValue ?? "medium"
+        let minimum: CGFloat = size == "small" ? 70 : size == "large" ? 126 : 94
+        return Button { select(row) } label: {
+            VStack(alignment: .leading, spacing: size == "small" ? 5 : 8) {
                 Text(rowTitle(row)).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                ForEach(cardColumns.filter { $0.id != groupColumn?.id }) { column in
+                ForEach(Array(cardColumns.filter { $0.id != groupColumn?.id }.prefix(4))) { column in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(column.name).font(.caption2).foregroundStyle(.secondary)
                         Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)).font(.caption).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading).desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary)
+            }.frame(maxWidth: .infinity, minHeight: minimum, alignment: .topLeading).desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary)
         }.buttonStyle(NodusCardButtonStyle()).frame(minHeight: 44)
     }
 

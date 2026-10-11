@@ -1,0 +1,7 @@
+# Selected download budget and image resources — source stage
+
+Every selected collection download now enforces the 50 MiB amount advertised in its UI, including complete dossiers, calculation dependencies, query records, images and selected original files. The final deduplicated record set is checked before the atomic pack commit. This per-download bound is separate from the 250 MiB shared temporary read-cache bound. Authored drafts remain in protected durable writing storage.
+
+Choosing images follows typed file descriptors across supported dossier families. Known non-image MIME entries are skipped; legacy catalogs without MIME are checked using their actual descriptor before content is requested. The database file catalog now includes its recorded attachment MIME. Images therefore no longer depend on the original-files toggle or a page-only special case. Cancellation, changed source or size failure prevents an incomplete selected copy.
+
+Database gallery/card summaries remain compact, with complete values in native inspectors. Card sizes are minimums that expand for text accessibility, and option/person subgroups use actual identities. The acceptance inventory was regenerated with pending operations for these source changes. **No contracts, tests, compilation or visual acceptance were run in this source stage.** Linked page-content/covers and final physical-device checks remain pending.

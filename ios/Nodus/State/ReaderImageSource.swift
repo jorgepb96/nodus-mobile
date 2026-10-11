@@ -114,6 +114,6 @@ enum ReaderImageSource {
         return Content(data:data,mime:mime)
     }
     static func supported(_ mime: String) -> Bool {
-        ["image/png","image/jpeg","image/gif","image/webp","image/avif","image/svg+xml"].contains(mime.lowercased())
+        ["image/png","image/jpeg","image/jpg","image/gif","image/webp","image/avif","image/heic","image/heif","image/tiff","image/bmp","image/svg+xml"].contains(mime.lowercased())
     }
 }

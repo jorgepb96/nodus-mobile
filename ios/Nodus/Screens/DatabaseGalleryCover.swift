@@ -30,8 +30,9 @@ struct DatabaseGalleryCover:View {
                 let copy=try await loadPrivateBridgeFile(session,kind:kind,id:id,downloadedOnly:downloadedOnly)
                 guard ReaderImageSource.supported(copy.descriptor.mime),copy.descriptor.byteSize <= ReaderImageSource.maximumBytes else { throw DesktopBridgeError.malformedResponse }
                 let bytes=try Data(contentsOf:copy.url);try Task.checkCancellation()
-                if ["image/svg+xml","image/gif"].contains(copy.descriptor.mime) {
-                    vector = .init(data:bytes,mime:copy.descriptor.mime)
+                let mime = copy.descriptor.mime.lowercased()
+                if ["image/svg+xml","image/gif"].contains(mime) {
+                    vector = .init(data:bytes,mime:mime)
                 } else { image=try ReaderRasterImage.preview(bytes,maxPixelSize:512) }
             } catch where error.isCancellation {}
             catch { issue=error.localizedDescription }

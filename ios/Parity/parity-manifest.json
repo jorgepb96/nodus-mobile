@@ -933,6 +933,132 @@
       "evidence": []
     },
     {
+      "id": "sync.actions.durableIntent",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.actions.lostAcknowledgement",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.actions.cancelBeforeAcknowledgement",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.actions.actualReceiptStatus",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.academic.explicitConflictRetry",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.academic.paidResponseRecovery",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.matrix.canonicalAcknowledgedCells",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.argumentMaps.fullStructuralSourceDownload",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.proseReview.currentLocalDraft.live",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.proseReview.currentLocalDraft.autonomous",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.actions.savedResults",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.argumentMaps.livePersistedCatalogue",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.argumentMap.inlineCancellation",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.generation.modeChangePreservesAuthorizedResult",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.savedPresentationProperties",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "visual.databases.phoneBoardGroups",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.chart",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.map",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.feed",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.dashboard",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.temporalConfiguration",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "visual.iphone",
       "category": "consultation",
       "result": "pending",
@@ -1989,156 +2115,158 @@
       "evidence": []
     },
     {
-      "id": "consultation.files.registeredDatabaseOriginalAndDeduplicatedBlob",
+      "id": "consultation.databases.nativeCardsAndIntrinsicStatusTags",
       "category": "consultation",
       "result": "pending",
       "evidence": []
     },
     {
-      "id": "consultation.files.nativeDossierOriginalCatalogueAndGalleryZoom",
+      "id": "consultation.databases.savedCardSizeCoversAndSubgroupIdentities",
       "category": "consultation",
       "result": "pending",
       "evidence": []
     },
     {
-      "id": "sync.dossiers.optionalImagesOriginalsAndAtomicBudget",
+      "id": "consultation.databases.sharedAllLayoutsAndNativeRowInspector",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.completeLinkedSourcePagination",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.offlineSavedFiltersOverPendingEdits",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.packagedLocalQueryEngine",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databases.canonicalRollupsAndRelatedFormulaValues",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.databases.boundedCompleteCalculationDependencyGraph",
       "category": "sync",
       "result": "pending",
       "evidence": []
     },
     {
-      "id": "sync.dossiers.downloadedLibraryMetadataAndStudyHistory",
+      "id": "sync.databases.linkedCopyEpochAndMissingSourceErrors",
       "category": "sync",
       "result": "pending",
       "evidence": []
     },
     {
-      "id": "consultation.world.originalGalleryRetryAndVectorPreview",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.world.sharedAtlasOriginalLayersShapesAndScale",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.world.nativeAtlasSheetsSearchAndLandscapeControls",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.world.atlasTemporalCastScenesAndMeasuredTravel",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "sync.world.selectedAtlasSourceAndOriginalOffline",
+      "id": "sync.databases.derivedTargetChangesAndRelationDeletion",
       "category": "sync",
       "result": "pending",
       "evidence": []
     },
     {
-      "id": "consultation.reports.nativeLiveReaderRoutingAndRetry",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.databases.actualRelationTargetsAndForeignVault",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "sync.databases.downloadedRelationRowLookup",
+      "id": "sync.jobs.keyedCancellationBeforeAcknowledgement",
       "category": "sync",
       "result": "pending",
       "evidence": []
     },
     {
-      "id": "consultation.pages.phonePortraitLandscapeAndNativeInspector",
+      "id": "sync.jobs.cancelledReceiptPersistsAcrossMacRestart",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.arguments.liveCanonicalSavedMapCatalogue",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.world.contentWritesRequireActualFamilyAndDomain",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.world.parentsReachMacBeforeDependentGeneration",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.world.canonicalContentProjectionAndRecreation",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.world.newOfflineSceneCanonicalProseTemplate",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.world.newScenePublicationRequiresSameDeviceCreationProof",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.world.paidReviewPreservesDraftAndChecksCanonicalSource",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.manuscript.proseBaselineConflictAndExplicitRebase",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.manuscript.encryptedDraftReopeningAndVaultIsolation",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.manuscript.newerDraftWinsDelayedDiskWrites",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.manuscript.canonicalShrinkPreimageAndSafeRestore",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.manuscript.mobileVersionComparison",
       "category": "consultation",
       "result": "pending",
       "evidence": []
     },
     {
-      "id": "consultation.databases.phoneRowsAndActualUniversalPage",
+      "id": "consultation.downloads.actualImageDescriptorsAcrossCollections",
       "category": "consultation",
       "result": "pending",
       "evidence": []
     },
     {
-      "id": "consultation.pages.completeNativeAndLegacyDocument",
-      "route": "database-pages",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "writing.pages.completeDocumentDraftAndExplicitConflict",
-      "route": "database-pages",
-      "category": "writing",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.pages.syncedBlocksAndLinkedViewPagination",
-      "route": "database-pages",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.pages.boundedSelectedDependenciesAndOriginals",
-      "route": "database-pages",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "writing.databases.canonicalDatabasePropertyAndRowCreation",
-      "route": "database-grid",
-      "category": "writing",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "writing.databases.typedCellValuesAndRevisionConflicts",
-      "route": "database-grid",
-      "category": "writing",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "writing.databases.offlineReopenAndAcknowledgedProjection",
-      "route": "database-grid",
-      "category": "writing",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.databases.actualSavedFiltersSortsAndSources",
-      "route": "database-grid",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.databases.completeSavedViewDownloadAndForeignRows",
-      "route": "database-grid",
-      "category": "consultation",
-      "result": "pending",
-      "evidence": []
-    },
-    {
-      "id": "consultation.pages.atomicDependencyMergeAndEpochCheck",
-      "route": "database-pages",
-      "category": "consultation",
+      "id": "sync.selectedCopy.enforcedPerDownloadBudget",
+      "category": "sync",
       "result": "pending",
       "evidence": []
     }
@@ -6891,6 +7019,18 @@
       "id": "AcademicApi.listResearchQuestions",
       "interface": "AcademicApi",
       "method": "listResearchQuestions",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.listSavedCompanionArgumentMaps",
+      "interface": "AcademicApi",
+      "method": "listSavedCompanionArgumentMaps",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "catalogued",
