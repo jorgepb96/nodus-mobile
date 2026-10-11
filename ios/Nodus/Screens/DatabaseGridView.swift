@@ -375,12 +375,12 @@ struct DatabaseRowView: View {
                 }
             }
 
-        case .relations(let count):
-            // The rows a relation points at are not in this page, and the desktop resolves
-            // their labels by opening whatever vault they live in. Saying how many there are
-            // is what this surface can say truthfully.
-            Label("\(count) linked records", systemImage: "link")
-                .font(.callout).foregroundStyle(.secondary)
+        case .relations:
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(context.relationRows[column.string("id") ?? ""] ?? [], id: \.columns) { relation in
+                    DatabaseRelationLink(session: session, relation: relation)
+                }
+            }
         }
     }
 }

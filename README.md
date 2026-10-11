@@ -495,3 +495,11 @@ translations and scoped annotations. The gallery and Mac generation continue to
 use Desktop options. Desktop reader tabs keep their original behavior. A failed
 native report load has an explicit retry control. This route remains **pending**
 current local build and device acceptance; no new test or capture was executed.
+
+Database relation controls now open the actual linked row or Nodus entity. Cross-vault
+links retain their target vault and require that exact vault in the existing workspace
+pairing. A provider-free Desktop locator finds the owning database without hydrating
+rows or materialising formulas. Native row reading checks every page and can locate
+the row in complete, explicitly selected database downloads on a transport failure.
+Prepared real-store and Swift identity cases are **unexecuted**; both new acceptance
+operations remain pending current compilation and device navigation.

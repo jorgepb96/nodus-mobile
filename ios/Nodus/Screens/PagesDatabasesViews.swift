@@ -836,7 +836,7 @@ private struct DatabaseRowInspector: View {
         Group {
             Label("Relations", systemImage: "link").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             if relations.isEmpty { Text("No linked rows, pages or Nodus entities.").font(.caption).foregroundStyle(.secondary) }
-            ForEach(relations, id: \.columns) { relation in HStack { Image(systemName: "link"); VStack(alignment: .leading) { Text(relation.text("last_known_label") ?? relation.string("target_id") ?? "Linked item").font(.caption.weight(.semibold)); Text(relation.string("target_kind") ?? "entity").font(.caption2).foregroundStyle(.secondary) }; Spacer() }.desktopContentRow(accent: session.accent) }
+            ForEach(relations, id: \.columns) { relation in DatabaseRelationLink(session: session, relation: relation).desktopContentRow(accent: session.accent) }
             Label("Files", systemImage: "paperclip").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 6)
             if attachments.isEmpty { Text("Sin archivos adjuntos").font(.caption).foregroundStyle(.secondary) }
             ForEach(attachments, id: \.columns) { file in
