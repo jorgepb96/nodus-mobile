@@ -316,6 +316,11 @@ loss and the retained scoped resource. Authored data images retain their bytes. 
 use a credential-free, size-bounded loader. Code examples do not trigger image loads. Image
 visuals keep existing prose blocks and annotation offsets; failures show a retry state.
 Prepared native image parsing/identity/grant regressions remain unexecuted.
+Native image inspection now fits rasters to the screen, supports pinch/double-tap zoom
+and refits after rotation; SVG/GIF use a script-disabled self-contained image surface.
+Raster previews decode once within 2048 pixels, while original bytes survive sharing
+through a protected lease retained by the activity sheet. Pixel-budget/corruption and
+original-byte/lifetime regressions are prepared but unexecuted, including device rotation.
 
 Autonomous Database Chat now uses the exact shared Desktop numerical profile, ten-row
 sample, conversation formatter and prompt language. Signed complete database source packs

@@ -278,6 +278,9 @@ function operationMatrix(routes) {
       ['consultation.worldChat.selectedSourceSheets', 'consultation'],
       ['sync.worldChat.actualFocusAndSelection', 'sync'],
       ['sync.worldChat.authoredFactRecovery', 'sync'],
+      ['consultation.nativeReader.imagePinchAndOrientation', 'consultation'],
+      ['consultation.nativeReader.boundedRasterDecode', 'consultation'],
+      ['consultation.nativeReader.originalImageShare', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

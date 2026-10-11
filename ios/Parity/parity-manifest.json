@@ -1759,6 +1759,24 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.nativeReader.imagePinchAndOrientation",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.nativeReader.boundedRasterDecode",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.nativeReader.originalImageShare",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

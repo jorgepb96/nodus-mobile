@@ -21,7 +21,7 @@ enum ReaderImageSource {
         var fence: Character?,fenceLength = 0
         let prose = markdown.components(separatedBy:.newlines).map { line -> String in
             let trim = line.trimmingCharacters(in:.whitespaces)
-            if let first = trim.first,["`","~"].contains(first) {
+            if let first = trim.first,first == "`" || first == "~" {
                 let count = trim.prefix{$0 == first}.count
                 if count >= 3 {
                     if fence == first && count >= fenceLength { fence = nil }
@@ -72,7 +72,7 @@ enum ReaderImageSource {
         let client = URLSession(configuration:config);defer { client.invalidateAndCancel() }
         var request = URLRequest(url:url);request.timeoutInterval = 15
         let (stream,response) = try await client.bytes(for:request)
-        guard let http = response as? HTTPURLResponse,http.statusCode == 200,let mime = http.mimeType,supported(mime),http.expectedContentLength <= Int64(maximumBytes) else { throw DesktopBridgeError.malformedResponse }
+        guard let http = response as? HTTPURLResponse,http.statusCode == 200,http.url?.scheme == "https",let mime = http.mimeType,supported(mime),http.expectedContentLength <= Int64(maximumBytes) else { throw DesktopBridgeError.malformedResponse }
         var data = Data()
         for try await byte in stream {
             if data.count % 65_536 == 0 { try Task.checkCancellation() }
