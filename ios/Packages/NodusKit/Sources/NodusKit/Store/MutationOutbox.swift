@@ -188,6 +188,14 @@ public actor MutationOutbox {
             ORDER BY created_at, rowid LIMIT ?
             """, arguments: [State.pending.rawValue, limit])
     }
+    /// A dependent document/job must wait for proof that every preceding
+    /// authorised content save reached the owner, including an unconfirmed ACK.
+    public func companionParentsReady() throws -> Bool {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM outbox WHERE authorised = 1 AND state IN (?, ?)",
+                arguments: [State.pending.rawValue, State.accepted.rawValue]) == 0
+        }
+    }
 
     /// Record that the user pressed send. Returns how many changes that covered.
     ///

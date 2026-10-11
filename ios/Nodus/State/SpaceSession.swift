@@ -358,7 +358,7 @@ final class SpaceSession {
         guard connection.desktopPairingId != nil else { return true }
         await synchronizeCompanionChanges()
         let queue = try MutationOutbox(spaceId:connection.storageId, directory:mirrorDirectory)
-        return try await queue.authorisedPending(limit:1).isEmpty
+        return try await queue.companionParentsReady()
     }
 
     func synchronizeCompanionChanges() async {
@@ -370,14 +370,17 @@ final class SpaceSession {
         // This drains only saves the user already authorised, never unsent drafts.
         let mutationQueue = try? MutationOutbox(spaceId: connection.storageId, directory: mirrorDirectory)
         if let mutationQueue { try? await OutboxDelivery.send(from: mutationQueue, using: client, in: connection.spaceId) }
+        let parentsReady: Bool
+        if let mutationQueue { parentsReady = (try? await mutationQueue.companionParentsReady()) == true }
+        else { parentsReady = false }
         if let vaultId, let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
             let chats = ChatHistoryStore.shared(spaceId:connection.storageId)
             do {
                 try chats.bind(kind:CompanionChatKind(vaultType:vaultType))
                 await chats.synchronize { kind,request in try await bridge.saveChatEdit(vaultId:vaultId,kind:kind,request:request) }
             } catch { /* The store retains its actual write issue and pending drafts. */ }
-            try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) }
-            if let pairingId = connection.desktopPairingId,
+            if parentsReady { try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) } }
+            if parentsReady, let pairingId = connection.desktopPairingId,
                let pages = try? await CompanionPageDocumentStores.shared.store(pairingId: pairingId, vaultId: vaultId) {
                 let before = await pages.revision
                 try? await pages.synchronize { request in try await bridge.savePageDocument(vaultId: vaultId, request: request) }
@@ -410,7 +413,7 @@ final class SpaceSession {
                 try? await bridge.reconcileDurableCancellations(vaultId: vaultId)
                 try? await ledger.synchronize(list: { try await bridge.listJobs(vaultId: vaultId) }, canSubmit: { request in
                     if let mutationQueue {
-                        guard let pending = try? await mutationQueue.authorisedPending(limit: 1), pending.isEmpty else { return false }
+                        guard (try? await mutationQueue.companionParentsReady()) == true else { return false }
                     }
                     // Native chat serializes submit/cancel/recovery with its
                     // durable conversation; this ledger only observes its jobs.

@@ -27,6 +27,34 @@ struct CompanionPageDocumentsTests {
         #expect(try await cache.data(vaultId:"other",domain:.writing,recordId:CompanionPageDocuments.storageKey)==nil)
         #expect(try await cache.data(vaultId:"vault",domain:.corpus,recordId:CompanionPageDocuments.storageKey)==nil)
     }
+    @Test("A newly authored offline page opens, keeps its structured edits and retains an empty creation baseline")
+    func localCreation() async throws {
+        let (cache,directory,keychain,id)=try setup();defer{try? FileManager.default.removeItem(at:directory);try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId:id))}
+        let store = try await open(cache)
+        let page = Row(["id": .string("page"), "title": .string("Mi página"), "origin": .string("standalone"), "state": .string("active"), "revision": .int(1),
+            "locked": .int(0), "created_at": .string("2026-10-11T10:00:00Z"), "updated_at": .string("2026-10-11T10:00:00Z")])
+        let created = try await store.createLocal(page: page)
+        #expect(created.objectValue?["revision"] == .int(-1)); #expect(created.objectValue?["blocks"] == .array([]))
+        #expect(created.objectValue?["mobileSyncState"] == .string("pending"))
+        let reopened = try await open(cache)
+        #expect(await reopened.document(pageId: "page") == created)
+        _ = try await reopened.save(pageId: "page", input: input(-1))
+        let changed = try await open(cache), draft = try #require(await changed.document(pageId: "page"))
+        #expect(draft.objectValue?["nativeDocument"] == input(-1).objectValue?["nativeDocument"])
+        let probe = PageProbe(document: document(2, title: "Título móvil"))
+        try await changed.synchronize { request in try await probe.send(request, lose: false) }
+        #expect(await probe.requests.first?.input.objectValue?["expectedRevision"] == .int(1))
+        #expect(await probe.requests.first?.input.objectValue?["expectedPageRevision"] == .int(1))
+    }
+    @Test("Local page creation cannot replace an existing Mac baseline")
+    func existingPageProtection() async throws {
+        let (cache,directory,keychain,id)=try setup();defer{try? FileManager.default.removeItem(at:directory);try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId:id))}
+        let store = try await open(cache); try await store.seed(pageId: "page", document: document())
+        let page = Row(["id": .string("page"), "title": .string("New"), "origin": .string("standalone"), "state": .string("active"), "revision": .int(1),
+            "created_at": .string("stamp"), "updated_at": .string("stamp")])
+        await #expect(throws: DesktopBridgeError.self) { try await store.createLocal(page: page) }
+        #expect(await store.hasDraft(pageId: "page") == false)
+    }
     @Test("Lost reply freezes the request and later edits cannot be retired by its acknowledgement")
     func lostReply() async throws {
         let (cache,directory,keychain,id)=try setup();defer{try? FileManager.default.removeItem(at:directory);try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId:id))}

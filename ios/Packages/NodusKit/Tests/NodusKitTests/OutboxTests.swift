@@ -57,6 +57,20 @@ struct MutationOutboxAuthorisationTests {
         #expect(try await outbox.authorisedPending(limit: 10).isEmpty,
                 "nothing may travel on its own before the user has pressed send")
     }
+    @Test("Dependent documents wait for applied parent receipts, including acceptance after a lost acknowledgement")
+    func companionParentProof() async throws {
+        let (outbox, folder) = try makeOutbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mutation = note("parent")
+        try await outbox.enqueue(mutation, title: "Parent")
+        #expect(try await outbox.companionParentsReady(), "An unsubmitted draft is not released or treated as a dependency")
+        try await outbox.authorise(ids: [mutation.id])
+        #expect(!(try await outbox.companionParentsReady()))
+        try await outbox.markAccepted([mutation.id])
+        #expect(!(try await outbox.companionParentsReady()), "Acceptance alone does not prove that the parent exists on the Mac")
+        _ = try await outbox.recordReceipt(MutationReceipt(accepted: [], duplicate: [mutation.id], rejected: [], cursor: 9, applied: [mutation.id]), for: [mutation])
+        #expect(try await outbox.companionParentsReady())
+    }
 
     @Test("pressing send authorises what is pending, and nothing else")
     func authorisingCoversPendingOnly() async throws {

@@ -161,7 +161,7 @@ struct PagesWorkspaceView: View {
         let id = "page_\(UUID().uuidString)"
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         var row: [String: JSONValue] = [
-            "id": .string(id), "origin": .string("standalone"), "title": .string("Untitled page"),
+            "id": .string(id), "origin": .string("standalone"), "title": .string(String(localized: "Untitled page")),
             "state": .string("active"), "locked": .int(0), "full_width": .int(0), "revision": .int(1),
             "created_by": .string("mobile"), "updated_by": .string("mobile"),
             "created_at": .string(now), "updated_at": .string(now),
@@ -169,6 +169,13 @@ struct PagesWorkspaceView: View {
         row["parent_page_id"] = parentId.map(JSONValue.string) ?? .null
         guard await outbox.syncMutation(kind:.upsert,table:.pages,key:[id],row:row,title:"Crear página") else {error=outbox.lastError;return}
         tables["pages",default:[]].append(Row(row));rebuild()
+        if session.connection.desktopPairingId != nil {
+            do {
+                let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+                let documents = try await CompanionPageDocumentStores.shared.store(pairingId: pairing.id, vaultId: vault)
+                _ = try await documents.createLocal(page: Row(row))
+            } catch { self.error = error.localizedDescription; return }
+        }
         if let page = pages.first(where: { $0.id == id }) { open(page) }
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Complete universal page edits remain authored records, separate from
 /// expiring downloads. An immutable sending request survives a lost reply.
@@ -54,6 +55,28 @@ public actor CompanionPageDocuments {
         baselines[pageId] = document
     }
     public func hasDraft(pageId:String)->Bool { records[pageId] != nil }
+    /// Called only for the new standalone page just authored through the typed
+    /// mutation outbox. Revision one is its empty creation baseline; it never
+    /// substitutes an existing Mac page. A later Mac edit still causes a conflict.
+    public func createLocal(page: Row) async throws -> JSONValue {
+        guard let id = page.string("id"), !id.isEmpty, id.utf8.count <= 1024,
+              page.string("origin") == "standalone", page.string("state") == "active", page.int("revision") == 1,
+              page.string("row_id") == nil, page.string("note_id") == nil,
+              page.bool("locked") != true, let title = page.string("title"), title.utf8.count <= 4096,
+              page.string("created_at") != nil, page.string("updated_at") != nil else { throw DesktopBridgeError.malformedResponse }
+        if let document = document(pageId: id) { return document }
+        guard baselines[id] == nil else { throw DesktopBridgeError.malformedResponse }
+        var metadata: [String: JSONValue] = ["id": .string(id), "origin": .string("standalone"), "title": .string(title),
+            "state": .string("active"), "revision": .int(1), "locked": .bool(false), "fullWidth": .bool(page.bool("full_width") == true)]
+        for (raw, portable) in ["row_id":"rowId", "note_id":"noteId", "parent_page_id":"parentPageId", "icon":"icon", "cover_blob_hash":"coverBlobHash", "created_by":"createdBy", "updated_by":"updatedBy", "created_at":"createdAt", "updated_at":"updatedAt"] {
+            metadata[portable] = page.columns[raw] ?? .null
+        }
+        baselines[id] = .object(["page": .object(metadata), "revision": .int(1), "markdown": .string(""), "blocks": .array([]),
+            "nativeDocument": .null, "schemaVersion": .int(1), "updateSequence": .int(0), "snapshotSequence": .int(0),
+            "markdownHash": .string(SHA256.hash(data: Data()).map { String(format: "%02x", $0) }.joined())])
+        let input: JSONValue = .object(["pageId": .string(id), "expectedRevision": .int(1), "title": .string(title), "markdown": .string(""), "blocks": .array([]), "reason": .string("Página creada en el móvil")])
+        return try await save(pageId: id, input: input).objectValue!["document"]!
+    }
     public func document(pageId: String) -> JSONValue? {
         guard let record = records[pageId] else { return nil }
         var document = record.baseline.objectValue!
