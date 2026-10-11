@@ -2350,6 +2350,10 @@ final class MobileReleaseUITests: XCTestCase {
         try linkMacByTypedCode(renewal: false)
     }
     @MainActor
+    func testMacCodeLinksWorkspaceAndConsultsExistingReport() throws {
+        try linkMacByTypedCode(renewal: false, consultExistingReport: true)
+    }
+    @MainActor
     func testRenewExistingMacConnectionByDesktopCode() throws {
         try linkMacByTypedCode(renewal: true)
     }
@@ -2361,11 +2365,12 @@ final class MobileReleaseUITests: XCTestCase {
     func testAcceptedMacCodeResumesAfterCapabilitiesFailureAndAppRestart() throws {
         try linkMacByTypedCode(renewal: false, capabilitiesFailureFirst: true)
     }
-    @MainActor private func linkMacByTypedCode(renewal: Bool, invalidCodeFirst: Bool = false, capabilitiesFailureFirst: Bool = false) throws {
+    @MainActor private func linkMacByTypedCode(renewal: Bool, invalidCodeFirst: Bool = false, capabilitiesFailureFirst: Bool = false, consultExistingReport: Bool = false) throws {
         executionTimeAllowance = 300
         let code = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_PAIRING_CODE"], "A fresh Mac code is required.")
         XCTAssertNil(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_LINK"], "This test must discover the Mac, not receive an injected link.")
         let app = XCUIApplication()
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         if let style = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_INTERFACE_STYLE"] {
             app.launchArguments += ["-nodus.prefs.interfaceStyle", style]
@@ -2430,6 +2435,15 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.buttons["Nuevo informe"].waitForExistence(timeout: 60))
         XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
         capture(app, "pairing-code-linked-research-loaded")
+        if consultExistingReport {
+            try verifyExistingResearchReport(app)
+            app.terminate(); app.launch()
+            XCTAssertTrue(app.buttons["nodus-navigation-toggle"].waitForExistence(timeout: 30))
+            XCTAssertTrue(app.webViews.firstMatch.buttons["Nuevo informe"].waitForExistence(timeout: 60))
+            XCTAssertFalse(app.textFields["pairing-code"].exists, "The linked workspace must reopen without another code.")
+            capture(app, "pairing-code-workspace-restored-after-process-restart")
+            return
+        }
         let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_RESEARCH_MARKER"])
         let body = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_RESEARCH_BODY_SNIPPET"])
         try verifyGeneratedResearchReport(app, marker: marker, timeout: 120, expectedBody: body)
@@ -2887,6 +2901,9 @@ final class MobileReleaseUITests: XCTestCase {
         for _ in 0..<6 { if research.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(research.isHittable, app.debugDescription)
         research.tap()
+        try verifyExistingResearchReport(app)
+    }
+    @MainActor private func verifyExistingResearchReport(_ app: XCUIApplication) throws {
         let reports = app.descendants(matching: .any)["shared-desktop-deepResearch"]
         XCTAssertTrue(reports.waitForExistence(timeout: 60), app.debugDescription)
         let web = reports.webViews.firstMatch
