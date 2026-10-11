@@ -130,7 +130,8 @@ actor CorpusCitations {
             pages: report.pages,
             citationsChecked: report.citationsChecked,
             citationsRejected: report.citationsRejected,
-            stoppedReason: report.stoppedReason
+            stoppedReason: report.stoppedReason,
+            supportMatrix: report.supportMatrix, audit: report.audit, materialScopes: report.materialScopes
         )
     }
 

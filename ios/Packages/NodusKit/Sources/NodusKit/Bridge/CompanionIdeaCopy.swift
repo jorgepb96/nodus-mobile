@@ -10,6 +10,10 @@ public struct CompanionIdeaCopy: Sendable {
     private let edges: [JSONValue]
     private let themes: [JSONValue]
     private let edgeDetails: [JSONValue]
+    /// Actual chosen dossiers, excluding the summaries of graph neighbours.
+    public var selectedRows: [Row] {
+        entries.map { Row($0.objectValue!["nativeDetail"]!.objectValue!["idea"]!.objectValue!) }
+    }
 
     public enum CopyError: Error, LocalizedError {
         case unavailable

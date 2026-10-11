@@ -4,6 +4,44 @@ import Testing
 
 @Suite("Native companion offline consultation", .serialized)
 struct DesktopCorpusOfflineTests {
+    @Test("new autonomous retrieval uses only selected source material after transport loss")
+    func selectedResearchMaterial() async throws {
+        let id = UUID().uuidString, root = URL.temporaryDirectory.appendingPathComponent("selected-context-\(UUID().uuidString)")
+        let keychain = KeychainStore(service: "nodus.tests.selected-context.\(id)")
+        let defaults = try #require(UserDefaults(suiteName: id)), store = DesktopBridgePairingStore(defaults: defaults, keychain: keychain)
+        let pairing = try DesktopBridgePairing(id: id, origin: "https://mac.nodus.test:7443", certificateFingerprint: String(repeating: "a", count: 64), deviceId: "phone", deviceName: "phone", vaultIds: ["a"], domains: [.corpus], pairedAt: Date(), expiresAt: nil)
+        let cache = try PrivateBridgeCache(pairingId: id, directory: root, keychain: keychain)
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [OfflineCorpusProtocol.self]
+        let session = URLSession(configuration: config), client = DesktopBridgeClient(pairing: pairing, token: "test-only", store: store, session: session)
+        defer { session.invalidateAndCancel(); try? FileManager.default.removeItem(at: root); try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)); defaults.removePersistentDomain(forName: id) }
+        let chosen = try CompanionSelectedContextTests.passages(count: 1)
+        let dossier = try chosen.dossier(id: "passage-0")
+        let copy: JSONValue = .object(["version": .int(1), "path": .string("passages"), "entries": .array([
+            .object(["summary": .object(dossier.primary.columns), "detail": dossier.payload])])])
+        let pack = try await cache.saveReadPack(vaultId: "a", title: "Selected source", expiresAt: Date().addingTimeInterval(3600), records: [.init(domain: .corpus,
+            recordId: CompanionCollectionCopy.recordId(path: "passages"), data: JSONEncoder.nodus.encode(copy))])
+        try await cache.removeReusableCopies()
+        let body: JSONValue = .object(["query": .string("¿Qué dice la fotografía sobre propaganda?"), "budget": .int(120_000)])
+        OfflineCorpusProtocol.state.set(error: .notConnectedToInternet, status: 200)
+        let response = try await client.corpusWithOfflineCopy(vaultId: "a", path: "context", method: "POST", body: body, cache: cache)
+        let context = try JSONDecoder.nodus.decode(ContextPackage.self, from: response.response.data)
+        #expect(response.fromCache); #expect(context.sourceScope == "device_downloads")
+        #expect(context.sections.first?.items.first?.string("text") == "La fotografía conserva 37 huellas de propaganda: testimonio literal final.")
+        await #expect(throws: URLError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "search/semantic", method: "POST", body: body, cache: cache) }
+        await #expect(throws: DesktopBridgeError.self) { try await client.corpusWithOfflineCopy(vaultId: "other", path: "context", method: "POST", body: body, cache: cache) }
+        for code in [URLError.Code.serverCertificateUntrusted, .cancelled] {
+            OfflineCorpusProtocol.state.set(error: code, status: 200)
+            await #expect(throws: URLError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "context", method: "POST", body: body, cache: cache) }
+        }
+        for status in [403, 422, 500] {
+            OfflineCorpusProtocol.state.set(error: nil, status: status)
+            await #expect(throws: APIError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "context", method: "POST", body: body, cache: cache) }
+        }
+        try await cache.removeReadPack(id: pack.id, vaultId: "a")
+        OfflineCorpusProtocol.state.set(error: .notConnectedToInternet, status: 200)
+        await #expect(throws: URLError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "context", method: "POST", body: body, cache: cache) }
+    }
+
     @Test("selected native reports survive reusable cache clearing without hiding permission or format failures")
     func selectedResearchReaders() async throws {
         let id = UUID().uuidString, root = URL.temporaryDirectory.appendingPathComponent("selected-research-\(UUID().uuidString)")

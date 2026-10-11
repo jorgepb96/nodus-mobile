@@ -140,6 +140,7 @@ final class DeepResearchRunner {
         let imageModel = ai.model(for: .image)
         let client = session.client
         let identity = semanticIdentity(session)
+        let materialScope = ResearchMaterialScope(checkpoint == nil ? [] : checkpoint?.materialScopes ?? ["unknown_recovered"])
 
         let orchestrator = DeepResearchOrchestrator(
             deps: DeepResearchWiring.deps(
@@ -147,7 +148,8 @@ final class DeepResearchRunner {
                     client: client,
                     spaceId: session.connection.spaceId,
                     embeddings: EmbeddingService(keyProvider: keyProvider),
-                    identity: identity
+                    identity: identity,
+                    scopeTracker: materialScope
                 ),
                 provider: ProviderClient(keyProvider: keyProvider),
                 citations: CorpusCitations(client: client, spaceId: session.connection.spaceId)
@@ -173,14 +175,14 @@ final class DeepResearchRunner {
         }
 
         do {
-            let report = try await orchestrator.run(
+            let generated = try await orchestrator.run(
                     request,
                     resuming: checkpoint,
                     // Written after every section, on whichever thread finished it. This is the
                     // persisted state Info.plist has always claimed a run resumes from, and the
                     // difference between an interrupted run and a wasted one.
                     onCheckpoint: { reached in
-                        DeepResearchCheckpointStore.save(reached, spaceId: spaceId)
+                        DeepResearchCheckpointStore.save(reached.withMaterialScopes(materialScope.current), spaceId: spaceId)
                     },
                     onProgress: { update in
                         Task { @MainActor in
@@ -195,6 +197,7 @@ final class DeepResearchRunner {
                         }
                     }
             )
+            let report = generated.withMaterialScopes(materialScope.current)
                 // Saved before anything else can go wrong. A run is one model call per section
                 // and losing it to a dismissed screen means paying for it twice.
                 //

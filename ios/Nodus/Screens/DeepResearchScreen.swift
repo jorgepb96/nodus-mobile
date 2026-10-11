@@ -514,6 +514,10 @@ struct DeepResearchScreen: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if session.connection.desktopPairingId != nil, session.aiExecutionMode == .autonomous {
+                Text("Con el Mac disponible se consulta su corpus. Sin conexión, la investigación utiliza únicamente las ideas, pasajes y obras que hayas descargado, con el proveedor configurado en este móvil.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Text((mode ?? defaultMode) == .teachingUnit ? "Unit topic" : "Objective")
                 .font(.subheadline.weight(.medium))
             TextField(

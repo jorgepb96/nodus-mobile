@@ -415,6 +415,31 @@ public actor DesktopBridgeClient {
     /// as the shared surfaces. Only transport loss permits fallback; revoked
     /// grants, invalid certificates and server errors always remain errors.
     public func corpusWithOfflineCopy(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", body: JSONValue? = nil, percentEncoded: Bool = false, cache suppliedCache: PrivateBridgeCache? = nil) async throws -> (response: DesktopBridgeResponse, fromCache: Bool) {
+        if method == "POST", path == "context" {
+            guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), query.isEmpty,
+                  let body, body.objectValue != nil else { throw DesktopBridgeError.permissionDenied }
+            let cache = try suppliedCache ?? store.offlineCache(for: pairing)
+            let hasSelected = try await CompanionSelectedContext.hasSource(cache: cache, vaultId: vaultId)
+            do {
+                return (try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body,
+                    percentEncoded: percentEncoded, timeout: hasSelected ? 4 : nil), false)
+            } catch {
+                guard hasSelected, let offline = error as? URLError,
+                      [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut].contains(offline.code)
+                else { throw error }
+                guard let selected = try await CompanionSelectedContext.downloaded(cache: cache, vaultId: vaultId) else { throw error }
+                return (try selected.response(body: body), true)
+            }
+        }
+        if method == "POST", path == "search/semantic" {
+            guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
+            let cache = try suppliedCache ?? store.offlineCache(for: pairing)
+            let selected = try await CompanionSelectedContext.hasSource(cache: cache, vaultId: vaultId)
+            // A selected lexical copy is not a vector index. Fail the semantic
+            // request promptly; the caller may then request its truthful lexical path.
+            return (try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body,
+                percentEncoded: percentEncoded, timeout: selected ? 4 : nil), false)
+        }
         guard method == "GET" else { return (try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded), false) }
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
         let cache = try suppliedCache ?? store.offlineCache(for: pairing)

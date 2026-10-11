@@ -20,6 +20,7 @@ struct CorpusRetrieval: Sendable {
     let embeddings: EmbeddingService
     /// Nil when the vault has no vectors, or when this device cannot match them.
     let identity: EmbeddingIdentity?
+    var scopeTracker: ResearchMaterialScope? = nil
 
     enum Mode: String, Sendable {
         case semantic
@@ -111,20 +112,23 @@ struct CorpusRetrieval: Sendable {
         guard !entries.isEmpty else {
             return try await lexicalMaterial(query: query, budget: 60_000, include: include)
         }
+        scopeTracker?.observe("linked_corpus")
         // The semantic path ranks ideas and passages; themes, gaps and works come from the
         // lexical package, so both are merged rather than one replacing the other.
         let lexical = try? await lexicalMaterial(query: query, budget: 30_000, include: include)
+        let warnings = [warning, lexical?.warning].compactMap { $0 }
         return Result(
             catalog: CitationCatalog(entries: entries).merging(lexical?.catalog ?? CitationCatalog(entries: [])),
             mode: .semantic,
             truncated: lexical?.truncated ?? false,
-            warning: warning,
+            warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             sections: semanticSections(entries) + (lexical?.sections.filter { $0.kind != .ideas && $0.kind != .passages } ?? [])
         )
     }
 
     private func lexicalMaterial(query: String, budget: Int, include: [ContextSectionKind]) async throws -> Result {
         let package = try await client.context(query: query, in: spaceId, budget: budget, include: include)
+        scopeTracker?.observe(package.sourceScope == "device_downloads" ? "device_downloads" : "linked_corpus")
         let sections = package.sections.compactMap { section -> MaterialSection? in
             guard let kind = ContextSectionKind(rawValue: section.kind), !section.items.isEmpty else { return nil }
             return MaterialSection(kind: kind, rows: section.items)
@@ -133,7 +137,7 @@ struct CorpusRetrieval: Sendable {
             catalog: CitationCatalog.from(package),
             mode: .lexical,
             truncated: package.stats.truncated,
-            warning: nil,
+            warning: package.sourceScope == "device_downloads" ? "Búsqueda en los dossiers descargados en este dispositivo; su alcance no incluye el vault completo." : nil,
             sections: sections
         )
     }
@@ -173,7 +177,7 @@ struct CorpusRetrieval: Sendable {
                 kind: "passage",
                 id: id,
                 label: String((row.text("text") ?? "Passage").prefix(160)),
-                detail: row.text("section"),
+                detail: row.text("text") ?? row.text("section"),
                 workId: row.string("nodus_id"),
                 locator: row.text("page_label")
             )
@@ -190,6 +194,16 @@ struct CorpusRetrieval: Sendable {
         }
         return nil
     }
+}
+
+/// The background section callbacks and checkpoint writer share a tiny scope
+/// receipt. Its lock protects metadata only and never encloses IO or model calls.
+nonisolated final class ResearchMaterialScope: @unchecked Sendable {
+    private let lock = NSLock()
+    private var scopes: Set<String>
+    init(_ scopes: [String] = []) { self.scopes = Set(scopes) }
+    func observe(_ scope: String) { lock.withLock { _ = scopes.insert(scope) } }
+    var current: [String] { lock.withLock { scopes.sorted() } }
 }
 
 /// The real `DeepResearchDeps`, wired to a space and a provider.

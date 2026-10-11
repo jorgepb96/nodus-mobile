@@ -173,6 +173,18 @@ downloads and deletion notify the visible access controls. This is consultation 
 public dossiers, not a substitute for private-domain permissions or full specialised offline
 editing. Native contracts are prepared; compilation and acceptance remain pending.
 
+Native autonomous research and chat can retrieve new questions from chosen academic
+source dossiers when the Mac is unreachable. This provider-free lexical source includes
+actual selected ideas, passages, themes, gaps and work rows; graph neighbours and linked
+summaries never become independent citable sources. Literal passages enter prompts in
+full, and an oversized passage is omitted with a truncation flag instead of silently
+shortened. Semantic requests still require the Mac and fail promptly before lexical
+retrieval; a local copy is never presented as a vector index. Permission, certificate,
+format and cancellation failures do not trigger offline fallback. Research checkpoints,
+reports and Markdown retain the downloaded/mixed material scope. Native source contracts
+and persistence regressions are prepared and remain pending execution. Selected specialised
+study/world content and workshop generation still require their own autonomous contracts.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

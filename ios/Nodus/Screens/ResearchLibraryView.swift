@@ -947,6 +947,9 @@ struct ReportBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let notice = report.materialNotice {
+                NodusNotice(tone: .info, title: "Alcance de la investigación", message: LocalizedStringKey(notice))
+            }
             ForEach(Array(report.sections.enumerated()), id: \.offset) { index, section in
                 VStack(alignment: .leading, spacing: 14) {
                     ReportSectionTitle(section.title, accent: session.accent)
@@ -1242,6 +1245,10 @@ struct PublishedReportReader: View {
     @State private var error: String?
     @State private var translationOpen = false
     private var currentRow: Row { detail?.report ?? row }
+    private var imageHash: String? {
+        if let detail { return detail.image?.text("hash") }
+        return row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue
+    }
 
     var body: some View {
         ScrollView {
@@ -1250,7 +1257,7 @@ struct PublishedReportReader: View {
                     Label("Sin conexión · informe descargado en este dispositivo", systemImage: "wifi.slash")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                if let hash = detail?.image?.text("hash") ?? row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
+                if let hash = imageHash {
                     ReportHeroLayout { AssetImage(session: session, hash: hash) }
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
@@ -1353,7 +1360,7 @@ struct PublishedReportReader: View {
                 .presentationDetents([.large])
             }
         }
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision)") { await load() }
     }
 
     private struct Prose { let heading: String?; let body: String }

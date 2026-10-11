@@ -8,6 +8,9 @@ public struct CompanionCollectionCopy: Sendable {
     public let collection: CollectionDescriptor
     private let entries: [JSONValue]
     private let revision: String
+    public var selectedRows: [Row] {
+        entries.map { Row(Self.primaryRow(collection, detail: $0.objectValue!["detail"]!.objectValue!)!) }
+    }
 
     public static func recordId(path: String) throws -> String {
         guard Collections[path] != nil else { throw DesktopBridgeError.permissionDenied }

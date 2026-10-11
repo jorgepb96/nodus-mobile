@@ -25,7 +25,7 @@ public extension NodusClient {
             path: address.spacePath(spaceId, "/assets/\(escape(hash))"),
             extraHeaders: ["Accept": "image/*"]
         ))
-        guard SHA256.hash(data: response.data).map({ String(format: "%02x", $0) }).joined() == hash.lowercased() else {
+        if hasDesktopBridge, SHA256.hash(data: response.data).map({ String(format: "%02x", $0) }).joined() != hash.lowercased() {
             throw APIError(status: 422, code: "asset_hash_mismatch", message: "La imagen descargada no coincide con su contenido original.", details: [:])
         }
         if !hasDesktopBridge { try await publishedAssets.write(response.data, hash: hash, origin: address.origin, spaceId: spaceId) }

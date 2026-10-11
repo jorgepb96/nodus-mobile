@@ -13,6 +13,14 @@ import Testing
 /// lost report on the other side.
 @Suite("Report drafts")
 struct ReportDraftTests {
+    @Test("a phone-authored report keeps the selected material scope in its canonical Desktop document")
+    func selectedScopeReachesDesktopReader() throws {
+        let selected = report().withMaterialScopes(["device_downloads"])
+        let document = try #require(Row(row(selected)).embeddedJSON("draft_json")?.objectValue)
+        #expect(document["draftMarkdown"]?.stringValue == selected.markdown)
+        #expect(document["draftMarkdown"]?.stringValue?.contains("no representa el vault completo") == true)
+    }
+
     private func report(
         objective: String = "La escasez como política",
         sections: [DeepResearchSection] = [

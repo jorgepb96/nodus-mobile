@@ -201,6 +201,8 @@ public enum ContextSectionKind: String, Sendable, Codable, CaseIterable {
 }
 
 public struct ContextPackage: Sendable, Decodable {
+    /// Explicit scope for selected on-device retrieval; older Mac replies omit it.
+    public let sourceScope: String?
     public struct Section: Sendable, Decodable {
         public let kind: String
         public let items: [Row]
