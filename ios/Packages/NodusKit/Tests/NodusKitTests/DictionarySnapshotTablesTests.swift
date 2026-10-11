@@ -4,6 +4,19 @@ import Testing
 
 @Suite("Downloaded Dictionary source selection")
 struct DictionarySnapshotTablesTests {
+    @Test("historical contradiction citations retain both actual idea statements without unrelated ideas")
+    func contradictionSources() throws {
+        let table: [String: JSONValue] = [
+            "dictionary_versions": .array([.object(["content_markdown": .string("[Tensión](nodus://contradiction/edge-old)")])]),
+            "edges": .array([.object(["id": .string("edge-old"), "from_id": .string("source"), "to_id": .string("target")])]),
+            "ideas": .array(["source", "target", "unrelated"].map { .object(["global_id": .string($0), "statement": .string("Enunciado de \($0)")]) })
+        ]
+        let document: JSONValue = .object(["format": .string(SnapshotFormat.identifier), "formatVersion": .int(2), "tables": .object(table)])
+        let selected = try SnapshotDownload.read(JSONEncoder.nodus.encode(document)).dictionaryConsultationTables()
+        #expect(selected["ideas"]?.arrayValue?.count == 2)
+        #expect(selected["ideas"]?.arrayValue?.map { $0.objectValue?["statement"]?.stringValue } == ["Enunciado de source", "Enunciado de target"])
+        #expect(selected["edges"] == table["edges"])
+    }
     @Test("source dossiers retain uncited ideas and evidence without exposing private domains or passage bodies")
     func fullSourceDossiers() throws {
         let tables: [String: JSONValue] = [

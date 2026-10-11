@@ -181,6 +181,12 @@ public struct SnapshotDownload: Sendable {
                 }
             }
         }
+        for edge in tables["edges"]?.arrayValue ?? [] {
+            guard let row = edge.objectValue, let id = row["id"]?.stringValue, citations["contradiction"]?.contains(id) == true else { continue }
+            for field in ["from_id", "to_id"] {
+                if let idea = row[field]?.stringValue { citations["idea", default: []].insert(idea) }
+            }
+        }
         for (table, kind, field) in [("ideas", "idea", "global_id"), ("passages", "passage", "passage_id"), ("gaps", "gap", "id"), ("edges", "contradiction", "id")] {
             let ids = citations[kind] ?? []
             if let rows = tables[table]?.arrayValue {
