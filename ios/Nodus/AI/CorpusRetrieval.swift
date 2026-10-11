@@ -82,15 +82,6 @@ struct CorpusRetrieval: Sendable {
         if let identity,
            let semantic = try? await semanticMaterial(query: query, identity: identity, include: include),
            !semantic.catalog.isEmpty {
-            if include.contains(.sources) {
-                let sources = try await lexicalMaterial(query: query, budget: max(1000, budget / 2), include: [.sources])
-                if !sources.catalog.isEmpty {
-                    return Result(catalog: semantic.catalog.merging(sources.catalog), mode: .hybrid,
-                        truncated: semantic.truncated || sources.truncated,
-                        warning: [semantic.warning, sources.warning, String(localized: "Las fuentes especializadas se recuperan mediante búsqueda textual.")].compactMap { $0 }.joined(separator: " "),
-                        sections: semantic.sections + sources.sections)
-                }
-            }
             return semantic
         }
         return try await lexicalMaterial(query: query, budget: budget, include: include)
@@ -127,11 +118,20 @@ struct CorpusRetrieval: Sendable {
         scopeTracker?.observe("linked_corpus")
         // The semantic path ranks ideas and passages; themes, gaps and works come from the
         // lexical package, so both are merged rather than one replacing the other.
-        let lexical = try? await lexicalMaterial(query: query, budget: 30_000, include: include)
-        let warnings = [warning, lexical?.warning].compactMap { $0 }
+        let supplementary = include.filter { $0 != .ideas && $0 != .passages }
+        let lexical: Result?
+        if supplementary.isEmpty { lexical = nil }
+        else if supplementary.contains(.sources) {
+            // A malformed or denied specialised source must remain an error;
+            // accepting only the vector hits would silently omit that material.
+            lexical = try await lexicalMaterial(query: query, budget: 30_000, include: supplementary)
+        } else { lexical = try? await lexicalMaterial(query: query, budget: 30_000, include: supplementary) }
+        let hasSources = lexical?.sections.contains { $0.kind == .sources } == true
+        let warnings = [warning, lexical?.warning,
+            hasSources ? String(localized: "Las fuentes especializadas se recuperan mediante búsqueda textual.") : nil].compactMap { $0 }
         return Result(
             catalog: CitationCatalog(entries: entries).merging(lexical?.catalog ?? CitationCatalog(entries: [])),
-            mode: .semantic,
+            mode: hasSources ? .hybrid : .semantic,
             truncated: lexical?.truncated ?? false,
             warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             sections: semanticSections(entries) + (lexical?.sections.filter { $0.kind != .ideas && $0.kind != .passages } ?? [])
@@ -148,11 +148,17 @@ struct CorpusRetrieval: Sendable {
             guard let kind = ContextSectionKind(rawValue: section.kind), !section.items.isEmpty else { return nil }
             return MaterialSection(kind: kind, rows: section.items)
         }
+        var warnings: [String] = []
+        if package.sourceScope == "device_downloads" { warnings.append("Búsqueda en los dossiers descargados en este dispositivo; su alcance no incluye el vault completo.") }
+        if package.stats.truncated { warnings.append("El contexto ha alcanzado su límite. Las fuentes que no caben se omiten completas; sus citas literales no se recortan.") }
+        if package.sections.contains(where: { $0.kind == "sources" && $0.items.contains { $0.string("contentScope") == "metadata" } }) {
+            warnings.append("Algunas fichas aportan solo metadatos. Sus documentos originales no forman parte del contexto consultado.")
+        }
         return Result(
             catalog: CitationCatalog.from(package),
             mode: .lexical,
             truncated: package.stats.truncated,
-            warning: package.sourceScope == "device_downloads" ? "Búsqueda en los dossiers descargados en este dispositivo; su alcance no incluye el vault completo." : nil,
+            warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             sections: sections
         )
     }
