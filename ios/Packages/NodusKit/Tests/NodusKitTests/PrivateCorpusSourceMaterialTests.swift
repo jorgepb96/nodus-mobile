@@ -9,12 +9,12 @@ struct PrivateCorpusSourceMaterialTests {
         var fields = root; fields[kind.primaryKey] = .string(id)
         let rows = Dictionary(uniqueKeysWithValues: kind.groups.map { key in
             (key,(groups[key] ?? []).enumerated().map { index, value in
-                var row = value; row["_bridge_cursor"] = .int(index + 1); return Row(row)
+                var row = value; row["_bridge_cursor"] = .int(Int64(index + 1)); return Row(row)
             })
         })
         let metadata: JSONValue = .object(["version":.int(1),"kind":.string(kind.rawValue),"id":.string(id),"root":.object(fields),
             "revision":.string(String(repeating:"a",count:64)),"groups":.array(kind.groups.map { key in
-                .object(["key":.string(key),"title":.string(key),"total":.int(rows[key]!.count),"revision":.string(String(repeating:"b",count:64))])
+                .object(["key":.string(key),"title":.string(key),"total":.int(Int64(rows[key]!.count)),"revision":.string(String(repeating:"b",count:64))])
             })])
         let source = try JSONDecoder.nodus.decode(PrivateCorpusSource.self,from: JSONEncoder.nodus.encode(metadata))
         return try .init(source: source,rows: rows,reference: reference)

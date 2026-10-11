@@ -10,6 +10,24 @@ public actor CompanionManuscriptDraftStore {
         public init(sceneId: String, baseline: String, text: String, updatedAt: Date = Date()) {
             self.sceneId = sceneId; self.baseline = baseline; self.text = text; self.updatedAt = updatedAt
         }
+        private enum CodingKeys: String, CodingKey { case sceneId, baseline, text, updatedAt, updatedAtTimestamp }
+        public init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            sceneId = try values.decode(String.self, forKey: .sceneId)
+            baseline = try values.decode(String.self, forKey: .baseline)
+            text = try values.decode(String.self, forKey: .text)
+            if let timestamp = try values.decodeIfPresent(Double.self, forKey: .updatedAtTimestamp) {
+                guard timestamp.isFinite else { throw DesktopBridgeError.malformedResponse }
+                updatedAt = Date(timeIntervalSinceReferenceDate: timestamp)
+            } else { updatedAt = try values.decode(Date.self, forKey: .updatedAt) }
+        }
+        public func encode(to encoder: any Encoder) throws {
+            var values = encoder.container(keyedBy: CodingKeys.self)
+            try values.encode(sceneId, forKey: .sceneId); try values.encode(baseline, forKey: .baseline); try values.encode(text, forKey: .text)
+            try values.encode(updatedAt, forKey: .updatedAt)
+            // Preserve local write order within the same wire-format millisecond.
+            try values.encode(updatedAt.timeIntervalSinceReferenceDate, forKey: .updatedAtTimestamp)
+        }
         public func conflicts(with remote: String) -> Bool { remote != baseline && remote != text }
     }
     static let storageKey = "companion-manuscript-drafts-v1"

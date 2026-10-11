@@ -12,7 +12,7 @@ struct PrivateCorpusSourceTests {
         let json: JSONValue = .object(["version": .int(1), "kind": .string(target.kind.rawValue), "id": .string(target.id),
             "root": .object([target.kind.primaryKey: .string(target.id), "title": .string("Fuente completa")]),
             "revision": .string(revision), "groups": .array(target.kind.groups.map { key in
-                .object(["key": .string(key), "title": .string(key), "revision": .string(revision), "total": .int(key == "segments" ? segmentCount : 0)])
+                .object(["key": .string(key), "title": .string(key), "revision": .string(revision), "total": .int(Int64(key == "segments" ? segmentCount : 0))])
             })])
         return try JSONDecoder.nodus.decode(PrivateCorpusSource.self, from: JSONEncoder.nodus.encode(json))
     }
@@ -97,7 +97,7 @@ struct PrivateCorpusSourceTests {
             let json: JSONValue = .object(["items": .array((0..<items).map { index in .object([
                 "id": .string("source-\(offset+index)"), "title": .string("Fuente \(offset+index)"),
                 "detail": .string("37"), "updatedAt": .string("2026-10-11T00:00:00.000Z"), "state": .string("active")]) }),
-                "total": .int(total), "offset": .int(offset), "limit": .int(100), "hasMore": .bool(false), "revision": .string(String(repeating: "a", count: 64))])
+                "total": .int(Int64(total)), "offset": .int(Int64(offset)), "limit": .int(100), "hasMore": .bool(false), "revision": .string(String(repeating: "a", count: 64))])
             return try JSONDecoder.nodus.decode(PrivateCorpusSource.Catalogue.self, from: JSONEncoder.nodus.encode(json))
         }
         try page(items: 21).validate(offset: 100)

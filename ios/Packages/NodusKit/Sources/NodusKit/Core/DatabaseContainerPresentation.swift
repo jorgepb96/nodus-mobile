@@ -25,11 +25,11 @@ public enum DatabaseContainerPresentation {
             for (canonical,column) in map {
                 guard let key=column.stringValue,!key.isEmpty else {throw DesktopBridgeError.malformedResponse}
                 if let content=cells[canonical],content != .null {
-                    guard let text=content.stringValue else {throw DesktopBridgeError.malformedResponse};physical[key]=text
+                    guard case .string(let text)=content else {throw DesktopBridgeError.malformedResponse};physical[key]=text
                 }
                 for field in ["formulaErrors", "formulaColors"] {
                     if let metadata = value[field]?.objectValue?[canonical], metadata != .null {
-                        guard let text = metadata.stringValue else { throw DesktopBridgeError.malformedResponse }
+                        guard case .string(let text) = metadata else { throw DesktopBridgeError.malformedResponse }
                         if !text.isEmpty { if field == "formulaErrors" { errors[key] = text } else { colors[key] = text } }
                     }
                 }

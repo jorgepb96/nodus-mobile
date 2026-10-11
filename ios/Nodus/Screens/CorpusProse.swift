@@ -176,12 +176,12 @@ struct CorpusReference: Identifiable, Hashable {
     init?(_ url: URL) {
         guard url.scheme?.lowercased() == "nodus" else { return nil }
         if let target = PrivateCorpusReference(url) {
-            kind = url.host?.lowercased() ?? ""; recordId = target.id; privateSource = target
+            self.init(kind: url.host?.lowercased() ?? "", recordId: target.id); privateSource = target
             specialised = SpecialisedCorpusReference(url)
             return
         }
         if let target = SpecialisedCorpusReference(url) {
-            kind = url.host?.lowercased() ?? ""; recordId = target.recordId; specialised = target
+            self.init(kind: url.host?.lowercased() ?? "", recordId: target.recordId); specialised = target
             return
         }
         // `nodus://idea/g-8969` parses as host = "idea", path = "/g-8969". A vault-scoped form
@@ -622,7 +622,7 @@ struct CorpusProse: View {
         } else { nativeProse }
     }
 
-    private var nativeProse: some View {
+    @ViewBuilder private var nativeProse: some View {
         let displayedBlocks = blocks.map(displayed)
         let annotationDocument = ReaderAnnotationDocument(blocks: displayedBlocks)
         // On iPad the report is deliberately wider than its prose. Those otherwise empty

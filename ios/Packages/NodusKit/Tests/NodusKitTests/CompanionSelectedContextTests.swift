@@ -20,7 +20,7 @@ struct CompanionSelectedContextTests {
         let package = try JSONDecoder.nodus.decode(ContextPackage.self, from: response.data)
         #expect(package.sourceScope == "device_downloads"); #expect(package.stats.matched == 253); #expect(!package.stats.truncated)
         #expect(package.sections.first?.items.count == 253)
-        #expect(package.sections.first?.items.last?.string("text") == "La fotografía conserva 37 huellas de propaganda: testimonio literal final.")
+        #expect(package.sections.first?.items.first(where: { $0.string("passage_id") == "passage-252" })?.string("text") == "La fotografía conserva 37 huellas de propaganda: testimonio literal final.")
         let missing = try source.response(body: .object(["query": .string("astronomía")]))
         let empty = try JSONDecoder.nodus.decode(ContextPackage.self, from: missing.data)
         #expect(empty.sections.isEmpty); #expect(empty.stats.matched == 0)

@@ -59,7 +59,7 @@ struct CompanionProseDraftTests {
         let checkpoint:JSONValue = .object(["id":.string(UUID().uuidString),"state":.string("saved"),"entityKey":.string("scene"),
             "request":.object(["source":requested,"model":model]),"context":.object(["source":value,"revision":.string(captured.revision)]),
             "raw":.string("LATIDO: sí — Se paga."),"preview":preview,"generatedAt":.string("2026-10-11T12:00:00Z")])
-        let publication=try #require(CompanionGenerationPublication(kind:"academic",entity:"scene",checkpoint:checkpoint))
+        let publication=try #require(try CompanionGenerationPublication(kind:"academic",entity:"scene",checkpoint:checkpoint))
         #expect(publication.args.first?.objectValue?["localScene"] == value.objectValue?["localScene"])
         #expect(publication.method=="saveMobileAcademicResult")
         #expect(throws:DesktopBridgeError.malformedResponse) { try CompanionProseDraft.localSceneSource(request:requested,creationMutationId:"unconfirmed",baselineDraft:saved) }

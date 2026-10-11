@@ -29,7 +29,7 @@ struct CompanionGenerationPublicationTests {
                                     ("immersion", "saveImmersionGeneratedSession", "plan"),
                                     ("writing", "saveStudyImprovementFromMobile", "raw")] {
             let source = checkpoint(kind: kind)
-            let publication = try #require(CompanionGenerationPublication(kind: kind, entity: "entity-a", checkpoint: source))
+            let publication = try #require(try CompanionGenerationPublication(kind: kind, entity: "entity-a", checkpoint: source))
             #expect(publication.method == method)
             #expect(DesktopBridgeClient.providerFreeJobMethods.contains(method))
             #expect(publication.args.count == 1)
@@ -55,7 +55,7 @@ struct CompanionGenerationPublicationTests {
         for kind in ["writing", "translation", "immersion"] {
             var value = try #require(checkpoint(kind: kind).objectValue)
             value["context"] = .object(["revision": .string(revision), "offlineSourceVersion": .int(1)])
-            let publication = try #require(CompanionGenerationPublication(kind: kind, entity: "entity-a", checkpoint: .object(value)))
+            let publication = try #require(try CompanionGenerationPublication(kind: kind, entity: "entity-a", checkpoint: .object(value)))
             #expect(publication.args[0].objectValue?["offlineSourceVersion"] == .int(1))
             value["context"] = .object(["revision": .string(revision), "offlineSourceVersion": .int(2)])
             #expect(throws: DesktopBridgeError.self) { try CompanionGenerationPublication(kind: kind, entity: "entity-a", checkpoint: .object(value)) }
@@ -73,7 +73,7 @@ struct CompanionGenerationPublicationTests {
         let cache = try PrivateBridgeCache(pairingId: pairing, directory: directory, keychain: keychain)
         let ledger = try DesktopJobLedger(cache: cache, vaultId: "vault-a", data: nil)
         let source = checkpoint(kind: "writing")
-        let publication = try #require(CompanionGenerationPublication(kind: "writing", entity: "entity-a", checkpoint: source))
+        let publication = try #require(try CompanionGenerationPublication(kind: "writing", entity: "entity-a", checkpoint: source))
         try await ledger.preparePublication(publication)
         // No separate checkpoint record has been written yet: simulate closing
         // immediately after the single durable publication acknowledgement.
@@ -110,7 +110,7 @@ struct CompanionGenerationPublicationTests {
         let cache = try PrivateBridgeCache(pairingId: pairing, directory: directory, keychain: keychain)
         let ledger = try DesktopJobLedger(cache: cache, vaultId: "vault-a", data: nil)
         let source = checkpoint(kind: "translation")
-        let publication = try #require(CompanionGenerationPublication(kind: "translation", entity: "entity-a", checkpoint: source))
+        let publication = try #require(try CompanionGenerationPublication(kind: "translation", entity: "entity-a", checkpoint: source))
         try await ledger.preparePublication(publication)
         try await ledger.update(id: publication.id, job: DesktopBridgeJob(id: "mac-job-b", vaultId: "vault-a", method: publication.method,
             state: .failed, nextSequence: 0, events: [], result: .null, error: "translation_generation_conflict"))
@@ -119,7 +119,7 @@ struct CompanionGenerationPublicationTests {
         #expect(failed.objectValue?["state"] == .string("failed")); #expect(failed.objectValue?["markdown"] == source.objectValue?["markdown"])
         #expect(failed.objectValue?["error"] == .string("translation_generation_conflict"))
         var altered = source.objectValue!; altered["markdown"] = .string("Changed response")
-        let other = try #require(CompanionGenerationPublication(kind: "translation", entity: "entity-a", checkpoint: .object(altered)))
+        let other = try #require(try CompanionGenerationPublication(kind: "translation", entity: "entity-a", checkpoint: .object(altered)))
         await #expect(throws: DesktopBridgeError.self) { try await ledger.preparePublication(other) }
     }
 }

@@ -125,7 +125,7 @@ struct CompanionWorkshopSourceTests {
             "request": promptRequest, "context": .object(["revision": .string(revision), "source": source.value]),
             "raw": .string(response), "sourceScope": .string("device_downloads"),
             "preview": try source.preview(raw: response, request: promptRequest, scope: "device_downloads", generatedAt: "now")]
-        let publication = try #require(CompanionGenerationPublication(kind: "workshop", entity: entity, checkpoint: .object(checkpoint)))
+        let publication = try #require(try CompanionGenerationPublication(kind: "workshop", entity: entity, checkpoint: .object(checkpoint)))
         #expect(publication.id == identity)
         #expect(publication.method == "saveWritingWorkshopFromMobile")
         #expect(DesktopBridgeClient.providerFreeJobMethods.contains(publication.method))

@@ -10,7 +10,7 @@ struct CompanionDatabasePublicationTests {
         let detail = JSONValue.object(["run":.object(["id":.string("dbr_mobile_\(id)"),"status":.string("partial")]),"report":.object(["id":.string("dbr_report_dbr_mobile_\(id)"),"runId":.string("dbr_mobile_\(id)"),"title":.string("Informe verificable"),"markdown":.string("Contenido propio")])])
         let pack = JSONValue.object(["version":.int(1),"id":.string(String(repeating:"a",count:64)),"signature":.string(String(repeating:"b",count:64))])
         let checkpoint = JSONValue.object(["id":.string(id),"entityKey":.string("chosen"),"state":.string("saved"),"request":.object(["databaseIds":.array([.string("database")])]),"context":.object(["revision":.string(String(repeating:"c",count:64)),"packs":.array([pack])]),"detail":detail])
-        let publication = try #require(CompanionGenerationPublication(kind:"database",entity:"chosen",checkpoint:checkpoint))
+        let publication = try #require(try CompanionGenerationPublication(kind:"database",entity:"chosen",checkpoint:checkpoint))
         #expect(publication.method == "saveMobileDatabaseResearchReport")
         #expect(DesktopBridgeClient.providerFreeJobMethods.contains(publication.method))
         #expect(publication.args[0].objectValue?["detail"] == detail)
@@ -49,7 +49,7 @@ struct CompanionDatabasePublicationTests {
         let checkpoint:JSONValue = .object(["id":.string(identity),"entityKey":.string("entity"),"state":.string("saved"),"request":.object([:]),
             "context":.object(["revision":.string(String(repeating:"a",count:64)),"packs":.array([.object(["rows":.string(String(repeating:"private-source",count:1000))])])]),
             "detail":.object(["run":.object(["id":.string("dbr_mobile_\(identity)"),"status":.string("completed")]),"report":report]),"reader":.object(["report":report])])
-        let publication = try #require(CompanionGenerationPublication(kind:"database",entity:"entity",checkpoint:checkpoint))
+        let publication = try #require(try CompanionGenerationPublication(kind:"database",entity:"entity",checkpoint:checkpoint))
         let ledger = try DesktopJobLedger(cache:cache,vaultId:"vault",data:nil)
         try await ledger.preparePublication(publication)
         #expect(await ledger.all().first?.args == publication.args)
@@ -62,7 +62,7 @@ struct CompanionDatabasePublicationTests {
         try await reopened.preparePublication(publication)
         #expect(await reopened.all().first?.state == "available")
         var altered = checkpoint.objectValue!;altered["request"] = .object(["objective":.string("Changed")])
-        let conflicting = try #require(CompanionGenerationPublication(kind:"database",entity:"entity",checkpoint:.object(altered)))
+        let conflicting = try #require(try CompanionGenerationPublication(kind:"database",entity:"entity",checkpoint:.object(altered)))
         await #expect(throws:DesktopBridgeError.self) { try await reopened.preparePublication(conflicting) }
     }
 }

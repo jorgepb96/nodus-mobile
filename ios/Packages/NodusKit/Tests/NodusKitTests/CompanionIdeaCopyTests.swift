@@ -27,16 +27,16 @@ struct CompanionIdeaCopyTests {
         let ids = (0..<241).map { String(format: "idea-%03d", $0) }
         let copy = try CompanionIdeaCopy(copies: [Self.copy(ids: ids)])
         let query = [URLQueryItem(name: "surface", value: "workspace"), URLQueryItem(name: "limit", value: "200"), URLQueryItem(name: "offset", value: "200"), URLQueryItem(name: "sort", value: "works")]
-        let response = try #require(copy.nativeResponse(path: "ideas", query: query, percentEncoded: true))
+        let response = try #require(try copy.nativeResponse(path: "ideas", query: query, percentEncoded: true))
         let page = try JSONDecoder.nodus.decode(IdeaWorkspacePage.self, from: response.data)
         #expect(page.total == 241); #expect(page.items.count == 41); #expect(!page.hasMore)
         #expect(page.items.first?.id == "idea-200")
-        let filtered = try #require(copy.nativeResponse(path: "ideas", query: [URLQueryItem(name: "surface", value: "workspace"), URLQueryItem(name: "q", value: "idea-0_1"), URLQueryItem(name: "type", value: "finding")], percentEncoded: true))
+        let filtered = try #require(try copy.nativeResponse(path: "ideas", query: [URLQueryItem(name: "surface", value: "workspace"), URLQueryItem(name: "q", value: "idea-0_1"), URLQueryItem(name: "type", value: "finding")], percentEncoded: true))
         let items = try JSONDecoder.nodus.decode(IdeaWorkspacePage.self, from: filtered.data)
         #expect(items.total == 10); #expect(items.items.allSatisfy { $0.type == "finding" })
-        let multiline = try #require(copy.nativeResponse(path: "ideas", query: [URLQueryItem(name: "surface", value: "workspace"), URLQueryItem(name: "q", value: "body%second")], percentEncoded: false))
+        let multiline = try #require(try copy.nativeResponse(path: "ideas", query: [URLQueryItem(name: "surface", value: "workspace"), URLQueryItem(name: "q", value: "body%second")], percentEncoded: false))
         #expect(try JSONDecoder.nodus.decode(IdeaWorkspacePage.self, from: multiline.data).total == 241)
-        let detail = try #require(copy.nativeResponse(path: "ideas/idea-240", query: [], percentEncoded: true))
+        let detail = try #require(try copy.nativeResponse(path: "ideas/idea-240", query: [], percentEncoded: true))
         #expect(try JSONDecoder.nodus.decode(IdeaDetail.self, from: detail.data).idea.string("global_id") == "idea-240")
     }
 
@@ -62,7 +62,7 @@ struct CompanionIdeaCopyTests {
             let merged = try CompanionIdeaCopy(copies: copies)
             #expect(merged.containsFullIdea("own"))
             #expect(try merged.operation("getIdeaDetail", args: [.string("own")])?.objectValue?["idea"]?.objectValue?["mobileSourceScope"] == nil)
-            let neighbors = try #require(merged.operation("stellarPage", args: [.object(["kind": .string("neighbors"), "id": .string("own")])]))
+            let neighbors = try #require(try merged.operation("stellarPage", args: [.object(["kind": .string("neighbors"), "id": .string("own")])]))
             #expect(neighbors.objectValue?["total"] == .int(1))
         }
         var broken = entry, native = entry["nativeDetail"]!.objectValue!
@@ -77,7 +77,7 @@ struct CompanionIdeaCopyTests {
         let copy = try CompanionIdeaCopy(copies: [Self.copy(ids: ["seed"], edges: edges)])
         var cursor = 0, seen = Set<String>()
         repeat {
-            let page = try #require(copy.operation("stellarPage", args: [.object(["kind": .string("neighbors"), "id": .string("seed"), "cursor": .int(Int64(cursor)), "limit": .int(200)])]))
+            let page = try #require(try copy.operation("stellarPage", args: [.object(["kind": .string("neighbors"), "id": .string("seed"), "cursor": .int(Int64(cursor)), "limit": .int(200)])]))
             let object = try #require(page.objectValue)
             #expect(object["total"]?.intValue == 503)
             for edge in object["edges"]!.arrayValue! { #expect(seen.insert(edge.objectValue!["id"]!.stringValue!).inserted) }
@@ -97,7 +97,7 @@ struct CompanionIdeaCopyTests {
         let old = Self.copy(ids: ["a", "b"], edges: [("ab", "a", "b")])
         let current = Self.copy(ids: ["a"])
         let copy = try CompanionIdeaCopy(copies: [current, old])
-        let page = try #require(copy.operation("stellarPage", args: [.object(["kind": .string("corpus")])]))
+        let page = try #require(try copy.operation("stellarPage", args: [.object(["kind": .string("corpus")])]))
         #expect(page.objectValue?["nodes"]?.arrayValue?.count == 2)
         #expect(page.objectValue?["edges"]?.arrayValue?.isEmpty == true)
         #expect(throws: CompanionIdeaCopy.CopyError.self) { try copy.operation("getEdgeDetail", args: [.string("ab")]) }

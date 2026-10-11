@@ -9,7 +9,7 @@ struct CompleteCatalogueTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let counts = ["study_questions": 1205, "study_flashcards": 407, "study_goals": 1600, "persons": 2201, "relationships": 4401]
-        let ids = ["persons": "person_id", "relationships": "relationship_id"]
+        let ids = ["persons": "person_id", "relationships": "rel_id"]
         var tables: [String: JSONValue] = [:]
         for (table, count) in counts {
             tables[table] = .array((0..<count).map { index in .object([ids[table] ?? "id": .string("\(table)-\(index)"), "title": .string("Fuente \(index)"), "name": .string("Persona \(index)"), "prompt": .string("Pregunta \(index)")]) })

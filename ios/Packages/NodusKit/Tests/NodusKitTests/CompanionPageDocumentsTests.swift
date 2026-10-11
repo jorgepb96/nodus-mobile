@@ -5,10 +5,10 @@ import Testing
 @Suite("Complete companion page documents")
 struct CompanionPageDocumentsTests {
     private func document(_ revision:Int=3,title:String="Original") -> JSONValue {
-        .object(["page":.object(["id":.string("page"),"title":.string(title),"revision":.int(revision),"locked":.bool(false)]),"revision":.int(revision),"markdown":.string("Original"),"blocks":.array([.object(["id":.string("block"),"type":.string("paragraph"),"content":.object(["text":.string("Original")])])]),"nativeDocument":.array([]),"academicMetadata":.object(["version":.int(1)]),"schemaVersion":.int(2)])
+        .object(["page":.object(["id":.string("page"),"title":.string(title),"revision":.int(Int64(revision)),"locked":.bool(false)]),"revision":.int(Int64(revision)),"markdown":.string("Original"),"blocks":.array([.object(["id":.string("block"),"type":.string("paragraph"),"content":.object(["text":.string("Original")])])]),"nativeDocument":.array([]),"academicMetadata":.object(["version":.int(1)]),"schemaVersion":.int(2)])
     }
     private func input(_ revision:Int,text:String="Móvil") -> JSONValue {
-        .object(["pageId":.string("page"),"expectedRevision":.int(revision),"title":.string("Título móvil"),"markdown":.string(text),"blocks":.array([.object(["id":.string("block"),"type":.string("paragraph"),"content":.object(["text":.string(text)])])]),"nativeDocument":.array([.object(["id":.string("block"),"type":.string("paragraph"),"content":.array([.object(["type":.string("text"),"text":.string(text),"styles":.object([:])])])])]),"academicMetadata":.object(["version":.int(1)])])
+        .object(["pageId":.string("page"),"expectedRevision":.int(Int64(revision)),"title":.string("Título móvil"),"markdown":.string(text),"blocks":.array([.object(["id":.string("block"),"type":.string("paragraph"),"content":.object(["text":.string(text)])])]),"nativeDocument":.array([.object(["id":.string("block"),"type":.string("paragraph"),"content":.array([.object(["type":.string("text"),"text":.string(text),"styles":.object([:])])])])]),"academicMetadata":.object(["version":.int(1)])])
     }
     private func setup() throws -> (PrivateBridgeCache,URL,KeychainStore,String) {
         let id=UUID().uuidString,directory=FileManager.default.temporaryDirectory.appendingPathComponent(id),keychain=KeychainStore(service:"nodus.tests.pages.\(id)")

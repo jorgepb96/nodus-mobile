@@ -31,7 +31,7 @@ public struct CorpusSourceMaterial: Sendable {
     public var id: String { row.string("recordId")! }
     public var kind: String { row.string("kind")! }
     public var label: String { row.text("label")! }
-    public var text: String { row.text("text")! }
+    public var text: String { row.string("text")! }
 
     public init(row: Row) throws {
         if row["privateKind"] != nil {
@@ -59,7 +59,7 @@ public struct CorpusSourceMaterial: Sendable {
         guard let projection = projections[copy.collection.path] else { throw DesktopBridgeError.permissionDenied }
         return try copy.selectedRows.compactMap { primary in
             guard let id = primary.string(copy.collection.idField) else { throw DesktopBridgeError.malformedResponse }
-            var parts = projection.fields.compactMap { primary.text($0) }.filter { !$0.isEmpty }
+            var parts = projection.fields.compactMap { primary.string($0) }.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             if copy.collection.path == "world-scenes" {
                 let body = try copy.dossier(id: id).payload.objectValue?["text"]?.objectValue
                 if body?["scene_id"]?.stringValue == id,

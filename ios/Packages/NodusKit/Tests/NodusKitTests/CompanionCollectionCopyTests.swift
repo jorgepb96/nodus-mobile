@@ -39,14 +39,14 @@ struct CompanionCollectionCopyTests {
     @Test("new searches and pages use only chosen dossiers and keep full versions")
     func completeCatalogue() throws {
         let copy = try CompanionCollectionCopy(path: "study-questions", copies: [Self.questions()])
-        let page = try #require(copy.nativeResponse(path: "study-questions", query: [.init(name: "limit", value: "200"), .init(name: "offset", value: "200")], percentEncoded: false))
+        let page = try #require(try copy.nativeResponse(path: "study-questions", query: [.init(name: "limit", value: "200"), .init(name: "offset", value: "200")], percentEncoded: false))
         let value = try JSONDecoder.nodus.decode(JSONValue.self, from: page.data).objectValue!
         #expect(value["questions"]?.arrayValue?.count == 41); #expect(value["total"] == .int(241)); #expect(value["hasMore"] == .bool(false))
-        let search = try #require(copy.nativeResponse(path: "study-questions", query: [.init(name: "q", value: "  %_ LITERALES  ")], percentEncoded: false))
+        let search = try #require(try copy.nativeResponse(path: "study-questions", query: [.init(name: "q", value: "  %_ LITERALES  ")], percentEncoded: false))
         #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: search.data).objectValue?["total"] == .int(1))
-        let noCrossColumn = try #require(copy.nativeResponse(path: "study-questions", query: [.init(name: "q", value: "guardada Otra")], percentEncoded: false))
+        let noCrossColumn = try #require(try copy.nativeResponse(path: "study-questions", query: [.init(name: "q", value: "guardada Otra")], percentEncoded: false))
         #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: noCrossColumn.data).objectValue?["total"] == .int(0), "A phrase across different columns does not match the server contract")
-        let detail = try #require(copy.nativeResponse(path: "study-questions/question-240", query: [], percentEncoded: false))
+        let detail = try #require(try copy.nativeResponse(path: "study-questions/question-240", query: [], percentEncoded: false))
         #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: detail.data).objectValue?["versions"]?.arrayValue?.first?.objectValue?["answer"] == .string("Historial íntegro"))
         #expect(throws: CompanionCollectionCopy.CopyError.self) { try copy.nativeResponse(path: "study-questions/unselected", query: [], percentEncoded: false) }
         #expect(try copy.nativeResponse(path: "study-questions", query: [.init(name: "surface", value: "unsupported")], percentEncoded: false) == nil)
@@ -62,7 +62,7 @@ struct CompanionCollectionCopyTests {
                 .object(["summary": row, "detail": .object(["item": row, "excerpts": .array(excerpts)])])])])
         }
         let selected = try CompanionCollectionCopy(path: "archive-items", copies: [copy([]), copy([.object(["excerpt_id": .string("removed")])])])
-        let response = try #require(selected.nativeResponse(path: "archive-items/source%2Fa%23b%252F", query: [], percentEncoded: true))
+        let response = try #require(try selected.nativeResponse(path: "archive-items/source%2Fa%23b%252F", query: [], percentEncoded: true))
         let detail = try JSONDecoder.nodus.decode(JSONValue.self, from: response.data).objectValue!
         #expect(detail["item"]?.objectValue?["item_id"] == .string(id)); #expect(detail["excerpts"] == .array([]))
         #expect(throws: DesktopBridgeError.self) { try CompanionCollectionCopy(path: "archive-units", copies: [copy([])]) }
@@ -80,7 +80,7 @@ struct CompanionCollectionCopyTests {
             "total": .int(503), "offset": .int(0), "limit": .int(503), "hasMore": .bool(false)]
         func source() -> JSONValue { .object(["version": .int(1), "path": .string("databases"), "entries": .array([.object(["summary": primary, "detail": .object(detail)])])]) }
         let copy = try CompanionCollectionCopy(path: "databases", copies: [source()])
-        let page = try #require(copy.nativeResponse(path: "databases/db", query: [.init(name: "offset", value: "500"), .init(name: "limit", value: "200")], percentEncoded: false))
+        let page = try #require(try copy.nativeResponse(path: "databases/db", query: [.init(name: "offset", value: "500"), .init(name: "limit", value: "200")], percentEncoded: false))
         let decoded = try JSONDecoder.nodus.decode(DatabaseDetail.self, from: page.data)
         #expect(decoded.rows.map { $0.string("id") } == ["row-500", "row-501", "row-502"])
         #expect(decoded.total == 503); #expect(decoded.cells.count == 3); #expect(!decoded.hasMore)

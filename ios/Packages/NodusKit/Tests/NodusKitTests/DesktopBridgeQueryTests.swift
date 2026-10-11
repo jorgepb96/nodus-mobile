@@ -207,8 +207,12 @@ struct DesktopBridgeQueryTests {
         let again = try await client.createSpaceAction(idempotencyKey: "restore:page-owned:2", kind: .pageRestoreRevision, payload: payload, in: "publication")
         #expect(again.action.status == .cancelled)
         #expect(CorpusQueryProtocol.state.calls().filter { $0.request.httpMethod == "POST" }.count == 1)
-        let lookup = try #require(CorpusQueryProtocol.state.calls().last { $0.request.httpMethod == "GET" }?.request.url)
-        #expect(URLComponents(url: lookup, resolvingAgainstBaseURL: false)?.queryItems?.first?.value == DesktopCompanionActions.key("restore:page-owned:2"))
+        let lookup = CorpusQueryProtocol.state.calls().compactMap { call -> URL? in
+            guard call.request.httpMethod == "GET", let url = call.request.url,
+                  URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "requestId" && $0.value == DesktopCompanionActions.key("restore:page-owned:2") }) == true else { return nil }
+            return url
+        }
+        #expect(!lookup.isEmpty)
         let cancellation = try #require(CorpusQueryProtocol.state.calls().last { $0.request.httpMethod == "DELETE" })
         let body = try JSONDecoder.nodus.decode(JSONValue.self, from: cancellation.body)
         #expect(body.objectValue?["idempotencyKey"]?.stringValue == DesktopCompanionActions.key("restore:page-owned:2"))
@@ -298,7 +302,7 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: Data(#"{"error":"job_not_found"}"#.utf8))
             client?.urlProtocolDidFinishLoading(self); return
         }
-        let result = request.url?.path.hasSuffix("/jobs") == true
+        let result = request.url?.path.hasSuffix("/jobs") == true || request.url?.path.contains("/jobs/") == true
             ? #"{"job":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","vaultId":"Mac/vault","method":"runMobileSpaceAction","state":"accepted","actionSequence":7,"createdAt":"2026-10-11T08:00:00.000Z","updatedAt":"2026-10-11T08:00:00.000Z","nextSequence":0,"events":[],"result":null,"error":null}}"#
             : request.url?.path.hasSuffix("/actions") == true
             ? #"{"action":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","sequence":7,"spaceId":"Mac/vault","idempotencyKey":"restore:page-owned:2","kind":"pages.restoreRevision","schemaVersion":1,"payload":{"pageId":"page-owned","revision":2},"actorUserId":"phone","createdByDevice":"phone","status":"queued","createdAt":"2026-10-11T08:00:00.000Z","updatedAt":"2026-10-11T08:00:00.000Z"},"duplicate":false}"#

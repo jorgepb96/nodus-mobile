@@ -30,16 +30,16 @@ struct CompanionResearchCorpusCopyTests {
     @Test("every selected report remains readable past page one, with export and actual illustration bytes")
     func nativeReaders() throws {
         let copy = try CompanionResearchCorpusCopy(copies: [Self.copy()])
-        let page = try #require(copy.nativeResponse(path: "deep-research", query: [.init(name: "limit", value: "200"), .init(name: "offset", value: "200")], percentEncoded: false))
+        let page = try #require(try copy.nativeResponse(path: "deep-research", query: [.init(name: "limit", value: "200"), .init(name: "offset", value: "200")], percentEncoded: false))
         let object = try JSONDecoder.nodus.decode(JSONValue.self, from: page.data).objectValue!
         #expect(object["reports"]?.arrayValue?.count == 41); #expect(object["total"] == .int(241)); #expect(object["hasMore"] == .bool(false))
-        let detail = try #require(copy.nativeResponse(path: "deep-research/report-0", query: [], percentEncoded: false))
+        let detail = try #require(try copy.nativeResponse(path: "deep-research/report-0", query: [], percentEncoded: false))
         let report = try JSONDecoder.nodus.decode(DeepResearchReportDetail.self, from: detail.data)
         #expect(report.report.embeddedJSON("draft")?.objectValue?["draftMarkdown"]?.stringValue?.contains("nodus://passage/p") == true)
         #expect(report.translations.count == 1); #expect(report.annotations?.count == 1)
-        let document = try #require(copy.nativeResponse(path: "deep-research/report-240/document.html", query: [], percentEncoded: false))
+        let document = try #require(try copy.nativeResponse(path: "deep-research/report-240/document.html", query: [], percentEncoded: false))
         #expect(String(data: document.data, encoding: .utf8)?.contains("Informe 240 · 37") == true)
-        let image = try #require(copy.nativeResponse(path: "assets/\(Self.imageHash)", query: [], percentEncoded: false))
+        let image = try #require(try copy.nativeResponse(path: "assets/\(Self.imageHash)", query: [], percentEncoded: false))
         #expect(image.data == Self.imageBytes); #expect(image.headers["content-type"] == "image/png")
         #expect(throws: CompanionCollectionCopy.CopyError.self) { try copy.nativeResponse(path: "deep-research/unchosen", query: [], percentEncoded: false) }
         #expect(try copy.nativeResponse(path: "deep-research/report-0/document.pdf", query: [], percentEncoded: false) == nil)
@@ -67,7 +67,7 @@ struct CompanionResearchCorpusCopyTests {
     func ownersAndValidation() throws {
         let id = "report/a%2F#x"
         let copy = try CompanionResearchCorpusCopy(copies: [Self.copy(count: 1, firstId: id, withImage: false, withRelations: false), Self.copy(count: 1, firstId: id)])
-        let response = try #require(copy.nativeResponse(path: "deep-research/report%2Fa%252F%23x", query: [], percentEncoded: true))
+        let response = try #require(try copy.nativeResponse(path: "deep-research/report%2Fa%252F%23x", query: [], percentEncoded: true))
         let detail = try JSONDecoder.nodus.decode(DeepResearchReportDetail.self, from: response.data)
         #expect(detail.report.string("id") == id); #expect(detail.translations.isEmpty); #expect(detail.annotations?.isEmpty == true); #expect(detail.image == nil)
         #expect(try copy.nativeResponse(path: "assets/\(Self.imageHash)", query: [], percentEncoded: false) == nil)

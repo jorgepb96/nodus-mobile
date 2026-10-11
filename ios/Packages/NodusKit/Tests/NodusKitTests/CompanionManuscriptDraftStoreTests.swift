@@ -4,6 +4,12 @@ import Testing
 
 @Suite("Durable scoped manuscript drafts")
 struct CompanionManuscriptDraftStoreTests {
+    private func regularFiles(in root: URL) throws -> [URL] {
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey])!
+        var result: [URL] = []
+        for case let file as URL in files where try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true { result.append(file) }
+        return result
+    }
     @Test("A reopened encrypted draft survives a zero read-cache limit and stays in its own vault")
     func reopening() async throws {
         let id = UUID().uuidString, root = URL.temporaryDirectory.appendingPathComponent("manuscript-draft-\(id)")
@@ -19,8 +25,7 @@ struct CompanionManuscriptDraftStoreTests {
         #expect(try await cache.data(vaultId: "other", domain: .writing, recordId: CompanionManuscriptDraftStore.storageKey) == nil)
         #expect(draft.conflicts(with: "Texto cambiado en el Mac"))
         #expect(!draft.conflicts(with: draft.baseline)); #expect(!draft.conflicts(with: draft.text))
-        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey])!
-        for case let file as URL in files where try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+        for file in try regularFiles(in: root) {
             #expect((try Data(contentsOf: file)).range(of: Data(draft.text.utf8)) == nil)
         }
     }
@@ -31,14 +36,16 @@ struct CompanionManuscriptDraftStoreTests {
         defer { try? FileManager.default.removeItem(at: root); try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }
         let cache = try PrivateBridgeCache(pairingId: id, directory: root, keychain: keychain, readLimitBytes: 0)
         let store = try CompanionManuscriptDraftStore(cache: cache, vaultId: "vault")
-        let old = CompanionManuscriptDraftStore.Draft(sceneId: "scene", baseline: "Original", text: "Primero", updatedAt: Date(timeIntervalSince1970: 1))
-        let newer = CompanionManuscriptDraftStore.Draft(sceneId: "scene", baseline: "Original", text: "Último texto", updatedAt: Date(timeIntervalSince1970: 2))
+        let old = CompanionManuscriptDraftStore.Draft(sceneId: "scene", baseline: "Original", text: "Primero", updatedAt: Date(timeIntervalSinceReferenceDate: 800_000_000.123456))
+        let newer = CompanionManuscriptDraftStore.Draft(sceneId: "scene", baseline: "Original", text: "Último texto", updatedAt: Date(timeIntervalSinceReferenceDate: 800_000_000.123457))
         async let first: Void = store.set(old)
         async let second: Void = store.set(newer)
         _ = try await (first, second)
         try await store.set(old)
         let bytes = try #require(try await cache.data(vaultId: "vault", domain: .writing, recordId: CompanionManuscriptDraftStore.storageKey))
         let reopened = try CompanionManuscriptDraftStore(cache: cache, vaultId: "vault", data: bytes)
+        #expect(await reopened.records()["scene"] == newer)
+        try await reopened.set(old)
         #expect(await reopened.records()["scene"] == newer)
     }
 }

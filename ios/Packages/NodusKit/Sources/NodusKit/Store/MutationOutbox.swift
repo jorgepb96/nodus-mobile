@@ -309,7 +309,8 @@ public actor MutationOutbox {
                       let state: String = row["state"],
                       [State.pending.rawValue, State.accepted.rawValue, State.delivered.rawValue].contains(state),
                       let payload: String = row["payload"], let bytes = payload.data(using: .utf8),
-                      try JSONDecoder.nodus.decode(Mutation.self, from: bytes) == sent[id] else {
+                      let expected = sent[id],
+                      try JSONEncoder.nodus.encode(JSONDecoder.nodus.decode(Mutation.self, from: bytes)) == JSONEncoder.nodus.encode(expected) else {
                     throw TransportError.malformedResponse(expected: "a receipt for authorised outbox items")
                 }
             }

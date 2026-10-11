@@ -72,8 +72,11 @@ public enum CompanionImmersionProgress {
             guard let question = value.objectValue, let id = question["id"]?.stringValue, !id.isEmpty,
                   let kind = question["kind"]?.stringValue, ["open","choice"].contains(kind) else { throw DesktopBridgeError.malformedResponse }
             let options = question["options"]?.arrayValue ?? []
-            parts += [id, kind, question["question"]?.stringValue ?? "", String(options.count),
-                (question["correctIndex"]?.intValue).map { String($0) } ?? "", question["explanation"]?.stringValue ?? "", question["expected"]?.stringValue ?? ""]
+            let prompt = question["question"]?.stringValue ?? ""
+            let answer = question["correctIndex"]?.intValue.map(String.init) ?? ""
+            let explanation = question["explanation"]?.stringValue ?? "", expected = question["expected"]?.stringValue ?? ""
+            let questionParts: [String] = [id, kind, prompt, String(options.count), answer, explanation, expected]
+            parts += questionParts
             parts += options.map { $0.stringValue ?? "" }
         }
         var hash = SHA256()
