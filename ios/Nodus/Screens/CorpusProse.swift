@@ -136,7 +136,7 @@ struct CorpusReference: Identifiable, Hashable {
     var specialised: SpecialisedCorpusReference? = nil
     var privateSource: PrivateCorpusReference? = nil
 
-    var id: String { "\(kind)/\(recordId)" + (specialised.map { ":\($0.collectionPath):\($0.expectedParentId ?? "")" } ?? "") + (privateSource.map { ":\($0.kind.rawValue):\($0.timestamp ?? 0):\($0.transcriptId ?? "")" } ?? "") }
+    var id: String { "\(kind)/\(recordId)" + (specialised.map { ":\($0.collectionPath):\($0.expectedParentId ?? "")" } ?? "") + (privateSource.map { ":\($0.kind.rawValue):\($0.timestamp ?? 0):\($0.transcriptId ?? ""):\($0.sessionId ?? ""):\($0.annotationId ?? "")" } ?? "") }
 
     init(kind: String, recordId: String) {
         self.kind = Self.canonical(kind)
@@ -177,6 +177,7 @@ struct CorpusReference: Identifiable, Hashable {
         guard url.scheme?.lowercased() == "nodus" else { return nil }
         if let target = PrivateCorpusReference(url) {
             kind = url.host?.lowercased() ?? ""; recordId = target.id; privateSource = target
+            specialised = SpecialisedCorpusReference(url)
             return
         }
         if let target = SpecialisedCorpusReference(url) {
@@ -292,8 +293,9 @@ struct CorpusReferenceView: View {
                 }
             case .privateSource:
                 if let source = reference.privateSource {
-                    if source.kind == .participant, session.connection.desktopPairingId == nil, let collection = Collections["persons"] {
+                    if session.connection.desktopPairingId == nil, let path = source.publishedCollectionPath, let collection = Collections[path] {
                         RowByIdView(session: session, collection: collection, id: source.id)
+                            .sourceCitationTarget(reference.specialised)
                     } else { PrivateCorpusSourceView(session: session, reference: source) }
                 }
             case .unsupported:
@@ -333,10 +335,17 @@ struct NoteByIdView: View {
     @State private var row: Row?
     @State private var failure: String?
     @State private var attempt = 0
+    private var privateReference: PrivateCorpusReference? {
+        guard session.connection.desktopPairingId != nil,
+              let target = try? PrivateCorpusReference.collectionReference(path: collection.path, id: id) else { return nil }
+        return try? PrivateCorpusReference(kind: target.kind, id: target.id, timestamp: sourceReference?.timestamp, transcriptId: sourceReference?.transcriptId)
+    }
 
     var body: some View {
         Group {
-            if let row {
+            if let privateReference {
+                PrivateCorpusSourceView(session: session, reference: privateReference)
+            } else if let row {
                 RowDetailView(session: session, collection: nil, row: row, title: "Notes")
             } else if let failure {
                 CorpusOpenFailure(message: failure) { attempt += 1 }
@@ -382,6 +391,7 @@ struct RowByIdView: View {
             }
         }
         .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(session.companionDownloadRevision)|\(attempt)") {
+            guard privateReference == nil else { return }
             failure = nil
             do {
                 let loaded = try await session.client.item(collection, id: id, in: session.connection.spaceId)

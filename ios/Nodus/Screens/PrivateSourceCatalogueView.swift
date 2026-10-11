@@ -35,7 +35,7 @@ struct PrivateSourceCatalogueView: View {
                 DesktopPageHeader(title: LocalizedStringKey(title), subtitle: "Fuentes privadas del workspace vinculado", systemImage: icon, accent: session.accent)
                 TextField("Buscar", text: $query).textInputAutocapitalization(.never).autocorrectionDisabled()
                     .textFieldStyle(.roundedBorder).frame(minHeight: 44)
-                if kind == .recording {
+                if kind == .recording || kind == .interview {
                     Picker("Estado", selection: $state) {
                         Text("Activas").tag("active"); Text("Archivadas").tag("archived")
                         Text("Papelera").tag("trash"); Text("Todas").tag("all")
@@ -125,7 +125,7 @@ struct PrivateSourceCatalogueView: View {
         let search = query.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current).trimmingCharacters(in: .whitespacesAndNewlines)
         var matches: [PrivateCorpusSource.CatalogueItem] = []
         for item in downloaded {
-            if kind == .recording, state != "all", (item.state ?? "active") != state { continue }
+            if [.recording, .interview].contains(kind), state != "all", (item.state ?? "active") != state { continue }
             if !search.isEmpty {
                 let target = try PrivateCorpusReference(kind: kind, id: item.id)
                 guard let copy = try await CompanionPrivateSourceCopy.downloaded(cache: cache, vaultId: vault, reference: target) else { throw DesktopBridgeError.malformedResponse }

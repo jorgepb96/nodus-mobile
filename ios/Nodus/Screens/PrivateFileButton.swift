@@ -44,7 +44,7 @@ struct PrivateFileButton: View {
             let copy = try await loadPrivateBridgeFile(session, kind: kind, id: id, downloadedOnly: downloadedOnly)
             self.copy = copy
             offline = copy.offline
-            if kind == .studyRecording {
+            if kind == .studyRecording || (kind == .testimonyMedia && copy.descriptor.mime.lowercased().hasPrefix("audio/")) {
                 audio = SavedAudioTarget(id: id, label: copy.descriptor.filename, copy: copy, initialTimestamp: initialTimestamp)
             } else { preview = copy.url }
         } catch { issue = error.localizedDescription }

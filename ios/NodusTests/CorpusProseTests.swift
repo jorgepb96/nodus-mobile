@@ -23,6 +23,11 @@ struct CorpusProseTests {
         let participant = try #require(CorpusReference(URL(string: "nodus://testimonios/participant/participant")!))
         #expect(participant.privateSource?.kind == .participant)
         #expect(participant.privateSource?.kind.domain == .testimonies)
+        let fragment = try #require(CorpusReference(URL(string: "nodus://testimonios/interview/interview?transcript=literal&session=session&annotation=annotation&t=37.4")!))
+        #expect(fragment.destination == .privateSource); #expect(fragment.privateSource?.annotationId == "annotation")
+        #expect(fragment.privateSource?.sessionId == "session"); #expect(fragment.privateSource?.transcriptId == "literal")
+        #expect(fragment.privateSource?.publishedCollectionPath == "testimony-interviews")
+        #expect(fragment.id != CorpusReference(URL(string: "nodus://testimonios/interview/interview?annotation=another")!)?.id)
     }
     @Test("specialised references use their Desktop route and retain an excerpt's owner")
     func specialisedReferences() throws {

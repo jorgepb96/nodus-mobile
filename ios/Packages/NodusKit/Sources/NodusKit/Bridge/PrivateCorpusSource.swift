@@ -8,17 +8,21 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
         case recording = "study-recording", person = "prosop-person", source = "prosop-source"
         case factoid = "prosop-factoid", mention = "prosop-mention"
         case participant = "testimony-participant"
+        case interview = "testimony-interview", testimonyTranscript = "testimony-transcript", contrast = "testimony-contrast"
         public var domain: DesktopBridgeDomain {
-            switch self { case .recording: .studyRecordings; case .participant: .testimonies; default: .prosopographyPrivate }
+            switch self { case .recording: .studyRecordings; case .participant, .interview, .testimonyTranscript, .contrast: .testimonies; default: .prosopographyPrivate }
         }
         public var primaryKey: String {
-            switch self { case .recording: "id"; case .person, .participant: "person_id"; case .source: "source_id"
+            switch self { case .recording, .interview, .testimonyTranscript, .contrast: "id"; case .person, .participant: "person_id"; case .source: "source_id"
             case .factoid: "factoid_id"; case .mention: "attestation_id" }
         }
         public var groups: [String] {
             switch self {
             case .recording: ["transcripts", "segments", "markers"]
             case .participant: ["profile", "participation"]
+            case .interview: ["participants", "sessions", "media", "transcripts", "segments", "agreements", "annotations", "codes", "annotationCodes", "noteLinks"]
+            case .testimonyTranscript: ["media", "segments", "annotations", "codes", "annotationCodes"]
+            case .contrast: ["items", "annotations", "transcripts", "media", "noteLinks"]
             case .person: ["profile", "mentions", "authorities", "factoids", "statements", "membership"]
             case .source: ["segments", "factoids", "mentions", "assessments"]
             case .factoid: ["source", "segments", "statements", "entities", "mentions"]
@@ -30,10 +34,28 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
     public let id: String
     public let timestamp: Double?
     public let transcriptId: String?
-    public init(kind: Kind, id: String) throws {
+    public let sessionId: String?
+    public let annotationId: String?
+    public static func collectionReference(path: String, id: String) throws -> Self? {
+        let kind: Kind? = ["testimony-interviews": .interview, "testimony-transcripts": .testimonyTranscript, "testimony-contrasts": .contrast][path]
+        return try kind.map { try Self(kind: $0, id: id) }
+    }
+    public var publishedCollectionPath: String? {
+        switch kind {
+        case .participant: "persons"
+        case .interview: "testimony-interviews"
+        case .testimonyTranscript: "testimony-transcripts"
+        case .contrast: "testimony-contrasts"
+        default: nil
+        }
+    }
+    public init(kind: Kind, id: String, timestamp: Double? = nil, transcriptId: String? = nil, sessionId: String? = nil, annotationId: String? = nil) throws {
         guard !id.isEmpty, id.count <= 256, id != ".", id != "..",
               !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw DesktopBridgeError.malformedResponse }
-        self.kind = kind; self.id = id; timestamp = nil; transcriptId = nil
+        guard timestamp.map({ $0.isFinite && $0 >= 0 }) ?? true,
+              [transcriptId, sessionId, annotationId].compactMap({ $0 }).allSatisfy({ !$0.isEmpty && $0.count <= 256 && !$0.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) }) else { throw DesktopBridgeError.malformedResponse }
+        self.kind = kind; self.id = id; self.timestamp = timestamp; self.transcriptId = transcriptId
+        self.sessionId = sessionId; self.annotationId = annotationId
     }
     public init?(_ url: URL) {
         guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false), parts.scheme == "nodus",
@@ -45,7 +67,7 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
         let target: Kind?
         switch parts.host?.lowercased() {
         case "study" where segments[0] == "recording": target = .recording
-        case "testimonios" where segments[0] == "participant": target = .participant
+        case "testimonios": target = ["participant": .participant, "interview": .interview, "transcript": .testimonyTranscript, "contrast": .contrast][segments[0]]
         case "prosop": target = ["person": .person, "source": .source, "factoid": .factoid, "mention": .mention][segments[0]]
         default: target = nil
         }
@@ -54,6 +76,9 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
         kind = target; id = segments[1]
         timestamp = query["t"].flatMap(Double.init).flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
         transcriptId = query["transcript"].flatMap { !$0.isEmpty ? $0 : nil }
+        sessionId = query["session"].flatMap { !$0.isEmpty ? $0 : nil }
+        annotationId = query["annotation"].flatMap { !$0.isEmpty ? $0 : nil }
+        guard [transcriptId, sessionId, annotationId].compactMap({ $0 }).allSatisfy({ $0.count <= 256 && !$0.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) }) else { return nil }
     }
     public var recordKey: String {
         let identity = Data("\(kind.rawValue.utf8.count):\(kind.rawValue)\(id.utf8.count):\(id)".utf8)
@@ -122,7 +147,7 @@ public struct PrivateCorpusSource: Codable, Sendable {
     private static func isRevision(_ value: String) -> Bool {
         value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
     }
-    public var title: String { root.text("title") ?? root.text("display_name") ?? root.text("literal_name") ?? root.text("summary") ?? id }
+    public var title: String { root.text("title") ?? root.text("display_name") ?? root.text("literal_name") ?? root.text("summary") ?? root.text("file_name") ?? root.text("short_id") ?? id }
 }
 
 /// A complete, explicitly chosen dossier, kept in the source's encrypted grant.
@@ -136,7 +161,7 @@ public struct CompanionPrivateSourceCopy: Codable, Sendable {
             item = .init(id: source.id, title: source.title,
                 detail: source.root.text("date_display") ?? source.root.text("status") ?? "",
                 updatedAt: source.root.text("updated_at") ?? "",
-                state: source.kind == .recording ? (source.root.text("deleted_at") != nil ? "trash" : source.root.text("archived_at") != nil ? "archived" : "active") : nil)
+                state: [.recording, .interview].contains(source.kind) ? (source.root.text("deleted_at") != nil ? "trash" : source.root.text("archived_at") != nil ? "archived" : "active") : nil)
         }
     }
     public let version: Int

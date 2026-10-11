@@ -37,6 +37,16 @@ struct PrivateCorpusSourceTests {
         let participant = try reference("nodus://testimonios/participant/private-id")
         #expect(participant.kind == .participant); #expect(participant.kind.domain == .testimonies)
         #expect(participant.kind.primaryKey == "person_id"); #expect(participant.recordKey != literal.recordKey)
+        let interview = try reference("nodus://testimonios/interview/interview%2Fone?session=session&transcript=literal&annotation=annotation&t=37.4")
+        #expect(interview.kind == .interview); #expect(interview.id == "interview/one")
+        #expect(interview.sessionId == "session"); #expect(interview.transcriptId == "literal")
+        #expect(interview.annotationId == "annotation"); #expect(interview.timestamp == 37.4)
+        #expect(interview.kind.domain == .testimonies); #expect(interview.kind.groups.contains("agreements"))
+        #expect(try PrivateCorpusReference(kind: .interview, id: interview.id).recordKey == interview.recordKey)
+        #expect(try PrivateCorpusReference.collectionReference(path: "testimony-transcripts", id: "literal")?.kind == .testimonyTranscript)
+        #expect(try PrivateCorpusReference.collectionReference(path: "persons", id: "private-person") == nil)
+        #expect(throws: (any Error).self) { try PrivateCorpusReference(kind: .interview, id: "interview", timestamp: .infinity) }
+        #expect(PrivateCorpusReference(URL(string: "nodus://testimonios/contrast/contrast")!)?.kind == .contrast)
     }
 
     @Test("partial or foreign dossiers never become complete downloaded sources")

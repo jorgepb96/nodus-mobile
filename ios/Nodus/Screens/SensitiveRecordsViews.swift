@@ -412,6 +412,14 @@ private struct TestimoniesWorkspace: View {
     private var active: SensitiveRecordsParity.TestimonyInterview? { SensitiveRecordsParity.testimonyInterviews(in: tables).first { $0.id == tabs.activeTabId(in: section) } }
 
     var body: some View {
+        if session.connection.desktopPairingId != nil {
+            switch mode {
+            case .testimonyInterviews: PrivateSourceCatalogueView(session: session, kind: .interview, title: "Entrevistas", icon: "mic")
+            case .testimonyParticipants: PrivateSourceCatalogueView(session: session, kind: .participant, title: "Participantes", icon: "person.2")
+            case .testimonyContrasts: PrivateSourceCatalogueView(session: session, kind: .contrast, title: "Contrastes", icon: "scale.3d")
+            default: EmptyView()
+            }
+        } else {
         VStack(spacing: 0) {
             if mode == .testimonyInterviews { WorkspaceTabStrip(section: section, catalogueTitle: "Interviews", catalogueImage: "mic", accent: session.accent) }
             switch mode {
@@ -424,6 +432,7 @@ private struct TestimoniesWorkspace: View {
         .nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
         .accessibilityIdentifier("testimonies-\(mode.rawValue)-workspace")
+        }
     }
 
     private var banner: some View { PrivateDomainBanner(cached: cached, issue: issue, accent: session.accent) { pairing = true } }

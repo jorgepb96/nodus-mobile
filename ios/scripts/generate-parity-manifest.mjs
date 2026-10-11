@@ -188,6 +188,16 @@ function operationMatrix(routes) {
     ...['deepResearch', 'immersion', 'dictionary', 'chat', 'translation', 'synthesis', 'argumentMap', 'writingAssistant']
       .flatMap(id => ['live', 'autonomous'].map(mode => ({ id: `generation.${id}.${mode}`, category: 'generation', result: 'pending', evidence: [] }))),
     ...['extractDocuments', 'indexDocuments', 'deriveIdeas'].map(id => ({ id, category: 'desktopExclusive', result: 'notApplicable', evidence: [] })),
+    ...[
+      ['generation.writingWorkshop.live', 'generation'], ['generation.writingWorkshop.autonomous', 'generation'],
+      ['consultation.writingWorkshop.sourcePagination', 'consultation'], ['consultation.writingWorkshop.structuredReading', 'consultation'],
+      ['consultation.privateSource.citations', 'consultation'], ['consultation.privateSource.downloads', 'consultation'],
+      ['consultation.studyRecordings.citationTimestamp', 'consultation'], ['consultation.privateSource.catalogue', 'consultation'],
+      ['generation.specialisedSourceContext.linked', 'generation'], ['generation.specialisedSourceContext.downloaded', 'generation'],
+      ['sync.selectedWorkshopSources', 'sync'],
+      ['consultation.testimonyPrivateDossiers', 'consultation'], ['consultation.testimonyCitationLocators', 'consultation'],
+      ['consultation.testimonyPrivateDownloads', 'consultation'],
+    ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }
 

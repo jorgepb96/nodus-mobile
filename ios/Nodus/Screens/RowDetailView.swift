@@ -74,7 +74,11 @@ struct RowDetailView: View {
     var body: some View {
         // An exam is a document, not a dossier: it gets the whole screen rather than a
         // "Questions" section under a field list nobody reads.
-        if case .exam(let detail) = enriched {
+        if session.connection.desktopPairingId != nil, let collection,
+           let id = row.string(collection.idField),
+           let reference = try? PrivateCorpusReference.collectionReference(path: collection.path, id: id) {
+            PrivateCorpusSourceView(session: session, reference: reference)
+        } else if case .exam(let detail) = enriched {
             ExamView(session: session, detail: detail)
         } else {
             dossier
