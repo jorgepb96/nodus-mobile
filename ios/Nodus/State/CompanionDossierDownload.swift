@@ -8,7 +8,7 @@ enum CompanionDossierDownload {
     /// into an entire vault, starts extraction, or commits a partial success.
     static func records(client: DesktopBridgeClient, vault: String, domains: Set<DesktopBridgeDomain>,
                         collection: String, id: String, detail: JSONValue, images: Bool, files: Bool,
-                        existing: Set<String>, maximumBytes: Int) async throws -> [PrivateBridgeCache.ReadPackRecord] {
+                        existing: Set<String>, maximumBytes: Int, fileCatalogue: JSONValue? = nil) async throws -> [PrivateBridgeCache.ReadPackRecord] {
         var output: [PrivateBridgeCache.ReadPackRecord] = [], seen = existing, used = 0
         func append(_ domain: DesktopBridgeDomain, _ key: String, _ data: Data) throws {
             guard !seen.contains(key) else { return }
@@ -28,7 +28,9 @@ enum CompanionDossierDownload {
         }
         if CompanionDossierResources.fileCollections.contains(collection), collection != "archive-items" || domains.contains(.primarySourceFiles) || files {
             let args = CompanionDossierResources.arguments(collection: collection, id: id)
-            let value = try await client.operation(vaultId: vault, method: "getMobileDossierFiles", args: args)
+            let value: JSONValue
+            if let fileCatalogue { value = fileCatalogue }
+            else { value = try await client.operation(vaultId: vault, method: "getMobileDossierFiles", args: args) }
             let catalog = try CompanionDossierResources(value: value, collection: collection, id: id)
             try append(.corpus, CompanionDocumentOutbox.operationKey("getMobileDossierFiles", args), JSONEncoder.nodus.encode(value))
             if let reader = catalog.reader { try append(.corpus, CompanionDocumentOutbox.operationKey("getLibraryReaderDocument", [.string(id)]), JSONEncoder.nodus.encode(reader)) }

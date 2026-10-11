@@ -349,6 +349,8 @@ function operationMatrix(routes) {
       ['consultation.ideas.confirmedOwnTextAfterAcknowledgementAndCacheExpiry', 'consultation'],
       ['consultation.ideas.partialAuthorshipPreservesSelectedCanonicalDossier', 'consultation'],
       ['consultation.ideas.detailFailureRecoveryAndExplicitSourceScope', 'consultation'],
+      ['consultation.database.rowDocumentsBoundedBatchAndLegacyCapabilityPath', 'consultation'],
+      ['sync.database.rowDocumentBatchEpochIdentityAndAssetCatalogue', 'sync'],
       ['sync.documents.parentsAppliedBeforeDependentContent', 'sync'],
       ['sync.jobs.keyedCancellationBeforeAcknowledgement', 'sync'],
       ['sync.jobs.cancelledReceiptPersistsAcrossMacRestart', 'sync'],

@@ -7,7 +7,7 @@ enum CompanionPageDownload {
     static let linkedDatabaseKey = "companion:linked-databases:v1"
     @MainActor static func records(client: DesktopBridgeClient, vault: String, root: JSONValue,
         domains: Set<DesktopBridgeDomain>, images: Bool, files: Bool, existing: Set<String>, maximumBytes: Int,
-        database: (String, Int) async throws -> JSONValue) async throws -> [PrivateBridgeCache.ReadPackRecord] {
+        recheckRoot: Bool = true, database: (String, Int) async throws -> JSONValue) async throws -> [PrivateBridgeCache.ReadPackRecord] {
         var output: [PrivateBridgeCache.ReadPackRecord] = [], seen = existing, used = 0
         var pending = [root], pages = Set<String>(), synced = Set<String>(), views = Set<String>()
         var queries:[([JSONValue],JSONValue)]=[]
@@ -26,11 +26,12 @@ enum CompanionPageDownload {
             guard pages.insert(pageId).inserted else { continue }
             guard pages.count <= 256 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
             _ = try CompanionPageDocuments.document(source, vaultId: vault, pageId: pageId)
+            guard let assets = source.objectValue?["assets"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
             documents.append((pageId, source))
             try retain("getMobilePageDocument", [.string(pageId)], source)
             let resources = try await CompanionDossierDownload.records(client: client, vault: vault, domains: domains,
                 collection: "pages", id: pageId, detail: .object([:]), images: images, files: files, existing: seen,
-                maximumBytes: maximumBytes - used)
+                maximumBytes: maximumBytes - used, fileCatalogue: .object(["version": .int(1), "collection": .string("pages"), "id": .string(pageId), "files": .array(assets)]))
             output.append(contentsOf: resources); used += resources.reduce(0) { $0 + $1.data.count }; seen.formUnion(resources.map(\.recordId))
             guard let dependencies = source.objectValue?["dependencies"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
             for dependency in dependencies {
@@ -100,6 +101,8 @@ enum CompanionPageDownload {
             guard final == first else {throw APIError(status:409,code:"page_dependency_changed",message:"Los datos de la vista enlazada cambiaron durante la descarga. Vuelve a intentarlo.")}
         }
         for (id, source) in documents {
+            // Row-page captures verify all roots together in their final batch.
+            if !recheckRoot, id == root.objectValue?["document"]?.objectValue?["page"]?.objectValue?["id"]?.stringValue { continue }
             let final = try await client.operation(vaultId: vault, method: "getMobilePageDocument", args: [.string(id)])
             guard final == source else { throw APIError(status: 409, code: "page_dependency_changed", message: "Una página cambió durante la descarga. Vuelve a intentarlo.") }
         }

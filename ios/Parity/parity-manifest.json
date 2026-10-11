@@ -2265,6 +2265,18 @@
       "evidence": []
     },
     {
+      "id": "consultation.database.rowDocumentsBoundedBatchAndLegacyCapabilityPath",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.database.rowDocumentBatchEpochIdentityAndAssetCatalogue",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "sync.documents.parentsAppliedBeforeDependentContent",
       "category": "sync",
       "result": "pending",

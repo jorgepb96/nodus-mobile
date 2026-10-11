@@ -31,7 +31,7 @@ struct CompanionDatabasePageDownloadTests {
                 let id = try #require(source.objectValue?["document"]?.objectValue?["page"]?.objectValue?["id"]?.stringValue)
                 return [try linked("db-\(id)")]
             })
-        #expect(visited == ["page-0", "page-1", "page-2"])
+        #expect(visited == ["page-0", "page-1", "page-2", "page-0", "page-1", "page-2"])
         #expect(result.filter { $0.recordId.hasPrefix("operation:") }.count == 3)
         let metadata = try #require(result.first { $0.recordId == CompanionDatabasePageDownload.key("database") })
         let pages = try #require(JSONDecoder.nodus.decode(JSONValue.self, from: metadata.data).objectValue?["pages"]?.arrayValue)
@@ -41,6 +41,52 @@ struct CompanionDatabasePageDownloadTests {
         let dependency = try #require(result.first { $0.recordId == CompanionPageDownload.linkedDatabaseKey })
         #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: dependency.data).objectValue?["databases"]?.objectValue?.count == 3)
         #expect(result.reduce(0) { $0 + $1.data.count } <= 1_000_000)
+    }
+
+    @Test("523 associated documents use bounded batches and verify the complete captured content again")
+    func batchedPages() async throws {
+        var requests = 0
+        func read(_ ids: [String]) async throws -> [String: JSONValue] {
+            try await CompanionPageReadBatch.read(vault: "vault", pageIds: ids, maximumBytes: 1_000_000) { input in
+                requests += 1
+                let ids = input.objectValue!["pageIds"]!.arrayValue!.map { $0.stringValue! }, offset = input.objectValue!["cursor"]!.intValue!
+                let end = min(offset + 20, ids.count)
+                return .object(["version": .int(1), "vaultId": .string("vault"), "totalCount": .int(Int64(ids.count)),
+                    "documents": .array(ids[offset..<end].map { document($0) }), "nextCursor": end < ids.count ? .int(Int64(end)) : .null])
+            }
+        }
+        let result = try await CompanionDatabasePageDownload.capture(vault: "vault", presentation: presentation(523), existing: [], maximumBytes: 1_000_000,
+            batch: read, fetch: { _ in throw DesktopBridgeError.malformedResponse }, dependencies: { _, _, _ in [] })
+        #expect(requests == 54)
+        #expect(result.filter { $0.recordId.hasPrefix("operation:") }.count == 523)
+        var round = 0
+        await #expect(throws: APIError.self) {
+            try await CompanionDatabasePageDownload.capture(vault: "vault", presentation: presentation(1), existing: [], maximumBytes: 1_000_000,
+                batch: { ids in
+                    round += 1; var source = document(ids[0]).objectValue!, body = source["document"]!.objectValue!
+                    if round == 2 { body["markdown"] = .string("Changed structured document at the same page title") }
+                    source["document"] = .object(body); return [ids[0]: .object(source)]
+                }, fetch: { _ in throw DesktopBridgeError.malformedResponse }, dependencies: { _, _, _ in [] })
+        }
+    }
+
+    @Test("Batch cursors, order, scope and read budget are validated before retaining sources")
+    func invalidBatch() async {
+        for kind in ["cursor", "order", "vault", "empty", "count"] {
+            await #expect(throws: DesktopBridgeError.self) {
+                try await CompanionPageReadBatch.read(vault: "vault", pageIds: ["page-0", "page-1"], maximumBytes: 1_000_000) { _ in
+                    .object(["version": .int(1), "vaultId": .string(kind == "vault" ? "other" : "vault"),
+                        "totalCount": .int(kind == "count" ? 1 : 2),
+                        "documents": .array(kind == "empty" ? [] : [document(kind == "order" ? "page-1" : "page-0")]),
+                        "nextCursor": .int(kind == "cursor" ? 0 : 1)])
+                }
+            }
+        }
+        await #expect(throws: PrivateBridgeCache.ReadPackError.self) {
+            try await CompanionPageReadBatch.read(vault: "vault", pageIds: ["page-0"], maximumBytes: 1) { _ in
+                .object(["version": .int(1), "vaultId": .string("vault"), "totalCount": .int(1), "documents": .array([document("page-0")]), "nextCursor": .null])
+            }
+        }
     }
     @Test("Changed pages, foreign vaults and wrong row owners never commit an incomplete copy")
     func rejectedPages() async {
