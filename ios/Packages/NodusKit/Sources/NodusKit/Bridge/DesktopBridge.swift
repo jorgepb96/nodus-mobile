@@ -354,6 +354,42 @@ public actor DesktopBridgeClient {
         return try await raw(path: "/bridge/v2/vaults/\(vault)/corpus/mutations", method: "POST", body: value)
     }
 
+    private func chatHistoryPath(vaultId: String,kind: CompanionChatKind,id: String? = nil,writing: Bool = false) throws -> String {
+        guard !pairing.isExpired,pairing.vaultIds.contains(vaultId),pairing.domains.contains(.corpus),!writing || pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn:"-._~"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters:allowed) else { throw DesktopBridgeError.invalidOrigin }
+        var path = "/bridge/v2/vaults/\(vault)/chat-history/\(kind.rawValue)"
+        if let id {
+            guard !id.isEmpty,id.utf8.count <= 256,let encoded = id.addingPercentEncoding(withAllowedCharacters:allowed) else { throw DesktopBridgeError.malformedResponse }
+            path += "/\(encoded)"
+        }
+        return path
+    }
+    public func chatHistoryPage(vaultId: String,kind: CompanionChatKind,cursor: Int = 0,revision: String? = nil) async throws -> CompanionChatPage {
+        guard cursor >= 0 else { throw DesktopBridgeError.malformedResponse }
+        var query = [URLQueryItem(name:"cursor",value:String(cursor))]
+        if let revision { query.append(URLQueryItem(name:"revision",value:revision)) }
+        let response = try await raw(path:chatHistoryPath(vaultId:vaultId,kind:kind),query:query,method:"GET",timeout:8)
+        let page = try JSONDecoder.nodus.decode(CompanionChatPage.self,from:response.data)
+        guard page.version == 1,page.kind == kind,page.revision.count == 64,page.rows.count <= 100,
+              page.cursor == cursor + page.rows.count,!page.hasMore || page.cursor > cursor,
+              revision == nil || revision == page.revision,
+              page.rows.allSatisfy({ $0.objectValue?["id"]?.stringValue != nil && $0.objectValue?["title"]?.stringValue != nil }) else { throw DesktopBridgeError.malformedResponse }
+        return page
+    }
+    public func chatDocument(vaultId: String,kind: CompanionChatKind,id: String) async throws -> CompanionChatDocument {
+        let response = try await raw(path:chatHistoryPath(vaultId:vaultId,kind:kind,id:id),method:"GET",timeout:12)
+        guard response.data.count <= 20 * 1024 * 1024 else { throw DesktopBridgeError.malformedResponse }
+        let document = try JSONDecoder.nodus.decode(CompanionChatDocument.self,from:response.data)
+        try document.validate(kind:kind,id:id)
+        return document
+    }
+    public func saveChatEdit(vaultId: String,kind: CompanionChatKind,request: JSONValue) async throws -> JSONValue {
+        guard try JSONEncoder.nodus.encode(request).count <= 20 * 1024 * 1024 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+        let response = try await raw(path:chatHistoryPath(vaultId:vaultId,kind:kind,writing:true),method:"POST",body:request)
+        return try JSONDecoder.nodus.decode(JSONValue.self,from:response.data)
+    }
+
     public func saveWorkspaceEdit(vaultId: String, request: CompanionDocumentOutbox.Request) async throws -> JSONValue {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))

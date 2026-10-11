@@ -143,8 +143,10 @@ struct ResearchView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingProviders = true } label: { Image(systemName: "key") }
-                    .tint(session.accent)
+                if session.aiExecutionMode == .autonomous {
+                    Button { showingProviders = true } label: { Image(systemName: "key") }
+                        .tint(session.accent)
+                }
             }
         }
         .nodusSheet(isPresented: $showingProviders) {
@@ -220,8 +222,6 @@ struct ChatTab: View {
         Group {
             if session.aiExecutionMode == .live, session.connection.desktopPairingId != nil {
                 SharedDesktopSurface(session: session, surface: .chat)
-            } else if ai.configuredProviders.isEmpty {
-                setupPrompt
             } else {
                 // The chat's model menu offers the pinned models; everything else — the full
                 // catalogue, the keys — is behind this sheet, which the tab owns.

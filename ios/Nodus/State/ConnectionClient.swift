@@ -27,6 +27,12 @@ enum ConnectionClient {
         let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: id, vaultId: vaultId)
         return (DesktopBridgeClient(pairing: pairing, token: token), documents)
     }
+    static func companionChat(for connection: AppModel.Connection) throws -> DesktopBridgeClient {
+        guard let id = connection.desktopPairingId,let vaultId = connection.vaultId else { throw DesktopBridgeError.permissionDenied }
+        let store = DesktopBridgePairingStore()
+        guard let pairing = store.pairings().first(where:{$0.id == id}),!pairing.isExpired,pairing.vaultIds.contains(vaultId),pairing.domains.contains(.corpus),let token = store.credential(for:pairing) else { throw DesktopBridgeError.permissionDenied }
+        return DesktopBridgeClient(pairing:pairing,token:token)
+    }
 
     private static var cacheDirectory: URL {
         URL.cachesDirectory.appendingPathComponent("nodus-http", isDirectory: true)

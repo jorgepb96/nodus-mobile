@@ -12,6 +12,7 @@ struct ChatHistoryView: View {
     let accent: Color
     /// The conversation on screen, so the list can mark it.
     let currentId: String?
+    var session: SpaceSession? = nil
     let onOpen: (ChatHistoryStore.Conversation) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -20,6 +21,7 @@ struct ChatHistoryView: View {
     @State private var pendingBulkDeletion: ChatHistoryStore.Scope?
     @State private var showsArchived = false
     @State private var mutationIssue: String?
+    @State private var showingMac = false
     private func mutate(_ action: () throws -> Void) {
         do { try action();mutationIssue = nil } catch { mutationIssue = error.localizedDescription }
     }
@@ -54,6 +56,20 @@ struct ChatHistoryView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
+                ForEach(store.conversations.filter { $0.desktop?.deleted == true && $0.desktop?.state != .saved }) { conversation in
+                    VStack(alignment:.leading,spacing:8) {
+                        Text("Deletion waiting to synchronize").font(.subheadline)
+                        Text(verbatim:conversation.title).font(.caption)
+                        if let issue = conversation.desktop?.issue { Text(verbatim:issue).font(.caption).foregroundStyle(.secondary) }
+                        if conversation.desktop?.state == .conflict {
+                            Button("Keep deletion") { mutate { try store.resolveConflict(id:conversation.id,keepMobile:true) } }
+                            if conversation.desktop?.remote != nil { Button("Use the Mac conversation") { mutate { try store.resolveConflict(id:conversation.id,keepMobile:false) } } }
+                        } else if conversation.desktop?.state == .blocked {
+                            Button("Retry synchronization") { mutate { try store.retrySynchronization(id:conversation.id) } }
+                        }
+                    }.listRowBackground(Color.clear)
+                }
+
                 ForEach(listed) { conversation in
                     Button {
                         onOpen(conversation)
@@ -83,6 +99,16 @@ struct ChatHistoryView: View {
                     // them and it is also invisible: nothing on the row says it is there, and
                     // a list you only ever scroll never reveals it.
                     .contextMenu {
+                        if conversation.desktop?.state == .blocked {
+                            Button("Retry synchronization") { mutate { try store.retrySynchronization(id:conversation.id) } }
+                        }
+                        if conversation.desktop?.state == .conflict {
+                            Button("Use the Mac conversation") { mutate { try store.resolveConflict(id:conversation.id,keepMobile:false) } }
+                            Button("Keep the mobile conversation") { mutate { try store.resolveConflict(id:conversation.id,keepMobile:true) } }
+                        }
+                        if conversation.downloadedUntil != nil {
+                            Button("Remove downloaded copy") { mutate { try store.removeDownloaded(conversation.id) } }
+                        }
                         Button {
                             mutate { try store.setArchived(!conversation.isArchived,for:conversation.id) }
                         } label: {
@@ -123,6 +149,11 @@ struct ChatHistoryView: View {
             .nodusPageBackdrop(accent: accent)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                if session?.connection.desktopPairingId != nil {
+                    ToolbarItem(placement:.topBarTrailing) {
+                        Button { showingMac = true } label: { Label("Mac conversations",systemImage:"desktopcomputer") }
+                    }
+                }
                 if !listedSource.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -179,6 +210,11 @@ struct ChatHistoryView: View {
         }
         .tint(accent)
         .onAppear { store.reload() }
+        .nodusSheet(isPresented:$showingMac) {
+            if let session {
+                CompanionChatCatalogueView(session:session,store:store) { conversation in onOpen(conversation);dismiss() }
+            }
+        }
     }
 
     private func row(_ conversation: ChatHistoryStore.Conversation) -> some View {
@@ -202,6 +238,13 @@ struct ChatHistoryView: View {
                 Text("\(conversation.messages.count / 2) · \(conversation.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                if let sync = conversation.desktop,sync.state != .saved {
+                    Label(sync.state == .conflict ? "Conversation conflict":sync.state == .blocked ? "Synchronization needs attention":"Waiting to synchronize",systemImage:sync.state == .conflict ? "exclamationmark.arrow.triangle.2.circlepath":"arrow.triangle.2.circlepath")
+                        .font(.caption).foregroundStyle(sync.state == .pending ? .secondary:.primary)
+                    if let issue = sync.issue { Text(verbatim:issue).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+                }
+                if conversation.downloadedUntil != nil { Text("Downloaded for 14 days").font(.caption).foregroundStyle(.secondary) }
+                if conversation.isLocalRecovery == true { Text("Recovered copy").font(.caption).foregroundStyle(.secondary) }
             }
             Spacer(minLength: 0)
         }

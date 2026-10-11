@@ -244,6 +244,16 @@ function operationMatrix(routes) {
       ['sync.chat.autonomousPartialRecovery', 'sync'],
       ['generation.chat.conversationIsolation', 'generation'],
       ['consultation.chat.storageFailures', 'consultation'],
+      ['sync.chat.privateHistoryCAS', 'sync'],
+      ['sync.chat.historyLostAcknowledgement', 'sync'],
+      ['sync.chat.historyCoalescedEdits', 'sync'],
+      ['sync.chat.historyArchiveDeletion', 'sync'],
+      ['sync.chat.historyConflictsRecovery', 'sync'],
+      ['consultation.chat.completeHistoryPagination', 'consultation'],
+      ['consultation.chat.selectedTemporaryHistory', 'consultation'],
+      ['sync.chat.preserveRichDesktopTurns', 'sync'],
+      ['consultation.studyChat.longHistory', 'consultation'],
+      ['sync.chat.downloadRevocation', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

@@ -23,7 +23,7 @@ struct ChatScreen: View {
     init(session: SpaceSession, openProviders: (() -> Void)? = nil) {
         self.session = session
         self.openProviders = openProviders
-        _history = State(initialValue: ChatHistoryStore(spaceId: session.connection.storageId))
+        _history = State(initialValue: ChatHistoryStore.shared(spaceId: session.connection.storageId))
     }
 
     struct Turn: Identifiable {
@@ -109,6 +109,7 @@ struct ChatScreen: View {
                 store: history,
                 accent: session.accent,
                 currentId: conversationId,
+                session: session,
                 onOpen: open
             )
             .nodusModalClose(accent: session.accent)
@@ -118,6 +119,9 @@ struct ChatScreen: View {
             // very object the next question is built from.
             controls.openHistory = openHistory
             chrome?.chat = controls
+            if session.connection.desktopPairingId != nil,session.connection.role.canSendChanges {
+                do { try history.bind(kind:CompanionChatKind(vaultType:session.vaultType)) } catch { self.error = error.localizedDescription }
+            }
         }
         // A fetch from iCloud writes conversation files underneath this store, which would
         // otherwise keep showing the list it read when the screen opened.

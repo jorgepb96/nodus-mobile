@@ -360,6 +360,11 @@ final class SpaceSession {
         isSynchronizingCompanionChanges = true
         defer { isSynchronizingCompanionChanges = false }
         if let vaultId, let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
+            let chats = ChatHistoryStore.shared(spaceId:connection.storageId)
+            do {
+                try chats.bind(kind:CompanionChatKind(vaultType:vaultType))
+                await chats.synchronize { kind,request in try await bridge.saveChatEdit(vaultId:vaultId,kind:kind,request:request) }
+            } catch { /* The store retains its actual write issue and pending drafts. */ }
             try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) }
             if let pairingId = connection.desktopPairingId,
                let progress = try? await CompanionImmersionProgressOutboxes.shared.outbox(pairingId: pairingId, vaultId: vaultId) {

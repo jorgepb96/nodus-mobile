@@ -27020,6 +27020,182 @@
           }
         }
       }
+    },
+    "Use the Mac conversation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar la conversación del Mac"
+          }
+        }
+      }
+    },
+    "Keep the mobile conversation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conservar la conversación del móvil"
+          }
+        }
+      }
+    },
+    "Remove downloaded copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirar copia descargada"
+          }
+        }
+      }
+    },
+    "Mac conversations": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversaciones del Mac"
+          }
+        }
+      }
+    },
+    "Conversation conflict": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicto de conversación"
+          }
+        }
+      }
+    },
+    "Synchronization needs attention": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisar sincronización"
+          }
+        }
+      }
+    },
+    "Waiting to synchronize": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pendiente de sincronizar"
+          }
+        }
+      }
+    },
+    "Downloaded for 14 days": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargada durante 14 días"
+          }
+        }
+      }
+    },
+    "Recovered copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copia recuperada"
+          }
+        }
+      }
+    },
+    "Deletion waiting to synchronize": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borrado pendiente de sincronizar"
+          }
+        }
+      }
+    },
+    "Keep deletion": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantener el borrado"
+          }
+        }
+      }
+    },
+    "Retry synchronization": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reintentar sincronización"
+          }
+        }
+      }
+    },
+    "Choose a conversation to keep it on this device for 14 days. Editing it keeps your work until it synchronizes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige una conversación para descargarla durante 14 días. Si la editas, tu trabajo se conservará hasta sincronizarse."
+          }
+        }
+      }
+    },
+    "Load more conversations": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargar más conversaciones"
+          }
+        }
+      }
+    },
+    "Filter loaded conversations": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtrar conversaciones cargadas"
+          }
+        }
+      }
+    },
+    "%lld messages": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mensajes"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

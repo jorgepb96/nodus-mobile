@@ -296,8 +296,19 @@ interrupted/cancelled/failed states. Follow-ups carry complete recent turns with
 context, with omissions shown rather than silently truncating a turn. Navigating between
 conversations cancels the owning response and prevents stale callbacks from changing another
 thread. Storage failures and unreadable files remain visible. Prepared context and persistence
-regressions still need execution. Desktop reconciliation of this native history and the full
-autonomous behaviour of specialised chats are unfinished parity work.
+regressions still need execution.
+
+Private native history now reconciles with the owning Research, World, Database or
+Study/Teaching Desktop history through revision-checked, provider-free edits and atomic
+receipts. Archive/delete intents retain their identities across lost acknowledgements; newer
+mobile edits survive older responses. Original rich turns and conversation scopes remain
+intact. Conflicts require an explicit choice and retain a visible recovered copy of the
+displaced draft. Metadata is paginated with a stable catalogue revision. Chosen conversation
+copies expire after 14 days and share a 50 MB download budget; authored work stays durable.
+Revocation removes temporary copies and blocks pending authored sync. Corrupt Study history
+files are errors, and Desktop Study follow-ups no longer trim the stored history to 100 turns.
+These contracts and native regressions are prepared but unexecuted. The full autonomous
+behaviour of specialised chats and final device/network/visual acceptance remain unfinished.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and

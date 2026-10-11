@@ -498,7 +498,12 @@ final class AppModel {
         await CompanionDocumentOutboxes.shared.forget(pairingId: pairing.id)
         await CompanionImmersionProgressOutboxes.shared.forget(pairingId: pairing.id)
         await CompanionDatabaseReadingOutboxes.shared.forget(pairingId:pairing.id)
-        for linked in connections.filter({ $0.desktopPairingId == pairing.id }) { forget(linked) }
+        var cleanupIssue: (any Error)?
+        for linked in connections.filter({ $0.desktopPairingId == pairing.id }) {
+            do { try ChatHistoryStore.shared(spaceId:linked.storageId).revokeLink() } catch { cleanupIssue = error }
+            forget(linked)
+        }
+        if let cleanupIssue { throw cleanupIssue }
     }
 
     // MARK: - Persistence
