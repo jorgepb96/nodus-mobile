@@ -17,12 +17,18 @@ public extension NodusClient {
     /// Note the request needs an `Authorization` header, so these URLs cannot be handed to a
     /// plain `AsyncImage`.
     func asset(hash: String, in spaceId: String) async throws -> Data {
-        if let downloaded = try await publishedAssets.read(hash: hash, origin: address.origin, spaceId: spaceId) { return downloaded }
+        // Private companion images stay inside the bounded encrypted Bridge cache.
+        // The public asset store has a different lifetime and cannot own a temporary
+        // private download after its pack expires or the Mac is unlinked.
+        if !hasDesktopBridge, let downloaded = try await publishedAssets.read(hash: hash, origin: address.origin, spaceId: spaceId) { return downloaded }
         let response = try await perform(.init(
             path: address.spacePath(spaceId, "/assets/\(escape(hash))"),
             extraHeaders: ["Accept": "image/*"]
         ))
-        try await publishedAssets.write(response.data, hash: hash, origin: address.origin, spaceId: spaceId)
+        guard SHA256.hash(data: response.data).map({ String(format: "%02x", $0) }).joined() == hash.lowercased() else {
+            throw APIError(status: 422, code: "asset_hash_mismatch", message: "La imagen descargada no coincide con su contenido original.", details: [:])
+        }
+        if !hasDesktopBridge { try await publishedAssets.write(response.data, hash: hash, origin: address.origin, spaceId: spaceId) }
         return response.data
     }
 

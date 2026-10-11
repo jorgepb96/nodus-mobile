@@ -27,6 +27,7 @@ struct DeepResearchScreen: View {
     @Environment(AppPreferences.self) private var preferences
     @State private var published: [Row] = []
     @State private var publishedError: String?
+    @State private var publishedFromDevice = false
     @State private var query = ""
     @State private var showingComposer = false
     @State private var selecting = false
@@ -59,6 +60,11 @@ struct DeepResearchScreen: View {
                     Button { Task { await loadPublished() } } label: { Label("Try again", systemImage: "arrow.clockwise") }
                         .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                         .accessibilityIdentifier("deep-research-catalog-retry")
+                }
+                if publishedFromDevice {
+                    Label("Sin conexión · se muestran tus informes descargados", systemImage: "wifi.slash")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("deep-research-downloaded-catalogue")
                 }
                 galleryControls
                 gallery
@@ -398,7 +404,10 @@ struct DeepResearchScreen: View {
 
     private func loadPublished() async {
         do {
-            published = try await session.client.allDeepResearchReports(in: session.connection.spaceId)
+            let catalogue = try await session.client.deepResearchCatalogue(in: session.connection.spaceId)
+            try Task.checkCancellation()
+            published = catalogue.items
+            publishedFromDevice = catalogue.fromDevice
             for row in published {
                 guard let remoteId = row.string("id") else { continue }
                 let localId = local.reports.first(where: { $0.vaultRowId == remoteId })?.id ?? remoteId
@@ -407,6 +416,7 @@ struct DeepResearchScreen: View {
             publishedError = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             published = []
+            publishedFromDevice = false
             publishedError = nil
         } catch where error.isCancellation {
         } catch {

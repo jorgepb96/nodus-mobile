@@ -431,8 +431,10 @@ public actor DesktopBridgeClient {
             selectedCollection = try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus,
                 recordId: CompanionCollectionCopy.recordId(path: collectionPath))
         } else { selectedCollection = false }
+        let selectedResearch = ["deep-research", "assets"].contains(collectionPath ?? "")
+            ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionResearchCorpusCopy.recordId) : false
         do {
-            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas || localIdeas != nil || selectedCollection ? 4 : nil)
+            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas || localIdeas != nil || selectedCollection || selectedResearch ? 4 : nil)
             if response.status == 200 { try await cache.store(JSONEncoder.nodus.encode(response), vaultId: vaultId, domain: .corpus, recordId: identity) }
             return (response, false)
         } catch {
@@ -450,6 +452,8 @@ public actor DesktopBridgeClient {
                let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
             if selectedCollection, let collectionPath,
                let copy = try await CompanionCollectionCopy.downloaded(cache: cache, vaultId: vaultId, path: collectionPath),
+               let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
+            if selectedResearch, let copy = try await CompanionResearchCorpusCopy.downloaded(cache: cache, vaultId: vaultId),
                let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
             guard let bytes = retained else { throw error }
             return (try JSONDecoder.nodus.decode(DesktopBridgeResponse.self, from: bytes), true)

@@ -203,7 +203,7 @@ struct CompanionResearchDownloadsView: View {
             } else {
                 _ = try await fetch("listDictionaryGenerationJobs", [])
             }
-            var dictionaryEntries: [JSONValue] = [], reports: [JSONValue] = []
+            var dictionaryEntries: [JSONValue] = [], reports: [JSONValue] = [], nativeReports: [JSONValue] = []
             for (index, row) in chosen.enumerated() {
                 let id = row.objectValue!["id"]!.stringValue!
                 if kind == .dictionary {
@@ -233,6 +233,26 @@ struct CompanionResearchDownloadsView: View {
                         guard report.objectValue?["id"]?.stringValue == id, report.objectValue?["draft"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
                         reports.append(report)
                         reader = report
+                        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+                        guard let escaped = id.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+                        let nativeResponse = try await client.corpus(vaultId: vault, path: "deep-research/\(escaped)", percentEncoded: true)
+                        let nativeDetail = try JSONDecoder.nodus.decode(JSONValue.self, from: nativeResponse.data)
+                        guard nativeDetail.objectValue?["report"]?.objectValue?["id"] == .string(id) else { throw DesktopBridgeError.malformedResponse }
+                        let document = try await client.corpus(vaultId: vault, path: "deep-research/\(escaped)/document.html", percentEncoded: true)
+                        guard let html = String(data: document.data, encoding: .utf8), !html.isEmpty else { throw DesktopBridgeError.malformedResponse }
+                        var nativeEntry: [String: JSONValue] = ["detail": nativeDetail, "documentHTML": .string(html)]
+                        if let image = nativeDetail.objectValue?["image"]?.objectValue {
+                            guard let hash = image["hash"]?.stringValue, hash.count == 64,
+                                  hash.allSatisfy({ $0.isHexDigit }), let mime = image["mime"]?.stringValue,
+                                  mime.hasPrefix("image/") else { throw DesktopBridgeError.malformedResponse }
+                            let response = try await client.corpus(vaultId: vault, path: "assets/\(hash)")
+                            nativeEntry["image"] = .object(["hash": .string(hash), "mime": .string(mime), "base64": .string(response.data.base64EncodedString())])
+                        }
+                        let retained: JSONValue = .object(nativeEntry)
+                        bytes += try JSONEncoder.nodus.encode(retained).count
+                        guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                        nativeReports.append(retained)
+                        collectCitations(nativeDetail)
                     } else {
                         let session = try await fetch("getImmersionSession", [.string(id)])
                         guard session.objectValue?["id"]?.stringValue == id, session.objectValue?["plan"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
@@ -267,7 +287,17 @@ struct CompanionResearchDownloadsView: View {
                 }
                 progress = (index + 1, chosen.count)
             }
-            if kind == .reports { try add("listWritingWorkshopDrafts", [], .array(reports)) }
+            if kind == .reports {
+                try add("listWritingWorkshopDrafts", [], .array(reports))
+                let copy: JSONValue = .object(["version": .int(1), "entries": .array(nativeReports)])
+                _ = try CompanionResearchCorpusCopy(copies: [copy])
+                let data = try JSONEncoder.nodus.encode(copy)
+                // Entries were counted while downloading; include the envelope too.
+                let entryBytes = try nativeReports.reduce(0) { try $0 + JSONEncoder.nodus.encode($1).count }
+                bytes += data.count - entryBytes
+                guard bytes + dictionaryBytes <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                records.append(.init(domain: .corpus, recordId: CompanionResearchCorpusCopy.recordId, data: data))
+            }
             if !citations.isEmpty {
                 func identity(_ ref: JSONValue) -> String {
                     (ref.objectValue?["kind"]?.stringValue ?? "") + ":" + (ref.objectValue?["id"]?.stringValue ?? "")

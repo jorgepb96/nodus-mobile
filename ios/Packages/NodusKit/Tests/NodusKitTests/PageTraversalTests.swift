@@ -2,6 +2,27 @@ import Testing
 @testable import NodusKit
 
 struct PageTraversalTests {
+    @Test func completeSelectedCatalogueKeepsProvenanceBeyondPageOne() async throws {
+        let result = try await PageTraversal.complete { offset in
+            let items = Array(offset..<min(offset + 37, 253))
+            return Page(items: items, total: 253, limit: 37, offset: offset, hasMore: offset + items.count < 253, revision: "copy", fromDevice: true)
+        }
+        #expect(result.items == Array(0..<253)); #expect(result.total == 253); #expect(result.fromDevice)
+    }
+
+    @Test func rejectsPartialAndMixedProvenanceCatalogues() async {
+        await #expect(throws: PageTraversalError.self) {
+            try await PageTraversal.complete { offset in
+                Page(items: [offset], total: 2, limit: 1, offset: offset, hasMore: false, revision: "copy")
+            }
+        }
+        await #expect(throws: PageTraversalError.self) {
+            try await PageTraversal.complete { offset in
+                Page(items: [offset], total: 2, limit: 1, offset: offset, hasMore: offset == 0, revision: "same", fromDevice: offset == 0)
+            }
+        }
+    }
+
     @Test func traversesEveryPageBeyondTheOldHundredReportLimit() async throws {
         let result = try await PageTraversal.all { offset in
             let items = Array(offset..<min(offset + 37, 253))

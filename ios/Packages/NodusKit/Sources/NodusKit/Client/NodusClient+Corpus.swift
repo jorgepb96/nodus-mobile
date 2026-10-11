@@ -280,7 +280,9 @@ public extension NodusClient {
             path: address.spacePath(spaceId, "/deep-research/\(escape(id))"),
             cacheable: true
         ))
-        return try decode(DeepResearchReportDetail.self, from: response)
+        var detail = try decode(DeepResearchReportDetail.self, from: response)
+        detail.fromDevice = response.fromCache
+        return detail
     }
 
     /// `GET .../immersion` — answers under `sessions`. `progress_json` is never served.
@@ -517,6 +519,7 @@ public struct StudyAgenda: Sendable, Decodable {
 }
 
 public struct DeepResearchReportDetail: Sendable, Decodable {
+    enum CodingKeys: String, CodingKey { case report, image, translations, annotations, revision }
     public let report: Row
     public let image: Row?
     public let translations: [Row]
@@ -524,6 +527,7 @@ public struct DeepResearchReportDetail: Sendable, Decodable {
     /// can still read reports from a server released before annotations existed.
     public let annotations: [Row]?
     public let revision: String?
+    public internal(set) var fromDevice = false
 }
 
 public struct NotesPage: Sendable {

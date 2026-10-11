@@ -4,6 +4,43 @@ import Testing
 
 @Suite("Native companion offline consultation", .serialized)
 struct DesktopCorpusOfflineTests {
+    @Test("selected native reports survive reusable cache clearing without hiding permission or format failures")
+    func selectedResearchReaders() async throws {
+        let id = UUID().uuidString, root = URL.temporaryDirectory.appendingPathComponent("selected-research-\(UUID().uuidString)")
+        let keychain = KeychainStore(service: "nodus.tests.selected-research.\(id)")
+        let defaults = try #require(UserDefaults(suiteName: id)), store = DesktopBridgePairingStore(defaults: defaults, keychain: keychain)
+        let pairing = try DesktopBridgePairing(id: id, origin: "https://mac.nodus.test:7443", certificateFingerprint: String(repeating: "a", count: 64), deviceId: "phone", deviceName: "phone", vaultIds: ["a"], domains: [.corpus], pairedAt: Date(), expiresAt: nil)
+        let cache = try PrivateBridgeCache(pairingId: id, directory: root, keychain: keychain)
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [OfflineCorpusProtocol.self]
+        let session = URLSession(configuration: config), client = DesktopBridgeClient(pairing: pairing, token: "test-only", store: store, session: session)
+        defer { session.invalidateAndCancel(); try? FileManager.default.removeItem(at: root); try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)); defaults.removePersistentDomain(forName: id) }
+        let pack = try await cache.saveReadPack(vaultId: "a", title: "Selected reports", expiresAt: Date().addingTimeInterval(3600), records: [.init(domain: .corpus,
+            recordId: CompanionResearchCorpusCopy.recordId, data: JSONEncoder.nodus.encode(CompanionResearchCorpusCopyTests.copy()))])
+        try await cache.removeReusableCopies()
+        OfflineCorpusProtocol.state.set(error: .notConnectedToInternet, status: 200)
+        let query = [URLQueryItem(name: "offset", value: "200"), URLQueryItem(name: "limit", value: "200")]
+        let response = try await client.corpusWithOfflineCopy(vaultId: "a", path: "deep-research", query: query, cache: cache)
+        #expect(response.fromCache)
+        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: response.response.data).objectValue?["reports"]?.arrayValue?.count == 41)
+        let document = try await client.corpusWithOfflineCopy(vaultId: "a", path: "deep-research/report-240/document.html", cache: cache)
+        #expect(String(data: document.response.data, encoding: .utf8)?.contains("Informe 240") == true)
+        let image = try await client.corpusWithOfflineCopy(vaultId: "a", path: "assets/\(CompanionResearchCorpusCopyTests.imageHash)", cache: cache)
+        #expect(image.response.data == CompanionResearchCorpusCopyTests.imageBytes)
+        await #expect(throws: CompanionCollectionCopy.CopyError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "deep-research/unchosen", cache: cache) }
+        await #expect(throws: DesktopBridgeError.self) { try await client.corpusWithOfflineCopy(vaultId: "other", path: "deep-research", query: query, cache: cache) }
+        for code in [URLError.Code.serverCertificateUntrusted, .cancelled] {
+            OfflineCorpusProtocol.state.set(error: code, status: 200)
+            await #expect(throws: URLError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "deep-research/report-0", cache: cache) }
+        }
+        for status in [403, 404, 422, 500] {
+            OfflineCorpusProtocol.state.set(error: nil, status: status)
+            await #expect(throws: APIError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "deep-research/report-0", cache: cache) }
+        }
+        try await cache.removeReadPack(id: pack.id, vaultId: "a")
+        OfflineCorpusProtocol.state.set(error: .notConnectedToInternet, status: 200)
+        await #expect(throws: URLError.self) { try await client.corpusWithOfflineCopy(vaultId: "a", path: "deep-research", query: query, cache: cache) }
+    }
+
     @Test("selected generic dossiers survive cache clearing, answer unseen pages and keep grants strict")
     func selectedCollections() async throws {
         let id = UUID().uuidString, root = URL.temporaryDirectory.appendingPathComponent("selected-collections-\(UUID().uuidString)")

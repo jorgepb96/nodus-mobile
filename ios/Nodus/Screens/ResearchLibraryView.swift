@@ -1246,6 +1246,10 @@ struct PublishedReportReader: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if detail?.fromDevice == true {
+                    Label("Sin conexión · informe descargado en este dispositivo", systemImage: "wifi.slash")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 if let hash = detail?.image?.text("hash") ?? row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
                     ReportHeroLayout { AssetImage(session: session, hash: hash) }
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

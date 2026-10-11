@@ -152,6 +152,16 @@ orientation-only status; they do not become quotation evidence. A linked work
 offers the granted on-device source reader directly. Contract regressions are
 prepared and remain pending execution.
 
+Selected Deep Research downloads now also retain the exact native report dossier,
+translations, annotations, printable HTML and hash-checked illustration. This closes
+the transport gap when switching to the native autonomous gallery: its pages are rebuilt
+from selected reports, including pages beyond 200, rather than an unrelated cached full
+catalogue. Native readers disclose device provenance. Linked-Mac illustrations stay in
+the bounded encrypted Bridge store instead of the permanent public-image store.
+Prepared regressions cover pagination, provenance changes, removals, reserved identities,
+image integrity, exports, unselected reports, permission/certificate/format failures and
+removal of the read pack. Execution and visual acceptance remain pending.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile
