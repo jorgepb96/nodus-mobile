@@ -25,6 +25,7 @@ parser.add_argument("--research-title")
 parser.add_argument("--research-markdown-sha256")
 parser.add_argument("--scriptor-marker")
 parser.add_argument("--pairing-by-code", action="store_true")
+parser.add_argument("--phone-graph", action="store_true")
 args = parser.parse_args()
 if not re.fullmatch(r"[a-z0-9-]+", args.attempt):
     raise SystemExit("A unique safe attempt name is required")
@@ -59,6 +60,11 @@ if args.scriptor_marker:
     values["NODUS_ACCEPTANCE_SCRIPTOR_MARKER"] = args.scriptor_marker
 if args.text_size:
     values["NODUS_ACCEPTANCE_DYNAMIC_TYPE"] = args.text_size
+if args.phone_graph:
+    graph = json.loads((args.lab / "phone-graph-acceptance-input.json").read_text())
+    if not graph.get("vaultId") or not isinstance(graph.get("themeLabel"), str) or not graph["themeLabel"] or not isinstance(graph.get("ideas"), int) or graph["ideas"] < 3:
+        raise SystemExit("A real populated Mac theme and its complete idea count are required")
+    values.update(NODUS_ACCEPTANCE_GRAPH_THEME=graph["themeLabel"], NODUS_ACCEPTANCE_GRAPH_IDEAS=str(graph["ideas"]))
 if args.mac_unavailable:
     if args.bridge_pid:
         raise SystemExit("Offline acceptance must reuse its existing connection, without a fresh pairing")
