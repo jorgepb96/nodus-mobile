@@ -65,8 +65,10 @@ try {
   await page.locator('[data-tour="nav-workspace"]').click();
   const search = page.getByPlaceholder('Buscar en notas e ideas…');
   await search.fill(createdMarker ?? fixture.title);
-  assert.equal(await page.getByRole('button', { name: `Abrir ${fixture.title}`, exact: true }).count(), 1);
-  await page.getByRole('button', { name: `Abrir ${fixture.title}`, exact: true }).click();
+  const row = page.getByRole('button', { name: `Abrir ${fixture.title}`, exact: true });
+  await row.waitFor({ state: 'visible' });
+  assert.equal(await row.count(), 1);
+  await row.click();
   await page.screenshot({ path: path.join(output, 'desktop-scriptor-opened.png') });
   const before = await page.evaluate(id => window.nodus.getWorkspaceNoteEditorData(id), fixture.noteId);
   fs.writeFileSync(path.join(output, 'desktop-scriptor-before.json'), JSON.stringify(before), { mode: 0o600 });
