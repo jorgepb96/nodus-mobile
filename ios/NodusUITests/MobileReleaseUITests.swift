@@ -363,7 +363,9 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(sheet.frame.width, web.frame.width - 2, "The phone dossier must fill the width instead of becoming a right sidebar.")
             let evidence = sheet.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Obras que la desarrollan")).firstMatch
             XCTAssertTrue(evidence.waitForExistence(timeout: 30), "The persisted dossier must load beyond its skeleton.\n\(app.debugDescription)")
-            XCTAssertTrue(sheet.staticTexts.allElementsBoundByIndex.contains(where: { $0.label.count > 80 }), "The actual statement must load, not just the title.")
+            let statement = sheet.otherElements["Enunciado de la idea"].firstMatch
+            XCTAssertTrue(statement.exists, "The actual statement must load, not just the title.")
+            XCTAssertFalse(statement.staticTexts.allElementsBoundByIndex.map(\.label).joined().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             capture(app, "phone-\(name)-idea-\(orientation == .portrait ? "portrait" : "landscape")")
             close.tap()
             XCTAssertTrue(sheet.waitForNonExistence(timeout: 10))
