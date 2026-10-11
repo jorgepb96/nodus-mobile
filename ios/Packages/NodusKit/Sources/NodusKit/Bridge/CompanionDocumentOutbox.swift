@@ -4,6 +4,9 @@ import CryptoKit
 /// Complete BlockNote saves stay on this device until the owning Mac confirms
 /// a canonical commit. A frozen in-flight request survives lost acknowledgements.
 public actor CompanionDocumentOutbox {
+    /// Mirrors shared/mobileWorkspace.ts; the shared editor keeps its own
+    /// smaller native-document and individual attachment limits.
+    public static let maximumRequestBytes = 32 * 1024 * 1024
     public enum State: String, Codable, Sendable { case pending, conflict, blocked }
     public struct Request: Codable, Sendable, Equatable {
         public let id: String
@@ -164,6 +167,9 @@ public actor CompanionDocumentOutbox {
         return noteResult(noteId: noteId)
     }
     public func save(noteId: String, input: JSONValue) async throws -> JSONValue {
+        guard try JSONEncoder.nodus.encode(input).count <= Self.maximumRequestBytes - 65_536 else {
+            throw APIError(status: 413, code: "workspace_edit_too_large", message: "La nota y sus archivos superan el tamaño permitido para sincronizar. Reduce los archivos adjuntos; el borrador anterior se conserva.")
+        }
         guard let fields = input.objectValue, fields["title"]?.stringValue != nil,
               fields["contentMarkdown"]?.stringValue != nil,
               let expected = fields["expectedRevision"]?.intValue,

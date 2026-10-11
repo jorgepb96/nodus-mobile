@@ -1237,6 +1237,18 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "writing.scriptor.embeddedImageRoundtrip",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.scriptor.attachmentEnvelope",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

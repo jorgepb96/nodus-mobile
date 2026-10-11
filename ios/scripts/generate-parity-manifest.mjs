@@ -204,6 +204,7 @@ function operationMatrix(routes) {
       ['consultation.immersion.completeCatalogue', 'consultation'],
       ['generation.privateSourceContext.linked', 'generation'], ['generation.privateSourceContext.downloaded', 'generation'],
       ['consultation.privateSourceContext.domainRevocation', 'consultation'],
+      ['writing.scriptor.embeddedImageRoundtrip', 'writing'], ['sync.scriptor.attachmentEnvelope', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

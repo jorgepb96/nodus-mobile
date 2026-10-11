@@ -42,6 +42,33 @@ struct CompanionDocumentOutboxTests {
     }
     private static let creationInput: JSONValue = .object(["title": .string("New offline document"), "content": .string(""),
         "kind": .string("markdown"), "folderId": .string("folder-a"), "tags": .array([.string("offline")])])
+    @Test("embedded images above the former transport limit survive restart and structured acknowledgement")
+    func embeddedImageRoundtrip() async throws {
+        let fixture = try Fixture(readLimitBytes: 1); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"100\"><rect width=\"200\" height=\"100\" fill=\"#6158e8\"/><!--" + String(repeating:"x",count:1_989_000) + "--></svg>"
+        let url = "data:image/svg+xml;base64," + Data(svg.utf8).base64EncodedString()
+        let markdown = "![Nodus](\(url))"
+        var input = Self.input(7,text:markdown).objectValue!
+        input["nativeDocument"] = .array([.object(["id":.string("image-37"),"type":.string("image"),"props":.object(["url":.string(url),"name":.string("Nodus.svg")])])])
+        try await queue.seed(noteId:"note",editorData:Self.editor())
+        _ = try await queue.save(noteId:"note",input:.object(input))
+        let reopened = try await fixture.open()
+        #expect(await reopened.editorData(noteId:"note")?.objectValue?["nativeDocument"] == input["nativeDocument"])
+        try await reopened.synchronize { request in
+            let wire = JSONValue.object(["id":.string(request.id),"noteId":.string(request.noteId),"input":request.input])
+            let bytes = try JSONEncoder.nodus.encode(wire).count
+            #expect(bytes > 4 * 1024 * 1024 && bytes < CompanionDocumentOutbox.maximumRequestBytes)
+            var confirmed = Self.editor(8,text:markdown).objectValue!
+            confirmed["nativeDocument"] = request.input.objectValue?["nativeDocument"]
+            return .object(["id":.string(request.id),"editorData":.object(confirmed)])
+        }
+        #expect(await reopened.pendingCount() == 0)
+        let confirmed = await reopened.editorData(noteId:"note")
+        #expect(confirmed?.objectValue?["contentMarkdown"] == .string(markdown))
+        #expect(confirmed?.objectValue?["nativeDocument"] == input["nativeDocument"])
+    }
+
     @Test("authored ideas retain both identities, source ownership and local dossier after offline restart")
     func offlineIdeaCreation() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }

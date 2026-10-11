@@ -362,6 +362,9 @@ public actor DesktopBridgeClient {
             "id": .string(request.id), "noteId": .string(request.noteId), "input": request.input
         ]
         if let creation = request.creation { body["creation"] = creation }
+        guard try JSONEncoder.nodus.encode(JSONValue.object(body)).count <= CompanionDocumentOutbox.maximumRequestBytes else {
+            throw APIError(status: 413, code: "workspace_edit_too_large", message: "La nota y sus archivos superan el tamaño permitido para sincronizar.")
+        }
         let response = try await raw(path: "/bridge/v2/vaults/\(vault)/workspace-edits", method: "POST", body: .object(body))
         return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
     }

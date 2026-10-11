@@ -232,6 +232,12 @@ page. Navigation messages preserve newer answers rather than replaying stale ans
 These additional contracts are prepared for the final local campaign, not yet executed.
 Completed autonomous writing assistance opens its durable native result directly from Scriptor
 while publication is pending; it does not fabricate a Mac log ID or replace the original document.
+Scriptor's complete save envelope now permits 32 MiB, while retaining the shared editor's
+native-document and individual attachment limits. A valid embedded image can occur in both
+BlockNote and Markdown without exceeding the former transport cap. Device and Mac check the
+same wire bound before sending or applying; the original structured image remains in durable
+authored storage and revision history. The prepared large-image roundtrip contracts have not
+been executed and still require actual visual/HTTP acceptance.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
