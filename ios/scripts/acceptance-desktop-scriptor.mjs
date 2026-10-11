@@ -71,13 +71,19 @@ try {
   await paragraph.click();
   await page.keyboard.press('End');
   await page.keyboard.insertText(` Frase de prueba enviada desde Desktop al movil. ${marker}.`);
-  await page.waitForFunction(async ({ id, marker }) => {
-    const document = await window.nodus.getWorkspaceNoteEditorData(id);
-    return document.contentMarkdown.includes(marker) && JSON.stringify(document.nativeDocument).includes(marker);
-  }, { id: fixture.noteId, marker }, { timeout: 30_000 });
-  const after = await page.evaluate(id => window.nodus.getWorkspaceNoteEditorData(id), fixture.noteId);
+  // Poll committed IPC reads explicitly: an async browser predicate can return a
+  // truthy Promise before the editor's debounced save has reached SQLite.
+  const deadline = Date.now() + 30_000;
+  let after;
+  do {
+    after = await page.evaluate(id => window.nodus.getWorkspaceNoteEditorData(id), fixture.noteId);
+    if (after.revision > before.revision && after.contentMarkdown.includes(marker) && JSON.stringify(after.nativeDocument).includes(marker)) break;
+    await new Promise(resolve => setTimeout(resolve, 300));
+  } while (Date.now() < deadline);
   assert.notEqual(after.revision, before.revision);
+  assert(after.contentMarkdown.includes(marker) && JSON.stringify(after.nativeDocument).includes(marker), 'The actual Desktop save must commit before it is approved');
   assert(after.versions.length > before.versions.length);
+  assert(after.versions.some(version => version.contentMarkdown === before.contentMarkdown), 'The previous persisted document must remain in version history');
   assert.deepEqual(after.nativeDocument.filter(block => block.type === 'table'), before.nativeDocument.filter(block => block.type === 'table'));
   assert(JSON.stringify(after.nativeDocument).includes('E=mc^2'));
   assert.equal(rendererErrors.length, 0, rendererErrors.join('\n'));
