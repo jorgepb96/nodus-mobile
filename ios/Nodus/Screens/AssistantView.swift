@@ -479,8 +479,8 @@ struct ChatScreen: View {
     /// like somewhere to type looked like a seam between two bars.
     ///
     /// The bar keeps the page's colour, which is what it is standing on, and the field is the
-    /// app's own glass capsule — the same surface `NodusSearchField` uses, because it is the
-    /// same object: a place to put words.
+    /// app's own glass field. A fixed corner radius keeps multiline drafts inside the
+    /// surface instead of an increasingly oval capsule cutting across the first lines.
     ///
     /// `fixedSize` vertically, because in a `VStack` under a `ScrollView` the greedy sibling
     /// wins ties: the composer was being compressed to a fraction of its height and the capsule
@@ -495,7 +495,8 @@ struct ChatScreen: View {
                 .padding(.horizontal, 15)
                 .padding(.vertical, 11)
                 .frame(minHeight: 44)
-                .nodusGlass(NodusGlass(.regular, tint: session.accent), in: Capsule())
+                .clipped()
+                .nodusGlass(NodusGlass(.regular, tint: session.accent), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
 
             Button {
                 if isThinking { stopCurrentConversation(cancelMac:true) } else { ask() }

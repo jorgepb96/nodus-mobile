@@ -519,8 +519,9 @@ struct PageChatSheet: View {
                 .focused($composerFocused)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 11)
-                .frame(minHeight: 42)
-                .nodusGlass(NodusGlass(.regular, tint: accent), in: Capsule())
+                .frame(minHeight: 44)
+                .clipped()
+                .nodusGlass(NodusGlass(.regular, tint: accent), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
 
                 Button {
                     if store.isThinking {
@@ -532,7 +533,7 @@ struct PageChatSheet: View {
                     Image(systemName: store.isThinking ? "stop.circle.fill" : "arrow.up.circle.fill")
                         .font(.system(size: 30))
                         .foregroundStyle(accent)
-                        .frame(width: 42, height: 42)
+                        .frame(width: 44, height: 44)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
