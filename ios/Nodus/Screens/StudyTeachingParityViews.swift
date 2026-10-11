@@ -688,7 +688,7 @@ private func pairingDomainLabel(_ domain: DesktopBridgeDomain) -> String {
 }
 
 @MainActor
-private func loadStudyTeachingTables(_ session:SpaceSession,_ names:[String])async throws->[String:[Row]]{let fixture=debugStudyTeachingFixture();if !fixture.isEmpty{return Dictionary(uniqueKeysWithValues:names.map{($0,fixture[$0] ?? [])})};if let mirror=session.mirror{var result:[String:[Row]]=[:];for name in names{result[name]=try await mirror.allRows(table:name)};return result};let snapshot=try await session.client.snapshot(in:session.connection.spaceId);return Dictionary(uniqueKeysWithValues:names.map{($0,snapshot.tables[$0] ?? [])})}
+private func loadStudyTeachingTables(_ session:SpaceSession,_ names:[String])async throws->[String:[Row]]{let fixture=debugStudyTeachingFixture();if session.connection.desktopPairingId == nil, !fixture.isEmpty{return Dictionary(uniqueKeysWithValues:names.map{($0,fixture[$0] ?? [])})};if let mirror=session.mirror{var result:[String:[Row]]=[:];for name in names{result[name]=try await mirror.allRows(table:name)};return result};let snapshot=try await session.client.snapshot(in:session.connection.spaceId);return Dictionary(uniqueKeysWithValues:names.map{($0,snapshot.tables[$0] ?? [])})}
 
 @MainActor
 private func loadPrivateStudyTables(_ session:SpaceSession,domain:DesktopBridgeDomain,names:[String])async throws->[String:[Row]]{

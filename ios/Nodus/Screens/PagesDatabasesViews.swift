@@ -975,7 +975,7 @@ private struct DatabaseAnalysisSurface: View {
 
 @MainActor
 func databaseParityTables(_ session: SpaceSession, _ names: [String]) async throws -> [String: [Row]] {
-    let fixture = debugDatabasesFixture()
+    let fixture = session.connection.desktopPairingId == nil ? debugDatabasesFixture() : [:]
     if let mirror = session.mirror {
         var result: [String: [Row]] = [:]
         for name in names { result[name] = try await mirror.allRows(table: name) }

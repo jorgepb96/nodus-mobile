@@ -340,7 +340,7 @@ struct WorldEntityWorkspaceView: View {
                 assetRefs = snapshot.assetRefs
                 tables = snapshot.tables
             }
-            tables.merge(debugWorldbuildingFixture()) { _, fixture in fixture }
+            if session.connection.desktopPairingId == nil { tables.merge(debugWorldbuildingFixture()) { _, fixture in fixture } }
             relatedTables = tables
             rows = tables[definition.table.rawValue] ?? []
             error = nil
@@ -1160,7 +1160,7 @@ struct WorldMapView: View {
 
 @MainActor
 func worldTables(_ session: SpaceSession, _ names: [String]) async throws -> [String: [Row]] {
-    let fixture = debugWorldbuildingFixture()
+    let fixture = session.connection.desktopPairingId == nil ? debugWorldbuildingFixture() : [:]
     if let mirror = session.mirror {
         var result: [String: [Row]] = [:]
         for name in names { result[name] = try await mirror.allRows(table: name) }
