@@ -67,6 +67,16 @@ try {
   assert(before.nativeDocument.some(block => block.type === 'table'));
   assert(JSON.stringify(before.nativeDocument).includes('E=mc^2'));
   await page.screenshot({ path: path.join(output, 'desktop-scriptor-before-edit.png') });
+  const expectedMobileEdit = process.env.NODUS_ACCEPTANCE_EXPECTED_EDIT;
+  if (expectedMobileEdit) {
+    assert(before.contentMarkdown.includes(expectedMobileEdit) && JSON.stringify(before.nativeDocument).includes(expectedMobileEdit), 'The real Mac document must contain the exact mobile edit');
+    const result = { result: 'passed', desktopVersion: version, noteId: fixture.noteId, expectedMobileEdit,
+      revision: before.revision, versions: before.versions.length, structuredTablePreserved: true, formulaPreserved: true,
+      interaction: 'actual Desktop BlockNote consultation after mobile editing', skipped: 0 };
+    await page.screenshot({ path: path.join(output, 'desktop-scriptor-mobile-edit-visible.png') });
+    fs.writeFileSync(path.join(output, 'desktop-scriptor-result.json'), JSON.stringify(result), { mode: 0o600 });
+    console.log(JSON.stringify(result));
+  } else {
   const marker = `DesktopQA-${randomUUID()}`;
   await paragraph.click();
   await page.keyboard.press('End');
@@ -94,6 +104,7 @@ try {
   fs.writeFileSync(path.join(lab, 'scriptor-desktop-edit-acceptance-result.json'), JSON.stringify(result), { mode: 0o600 });
   fs.writeFileSync(path.join(output, 'desktop-scriptor-result.json'), JSON.stringify(result), { mode: 0o600 });
   console.log(JSON.stringify(result));
+  }
 } catch (error) {
   if (page) {
     await page.screenshot({ path: path.join(output, 'desktop-scriptor-failure.png') }).catch(() => {});
