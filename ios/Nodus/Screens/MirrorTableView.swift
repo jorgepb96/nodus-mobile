@@ -163,6 +163,7 @@ struct MirrorTableView: View {
                 var matching: [Row] = []
                 var offset = 0
                 while true {
+                    try Task.checkCancellation()
                     let page = try await mirror.page(
                         table: table,
                         query: query.isEmpty ? nil : query,
@@ -172,7 +173,8 @@ struct MirrorTableView: View {
                     )
                     matching.append(contentsOf: page.items.filter(filter.includes))
                     offset += page.items.count
-                    if !page.hasMore || offset >= 10_000 { break }
+                    if !page.hasMore { break }
+                    guard !page.items.isEmpty else { throw DesktopBridgeError.malformedResponse }
                 }
                 rows = matching
                 total = matching.count

@@ -312,6 +312,10 @@ function operationMatrix(routes) {
       ['consultation.reports.singleNativeSelectionRibbon', 'consultation'],
       ['sync.reports.richReaderAnnotationAndBookmarkContinuity', 'sync'],
       ['consultation.reports.richSearchAndNativeOriginalImageZoom', 'consultation'],
+      ['consultation.catalogues.studyAgendaAndFamilyAllPages', 'consultation'],
+      ['consultation.study.nativeQuestionFiltersAndStructuredAnswers', 'consultation'],
+      ['consultation.study.originalRubricVersionsAttemptsAndProvenance', 'consultation'],
+      ['sync.study.downloadedOriginalHistoryAndLegacyPackCompatibility', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

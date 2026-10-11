@@ -204,34 +204,20 @@ struct FamilyTreeView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            // Both collections come down whole: a family is hundreds of rows, not thousands,
-            // and holding them makes every hop instant.
-            var allPeople: [Row] = []
-            var offset = 0
-            while let collection = Collections["persons"] {
-                let page = try await session.client.list(collection, in: session.connection.spaceId, limit: 200, offset: offset)
-                allPeople.append(contentsOf: page.items)
-                guard page.hasMore, allPeople.count < 2000 else { break }
-                offset += page.items.count
+            guard let persons = Collections["persons"], let links = Collections["relationships"] else {
+                throw DesktopBridgeError.malformedResponse
             }
+            let allPeople = try await session.client.allItems(persons, in: session.connection.spaceId)
+            let allRelationships = try await session.client.allItems(links, in: session.connection.spaceId)
             people = Dictionary(allPeople.compactMap { row in
                 row.string("person_id").map { ($0, row) }
             }, uniquingKeysWith: { first, _ in first })
-
-            var allRelationships: [Row] = []
-            offset = 0
-            while let collection = Collections["relationships"] {
-                let page = try await session.client.list(collection, in: session.connection.spaceId, limit: 200, offset: offset)
-                allRelationships.append(contentsOf: page.items)
-                guard page.hasMore, allRelationships.count < 4000 else { break }
-                offset += page.items.count
-            }
             relationships = allRelationships
 
             portraitHashes = [:]
             if let mirror = session.mirror {
-                let portraits = (try? await mirror.page(table: "person_portraits", limit: 500)) ?? Page(items: [], total: 0, limit: 0, offset: 0, hasMore: false, revision: "")
-                for row in portraits.items {
+                let portraits = try await mirror.allRows(table: "person_portraits")
+                for row in portraits {
                     guard let id = row.string("person_id"), let asset = try? await mirror.portrait(personId: id) else { continue }
                     portraitHashes[id] = asset.hash
                 }

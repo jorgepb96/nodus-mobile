@@ -47,6 +47,38 @@ public extension NodusClient {
         return try page(from: response, key: collection.listKey)
     }
 
+    /// Complete catalogues must not silently stop at the server's page bound.
+    /// A changing publication or broken offset is an error, never a shorter list.
+    func allItems(_ collection: CollectionDescriptor, in spaceId: String, query: String? = nil) async throws -> [Row] {
+        var rows: [Row] = []
+        var identities = Set<String>()
+        var offset = 0
+        var revision: String?
+        var total: Int?
+        while true {
+            try Task.checkCancellation()
+            let page = try await list(collection, in: spaceId, query: query, limit: PageBounds.maxLimit, offset: offset)
+            guard page.offset == offset, page.limit > 0, page.total >= 0,
+                  revision == nil || revision == page.revision, total == nil || total == page.total else {
+                throw TransportError.malformedResponse(expected: "a stable paginated catalogue; refresh the catalogue")
+            }
+            revision = page.revision; total = page.total
+            for row in page.items {
+                guard let id = row.string(collection.idField), !id.isEmpty, identities.insert(id).inserted else {
+                    throw TransportError.malformedResponse(expected: "unique record identities across catalogue pages")
+                }
+                rows.append(row)
+            }
+            offset += page.items.count
+            guard offset <= page.total else { throw TransportError.malformedResponse(expected: "the catalogue's declared record count") }
+            if !page.hasMore {
+                guard offset == page.total else { throw TransportError.malformedResponse(expected: "all catalogue records") }
+                return rows
+            }
+            guard !page.items.isEmpty, offset < page.total else { throw TransportError.malformedResponse(expected: "a progressing catalogue page") }
+        }
+    }
+
     /// The primary row of a dossier, under its declared domain key.
     ///
     /// Use a dossier reader when relations, versions or evidence are needed; this

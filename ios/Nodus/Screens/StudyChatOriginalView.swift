@@ -35,13 +35,24 @@ struct StudyChatOriginalView: View {
                                 }
                             }
                         }
-                        if let updated = data["updatedAt"]?.stringValue { Text("Actualizado: \(updated)").font(.caption2).foregroundStyle(.secondary) }
+                        if kind != "question" {
+                            StudyOriginalMetadata(session: session, value: .object(data), excluding: ["title", "description", "durationMinutes", "maxAttempts", "items"])
+                        }
+                        if let related = source?.objectValue?["related"]?.objectValue {
+                            if let rubric = related["rubric"], rubric != .null { StudyOriginalSection(session: session, title: "Rúbrica", value: rubric, field: "rubric") }
+                            if let versions = related["versions"] { StudyOriginalSection(session: session, title: "Versiones", value: versions, field: "versions") }
+                            if let attempts = related["attempts"] { StudyOriginalSection(session: session, title: "Intentos y respuestas", value: attempts, field: "attempts") }
+                        } else if downloaded {
+                            Text("Esta descarga conserva la pregunta o examen original. Para incluir sus versiones e intentos, actualiza la descarga cuando Nodus esté conectado.").font(.footnote).foregroundStyle(.secondary)
+                        }
                     }.padding(20).frame(maxWidth:800,alignment:.leading).frame(maxWidth:.infinity,alignment:.center)
                 }
             } else if let issue { CorpusOpenFailure(message:issue) { attempt += 1 } }
             else { ProgressView().tint(session.accent) }
         }.navigationTitle(kind == "question" ? "Pregunta":"Examen de estudio").navigationBarTitleDisplayMode(.inline)
             .nodusPageBackdrop(accent:session.accent)
+            .nodusReadingStyle(ReadingStyle(document: true))
+            .nodusPageFunctions(accent: session.accent)
             .task(id:attempt) {
                 issue = nil
                 do { let (value,offline) = try await CompanionStudyChatSources.original(kind:kind,id:id,session:session);try Task.checkCancellation();source = value;downloaded = offline }
@@ -51,7 +62,7 @@ struct StudyChatOriginalView: View {
     }
 }
 
-private struct StudyChatQuestionContent: View {
+struct StudyChatQuestionContent: View {
     let question: JSONValue
     let session: SpaceSession
     var body: some View {
@@ -73,15 +84,18 @@ private struct StudyChatQuestionContent: View {
                     }
                 }
                 if let answer = raw["answer"]?.objectValue {
-                    let text = answerText(answer)
+                    let text = Self.answerText(answer)
                     if !text.isEmpty { Text("Respuesta").font(.headline);CorpusProse(text,accent:session.accent,session:session) }
                 }
                 if let explanation = raw["explanation"]?.stringValue,!explanation.isEmpty { Text("Explicación").font(.headline);CorpusProse(explanation,accent:session.accent,session:session) }
                 if let competence = raw["competence"]?.stringValue,!competence.isEmpty { Text("Competencia").font(.headline);Text(verbatim:competence).textSelection(.enabled) }
+                if let source = raw["source"]?.objectValue { StudyOriginalProvenance(session: session, question: raw, source: source) }
+                if let rubric = raw["rubric"], rubric.objectValue?.isEmpty == false { StudyOriginalSection(session: session, title: "Criterios de evaluación", value: rubric, field: "rubric") }
+                StudyOriginalMetadata(session: session, value: question, excluding: ["prompt", "options", "answer", "explanation", "competence", "source", "rubric"])
             }.frame(maxWidth:.infinity,alignment:.leading)
         }
     }
-    private func answerText(_ answer: [String:JSONValue]) -> String {
+    static func answerText(_ answer: [String:JSONValue]) -> String {
         var pieces: [String] = []
         if let text = answer["text"]?.stringValue,!text.isEmpty { pieces.append(text) }
         if let value = answer["value"] {

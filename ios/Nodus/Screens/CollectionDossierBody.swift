@@ -42,6 +42,7 @@ struct CollectionDossierBody: View {
             "transcripts": "Transcripciones", "codes": "Códigos", "annotationCodes": "Codificación",
             "items": "Fuentes", "excerpts": "Extractos", "units": "Unidades descriptivas", "repository": "Repositorio",
             "profile": "Perfil", "analysis": "Análisis", "personMentions": "Personas mencionadas", "placeMentions": "Lugares mencionados",
+            "attempts": "Intentos", "rubric": "Rúbrica", "criteria": "Criterios", "weight": "Peso", "response": "Respuesta", "feedback": "Evaluación", "answers": "Respuestas", "score": "Puntuación", "maxScore": "Puntuación máxima", "isCorrect": "Correcta", "pointsAwarded": "Puntos obtenidos", "responseMs": "Tiempo de respuesta (ms)", "startedAt": "Inicio", "submittedAt": "Entrega", "durationSeconds": "Duración (segundos)", "config": "Configuración", "snapshot": "Contenido de la versión", "reason": "Motivo", "versionNo": "Versión", "generationPrompt": "Instrucciones de generación", "model": "Modelo", "usageCount": "Veces utilizada", "correctCount": "Aciertos", "incorrectCount": "Errores", "omittedCount": "Sin responder", "lastResponse": "Última respuesta", "lastScore": "Última puntuación", "lastMaxScore": "Puntuación máxima de la última respuesta", "lastFeedback": "Última evaluación", "lastAnsweredAt": "Última respuesta registrada", "createdAt": "Creación", "updatedAt": "Actualización", "pageNumber": "Página", "slideNumber": "Diapositiva", "timestampSeconds": "Instante (segundos)", "favorite": "Favorito", "locked": "Protegido", "attemptCount": "Intentos registrados", "availableAt": "Disponible desde", "expected": "Respuesta esperada", "gradable": "Evaluable", "omitted": "Sin responder", "correct": "Correcta", "maxPoints": "Puntos máximos", "confidence": "Confianza", "flagged": "Marcada para revisión",
             "itemUnits": "Ubicación de las fuentes", "members": "Miembros", "children": "Elementos dependientes",
             "affiliations": "Afiliaciones", "seat": "Sede", "text": "Manuscrito", "beats": "Hitos narrativos",
             "cast": "Personajes", "snapshots": "Historial", "images": "Imágenes", "rules": "Reglas",
@@ -53,7 +54,7 @@ struct CollectionDossierBody: View {
     }
 }
 
-private struct DossierValueView: View {
+struct DossierValueView: View {
     let session: SpaceSession
     let value: JSONValue
     let field: String
@@ -107,6 +108,8 @@ private struct DossierValueView: View {
                 return AnyView(CorpusProse(text, accent: session.accent, session: session))
             }
             return AnyView(Text(text).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true))
+        case .bool(let value):
+            return AnyView(Text(value ? "Sí" : "No").font(.callout))
         default:
             return AnyView(Text(value.stringValue ?? "—").font(.callout).textSelection(.enabled))
         }
@@ -116,11 +119,11 @@ private struct DossierValueView: View {
         AnyView(DossierValueView(session: session, value: value, field: field, linkedCollection: linked, onOpenRelated: onOpenRelated))
     }
     private static func technical(_ key: String) -> Bool {
-        key == "id" || key.hasSuffix("_id") || key.hasSuffix("_hash") ||
+        key == "id" || key.hasSuffix("_id") || key.hasSuffix("Id") || key.hasSuffix("_hash") ||
             ["global_id", "from_id", "to_id", "created_by", "local_path", "file_path", "sort_order"].contains(key)
     }
     private func objectLabel(_ object: [String: JSONValue], ordinal: Int) -> some View {
-        let title = ["title", "name", "label", "prompt", "heading", "created_at", "generated_at", "version_no"].compactMap { object[$0]?.stringValue }.first { !$0.isEmpty }
+        let title = ["title", "name", "label", "prompt", "heading", "startedAt", "createdAt", "created_at", "generated_at", "versionNo", "version_no"].compactMap { object[$0]?.stringValue }.first { !$0.isEmpty }
         return Text(title ?? "\(CollectionDossierBody.label(field)) · \(ordinal)").font(.subheadline.weight(.medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
     }
     @ViewBuilder private func link(_ row: Row, to collection: CollectionDescriptor) -> some View {

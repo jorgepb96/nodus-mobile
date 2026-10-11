@@ -1963,6 +1963,30 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.catalogues.studyAgendaAndFamilyAllPages",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.study.nativeQuestionFiltersAndStructuredAnswers",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.study.originalRubricVersionsAttemptsAndProvenance",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.study.downloadedOriginalHistoryAndLegacyPackCompatibility",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

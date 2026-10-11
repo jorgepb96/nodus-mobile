@@ -448,3 +448,18 @@ These reader sources and Swift regression cases are prepared but **uncompiled an
 unexecuted**. Four new acceptance operations are pending; cross-device annotation
 continuity, actual WK selection, keyboard/touch accessibility and current captures
 must be checked in the final local campaign. Shared resources are not rebuilt yet.
+
+Study originals now retain existing question versions, answer histories and exam
+rubrics in their bounded source packs. The reader shows original scoring criteria,
+answers, provenance and native links into documents, materials and the precise
+recording/transcript identity. Older downloads still work and state when their
+history needs a fresh download. Reading a rubric does not initialise or create
+Mac records. The question bank uses actual question types, stable IDs, native
+filters and structured answers. Study cards, goals and family collections now
+read every page with revision/count/identity consistency checks; local timetable
+and portrait reads no longer stop at their first page. Filtered mirror tables no
+longer silently stop after 10,000 rows.
+Prepared local catalogue and real-store Study history cases are **unexecuted**.
+Four new acceptance operations remain pending; current local compilation,
+large-catalogue/device navigation and offline original-history acceptance are
+still required. These source changes are not a parity certification.
