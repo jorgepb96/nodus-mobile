@@ -1611,10 +1611,11 @@ final class MobileReleaseUITests: XCTestCase {
         for _ in 0..<12 { if select.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(select.isHittable, app.debugDescription); select.tap()
         XCTAssertTrue(app.navigationBars["Descargar para llevar"].waitForExistence(timeout: 15), "The download selector must open above Settings.\n\(app.debugDescription)")
+        try findCompanionScriptorDocument(app)
         let noteId = "71af4d2a-74d1-4761-86ad-7df8b10f387e"
         let note = app.buttons["companion-download-note-" + noteId]
-        XCTAssertTrue(note.waitForExistence(timeout: 30), app.debugDescription)
-        for _ in 0..<8 { if note.isHittable { break }; app.swipeUp() }
+        for _ in 0..<8 { if note.exists && note.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(note.exists, app.debugDescription)
         XCTAssertTrue(note.isHittable); note.tap()
         XCTAssertEqual(note.value as? String, "Seleccionado")
         capture(app, "companion-one-structured-document-selected")
@@ -1632,7 +1633,9 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(select.isHittable)
         select.tap()
         XCTAssertTrue(app.navigationBars["Descargar para llevar"].waitForExistence(timeout: 15))
-        XCTAssertTrue(note.waitForExistence(timeout: 30)); note.tap()
+        try findCompanionScriptorDocument(app)
+        for _ in 0..<8 { if note.exists && note.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(note.exists && note.isHittable); note.tap()
         app.buttons["companion-download-start"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["companion-download-ready"].firstMatch.waitForExistence(timeout: 45))
         app.buttons["Cerrar"].tap()
@@ -1648,6 +1651,12 @@ final class MobileReleaseUITests: XCTestCase {
         app.buttons["Liberar espacio"].tap()
         XCTAssertTrue(app.staticTexts["1 documento de Scriptor"].exists)
         capture(app, "companion-chosen-download-survives-consulted-cleanup")
+    }
+    @MainActor private func findCompanionScriptorDocument(_ app: XCUIApplication) throws {
+        let search = app.searchFields["Buscar notas e ideas"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.tap(); search.typeText("Aceptación Scriptor móvil 0.1.0\n")
+        capture(app, "companion-document-search")
     }
     @MainActor
     func testCompanionSettingsReadsRealMacEmbeddingIdentity() throws {

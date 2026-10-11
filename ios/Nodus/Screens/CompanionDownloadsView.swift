@@ -9,6 +9,7 @@ struct CompanionDownloadsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var tree: JSONValue?
     @State private var selected = Set<String>()
+    @State private var query = ""
     @State private var days = 7
     @State private var progress: (done: Int, total: Int)?
     @State private var issue: String?
@@ -79,7 +80,7 @@ struct CompanionDownloadsView: View {
                 }
                 if saved { Label("Descarga disponible sin conexión", systemImage: "checkmark.circle.fill").foregroundStyle(.green).accessibilityIdentifier("companion-download-ready") }
                 Section("Documentos") {
-                    ForEach(notes, id: \.idForDownload) { note in
+                    ForEach(notes.filter { query.isEmpty || ($0["title"]?.stringValue ?? "").localizedStandardContains(query) }, id: \.idForDownload) { note in
                         if let id = note["id"]?.stringValue {
                             Button {
                                 if !selected.insert(id).inserted { selected.remove(id) }
@@ -97,6 +98,7 @@ struct CompanionDownloadsView: View {
             }
             .navigationTitle("Descargar para llevar")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: "Buscar notas e ideas")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(progress == nil ? "Cerrar" : "Cancelar") {
