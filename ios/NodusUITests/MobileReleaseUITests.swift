@@ -155,14 +155,14 @@ final class MobileReleaseUITests: XCTestCase {
             search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
         }
         search.typeText("La mirada extranjera"); try dismissResearchKeyboard(app)
-        let read = gallery.buttons["Leer"].firstMatch
+        let read = gallery.buttons.containing(NSPredicate(format: "label CONTAINS %@", "La mirada extranjera sobre la España franquista")).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 45), app.debugDescription)
         try revealResearchControl(read, in: gallery, upwards: true); read.tap()
         let reader = app.scrollViews["report-native-reader"]
         XCTAssertTrue(reader.waitForExistence(timeout: 30), app.debugDescription)
         let body = reader.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
+        for _ in 0..<12 { if body.exists && body.isHittable { break }; reader.swipeUp() }
         XCTAssertTrue(body.waitForExistence(timeout: 30), app.debugDescription)
-        for _ in 0..<12 { if body.isHittable { break }; reader.swipeUp() }
         XCTAssertTrue(body.isHittable)
         body.press(forDuration: 1.2)
         for identifier in ["nodus-selection-copy", "nodus-selection-highlight", "nodus-selection-comment", "nodus-selection-bookmark", "nodus-selection-ask"] {
@@ -2868,7 +2868,7 @@ final class MobileReleaseUITests: XCTestCase {
         try focusResearchSearch(search, in: web, app: app)
         search.typeText("La mirada extranjera")
         try dismissResearchKeyboard(app)
-        let report = web.buttons["Leer"].firstMatch
+        let report = web.buttons.containing(NSPredicate(format: "label CONTAINS %@", "La mirada extranjera sobre la España franquista")).firstMatch
         XCTAssertTrue(report.waitForExistence(timeout: 90), app.debugDescription)
         try revealResearchControl(report, in: web, upwards: true)
         capture(app, "live-deep-research-catalogue")
@@ -2879,8 +2879,8 @@ final class MobileReleaseUITests: XCTestCase {
         let loaded = NSPredicate(format: "exists == true AND enabled == true")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: translations)], timeout: 30), .completed)
         let paragraph = reader.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
+        for _ in 0..<12 { if paragraph.exists && paragraph.isHittable { break }; reader.swipeUp() }
         XCTAssertTrue(paragraph.waitForExistence(timeout: 30), app.debugDescription)
-        for _ in 0..<12 { if paragraph.isHittable { break }; reader.swipeUp() }
         XCTAssertTrue(paragraph.isHittable, app.debugDescription)
         for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
             XCUIDevice.shared.orientation = orientation

@@ -1245,6 +1245,8 @@ struct PublishedReportReader: View {
     @State private var error: String?
     @State private var translationOpen = false
     @State private var loading = false
+    @State private var metadataExpanded = false
+    private var phoneHeader: Bool { UIDevice.current.userInterfaceIdiom == .phone }
     private var currentRow: Row { detail?.report ?? row }
     private var imageHash: String? {
         if let detail { return detail.image?.text("hash") }
@@ -1258,7 +1260,7 @@ struct PublishedReportReader: View {
                     Label("Sin conexión · informe descargado en este dispositivo", systemImage: "wifi.slash")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                if let hash = imageHash {
+                if !phoneHeader, let hash = imageHash {
                     ReportHeroLayout { AssetImage(session: session, hash: hash) }
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
@@ -1266,25 +1268,17 @@ struct PublishedReportReader: View {
                 VStack(alignment: .leading, spacing: 6) {
                     PageText(currentRow.text("title") ?? String(localized: "Report"), order: 0)
                         .font(.title3.weight(.semibold))
-                    if let objective = currentRow.text("objective") {
-                        PageText(objective, order: 1).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    if let document {
-                        ReportActions(
-                            markdown: document,
-                            title: currentRow.text("title"),
-                            // Beside the copy, because it is the other way to take the report
-                            // with you — and the only one that keeps its layout.
-                            pdf: currentRow.string("id").map {
-                                (session, $0, currentRow.text("title") ?? String(localized: "Report"))
-                            },
-                            saveToNotes: currentRow.string("id").map {
-                                ($0, currentRow.text("title") ?? String(localized: "Report"), document, session)
-                            },
-                            accent: session.accent
-                        )
-                        .padding(.top, 6)
-                    }
+                    if phoneHeader {
+                        DisclosureGroup("Detalles y opciones", isExpanded: $metadataExpanded) {
+                            if let hash = imageHash {
+                                ReportHeroLayout { AssetImage(session: session, hash: hash) }
+                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                            reportMetadata
+                        }
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("report-native-details")
+                    } else { reportMetadata }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(NodusSpace.cardPadding)
@@ -1364,6 +1358,28 @@ struct PublishedReportReader: View {
             }
         }
         .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision)") { await load() }
+    }
+
+    @ViewBuilder private var reportMetadata: some View {
+                    if let objective = currentRow.text("objective") {
+                        PageText(objective, order: 1).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if let document {
+                        ReportActions(
+                            markdown: document,
+                            title: currentRow.text("title"),
+                            // Beside the copy, because it is the other way to take the report
+                            // with you — and the only one that keeps its layout.
+                            pdf: currentRow.string("id").map {
+                                (session, $0, currentRow.text("title") ?? String(localized: "Report"))
+                            },
+                            saveToNotes: currentRow.string("id").map {
+                                ($0, currentRow.text("title") ?? String(localized: "Report"), document, session)
+                            },
+                            accent: session.accent
+                        )
+                        .padding(.top, 6)
+                    }
     }
 
     private struct Prose { let heading: String?; let body: String }
