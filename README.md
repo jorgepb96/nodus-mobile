@@ -365,6 +365,14 @@ Desktop saves omit the field. Study, World and Database portable histories retai
 dates, and malformed dates are rejected. Existing histories without per-turn dates remain
 readable. Timestamp persistence and replay regressions are prepared but unexecuted.
 
+Study citations now open complete question and study-assessment records with their actual
+answers, options, explanations and exam questions. Explicit Study source downloads keep
+these complete records beside the selected indexed fragments, within the same encrypted
+temporary-copy budget. Legacy source packs still support retrieval and saved quotations;
+opening a full original they do not contain requests a new explicit download. A deleted
+source and a live transport/permission error remain errors instead of stale fallback.
+Original-source identity and owning-vault fixtures are prepared but unexecuted.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

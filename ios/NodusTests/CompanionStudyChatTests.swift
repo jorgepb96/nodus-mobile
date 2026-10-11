@@ -6,6 +6,16 @@ import NodusKit
 @Suite("Native autonomous Study companion")
 @MainActor
 struct CompanionStudyChatTests {
+    @Test("Full question and study-exam originals reject a mismatched source identity")
+    func originalIdentity() async throws {
+        let question: JSONValue = .object(["id":.string("question-1"),"prompt":.string("¿Qué regula el intercambio?"),"explanation":.string("El gradiente."),"answer":.object(["text":.string("El gradiente")]),"options":.array([])])
+        let source: JSONValue = .object(["kind":.string("question"),"sourceId":.string("question-1"),"data":question])
+        try await CompanionChatContext.validateStudyOriginal(source)
+        let exam: JSONValue = .object(["kind":.string("exam"),"sourceId":.string("exam-1"),"data":.object(["id":.string("exam-1"),"kind":.string("exam"),"title":.string("Examen de membrana"),"description":.string(""),"items":.array([.object(["questionId":.string("question-1"),"points":.int(2),"question":question])])])])
+        try await CompanionChatContext.validateStudyOriginal(exam)
+        var wrong = source.objectValue!;wrong["sourceId"] = .string("another-question")
+        await #expect(throws:(any Error).self) { try await CompanionChatContext.validateStudyOriginal(.object(wrong)) }
+    }
     private func citation() -> JSONValue {
         .object(["id":.string("S1"),"sourceKey":.string("material:source"),"indexId":.string("fragment"),"kind":.string("material"),"sourceId":.string("source"),"title":.string("Membrana 🌊"),"subtitle":.string("Biología"),"quote":.string("El gradiente permite intercambio."),"location":.object(["materialId":.string("source"),"pageNumber":.int(3)]),"scope":.object(["courseId":.null,"subjectId":.null,"folderId":.null,"topicId":.null])])
     }

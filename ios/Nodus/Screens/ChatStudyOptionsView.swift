@@ -118,6 +118,9 @@ struct StudyChatEvidenceView: View {
                     }
                     Text(citation.objectValue?["quote"]?.stringValue ?? "").textSelection(.enabled)
                     if let reference { NavigationLink("Abrir la fuente") { CorpusReferenceView(session:session,reference:reference) } }
+                    if let raw = citation.objectValue,let kind = raw["kind"]?.stringValue,["question","exam"].contains(kind),let id = raw["sourceId"]?.stringValue {
+                        NavigationLink("Abrir la fuente completa") { StudyChatOriginalView(kind:kind,id:id,session:session) }.frame(minHeight:44)
+                    }
                 }.padding(20).frame(maxWidth:.infinity,alignment:.leading)
             }.navigationTitle(citation.objectValue?["id"]?.stringValue ?? "Evidencia").navigationBarTitleDisplayMode(.inline)
                 .nodusModalClose(accent:session.accent)

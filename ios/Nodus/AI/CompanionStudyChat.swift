@@ -79,6 +79,26 @@ enum CompanionStudyChatSources {
         }
         return packs
     }
+    static func original(kind: String,id: String,session: SpaceSession) async throws -> (JSONValue,Bool) {
+        guard ["question","exam"].contains(kind),!id.isEmpty else { throw DesktopBridgeError.malformedResponse }
+        let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus)
+        let source: JSONValue,offline: Bool
+        do {
+            source = try await DesktopBridgeClient(pairing:pairing,token:token).operation(vaultId:vault,method:"getMobileStudyChatOriginal",args:[.object(["kind":.string(kind),"sourceId":.string(id)])]);offline = false
+        } catch {
+            guard isPrivateBridgeOffline(error) else { throw error }
+            var chosen: JSONValue?
+            for pack in try await packs(session:session) {
+                try await CompanionChatContext.validateStudySources(pack,vaultId:vault)
+                if let candidate = pack.objectValue?["originals"]?.objectValue?["\(kind):\(id)"] { chosen = candidate;break }
+            }
+            guard let chosen else { throw APIError(status:409,code:"study_chat_original_not_downloaded",message:"La cita está guardada, pero su fuente completa no está descargada. Vuelve a descargar esta pregunta o examen desde Fuentes de estudio cuando Nodus esté conectado.") }
+            source = chosen;offline = true
+        }
+        guard source.objectValue?["kind"] == .string(kind),source.objectValue?["sourceId"] == .string(id) else { throw DesktopBridgeError.malformedResponse }
+        try await CompanionChatContext.validateStudyOriginal(source)
+        return (source,offline)
+    }
     static func download(session: SpaceSession,keys: [String],days: Int) async throws {
         guard !keys.isEmpty,keys.count <= 100,Set(keys).count == keys.count,[7,30].contains(days) else { throw DesktopBridgeError.malformedResponse }
         let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus),client = DesktopBridgeClient(pairing:pairing,token:token)

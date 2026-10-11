@@ -93,18 +93,22 @@ enum CompanionChatContext {
         return prepared
     }
     private enum Operation {
-        case database,study,studyAnswer,studySources,world,worldAnswer,worldSources
+        case database,study,studyAnswer,studySources,studyOriginal,world,worldAnswer,worldSources
         var script: String {
             switch self {
             case .database: "return NodusCompanionChat.prepareDatabaseChat(input);"
             case .study: "return NodusCompanionChat.prepareStudyChat(input);"
             case .studyAnswer: "return NodusCompanionChat.validateStudyAssistantAnswer(input.answer,input.citations);"
             case .studySources: "NodusCompanionChat.validateMobileStudyChatSourcePack(input.pack,input.vaultId);return {valid:true};"
+            case .studyOriginal: "NodusCompanionChat.validateMobileStudyChatOriginal(input.source);return {valid:true};"
             case .world: "return NodusCompanionChat.prepareWorldChat(input);"
             case .worldAnswer: "return NodusCompanionChat.validateMobileWorldChatAnswer(input);"
             case .worldSources: "NodusCompanionChat.validateMobileWorldChatSourcePack(input.pack,input.vaultId);return {valid:true};"
             }
         }
+    }
+    static func validateStudyOriginal(_ source: JSONValue) async throws {
+        _ = try await evaluateValue(.object(["source":source]),operation:.studyOriginal)
     }
     private static func evaluateValue(_ input: JSONValue,operation: Operation) async throws -> JSONValue {
         try Task.checkCancellation()

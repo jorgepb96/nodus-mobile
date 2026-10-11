@@ -1783,6 +1783,18 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.studyChat.questionAndExamOriginals",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.studyChat.completeDownloadedOriginals",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {
