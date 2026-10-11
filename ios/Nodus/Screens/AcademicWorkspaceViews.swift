@@ -564,6 +564,7 @@ private struct AuthorWorkspaceRow: View {
 }
 
 private struct AuthorWorkspaceDocument: View {
+    @Environment(AISettings.self) private var ai
     let session: SpaceSession
     let row: Row
     let isSaved: Bool
@@ -576,6 +577,9 @@ private struct AuthorWorkspaceDocument: View {
     @State private var error: String?
     @State private var actionState: String?
     @State private var showingAssistant = false
+    @State private var localSynthesis: AuthorDossierSynthesis?
+    @State private var generationTask: Task<Void, Never>?
+    private var sourceRequest: JSONValue { CompanionAcademicGeneration.sourceRequest(kind: "author", author: id, language: CompanionAcademicGeneration.language) }
 
     private var id: String { row.string("author_id") ?? "" }
     private var canAct: Bool {
@@ -610,11 +614,13 @@ private struct AuthorWorkspaceDocument: View {
                     Button(action: onToggleSaved) { Label(isSaved ? "Saved" : "Save", systemImage: isSaved ? "bookmark.fill" : "bookmark") }
                     Button { showingAssistant = true } label: { Label("Assistant", systemImage: "sparkles") }
                     if let idea = dossier.ideas.first { Button { onOpenArgument(ArgumentSeed(id: idea.globalId, label: idea.label)) } label: { Label("Argument map", systemImage: "point.3.connected.trianglepath.dotted") } }
-                    Button { Task { await generateSynthesis() } } label: { Label(dossier.synthesis == nil ? "Generate synthesis" : "Regenerate synthesis", systemImage: "wand.and.stars") }.disabled(!canAct)
+                    Button { generationTask = Task { defer { generationTask = nil }; await generateSynthesis() } } label: { Label(dossier.synthesis == nil && localSynthesis == nil ? "Generate synthesis" : "Regenerate synthesis", systemImage: "wand.and.stars") }.disabled(!canAct || generationTask != nil)
+                    if generationTask != nil { Button("Cancelar") { generationTask?.cancel() } }
+                    if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: sourceRequest) }
                 }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                 if let actionState { Text(actionState).font(.caption).foregroundStyle(.secondary) }
 
-                if let synthesis = dossier.synthesis { synthesisPanel(synthesis) }
+                if let synthesis = freshestSynthesis(dossier.synthesis) { synthesisPanel(synthesis) }
                 authorWorks("Works", dossier.works)
                 authorWorks("Edited works", dossier.editedWorks)
                 authorIdeas(dossier.ideas)
@@ -650,13 +656,24 @@ private struct AuthorWorkspaceDocument: View {
     private func load() async {
         guard !id.isEmpty else { return }
         isLoading = true; defer { isLoading = false }
-        do { dossier = try await session.client.authorWorkspaceDossier(id, in: session.connection.spaceId); error = nil }
+        do {
+            dossier = try await session.client.authorWorkspaceDossier(id, in: session.connection.spaceId)
+            if session.connection.desktopPairingId != nil, let value = try await CompanionAcademicGeneration.saved(session: session, request: sourceRequest) {
+                localSynthesis = try JSONDecoder.nodus.decode(AuthorDossierSynthesis.self, from: JSONEncoder.nodus.encode(value))
+            }
+            error = nil
+        }
         catch where error.isCancellation {} catch { self.error = error.localizedDescription }
     }
 
     private func generateSynthesis() async {
         guard canAct else { return }
         do {
+            if session.aiExecutionMode == .autonomous, session.connection.desktopPairingId != nil {
+                let value = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: sourceRequest) { actionState = $0 }
+                localSynthesis = try JSONDecoder.nodus.decode(AuthorDossierSynthesis.self, from: JSONEncoder.nodus.encode(value))
+                return
+            }
             let result = try await session.client.createSpaceAction(
                 idempotencyKey: "ios:author-synthesis:\(session.connection.spaceId):\(id):\(session.publishedRevision ?? "local")",
                 kind: .authorSynthesisGenerate, payload: ["authorId": .string(id)], inputRevision: session.publishedRevision,
@@ -665,9 +682,15 @@ private struct AuthorWorkspaceDocument: View {
             actionState = result.duplicate ? String(localized: "This synthesis is already queued.") : String(localized: "Synthesis queued for Desktop.")
         } catch { actionState = error.localizedDescription }
     }
+    private func freshestSynthesis(_ remote: AuthorDossierSynthesis?) -> AuthorDossierSynthesis? {
+        guard let localSynthesis else { return remote }; guard let remote else { return localSynthesis }
+        return remote.generatedAt > localSynthesis.generatedAt ? remote : localSynthesis
+    }
 }
 
 private struct AuthorSynthesisMatrixView: View {
+    @Environment(AISettings.self) private var ai
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let session: SpaceSession
     let onOpenIdea: (Row) -> Void
 
@@ -675,6 +698,10 @@ private struct AuthorSynthesisMatrixView: View {
     @State private var isLoading = false
     @State private var error: String?
     @State private var generated: [String: String] = [:]
+    @State private var localCells: [String: SynthesisMatrixCell] = [:]
+    @State private var generating: Set<String> = []
+    @State private var selectedTheme = ""
+    private var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     var body: some View {
         Group {
@@ -691,11 +718,27 @@ private struct AuthorSynthesisMatrixView: View {
         VStack(spacing: 0) {
             DesktopPageHeader(title: "Authors × themes", subtitle: "\(matrix.authors.count) authors · \(matrix.themes.count) themes · grounded cells only", systemImage: "square.grid.3x3", accent: session.accent)
                 .padding(NodusSpace.page).background(Color(uiColor: .systemBackground).opacity(0.97))
-            ScrollView([.horizontal, .vertical]) {
+            if phone {
+                Picker("Tema", selection: $selectedTheme) { ForEach(matrix.themes) { Text($0.label).tag($0.themeId) } }
+                    .pickerStyle(.menu).padding(.horizontal, 16).frame(minHeight: 44)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        if let theme = matrix.themes.first(where: { $0.themeId == selectedTheme }) ?? matrix.themes.first {
+                            ForEach(matrix.authors) { author in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(author.name).font(.headline).fixedSize(horizontal: false, vertical: true)
+                                    Text(theme.label).font(.subheadline).foregroundStyle(.secondary)
+                                    matrixCell(author: author, theme: theme, matrix: matrix)
+                                }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                    }.padding(16)
+                }
+            } else { ScrollView([.horizontal, .vertical]) {
                 Grid(alignment: .topLeading, horizontalSpacing: 1, verticalSpacing: 1) {
                     GridRow {
                         Text("AUTHOR").matrixHeader(width: 190)
-                        ForEach(matrix.themes) { Text($0.label).matrixHeader(width: 210) }
+                        ForEach(matrix.themes) { Text($0.label).matrixHeader(width: 260) }
                     }
                     ForEach(matrix.authors) { author in
                         GridRow {
@@ -705,34 +748,51 @@ private struct AuthorSynthesisMatrixView: View {
                         }
                     }
                 }.padding(NodusSpace.page)
-            }
+            } }
         }
     }
 
     private func matrixCell(author: SynthesisMatrixAuthor, theme: SynthesisMatrixTheme, matrix: SynthesisMatrix) -> some View {
-        let cell = matrix.cells.first { $0.authorId == author.authorId && $0.themeId == theme.themeId }
         let key = "\(author.authorId):\(theme.themeId)"
+        let cell = localCells[key] ?? matrix.cells.first { $0.authorId == author.authorId && $0.themeId == theme.themeId }
         return VStack(alignment: .leading, spacing: 6) {
             if let cell {
                 HStack { NodusChip("\(cell.ideaCount) ideas", tint: session.accent.nodusReadable, capitalises: false); Spacer() }
-                if let stance = cell.stance { Text(stance).font(.caption).lineLimit(4) }
-                else { Button("Generate stance") { Task { await generate(author.authorId, theme.themeId, key: key) } }.font(.caption.weight(.semibold)).disabled(session.isDemo || !session.connection.role.canSendChanges) }
-                if let first = cell.ideas.first { Button(first.label) { onOpenIdea(Row(["global_id": .string(first.globalId), "label": .string(first.label), "type": .string(first.type)])) }.font(.caption2).lineLimit(1) }
+                if let stance = cell.stance { Text(stance).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                Button(cell.stance == nil ? "Generate stance" : "Regenerate synthesis") { Task { await generate(author.authorId, theme.themeId, key: key) } }.font(.caption.weight(.semibold)).disabled(session.isDemo || !session.connection.role.canSendChanges || generating.contains(key))
+                ForEach(cell.ideas) { idea in Button(idea.label) { onOpenIdea(Row(["global_id": .string(idea.globalId), "label": .string(idea.label), "type": .string(idea.type)])) }.font(.caption).fixedSize(horizontal: false, vertical: true).frame(minHeight: 44, alignment: .leading) }
+                if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: sourceRequest(author.authorId, theme.themeId)) }
             } else { Text("—").foregroundStyle(.tertiary) }
-            if let status = generated[key] { Text(status).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+            if let status = generated[key] { Text(status).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
-        .padding(10).frame(width: 210, height: 120, alignment: .topLeading)
+        .padding(10).frame(width: phone ? nil : 260, alignment: .topLeading).frame(maxWidth: phone ? .infinity : nil, alignment: .leading)
         .background(Color(uiColor: .systemBackground))
     }
 
     private func load() async {
         isLoading = true; defer { isLoading = false }
-        do { matrix = try await session.client.synthesisMatrix(in: session.connection.spaceId); error = nil }
+        do {
+            let value = try await session.client.synthesisMatrix(in: session.connection.spaceId); matrix = value
+            if selectedTheme.isEmpty { selectedTheme = value.themes.first?.themeId ?? "" }
+            if session.connection.desktopPairingId != nil {
+                for cell in value.cells {
+                    if let saved = try await CompanionAcademicGeneration.saved(session: session, request: sourceRequest(cell.authorId, cell.themeId)) {
+                        localCells[cell.id] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(saved))
+                    }
+                }
+            }
+            error = nil
+        }
         catch where error.isCancellation {} catch { self.error = error.localizedDescription }
     }
 
     private func generate(_ authorId: String, _ themeId: String, key: String) async {
+        guard !generating.contains(key) else { return }; generating.insert(key); defer { generating.remove(key) }
         do {
+            if session.aiExecutionMode == .autonomous, session.connection.desktopPairingId != nil {
+                let value = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: sourceRequest(authorId, themeId)) { generated[key] = $0 }
+                localCells[key] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(value)); return
+            }
             _ = try await session.client.createSpaceAction(
                 idempotencyKey: "ios:matrix:\(session.connection.spaceId):\(authorId):\(themeId):\(session.publishedRevision ?? "local")",
                 kind: .authorsMatrixGenerate, payload: ["authorId": .string(authorId), "themeId": .string(themeId)],
@@ -740,6 +800,9 @@ private struct AuthorSynthesisMatrixView: View {
             )
             generated[key] = "Queued"
         } catch { generated[key] = error.localizedDescription }
+    }
+    private func sourceRequest(_ authorId: String, _ themeId: String) -> JSONValue {
+        CompanionAcademicGeneration.sourceRequest(kind: "matrix", author: authorId, theme: themeId, language: CompanionAcademicGeneration.language)
     }
 }
 

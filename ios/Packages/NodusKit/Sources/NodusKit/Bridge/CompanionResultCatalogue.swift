@@ -7,6 +7,13 @@ public enum CompanionResultCatalogue {
         guard let checkpoint = request.checkpoint?.objectValue else { return false }
         let original = checkpoint["request"]?.objectValue ?? [:]
         switch request.method {
+        case "saveMobileAcademicResult":
+            guard checkpoint["preview"]?.objectValue != nil else { return false }
+            switch original["source"]?.objectValue?["kind"]?.stringValue {
+            case "author", "matrix": return surface == "authors"
+            case "prose": return surface == "manuscript"
+            default: return false
+            }
         case "saveDictionaryGeneratedVersion":
             return surface == "dictionary" && !(checkpoint["definition"]?.objectValue?["contentMarkdown"]?.stringValue ?? "").isEmpty
         case "saveStudyImprovementFromMobile":
@@ -31,6 +38,14 @@ public enum CompanionResultCatalogue {
 
     public static func title(_ request: DesktopJobLedger.Request) -> String {
         let checkpoint = request.checkpoint?.objectValue ?? [:]
+        if request.method == "saveMobileAcademicResult" {
+            switch checkpoint["request"]?.objectValue?["source"]?.objectValue?["kind"]?.stringValue {
+            case "author": return "Síntesis de autor"
+            case "matrix": return "Síntesis de autor y tema"
+            case "prose": return "Revisión de escena"
+            default: return "Resultado de investigación"
+            }
+        }
         if request.method == "saveMobileDatabaseResearchReport",let title = checkpoint["detail"]?.objectValue?["report"]?.objectValue?["title"]?.stringValue,!title.isEmpty { return title }
         if request.method == "saveWritingWorkshopFromMobile",
            let title = checkpoint["preview"]?.objectValue?["title"]?.stringValue, !title.isEmpty { return title }

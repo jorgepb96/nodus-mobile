@@ -417,6 +417,7 @@ struct WorldManuscriptView: View {
 /// continuity and recoverable prose operations. iPad keeps it beside the editor; iPhone
 /// reaches this exact view through the compact Write/Scene switch rather than losing it.
 private struct WorldManuscriptInspector: View {
+    @Environment(AISettings.self) private var ai
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: SpaceSession
     let scene: WorldbuildingParity.ManuscriptScene
@@ -430,6 +431,8 @@ private struct WorldManuscriptInspector: View {
     @State private var reviewRows: [ReviewRow] = []
     @State private var reviewMessage: String?
     @State private var reviewing = false
+    @State private var reviewTask: Task<Void, Never>?
+    private var proseRequest: JSONValue { CompanionAcademicGeneration.sourceRequest(kind: "prose", scene: scene.id, language: CompanionAcademicGeneration.language) }
 
     private struct ReviewRow: Identifiable {
         let id: String
@@ -606,12 +609,14 @@ private struct WorldManuscriptInspector: View {
             HStack(spacing: 7) {
                 Button { Task { await takeSnapshot(reason: "manual") } } label: { Label("Snapshot", systemImage: "camera") }
                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(outbox == nil)
-                Button { Task { await reviewProse() } } label: {
+                Button { reviewTask = Task { defer { reviewTask = nil }; await reviewProse() } } label: {
                     if reviewing { ProgressView() } else { Label("On the page?", systemImage: "sparkles") }
                 }
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                 .disabled(reviewing || session.isDemo || !session.connection.role.canSendChanges)
             }
+            if reviewing { Button("Cancelar revisión") { reviewTask?.cancel() }.font(.caption) }
+            if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: proseRequest) }
             if let reviewMessage { Text(reviewMessage).font(.caption2).foregroundStyle(.secondary) }
             ForEach(reviewRows) { review in
                 VStack(alignment: .leading, spacing: 2) {
@@ -634,6 +639,11 @@ private struct WorldManuscriptInspector: View {
                     }
                 }
             }
+        }
+        .task(id: "\(scene.id):\(session.companionResultRevision):\(session.companionPublicationRevision)") {
+            guard session.connection.desktopPairingId != nil else { return }
+            do { if let saved = try await CompanionAcademicGeneration.saved(session: session, request: proseRequest)?.objectValue { applyReview(saved) } }
+            catch { reviewMessage = error.localizedDescription }
         }
     }
 
@@ -740,6 +750,11 @@ private struct WorldManuscriptInspector: View {
     private func reviewProse() async {
         reviewing = true; defer { reviewing = false }
         do {
+            if session.aiExecutionMode == .autonomous, session.connection.desktopPairingId != nil {
+                let result = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: proseRequest) { reviewMessage = $0 }
+                guard let object = result.objectValue else { throw DesktopBridgeError.malformedResponse }
+                applyReview(object); return
+            }
             let creation = try await session.client.createSpaceAction(
                 idempotencyKey: "prose-review:\(scene.id):\(UUID().uuidString.prefix(8))",
                 kind: .worldbuildingProseReview, payload: ["sceneId": .string(scene.id)],
@@ -756,6 +771,12 @@ private struct WorldManuscriptInspector: View {
                     : "Review is still running in Desktop; its result remains visible in Sync Center."
                 return
             }
+            applyReview(object)
+        } catch where error.isCancellation { reviewMessage = "Revisión cancelada. El texto permanece intacto." }
+        catch { reviewMessage = error.localizedDescription }
+    }
+
+    private func applyReview(_ object: [String: JSONValue]) {
             if object["noMaterial"]?.boolValue == true {
                 reviewMessage = "The review needs both authored beats and written prose."
                 reviewRows = []
@@ -773,10 +794,7 @@ private struct WorldManuscriptInspector: View {
                     note: row["note"]?.isNull == true ? nil : row["note"]?.stringValue
                 )
             }
-            reviewMessage = reviewRows.isEmpty ? "Desktop returned no readable beat verdicts." : nil
-        } catch {
-            reviewMessage = "Could not queue the typed Desktop review: \(error.localizedDescription)"
-        }
+            reviewMessage = reviewRows.isEmpty ? "No hay veredictos legibles para esta escena." : nil
     }
 
     private func upsertLocal(table: String, row: Row, keyFields: [String]) {

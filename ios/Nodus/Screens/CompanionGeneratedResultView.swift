@@ -13,6 +13,20 @@ struct CompanionGeneratedResultView: View {
     private var value: [String: JSONValue] { (current.checkpoint ?? checkpoint).objectValue ?? [:] }
     private var markdown: String? {
         switch current.method {
+        case "saveMobileAcademicResult":
+            guard let preview = value["preview"]?.objectValue else { return nil }
+            if let thesis = preview["thesis"]?.stringValue {
+                return ([thesis] + (preview["remember"]?.arrayValue ?? []).compactMap(\.stringValue).map { "- \($0)" } + [preview["positioning"]?.stringValue ?? ""]).joined(separator: "\n\n")
+            }
+            if let stance = preview["stance"]?.stringValue { return stance }
+            if let beats = preview["beats"]?.arrayValue {
+                return beats.compactMap { value in
+                    guard let row = value.objectValue, let title = row["threadTitle"]?.stringValue else { return nil }
+                    let symbol = row["present"] == .null ? "·" : row["present"]?.boolValue == true ? "✓" : "✗"
+                    return "\(symbol) \(title) — \(row["mark"]?.stringValue ?? "")\n\n\(row["note"]?.stringValue ?? "")"
+                }.joined(separator: "\n\n")
+            }
+            return nil
         case "saveDictionaryGeneratedVersion": return value["definition"]?.objectValue?["contentMarkdown"]?.stringValue
         case "saveContentTranslationFromMobile": return value["markdown"]?.stringValue
         case "saveStudyImprovementFromMobile": return value["preview"]?.objectValue?["text"]?.stringValue ?? current.result?.objectValue?["text"]?.stringValue

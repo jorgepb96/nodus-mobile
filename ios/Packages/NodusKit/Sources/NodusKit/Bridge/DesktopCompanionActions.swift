@@ -6,11 +6,11 @@ enum DesktopCompanionActions {
     static let content: Set<String> = [
         "idea.delete", "idea.saveToNotes", "deepResearch.saveToNotes", "hypothesis.saveToNotes",
         "projects.create", "projects.update", "projects.section.update", "projects.chapter.import",
-        "worldbuilding.entityDelete", "pages.restoreRevision", "databases.importCSV"
+        "worldbuilding.entityDelete", "pages.restoreRevision", "databases.importCSV", "worldbuilding.continuity"
     ]
     static let research: Set<String> = [
         "author.synthesis.generate", "authors.matrix.generate", "argumentMap.generate", "writing.generate",
-        "worldbuilding.continuity", "worldbuilding.proseReview"
+        "worldbuilding.proseReview"
     ]
 
     static func isIdentity(_ value: String) -> Bool { value.count == 36 && UUID(uuidString: value) != nil }
