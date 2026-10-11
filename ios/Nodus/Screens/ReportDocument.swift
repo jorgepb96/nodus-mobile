@@ -129,16 +129,18 @@ enum ReportDocument {
 
     /// Load the document into an off-screen web view and print it.
     static func pdf(from html: String) async throws -> Data {
+        try Task.checkCancellation()
         let paper = CGRect(
             origin: .zero,
             size: CGSize(width: paperSize.width / layoutScale, height: paperSize.height / layoutScale)
         )
-        let webView = WKWebView(frame: paper)
+        let configuration = WKWebViewConfiguration();configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: paper,configuration:configuration)
         // In the window, not floating free: WebKit will not lay out a detached web view for
         // print, and a print job asked of one comes back empty — which is the other half of
         // "sometimes it does not even generate".
         attach(webView)
-        defer { webView.removeFromSuperview() }
+        defer { webView.stopLoading();webView.navigationDelegate = nil;webView.removeFromSuperview() }
 
         let loader = Loader()
         webView.navigationDelegate = loader
@@ -150,7 +152,7 @@ enum ReportDocument {
 
         // WebKit reports the page as laid out only after a turn of the run loop past
         // `didFinish`; printing immediately gives a blank first page.
-        try? await Task.sleep(for: .milliseconds(200))
+        try await Task.sleep(for: .milliseconds(200))
         try await paginateLongTables(in: webView, paper: paper)
         _ = try await webView.evaluateJavaScript("""
         (() => {
@@ -176,6 +178,7 @@ enum ReportDocument {
         renderer.addPrintFormatter(formatter, startingAtPageAt: 0)
 
         let pages = renderer.numberOfPages
+        try Task.checkCancellation()
         guard pages > 0 else { throw Failure.couldNotRender }
 
         let data = NSMutableData()
@@ -241,9 +244,10 @@ enum ReportDocument {
         """) as? [Int] ?? []
         guard counts.contains(where: { $0 > 1 }) else { return }
         let head = try await webView.evaluateJavaScript("document.head.innerHTML") as? String ?? ""
-        let probe = WKWebView(frame: paper)
+        let configuration = WKWebViewConfiguration();configuration.websiteDataStore = .nonPersistent()
+        let probe = WKWebView(frame: paper,configuration:configuration)
         attach(probe)
-        defer { probe.removeFromSuperview() }
+        defer { probe.stopLoading();probe.navigationDelegate = nil;probe.removeFromSuperview() }
         let probeRules = "<style>@media print { .report-section { break-before: auto !important; page-break-before: auto !important; } }</style>"
 
         func pageCount(table index: Int, start: Int, end: Int) async throws -> Int {
@@ -358,19 +362,28 @@ enum ReportDocument {
     }
 
     /// `WKNavigationDelegate` as one awaited call.
+    @MainActor
     private final class Loader: NSObject, WKNavigationDelegate {
         private var continuation: CheckedContinuation<Void, Error>?
-        private var settled = false
+        private var result: Result<Void,Error>?
+        private var timeout: Task<Void,Never>?
 
         func finished() async throws {
-            try await withCheckedThrowingContinuation { continuation in
-                self.continuation = continuation
-            }
+            try Task.checkCancellation()
+            if let result { return try result.get() }
+            try await withTaskCancellationHandler(operation:{
+                try await withCheckedThrowingContinuation { (continuation:CheckedContinuation<Void,Error>) in
+                    self.continuation = continuation
+                    timeout = Task { @MainActor [weak self] in
+                        do { try await Task.sleep(for:.seconds(30));self?.settle(.failure(URLError(.timedOut))) } catch { }
+                    }
+                }
+            },onCancel:{ Task { @MainActor in self.settle(.failure(CancellationError())) } })
         }
 
         private func settle(_ result: Result<Void, Error>) {
-            guard !settled else { return }
-            settled = true
+            guard self.result == nil else { return }
+            self.result = result;timeout?.cancel();timeout = nil
             switch result {
             case .success: continuation?.resume()
             case .failure(let error): continuation?.resume(throwing: error)
@@ -389,6 +402,7 @@ enum ReportDocument {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             settle(.failure(error))
         }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { settle(.failure(Failure.couldNotRender)) }
     }
 }
 

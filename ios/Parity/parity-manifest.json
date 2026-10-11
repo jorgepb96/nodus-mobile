@@ -1495,6 +1495,42 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.explicitResume",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.offlineExportAllFormats",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.databaseResearch.completeReproducibleCopy",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.rawSnapshotIdentity",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.protectedShareFiles",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.cancelExport",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

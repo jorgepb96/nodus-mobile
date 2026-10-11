@@ -121,4 +121,14 @@ struct CompanionDatabaseResearchTests {
         #expect(detail?.objectValue?["report"]?.objectValue?["markdown"] == .string("Texto íntegro 240"))
         #expect(throws:(any Error).self) { try copy.operation("getMobileDatabaseResearchReader",args:[.string("missing")]) }
     }
+    @Test("Chosen copies preserve the reproducible archive and reject a foreign run")
+    func reproducibleCopy() throws {
+        let report:JSONValue = .object(["id":.string("report"),"runId":.string("run"),"title":.string("Informe"),"markdown":.string("Texto íntegro"),"createdAt":.string("2026-10-11T00:00:00Z"),"structured":.object([:]),"metadata":.object([:]),"quality":.object([:]),"provenance":.object([:]),"bibliography":.array([])])
+        let detail:JSONValue = .object(["run":.object(["id":.string("run")]),"steps":.array([.object(["kind":.string("verification")])]),"claims":.array([])])
+        let source:JSONValue = .object(["version":.int(1),"report":report,"sourceRevision":.string(sourceRevision),"exportDetail":detail])
+        let copy = try CompanionDatabaseResearchCopy(copies:[.object(["version":.int(1),"reports":.array([source])])])
+        #expect(try copy.operation("getMobileDatabaseResearchReader",args:[.string("report")])?.objectValue?["exportDetail"] == detail)
+        var invalid = source.objectValue!;invalid["exportDetail"] = .object(["run":.object(["id":.string("foreign-run")]),"steps":.array([]),"claims":.array([])])
+        #expect(throws:DesktopBridgeError.self) { try CompanionDatabaseResearchCopy(copies:[.object(["version":.int(1),"reports":.array([.object(invalid)])])]) }
+    }
 }

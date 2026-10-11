@@ -3,7 +3,7 @@ import NodusKit
 
 @MainActor
 final class DatabaseResearchSurfaceBridge {
-    static let methods:Set<String> = ["getDatabaseDeepResearchReport","listMobileDatabaseDeepResearchReports","listDatabaseDeepResearchReportAnnotations","createDatabaseDeepResearchReportAnnotation","updateDatabaseDeepResearchReportComment","deleteDatabaseDeepResearchReportAnnotation","setDatabaseDeepResearchReportRead"]
+    static let methods:Set<String> = ["getDatabaseDeepResearchReport","getDatabaseResearchExportSource","listMobileDatabaseDeepResearchReports","listDatabaseDeepResearchReportAnnotations","createDatabaseDeepResearchReportAnnotation","updateDatabaseDeepResearchReportComment","deleteDatabaseDeepResearchReportAnnotation","setDatabaseDeepResearchReportRead"]
     private let session:SpaceSession
     private let localReader:(String) async throws -> JSONValue?
     private var sources:[String:CompanionDatabaseResearch.Source] = [:]
@@ -17,6 +17,12 @@ final class DatabaseResearchSurfaceBridge {
         let cache = try PrivateBridgeCache(pairingId:pairing.id)
         if method == "getDatabaseDeepResearchReport",args.count == 1,let id = args[0].stringValue {
             return try await load(id,client:client,pairing:pairing,vault:vaultId,cache:cache,onOffline:onOffline).report
+        }
+        if method == "getDatabaseResearchExportSource",args.count == 1,let id = args[0].stringValue {
+            let source = try await load(id,client:client,pairing:pairing,vault:vaultId,cache:cache,onOffline:onOffline)
+            var value = try JSONDecoder.nodus.decode(JSONValue.self,from:JSONEncoder.nodus.encode(source)).objectValue!
+            if let own = try await localReader(id),own.objectValue?["published"] == .bool(false),let packs = own.objectValue?["sourcePacks"] { value["sourcePacks"] = packs }
+            return .object(value)
         }
         if method == "listMobileDatabaseDeepResearchReports" {
             let key = try CompanionDocumentOutbox.operationKey(method,args)

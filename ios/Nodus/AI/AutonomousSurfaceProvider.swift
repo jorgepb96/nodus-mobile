@@ -115,7 +115,11 @@ final class AutonomousSurfaceProvider {
             guard let reader = value.objectValue?["reader"]?.objectValue,reader["report"]?.objectValue?["id"] == .string(id),
                   let reading = value.objectValue?["reading"],
                   ["saved","available","failed"].contains(value.objectValue?["state"]?.stringValue ?? "") else { continue }
-            return .object(["source":.object(reader),"reading":reading,"published":.bool(value.objectValue?["state"] == .string("available"))])
+            var source = reader
+            if source["exportDetail"] == nil,var detail = value.objectValue?["detail"]?.objectValue { detail["report"] = nil;source["exportDetail"] = .object(detail) }
+            var result: [String:JSONValue] = ["source":.object(source),"reading":reading,"published":.bool(value.objectValue?["state"] == .string("available"))]
+            if let packs = value.objectValue?["context"]?.objectValue?["packs"] { result["sourcePacks"] = packs }
+            return .object(result)
         }
         return nil
     }
@@ -198,6 +202,7 @@ final class AutonomousSurfaceProvider {
         if value["state"] == .string("available"), local?.objectValue?["state"] != .string("available") {
             value["recoveredPublication"] = .bool(true)
         }
+        if local?.objectValue?["id"] == value["id"],local?.objectValue?["hiddenFromQueue"] == .bool(true) { value["hiddenFromQueue"] = .bool(true) }
         if value["state"] == .string("available"),key.hasPrefix("autonomous:database:") {
             value["context"] = nil
             try await cache.store(JSONEncoder.nodus.encode(JSONValue.object(value)),vaultId:scope.recordVaultId,domain:.researchGeneration,recordId:key)

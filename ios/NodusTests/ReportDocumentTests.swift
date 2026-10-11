@@ -17,6 +17,12 @@ import UIKit
 @Suite("Report document")
 @MainActor
 struct ReportDocumentTests {
+    @Test("cancelled printing returns promptly before creating a document window")
+    func cancelledExport() async throws {
+        let task = Task { try await ReportDocument.pdf(from:"<html><head></head><body>Informe</body></html>") }
+        task.cancel()
+        await #expect(throws:CancellationError.self) { try await task.value }
+    }
     @Test("the bundled Desktop renderer preserves rich content, cover images and bibliography without a server")
     func canonicalOfflineLayout() throws {
         let prose = "## Memoria y fuentes\n\nUna cita [Fuente](nodus://passage/work%23source).\n\n| Fuente | Año |\n| --- | --- |\n| Archivo | 2026 |\n\n<script>untrusted()</script>"

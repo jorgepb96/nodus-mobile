@@ -282,8 +282,13 @@ narrative without invoking a provider before an atomic save. Own annotations wai
 save, retain their original source anchors, and reconcile through the existing conflict journal.
 After acknowledgement, raw source rows leave the generation ledger and checkpoint; reports,
 annotations and receipts remain durable. Prepared source, SQLite publication and Swift
-persistence regressions are not executed evidence. The autonomous queue controls, offline
-export and final device/visual/network acceptance still require completion.
+persistence regressions are not executed evidence. The device queue can explicitly resume or
+cancel paused requests and clear terminal rows without deleting authored work. Database
+readers retain the reproducible run, steps and claims. All four export formats now have a
+local path: Markdown and Word share the Desktop writer, PDF uses the existing paginated
+Nodus printer, and ZIP members share the Desktop redaction and snapshot-fingerprint checks.
+Native sharing holds protected files only while open. Browser-bundled export and native
+cancellation regressions are prepared; final device/visual/network acceptance remains pending.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and

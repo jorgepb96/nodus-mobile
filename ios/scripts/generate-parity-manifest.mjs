@@ -234,6 +234,12 @@ function operationMatrix(routes) {
       ['sync.databaseResearch.ownReportAnnotationAnchors', 'sync'],
       ['sync.databaseResearch.annotationsAwaitPublication', 'sync'],
       ['sync.databaseResearch.releaseAcknowledgedSourceRows', 'sync'],
+      ['generation.databaseResearch.explicitResume', 'generation'],
+      ['consultation.databaseResearch.offlineExportAllFormats', 'consultation'],
+      ['sync.databaseResearch.completeReproducibleCopy', 'sync'],
+      ['consultation.databaseResearch.rawSnapshotIdentity', 'consultation'],
+      ['consultation.databaseResearch.protectedShareFiles', 'consultation'],
+      ['consultation.databaseResearch.cancelExport', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

@@ -6,6 +6,7 @@ public enum CompanionDatabaseResearch {
     public struct Source: Codable, Sendable, Equatable {
         public let version: Int, sourceRevision: String
         public let report: JSONValue
+        public var exportDetail: JSONValue? = nil
         public var id: String { report.objectValue?["id"]?.stringValue ?? "" }
         public func validate(id expected: String) throws {
             guard version == 1, id == expected, !id.isEmpty, CompanionDatabaseResearch.validHash(sourceRevision),
@@ -14,6 +15,10 @@ public enum CompanionDatabaseResearch {
                   fields["createdAt"]?.stringValue != nil, fields["structured"]?.objectValue != nil,
                   fields["metadata"]?.objectValue != nil, fields["quality"]?.objectValue != nil,
                   fields["provenance"]?.objectValue != nil, fields["bibliography"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
+            if let exportDetail {
+                guard let detail = exportDetail.objectValue,detail["run"]?.objectValue?["id"] == fields["runId"],
+                      detail["steps"]?.arrayValue != nil,detail["claims"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
+            }
         }
     }
     public struct Reading: Codable, Sendable, Equatable {

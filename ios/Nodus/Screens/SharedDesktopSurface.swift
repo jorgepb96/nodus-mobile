@@ -65,6 +65,7 @@ struct SharedDesktopSurface: View {
     @State private var sourceDocument: SourceDocumentTarget?
     @State private var issue: String?
     @State private var exportedURL: URL?
+    @State private var exportedLease: PrivateBridgeFileLease?
     @State private var embeddedPreview: URL?
     @State private var embeddedLease: PrivateBridgeFileLease?
     @State private var openingEmbeddedResource = false
@@ -77,7 +78,7 @@ struct SharedDesktopSurface: View {
     @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, onError: { issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -145,7 +146,7 @@ struct SharedDesktopSurface: View {
             }
             }
         }
-        .sheet(item: $exportedURL) { ActivityShareSheet(items: [$0]) }
+        .sheet(item: $exportedURL,onDismiss:{ exportedLease = nil }) { ActivityShareSheet(items: [$0]) }
         .quickLookPreview($embeddedPreview)
         .onChange(of:embeddedPreview) { _, value in if value == nil { embeddedLease = nil } }
         .sheet(isPresented: $showImmersionProgress) {
@@ -284,7 +285,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let databaseReadingRevision:Int
     let initialDatabaseReportId: String?
     let onError: (String) -> Void
-    let onExport: (URL) -> Void
+    let onExport: (PrivateBridgeFileLease) -> Void
     let onAutonomousStatus: (String?) -> Void
     let onOfflineCopy: (Bool) -> Void
     let onOpenSource: (SourceDocumentTarget) -> Void
@@ -413,7 +414,7 @@ private struct DesktopWebView: UIViewRepresentable {
         let autonomous: AutonomousSurfaceProvider
         let onNavigate: (String, String, String?, String?) -> Void
         let onError: (String) -> Void
-            let onExport: (URL) -> Void
+            let onExport: (PrivateBridgeFileLease) -> Void
         let onAutonomousStatus: (String?) -> Void
         let onOfflineCopy: (Bool) -> Void
         let onOpenSource: (SourceDocumentTarget) -> Void
@@ -452,7 +453,7 @@ private struct DesktopWebView: UIViewRepresentable {
             webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:publication:changed',args:[\(payload)]});", completionHandler: nil)
             if session.companionPublicationUpdates.contains(where: { $0.objectValue?["id"]?.stringValue == autonomousGenerationId && $0.objectValue?["state"] == .string("available") }) { onAutonomousStatus(nil) }
         }
-        init(session: SpaceSession, ai: AISettings, onError: @escaping (String) -> Void, onExport: @escaping (URL) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
+        init(session: SpaceSession, ai: AISettings, onError: @escaping (String) -> Void, onExport: @escaping (PrivateBridgeFileLease) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; autonomous = AutonomousSurfaceProvider(settings: ai); self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
                 let id = body["id"] as? String, let method = body["method"] as? String,
@@ -482,6 +483,25 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try await companionDictionaryCopy(session)
                     } else if method == "surfaceOfflineCopy", args.isEmpty {
                         onOfflineCopy(true); value = .null
+                    } else if ["surfaceExportFile","surfaceExportPDF"].contains(method),args.count == 1,
+                              let export = args[0].objectValue,let reportId = export["reportId"]?.stringValue,
+                              let filename = export["filename"]?.stringValue,!filename.isEmpty,filename.utf8.count <= 200,
+                              !filename.contains("/"),!filename.contains("\\"),![".",".."].contains(filename) {
+                        let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus)
+                        let client = DesktopBridgeClient(pairing:pairing,token:token)
+                        _ = try await databaseReading.perform("getDatabaseDeepResearchReport",args:[.string(reportId)],client:client,pairing:pairing,vaultId:vault,onOffline:onOfflineCopy)
+                        let bytes:Data
+                        if method == "surfaceExportPDF",filename.hasSuffix(".pdf"),let html = export["html"]?.stringValue,html.utf8.count <= 20_000_000,html.contains("<head>") {
+                            let policy = "<head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;\">"
+                            bytes = try await ReportDocument.pdf(from:html.replacingOccurrences(of:"<head>",with:policy))
+                            guard bytes.count <= 20_000_000 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                        } else if method == "surfaceExportFile",["md","docx","zip"].contains(URL(fileURLWithPath:filename).pathExtension),
+                                  let encoded = export["base64"]?.stringValue,encoded.utf8.count <= 28_000_000,
+                                  let expected = export["sha256"]?.stringValue,let data = Data(base64Encoded:encoded),data.count <= 20_000_000,
+                                  SHA256.hash(data:data).map({String(format:"%02x",$0)}).joined() == expected { bytes = data }
+                        else { throw DesktopBridgeError.malformedResponse }
+                        let lease = try PrivateBridgeFileLease.write(bytes,filename:filename)
+                        onExport(lease);value = .object(["canceled":.bool(false),"path":.string(filename)])
                     } else if method == "readerSelectionState", args.count == 1, let selected = input.first as? Bool {
                         (webView as? ReaderSurfaceWebView)?.readerSelectionManaged = selected
                         value = .null
@@ -566,7 +586,8 @@ private struct DesktopWebView: UIViewRepresentable {
                             (creationFields?["kind"] == nil || creationFields?["kind"] == .string("markdown")) &&
                             (creationFields?["source"] == nil || creationFields?["source"] == .null) &&
                             creationFields?["content"] == .string(""))
-                        if Self.operationDomains[method] == "research-generation", session.aiExecutionMode != .live, !localCreation {
+                        if Self.operationDomains[method] == "research-generation", session.aiExecutionMode != .live, !localCreation,
+                           !["cancelDatabaseDeepResearchJob","clearFinishedDatabaseDeepResearchJobs"].contains(method) {
                             throw APIError(status: 409, code: "explicit_mode_required", message: String(localized: "Choose live mode to run this operation on the Mac. The app does not switch execution modes automatically."))
                         }
                         let store = DesktopBridgePairingStore()
@@ -739,12 +760,8 @@ private struct DesktopWebView: UIViewRepresentable {
                         if ["exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport"].contains(method), case .object(var file) = value,
                            let exportId = file["exportId"]?.stringValue, let name = file["filename"]?.stringValue, let hash = file["sha256"]?.stringValue {
                             let bytes = try await client.exportedFile(vaultId: vaultId, id: exportId, sha256: hash)
-                            // A unique directory prevents two same-title reports overwriting each other.
-                            let folder = URL.temporaryDirectory.appendingPathComponent("Nodus-exports/\(UUID().uuidString)", isDirectory: true)
-                            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                            let url = folder.appendingPathComponent(URL(fileURLWithPath: name).lastPathComponent)
-                            try bytes.write(to: url, options: [.atomic, .completeFileProtection])
-                            onExport(url); file["path"] = .string(url.lastPathComponent); value = .object(file)
+                            let lease = try PrivateBridgeFileLease.write(bytes,filename:URL(fileURLWithPath:name).lastPathComponent)
+                            onExport(lease);file["path"] = .string(lease.url.lastPathComponent);value = .object(file)
                         }
                     }
                     try reply(id, value: value, error: nil)
