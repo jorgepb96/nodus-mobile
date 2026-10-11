@@ -186,8 +186,12 @@ and persistence regressions are prepared and remain pending execution. Selected 
 Public study, world, genealogy, archive and testimony records now have a closed, provider-free
 citable context contract for autonomous research and chat. Chosen device dossiers use fresh
 lexical retrieval, actual Desktop citation routes and complete selected text, with metadata-only
-materials explicitly identified. Private prosopography, recording and database research still
-require their specialised autonomous source contracts and executed acceptance. The native
+materials explicitly identified. Database research still requires its specialised autonomous
+source contract. Private prosopography, recording and testimony source contracts now preserve
+complete literal text under their own grants, with exact stored transcript versions. Neither
+private SQLite text nor media enters the public snapshot. Offline retrieval requires selected,
+unexpired source packs and a current domain grant; context budgets omit whole oversized sources.
+These contracts and their prepared tests still require executed acceptance. The native
 writing workshop now supports all six formats, Desktop languages and seven source categories,
 with paged source selection, selected-source downloads, structured device results and idempotent
 provider-free publication. Its new contract and native tests are prepared, not executed.

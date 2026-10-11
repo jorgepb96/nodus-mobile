@@ -11,7 +11,7 @@ public struct CompanionSelectedContext: Sendable {
     private let rows: [String: [Row]]
     private let revision: String
 
-    public init(collections: [CompanionCollectionCopy], ideas: CompanionIdeaCopy? = nil) throws {
+    public init(collections: [CompanionCollectionCopy], ideas: CompanionIdeaCopy? = nil, privateSources: [CompanionPrivateSourceCopy] = []) throws {
         var rows: [String: [Row]] = [:], ids: [String: Set<String>] = [:]
         if let ideas {
             rows["ideas"] = ideas.selectedRows
@@ -32,24 +32,43 @@ public struct CompanionSelectedContext: Sendable {
                 if ids[path, default: []].insert(id).inserted { rows[path, default: []].append(row) }
             }
         }
+        for copy in privateSources {
+            for row in try PrivateCorpusSourceMaterial.selected(copy: copy) {
+                guard let token = row.string("citation") else { throw DesktopBridgeError.malformedResponse }
+                if let index = rows["sources"]?.firstIndex(where: { $0.string("citation") == token }) {
+                    rows["sources"]?[index] = row
+                } else { ids["sources", default: []].insert(token); rows["sources", default: []].append(row) }
+            }
+        }
         self.rows = rows
         let value = JSONValue.object(rows.mapValues { .array($0.map { .object($0.columns) }) })
         revision = "companion:context:" + SHA256.hash(data: try JSONEncoder.nodus.encode(value)).map { String(format: "%02x", $0) }.joined()
     }
 
-    public static func downloaded(cache: PrivateBridgeCache, vaultId: String) async throws -> Self? {
+    public static func downloaded(cache: PrivateBridgeCache, vaultId: String, domains: [DesktopBridgeDomain] = []) async throws -> Self? {
         var collections: [CompanionCollectionCopy] = []
         for path in paths {
             if let copy = try await CompanionCollectionCopy.downloaded(cache: cache, vaultId: vaultId, path: path) { collections.append(copy) }
         }
         let ideas = try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId)
-        return collections.isEmpty && ideas == nil ? nil : try Self(collections: collections, ideas: ideas)
+        var sources: [CompanionPrivateSourceCopy] = []
+        for kind in PrivateCorpusReference.Kind.allCases where domains.contains(kind.domain) {
+            for item in try await CompanionPrivateSourceCopy.downloadedCatalogue(cache: cache, vaultId: vaultId, kind: kind) {
+                let reference = try PrivateCorpusReference(kind: kind,id: item.id)
+                guard let copy = try await CompanionPrivateSourceCopy.downloaded(cache: cache,vaultId: vaultId,reference: reference) else { throw DesktopBridgeError.malformedResponse }
+                sources.append(copy)
+            }
+        }
+        return collections.isEmpty && ideas == nil && sources.isEmpty ? nil : try Self(collections: collections, ideas: ideas, privateSources: sources)
     }
 
-    public static func hasSource(cache: PrivateBridgeCache, vaultId: String) async throws -> Bool {
+    public static func hasSource(cache: PrivateBridgeCache, vaultId: String, domains: [DesktopBridgeDomain] = []) async throws -> Bool {
         if try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) { return true }
         for path in paths {
             if try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionCollectionCopy.recordId(path: path)) { return true }
+        }
+        for kind in PrivateCorpusReference.Kind.allCases where domains.contains(kind.domain) {
+            if try await CompanionPrivateSourceCopy.downloadedCatalogue(cache: cache,vaultId: vaultId,kind: kind).isEmpty == false { return true }
         }
         return try await cache.data(vaultId: vaultId, domain: .writing, recordId: CompanionDocumentOutbox.storageKey) != nil
     }

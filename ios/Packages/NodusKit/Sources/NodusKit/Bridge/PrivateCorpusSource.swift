@@ -4,7 +4,7 @@ import Foundation
 /// Private Desktop citations retain their own identity and domain. A private
 /// person identifier is never interpreted as a published population member.
 public struct PrivateCorpusReference: Codable, Hashable, Sendable {
-    public enum Kind: String, Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Hashable, Sendable {
         case recording = "study-recording", person = "prosop-person", source = "prosop-source"
         case factoid = "prosop-factoid", mention = "prosop-mention"
         case participant = "testimony-participant"

@@ -202,6 +202,8 @@ function operationMatrix(routes) {
       ['sync.immersion.conflicts', 'sync'], ['sync.immersion.pendingGenerationProgress', 'sync'],
       ['sync.immersion.sharedPlayerProgress', 'sync'], ['consultation.immersion.progressGrant', 'consultation'],
       ['consultation.immersion.completeCatalogue', 'consultation'],
+      ['generation.privateSourceContext.linked', 'generation'], ['generation.privateSourceContext.downloaded', 'generation'],
+      ['consultation.privateSourceContext.domainRevocation', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

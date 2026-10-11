@@ -1219,6 +1219,24 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "generation.privateSourceContext.linked",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.privateSourceContext.downloaded",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.privateSourceContext.domainRevocation",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

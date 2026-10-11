@@ -34,6 +34,10 @@ public struct CorpusSourceMaterial: Sendable {
     public var text: String { row.text("text")! }
 
     public init(row: Row) throws {
+        if row["privateKind"] != nil {
+            self.row = try PrivateCorpusSourceMaterial(row: row).row
+            return
+        }
         guard row.int("version") == 1, let path = row.string("collection"), let projection = Self.projections[path],
               let id = row.string("recordId"), !id.isEmpty, let citation = row.string("citation"),
               let label = row.text("label"), !label.isEmpty, let text = row.text("text"), !text.isEmpty,
