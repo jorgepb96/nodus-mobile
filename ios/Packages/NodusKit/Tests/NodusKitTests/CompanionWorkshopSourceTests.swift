@@ -4,6 +4,24 @@ import Testing
 
 @Suite("Selected autonomous workshop material and durable publication")
 struct CompanionWorkshopSourceTests {
+    @Test("chosen workshop selections preserve all seven categories, including contradictions and tutor routes")
+    func allChosenCategories() throws {
+        let copies = CompanionWorkshopSource.groups.keys.sorted().map { key in copy(key, id: "chosen-\(key)", text: "Fuente completa de \(key) · 37 datos") }
+        let source = try CompanionWorkshopSource(copies: copies)
+        let selection: JSONValue = .object(Dictionary(uniqueKeysWithValues: CompanionWorkshopSource.groups.keys.map { key in
+            (key, .array([.string("chosen-\(key)")]))
+        }))
+        let chosen = try source.selected(selection)
+        for key in CompanionWorkshopSource.groups.keys {
+            #expect(chosen.rows(for: key).count == 1)
+            #expect(chosen.rows(for: key).first?.text("enunciado") == "Fuente completa de \(key) · 37 datos")
+        }
+        let restored = try CompanionWorkshopSource(copies: [JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(chosen.value))])
+        #expect(restored.rows(for: "contradictionIds").count == 1)
+        #expect(restored.rows(for: "tutorRouteIds").count == 1)
+        var absent = selection.objectValue!; absent["tutorRouteIds"] = .array([.string("not-chosen")])
+        #expect(throws: (any Error).self) { try restored.selected(.object(absent)) }
+    }
     private let revision = String(repeating: "a", count: 64)
     private func copy(_ key: String = "ideaIds", id: String = "idea-a", text: String = "Enunciado literal", config: String? = nil) -> JSONValue {
         var groups: [String: JSONValue] = Dictionary(uniqueKeysWithValues: CompanionWorkshopSource.groups.values.map { ($0, .array([])) })

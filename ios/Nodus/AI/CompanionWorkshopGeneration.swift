@@ -3,6 +3,28 @@ import Foundation
 import NodusAI
 import NodusKit
 
+/// The workshop can choose categories with no ordinary collection screen,
+/// including contradictions and tutor routes. Keep exactly that selection.
+@MainActor
+func saveWorkshopSourceSelection(_ session: SpaceSession, selection: JSONValue, days: Int) async throws {
+    guard [7, 30].contains(days) else { throw PrivateBridgeCache.ReadPackError.invalidSelection }
+    let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+    guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+    let value = try await DesktopBridgeClient(pairing: pairing, token: token)
+        .operation(vaultId: vault, method: "getWritingWorkshopMobileSource", args: [selection])
+    let source = try CompanionWorkshopSource(copies: [value]).selected(selection)
+    let bytes = try JSONEncoder.nodus.encode(source.value)
+    let identity = SHA256.hash(data: try JSONEncoder.nodus.encode(selection)).map { String(format: "%02x", $0) }.joined()
+    let id = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: ["\(CompanionWorkshopSource.recordId):\(identity)"])
+    let count = CompanionWorkshopSource.groups.keys.reduce(0) { $0 + (selection.objectValue?[$1]?.arrayValue?.count ?? 0) }
+    try Task.checkCancellation()
+    try await PrivateBridgeCache(pairingId: pairing.id).saveReadPack(id: id, vaultId: vault,
+        title: "Fuentes del taller · \(count)", expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: [
+            .init(domain: .corpus, recordId: CompanionWorkshopSource.recordId, data: bytes),
+        ])
+    session.didChangeCompanionDownloads()
+}
+
 /// Prepares downloads in bounded batches, retaining only selected sources.
 @MainActor
 func workshopDownloadRecord(client: DesktopBridgeClient, vault: String, path: String, ids: [String]) async throws -> PrivateBridgeCache.ReadPackRecord? {

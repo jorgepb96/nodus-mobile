@@ -263,7 +263,10 @@ private struct WritingComposer: View {
     @State private var readingSources = false
     @State private var generationTask: Task<Void, Never>?
     @State private var completed: DesktopJobLedger.Request?
+    @State private var savingSources = false
+    @State private var sourceDownloadTask: Task<Void, Never>?
     private var autonomous: Bool { session.aiExecutionMode == .autonomous }
+    private var selectionCount: Int { selections.values.reduce(0) { $0 + $1.count } }
     private let categories: [(key: String, table: String, id: String, title: String)] = [
         ("workIds", "works", "nodus_id", "Obras"), ("ideaIds", "ideas", "global_id", "Ideas"),
         ("themeIds", "themes", "theme_id", "Temas"), ("gapIds", "gaps", "id", "Huecos"),
@@ -328,6 +331,22 @@ private struct WritingComposer: View {
                     }
                 }
             }
+            if session.connection.desktopPairingId != nil {
+                Section("Fuentes para llevar") {
+                    Text("Conserva las fuentes elegidas para generar un borrador sin conexión. Incluye contradicciones y rutas del tutor; sus documentos y archivos se descargan desde sus lectores.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("\(selectionCount) fuentes elegidas · máximo 200").font(.caption)
+                    Menu {
+                        Button("Conservar 7 días") { downloadSources(days: 7) }
+                        Button("Conservar 30 días") { downloadSources(days: 30) }
+                    } label: {
+                        if savingSources { ProgressView("Guardando fuentes…") }
+                        else { Label("Conservar selección sin conexión", systemImage: "arrow.down.circle") }
+                    }.disabled(savingSources || sending || selectionCount == 0 || selectionCount > 200 || usingDownloads)
+                        .frame(minHeight: 44).accessibilityIdentifier("workshop-download-selection")
+                    if savingSources { Button("Cancelar descarga", role: .cancel) { sourceDownloadTask?.cancel() }.frame(minHeight: 44) }
+                }
+            }
             if let error { Section { Text(error).foregroundStyle(Color.nodusDanger).fixedSize(horizontal: false, vertical: true) } }
             if let status { Section { Text(status).fixedSize(horizontal: false, vertical: true) } }
             Section {
@@ -340,13 +359,14 @@ private struct WritingComposer: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .disabled(objective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.isDemo || !session.connection.role.canSendChanges
+                        || savingSources || selectionCount > 200
                         || (autonomous && (ai.model(for: .writing) == nil || selections.values.allSatisfy(\.isEmpty))))
                 }
             }
         }
         .navigationTitle("Nuevo borrador").navigationBarTitleDisplayMode(.inline)
         .onChange(of: query) { _, _ in limits = [:] }
-        .onDisappear { generationTask?.cancel() }
+        .onDisappear { generationTask?.cancel(); sourceDownloadTask?.cancel() }
         .task(id: "\(query):\(session.companionDownloadRevision):\(session.publishedRevision ?? "")") {
             if !query.isEmpty {
                 do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
@@ -422,7 +442,19 @@ private struct WritingComposer: View {
                 Image(systemName: identity.map { selections[category.key]?.contains($0) == true } == true ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(session.accent.nodusReadable)
             }.frame(minHeight: 44).contentShape(Rectangle())
-        }.disabled(identity == nil || sending)
+        }.disabled(identity == nil || sending || savingSources)
+    }
+    private func downloadSources(days: Int) {
+        let selected = selection
+        savingSources = true; error = nil
+        sourceDownloadTask = Task {
+            defer { savingSources = false }
+            do {
+                try await saveWorkshopSourceSelection(session, selection: selected, days: days)
+                status = "Fuentes guardadas para llevar durante \(days) días. Los borradores nuevos se conservarán hasta que decidas eliminarlos."
+            } catch is CancellationError { status = "Descarga cancelada." }
+            catch { self.error = error.localizedDescription }
+        }
     }
     private func queue() async {
         sending = true; error = nil; defer { sending = false }

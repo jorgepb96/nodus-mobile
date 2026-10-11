@@ -191,6 +191,9 @@ require their specialised autonomous source contracts and executed acceptance. T
 writing workshop now supports all six formats, Desktop languages and seven source categories,
 with paged source selection, selected-source downloads, structured device results and idempotent
 provider-free publication. Its new contract and native tests are prepared, not executed.
+The native workshop can explicitly conserve its complete seven-category selection for 7 or 30
+days, including contradictions and tutor routes, within the shared download budget. It prepares
+those sources without invoking a provider; this does not download every source dossier or file.
 The paired workshop gallery reads paged metadata, then opens one exact complete draft on demand;
 it no longer requests a vault snapshot. Offline galleries use only selected encrypted downloads,
 with complete outlines, evidence matrices and bibliography. Source and draft pagination have

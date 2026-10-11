@@ -1141,6 +1141,12 @@
       "category": "generation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "sync.selectedWorkshopSources",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {
