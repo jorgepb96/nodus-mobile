@@ -4,6 +4,32 @@ import Testing
 
 @Suite("Companion corpus queries and typed actions", .serialized)
 struct DesktopBridgeQueryTests {
+    @Test("live consultation projection uses the Mac vault identity and keeps offline copies separate from a complete snapshot")
+    func snapshotConsultations() async throws {
+        let (bridge, session) = try fixture(); defer { session.invalidateAndCancel() }
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = NodusClient(address: try ServerAddress(validating: "https://mac.nodus.test:7443"), cache: ResponseCache(directory: root), desktopBridge: bridge, vaultId: "Mac/vault")
+        for selection: SnapshotConsultation in [.dictionary, .sources] {
+            let snapshot = try await client.snapshot(in: "different-publication", consultation: selection)
+            #expect(snapshot.document["requestedProjection"]?.stringValue == selection.rawValue)
+        }
+        #expect(try await client.snapshot(in: "different-publication").document["requestedProjection"] == .string("complete"))
+        let calls = CorpusQueryProtocol.state.calls()
+        #expect(calls.count == 3)
+        #expect(calls.allSatisfy { $0.request.url?.path == "/bridge/v2/vaults/Mac/vault/corpus/snapshot" })
+        #expect(calls[0].request.url?.query == "projection=dictionary")
+        #expect(calls[1].request.url?.query == "projection=sources")
+        #expect(calls[2].request.url?.query == nil)
+        for selection: SnapshotConsultation in [.sources, .dictionary] {
+            CorpusQueryProtocol.state.respond(.offline)
+            let restored = try await client.snapshot(in: "different-publication", consultation: selection)
+            #expect(restored.document["requestedProjection"]?.stringValue == selection.rawValue)
+        }
+        CorpusQueryProtocol.state.respond(.offline)
+        #expect(try await client.snapshot(in: "different-publication").document["requestedProjection"] == .string("complete"))
+    }
+
     private func fixture(domains: Set<DesktopBridgeDomain> = [.corpus], expiresAt: Date? = nil) throws -> (DesktopBridgeClient, URLSession) {
         let pair = try DesktopBridgePairing(id: UUID().uuidString, origin: "https://mac.nodus.test:7443",
             certificateFingerprint: String(repeating: "a", count: 64), deviceId: "phone", deviceName: "phone",
@@ -302,7 +328,10 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: Data(#"{"error":"job_not_found"}"#.utf8))
             client?.urlProtocolDidFinishLoading(self); return
         }
-        let result = request.url?.path.hasSuffix("/jobs") == true || request.url?.path.contains("/jobs/") == true
+        let projection = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "projection" })?.value ?? "complete"
+        let result = request.url?.path.hasSuffix("/snapshot") == true
+            ? "{\"format\":\"nodus.server-snapshot\",\"formatVersion\":2,\"tables\":{},\"requestedProjection\":\"\(projection)\"}"
+            : request.url?.path.hasSuffix("/jobs") == true || request.url?.path.contains("/jobs/") == true
             ? #"{"job":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","vaultId":"Mac/vault","method":"runMobileSpaceAction","state":"accepted","actionSequence":7,"createdAt":"2026-10-11T08:00:00.000Z","updatedAt":"2026-10-11T08:00:00.000Z","nextSequence":0,"events":[],"result":null,"error":null}}"#
             : request.url?.path.hasSuffix("/actions") == true
             ? #"{"action":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","sequence":7,"spaceId":"Mac/vault","idempotencyKey":"restore:page-owned:2","kind":"pages.restoreRevision","schemaVersion":1,"payload":{"pageId":"page-owned","revision":2},"actorUserId":"phone","createdByDevice":"phone","status":"queued","createdAt":"2026-10-11T08:00:00.000Z","updatedAt":"2026-10-11T08:00:00.000Z"},"duplicate":false}"#

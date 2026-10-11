@@ -689,9 +689,9 @@ private struct DesktopWebView: UIViewRepresentable {
                     } else if method == "snapshot" {
                         value = .object(try await session.client.snapshot(in: session.connection.spaceId).document)
                     } else if method == "dictionarySnapshotTables", input.isEmpty {
-                        value = .object(try await session.client.snapshot(in: session.connection.spaceId).dictionaryConsultationTables())
+                        value = .object(try await session.client.snapshot(in: session.connection.spaceId, consultation: .dictionary).dictionaryConsultationTables())
                     } else if method == "sourceConsultationTables", input.isEmpty {
-                        value = .object(try await session.client.snapshot(in: session.connection.spaceId).sourceConsultationTables())
+                        value = .object(try await session.client.snapshot(in: session.connection.spaceId, consultation: .sources).sourceConsultationTables())
                     } else if method == "openSourceDocument", args.count == 1 {
                         let target = try JSONDecoder.nodus.decode(SourceDocumentTarget.self, from: JSONEncoder.nodus.encode(args[0]))
                         try target.validate(); onOpenSource(target); value = .null

@@ -20,15 +20,22 @@ public extension NodusClient {
     /// The body arrives as `application/vnd.nodus.snapshot+json` with `content-encoding: gzip`.
     /// URLSession usually inflates it in passing; when it has not, the bytes still carry the
     /// gzip magic and are unwrapped here.
-    func snapshot(in spaceId: String) async throws -> SnapshotDownload {
+    func snapshot(in spaceId: String, consultation: SnapshotConsultation? = nil) async throws -> SnapshotDownload {
         let response = try await perform(.init(
             method: "GET",
             path: address.spacePath(spaceId, "/snapshot"),
+            query: hasDesktopBridge ? consultation.map { [.init(name: "projection", value: $0.rawValue)] } ?? [] : [],
             extraHeaders: ["Accept": SnapshotFormat.contentType]
         ))
 
         return try SnapshotDownload.read(response.data, revision: response.revision)
     }
+}
+
+/// Live Mac consultations can avoid transferring the complete passage corpus.
+/// Older Macs ignore the projection query; callers still select the same tables locally.
+public enum SnapshotConsultation: String, Sendable {
+    case dictionary, sources
 }
 
 /// One image the publication carried, described by everything except its bytes.
