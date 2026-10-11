@@ -331,6 +331,19 @@ public struct CitationCatalog: Sendable {
     public func entry(for token: String) -> Entry? { byToken[token] }
     public var isEmpty: Bool { entries.isEmpty }
 
+    /// Budget complete source entries. An oversized literal quotation is
+    /// omitted, never rewritten as a prefix that could change its meaning.
+    public func bounded(to bytes: Int) throws -> (catalog: CitationCatalog, omitted: Int, bytes: Int) {
+        var kept: [Entry] = [], used = 0, omitted = 0
+        let limit = max(0, bytes)
+        for entry in entries {
+            let cost = try JSONEncoder.nodus.encode(entry).count
+            if cost > limit - used { omitted += 1; continue }
+            used += cost; kept.append(entry)
+        }
+        return (CitationCatalog(entries: kept), omitted, used)
+    }
+
     /// Built from a context package the server returned.
     public static func from(_ package: ContextPackage) -> CitationCatalog {
         var entries: [Entry] = []

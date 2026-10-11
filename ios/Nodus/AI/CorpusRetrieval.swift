@@ -80,14 +80,14 @@ struct CorpusRetrieval: Sendable {
         include: [ContextSectionKind] = ContextSectionKind.allCases
     ) async throws -> Result {
         if let identity,
-           let semantic = try? await semanticMaterial(query: query, identity: identity, include: include),
+           let semantic = try? await semanticMaterial(query: query, identity: identity, budget: budget, include: include),
            !semantic.catalog.isEmpty {
             return semantic
         }
         return try await lexicalMaterial(query: query, budget: budget, include: include)
     }
 
-    private func semanticMaterial(query: String, identity: EmbeddingIdentity, include: [ContextSectionKind]) async throws -> Result {
+    private func semanticMaterial(query: String, identity: EmbeddingIdentity, budget: Int, include: [ContextSectionKind]) async throws -> Result {
         let vector = try await embeddings.embed(query, as: identity)
 
         // Ideas carry the argument; passages carry the evidence. A report needs both, and the
@@ -112,27 +112,29 @@ struct CorpusRetrieval: Sendable {
             }
         }
 
-        guard !entries.isEmpty else {
-            return try await lexicalMaterial(query: query, budget: 60_000, include: include)
-        }
+        let supplementary = include.filter { $0 != .ideas && $0 != .passages }
+        let limit = min(120_000, max(1000, budget))
+        let bounded = try CitationCatalog(entries: entries).bounded(to: supplementary.isEmpty ? limit : max(1000, limit / 2))
+        entries = bounded.catalog.entries
+        guard !entries.isEmpty else { return try await lexicalMaterial(query: query, budget: limit, include: include) }
         scopeTracker?.observe("linked_corpus")
         // The semantic path ranks ideas and passages; themes, gaps and works come from the
         // lexical package, so both are merged rather than one replacing the other.
-        let supplementary = include.filter { $0 != .ideas && $0 != .passages }
         let lexical: Result?
         if supplementary.isEmpty { lexical = nil }
         else if supplementary.contains(.sources) {
             // A malformed or denied specialised source must remain an error;
             // accepting only the vector hits would silently omit that material.
-            lexical = try await lexicalMaterial(query: query, budget: 30_000, include: supplementary)
-        } else { lexical = try? await lexicalMaterial(query: query, budget: 30_000, include: supplementary) }
+            lexical = try await lexicalMaterial(query: query, budget: max(1000, limit - bounded.bytes), include: supplementary)
+        } else { lexical = try? await lexicalMaterial(query: query, budget: max(1000, limit - bounded.bytes), include: supplementary) }
         let hasSources = lexical?.sections.contains { $0.kind == .sources } == true
         let warnings = [warning, lexical?.warning,
+            bounded.omitted > 0 ? String(localized: "Se han omitido fuentes completas para respetar el límite de contexto; las citas literales conservan su texto íntegro.") : nil,
             hasSources ? String(localized: "Las fuentes especializadas se recuperan mediante búsqueda textual.") : nil].compactMap { $0 }
         return Result(
             catalog: CitationCatalog(entries: entries).merging(lexical?.catalog ?? CitationCatalog(entries: [])),
             mode: hasSources ? .hybrid : .semantic,
-            truncated: lexical?.truncated ?? false,
+            truncated: bounded.omitted > 0 || lexical?.truncated == true,
             warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             sections: semanticSections(entries) + (lexical?.sections.filter { $0.kind != .ideas && $0.kind != .passages } ?? [])
         )
