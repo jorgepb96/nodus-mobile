@@ -54,13 +54,15 @@ struct ReaderInlineImage: View {
 struct ReaderVectorImage: UIViewRepresentable {
     let content: ReaderImageSource.Content
     var allowsZoom = false
+    var fit = "contain"
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration();config.websiteDataStore = .nonPersistent()
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         let view = WKWebView(frame:.zero,configuration:config)
         view.isOpaque = false;view.backgroundColor = .clear;view.scrollView.isScrollEnabled = allowsZoom
         let source = content.data.base64EncodedString()
-        view.loadHTMLString("<meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=5'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\"><style>html,body{margin:0;width:100%;height:100%;background:transparent}img{display:block;width:100%;height:100%;object-fit:contain}</style><img src='data:\(content.mime);base64,\(source)' alt=''>",baseURL:nil)
+        let imageFit=fit == "cover" ? "cover":"contain"
+        view.loadHTMLString("<meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=5'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\"><style>html,body{margin:0;width:100%;height:100%;background:transparent}img{display:block;width:100%;height:100%;object-fit:\(imageFit)}</style><img src='data:\(content.mime);base64,\(source)' alt=''>",baseURL:nil)
         return view
     }
     func updateUIView(_ view: WKWebView,context: Context) {}

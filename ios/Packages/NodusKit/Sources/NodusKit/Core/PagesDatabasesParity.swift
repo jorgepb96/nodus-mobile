@@ -243,6 +243,7 @@ public enum PagesDatabasesParity {
             return formulaValue(spec: formula, row: row, allRows: allRows, columns: columns) ?? ""
         }
         let raw = row.cells[column.id] ?? ""
+        if let display=DatabaseCardPresentation.structuredValue(type:column.type,raw:raw) { return display }
         switch column.type {
         case "checkbox": return ["1", "true", "yes"].contains(raw.lowercased()) ? "Yes" : "No"
         case "select", "status": return column.options.first(where: { $0.id == raw })?.label ?? raw
