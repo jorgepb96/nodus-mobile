@@ -2392,10 +2392,12 @@ final class MobileReleaseUITests: XCTestCase {
         let initial = expectation(for: NSPredicate { _, _ in addServer.exists || switchSpace.exists }, evaluatedWith: app)
         XCTAssertEqual(XCTWaiter.wait(for: [initial], timeout: 20), .completed)
         if switchSpace.exists { switchSpace.tap() }
+        capture(app, "code-link-workspace-picker")
+        XCTAssertTrue(addServer.waitForExistence(timeout: 15), app.debugDescription)
         if renewal {
             XCTAssertTrue(app.buttons["space-default"].waitForExistence(timeout: 15), "Renewal must start with the existing Mac vault, not create its first connection.")
         }
-        for _ in 0..<16 { if addServer.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(addServer.isHittable, "Linking must stay visible without scrolling through every vault.\n" + app.debugDescription)
         XCTAssertTrue(addServer.isHittable); addServer.tap()
         XCTAssertFalse(app.textFields["nodus-server-address"].exists, "Server configuration is not part of the main connection flow.")
         let findMac = app.buttons["pairing-find-mac"]

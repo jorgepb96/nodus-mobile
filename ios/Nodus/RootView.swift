@@ -281,14 +281,7 @@ struct SpacePickerView: View {
                         )
                     }
 
-                    Button {
-                        showingConnect = true
-                    } label: {
-                        Label("Link Nodus", systemImage: "qrcode")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
-                    .accessibilityIdentifier("nodus-add-server")
+                    if !model.hasAnyConnection { linkControl }
 
                     if !hasDemo { exampleVaultButton }
                 }
@@ -305,6 +298,16 @@ struct SpacePickerView: View {
             }
             .nodusDismissesKeyboard()
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if model.hasAnyConnection {
+                linkControl
+                    .frame(maxWidth: 560)
+                    .padding(.horizontal, NodusSpace.page)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background { NodusBackdrop(accent: accent) }
+            }
+        }
         .nodusSheet(item: $diagnosing) { connection in
             // Its own stack: the picker has no navigation bar of its own, and the screen needs
             // a title and a "run again" control.
@@ -319,6 +322,15 @@ struct SpacePickerView: View {
             .environment(model)
             .nodusModalClose(accent: connection.accent)
         }
+    }
+
+    /// Linking is the primary companion action, even when the workspace contains many vaults.
+    private var linkControl: some View {
+        Button { showingConnect = true } label: {
+            Label("Link Nodus", systemImage: "qrcode").frame(maxWidth: .infinity)
+        }
+        .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
+        .accessibilityIdentifier("nodus-add-server")
     }
 
     /// The mark, the name and the line under it.
