@@ -114,6 +114,7 @@ struct CompanionDownloadsView: View {
                             .accessibilityIdentifier("companion-download-start")
                     }
                 }
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, NodusSpace.page)
                 .padding(.vertical, 10)
                 .background { NodusBackdrop(accent: session.accent) }
