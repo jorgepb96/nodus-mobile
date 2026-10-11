@@ -10,6 +10,7 @@ private struct DownloadedDossierTarget: Hashable {
 private enum DownloadedCollectionDestination: Hashable {
     case catalogue(String)
     case dossier(DownloadedDossierTarget)
+    case privateCatalogue(PrivateCorpusReference.Kind)
 }
 
 /// Dossiers stay separate from the full vault and from privacy-scoped private tables.
@@ -19,6 +20,7 @@ struct CompanionDownloadedCollectionsView: View {
     var paths: [String]? = nil
     var matching: [String: JSONValue] = [:]
     @State private var available: [CollectionDescriptor] = []
+    @State private var privateKinds: [PrivateCorpusReference.Kind] = []
     @State private var loading = true
     @State private var issue: String?
     @State private var navigation: [DownloadedCollectionDestination] = []
@@ -38,7 +40,7 @@ struct CompanionDownloadedCollectionsView: View {
                         Text(issue).foregroundStyle(Color.nodusDanger)
                         Button("Reintentar") { Task { await load() } }.frame(minHeight: 44)
                     }
-                } else if !loading, available.isEmpty {
+                } else if !loading, available.isEmpty, privateKinds.isEmpty {
                     ContentUnavailableView("Sin dossiers descargados", systemImage: "arrow.down.circle",
                         description: Text("Elige qué contenido llevar contigo en Descargar para llevar, mientras tu Mac está disponible."))
                 }
@@ -47,6 +49,11 @@ struct CompanionDownloadedCollectionsView: View {
                         Label(collection.label, systemImage: collection.icon).frame(minHeight: 44)
                     }
                     .accessibilityIdentifier("downloaded-collection-\(collection.path)")
+                }
+                ForEach(privateKinds, id: \.self) { kind in
+                    NavigationLink(value: DownloadedCollectionDestination.privateCatalogue(kind)) {
+                        Label(privateTitle(kind), systemImage: kind == .recording ? "waveform" : "lock.doc").frame(minHeight: 44)
+                    }
                 }
             }
             .navigationTitle("Dossiers descargados")
@@ -62,6 +69,8 @@ struct CompanionDownloadedCollectionsView: View {
                     }
                 case .dossier(let target):
                     DownloadedCollectionDossier(session: session, target: target, open: { navigation.append(.dossier($0)) })
+                case .privateCatalogue(let kind):
+                    PrivateSourceCatalogueView(session: session, kind: kind, title: privateTitle(kind), icon: kind == .recording ? "waveform" : "lock.doc", downloadedOnly: true)
                 }
             }
             .task { await load() }
@@ -84,8 +93,21 @@ struct CompanionDownloadedCollectionsView: View {
                 }
             }
             available = found
+            var foundPrivate: [PrivateCorpusReference.Kind] = []
+            if paths == nil {
+                for kind in [PrivateCorpusReference.Kind.recording, .person, .source, .factoid, .mention] where pairing.domains.contains(kind.domain) {
+                    if !(try await CompanionPrivateSourceCopy.downloadedCatalogue(cache: cache, vaultId: vault, kind: kind)).isEmpty { foundPrivate.append(kind) }
+                }
+            }
+            privateKinds = foundPrivate
         } catch where error.isCancellation { }
-        catch { available = []; issue = error.localizedDescription }
+        catch { available = []; privateKinds = []; issue = error.localizedDescription }
+    }
+    private func privateTitle(_ kind: PrivateCorpusReference.Kind) -> String {
+        switch kind {
+        case .recording: "Grabaciones"; case .person: "Personas prosopográficas"; case .source: "Fuentes prosopográficas"
+        case .factoid: "Observaciones prosopográficas"; case .mention: "Menciones prosopográficas"
+        }
     }
 }
 

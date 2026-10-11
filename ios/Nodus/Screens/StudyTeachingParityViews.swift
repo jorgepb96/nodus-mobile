@@ -17,7 +17,7 @@ struct StudyTeachingWorkspaceView: View {
         case .materials: StudyMaterialsWorkspace(session: session)
         case .schedule: StudyPlannerWorkspace(session: session, calendarOnly: false)
         case .calendar: StudyPlannerWorkspace(session: session, calendarOnly: true)
-        case .recordings: StudyRecordingsWorkspace(session: session)
+        case .recordings: PrivateSourceCatalogueView(session: session, kind: .recording, title: "Grabaciones", icon: "waveform")
         case .groups: TeachingGroupsWorkspace(session: session)
         case .grades: TeachingGradebookWorkspace(session: session)
         case .exams: TeachingExamsWorkspace(session: session)
@@ -271,22 +271,6 @@ private struct TeachingGradebookWorkspace: View {
     }
     private func cell(_ value:String,_ width:CGFloat,_ heading:Bool)->some View { Text(value).font(heading ? .caption.weight(.semibold):.caption).frame(width:width,alignment:.leading).padding(9).overlay(alignment:.trailing){Divider()} }
     private func load() async { do { let roster = try await loadPrivateStudyTables(session, domain:.teachingRoster,names:["teaching_students"]); let grades = try await loadPrivateStudyTables(session,domain:.teachingGrades,names:["teaching_assessment_plans","teaching_assessment_items","teaching_grade_entries","teaching_rubric_evaluations"]); tables=roster.merging(grades){$1}; bridgeIssue=nil } catch { tables=[:]; bridgeIssue=error.localizedDescription } }
-}
-
-private struct StudyRecordingsWorkspace: View {
-    @Environment(WorkspaceTabs.self) private var tabs
-    let session: SpaceSession
-    @State private var tables:[String:[Row]]=[:]
-    @State private var issue:String?
-    @State private var pairing=false
-    private let section="studyRecordings"
-    private var active:Row?{(tables["study_recordings"] ?? []).first{$0.string("id")==tabs.activeTabId(in:section)}}
-    var body:some View { VStack(spacing:0){WorkspaceTabStrip(section:section,catalogueTitle:"Recordings",catalogueImage:"waveform",accent:session.accent); if let active{reader(active)}else{catalogue}}.nodusPageBackdrop(accent:session.accent).task{await load()}.nodusSheet(isPresented:$pairing){DesktopBridgePairingSheet(accent:session.accent){Task{await load()}}}.accessibilityIdentifier("study-recordings-workspace") }
-    private var catalogue:some View { ScrollView{VStack(alignment:.leading,spacing:12){DesktopPageHeader(title:"Recordings",subtitle:"Private audio, transcripts and markers",systemImage:"waveform",accent:session.accent); if let issue{NodusNotice(tone:.info,title:"Direct Mac connection required",message:LocalizedStringKey(issue),systemImage:"lock.shield");Button("Pair Desktop Bridge"){pairing=true}.buttonStyle(NodusPrimaryButtonStyle(accent:session.accent))};ForEach(tables["study_recordings"] ?? [],id:\.columns){row in Button{open(row)}label:{HStack{Image(systemName:"waveform.circle.fill").font(.title2).foregroundStyle(session.accent);VStack(alignment:.leading){Text(row.text("title") ?? "Recording").font(.headline);Text("\(duration(row.int("duration_seconds") ?? 0)) · \(row.text("processing_status") ?? "pending")").font(.caption).foregroundStyle(.secondary)};Spacer();Image(systemName:"chevron.right").foregroundStyle(.secondary)}.desktopContentRow(accent:session.accent)}.buttonStyle(NodusCardButtonStyle())}}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()} }
-    private func reader(_ recording:Row)->some View { let transcript=(tables["study_transcripts"] ?? []).first{$0.string("recording_id")==recording.string("id")};let markers=(tables["study_audio_markers"] ?? []).filter{$0.string("recording_id")==recording.string("id")};return ScrollView{VStack(alignment:.leading,spacing:14){DesktopPageHeader(title:LocalizedStringKey(recording.text("title") ?? "Recording"),subtitle:"\(duration(recording.int("duration_seconds") ?? 0)) · private",systemImage:"waveform",accent:session.accent);NodusNotice(tone:.info,title:"End-to-end private route",message:"Audio and transcripts use the permissions of the paired Mac. Remote transport remains encrypted between devices.",systemImage:"lock.shield.fill");PrivateFileButton(session:session,kind:.studyRecording,id:recording.string("id") ?? "");ForEach(markers,id:\.columns){marker in HStack{Text(duration(Int(marker.double("seconds") ?? 0))).font(.caption.monospacedDigit()).foregroundStyle(session.accent);Text(marker.text("label") ?? "Marker");Spacer()}.desktopContentRow(accent:session.accent)};DesktopSectionHeader(title:"Transcript",subtitle:LocalizedStringKey(transcript?.text("kind") ?? "Not available"),systemImage:"text.quote",accent:session.accent);Text(transcript?.text("content_markdown") ?? "No transcript").font(.body).textSelection(.enabled)}.padding(NodusSpace.page).frame(maxWidth:900).frame(maxWidth:.infinity).nodusTopAnchor()} }
-    private func open(_ row:Row){guard let id=row.string("id")else{return};tabs.open(.init(id:id,title:row.text("title") ?? id,systemImage:"waveform",kind:.document,payload:.row(row)),in:section)}
-    private func duration(_ seconds:Int)->String{"\(seconds/60):\(String(format:"%02d",seconds%60))"}
-    private func load()async{do{tables=try await loadPrivateStudyTables(session,domain:.studyRecordings,names:["study_recordings","study_transcripts","study_transcript_segments","study_audio_markers"]);issue=nil}catch{tables=[:];issue=error.localizedDescription}}
 }
 
 // MARK: - Published Teaching authoring

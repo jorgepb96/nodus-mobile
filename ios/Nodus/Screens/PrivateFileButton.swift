@@ -9,6 +9,7 @@ struct PrivateFileButton: View {
     let kind: DesktopBridgeFileKind
     let id: String
     var initialTimestamp: Double? = nil
+    var downloadedOnly = false
     @State private var preview: URL?
     @State private var downloading = false
     @State private var issue: String?
@@ -39,7 +40,7 @@ struct PrivateFileButton: View {
         downloading = true; issue = nil; offline = false
         defer { downloading = false }
         do {
-            let copy = try await loadPrivateBridgeFile(session, kind: kind, id: id)
+            let copy = try await loadPrivateBridgeFile(session, kind: kind, id: id, downloadedOnly: downloadedOnly)
             self.copy = copy
             offline = copy.offline
             if kind == .studyRecording {

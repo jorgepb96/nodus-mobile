@@ -117,10 +117,20 @@ struct PrivateBridgeFileCopy {
 }
 
 @MainActor
-func loadPrivateBridgeFile(_ session: SpaceSession, kind: DesktopBridgeFileKind, id: String) async throws -> PrivateBridgeFileCopy {
+func loadPrivateBridgeFile(_ session: SpaceSession, kind: DesktopBridgeFileKind, id: String, downloadedOnly: Bool = false) async throws -> PrivateBridgeFileCopy {
     let (vaultId, pairing, token) = try privateBridgeConnection(session, domain: kind.domain)
     let client = DesktopBridgeClient(pairing: pairing, token: token), cache = try PrivateBridgeCache(pairingId: pairing.id)
     let key = "file:\(kind.rawValue):\(id)"
+    if downloadedOnly {
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        guard let metadata = try await cache.downloadedData(vaultId: vaultId, domain: kind.domain, recordId: key).first else { throw PrivateCorpusSourceError.notDownloaded }
+        let file = try JSONDecoder.nodus.decode(DesktopBridgeFileDescriptor.self, from: metadata)
+        guard file.kind == kind, file.id == id, file.byteSize <= PrivateBridgeCache.defaultReadLimitBytes,
+              let bytes = try await cache.downloadedData(vaultId: vaultId, domain: kind.domain, recordId: "\(key):\(file.sha256)").first,
+              bytes.count == file.byteSize, SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == file.sha256.lowercased() else { throw DesktopBridgeError.malformedResponse }
+        let lease = try PrivateBridgeFileLease.write(bytes, filename: file.filename)
+        return PrivateBridgeFileCopy(url: lease.url, descriptor: file, offline: true, lease: lease)
+    }
     var descriptor: DesktopBridgeFileDescriptor, bytes: Data, offline = false
     do {
         descriptor = try await client.fileDescriptor(vaultId: vaultId, kind: kind, id: id)

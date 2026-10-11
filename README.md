@@ -197,6 +197,9 @@ identifiers decode once. Private prosopography and recording links now have addr
 readers, complete paged relations, revision checks, separate audio with citation timestamps and
 chosen encrypted downloads under their actual private domain. Their contracts and acceptance
 tests are prepared, not executed.
+The recording catalogue now uses metadata pagination, transcript search and active/archive/trash
+filters. Downloaded private dossiers can be reopened directly from the selected-download browser;
+this route reads only chosen packs, including its separately chosen audio, without querying the Mac.
 Completed autonomous writing assistance opens its durable native result directly from Scriptor
 while publication is pending; it does not fabricate a Mac log ID or replace the original document.
 

@@ -58,6 +58,7 @@ struct PrivateCorpusSourceTests {
         defer { try? FileManager.default.removeItem(at: folder); try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }
         let cache = try PrivateBridgeCache(pairingId: id, directory: folder, keychain: keychain, readLimitBytes: 100_000)
         let bytes = try JSONEncoder.nodus.encode(copy)
+        let index = try JSONEncoder.nodus.encode(CompanionPrivateSourceCopy.CatalogueEntry(source: source))
         try await cache.store(bytes, vaultId: "vault", domain: .studyRecordings, recordId: target.recordKey)
         #expect(try await CompanionPrivateSourceCopy.downloaded(cache: cache, vaultId: "vault", reference: target) == nil)
         let wrongDomain = try await cache.saveReadPack(vaultId: "vault", title: source.title, expiresAt: .distantFuture,
@@ -65,11 +66,29 @@ struct PrivateCorpusSourceTests {
         #expect(try await CompanionPrivateSourceCopy.downloaded(cache: cache, vaultId: "vault", reference: target) == nil)
         try await cache.removeReadPack(id: wrongDomain.id, vaultId: "vault")
         let pack = try await cache.saveReadPack(vaultId: "vault", title: source.title, expiresAt: .distantFuture,
-            records: [.init(domain: .studyRecordings, recordId: target.recordKey, data: bytes)])
+            records: [.init(domain: .studyRecordings, recordId: target.recordKey, data: bytes),
+                .init(domain: .studyRecordings, recordId: CompanionPrivateSourceCopy.catalogueKey, data: index)])
         let reopened = try PrivateBridgeCache(pairingId: id, directory: folder, keychain: keychain, readLimitBytes: 100_000)
         #expect(try await CompanionPrivateSourceCopy.downloaded(cache: reopened, vaultId: "vault", reference: target)?.source.id == target.id)
         #expect(try await CompanionPrivateSourceCopy.downloaded(cache: reopened, vaultId: "other-vault", reference: target) == nil)
+        #expect(try await CompanionPrivateSourceCopy.downloadedCatalogue(cache: reopened, vaultId: "vault", kind: .recording).first?.id == target.id)
+        #expect(try await CompanionPrivateSourceCopy.downloadedCatalogue(cache: reopened, vaultId: "vault", kind: .person).isEmpty)
         try await reopened.removeReadPack(id: pack.id, vaultId: "vault")
         #expect(try await CompanionPrivateSourceCopy.downloaded(cache: reopened, vaultId: "vault", reference: target) == nil)
+        #expect(try await CompanionPrivateSourceCopy.downloadedCatalogue(cache: reopened, vaultId: "vault", kind: .recording).isEmpty)
+    }
+
+    @Test("source catalogues validate complete pages and never accept a partial last page")
+    func cataloguePages() throws {
+        func page(items: Int, offset: Int = 100, total: Int = 121) throws -> PrivateCorpusSource.Catalogue {
+            let json: JSONValue = .object(["items": .array((0..<items).map { index in .object([
+                "id": .string("source-\(offset+index)"), "title": .string("Fuente \(offset+index)"),
+                "detail": .string("37"), "updatedAt": .string("2026-10-11T00:00:00.000Z"), "state": .string("active")]) }),
+                "total": .int(total), "offset": .int(offset), "limit": .int(100), "hasMore": .bool(false), "revision": .string(String(repeating: "a", count: 64))])
+            return try JSONDecoder.nodus.decode(PrivateCorpusSource.Catalogue.self, from: JSONEncoder.nodus.encode(json))
+        }
+        try page(items: 21).validate(offset: 100)
+        #expect(throws: (any Error).self) { try page(items: 20).validate(offset: 100) }
+        #expect(throws: (any Error).self) { try page(items: 21).validate(offset: 0) }
     }
 }

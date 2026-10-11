@@ -2,11 +2,15 @@ import Foundation
 import NodusKit
 
 @MainActor
-func loadPrivateCorpusSource(_ session: SpaceSession, reference: PrivateCorpusReference,
+func loadPrivateCorpusSource(_ session: SpaceSession, reference: PrivateCorpusReference, downloadedOnly: Bool = false,
     progress: @escaping (Int, Int) -> Void = { _, _ in }) async throws -> (CompanionPrivateSourceCopy, Bool) {
     let (vault, pairing, token) = try privateBridgeConnection(session, domain: reference.kind.domain)
     guard !pairing.isExpired else { throw DesktopBridgeError.expired }
     let cache = try PrivateBridgeCache(pairingId: pairing.id)
+    if downloadedOnly {
+        guard let copy = try await CompanionPrivateSourceCopy.downloaded(cache: cache, vaultId: vault, reference: reference) else { throw PrivateCorpusSourceError.notDownloaded }
+        return (copy, true)
+    }
     let client = DesktopBridgeClient(pairing: pairing, token: token)
     do {
         let source = try await client.privateSource(vaultId: vault, reference: reference)
@@ -44,8 +48,13 @@ func loadPrivateCorpusSource(_ session: SpaceSession, reference: PrivateCorpusRe
 }
 
 enum PrivateCorpusSourceError: Error, LocalizedError {
-    case changed
-    var errorDescription: String? { "La fuente ha cambiado mientras se cargaba. Vuelve a abrirla para consultar su versión actual." }
+    case changed, notDownloaded
+    var errorDescription: String? {
+        switch self {
+        case .changed: "La fuente ha cambiado mientras se cargaba. Vuelve a abrirla para consultar su versión actual."
+        case .notDownloaded: "Esta fuente no está descargada. Consérvala desde su lector mientras el Mac está disponible."
+        }
+    }
 }
 
 @MainActor
@@ -56,12 +65,14 @@ func savePrivateCorpusSource(_ session: SpaceSession, reference: PrivateCorpusRe
     guard !pairing.isExpired else { throw DesktopBridgeError.expired }
     try copy.validate(for: reference)
     let bytes = try JSONEncoder.nodus.encode(copy)
+    let index = try JSONEncoder.nodus.encode(CompanionPrivateSourceCopy.CatalogueEntry(source: copy.source))
     guard bytes.count <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
     let cache = try PrivateBridgeCache(pairingId: pairing.id)
     let id = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: [reference.recordKey])
     try await cache.saveReadPack(id: id, vaultId: vault, title: copy.source.title,
         expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: [
             .init(domain: reference.kind.domain, recordId: reference.recordKey, data: bytes),
+            .init(domain: reference.kind.domain, recordId: CompanionPrivateSourceCopy.catalogueKey, data: index),
         ])
     session.didChangeCompanionDownloads()
 }

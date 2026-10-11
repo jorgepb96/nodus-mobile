@@ -543,6 +543,20 @@ public actor DesktopBridgeClient {
         return source
     }
 
+    public func privateSourceCatalogue(vaultId: String, kind: PrivateCorpusReference.Kind, offset: Int = 0, query: String = "", state: String = "active") async throws -> PrivateCorpusSource.Catalogue {
+        let target = try PrivateCorpusReference(kind: kind, id: "catalogue")
+        try requirePrivateSourceGrant(vaultId: vaultId, reference: target)
+        guard offset >= 0 else { throw DesktopBridgeError.malformedResponse }
+        let address = try target.path(vaultId: vaultId)
+        let response = try await raw(path: String(address.dropLast("/catalogue".count)), query: [
+            URLQueryItem(name: "offset", value: String(offset)), URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "state", value: state),
+        ], method: "GET", timeout: 4)
+        let page = try JSONDecoder.nodus.decode(PrivateCorpusSource.Catalogue.self, from: response.data)
+        try page.validate(offset: offset)
+        return page
+    }
+
     public func privateSourcePage(vaultId: String, reference: PrivateCorpusReference,
         group: PrivateCorpusSource.Group, cursor: Int = 0) async throws -> PrivateCorpusSource.Page {
         try requirePrivateSourceGrant(vaultId: vaultId, reference: reference)

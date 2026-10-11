@@ -26,6 +26,11 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
     public let id: String
     public let timestamp: Double?
     public let transcriptId: String?
+    public init(kind: Kind, id: String) throws {
+        guard !id.isEmpty, id.count <= 256, id != ".", id != "..",
+              !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw DesktopBridgeError.malformedResponse }
+        self.kind = kind; self.id = id; timestamp = nil; transcriptId = nil
+    }
     public init?(_ url: URL) {
         guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false), parts.scheme == "nodus",
               parts.user == nil, parts.password == nil, parts.port == nil else { return nil }
@@ -61,6 +66,26 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
 }
 
 public struct PrivateCorpusSource: Codable, Sendable {
+    public struct CatalogueItem: Codable, Sendable, Identifiable {
+        public let id: String, title: String, detail: String, updatedAt: String
+        public let state: String?
+        public init(id: String, title: String, detail: String, updatedAt: String, state: String? = nil) {
+            self.id = id; self.title = title; self.detail = detail; self.updatedAt = updatedAt
+            self.state = state
+        }
+    }
+    public struct Catalogue: Codable, Sendable {
+        public let items: [CatalogueItem]
+        public let total: Int, offset: Int, limit: Int
+        public let hasMore: Bool
+        public let revision: String
+        public func validate(offset expected: Int) throws {
+            guard offset == expected, total >= 0, limit > 0, limit <= 100, Self.isRevision(revision),
+                  Set(items.map(\.id)).count == items.count, items.allSatisfy({ !$0.id.isEmpty }),
+                  items.count == min(limit, max(0, total - offset)), hasMore == (offset + items.count < total) else { throw DesktopBridgeError.malformedResponse }
+        }
+        private static func isRevision(_ value: String) -> Bool { value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase } }
+    }
     public struct Group: Codable, Sendable, Equatable, Identifiable {
         public let key: String, title: String, revision: String
         public let total: Int
@@ -91,6 +116,18 @@ public struct PrivateCorpusSource: Codable, Sendable {
 
 /// A complete, explicitly chosen dossier, kept in the source's encrypted grant.
 public struct CompanionPrivateSourceCopy: Codable, Sendable {
+    public static let catalogueKey = "companion:private-sources:catalogue:v1"
+    public struct CatalogueEntry: Codable, Sendable {
+        public let kind: PrivateCorpusReference.Kind
+        public let item: PrivateCorpusSource.CatalogueItem
+        public init(source: PrivateCorpusSource) {
+            kind = source.kind
+            item = .init(id: source.id, title: source.title,
+                detail: source.root.text("date_display") ?? source.root.text("status") ?? "",
+                updatedAt: source.root.text("updated_at") ?? "",
+                state: source.kind == .recording ? (source.root.text("deleted_at") != nil ? "trash" : source.root.text("archived_at") != nil ? "archived" : "active") : nil)
+        }
+    }
     public let version: Int
     public let source: PrivateCorpusSource
     public let rows: [String: [Row]]
@@ -113,5 +150,17 @@ public struct CompanionPrivateSourceCopy: Codable, Sendable {
         let copy = try JSONDecoder.nodus.decode(Self.self, from: bytes)
         try copy.validate(for: reference)
         return copy
+    }
+    public static func downloadedCatalogue(cache: PrivateBridgeCache, vaultId: String, kind: PrivateCorpusReference.Kind) async throws -> [PrivateCorpusSource.CatalogueItem] {
+        let entries = try await cache.downloadedData(vaultId: vaultId, domain: kind.domain, recordId: catalogueKey)
+        var seen = Set<String>(), items: [PrivateCorpusSource.CatalogueItem] = []
+        for bytes in entries {
+            let entry = try JSONDecoder.nodus.decode(CatalogueEntry.self, from: bytes)
+            guard entry.kind == kind else { continue }
+            let reference = try PrivateCorpusReference(kind: kind, id: entry.item.id)
+            guard try await cache.hasDownloadedData(vaultId: vaultId, domain: kind.domain, recordId: reference.recordKey) else { throw DesktopBridgeError.malformedResponse }
+            if seen.insert(entry.item.id).inserted { items.append(entry.item) }
+        }
+        return items
     }
 }

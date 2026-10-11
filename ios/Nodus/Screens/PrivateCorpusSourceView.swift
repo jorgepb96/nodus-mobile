@@ -7,6 +7,7 @@ import SwiftUI
 struct PrivateCorpusSourceView: View {
     let session: SpaceSession
     let reference: PrivateCorpusReference
+    var downloadedOnly = false
     @State private var copy: CompanionPrivateSourceCopy?
     @State private var offline = false
     @State private var issue: String?
@@ -52,7 +53,7 @@ struct PrivateCorpusSourceView: View {
                             Spacer(minLength: 0)
                         }
                         if reference.kind == .recording {
-                            PrivateFileButton(session: session, kind: .studyRecording, id: reference.id, initialTimestamp: reference.timestamp)
+                            PrivateFileButton(session: session, kind: .studyRecording, id: reference.id, initialTimestamp: reference.timestamp, downloadedOnly: downloadedOnly)
                             recordingReader
                         } else {
                             Menu {
@@ -89,7 +90,7 @@ struct PrivateCorpusSourceView: View {
 
     @ViewBuilder private func rootDetails(_ row: Row) -> some View {
         fields(row, keys: ["date_display", "citation", "repository", "reference_code", "description", "coverage_notes",
-            "reliability_notes", "rights_notes", "summary", "context", "role_or_title", "birth_date", "death_date", "language"])
+            "reliability_notes", "rights_notes", "summary", "context", "role_or_title", "birth_date", "death_date", "language", "notes", "biography"])
         if let url = row.text("url"), let address = URL(string: url), ["https", "http"].contains(address.scheme?.lowercased() ?? "") {
             Link("Abrir referencia original", destination: address).frame(minHeight: 44)
         }
@@ -139,7 +140,7 @@ struct PrivateCorpusSourceView: View {
             if let number = row.double("value_number") { Text(number.formatted()) }
             if let boolean = row.int("value_boolean") { Text(boolean == 0 ? "No" : "Sí") }
             ForEach(relatedLinks(row), id: \.id) { link in
-                NavigationLink { PrivateCorpusSourceView(session: session, reference: link.reference) }
+                NavigationLink { PrivateCorpusSourceView(session: session, reference: link.reference, downloadedOnly: downloadedOnly) }
                     label: { Label(link.title, systemImage: "arrow.up.right").frame(minHeight: 44) }
             }
         }.desktopContentRow(accent: session.accent)
@@ -171,7 +172,7 @@ struct PrivateCorpusSourceView: View {
         loading = true; issue = nil; copy = nil; saved = false
         defer { loading = false }
         do {
-            let result = try await loadPrivateCorpusSource(session, reference: reference) { loaded = $0; total = $1 }
+            let result = try await loadPrivateCorpusSource(session, reference: reference, downloadedOnly: downloadedOnly) { loaded = $0; total = $1 }
             try Task.checkCancellation()
             copy = result.0; offline = result.1
             selectedGroup = copy?.source.groups.first?.key ?? ""
