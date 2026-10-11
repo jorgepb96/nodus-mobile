@@ -41,6 +41,9 @@ if (process.argv.includes('--verify')) {
   execFileSync(path.join(desktop, 'node_modules/esbuild/bin/esbuild'), [path.join(desktop, 'shared/deepResearchReport.ts'),
     '--bundle', '--platform=browser', '--format=iife', '--global-name=NodusReport', '--target=es2020',
     '--outfile='+path.join(output,'report-renderer.js')], {cwd:desktop,stdio:'inherit'});
+  execFileSync(path.join(desktop, 'node_modules/esbuild/bin/esbuild'), [path.join(desktop,'shared/companionChatContext.ts'),
+    '--bundle','--platform=browser','--format=iife','--global-name=NodusCompanionChat','--target=es2020',
+    '--outfile='+path.join(output,'companion-chat.js')],{cwd:desktop,stdio:'inherit'});
   if (sourceDigest() !== digest) throw new Error('Shared sources changed during the build. Repeat the build before accepting it.');
   const files = Object.fromEntries(fs.readdirSync(output).filter(file => file !== 'build.json' && fs.statSync(path.join(output, file)).isFile()).map(file => [file, hash(fs.readFileSync(path.join(output, file)))]));
   fs.writeFileSync(path.join(output, 'build.json'), JSON.stringify({ version: 1, desktopCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: desktop, encoding: 'utf8' }).trim(), sourceDigest: digest, files }, null, 2) + '\n');

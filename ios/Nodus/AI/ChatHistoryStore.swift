@@ -46,6 +46,7 @@ final class ChatHistoryStore {
         /// Chosen read-only copies expire; authoring makes the copy durable.
         var downloadedUntil: Date? = nil
         var isLocalRecovery: Bool? = nil
+        var databaseIds: [String]? = nil
 
         var preview: String {
             messages.last(where: { $0.role == .assistant })?.text
@@ -294,7 +295,7 @@ final class ChatHistoryStore {
             let fractional = ISO8601DateFormatter();fractional.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
             return fractional.date(from:raw) ?? ISO8601DateFormatter().date(from:raw) ?? Date()
         }
-        return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved))
+        return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved),databaseIds:object["databaseIds"]?.arrayValue?.compactMap(\.stringValue))
     }
     private func request(_ conversation: Conversation,sync: DesktopSync) throws -> JSONValue {
         var fields: [String:JSONValue] = ["version":.int(1),"id":.string(UUID().uuidString),"conversationId":.string(conversation.id),"expectedRevision":sync.baseline.map { .string($0.revision) } ?? .null,"action":.string(sync.deleted ? "delete":"save")]
@@ -309,6 +310,9 @@ final class ChatHistoryStore {
                 return .object(raw)
             }
             fields["draft"] = .object(["title":.string(conversation.title),"archived":.bool(conversation.isArchived),"messages":.array(messages)])
+            if sync.kind == .database,let ids = conversation.databaseIds {
+                var draft = fields["draft"]!.objectValue!;draft["databaseIds"] = .array(ids.map(JSONValue.string));fields["draft"] = .object(draft)
+            }
             var native = conversation.messages
             for index in native.indices { native[index].desktopRecord = nil }
             fields["companion"] = .object(["messages":try JSONDecoder.nodus.decode(JSONValue.self,from:JSONEncoder.nodusReports.encode(native))])

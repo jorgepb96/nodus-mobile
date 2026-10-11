@@ -257,6 +257,10 @@ function operationMatrix(routes) {
       ['consultation.nativeReader.scopedInlineImages', 'consultation'],
       ['consultation.nativeReader.imageAnnotationAnchors', 'consultation'],
       ['consultation.nativeReader.imageTransportFailures', 'consultation'],
+      ['generation.databaseChat.autonomousCompleteProfile', 'generation'],
+      ['generation.databaseChat.chosenOfflineSources', 'generation'],
+      ['sync.databaseChat.actualSourceSelection', 'sync'],
+      ['consultation.chat.nativeHistoryControl', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

@@ -317,6 +317,18 @@ use a credential-free, size-bounded loader. Code examples do not trigger image l
 visuals keep existing prose blocks and annotation offsets; failures show a retry state.
 Prepared native image parsing/identity/grant regressions remain unexecuted.
 
+Autonomous Database Chat now uses the exact shared Desktop numerical profile, ten-row
+sample, conversation formatter and prompt language. Signed complete database source packs
+carry the profile from the same immutable Mac snapshot; offline answers require chosen
+complete downloads, and older packs without the chat profile require a fresh download.
+Native SwiftUI keeps its composer, history and selectable databases, while an isolated local
+JavaScript host runs the deterministic context formatter without providers or credentials.
+The chosen source IDs persist and reconcile with the actual Desktop conversation. Native
+history/context controls are directly reachable. The comparison against real 650-row
+Desktop profiles in 15 languages and the native host contracts are prepared, not executed.
+The shared resources must be rebuilt during final local compilation. World and Study
+autonomous specialised context/controls still require implementation and acceptance.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

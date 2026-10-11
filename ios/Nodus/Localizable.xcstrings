@@ -27218,6 +27218,94 @@
           }
         }
       }
+    },
+    "Conversation history": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historial de conversaciones"
+          }
+        }
+      }
+    },
+    "Choose at least one database for this question.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige al menos una base de datos para esta pregunta."
+          }
+        }
+      }
+    },
+    "%lld databases": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld bases de datos"
+          }
+        }
+      }
+    },
+    "Context": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contexto"
+          }
+        }
+      }
+    },
+    "Choose from the complete databases downloaded to this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige entre las bases completas que has descargado en este dispositivo."
+          }
+        }
+      }
+    },
+    "The same complete profiles and samples used by Nodus will support your question.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu pregunta usará los mismos perfiles completos y muestras que utiliza Nodus."
+          }
+        }
+      }
+    },
+    "Could not load databases": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se han podido cargar las bases de datos"
+          }
+        }
+      }
+    },
+    "Chat databases": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bases de datos del chat"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

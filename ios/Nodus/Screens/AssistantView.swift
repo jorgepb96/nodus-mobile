@@ -62,6 +62,8 @@ struct ChatScreen: View {
     @State private var conversationTitle = ""
     @State private var conversationCreatedAt = Date()
     @State private var showingHistory = false
+    @State private var showingDatabases = false
+    @State private var databaseIds: [String] = []
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -114,6 +116,9 @@ struct ChatScreen: View {
             )
             .nodusModalClose(accent: session.accent)
         }
+        .nodusSheet(isPresented:$showingDatabases) {
+            ChatDatabaseSelectionView(session:session,selection:$databaseIds).environment(ai)
+        }
         .task {
             // Lent to the chrome, not copied into it: the header ticks layers on and off in the
             // very object the next question is built from.
@@ -157,6 +162,10 @@ struct ChatScreen: View {
                 // and so the pill stays on the centre line whatever it is naming.
                 .padding(.horizontal, 48)
                 .frame(maxWidth: .infinity)
+                .overlay(alignment:.leading) {
+                    Button(action:openHistory) { Image(systemName:"clock.arrow.circlepath").frame(width:44,height:44) }
+                        .buttonStyle(.plain).foregroundStyle(session.accent).accessibilityLabel("Conversation history")
+                }
                 .overlay(alignment: .trailing) {
                     if !turns.isEmpty {
                         Button {
@@ -165,7 +174,7 @@ struct ChatScreen: View {
                         } label: {
                             Image(systemName: "square.and.pencil")
                                 .font(.callout)
-                                .frame(width: 40, height: 36)
+                                .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -173,6 +182,20 @@ struct ChatScreen: View {
                         .accessibilityLabel("New conversation")
                     }
                 }
+
+            if session.vaultType == .databases {
+                Button { composerFocused = false;showingDatabases = true } label: {
+                    Label("\(databaseIds.count) databases",systemImage:"tablecells").font(.caption).lineLimit(1).padding(.horizontal,12).frame(minHeight:44)
+                }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+            } else {
+                Menu {
+                    ForEach(ContextSectionKind.allCases,id:\.self) { kind in
+                        Toggle(contextLabel(kind),isOn:Binding(get:{controls.include.contains(kind)},set:{ enabled in if enabled { controls.include.insert(kind) } else { controls.include.remove(kind) } }))
+                    }
+                } label: {
+                    Label("Context",systemImage:"square.3.layers.3d").font(.caption).frame(minHeight:44)
+                }.foregroundStyle(session.accent).disabled(isThinking)
+            }
 
             // Which conversation this is, when it is one that has a name. A new conversation
             // says nothing here rather than saying "New conversation", because an empty screen
@@ -195,6 +218,9 @@ struct ChatScreen: View {
         composerFocused = false
         showingHistory = true
     }
+    private func contextLabel(_ kind: ContextSectionKind) -> LocalizedStringKey {
+        switch kind { case .ideas:"Ideas";case .passages:"Passages";case .themes:"Themes";case .gaps:"Research gaps";case .works:"Works";case .sources:"Sources" }
+    }
 
     // MARK: - Conversations
 
@@ -204,6 +230,7 @@ struct ChatScreen: View {
         error = nil
         conversationId = nil
         conversationTitle = ""
+        databaseIds = []
     }
 
     private func open(_ conversation: ChatHistoryStore.Conversation) {
@@ -212,6 +239,7 @@ struct ChatScreen: View {
         conversationId = conversation.id
         conversationTitle = conversation.title
         conversationCreatedAt = conversation.createdAt
+        databaseIds = conversation.databaseIds ?? []
         // The retrieved material is not kept — see `ChatHistoryStore` — so a re-opened
         // conversation shows what was said and what it cited, and does not pretend to still
         // hold the corpus rows the answer was built from.
@@ -252,7 +280,8 @@ struct ChatScreen: View {
             },
             createdAt: conversationCreatedAt,
             updatedAt: Date(),
-            isArchived: history.conversations.first(where:{$0.id == id})?.isArchived ?? false
+            isArchived: history.conversations.first(where:{$0.id == id})?.isArchived ?? false,
+            databaseIds: session.vaultType == .databases ? databaseIds:nil
         ))
     }
     private func stopCurrentConversation() {
@@ -335,6 +364,8 @@ struct ChatScreen: View {
         }
         let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
+        if session.vaultType == .databases,databaseIds.isEmpty { error = String(localized:"Choose at least one database for this question.");showingDatabases = true;return }
+        let selectedDatabases = databaseIds
         let prior = turns.map { ChatMessage(role:$0.role,content:$0.text) }
 
         draft = ""
@@ -357,33 +388,37 @@ struct ChatScreen: View {
                 }
             }
             do {
-                let retrieval = CorpusRetrieval(
-                    client: session.client,
-                    spaceId: session.connection.spaceId,
-                    embeddings: EmbeddingService(keyProvider: ai.keyProvider),
-                    identity: semanticIdentity
-                )
-                let material = try await retrieval.material(
-                    for: question,
-                    include: ContextSectionKind.allCases.filter(controls.include.contains)
-                )
-                guard !Task.isCancelled,ownsAnswer() else { return }
-
-                turns[answerIndex].mode = material.mode
-                turns[answerIndex].warning = material.warning
-                turns[answerIndex].sections = material.sections
-
-                let provider = ProviderClient(keyProvider: ai.keyProvider)
-                let context = NativeChatPrompt.make(history:prior,system:Prompts.system(language:Prompts.interfaceLanguage),question:question,citations:Prompts.citationPolicy(catalog:material.catalog))
-                if context.omittedTurns > 0 {
-                    let warning = String(localized:"Earlier turns remain in history but do not fit in this question's context.")
-                    turns[answerIndex].warning = [material.warning,warning].compactMap{$0}.joined(separator:" ")
+                let material: CorpusRetrieval.Result?
+                let request: ChatRequest
+                if session.vaultType == .databases {
+                    let context = try await CompanionChatContext.database(session:session,settings:ai,ids:selectedDatabases,question:question,history:prior)
+                    guard !Task.isCancelled,ownsAnswer() else { return }
+                    material = nil
+                    request = ChatRequest(model:model,messages:[.init(role:.system,content:context.system),.init(role:.user,content:context.user)],temperature:context.temperature,maxTokens:context.maxTokens)
+                } else {
+                    let retrieval = CorpusRetrieval(
+                        client:session.client,
+                        spaceId:session.connection.spaceId,
+                        embeddings:EmbeddingService(keyProvider:ai.keyProvider),
+                        identity:semanticIdentity
+                    )
+                    let retrieved = try await retrieval.material(
+                        for:question,
+                        include:ContextSectionKind.allCases.filter(controls.include.contains)
+                    )
+                    guard !Task.isCancelled,ownsAnswer() else { return }
+                    material = retrieved
+                    turns[answerIndex].mode = retrieved.mode
+                    turns[answerIndex].warning = retrieved.warning
+                    turns[answerIndex].sections = retrieved.sections
+                    let context = NativeChatPrompt.make(history:prior,system:Prompts.system(language:Prompts.interfaceLanguage),question:question,citations:Prompts.citationPolicy(catalog:retrieved.catalog))
+                    if context.omittedTurns > 0 {
+                        let warning = String(localized:"Earlier turns remain in history but do not fit in this question's context.")
+                        turns[answerIndex].warning = [retrieved.warning,warning].compactMap{$0}.joined(separator:" ")
+                    }
+                    request = ChatRequest(model:model,messages:context.messages,temperature:0.4)
                 }
-                let request = ChatRequest(
-                    model: model,
-                    messages: context.messages,
-                    temperature: 0.4
-                )
+                let provider = ProviderClient(keyProvider: ai.keyProvider)
 
                 var text = ""
                 var savedAt = Date()
@@ -398,10 +433,16 @@ struct ChatScreen: View {
 
                 // The same guarantee the reports get: an invented source never reaches the
                 // screen, and what survived is listed so the user can open it.
-                let validated = CitationValidator.validate(prose: text, against: material.catalog)
                 guard ownsAnswer(),!Task.isCancelled else { return }
-                turns[answerIndex].text = validated.prose
-                turns[answerIndex].citations = validated.accepted.compactMap(material.catalog.entry(for:))
+                if let material {
+                    let validated = CitationValidator.validate(prose:text,against:material.catalog)
+                    turns[answerIndex].text = validated.prose
+                    turns[answerIndex].citations = validated.accepted.compactMap(material.catalog.entry(for:))
+                } else {
+                    // Numerical data is grounded by the exact Desktop profile;
+                    // unrelated corpus URLs are never accepted as evidence.
+                    turns[answerIndex].text = CitationValidator.validate(prose:text,against:CitationCatalog(entries:[])).prose
+                }
                 turns[answerIndex].delivery = .completed
             } catch is CancellationError {
                 if ownsAnswer() { turns[answerIndex].delivery = .cancelled;turns[answerIndex].text += "\n\n_" + String(localized:"Cancelled.") + "_" }
