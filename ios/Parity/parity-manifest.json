@@ -1795,6 +1795,36 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.chat.nativeProjectsFoldersNotebooks",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.organizeRenameAndPinCAS",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.archivePinLimitAndUnavailableDestination",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.offlineOrganizationLostAcknowledgement",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.chat.sharedProjectPreferences",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

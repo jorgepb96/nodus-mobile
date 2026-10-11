@@ -55,6 +55,7 @@ final class ChatHistoryStore {
         var databaseIds: [String]? = nil
         var study: CompanionStudyChatOptions? = nil
         var world: CompanionWorldChatOptions? = nil
+        var placement: CompanionChatPlacement? = nil
 
         var preview: String {
             messages.last(where: { $0.role == .assistant })?.text
@@ -89,11 +90,12 @@ final class ChatHistoryStore {
 
     private(set) var conversations: [Conversation] = []
     private(set) var issue: String?
+    private(set) var organisation: CompanionChatOrganisation?
     private let directory: URL
     private let spaceId: String
     private let backup: CloudBackup?
 
-    var active: [Conversation] { conversations.filter { !$0.isArchived && $0.desktop?.deleted != true } }
+    var active: [Conversation] { conversations.filter { !$0.isArchived && $0.desktop?.deleted != true }.sorted { ($0.placement?.pinned ?? false) == ($1.placement?.pinned ?? false) ? $0.updatedAt > $1.updatedAt:($0.placement?.pinned ?? false) } }
     var archived: [Conversation] { conversations.filter { $0.isArchived && $0.desktop?.deleted != true } }
 
     /// Where one space's conversations sit.
@@ -118,6 +120,11 @@ final class ChatHistoryStore {
         directory = Self.directory(spaceId: spaceId,root:root)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         reload()
+        let metadata = directory.appendingPathComponent("organisation.snapshot")
+        if FileManager.default.fileExists(atPath:metadata.path) {
+            do { let saved = try JSONDecoder.nodus.decode(CompanionChatOrganisation.self,from:Data(contentsOf:metadata));try saved.validate(kind:saved.kind);organisation = saved }
+            catch { issue = error.localizedDescription }
+        }
     }
 
     func reload() {
@@ -153,6 +160,7 @@ final class ChatHistoryStore {
         if let existing = conversations.first(where:{$0.id == stored.id}) {
             guard existing.desktop?.deleted != true else { throw APIError(status:409,code:"chat_deleted_locally",message:"This conversation is waiting to be deleted. Start a new conversation to continue.") }
             stored.isLocalRecovery = existing.isLocalRecovery
+            if stored.placement == nil { stored.placement = existing.placement }
             if let current = existing.desktop { stored.desktop = current }
             for index in stored.messages.indices {
                 if let original = existing.messages.first(where:{$0.id == stored.messages[index].id}) {
@@ -194,7 +202,46 @@ final class ChatHistoryStore {
     func setArchived(_ archived: Bool, for id: String) throws {
         guard var conversation = conversations.first(where: { $0.id == id }) else { return }
         conversation.isArchived = archived
+        if archived { conversation.placement?.pinned = false }
         try save(conversation)
+    }
+    func rename(_ id:String,title:String) throws {
+        let name = title.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !name.isEmpty,name.count <= 120,var conversation = conversations.first(where:{$0.id == id}) else { throw DesktopBridgeError.malformedResponse }
+        conversation.title = name;try save(conversation)
+    }
+    func retainOrganisation(_ value:CompanionChatOrganisation) throws {
+        try value.validate(kind:linkedKind ?? value.kind)
+        try JSONEncoder.nodus.encode(value).write(to:directory.appendingPathComponent("organisation.snapshot"),options:[.atomic,.completeFileProtection])
+        organisation = value
+    }
+    func projectPreferences(_ id:String,session:SpaceSession) async throws -> CompanionChatOrganisation.Project {
+        let kind = CompanionChatKind(vaultType:session.vaultType)
+        do {
+            guard let vault = session.vaultId else { throw DesktopBridgeError.permissionDenied }
+            let page = try await ConnectionClient.companionChat(for:session.connection).chatHistoryPage(vaultId:vault,kind:kind)
+            guard let metadata = page.organisation else { throw APIError(status:503,code:"chat_organisation_unsupported",message:"Actualiza Nodus en el Mac para compartir las instrucciones de este proyecto.") }
+            try metadata.validate(kind:kind);try retainOrganisation(metadata)
+        } catch { guard isPrivateBridgeOffline(error),organisation?.kind == kind else { throw error } }
+        guard let project = organisation?.projects.first(where:{$0.id == id}) else { throw APIError(status:409,code:"chat_placement_unavailable",message:"El proyecto de esta conversación no está disponible. Revisa su organización en el historial.") }
+        return project
+    }
+    func organize(_ id:String,placement:CompanionChatPlacement,title:String? = nil) throws {
+        guard var conversation = conversations.first(where:{$0.id == id}) else { throw DesktopBridgeError.malformedResponse }
+        if placement.pinned && conversation.isArchived { throw APIError(status:409,code:"chat_archived_pin",message:"Desarchiva la conversación antes de fijarla.") }
+        if placement.pinned,conversation.placement?.pinned != true,active.filter({$0.placement?.pinned == true}).count >= 5 { throw APIError(status:409,code:"chat_pin_limit",message:"Puedes fijar hasta cinco conversaciones. Desfija una antes de añadir otra.") }
+        if let organisation {
+            guard placement.projectId.map({id in organisation.projects.contains(where:{$0.id == id})}) ?? true,
+                  placement.folderId.map({id in organisation.folders.contains(where:{$0.id == id && $0.projectId == placement.projectId})}) ?? true,
+                  placement.notebookId.map({id in organisation.notebooks.contains(where:{$0.id == id})}) ?? true,
+                  organisation.kind == .research || placement.notebookId == nil || placement.projectId == nil && placement.folderId == nil else { throw APIError(status:409,code:"chat_placement_unavailable",message:"El destino ya no está disponible. Actualiza el historial del Mac.") }
+        } else if placement.projectId != nil || placement.folderId != nil || placement.notebookId != nil { throw DesktopBridgeError.malformedResponse }
+        if let title {
+            let name = title.trimmingCharacters(in:.whitespacesAndNewlines)
+            guard !name.isEmpty,name.count <= 120 else { throw DesktopBridgeError.malformedResponse }
+            conversation.title = name
+        }
+        conversation.placement = placement;try save(conversation)
     }
 
     func delete(_ id: String) throws {
@@ -306,7 +353,7 @@ final class ChatHistoryStore {
             let fractional = ISO8601DateFormatter();fractional.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
             return fractional.date(from:raw) ?? ISO8601DateFormatter().date(from:raw) ?? Date()
         }
-        return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved),databaseIds:object["databaseIds"]?.arrayValue?.compactMap(\.stringValue),study:document.kind == .study ? try CompanionStudyChatOptions.desktop(document.data):nil,world:document.kind == .world ? try CompanionWorldChatOptions.desktop(document.data):nil)
+        return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved),databaseIds:object["databaseIds"]?.arrayValue?.compactMap(\.stringValue),study:document.kind == .study ? try CompanionStudyChatOptions.desktop(document.data):nil,world:document.kind == .world ? try CompanionWorldChatOptions.desktop(document.data):nil,placement:CompanionChatPlacement.desktop(document.data))
     }
     private static func messageDate(_ raw: String) -> Date? {
         let fractional = ISO8601DateFormatter();fractional.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
@@ -332,6 +379,7 @@ final class ChatHistoryStore {
                 return .object(raw)
             }
             fields["draft"] = .object(["title":.string(conversation.title),"archived":.bool(conversation.isArchived),"messages":.array(messages)])
+            if let placement = conversation.placement { var draft = fields["draft"]!.objectValue!;draft["placement"] = placement.value;fields["draft"] = .object(draft) }
             if sync.kind == .database,let ids = conversation.databaseIds {
                 var draft = fields["draft"]!.objectValue!;draft["databaseIds"] = .array(ids.map(JSONValue.string));fields["draft"] = .object(draft)
             }
@@ -390,6 +438,7 @@ final class ChatHistoryStore {
                     try document.validate(kind:sync.kind,id:id)
                     current.baseline = document;current.sending = nil;current.sendingGeneration = nil;current.issue = nil;current.remote = nil
                     current.state = current.generation == generation ? .saved:.pending
+                    if current.state == .saved { latest.placement = CompanionChatPlacement.desktop(document.data) }
                     let rawMessages = document.data.objectValue?["messages"]?.arrayValue ?? []
                     for index in latest.messages.indices {
                         let message = latest.messages[index]
@@ -450,6 +499,8 @@ final class ChatHistoryStore {
     }
     func revokeLink() throws {
         linkedKind = nil;linkGeneration += 1
+        let metadata = directory.appendingPathComponent("organisation.snapshot")
+        if FileManager.default.fileExists(atPath:metadata.path) { try FileManager.default.removeItem(at:metadata) };organisation = nil
         for var conversation in conversations {
             if conversation.downloadedUntil != nil {
                 try FileManager.default.removeItem(at:directory.appendingPathComponent("\(conversation.id).json"))

@@ -93,7 +93,7 @@ enum CompanionChatContext {
         return prepared
     }
     private enum Operation {
-        case database,study,studyAnswer,studySources,studyOriginal,world,worldAnswer,worldSources
+        case database,study,studyAnswer,studySources,studyOriginal,project,world,worldAnswer,worldSources
         var script: String {
             switch self {
             case .database: "return NodusCompanionChat.prepareDatabaseChat(input);"
@@ -101,6 +101,7 @@ enum CompanionChatContext {
             case .studyAnswer: "return NodusCompanionChat.validateStudyAssistantAnswer(input.answer,input.citations);"
             case .studySources: "NodusCompanionChat.validateMobileStudyChatSourcePack(input.pack,input.vaultId);return {valid:true};"
             case .studyOriginal: "NodusCompanionChat.validateMobileStudyChatOriginal(input.source);return {valid:true};"
+            case .project: "return {system:NodusCompanionChat.composeProjectSystemPrompt(input.base,null,input.project)};"
             case .world: "return NodusCompanionChat.prepareWorldChat(input);"
             case .worldAnswer: "return NodusCompanionChat.validateMobileWorldChatAnswer(input);"
             case .worldSources: "NodusCompanionChat.validateMobileWorldChatSourcePack(input.pack,input.vaultId);return {valid:true};"
@@ -109,6 +110,13 @@ enum CompanionChatContext {
     }
     static func validateStudyOriginal(_ source: JSONValue) async throws {
         _ = try await evaluateValue(.object(["source":source]),operation:.studyOriginal)
+    }
+    static func projectSystem(_ base:String,project:CompanionChatOrganisation.Project) async throws -> String {
+        guard !base.isEmpty else { throw DesktopBridgeError.malformedResponse }
+        let input:JSONValue = .object(["base":.string(base),"project":.object(["name":.string(project.name),"instructions":.string(project.instructions)])])
+        let result = try await evaluateValue(input,operation:.project)
+        guard let system = result.objectValue?["system"]?.stringValue,!system.isEmpty else { throw DesktopBridgeError.malformedResponse }
+        return system
     }
     private static func evaluateValue(_ input: JSONValue,operation: Operation) async throws -> JSONValue {
         try Task.checkCancellation()

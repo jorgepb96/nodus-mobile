@@ -373,6 +373,16 @@ opening a full original they do not contain requests a new explicit download. A 
 source and a live transport/permission error remain errors instead of stale fallback.
 Original-source identity and owning-vault fixtures are prepared but unexecuted.
 
+The native chat history now browses projects, nested folders, notebooks and pinned chats,
+and offers a touch form for renaming and organizing complete selected conversations.
+Metadata is bounded and protected locally; moving, renaming, pinning and archiving use
+the same durable revision-checked conversation queue rather than independent untracked
+writes. Desktop enforces owning-surface destinations, the five-pin limit and atomic replay;
+archiving releases a pin and deletion confirmations describe synchronization to the Mac.
+Autonomous replies inherit the project's actual shared preference composer, with application
+source/citation rules retaining precedence. Metadata, pin-limit, offline restart and lost-ACK
+fixtures are prepared but unexecuted; history visual acceptance remains pending.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile

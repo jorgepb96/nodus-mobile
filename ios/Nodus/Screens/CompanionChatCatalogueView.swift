@@ -17,14 +17,20 @@ struct CompanionChatCatalogueView: View {
     @State private var downloading: String?
     @State private var issue: String?
     @State private var query = ""
+    @State private var placementFilter = "all"
     private var kind: CompanionChatKind { CompanionChatKind(vaultType:session.vaultType) }
     private var filtered: [JSONValue] {
         let needle = query.trimmingCharacters(in:.whitespacesAndNewlines)
-        return needle.isEmpty ? rows:rows.filter { ($0.objectValue?["title"]?.stringValue ?? "").localizedCaseInsensitiveContains(needle) }
+        return rows.filter { row in
+            let raw = row.objectValue ?? [:]
+            let scope = placementFilter == "all" || placementFilter == "pinned" && raw["pinnedAt"]?.stringValue != nil || placementFilter.hasPrefix("project:") && raw["projectId"]?.stringValue == String(placementFilter.dropFirst(8)) || placementFilter.hasPrefix("folder:") && raw["folderId"]?.stringValue == String(placementFilter.dropFirst(7)) || placementFilter.hasPrefix("notebook:") && raw["notebookId"]?.stringValue == String(placementFilter.dropFirst(9))
+            return scope && (needle.isEmpty || (raw["title"]?.stringValue ?? "").localizedCaseInsensitiveContains(needle))
+        }
     }
     var body: some View {
         NavigationStack {
             List {
+                ChatHistoryScopePicker(organisation:store.organisation,filter:$placementFilter)
                 Text("Choose a conversation to keep it on this device for 14 days. Editing it keeps your work until it synchronizes.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if let issue {
@@ -38,6 +44,8 @@ struct CompanionChatCatalogueView: View {
                                 VStack(alignment:.leading,spacing:5) {
                                     Text(verbatim:row.objectValue?["title"]?.stringValue ?? "").foregroundStyle(.primary).lineLimit(3)
                                     if let count = row.objectValue?["messageCount"]?.intValue { Text("\(count) messages").font(.caption).foregroundStyle(.secondary) }
+                                    if row.objectValue?["pinnedAt"]?.stringValue != nil { Label("Fijada",systemImage:"pin.fill").font(.caption).foregroundStyle(.secondary) }
+                                    if let project = row.objectValue?["projectId"]?.stringValue,let name = store.organisation?.projects.first(where:{$0.id == project})?.name { Text(verbatim:name).font(.caption).foregroundStyle(.secondary) }
                                 }
                                 Spacer(minLength:12)
                                 if downloading == id { ProgressView() } else { Image(systemName:"arrow.down.circle").foregroundStyle(session.accent) }
@@ -63,6 +71,7 @@ struct CompanionChatCatalogueView: View {
             guard let vault = session.vaultId else { throw DesktopBridgeError.permissionDenied }
             let bridge = try ConnectionClient.companionChat(for:session.connection)
             let page = try await bridge.chatHistoryPage(vaultId:vault,kind:kind,cursor:reset ? 0:cursor,revision:reset ? nil:revision)
+            if let organisation = page.organisation { try organisation.validate(kind:kind);try store.retainOrganisation(organisation) }
             let existing = Set((reset ? []:rows).compactMap{$0.objectValue?["id"]?.stringValue})
             let ids = page.rows.compactMap{$0.objectValue?["id"]?.stringValue}
             guard Set(ids).count == ids.count,existing.isDisjoint(with:ids) else { throw DesktopBridgeError.malformedResponse }

@@ -1,4 +1,5 @@
 import NodusUI
+import NodusKit
 import SwiftUI
 
 /// Everything the vault has been asked, and what to do with it.
@@ -22,6 +23,8 @@ struct ChatHistoryView: View {
     @State private var showsArchived = false
     @State private var mutationIssue: String?
     @State private var showingMac = false
+    @State private var organizing: ChatHistoryStore.Conversation?
+    @State private var placementFilter = "all"
     private func mutate(_ action: () throws -> Void) {
         do { try action();mutationIssue = nil } catch { mutationIssue = error.localizedDescription }
     }
@@ -34,10 +37,10 @@ struct ChatHistoryView: View {
     private var listed: [ChatHistoryStore.Conversation] {
         let source = listedSource
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return source }
         return source.filter {
-            $0.title.lowercased().contains(needle)
-                || $0.messages.contains { $0.text.lowercased().contains(needle) }
+            let placement = $0.placement ?? CompanionChatPlacement()
+            let scope = placementFilter == "all" || placementFilter == "pinned" && placement.pinned || placementFilter.hasPrefix("project:") && placement.projectId == String(placementFilter.dropFirst(8)) || placementFilter.hasPrefix("folder:") && placement.folderId == String(placementFilter.dropFirst(7)) || placementFilter.hasPrefix("notebook:") && placement.notebookId == String(placementFilter.dropFirst(9))
+            return scope && (needle.isEmpty || $0.title.lowercased().contains(needle) || $0.messages.contains { $0.text.lowercased().contains(needle) })
         }
     }
 
@@ -55,6 +58,8 @@ struct ChatHistoryView: View {
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+                ChatHistoryScopePicker(organisation:store.organisation,filter:$placementFilter)
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
 
                 ForEach(store.conversations.filter { $0.desktop?.deleted == true && $0.desktop?.state != .saved }) { conversation in
                     VStack(alignment:.leading,spacing:8) {
@@ -99,6 +104,11 @@ struct ChatHistoryView: View {
                     // them and it is also invisible: nothing on the row says it is there, and
                     // a list you only ever scroll never reveals it.
                     .contextMenu {
+                        Button { organizing = conversation } label: { Label("Organizar y renombrar",systemImage:"folder") }
+                        Button {
+                            var placement = conversation.placement ?? CompanionChatPlacement();placement.pinned.toggle()
+                            mutate { try store.organize(conversation.id,placement:placement) }
+                        } label: { Label(conversation.placement?.pinned == true ? "Desfijar":"Fijar",systemImage:conversation.placement?.pinned == true ? "pin.slash":"pin") }.disabled(conversation.isArchived)
                         if conversation.desktop?.state == .blocked {
                             Button("Retry synchronization") { mutate { try store.retrySynchronization(id:conversation.id) } }
                         }
@@ -191,7 +201,7 @@ struct ChatHistoryView: View {
                 }
                 Button("Cancel", role: .cancel) { pendingDeletion = nil }
             } message: {
-                Text("“\(pendingDeletion?.title ?? "")” is removed from this device. This cannot be undone.")
+                Text(pendingDeletion?.desktop != nil ? "La conversación se eliminará de este dispositivo y del Mac al sincronizar. Esta acción no se puede deshacer.":"La conversación se eliminará de este dispositivo. Esta acción no se puede deshacer.")
             }
             .alert(
                 "Delete these conversations?",
@@ -205,7 +215,7 @@ struct ChatHistoryView: View {
             } message: {
                 // The count is the whole point of the sentence: "delete all" is a different
                 // decision at three conversations and at ninety.
-                Text("\(store.count(pendingBulkDeletion ?? .active)) conversations are removed from this device. This cannot be undone.")
+                Text("Se eliminarán \(store.count(pendingBulkDeletion ?? .active)) conversaciones. Las conversaciones vinculadas también se eliminarán del Mac al sincronizar. Esta acción no se puede deshacer.")
             }
         }
         .tint(accent)
@@ -215,11 +225,12 @@ struct ChatHistoryView: View {
                 CompanionChatCatalogueView(session:session,store:store) { conversation in onOpen(conversation);dismiss() }
             }
         }
+        .nodusSheet(item:$organizing) { conversation in ChatConversationOrganizationView(conversation:conversation,store:store,accent:accent) }
     }
 
     private func row(_ conversation: ChatHistoryStore.Conversation) -> some View {
         HStack(alignment: .top, spacing: 11) {
-            Image(systemName: conversation.id == currentId ? "bubble.left.fill" : "bubble.left")
+            Image(systemName: conversation.placement?.pinned == true ? "pin.fill":conversation.id == currentId ? "bubble.left.fill" : "bubble.left")
                 .font(.footnote)
                 .foregroundStyle(accent)
                 .frame(width: 22, height: 22)
@@ -238,6 +249,11 @@ struct ChatHistoryView: View {
                 Text("\(conversation.messages.count / 2) · \(conversation.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                if let id = conversation.placement?.projectId,let project = store.organisation?.projects.first(where:{$0.id == id}) {
+                    Text(verbatim:project.name).font(.caption2).foregroundStyle(.secondary)
+                }
+                if let id = conversation.placement?.folderId,let name = store.organisation?.folderName(id) { Text(verbatim:name).font(.caption2).foregroundStyle(.secondary) }
+                if let id = conversation.placement?.notebookId,let name = store.organisation?.notebooks.first(where:{$0.id == id})?.name { Label(name,systemImage:"book.closed").font(.caption2).foregroundStyle(.secondary) }
                 if let sync = conversation.desktop,sync.state != .saved {
                     Label(sync.state == .conflict ? "Conversation conflict":sync.state == .blocked ? "Synchronization needs attention":"Waiting to synchronize",systemImage:sync.state == .conflict ? "exclamationmark.arrow.triangle.2.circlepath":"arrow.triangle.2.circlepath")
                         .font(.caption).foregroundStyle(sync.state == .pending ? .secondary:.primary)

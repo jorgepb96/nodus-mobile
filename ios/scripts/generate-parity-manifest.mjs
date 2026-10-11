@@ -284,6 +284,11 @@ function operationMatrix(routes) {
       ['sync.chat.perTurnAuthorshipTimes', 'sync'],
       ['consultation.studyChat.questionAndExamOriginals', 'consultation'],
       ['consultation.studyChat.completeDownloadedOriginals', 'consultation'],
+      ['consultation.chat.nativeProjectsFoldersNotebooks', 'consultation'],
+      ['sync.chat.organizeRenameAndPinCAS', 'sync'],
+      ['sync.chat.archivePinLimitAndUnavailableDestination', 'sync'],
+      ['sync.chat.offlineOrganizationLostAcknowledgement', 'sync'],
+      ['generation.chat.sharedProjectPreferences', 'generation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

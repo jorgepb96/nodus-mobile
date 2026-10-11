@@ -293,7 +293,7 @@ struct ChatScreen: View {
         }
         try history.save(ChatHistoryStore.Conversation(
             id: id,
-            title: conversationTitle,
+            title: history.conversations.first(where:{$0.id == id})?.title ?? conversationTitle,
             messages: turns.map { turn in
                 ChatHistoryStore.Message(
                     id: turn.id,
@@ -408,6 +408,7 @@ struct ChatScreen: View {
         let selectedDatabases = databaseIds
         let selectedStudy = studyOptions
         let selectedWorld = worldOptions
+        let selectedProject = conversationId.flatMap { id in history.conversations.first(where:{$0.id == id})?.placement?.projectId }
         let prior = turns.map { ChatMessage(role:$0.role,content:$0.text) }
 
         draft = ""
@@ -431,7 +432,7 @@ struct ChatScreen: View {
             }
             do {
                 let material: CorpusRetrieval.Result?
-                let request: ChatRequest
+                var request: ChatRequest
                 var studyContext: CompanionChatContext.StudyPrepared?
                 var worldContext: CompanionChatContext.WorldPrepared?
                 if session.vaultType == .databases {
@@ -480,6 +481,13 @@ struct ChatScreen: View {
                     }
                     request = ChatRequest(model:model,messages:context.messages,temperature:0.4)
                 }
+                if let selectedProject {
+                    let project = try await history.projectPreferences(selectedProject,session:session)
+                    guard let index = request.messages.firstIndex(where:{$0.role == .system}) else { throw DesktopBridgeError.malformedResponse }
+                    let system = try await CompanionChatContext.projectSystem(request.messages[index].content,project:project)
+                    request.messages[index] = .init(role:.system,content:system)
+                }
+                guard ownsAnswer(),!Task.isCancelled else { return }
                 let provider = ProviderClient(keyProvider: ai.keyProvider)
 
                 var text = ""
