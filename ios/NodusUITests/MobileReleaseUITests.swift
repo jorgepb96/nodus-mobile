@@ -2383,6 +2383,12 @@ final class MobileReleaseUITests: XCTestCase {
         app.launch()
         let addServer = app.buttons["nodus-add-server"]
         let switchSpace = app.buttons["Cambiar de espacio"]
+        let restoredReaderClose = app.buttons["nodus-modal-close"]
+        if restoredReaderClose.waitForExistence(timeout: 2), restoredReaderClose.isHittable {
+            capture(app, "code-link-startup-restored-reader")
+            restoredReaderClose.tap()
+            XCTAssertTrue(restoredReaderClose.waitForNonExistence(timeout: 10))
+        }
         let initial = expectation(for: NSPredicate { _, _ in addServer.exists || switchSpace.exists }, evaluatedWith: app)
         XCTAssertEqual(XCTWaiter.wait(for: [initial], timeout: 20), .completed)
         if switchSpace.exists { switchSpace.tap() }
