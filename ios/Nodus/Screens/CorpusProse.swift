@@ -125,6 +125,7 @@ struct CorpusReference: Identifiable, Hashable {
         case passage
         case debate
         case collection
+        case privateSource
         case unsupported
     }
 
@@ -133,8 +134,9 @@ struct CorpusReference: Identifiable, Hashable {
     /// The record's own identifier: a `global_id`, a `nodus_id`, a `passage_id`.
     let recordId: String
     var specialised: SpecialisedCorpusReference? = nil
+    var privateSource: PrivateCorpusReference? = nil
 
-    var id: String { "\(kind)/\(recordId)" + (specialised.map { ":\($0.collectionPath):\($0.expectedParentId ?? "")" } ?? "") }
+    var id: String { "\(kind)/\(recordId)" + (specialised.map { ":\($0.collectionPath):\($0.expectedParentId ?? "")" } ?? "") + (privateSource.map { ":\($0.kind.rawValue):\($0.timestamp ?? 0):\($0.transcriptId ?? "")" } ?? "") }
 
     init(kind: String, recordId: String) {
         self.kind = Self.canonical(kind)
@@ -173,6 +175,10 @@ struct CorpusReference: Identifiable, Hashable {
 
     init?(_ url: URL) {
         guard url.scheme?.lowercased() == "nodus" else { return nil }
+        if let target = PrivateCorpusReference(url) {
+            kind = url.host?.lowercased() ?? ""; recordId = target.id; privateSource = target
+            return
+        }
         if let target = SpecialisedCorpusReference(url) {
             kind = url.host?.lowercased() ?? ""; recordId = target.recordId; specialised = target
             return
@@ -212,6 +218,7 @@ struct CorpusReference: Identifiable, Hashable {
     /// prevents a valid citation from falling through the collection lookup and being described
     /// as outside the corpus merely because no `contradictions` table exists.
     var destination: Destination {
+        if privateSource != nil { return .privateSource }
         switch kind {
         case "idea": return .idea
         case "work": return .work
@@ -283,6 +290,8 @@ struct CorpusReferenceView: View {
                     RowByIdView(session: session, collection: collection, id: reference.recordId)
                         .sourceCitationTarget(reference.specialised)
                 }
+            case .privateSource:
+                if let source = reference.privateSource { PrivateCorpusSourceView(session: session, reference: source) }
             case .unsupported:
                 ContentUnavailableView(
                     "This citation points outside the corpus",

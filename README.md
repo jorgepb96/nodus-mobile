@@ -193,8 +193,10 @@ with complete outlines, evidence matrices and bibliography. Source and draft pag
 separate, validated contracts and stable identities when timestamps tie.
 Native citation readers recognise Desktop's world, archive/primary-source, study document/material
 and public testimony routes. Primary-source excerpts validate their owning document and internal
-identifiers decode once. Source locators are retained; private prosopography and recording links
-still require their specialised readers and final acceptance.
+identifiers decode once. Private prosopography and recording links now have addressed native
+readers, complete paged relations, revision checks, separate audio with citation timestamps and
+chosen encrypted downloads under their actual private domain. Their contracts and acceptance
+tests are prepared, not executed.
 Completed autonomous writing assistance opens its durable native result directly from Scriptor
 while publication is pending; it does not fabricate a Mac log ID or replace the original document.
 

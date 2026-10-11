@@ -6,6 +6,7 @@ struct SavedAudioTarget: Identifiable {
     let id: String
     let label: String
     let copy: PrivateBridgeFileCopy
+    var initialTimestamp: Double? = nil
 }
 
 /// The player receives only the verified, protected local copy; no Mac URL or credential.
@@ -77,6 +78,9 @@ struct SavedAudioPlayer: View {
                 audio.enableRate = true; audio.rate = rate
                 guard audio.prepareToPlay(), audio.duration.isFinite, audio.duration > 0 else { throw CocoaError(.fileReadCorruptFile) }
                 player = audio; duration = audio.duration
+                if let timestamp = target.initialTimestamp, timestamp.isFinite, timestamp >= 0 {
+                    audio.currentTime = min(audio.duration, timestamp)
+                }
                 trace("prepared")
                 while !Task.isCancelled {
                     playing = audio.isPlaying
@@ -88,7 +92,8 @@ struct SavedAudioPlayer: View {
         .onDisappear {
             player?.stop(); player = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            try? FileManager.default.removeItem(at: target.copy.url.deletingLastPathComponent())
+            // The protected file lease owns deletion. Another open control may
+            // still need the same verified copy to save its chosen download.
         }
     }
     private func toggle() {

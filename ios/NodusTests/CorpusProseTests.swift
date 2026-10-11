@@ -12,6 +12,15 @@ import Testing
 /// the same answer every time.
 @Suite("Corpus prose")
 struct CorpusProseTests {
+    @Test("private citations retain their addressed source and never use a public person dossier")
+    func privateReferences() throws {
+        let person = try #require(CorpusReference(URL(string: "nodus://prosop/person/private-person")!))
+        #expect(person.destination == .privateSource); #expect(person.privateSource?.kind == .person)
+        #expect(person.collection == nil)
+        let recording = try #require(CorpusReference(URL(string: "nodus://study/recording/recording?t=37.4")!))
+        #expect(recording.destination == .privateSource); #expect(recording.privateSource?.timestamp == 37.4)
+        #expect(recording.id != CorpusReference(URL(string: "nodus://study/recording/recording?t=12")!)?.id)
+    }
     @Test("specialised references use their Desktop route and retain an excerpt's owner")
     func specialisedReferences() throws {
         let world = try #require(CorpusReference(URL(string: "nodus://world/character/person-a")!))

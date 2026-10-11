@@ -8,11 +8,13 @@ struct PrivateFileButton: View {
     let session: SpaceSession
     let kind: DesktopBridgeFileKind
     let id: String
+    var initialTimestamp: Double? = nil
     @State private var preview: URL?
     @State private var downloading = false
     @State private var issue: String?
     @State private var offline = false
     @State private var copy: PrivateBridgeFileCopy?
+    @State private var audio: SavedAudioTarget?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
@@ -28,6 +30,10 @@ struct PrivateFileButton: View {
             if let copy { CompanionFileDownloadButton(session: session, copy: copy) }
         }
         .quickLookPreview($preview)
+        .nodusSheet(item: $audio) { target in
+            SavedAudioPlayer(target: target, accent: session.accent)
+        }
+        .onDisappear { preview = nil; audio = nil; copy = nil }
     }
     @MainActor private func open() async {
         downloading = true; issue = nil; offline = false
@@ -35,7 +41,10 @@ struct PrivateFileButton: View {
         do {
             let copy = try await loadPrivateBridgeFile(session, kind: kind, id: id)
             self.copy = copy
-            preview = copy.url; offline = copy.offline
+            offline = copy.offline
+            if kind == .studyRecording {
+                audio = SavedAudioTarget(id: id, label: copy.descriptor.filename, copy: copy, initialTimestamp: initialTimestamp)
+            } else { preview = copy.url }
         } catch { issue = error.localizedDescription }
     }
 }

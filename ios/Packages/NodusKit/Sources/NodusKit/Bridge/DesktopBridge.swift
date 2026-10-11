@@ -535,6 +535,33 @@ public actor DesktopBridgeClient {
         return DesktopBridgeResponse(data: data, status: http.statusCode, headers: Dictionary(uniqueKeysWithValues: http.allHeaderFields.map { (String(describing: $0.key).lowercased(), String(describing: $0.value)) }))
     }
 
+    public func privateSource(vaultId: String, reference: PrivateCorpusReference) async throws -> PrivateCorpusSource {
+        try requirePrivateSourceGrant(vaultId: vaultId, reference: reference)
+        let response = try await raw(path: reference.path(vaultId: vaultId), method: "GET", timeout: 4)
+        let source = try JSONDecoder.nodus.decode(PrivateCorpusSource.self, from: response.data)
+        try source.validate(for: reference)
+        return source
+    }
+
+    public func privateSourcePage(vaultId: String, reference: PrivateCorpusReference,
+        group: PrivateCorpusSource.Group, cursor: Int = 0) async throws -> PrivateCorpusSource.Page {
+        try requirePrivateSourceGrant(vaultId: vaultId, reference: reference)
+        guard reference.kind.groups.contains(group.key), cursor >= 0 else { throw DesktopBridgeError.permissionDenied }
+        let response = try await raw(path: reference.path(vaultId: vaultId), query: [
+            URLQueryItem(name: "group", value: group.key), URLQueryItem(name: "cursor", value: String(cursor)),
+            URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "revision", value: group.revision),
+        ], method: "GET", timeout: 10)
+        let page = try JSONDecoder.nodus.decode(PrivateCorpusSource.Page.self, from: response.data)
+        guard page.revision == group.revision, page.total == group.total,
+              !page.hasMore || (!page.rows.isEmpty && page.cursor > cursor) else { throw DesktopBridgeError.malformedResponse }
+        return page
+    }
+
+    private func requirePrivateSourceGrant(vaultId: String, reference: PrivateCorpusReference) throws {
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(reference.kind.domain) else { throw DesktopBridgeError.permissionDenied }
+    }
+
     public func privateJSON<T: Decodable & Sendable>(
         vaultId: String,
         domain: DesktopBridgeDomain,
