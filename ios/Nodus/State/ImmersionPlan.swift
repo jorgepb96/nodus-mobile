@@ -8,6 +8,7 @@ import NodusKit
 /// string given a shape — and only the parts the desktop actually fills, so a field that is
 /// missing reads as absent rather than as empty ceremony.
 struct ImmersionPlan {
+    let source: JSONValue
     let title: String
     let topic: String
     let minutes: Int
@@ -42,11 +43,21 @@ struct ImmersionPlan {
     }
 
     struct Citation {
+        let passageId: String
+        let workId: String
         let workTitle: String
         let authors: [String]
         let year: Int?
         let pageLabel: String?
         let text: String
+        let commentary: String
+        let whyItMatters: String
+        var targetURL: URL? {
+            let kind = passageId.isEmpty ? "work" : "passage", id = passageId.isEmpty ? workId : passageId
+            guard !id.isEmpty else { return nil }
+            var parts = URLComponents(); parts.scheme = "nodus"; parts.host = kind
+            parts.path = "/" + id; return parts.url
+        }
 
         /// Author, year and page as one line — the way a reader cites, not the way a row stores.
         var reference: String {
@@ -98,6 +109,7 @@ struct ImmersionPlan {
         // `plan` is a JSON column. `embeddedJSON` parses a string column; a server that ever
         // sends it already decoded is handled by the fallback, so neither shape is a surprise.
         guard let plan = (row.embeddedJSON("plan") ?? row["plan"])?.objectValue else { return nil }
+        source = .object(plan)
 
         title = plan["title"]?.stringValue ?? row.text("title") ?? ""
         topic = plan["topic"]?.stringValue ?? row.text("topic") ?? ""
@@ -122,11 +134,15 @@ struct ImmersionPlan {
                 citations: (station["citations"]?.arrayValue ?? []).compactMap { value in
                     guard let object = value.objectValue else { return nil }
                     return Citation(
+                        passageId: object["passageId"]?.stringValue ?? "",
+                        workId: object["workId"]?.stringValue ?? "",
                         workTitle: object["workTitle"]?.stringValue ?? "",
                         authors: (object["authors"]?.arrayValue ?? []).compactMap(\.stringValue),
                         year: object["year"]?.intValue,
                         pageLabel: object["pageLabel"]?.stringValue,
-                        text: object["text"]?.stringValue ?? ""
+                        text: object["text"]?.stringValue ?? "",
+                        commentary: object["commentary"]?.stringValue ?? "",
+                        whyItMatters: object["whyItMatters"]?.stringValue ?? ""
                     )
                 },
                 quiz: Self.questions(station["quiz"])

@@ -43,6 +43,7 @@ final class SpaceSession {
     private(set) var companionPublicationRevision = 0
     private(set) var companionResultRevision = 0
     private(set) var companionDownloadRevision = 0
+    private(set) var companionImmersionProgressRevision = 0
     private(set) var companionPublicationUpdates: [JSONValue] = []
 
     /// A durable device result refreshes native readers without reporting an
@@ -357,6 +358,14 @@ final class SpaceSession {
         defer { isSynchronizingCompanionChanges = false }
         if let vaultId, let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
             try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) }
+            if let pairingId = connection.desktopPairingId,
+               let progress = try? await CompanionImmersionProgressOutboxes.shared.outbox(pairingId: pairingId, vaultId: vaultId) {
+                let before = await progress.revision
+                try? await progress.synchronize { sessionId, request in
+                    try await bridge.saveImmersionProgress(vaultId: vaultId, sessionId: sessionId, request: request)
+                }
+                if await progress.revision != before { companionImmersionProgressRevision += 1 }
+            }
             // Portable results synchronize in either mode. New Mac generation
             // resumes only while live remains explicitly selected, including
             // when the user changes modes during the preceding network probe.
@@ -370,6 +379,19 @@ final class SpaceSession {
                     try await bridge.submitJob(vaultId: vaultId, method: request.method, args: request.args, idempotencyKey: request.id)
                 })
                 let changed = await ledger.all().filter { before[$0.id] != $0.state }
+                if let progress = try? await CompanionImmersionProgressOutboxes.shared.outbox(pairingId: pairingId, vaultId: vaultId) {
+                    let beforeProgress = await progress.revision
+                    for result in await ledger.all() where result.method == "saveImmersionGeneratedSession" && result.state == "available" {
+                        if let value = result.result?.objectValue, let id = value["id"]?.stringValue, let plan = value["plan"],
+                           let sourceRevision = try? CompanionImmersionProgress.sourceRevision(plan: plan) {
+                            try? await progress.associate(publicationId: result.id, sessionId: id, sourceRevision: sourceRevision)
+                        }
+                    }
+                    if await progress.revision != beforeProgress {
+                        try? await progress.synchronize { sessionId, request in try await bridge.saveImmersionProgress(vaultId: vaultId, sessionId: sessionId, request: request) }
+                        companionImmersionProgressRevision += 1
+                    }
+                }
                 if !changed.isEmpty {
                     companionPublicationUpdates = changed.map { job in
                         let checkpoint = job.checkpoint?.objectValue

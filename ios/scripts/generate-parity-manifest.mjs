@@ -197,6 +197,9 @@ function operationMatrix(routes) {
       ['sync.selectedWorkshopSources', 'sync'],
       ['consultation.testimonyPrivateDossiers', 'consultation'], ['consultation.testimonyCitationLocators', 'consultation'],
       ['consultation.testimonyPrivateDownloads', 'consultation'],
+      ['consultation.immersion.privateProgress', 'consultation'], ['consultation.immersion.quizPersistence', 'consultation'],
+      ['consultation.immersion.restart', 'consultation'], ['sync.immersion.answers', 'sync'],
+      ['sync.immersion.conflicts', 'sync'], ['sync.immersion.pendingGenerationProgress', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

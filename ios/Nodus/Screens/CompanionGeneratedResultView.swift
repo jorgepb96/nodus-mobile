@@ -26,7 +26,7 @@ struct CompanionGeneratedResultView: View {
         Group {
             if current.method == "saveImmersionGeneratedSession", let plan = value["plan"],
                let itinerary = ImmersionPlan(Row(["plan": plan])) {
-                ImmersionView(session: session, sessionId: request.id, title: title, localPlan: itinerary)
+                ImmersionView(session: session, sessionId: request.id, title: title, localPlan: itinerary, publicationId: current.id)
             } else if let markdown {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {

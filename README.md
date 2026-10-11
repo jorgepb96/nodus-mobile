@@ -214,6 +214,13 @@ Canonical interview citations retain their exact session, transcript, annotation
 locators report a failure instead of substituting another version. Private dossiers and audio are
 separate explicit downloads within the shared storage budget and testimony grant. Unpaired public
 readers remain limited to their published dossier. These contracts are prepared, not yet executed.
+Native immersion choices, private reflections and reading progress now persist in the encrypted
+authored-work store. The writing bridge uses source identities, optimistic revisions and atomic
+receipts; lost acknowledgements replay without overwriting later Desktop changes. Concurrent
+progress exposes both answer sets for explicit review. Pending autonomous sessions retain their
+progress under the generation identity until its canonical session receipt arrives. Reflections
+are never evaluated by or sent to a model, matching Desktop. Full station evidence, commentary
+and source links remain available in the native reader. The new contracts are prepared, not run.
 Completed autonomous writing assistance opens its durable native result directly from Scriptor
 while publication is pending; it does not fabricate a Mac log ID or replace the original document.
 

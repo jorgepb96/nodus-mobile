@@ -535,6 +535,24 @@ public actor DesktopBridgeClient {
         return DesktopBridgeResponse(data: data, status: http.statusCode, headers: Dictionary(uniqueKeysWithValues: http.allHeaderFields.map { (String(describing: $0.key).lowercased(), String(describing: $0.value)) }))
     }
 
+    private func immersionProgressPath(vaultId: String, sessionId: String) throws -> String {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing), !sessionId.isEmpty else { throw DesktopBridgeError.permissionDenied }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed), let session = sessionId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.malformedResponse }
+        return "/bridge/v2/vaults/\(vault)/writing/immersion/\(session)/progress"
+    }
+    public func immersionProgress(vaultId: String, sessionId: String) async throws -> CompanionImmersionProgress.Snapshot {
+        let response = try await raw(path: immersionProgressPath(vaultId: vaultId, sessionId: sessionId), method: "GET", timeout: 4)
+        let value = try JSONDecoder.nodus.decode(CompanionImmersionProgress.Snapshot.self, from: response.data)
+        try value.validate(sessionId: sessionId); return value
+    }
+    public func saveImmersionProgress(vaultId: String, sessionId: String, request: CompanionImmersionProgress.Request) async throws -> CompanionImmersionProgress.Receipt {
+        let body = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(request))
+        let response = try await raw(path: immersionProgressPath(vaultId: vaultId, sessionId: sessionId), method: "POST", body: body, timeout: 10)
+        let receipt = try JSONDecoder.nodus.decode(CompanionImmersionProgress.Receipt.self, from: response.data)
+        guard receipt.id == request.id else { throw DesktopBridgeError.malformedResponse }
+        try receipt.snapshot.validate(sessionId: sessionId); return receipt
+    }
     public func privateSource(vaultId: String, reference: PrivateCorpusReference) async throws -> PrivateCorpusSource {
         try requirePrivateSourceGrant(vaultId: vaultId, reference: reference)
         let response = try await raw(path: reference.path(vaultId: vaultId), method: "GET", timeout: 4)
