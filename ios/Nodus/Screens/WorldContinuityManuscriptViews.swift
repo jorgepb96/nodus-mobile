@@ -114,7 +114,7 @@ struct WorldContinuityView: View {
             let creation = try await session.client.createSpaceAction(
                 idempotencyKey: "continuity:\(session.connection.spaceId):\(session.publishedRevision ?? "local")",
                 kind: .worldbuildingContinuity, payload: [:], inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
+                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             message = creation.duplicate
                 ? "This revision is already queued for the full Desktop audit."
@@ -743,7 +743,7 @@ private struct WorldManuscriptInspector: View {
             let creation = try await session.client.createSpaceAction(
                 idempotencyKey: "prose-review:\(scene.id):\(UUID().uuidString.prefix(8))",
                 kind: .worldbuildingProseReview, payload: ["sceneId": .string(scene.id)],
-                inputRevision: session.publishedRevision, in: session.connection.spaceId
+                inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             var action = creation.action
             for _ in 0..<30 where !action.status.isTerminal {

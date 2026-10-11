@@ -326,7 +326,7 @@ private struct IdeaWorkspaceDocument: View {
             let result = try await session.client.createSpaceAction(
                 idempotencyKey: "ios:\(kind.rawValue):\(session.connection.spaceId):\(id):\(session.publishedRevision ?? "local")",
                 kind: kind, payload: ["ideaId": .string(id)], inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
+                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             actionState = result.duplicate ? String(localized: "This action was already queued.") : String(localized: "Queued for Desktop · \(result.action.status.rawValue)")
             if kind == .ideaDelete { workspaceTabs.close(tabId, in: NodusRoute.ideas.rawValue) }
@@ -660,7 +660,7 @@ private struct AuthorWorkspaceDocument: View {
             let result = try await session.client.createSpaceAction(
                 idempotencyKey: "ios:author-synthesis:\(session.connection.spaceId):\(id):\(session.publishedRevision ?? "local")",
                 kind: .authorSynthesisGenerate, payload: ["authorId": .string(id)], inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
+                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             actionState = result.duplicate ? String(localized: "This synthesis is already queued.") : String(localized: "Synthesis queued for Desktop.")
         } catch { actionState = error.localizedDescription }
@@ -736,7 +736,7 @@ private struct AuthorSynthesisMatrixView: View {
             _ = try await session.client.createSpaceAction(
                 idempotencyKey: "ios:matrix:\(session.connection.spaceId):\(authorId):\(themeId):\(session.publishedRevision ?? "local")",
                 kind: .authorsMatrixGenerate, payload: ["authorId": .string(authorId), "themeId": .string(themeId)],
-                inputRevision: session.publishedRevision, in: session.connection.spaceId
+                inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             generated[key] = "Queued"
         } catch { generated[key] = error.localizedDescription }

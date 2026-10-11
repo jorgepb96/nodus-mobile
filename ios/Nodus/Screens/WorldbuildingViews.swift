@@ -413,7 +413,7 @@ struct WorldEntityWorkspaceView: View {
                     kind: .worldbuildingEntityDelete,
                     payload: ["entity": .string(entity), "id": .string(id)],
                     inputRevision: session.publishedRevision,
-                    in: session.connection.spaceId
+                    executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
                 )
                 return
             } catch {

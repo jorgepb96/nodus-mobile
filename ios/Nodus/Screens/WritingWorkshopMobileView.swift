@@ -474,7 +474,7 @@ private struct WritingComposer: View {
                 let fingerprint = try JSONEncoder.nodus.encode(JSONValue.object(payload))
                 let stable = SHA256.hash(data: fingerprint).map { String(format: "%02x", $0) }.joined()
                 _ = try await session.client.createSpaceAction(idempotencyKey: "writing:\(stable)", kind: .writingGenerate,
-                    payload: payload, inputRevision: session.publishedRevision, in: session.connection.spaceId)
+                    payload: payload, inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId)
                 onQueued("Nodus ha aceptado la generación. El borrador aparecerá cuando esté guardado y disponible para consultar.")
             }
         } catch where error.isCancellation { status = "Generación cancelada. El original permanece intacto." }

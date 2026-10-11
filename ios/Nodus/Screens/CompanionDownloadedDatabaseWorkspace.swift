@@ -16,7 +16,7 @@ struct CompanionDownloadedDatabaseWorkspace:View {
             if let database {DatabaseDetailWorkspace(session:session,database:database,tables:$tables,outbox:outbox,downloadedOnly:true)}
             else if let issue {NodusNotice(tone:.caution,title:"Descarga de base de datos no disponible",message:LocalizedStringKey(issue)).padding(NodusSpace.page)}
             else {ProgressView("Leyendo la base de datos descargada…")}
-        }.task(id:dossier.id){await load()}
+        }.task(id:dossier.primary.string(dossier.collection.idField)){await load()}
     }
     private func load() async {
         do {
@@ -28,7 +28,7 @@ struct CompanionDownloadedDatabaseWorkspace:View {
             }
             let queue=try await MutationOutbox.open(spaceId:session.connection.storageId,directory:URL.applicationSupportDirectory.appendingPathComponent("spaces",isDirectory:true))
             source=try await queue.companionContentProjection(source)
-            guard let parent=PagesDatabasesParity.databases(in:source).first(where:{$0.id == dossier.id}) else {throw DesktopBridgeError.malformedResponse}
+            guard let identity=dossier.primary.string(dossier.collection.idField),let parent=PagesDatabasesParity.databases(in:source).first(where:{$0.id == identity}) else {throw DesktopBridgeError.malformedResponse}
             try Task.checkCancellation();tables=source;database=parent;outbox=await OutboxController.open(session:session)
         }catch where error.isCancellation {}
         catch{issue=error.localizedDescription}

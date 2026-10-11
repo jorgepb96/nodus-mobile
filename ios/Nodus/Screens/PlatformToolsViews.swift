@@ -861,6 +861,6 @@ private enum DesktopToolkitQueue {
         _ = try await outbox.enqueue(.record(version), title: item.metadata.title)
         _ = try await catalog.flushObjects(using: session.client); _ = try await outbox.flush(using: session.client)
         let outputFormat = command == "docx-to-text" ? "md" : "pdf"
-        _ = try await session.client.createSpaceAction(idempotencyKey: "toolkit:\(command):\(hash)", kind: .toolkitDesktopRun, payload: ["operation": .string(command), "libraryObjectIds": .array([.string(hash)]), "fileNames": .array([.string(url.lastPathComponent)]), "outputFormat": .string(outputFormat)], inputRevision: session.publishedRevision, inputFingerprint: hash, in: session.connection.spaceId)
+        _ = try await session.client.createSpaceAction(idempotencyKey: "toolkit:\(command):\(hash)", kind: .toolkitDesktopRun, payload: ["operation": .string(command), "libraryObjectIds": .array([.string(hash)]), "fileNames": .array([.string(url.lastPathComponent)]), "outputFormat": .string(outputFormat)], inputRevision: session.publishedRevision, inputFingerprint: hash, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId)
     }
 }

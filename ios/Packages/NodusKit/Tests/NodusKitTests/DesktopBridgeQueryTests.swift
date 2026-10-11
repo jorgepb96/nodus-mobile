@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import NodusKit
 
-@Suite("Companion read-only POST queries", .serialized)
+@Suite("Companion corpus queries and typed actions", .serialized)
 struct DesktopBridgeQueryTests {
     private func fixture(domains: Set<DesktopBridgeDomain> = [.corpus], expiresAt: Date? = nil) throws -> (DesktopBridgeClient, URLSession) {
         let pair = try DesktopBridgePairing(id: UUID().uuidString, origin: "https://mac.nodus.test:7443",
@@ -110,6 +110,68 @@ struct DesktopBridgeQueryTests {
         }
         #expect(CorpusQueryProtocol.state.calls().isEmpty)
     }
+
+    private var actionBody: JSONValue { .object([
+        "id": .string("41BCE15F-FA11-469D-9399-7ACB49620F83"), "kind": .string("pages.restoreRevision"),
+        "schemaVersion": .int(1), "payload": .object(["pageId": .string("page-owned"), "revision": .int(2)]),
+        "idempotencyKey": .string("restore:page-owned:2")
+    ]) }
+
+    @Test("the normal action API uses the actual owning vault and the persisted Mac receipt")
+    func directAction() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing]); defer { session.invalidateAndCancel() }
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = NodusClient(address: try ServerAddress(validating: "https://mac.nodus.test:7443"), cache: ResponseCache(directory: root), desktopBridge: bridge, vaultId: "Mac/vault")
+        let created = try await client.createSpaceAction(idempotencyKey: "restore:page-owned:2", kind: .pageRestoreRevision,
+            payload: ["pageId": .string("page-owned"), "revision": .int(2)], executionMode: "autonomous", in: "different-published-space")
+        #expect(created.action.spaceId == "Mac/vault")
+        #expect(created.action.status == .queued)
+        #expect(created.action.sequence == 7)
+        let request = try #require(CorpusQueryProtocol.state.calls().first)
+        #expect(request.request.url?.absoluteString == "https://mac.nodus.test:7443/bridge/v2/vaults/Mac%2Fvault/corpus/actions")
+        #expect(request.request.httpMethod == "POST")
+        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: request.body).objectValue?["executionMode"] == .string("autonomous"))
+        #expect(CorpusQueryProtocol.state.calls().count == 1)
+    }
+
+    @Test("typed content actions cannot open generic writes, toolkit or an encoded alias")
+    func closedActionBoundary() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing, .researchGeneration]); defer { session.invalidateAndCancel() }
+        for path in ["%61ctions", "actions/", "actions/../actions", "actions/invalid/cancel", "actions?method=delete", "notes"] {
+            await #expect(throws: DesktopBridgeError.permissionDenied) {
+                try await bridge.corpus(vaultId: "Mac/vault", path: path, method: "POST", body: actionBody, percentEncoded: true)
+            }
+        }
+        var input = try #require(actionBody.objectValue)
+        for kind in ["toolkit.desktopRun", "library.importToSpace", "academic.recompute", "pages.automationRun", "unknown"] {
+            input["kind"] = .string(kind)
+            let value = JSONValue.object(input)
+            await #expect(throws: DesktopBridgeError.permissionDenied) { try await bridge.corpus(vaultId: "Mac/vault", path: "actions", method: "POST", body: value) }
+        }
+        input["kind"] = .string("pages.restoreRevision"); input["method"] = .string("arbitraryIPC")
+        let extra = JSONValue.object(input)
+        await #expect(throws: DesktopBridgeError.malformedResponse) { try await bridge.corpus(vaultId: "Mac/vault", path: "actions", method: "POST", body: extra) }
+        #expect(CorpusQueryProtocol.state.calls().isEmpty)
+    }
+
+    @Test("research actions require explicit live mode and content actions still require writing")
+    func actionPermissionsAndMode() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing, .researchGeneration]); defer { session.invalidateAndCancel() }
+        var input = try #require(actionBody.objectValue); input["kind"] = .string("author.synthesis.generate")
+        let modes: [JSONValue?] = [nil, .string("autonomous")]
+        for mode in modes {
+            input["executionMode"] = mode; let value = JSONValue.object(input)
+            do {
+                _ = try await bridge.corpus(vaultId: "Mac/vault", path: "actions", method: "POST", body: value)
+                Issue.record("An autonomous action reached the Mac providers")
+            } catch let error as APIError { #expect(error.code == "explicit_live_mode_required") }
+        }
+        #expect(CorpusQueryProtocol.state.calls().isEmpty)
+        let (readOnly, readSession) = try fixture(); defer { readSession.invalidateAndCancel() }
+        await #expect(throws: DesktopBridgeError.permissionDenied) { try await readOnly.corpus(vaultId: "Mac/vault", path: "actions", method: "POST", body: actionBody) }
+        #expect(CorpusQueryProtocol.state.calls().isEmpty)
+    }
 }
 
 private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
@@ -128,7 +190,9 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
             }
         }
         Self.state.record(request, body: bytes)
-        let result = request.url?.path.hasSuffix("/operations") == true
+        let result = request.url?.path.hasSuffix("/actions") == true
+            ? #"{"action":{"id":"55471b5e-aa10-48c0-9d4c-cfc37b1c0ce1","sequence":7,"spaceId":"Mac/vault","idempotencyKey":"restore:page-owned:2","kind":"pages.restoreRevision","schemaVersion":1,"payload":{"pageId":"page-owned","revision":2},"actorUserId":"phone","createdByDevice":"phone","status":"queued","createdAt":"2026-10-11T08:00:00.000Z","updatedAt":"2026-10-11T08:00:00.000Z"},"duplicate":false}"#
+            : request.url?.path.hasSuffix("/operations") == true
             ? #"{"result":{"folders":[],"notes":[]}}"#
             : request.url?.path.hasSuffix("/search/semantic") == true
             ? #"{"indexed":false,"reason":"provider_mismatch","expected":{"provider":"fixture-provider","model":"fixture-model","dim":3},"results":[],"warning":"different provider"}"#

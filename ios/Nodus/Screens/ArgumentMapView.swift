@@ -275,7 +275,7 @@ private struct ArgumentMapDocumentView: View {
                 kind: .argumentMapGenerate,
                 payload: ["request": .object(["seedIdeaId": .string(seed.id), "mode": .string("ai")])],
                 inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
+                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             remoteState = result.duplicate ? String(localized: "The AI trace is already queued.") : String(localized: "AI trace queued for Desktop; its state is visible in Sync Center.")
         } catch { remoteState = error.localizedDescription }

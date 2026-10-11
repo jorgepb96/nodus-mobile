@@ -78,6 +78,7 @@ private struct SpaceActionCreateBody: Encodable {
     let payload: [String: JSONValue]
     let inputRevision: String?
     let inputFingerprint: String?
+    let executionMode:String?
 }
 
 public extension NodusClient {
@@ -90,6 +91,7 @@ public extension NodusClient {
         payload: [String: JSONValue],
         inputRevision: String? = nil,
         inputFingerprint: String? = nil,
+        executionMode:String? = nil,
         in spaceId: String
     ) async throws -> SpaceActionCreation {
         let body = SpaceActionCreateBody(
@@ -99,7 +101,8 @@ public extension NodusClient {
             schemaVersion: 1,
             payload: payload,
             inputRevision: inputRevision,
-            inputFingerprint: inputFingerprint
+            inputFingerprint: inputFingerprint,
+            executionMode:hasDesktopBridge ? executionMode:nil
         )
         let response = try await perform(.init(
             method: "POST",

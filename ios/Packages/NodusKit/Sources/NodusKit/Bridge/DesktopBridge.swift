@@ -537,10 +537,13 @@ public actor DesktopBridgeClient {
     public func corpus(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", body: JSONValue? = nil, percentEncoded: Bool = false, timeout: TimeInterval? = nil) async throws -> DesktopBridgeResponse {
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         let readQuery = method == "POST" && ["search/semantic", "context"].contains(path)
-        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), ["GET", "HEAD"].contains(method) || readQuery else { throw DesktopBridgeError.permissionDenied }
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
+        let actionWrite = method == "POST" && !readQuery
+            ? try DesktopCompanionActions.validateWrite(path: path, query: query, body: body, domains: pairing.domains) : false
+        guard ["GET", "HEAD"].contains(method) || readQuery || actionWrite else { throw DesktopBridgeError.permissionDenied }
         if readQuery {
             guard let body, body.objectValue != nil, try JSONEncoder.nodus.encode(body).count <= 256 * 1024 else { throw DesktopBridgeError.malformedResponse }
-        } else if body != nil { throw DesktopBridgeError.permissionDenied }
+        } else if !actionWrite && body != nil { throw DesktopBridgeError.permissionDenied }
         return try await raw(path: Self.corpusPath(vaultId: vaultId, path: path, percentEncoded: percentEncoded), query: query, method: method, body: body, timeout: timeout)
     }
 

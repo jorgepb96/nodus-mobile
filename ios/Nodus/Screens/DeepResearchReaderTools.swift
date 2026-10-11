@@ -56,7 +56,7 @@ struct DeepResearchSaveToNotesButton: View {
                         "markdown": .string(markdown),
                     ],
                     inputRevision: session.publishedRevision,
-                    in: session.connection.spaceId
+                    executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
                 )
                 queued = true
             } catch {

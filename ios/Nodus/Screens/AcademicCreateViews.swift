@@ -142,7 +142,7 @@ struct ProjectsMobileView: View {
                 idempotencyKey: "project-section:\(section.id):\(status):\(session.publishedRevision ?? "local")",
                 kind: .projectsSectionUpdate,
                 payload: ["id": .string(section.id), "status": .string(status)], inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
+                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             message = String(localized: "Section update queued once for Desktop.")
         } catch { self.error = error.localizedDescription }
@@ -163,7 +163,7 @@ struct ProjectsMobileView: View {
                 payload: [
                     "projectId": .string(project.id), "title": .string(url.deletingPathExtension().lastPathComponent),
                     "sourceFormat": .string(url.pathExtension.lowercased() == "md" ? "markdown" : "txt"), "text": .string(text),
-                ], inputRevision: session.publishedRevision, in: session.connection.spaceId
+                ], inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             message = String(localized: "Chapter import queued once. Desktop will version it and link it to the manuscript.")
         } catch { self.error = error.localizedDescription }
@@ -210,7 +210,7 @@ private struct ProjectCreateForm: View {
             _ = try await session.client.createSpaceAction(
                 idempotencyKey: "project-create:\(stableActionFingerprint("\(normalized)|\(kind)|\(brief)"))", kind: .projectsCreate,
                 payload: ["title": .string(normalized), "kind": .string(kind), "brief": .string(brief), "targetWords": .int(Int64(targetWords))],
-                inputRevision: session.publishedRevision, in: session.connection.spaceId
+                inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             onQueued("Project creation queued once. Desktop will initialise every canonical section and publish it.")
         } catch { self.error = error.localizedDescription }

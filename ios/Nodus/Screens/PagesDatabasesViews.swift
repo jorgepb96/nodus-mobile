@@ -422,7 +422,7 @@ private struct PageDocumentWorkspace: View {
     private func restoreRevision(_ row: Row) async {
         guard let revision = row.int("revision") else { return }
         do {
-            _ = try await session.client.createSpaceAction(idempotencyKey: "page-restore:\(page.id):\(revision)", kind: .pageRestoreRevision, payload: ["pageId": .string(page.id), "revision": .int(Int64(revision))], inputRevision: session.publishedRevision, in: session.connection.spaceId)
+            _ = try await session.client.createSpaceAction(idempotencyKey: "page-restore:\(page.id):\(revision)", kind: .pageRestoreRevision, payload: ["pageId": .string(page.id), "revision": .int(Int64(revision))], inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId)
             actionError = nil
         } catch { actionError = error.localizedDescription }
     }
@@ -871,7 +871,7 @@ struct DatabaseDetailWorkspace: View {
             ]
             let result = try await session.client.createSpaceAction(
                 idempotencyKey: "database-import:\(UUID().uuidString)", kind: .databaseImportCSV,
-                payload: payload, inputRevision: session.publishedRevision, in: session.connection.spaceId
+                payload: payload, inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             importMessage = "CSV queued for Desktop as \(result.action.id). It will appear after the vault republishes."
         } catch {
