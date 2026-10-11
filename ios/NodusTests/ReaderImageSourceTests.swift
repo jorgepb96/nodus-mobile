@@ -34,6 +34,24 @@ struct ReaderImageSourceTests {
             await #expect(throws:(any Error).self) { try await ReaderImageSource.load(value,session:nil) }
         }
     }
+    @Test("HTML figures share the Markdown identity and literal code never becomes a resource")
+    func htmlFigures() {
+        let text = """
+        <img alt='Mapa &quot;local&quot;' src="https://example.invalid/figure.png?a=1&amp;b=2" width="200">
+        <IMG SRC='nodus-library://attachment/document/asset' ALT='Archivo'>
+        ![Duplicada](nodus-library://attachment/document/asset)
+        `<img src="https://example.invalid/inline.png">`
+        ~~~html
+        <img src="https://example.invalid/fenced.png">
+        ~~~
+            <img src="https://example.invalid/indented.png">
+        """
+        let values = ReaderImageSource.references(in: text)
+        #expect(values.count == 2)
+        #expect(values.first(where: { $0.source.hasPrefix("https") })?.source == "https://example.invalid/figure.png?a=1&b=2")
+        #expect(values.first(where: { $0.source.hasPrefix("https") })?.alternative == "Mapa \"local\"")
+        #expect(values.contains(where: { $0.source == "nodus-library://attachment/document/asset" }))
+    }
     @Test("Private image identities cannot bypass their owning paired vault")
     func privateImagesNeedGrant() async {
         for value in ["nodus-image://world/fixture","nodus-library://original/fixture","nodus-archive://file/fixture"] {

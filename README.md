@@ -436,3 +436,15 @@ The new Desktop contract fixtures and Swift protocol/history regressions are **p
 executed**. All ten new acceptance rows are pending: no compilation, provider call, device
 walkthrough, screenshot or TestFlight availability is claimed for this change. Existing
 workflows remain unchanged; intermediate work is committed locally without triggering CI.
+
+Formatted report reading now has a local Desktop Markdown/GFM/KaTeX body hosted
+inside the native reader. Wide iPhone tables use labelled rows; iPad keeps tables.
+Native search, original-image zoom, annotation outbox and contextual UTF-16 anchors
+remain the owning app operations. Both TextKit and the rich host provide one Nodus
+selection ribbon. Literal code and original block boundaries are preserved; HTML
+image tags are limited to image references without executable HTML. Missing reader
+resources and failed image reads show an error and an explicit text fallback.
+These reader sources and Swift regression cases are prepared but **uncompiled and
+unexecuted**. Four new acceptance operations are pending; cross-device annotation
+continuity, actual WK selection, keyboard/touch accessibility and current captures
+must be checked in the final local campaign. Shared resources are not rebuilt yet.

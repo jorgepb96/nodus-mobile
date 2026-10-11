@@ -1939,6 +1939,30 @@
       "category": "generation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.reports.sharedTablesMathAndHTMLFigures",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.reports.singleNativeSelectionRibbon",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.reports.richReaderAnnotationAndBookmarkContinuity",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.reports.richSearchAndNativeOriginalImageZoom",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

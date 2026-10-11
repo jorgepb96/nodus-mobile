@@ -34,13 +34,33 @@ enum ReaderImageSource {
         let code = try! NSRegularExpression(pattern:#"`+[^`\n]*`+"#)
         let eligible = code.stringByReplacingMatches(in:prose,range:NSRange(prose.startIndex...,in:prose),withTemplate:"")
         var seen = Set<String>()
-        return expression.matches(in:eligible,range:NSRange(eligible.startIndex...,in:eligible)).compactMap { match in
+        var references = expression.matches(in:eligible,range:NSRange(eligible.startIndex...,in:eligible)).compactMap { match -> Reference? in
             guard let label = Range(match.range(at:1),in:eligible),
                   let target = Range(match.range(at:2).location == NSNotFound ? match.range(at:3):match.range(at:2),in:eligible) else { return nil }
             let source = String(eligible[target])
             guard seen.insert(source).inserted else { return nil }
             return Reference(source:source,alternative:String(eligible[label]))
         }
+        let images = try! NSRegularExpression(pattern: #"<img\b([^<>]*)/?>"#, options: [.caseInsensitive])
+        for image in images.matches(in: eligible, range: NSRange(eligible.startIndex..., in: eligible)) {
+            guard let range = Range(image.range(at: 1), in: eligible) else { continue }
+            let attributes = String(eligible[range])
+            func attribute(_ name: String) -> String? {
+                let pattern = "(?:^|\\s)" + name + #"\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))"#
+                guard let match = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]).firstMatch(in: attributes, range: NSRange(attributes.startIndex..., in: attributes)) else { return nil }
+                for group in 1...3 {
+                    if let range = Range(match.range(at: group), in: attributes) {
+                        var text = String(attributes[range])
+                        for (entity, decoded) in [("&quot;", "\""), ("&apos;", "'"), ("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&")] { text = text.replacingOccurrences(of: entity, with: decoded) }
+                        return text
+                    }
+                }
+                return nil
+            }
+            guard let source = attribute("src"), !source.isEmpty, seen.insert(source).inserted else { continue }
+            references.append(Reference(source: source, alternative: attribute("alt") ?? ""))
+        }
+        return references
     }
     static let maximumBytes = 40 * 1024 * 1024
     struct Content { let data: Data;let mime: String }

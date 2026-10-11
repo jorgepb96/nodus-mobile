@@ -511,6 +511,7 @@ struct CorpusProse: View {
         accent: Color,
         session: SpaceSession? = nil,
         labels: [String: String] = [:],
+        renderRichText: Bool = true,
         onReference: ((Int) -> Void)? = nil,
         onCitation: ((URL) -> Bool)? = nil
     ) {
@@ -520,7 +521,11 @@ struct CorpusProse: View {
         self.onCitation = onCitation
         // The text and the labels are not kept: everything that reads them is done here. What
         // survives is `blocks`, which is what they were for.
-        blocks = Self.prepare(text, labels: labels)
+        let prepared = Self.prepare(text, labels: labels)
+        blocks = prepared
+        richSource = renderRichText && RichCorpusProse.isRequired(text)
+            ? Self.linkifyRichText(text, labels: labels)
+            : nil
     }
 
     /// The prose, split into blocks and linkified, once.
@@ -540,6 +545,7 @@ struct CorpusProse: View {
     /// handed to it is now the same instance each pass, so the identity check that decides whether
     /// to reparse the Markdown short-circuits instead of walking two copies of a paragraph.
     private let blocks: [Block]
+    private let richSource: String?
 
     /// Uses the same block identities as the rendered reader, so an evidence
     /// jump opens the cited paragraph rather than the start of a long document.
@@ -548,7 +554,7 @@ struct CorpusProse: View {
         guard !needle.isEmpty, let block = blocks.first(where: {
             $0.text.split(whereSeparator: \.isWhitespace).joined(separator: " ").range(of: needle, options: .caseInsensitive) != nil
         }) else { return nil }
-        return PageSearchAnchor(path: path + [block.id])
+        return PageSearchAnchor(path: path + [richSource == nil ? block.id : 0])
     }
 
     /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: an
@@ -606,6 +612,17 @@ struct CorpusProse: View {
     }
 
     var body: some View {
+        if reading.document, let richSource {
+            RichCorpusProse(source: richSource, accent: accent, session: session, onOpen: { [presenting] url in
+                if onCitation?(url) == true { return true }
+                if let number = PageChatReference.number(in: url) { onReference?(number); return true }
+                guard session != nil, let reference = CorpusReference(url) else { return false }
+                presenting.reference = reference; return true
+            }).background { ProseSheets(session: session, presenting: presenting, removeBookmark: { [bookmarks] in bookmarks?.clear() }) }
+        } else { nativeProse }
+    }
+
+    private var nativeProse: some View {
         let displayedBlocks = blocks.map(displayed)
         let annotationDocument = ReaderAnnotationDocument(blocks: displayedBlocks)
         // On iPad the report is deliberately wider than its prose. Those otherwise empty
@@ -908,6 +925,36 @@ struct CorpusProse: View {
             output.replaceSubrange(replaceRange, with: "[\(safe)](\(trimmed))")
         }
         return output
+    }
+
+    /// Preserve the original block syntax and literal code in the shared renderer.
+    /// Reconstructing it from TextKit paragraphs would turn headings inside a code
+    /// example into document headings and alter table or fenced-code boundaries.
+    static func linkifyRichText(_ source: String, labels: [String: String]) -> String {
+        var fence: Character?
+        var fenceLength = 0
+        let inlineCode = try? NSRegularExpression(pattern: #"(`+).*?\1"#)
+        return source.components(separatedBy: .newlines).map { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let first = trimmed.first, first == "`" || first == "~" {
+                let count = trimmed.prefix { $0 == first }.count
+                if count >= 3 {
+                    if fence == first, count >= fenceLength { fence = nil }
+                    else if fence == nil { fence = first; fenceLength = count }
+                    return line
+                }
+            }
+            guard fence == nil, !line.hasPrefix("    "), !line.hasPrefix("\t") else { return line }
+            var start = line.startIndex
+            var result = ""
+            for match in inlineCode?.matches(in: line, range: NSRange(line.startIndex..., in: line)) ?? [] {
+                guard let range = Range(match.range, in: line) else { continue }
+                result += linkify(String(line[start..<range.lowerBound]), labels: labels)
+                result += line[range]; start = range.upperBound
+            }
+            result += linkify(String(line[start...]), labels: labels)
+            return result
+        }.joined(separator: "\n")
     }
 }
 
@@ -1757,14 +1804,9 @@ private struct DocumentProse: UIViewRepresentable {
 
             let palette = UIMenu(title: "", options: .displayInline, preferredElementSize: .small, children: ours)
 
-            // The non-editable text view's standard edit group contains Copy. Its icon above is
-            // the replacement, not an additional way to copy, so remove the labelled group and
-            // leave Look Up, Translate, Share and the rest of the system's suggestions intact.
-            var children = suggestedActions.filter { element in
-                (element as? UIMenu)?.identifier != .standardEdit
-            }
-            children.insert(palette, at: 0)
-            let selectionMenu = UIMenu(children: children)
+            // One ribbon for the report. UIKit selection handles and keyboard commands stay
+            // native, while duplicate Copy/Look Up/Translate/Share groups are excluded.
+            let selectionMenu = UIMenu(children: [palette])
 
             // UIKit can present a secondary click through either its own text-selection
             // interaction or our installed edit interaction. Both must use the same ribbon.

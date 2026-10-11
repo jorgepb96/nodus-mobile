@@ -308,6 +308,10 @@ function operationMatrix(routes) {
       ['consultation.chat.liveActivityAndOriginalMemberResults', 'consultation'],
       ['sync.chat.noAutomaticModeFallback', 'sync'],
       ['generation.chat.checkpointsPreservePendingRichAssets', 'generation'],
+      ['consultation.reports.sharedTablesMathAndHTMLFigures', 'consultation'],
+      ['consultation.reports.singleNativeSelectionRibbon', 'consultation'],
+      ['sync.reports.richReaderAnnotationAndBookmarkContinuity', 'sync'],
+      ['consultation.reports.richSearchAndNativeOriginalImageZoom', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }
