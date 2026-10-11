@@ -803,8 +803,10 @@ private struct DesktopWebView: UIViewRepresentable {
                                 let includeTrashed = args.first == .bool(true)
                                 let ownedTree = method == "getNotesTree" ? await documents.confirmedTree(includeTrashed: includeTrashed) : nil
                                 var privateReadFromDevice = false
-                                let hasIdeas = CompanionIdeaCopy.operationMethods.contains(method)
+                                let hasDownloadedIdeas = CompanionIdeaCopy.operationMethods.contains(method)
                                     ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
+                                let authoredIdeas = CompanionIdeaCopy.operationMethods.contains(method) ? await documents.pendingIdeaCopy(includeConfirmed: true) : nil
+                                let hasIdeas = hasDownloadedIdeas || authoredIdeas != nil
                                 do {
                                     value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasIdeas && ownedEditor == nil && ownedTree == nil ? nil : 4)
                                     onOfflineCopy(false)

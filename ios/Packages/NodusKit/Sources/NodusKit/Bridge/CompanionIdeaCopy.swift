@@ -21,12 +21,20 @@ public struct CompanionIdeaCopy: Sendable {
     }
 
     public init(copies: [JSONValue]) throws {
+        // An authored text projection does not own a canonical neighbourhood.
+        // Complete selected dossiers take priority, even when an older local
+        // writing store is present; partial text cannot erase real connections.
+        let completeIds = Set(copies.flatMap { $0.objectValue?["entries"]?.arrayValue ?? [] }.compactMap { item -> String? in
+            guard item.objectValue?["summary"]?.objectValue?["mobileSourceScope"] != .string("authoredText") else { return nil }
+            return item.objectValue?["summary"]?.objectValue?["id"]?.stringValue
+        })
         var entries: [JSONValue] = [], nodes: [JSONValue] = [], edges: [JSONValue] = [], themes: [JSONValue] = [], details: [JSONValue] = []
         var entryIds = Set<String>(), nodeIds = Set<String>(), edgeIds = Set<String>(), themeIds = Set<String>(), detailIds = Set<String>()
         var newestOwner: [String: Int] = [:]
         for (index, copy) in copies.enumerated() {
             for item in copy.objectValue?["entries"]?.arrayValue ?? [] {
-                if let id = item.objectValue?["summary"]?.objectValue?["id"]?.stringValue, newestOwner[id] == nil { newestOwner[id] = index }
+                if let id = item.objectValue?["summary"]?.objectValue?["id"]?.stringValue, newestOwner[id] == nil,
+                   item.objectValue?["summary"]?.objectValue?["mobileSourceScope"] != .string("authoredText") { newestOwner[id] = index }
             }
         }
         for (index, copy) in copies.enumerated() {
@@ -45,12 +53,22 @@ public struct CompanionIdeaCopy: Sendable {
                       item.objectValue?["connections"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
                 _ = try JSONDecoder.nodus.decode(IdeaWorkspaceItem.self, from: JSONEncoder.nodus.encode(summary))
                 _ = try JSONDecoder.nodus.decode(IdeaDetail.self, from: JSONEncoder.nodus.encode(native))
-                if entryIds.insert(id).inserted { entries.append(item) }
+                if summary.objectValue?["mobileSourceScope"] == .string("authoredText") {
+                    guard item.objectValue?["detail"]?.objectValue?["idea"]?.objectValue?["mobileSourceScope"] == .string("authoredText"),
+                          native.objectValue?["idea"]?.objectValue?["mobileSourceScope"] == .string("authoredText"),
+                          item.objectValue?["connections"] == .array([]), native.objectValue?["relations"] == .array([]),
+                          native.objectValue?["evidence"] == .array([]), native.objectValue?["occurrences"] == .array([]) else { throw DesktopBridgeError.malformedResponse }
+                }
+                if item.objectValue?["summary"]?.objectValue?["mobileSourceScope"] != .string("authoredText") || !completeIds.contains(id) {
+                    if entryIds.insert(id).inserted { entries.append(item) }
+                }
             }
             for node in graphNodes {
                 guard let id = node.objectValue?["id"]?.stringValue, !id.isEmpty, ownNodes.insert(id).inserted,
                       node.objectValue?["label"]?.stringValue != nil, node.objectValue?["themes"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
-                if nodeIds.insert(id).inserted { nodes.append(node) }
+                if node.objectValue?["mobileSourceScope"] != .string("authoredText") || !completeIds.contains(id) {
+                    if nodeIds.insert(id).inserted { nodes.append(node) }
+                }
             }
             guard ownEntries.isSubset(of: ownNodes) else { throw DesktopBridgeError.malformedResponse }
             for edge in graphEdges {
@@ -84,9 +102,9 @@ public struct CompanionIdeaCopy: Sendable {
         guard !bytes.isEmpty else { return nil }
         return try Self(copies: bytes.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) })
     }
-    public static func authored(cache: PrivateBridgeCache, vaultId: String) async throws -> JSONValue? {
+    public static func authored(cache: PrivateBridgeCache, vaultId: String, includeConfirmed: Bool = true) async throws -> JSONValue? {
         guard let data = try await cache.data(vaultId: vaultId, domain: .writing, recordId: CompanionDocumentOutbox.storageKey) else { return nil }
-        return try await CompanionDocumentOutbox(cache: cache, vaultId: vaultId, data: data).pendingIdeaCopy()
+        return try await CompanionDocumentOutbox(cache: cache, vaultId: vaultId, data: data).pendingIdeaCopy(includeConfirmed: includeConfirmed)
     }
     public static func consultable(cache: PrivateBridgeCache, vaultId: String) async throws -> Self? {
         var copies: [JSONValue] = []
@@ -95,7 +113,10 @@ public struct CompanionIdeaCopy: Sendable {
         copies.append(contentsOf: try downloaded.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) })
         return copies.isEmpty ? nil : try Self(copies: copies)
     }
-    public func containsFullIdea(_ id: String) -> Bool { entry(id) != nil }
+    public func containsFullIdea(_ id: String) -> Bool {
+        guard let value = entry(id) else { return false }
+        return value.objectValue?["summary"]?.objectValue?["mobileSourceScope"] != .string("authoredText")
+    }
 
     public func nativeResponse(path: String, query: [URLQueryItem], percentEncoded: Bool) throws -> DesktopBridgeResponse? {
         let parts = try path.split(separator: "/").map { part -> String in
@@ -139,6 +160,7 @@ public struct CompanionIdeaCopy: Sendable {
             })
         case "getIdeaDetail", "getIdeaEdges":
             guard let id = args.first?.stringValue, let entry = entry(id) else { throw CopyError.unavailable }
+            if method == "getIdeaEdges", !containsFullIdea(id) { throw CopyError.unavailable }
             return entry.objectValue?[method == "getIdeaDetail" ? "detail" : "connections"]
         case "getEdgeDetail":
             guard let id = args.first?.stringValue,
@@ -151,7 +173,7 @@ public struct CompanionIdeaCopy: Sendable {
             let offset = max(0, request["cursor"]?.intValue ?? 0), limit = min(200, max(1, request["limit"]?.intValue ?? 200))
             var ns = nodes, es = edges
             if kind == "neighbors" {
-                guard let id = request["id"]?.stringValue, entry(id) != nil else { throw CopyError.unavailable }
+                guard let id = request["id"]?.stringValue, containsFullIdea(id) else { throw CopyError.unavailable }
                 ns = []; es = es.filter { $0.objectValue?["source"]?.stringValue == id || $0.objectValue?["target"]?.stringValue == id }.sorted(by: Self.edgeBefore)
             } else if kind == "search" {
                 let search = request["search"]?.stringValue ?? "", author = request["author"]?.stringValue ?? ""

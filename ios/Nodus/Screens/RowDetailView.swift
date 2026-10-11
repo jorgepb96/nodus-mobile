@@ -232,7 +232,9 @@ struct RowDetailView: View {
             // Start with provenance: before classifying an idea by theme, show the works where
             // the reader can actually find it. This also puts the most useful navigation out
             // of an idea above its longer evidence and record sections.
-            occurrencesSection(detail)
+            if detail.idea.string("mobileSourceScope") == "authoredText" {
+                NodusNotice(tone: .info, title: "Texto escrito en este móvil", message: "Las evidencias y conexiones necesitan su propia descarga para consultarlas sin el Mac.")
+            } else { occurrencesSection(detail) }
             if !detail.themes.isEmpty {
                 chips(detail.themes, label: "Themes")
             }
@@ -282,7 +284,7 @@ struct RowDetailView: View {
                 }
             }
             fields(of: detail.idea)
-            relationsSection(detail)
+            if detail.idea.string("mobileSourceScope") != "authoredText" { relationsSection(detail) }
         }
     }
 
@@ -787,6 +789,7 @@ struct RowDetailView: View {
             "light_at", "light_status", "deep_at", "deep_status", "deep_trigger", "manual_deep",
             "summary_at", "summary_status", "source_type", "zotero_version", "order_idx",
             "created_at", "updated_at",
+            "mobileSourceScope", "mobileSyncState", "mobileSyncIssue",
             // Shown as the control at the top of the dossier, which carries the key itself as
             // its subtitle. Listing it here as well would put the same eight characters on the
             // screen twice, once as something you can press and once as something you cannot.

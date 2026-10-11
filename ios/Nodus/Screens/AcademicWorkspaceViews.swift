@@ -218,6 +218,7 @@ struct IdeasWorkspaceView: View {
             "statement": .string(item.statement), "work_count": .int(Int64(item.workCount)),
             "connection_count": .int(Int64(item.connectionCount)), "max_confidence": .double(item.maxConfidence),
             "themes": .array(item.themes.map(JSONValue.string)),
+            "mobileSourceScope": item.mobileSourceScope.map(JSONValue.string) ?? .null,
         ])
     }
 }
@@ -236,9 +237,13 @@ private struct IdeaWorkspaceRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 NodusChip(key: item.type, tint: SemanticTone.ideaType(item.type, fallback: accent)).frame(width: 90, alignment: .leading)
-                Text(item.workCount.formatted()).frame(width: 58, alignment: .trailing)
-                Text(item.connectionCount.formatted()).frame(width: 58, alignment: .trailing)
-                Text(item.maxConfidence, format: .percent.precision(.fractionLength(0))).frame(width: 64, alignment: .trailing)
+                if item.mobileSourceScope == "authoredText" {
+                    Text("Texto propio").foregroundStyle(.secondary).frame(width: 204, alignment: .trailing)
+                } else {
+                    Text(item.workCount.formatted()).frame(width: 58, alignment: .trailing)
+                    Text(item.connectionCount.formatted()).frame(width: 58, alignment: .trailing)
+                    Text(item.maxConfidence, format: .percent.precision(.fractionLength(0))).frame(width: 64, alignment: .trailing)
+                }
             }
             .font(.caption.monospacedDigit())
             .padding(.horizontal, 14).padding(.vertical, 10)
@@ -248,9 +253,12 @@ private struct IdeaWorkspaceRow: View {
                 HStack { Text(item.label).font(.subheadline.weight(.semibold)).lineLimit(2); Spacer(); NodusChip(key: item.type, tint: SemanticTone.ideaType(item.type, fallback: accent)) }
                 Text(item.statement).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                 HStack(spacing: 12) {
-                    Label("\(item.workCount)", systemImage: "books.vertical")
-                    Label("\(item.connectionCount)", systemImage: "link")
-                    Text(item.maxConfidence, format: .percent.precision(.fractionLength(0)))
+                    if item.mobileSourceScope == "authoredText" { Label("Texto propio", systemImage: "iphone") }
+                    else {
+                        Label("\(item.workCount)", systemImage: "books.vertical")
+                        Label("\(item.connectionCount)", systemImage: "link")
+                        Text(item.maxConfidence, format: .percent.precision(.fractionLength(0)))
+                    }
                 }.font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             }.desktopContentRow(accent: accent)
         }

@@ -176,39 +176,55 @@ public actor CompanionDocumentOutbox {
     }
     /// A newly authored, not-yet-confirmed idea has a complete local dossier.
     /// Existing corpus dossiers continue through their authenticated query cache.
-    public func pendingIdeaDetail(globalId: String) -> JSONValue? {
-        guard let id = records.keys.first(where: {
+    public func pendingIdeaDetail(globalId: String, includeConfirmed: Bool = false) -> JSONValue? {
+        let pendingId = records.keys.first(where: {
             let source = records[$0]?.createdNote?.objectValue?["source"]?.objectValue
             return records[$0]?.creation?.objectValue?["globalId"] == .string(globalId)
                 && source?["note"] == .string("manual-idea") && source?["ref"] == .string(globalId)
-        }),
-              let note = records[id]?.createdNote?.objectValue, let editor = editorData(noteId: id)?.objectValue else { return nil }
-        return .object(["idea": .object(["global_id": .string(globalId), "type": .string("claim"),
+        })
+        let confirmedId = includeConfirmed ? authored.keys.first(where: {
+            let note = authored[$0]?.note?.objectValue, source = note?["source"]?.objectValue
+            return note?["kind"] == .string("idea") && Self.isVisibleNote(authored[$0]!.note!)
+                && source?["note"] == .string("manual-idea") && source?["ref"] == .string(globalId)
+        }) : nil
+        guard let id = pendingId ?? confirmedId,
+              let note = (records[id]?.createdNote ?? authored[id]?.note)?.objectValue,
+              let editor = (editorData(noteId: id) ?? confirmedEditorData(noteId: id))?.objectValue else { return nil }
+        var idea: [String: JSONValue] = ["global_id": .string(globalId), "type": .string("claim"),
             "label": editor["documentTitle"]!, "statement": editor["contentMarkdown"]!, "embedding": .null,
             "created_at": note["createdAt"] ?? .null,
             "mobileSyncState": editor["mobileSyncState"] ?? .null,
-            "mobileSyncIssue": editor["mobileSyncIssue"] ?? .null]), "themes": .array([]), "occurrences": .array([]),
+            "mobileSyncIssue": editor["mobileSyncIssue"] ?? .null]
+        if pendingId == nil { idea["mobileSourceScope"] = .string("authoredText") }
+        return .object(["idea": .object(idea), "themes": .array([]), "occurrences": .array([]),
             "evidence": .array([]), "gaps": .array([]), "externalRefs": .array([])])
     }
     /// A projection of genuine local authorship, with no fabricated evidence or
     /// derived relations. Durable drafts remain separate from expiring downloads.
-    public func pendingIdeaCopy() -> JSONValue? {
-        let ids = records.values.compactMap { record -> String? in
+    public func pendingIdeaCopy(includeConfirmed: Bool = false) -> JSONValue? {
+        var ids = Set(records.values.compactMap { record -> String? in
             guard let source = record.createdNote?.objectValue?["source"]?.objectValue,
                   source["note"] == .string("manual-idea"),
                   record.creation?.objectValue?["globalId"] == source["ref"] else { return nil }
             return source["ref"]?.stringValue
-        }.sorted()
+        })
+        if includeConfirmed {
+            for source in authored.values {
+                let note = source.note?.objectValue, provenance = note?["source"]?.objectValue
+                if note?["kind"] == .string("idea"), provenance?["note"] == .string("manual-idea"),
+                   let id = provenance?["ref"]?.stringValue, Self.isVisibleNote(source.note!) { ids.insert(id) }
+            }
+        }
         var entries: [JSONValue] = [], nodes: [JSONValue] = []
-        for id in ids {
-            guard let detail = pendingIdeaDetail(globalId: id), let idea = detail.objectValue?["idea"]?.objectValue else { continue }
+        for id in ids.sorted() {
+            guard let detail = pendingIdeaDetail(globalId: id, includeConfirmed: includeConfirmed), let idea = detail.objectValue?["idea"]?.objectValue else { continue }
             var native = detail.objectValue!; native["relations"] = .array([]); native["revision"] = .null
             entries.append(.object(["summary": .object(["id": .string(id), "label": idea["label"]!, "statement": idea["statement"]!, "type": .string("claim"),
-                "workCount": .int(0), "connectionCount": .int(0), "maxConfidence": .double(0), "themes": .array([])]),
+                "workCount": .int(0), "connectionCount": .int(0), "maxConfidence": .double(0), "themes": .array([]), "mobileSourceScope": idea["mobileSourceScope"] ?? .null]),
                 "detail": detail, "nativeDetail": .object(native), "connections": .array([])]))
             nodes.append(.object(["id": .string(id), "label": idea["label"]!, "statement": idea["statement"]!, "type": .string("claim"),
                 "workCount": .int(0), "workIds": .array([]), "maxConfidence": .double(0), "createdAt": idea["created_at"] ?? .null,
-                "themes": .array([]), "authors": .array([]), "years": .array([]), "read": .bool(false)]))
+                "themes": .array([]), "authors": .array([]), "years": .array([]), "read": .bool(false), "mobileSourceScope": idea["mobileSourceScope"] ?? .null]))
         }
         guard !entries.isEmpty else { return nil }
         return .object(["version": .int(1), "entries": .array(entries), "graph": .object(["nodes": .array(nodes), "edges": .array([])]),

@@ -13,6 +13,7 @@ public struct IdeaWorkspaceItem: Sendable, Hashable, Codable, Identifiable {
     public let themes: [String]
     public let maxConfidence: Double
     public let connectionCount: Int
+    public let mobileSourceScope: String?
 }
 
 public struct IdeaWorkspacePage: Sendable, Hashable, Codable {

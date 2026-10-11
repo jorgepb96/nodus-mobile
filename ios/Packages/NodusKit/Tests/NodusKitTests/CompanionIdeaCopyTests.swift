@@ -40,6 +40,37 @@ struct CompanionIdeaCopyTests {
         #expect(try JSONDecoder.nodus.decode(IdeaDetail.self, from: detail.data).idea.string("global_id") == "idea-240")
     }
 
+    @Test("confirmed authored text cannot erase a selected canonical dossier or claim its absent neighbourhood")
+    func authoredTextScope() throws {
+        var partial = Self.copy(ids: ["own"]).objectValue!, entry = partial["entries"]!.arrayValue![0].objectValue!
+        var summary = entry["summary"]!.objectValue!; summary["mobileSourceScope"] = .string("authoredText")
+        summary["label"] = .string("Own retained text"); entry["summary"] = .object(summary)
+        for key in ["detail", "nativeDetail"] {
+            var detail = entry[key]!.objectValue!, idea = detail["idea"]!.objectValue!
+            idea["mobileSourceScope"] = .string("authoredText"); detail["idea"] = .object(idea)
+            entry[key] = .object(detail)
+        }
+        partial["entries"] = .array([.object(entry)])
+        var graph = partial["graph"]!.objectValue!, node = graph["nodes"]!.arrayValue![0].objectValue!
+        node["mobileSourceScope"] = .string("authoredText"); graph["nodes"] = .array([.object(node)]); partial["graph"] = .object(graph)
+        let text = try CompanionIdeaCopy(copies: [.object(partial)])
+        #expect(!text.containsFullIdea("own"))
+        #expect(throws: CompanionIdeaCopy.CopyError.self) { try text.operation("getIdeaEdges", args: [.string("own")]) }
+        #expect(throws: CompanionIdeaCopy.CopyError.self) { try text.operation("stellarPage", args: [.object(["kind": .string("neighbors"), "id": .string("own")])]) }
+        let selected = Self.copy(ids: ["own"], edges: [("real-edge", "own", "other")])
+        for copies in [[.object(partial), selected], [selected, .object(partial)]] {
+            let merged = try CompanionIdeaCopy(copies: copies)
+            #expect(merged.containsFullIdea("own"))
+            #expect(try merged.operation("getIdeaDetail", args: [.string("own")])?.objectValue?["idea"]?.objectValue?["mobileSourceScope"] == nil)
+            let neighbors = try #require(merged.operation("stellarPage", args: [.object(["kind": .string("neighbors"), "id": .string("own")])]))
+            #expect(neighbors.objectValue?["total"] == .int(1))
+        }
+        var broken = entry, native = entry["nativeDetail"]!.objectValue!
+        native["evidence"] = .array([.object(["id": .string("invented")])]); broken["nativeDetail"] = .object(native)
+        partial["entries"] = .array([.object(broken)])
+        #expect(throws: DesktopBridgeError.self) { try CompanionIdeaCopy(copies: [.object(partial)]) }
+    }
+
     @Test("all 503 direct connections are available, while an undownloaded neighbour cannot impersonate a complete dossier")
     func completeNeighbourhood() throws {
         let edges = (0..<503).map { (String(format: "e-%03d", $0), "seed", "neighbour-\($0)") }
