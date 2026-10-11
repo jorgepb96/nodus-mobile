@@ -207,6 +207,10 @@ function operationMatrix(routes) {
       ['writing.scriptor.embeddedImageRoundtrip', 'writing'], ['sync.scriptor.attachmentEnvelope', 'sync'],
       ['consultation.internalImages.scopedRendering', 'consultation'], ['sync.selectedInternalImages', 'sync'],
       ['consultation.internalImages.privateGrant', 'consultation'],
+      ['consultation.databaseResearch.completeCatalogue', 'consultation'], ['consultation.databaseResearch.structuredReport', 'consultation'],
+      ['consultation.databaseResearch.annotations', 'consultation'], ['consultation.databaseResearch.export', 'consultation'],
+      ['generation.databaseResearch.live', 'generation'], ['generation.databaseResearch.autonomous', 'generation'],
+      ['sync.selectedDatabaseResearch', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

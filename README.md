@@ -89,6 +89,12 @@ specialised mirror-based surfaces, binary assets and final visual/contract accep
 part of the unfinished parity campaign.
 
 Shared domain models, report layout and reading-copy rules live in the Nodus repository.
+Database Deep Research now opens its actual structured report component through a separate
+mobile route. Its stable, paginated gallery transfers metadata instead of every report body;
+details preserve the saved charts, sections, evidence and annotations. Native export uses
+the scoped file bridge. The isolated 241-report regression scenario is prepared but has not
+run. Autonomous query execution, durable database research mutations and chosen offline
+report packs remain pending; none of these operations is certified by this implementation.
 `ios/scripts/build-shared-desktop.mjs --verify` checks the bundled shared-source/output digests;
 `ios/scripts/test-reading-copy-parity.mjs` checks the reading contract.
 

@@ -1267,6 +1267,48 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.completeCatalogue",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.structuredReport",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.annotations",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.export",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.live",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.autonomous",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.selectedDatabaseResearch",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

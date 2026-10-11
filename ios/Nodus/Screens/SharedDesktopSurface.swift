@@ -4,7 +4,7 @@ import NodusUI
 import SwiftUI
 import WebKit
 
-enum DesktopSurface: String { case graph, dictionary, workspace, argument, deepResearch, immersion, chat, writingWorkshop }
+enum DesktopSurface: String { case graph, dictionary, workspace, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
 
 private struct MobileWritingResultTarget: Identifiable {
     let request: DesktopJobLedger.Request
@@ -663,7 +663,7 @@ private struct DesktopWebView: UIViewRepresentable {
                             value = try await immersionProgress.read(value, id: id, client: client, pairing: pairing, vaultId: vaultId, fetchMacProgress: !immersionDefinitionFromDevice)
                             if pairing.domains.contains(.writing), let plan = value.objectValue?["plan"] { onImmersionSource(id, plan) }
                         }
-                        if ["exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf"].contains(method), case .object(var file) = value,
+                        if ["exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport"].contains(method), case .object(var file) = value,
                            let exportId = file["exportId"]?.stringValue, let name = file["filename"]?.stringValue, let hash = file["sha256"]?.stringValue {
                             let bytes = try await client.exportedFile(vaultId: vaultId, id: exportId, sha256: hash)
                             // A unique directory prevents two same-title reports overwriting each other.
