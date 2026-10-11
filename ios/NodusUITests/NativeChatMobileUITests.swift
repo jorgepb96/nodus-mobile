@@ -19,6 +19,9 @@ final class NativeChatMobileUITests: XCTestCase {
             XCTAssertTrue(composer.waitForExistence(timeout: 25)); XCTAssertTrue(composer.isHittable)
             composer.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+            if let previous = composer.value as? String, previous != "Haz una pregunta", !previous.isEmpty {
+                composer.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+            }
             let draft = "Consulta sin enviar\nSegunda linea"
             composer.typeText(draft)
             XCTAssertEqual(composer.value as? String, draft)
@@ -48,6 +51,10 @@ final class NativeChatMobileUITests: XCTestCase {
             let edited = try XCTUnwrap(composer.value as? String)
             XCTAssertEqual(edited.replacingOccurrences(of: "x", with: ""), draft)
             XCTAssertEqual(edited.count, draft.count + 1)
+            app.terminate(); app.launch()
+            XCTAssertTrue(composer.waitForExistence(timeout: 25))
+            XCTAssertEqual(composer.value as? String, edited, "The unsent question must survive a real process restart.")
+            capture(app, "native-chat-durable-composer-\(style)")
         }
     }
     @MainActor private func launch(style: String) -> XCUIApplication {

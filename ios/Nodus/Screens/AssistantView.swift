@@ -49,6 +49,8 @@ struct ChatScreen: View {
 
     @State private var turns: [Turn] = []
     @State private var draft = ""
+    @State private var draftLoaded = false
+    @State private var draftIssue: String?
     @State private var isThinking = false
     @State private var error: String?
     @State private var running: Task<Void, Never>?
@@ -107,6 +109,10 @@ struct ChatScreen: View {
                             NodusNotice(tone: .blocked, title: "The query failed", message: LocalizedStringKey(error))
                                 .accessibilityIdentifier("nodus-chat-error")
                         }
+                        if let draftIssue {
+                            NodusNotice(tone: .caution, title: "Borrador del chat", message: LocalizedStringKey(draftIssue))
+                                .accessibilityIdentifier("nodus-chat-draft-error")
+                        }
                     }
                     .padding(16)
                 }
@@ -142,6 +148,11 @@ struct ChatScreen: View {
         .nodusSheet(isPresented:$showingWorldOptions) { ChatWorldOptionsView(session:session,options:$worldOptions) }
         .nodusSheet(isPresented:$showingLiveOptions) { NativeLiveChatOptionsView(session:session,options:liveOptions,conversationId:conversationId) }
         .task {
+            if !draftLoaded {
+                do { if draft.isEmpty { draft = try history.loadComposerDraft() } }
+                catch { draftIssue = error.localizedDescription }
+                draftLoaded = true
+            }
             // Lent to the chrome, not copied into it: the header ticks layers on and off in the
             // very object the next question is built from.
             controls.openHistory = openHistory
@@ -158,6 +169,11 @@ struct ChatScreen: View {
         // A fetch from iCloud writes conversation files underneath this store, which would
         // otherwise keep showing the list it read when the screen opened.
         .onChange(of: cloud?.lastFetchedAt) { _, _ in history.reload() }
+        .onChange(of: draft) { _, value in
+            guard draftLoaded else { return }
+            do { try history.saveComposerDraft(value); draftIssue = nil }
+            catch { draftIssue = error.localizedDescription }
+        }
         .onChange(of:conversationId.flatMap { id in history.conversations.first(where:{$0.id == id})?.updatedAt }) { _,_ in
             if let id=conversationId,history.conversations.first(where:{$0.id == id})?.pendingLive != nil || isThinking && session.aiExecutionMode == .live { refreshLive(id) }
         }
@@ -844,7 +860,7 @@ private struct TurnBubble: View {
                         }
                         Spacer(minLength: 0)
                         if let regenerate {
-                            Button(action: regenerate) { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44) }
+                            Button(action: regenerate) { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44).contentShape(Rectangle()) }
                                 .buttonStyle(.plain).foregroundStyle(accent)
                                 .accessibilityLabel("Regenerar respuesta").accessibilityIdentifier("nodus-chat-regenerate")
                         }

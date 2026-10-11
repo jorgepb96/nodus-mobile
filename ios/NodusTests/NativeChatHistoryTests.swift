@@ -7,6 +7,46 @@ import NodusKit
 @Suite("Native companion conversation recovery")
 @MainActor
 struct NativeChatHistoryTests {
+    @Test("An unsent question survives reopening, stays in its vault and clears deliberately")
+    func composerReopening() throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let draft = "Fotografía, política y turismo 🌊\nConserva las fuentes y [esta nota]."
+        let first = ChatHistoryStore(spaceId: "first", root: root, backup: nil)
+        try first.saveComposerDraft(draft)
+        #expect(try ChatHistoryStore(spaceId: "first", root: root, backup: nil).loadComposerDraft() == draft)
+        #expect(try ChatHistoryStore(spaceId: "second", root: root, backup: nil).loadComposerDraft().isEmpty)
+        #expect(first.conversations.isEmpty)
+        try first.saveComposerDraft("")
+        #expect(try ChatHistoryStore(spaceId: "first", root: root, backup: nil).loadComposerDraft().isEmpty)
+    }
+    @Test("Unreadable draft data is reported and preserved when the user writes a replacement")
+    func composerRecovery() throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ChatHistoryStore(spaceId: "first", root: root, backup: nil)
+        let folder = ChatHistoryStore.directory(spaceId: "first", root: root)
+        let file = folder.appendingPathComponent("composer.snapshot")
+        let previous = Data("incomplete draft data".utf8)
+        try previous.write(to: file)
+        #expect(throws: ChatHistoryStore.ComposerDraftError.invalidData) { try store.loadComposerDraft() }
+        #expect(try Data(contentsOf: file) == previous)
+        try store.saveComposerDraft("Texto recuperado por el usuario")
+        #expect(try store.loadComposerDraft() == "Texto recuperado por el usuario")
+        let copies = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("composer-unreadable-") }
+        #expect(copies.count == 1)
+        #expect(try Data(contentsOf: #require(copies.first)) == previous)
+    }
+    @Test("An oversized edit cannot destroy the last durable unsent question")
+    func composerBounded() throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ChatHistoryStore(spaceId: "first", root: root, backup: nil)
+        try store.saveComposerDraft("Último borrador guardado")
+        #expect(throws: ChatHistoryStore.ComposerDraftError.tooLarge) { try store.saveComposerDraft(String(repeating: "a", count: 1024 * 1024 + 1)) }
+        #expect(try store.loadComposerDraft() == "Último borrador guardado")
+    }
     @Test("History organization survives offline restart and a lost acknowledgement")
     func organization() async throws {
         let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString),space = UUID().uuidString,id = UUID().uuidString

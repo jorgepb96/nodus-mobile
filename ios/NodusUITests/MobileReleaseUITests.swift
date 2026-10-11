@@ -15,6 +15,9 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 30)); XCTAssertTrue(input.isHittable)
         let draft = "Pregunta de prueba sin enviar\nSegunda línea"
         input.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        if let previous = input.value as? String, previous != "Haz una pregunta", !previous.isEmpty {
+            input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+        }
         input.typeText(draft)
         XCTAssertEqual(input.value as? String, draft)
         XCTAssertTrue(app.keyboards.firstMatch.exists)
@@ -94,6 +97,9 @@ final class MobileReleaseUITests: XCTestCase {
         app.buttons["nodus-chat-options-close"].tap()
         let marker = "QAChat-\(UUID().uuidString.prefix(8))"
         input.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        if let previous = input.value as? String, previous != "Haz una pregunta", !previous.isEmpty {
+            input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+        }
         input.typeText("\(marker). Explica en unas 250 palabras cómo el corpus relaciona propaganda turística y fotografía. Incluye dos ideas y sus fuentes. Empieza la respuesta con el marcador \(marker).")
         let send = app.buttons["nodus-chat-send"]
         let ready = NSPredicate(format: "exists == true AND enabled == true")

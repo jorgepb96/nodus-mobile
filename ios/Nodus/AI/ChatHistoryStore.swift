@@ -108,6 +108,55 @@ final class ChatHistoryStore {
     private let spaceId: String
     private let backup: CloudBackup?
 
+    enum ComposerDraftError: LocalizedError {
+        case invalidData, tooLarge
+        var errorDescription: String? {
+            switch self {
+            case .invalidData: "El borrador del chat no tiene un formato compatible."
+            case .tooLarge: "El borrador del chat supera el límite de 1 MB."
+            }
+        }
+    }
+    private struct ComposerDraft: Codable { var version = 1; let text: String }
+    private var composerURL: URL { directory.appendingPathComponent("composer.snapshot") }
+    private func readComposerDraft() throws -> ComposerDraft {
+        let size = try FileManager.default.attributesOfItem(atPath: composerURL.path)[.size] as? NSNumber
+        guard let size, size.intValue <= 2 * 1024 * 1024 else { throw ComposerDraftError.tooLarge }
+        let bytes = try Data(contentsOf: composerURL)
+        let value: ComposerDraft
+        do { value = try JSONDecoder.nodus.decode(ComposerDraft.self, from: bytes) }
+        catch { throw ComposerDraftError.invalidData }
+        guard value.version == 1 else { throw ComposerDraftError.invalidData }
+        guard value.text.utf8.count <= 1024 * 1024 else { throw ComposerDraftError.tooLarge }
+        return value
+    }
+    func loadComposerDraft() throws -> String {
+        guard FileManager.default.fileExists(atPath: composerURL.path) else { return "" }
+        return try readComposerDraft().text
+    }
+    /// The unsent question belongs to this workspace and never enters a Mac job or a
+    /// conversation backup. A deliberate edit preserves an unreadable older copy.
+    func saveComposerDraft(_ text: String) throws {
+        guard text.utf8.count <= 1024 * 1024 else { throw ComposerDraftError.tooLarge }
+        let bytes = try JSONEncoder.nodus.encode(ComposerDraft(text: text))
+        guard bytes.count <= 2 * 1024 * 1024 else { throw ComposerDraftError.tooLarge }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: composerURL.path) {
+            do { _ = try readComposerDraft() }
+            catch is ComposerDraftError {
+                let previous = directory.appendingPathComponent("composer-unreadable-\(UUID().uuidString).snapshot")
+                try FileManager.default.moveItem(at: composerURL, to: previous)
+                BackupPolicy.apply(.excluded, to: previous)
+            }
+        }
+        if text.isEmpty {
+            if FileManager.default.fileExists(atPath: composerURL.path) { try FileManager.default.removeItem(at: composerURL) }
+        } else {
+            try bytes.write(to: composerURL, options: [.atomic, .completeFileProtection])
+            BackupPolicy.apply(.excluded, to: composerURL)
+        }
+    }
+
     var active: [Conversation] { conversations.filter { !$0.isArchived && $0.desktop?.deleted != true }.sorted { ($0.placement?.pinned ?? false) == ($1.placement?.pinned ?? false) ? $0.updatedAt > $1.updatedAt:($0.placement?.pinned ?? false) } }
     var archived: [Conversation] { conversations.filter { $0.isArchived && $0.desktop?.deleted != true } }
 
