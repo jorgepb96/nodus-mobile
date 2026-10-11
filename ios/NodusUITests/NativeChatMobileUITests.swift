@@ -19,9 +19,7 @@ final class NativeChatMobileUITests: XCTestCase {
             XCTAssertTrue(composer.waitForExistence(timeout: 25)); XCTAssertTrue(composer.isHittable)
             composer.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
-            if let previous = composer.value as? String, previous != "Haz una pregunta", !previous.isEmpty {
-                composer.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
-            }
+            try clearNativeChatComposer(composer, in: app)
             let draft = "Consulta sin enviar\nSegunda linea"
             composer.typeText(draft)
             XCTAssertEqual(composer.value as? String, draft)
@@ -70,4 +68,16 @@ final class NativeChatMobileUITests: XCTestCase {
         let tree = XCTAttachment(string: app.debugDescription)
         tree.name = name + "-accessibility"; tree.lifetime = .keepAlways; add(tree)
     }
+}
+
+/// A tap in a restored multiline field can put the caret in the middle of the draft.
+/// Clear with the real editing menu rather than assuming backspace starts at its end.
+@MainActor func clearNativeChatComposer(_ composer: XCUIElement, in app: XCUIApplication) throws {
+    guard let value = composer.value as? String, !value.isEmpty, value != composer.placeholderValue else { return }
+    composer.press(forDuration: 1.1)
+    let all = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label == %@", "Seleccionar todo", "Select All")).firstMatch
+    XCTAssertTrue(all.waitForExistence(timeout: 8), "The native composer must support selecting its complete restored draft.\n" + app.debugDescription)
+    all.tap()
+    composer.typeText(XCUIKeyboardKey.delete.rawValue)
+    XCTAssertTrue((composer.value as? String)?.isEmpty == true || composer.value as? String == composer.placeholderValue)
 }
