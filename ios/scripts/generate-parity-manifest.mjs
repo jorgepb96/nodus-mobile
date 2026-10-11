@@ -281,6 +281,7 @@ function operationMatrix(routes) {
       ['consultation.nativeReader.imagePinchAndOrientation', 'consultation'],
       ['consultation.nativeReader.boundedRasterDecode', 'consultation'],
       ['consultation.nativeReader.originalImageShare', 'consultation'],
+      ['sync.chat.perTurnAuthorshipTimes', 'sync'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

@@ -32,6 +32,9 @@ final class ChatHistoryStore {
         var studyCitations: [JSONValue]?
         var studyEvidence: JSONValue?
         var worldFacts: JSONValue?
+        /// Optional for histories written by earlier releases. Each newly
+        /// authored turn keeps its own time across reopening and synchronization.
+        var createdAt: Date? = nil
 
         enum Role: String, Codable { case user, assistant }
         enum Delivery: String, Codable { case streaming, completed, cancelled, failed }
@@ -152,7 +155,10 @@ final class ChatHistoryStore {
             stored.isLocalRecovery = existing.isLocalRecovery
             if let current = existing.desktop { stored.desktop = current }
             for index in stored.messages.indices {
-                if let original = existing.messages.first(where:{$0.id == stored.messages[index].id})?.desktopRecord { stored.messages[index].desktopRecord = original }
+                if let original = existing.messages.first(where:{$0.id == stored.messages[index].id}) {
+                    if let record = original.desktopRecord { stored.messages[index].desktopRecord = record }
+                    if stored.messages[index].createdAt == nil { stored.messages[index].createdAt = original.createdAt }
+                }
             }
         }
         if stored.desktop == nil,stored.isLocalRecovery != true,let linkedKind { stored.desktop = DesktopSync(kind:linkedKind,baseline:nil) }
@@ -293,7 +299,7 @@ final class ChatHistoryStore {
                 if candidate?.text == raw["content"]?.stringValue,candidate?.role.rawValue == raw["role"]?.stringValue { native = candidate }
             }
             let id = native?.id ?? raw["id"]?.stringValue.flatMap(UUID.init(uuidString:)) ?? UUID()
-            return Message(id:id,role:raw["role"] == .string("assistant") ? .assistant:.user,text:raw["content"]!.stringValue!,citations:native?.citations ?? [],wasSemantic:native?.wasSemantic,warning:native?.warning,delivery:native?.delivery,desktopRecord:record,studyCitations:document.kind == .study ? raw["citations"]?.arrayValue ?? native?.studyCitations:nil,studyEvidence:native?.studyEvidence,worldFacts:native?.worldFacts)
+            return Message(id:id,role:raw["role"] == .string("assistant") ? .assistant:.user,text:raw["content"]!.stringValue!,citations:native?.citations ?? [],wasSemantic:native?.wasSemantic,warning:native?.warning,delivery:native?.delivery,desktopRecord:record,studyCitations:document.kind == .study ? raw["citations"]?.arrayValue ?? native?.studyCitations:nil,studyEvidence:native?.studyEvidence,worldFacts:native?.worldFacts,createdAt:raw["createdAt"]?.stringValue.flatMap(Self.messageDate) ?? native?.createdAt)
         }
         func date(_ key: String,_ alternate: String) -> Date {
             let raw = object[key]?.stringValue ?? object[alternate]?.stringValue ?? ""
@@ -302,6 +308,10 @@ final class ChatHistoryStore {
         }
         return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved),databaseIds:object["databaseIds"]?.arrayValue?.compactMap(\.stringValue),study:document.kind == .study ? try CompanionStudyChatOptions.desktop(document.data):nil,world:document.kind == .world ? try CompanionWorldChatOptions.desktop(document.data):nil)
     }
+    private static func messageDate(_ raw: String) -> Date? {
+        let fractional = ISO8601DateFormatter();fractional.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
+        return fractional.date(from:raw) ?? ISO8601DateFormatter().date(from:raw)
+    }
     private func request(_ conversation: Conversation,sync: DesktopSync) throws -> JSONValue {
         var fields: [String:JSONValue] = ["version":.int(1),"id":.string(UUID().uuidString),"conversationId":.string(conversation.id),"expectedRevision":sync.baseline.map { .string($0.revision) } ?? .null,"action":.string(sync.deleted ? "delete":"save")]
         if !sync.deleted {
@@ -309,6 +319,12 @@ final class ChatHistoryStore {
                 var raw = message.desktopRecord?.objectValue ?? [:]
                 if raw["id"] == nil && [.research,.study].contains(sync.kind) { raw["id"] = .string(message.id.uuidString) }
                 raw["role"] = .string(message.role.rawValue);raw["content"] = .string(message.text)
+                if raw["createdAt"] == nil,let createdAt = message.createdAt {
+                    let formatter = ISO8601DateFormatter();formatter.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
+                    raw["createdAt"] = .string(formatter.string(from:createdAt))
+                }
+                // Legacy Study messages require a date. Retain their recorded
+                // conversation time; never replace it with the time of a retry.
                 if sync.kind == .study && raw["createdAt"] == nil { raw["createdAt"] = .string(ISO8601DateFormatter().string(from:conversation.createdAt)) }
                 if message.delivery == .failed { raw["error"] = .bool(true) }
                 if sync.kind == .study && message.delivery == .cancelled { raw["interrupted"] = .bool(true) }

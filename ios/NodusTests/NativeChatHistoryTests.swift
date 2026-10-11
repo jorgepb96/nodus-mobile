@@ -7,6 +7,26 @@ import NodusKit
 @Suite("Native companion conversation recovery")
 @MainActor
 struct NativeChatHistoryTests {
+    @Test("Per-turn authorship times survive persistence, synchronization and legacy imports")
+    func authorshipTimes() async throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString),space = UUID().uuidString,id = UUID().uuidString
+        defer { try? FileManager.default.removeItem(at:root) }
+        let first = ChatHistoryStore(spaceId:space,root:root,backup:nil)
+        try first.bind(kind:.research)
+        let questionAt = Date(timeIntervalSince1970:1_767_344_400.125),answerAt = questionAt.addingTimeInterval(135.25)
+        let messages: [ChatHistoryStore.Message] = [.init(role:.user,text:"Question",citations:[],createdAt:questionAt),.init(role:.assistant,text:"Answer",citations:[],createdAt:answerAt)]
+        try first.save(.init(id:id,title:"Question",messages:messages,createdAt:questionAt,updatedAt:answerAt,isArchived:false))
+        let reopened = ChatHistoryStore(spaceId:space,root:root,backup:nil)
+        #expect(reopened.conversations.first?.messages.map(\.createdAt) == [questionAt,answerAt])
+        var sent: JSONValue?
+        await reopened.synchronize { _,request in sent = request;throw URLError(.networkConnectionLost) }
+        let raw = try #require(sent?.objectValue?["draft"]?.objectValue?["messages"]?.arrayValue)
+        #expect(raw[0].objectValue?["createdAt"] == .string("2026-01-02T09:00:00.125Z"))
+        #expect(raw[1].objectValue?["createdAt"] == .string("2026-01-02T09:02:15.375Z"))
+        let legacyId = UUID().uuidString
+        let legacy = try reopened.importDesktop(document(id:legacyId,messages:[.object(["id":.string(UUID().uuidString),"role":.string("user"),"content":.string("Earlier turn")])]))
+        #expect(legacy.messages.first?.createdAt == nil)
+    }
     @Test("Follow-ups retain chronological roles, current sources and complete bounded turns")
     func context() {
         let history:[ChatMessage] = [.init(role:.system,content:"Not a user-controlled system instruction"),.init(role:.user,content:"Primera pregunta 🌊"),.init(role:.assistant,content:"Respuesta anterior"),.init(role:.user,content:"Segunda pregunta"),.init(role:.assistant,content:"Otra respuesta")]

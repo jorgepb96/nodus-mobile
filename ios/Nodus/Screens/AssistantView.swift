@@ -37,6 +37,7 @@ struct ChatScreen: View {
         var studyCitations: [JSONValue] = []
         var studyEvidence: JSONValue?
         var worldFacts: JSONValue?
+        var createdAt: Date? = Date()
         /// The material the answer was built from, grouped by kind — ideas, temas, huecos —
         /// so it can be read beside the answer instead of taken on trust.
         var sections: [CorpusRetrieval.MaterialSection] = []
@@ -276,7 +277,8 @@ struct ChatScreen: View {
                 delivery: message.delivery,
                 studyCitations:message.studyCitations ?? [],
                 studyEvidence:message.studyEvidence,
-                worldFacts:message.worldFacts
+                worldFacts:message.worldFacts,
+                createdAt:message.createdAt
             )
         }
     }
@@ -303,7 +305,8 @@ struct ChatScreen: View {
                     delivery: turn.delivery,
                     studyCitations:turn.studyCitations.isEmpty ? nil:turn.studyCitations,
                     studyEvidence:turn.studyEvidence,
-                    worldFacts:turn.worldFacts
+                    worldFacts:turn.worldFacts,
+                    createdAt:turn.createdAt
                 )
             },
             createdAt: conversationCreatedAt,
@@ -737,7 +740,7 @@ private struct AnswerCopyButton: View {
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
                 .font(.caption)
-                .frame(width: 34, height: 30)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

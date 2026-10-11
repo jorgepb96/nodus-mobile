@@ -359,6 +359,12 @@ removes unsupplied citations. Temporal fixture comparisons across 15 languages a
 recovery/validator tests are prepared but unexecuted. Rich chat presentation, full visual
 acceptance, local compilation and end-to-end networking still need closure.
 
+Native authored chats now retain per-turn timestamps across persistence and retries.
+Research Chat exposes the original SQLite message timestamp and preserves it when legacy
+Desktop saves omit the field. Study, World and Database portable histories retain supplied
+dates, and malformed dates are rejected. Existing histories without per-turn dates remain
+readable. Timestamp persistence and replay regressions are prepared but unexecuted.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile
