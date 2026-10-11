@@ -84,7 +84,8 @@ final class NativeChatMobileUITests: XCTestCase {
         }
     }
     captureMenu("opened")
-    let all = app.menuItems.matching(NSPredicate(format: "label == %@ OR label == %@", "Seleccionar todo", "Select All")).firstMatch
+    // iOS 26 exposes the inline menu as MenuItems and its expanded grid as Buttons.
+    let all = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label == %@", "Seleccionar todo", "Select All")).firstMatch
     for _ in 0..<5 {
         if all.exists && all.isHittable { break }
         let next = app.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Adelante", "Forward")).firstMatch
