@@ -29,7 +29,7 @@ const version = JSON.parse(fs.readFileSync(path.join(desktop, 'package.json'), '
 const env = { ...process.env, NODUS_USERDATA: lab, NODUS_DISABLE_AUTO_UPDATE: '1',
   NODUS_E2E_UPDATE_STATUS: 'not-available', NODUS_E2E_DISABLE_STUDY_BACKGROUND_AI: '1' };
 delete env.ELECTRON_RUN_AS_NODE;
-let application, page;
+let application, page, createdIdeaId;
 try {
   application = await _electron.launch({ executablePath: nodusRequire('electron'), args: [desktop], env, timeout: 60_000 });
   assert.equal(await application.evaluate(({ app }) => app.getPath('userData')), lab);
@@ -60,6 +60,15 @@ try {
     assert.equal(matching.length, 1, 'A mobile creation must arrive once in the canonical Mac catalogue');
     assert.equal(matching[0].kind, createdKind, 'A manual idea must retain its original document kind');
     assert.equal(matching[0].trashedAt ?? null, null);
+    if (createdKind === 'idea') {
+      createdIdeaId = matching[0].source?.ref;
+      assert(createdIdeaId?.startsWith('manual-'), 'Manual creation must retain its original idea identity');
+      const detail = await page.evaluate(id => window.nodus.getIdeaDetail(id), createdIdeaId);
+      assert.equal(detail.idea.global_id, createdIdeaId);
+      assert(detail.idea.statement.includes(createdMarker), 'The canonical idea dossier must contain the authored text');
+      assert.equal(detail.occurrences.length, 0, 'Manual mobile writing must not initiate document extraction');
+      assert.equal(detail.evidence.length, 0);
+    }
     fixture = { noteId: matching[0].id, title: matching[0].title };
   }
   await page.locator('[data-tour="nav-workspace"]').click();
@@ -91,7 +100,8 @@ try {
     assert(before.contentMarkdown.includes(expectedMobileEdit) && JSON.stringify(before.nativeDocument).includes(expectedMobileEdit), 'The real Mac document must contain the exact mobile edit');
     const result = { result: 'passed', desktopVersion: version, noteId: fixture.noteId, expectedMobileEdit,
       revision: before.revision, versions: before.versions.length,
-      ...(createdMarker ? { creationKind: createdKind, duplicateCount: 0 } : { structuredTablePreserved: true, formulaPreserved: true }),
+      ...(createdMarker ? { creationKind: createdKind, duplicateCount: 0,
+        ...(createdIdeaId ? { canonicalIdeaId: createdIdeaId, documentExtractionStarted: false } : {}) } : { structuredTablePreserved: true, formulaPreserved: true }),
       interaction: 'actual Desktop BlockNote consultation after mobile editing', skipped: 0 };
     await page.screenshot({ path: path.join(output, 'desktop-scriptor-mobile-edit-visible.png') });
     fs.writeFileSync(path.join(output, 'desktop-scriptor-result.json'), JSON.stringify(result), { mode: 0o600 });
