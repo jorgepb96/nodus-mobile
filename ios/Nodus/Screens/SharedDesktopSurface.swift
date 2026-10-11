@@ -549,7 +549,23 @@ private struct DesktopWebView: UIViewRepresentable {
                                 throw DesktopBridgeError.permissionDenied
                             }
                         }
-                        if DatabaseResearchSurfaceBridge.methods.contains(method) {
+                        if method == "enqueueDatabaseDeepResearch",args.count == 1,args[0].objectValue != nil {
+                            guard !pairing.isExpired,pairing.vaultIds.contains(vaultId),pairing.domains.contains(.researchGeneration),session.aiExecutionMode == .live else { throw DesktopBridgeError.permissionDenied }
+                            let requestId = UUID().uuidString
+                            let ledger = try await DesktopJobLedgers.shared.ledger(pairingId:pairing.id,vaultId:vaultId)
+                            _ = try await ledger.prepare(id:requestId,method:method,args:args)
+                            do {
+                                let job = try await client.submitJob(vaultId:vaultId,method:method,args:args,idempotencyKey:requestId)
+                                guard [DesktopBridgeJob.State.accepted,.running,.saved,.available].contains(job.state) else { throw APIError(status:409,code:"database_request_not_accepted",message:job.error ?? "La solicitud no se pudo aceptar.") }
+                                try await ledger.update(id:requestId,job:job)
+                                value = .object(["version":.int(1),"requestId":.string(requestId),"bridgeJobId":.string(job.id),"state":.string(job.state.rawValue)])
+                            } catch {
+                                try? await ledger.disconnected(id:requestId,issue:error.localizedDescription)
+                                guard isPrivateBridgeOffline(error) else { throw error }
+                                value = .object(["version":.int(1),"requestId":.string(requestId),"bridgeJobId":.null,"state":.string("pending")])
+                            }
+                            Task { await session.synchronizeCompanionChanges() }
+                        } else if DatabaseResearchSurfaceBridge.methods.contains(method) {
                             value = try await databaseReading.perform(method,args:args,client:client,pairing:pairing,vaultId:vaultId,onOffline:onOfflineCopy)
                         } else if ImmersionSurfaceProgressBridge.writeMethods.contains(method) {
                             value = try await immersionProgress.write(method: method, args: args, pairing: pairing, vaultId: vaultId)

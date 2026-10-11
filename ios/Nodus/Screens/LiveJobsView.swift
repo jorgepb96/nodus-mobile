@@ -26,7 +26,7 @@ struct LiveJobsView: View {
                     }
                     if let error = job?.error ?? request.issue { Text(error).font(.caption).foregroundStyle(.red) }
                     if ["pending", "accepted", "running", "saved"].contains(job?.state.rawValue ?? request.state)
-                        || (job?.state == .interrupted && request.method == "enqueueDeepResearchJob") {
+                        || (job?.state == .interrupted && ["enqueueDeepResearchJob", "enqueueDatabaseDeepResearch"].contains(request.method)) {
                         HStack {
                             Button("Recover request") { Task { await recover(request) } }
                                 .disabled(loading || (session.aiExecutionMode != .live && !DesktopBridgeClient.providerFreeJobMethods.contains(request.method)))
@@ -76,7 +76,7 @@ struct LiveJobsView: View {
         catch { issue = error.localizedDescription }
     }
     private func title(_ method: String) -> String {
-        ["saveDictionaryGeneratedVersion": "Definición del diccionario", "saveImmersionGeneratedSession": "Inmersión del móvil", "saveContentTranslationFromMobile": "Traducción del móvil", "saveStudyImprovementFromMobile": "Asistencia de escritura del móvil", "startDictionaryGeneration": "Diccionario", "enqueueDeepResearchJob": "Deep Research", "exportWritingWorkshopDraft": "Exportar informe", "exportDeepResearchArchive": "Descargar informes", "exportImmersionSessionPdf": "Exportar inmersión", "generateImmersionSession": "Inmersión", "generateWritingWorkshopDraft": "Informe", "generateContentTranslation": "Traducción", "researchChat": "Chat", "researchChatStream": "Chat", "improveStudyText": "Asistencia de escritura", "buildArgumentMap": "Mapa de argumentos", "scanDictionaryNewEvidence": "Evidencias del diccionario", "generateConversationTitle": "Título de conversación"][method] ?? method
+        ["saveDictionaryGeneratedVersion": "Definición del diccionario", "saveImmersionGeneratedSession": "Inmersión del móvil", "saveContentTranslationFromMobile": "Traducción del móvil", "saveStudyImprovementFromMobile": "Asistencia de escritura del móvil", "startDictionaryGeneration": "Diccionario", "enqueueDeepResearchJob": "Deep Research", "enqueueDatabaseDeepResearch": "Deep Research de datos", "worldChatStream": "Chat del mundo", "dbChatStream": "Chat de bases de datos", "streamStudyAssistant": "Chat de estudio", "exportDatabaseDeepResearchReport": "Exportar informe de datos", "exportWritingWorkshopDraft": "Exportar informe", "exportDeepResearchArchive": "Descargar informes", "exportImmersionSessionPdf": "Exportar inmersión", "generateImmersionSession": "Inmersión", "generateWritingWorkshopDraft": "Informe", "generateContentTranslation": "Traducción", "researchChat": "Chat", "researchChatStream": "Chat", "improveStudyText": "Asistencia de escritura", "buildArgumentMap": "Mapa de argumentos", "scanDictionaryNewEvidence": "Evidencias del diccionario", "generateConversationTitle": "Título de conversación"][method] ?? method
     }
     private func status(_ state: String) -> String {
         ["pending": "Pendiente de enviar al Mac", "accepted": "Aceptado por el Mac", "running": "Ejecutándose en el Mac", "saved": "Resultado guardado", "available": "Resultado disponible", "failed": "No se pudo completar", "interrupted": "Interrumpido al reiniciar el Mac", "cancelled": "Cancelado"][state] ?? state

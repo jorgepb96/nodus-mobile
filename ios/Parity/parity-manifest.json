@@ -1399,6 +1399,30 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.restartIdentity",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.persistedAvailability",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.databaseResearch.offlineRequest",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.databaseResearch.evidenceSheet",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

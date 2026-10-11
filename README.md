@@ -98,8 +98,10 @@ evidence. The gallery defers database/row loading until the creation form opens.
 highlights, comments and bookmarks use a separate encrypted durable journal, stable identities,
 source/revision checks and atomic acknowledgements. Reconnect preserves newer device edits;
 conflicts have an explicit mobile/Mac comparison and export of device annotations. A deleted,
-changed or malformed report is an error, never a partial empty report. Autonomous query
-execution and durable database generation remain pending. These changes and their prepared
+changed or malformed report is an error, never a partial empty report. Live generation records
+the request before submission, returns after acceptance, and observes the actual Mac queue.
+Atomic run/Bridge identity receipts recover the same execution after restart; completion requires
+a persisted, queryable report. Autonomous query execution remains pending. These changes and their prepared
 Desktop/Swift regressions have not run or passed acceptance.
 Live chats select the actual World, Study/Teaching or Database adapter for their vault rather
 than the academic adapter. The scoped bridge carries their histories, projects, notebooks and

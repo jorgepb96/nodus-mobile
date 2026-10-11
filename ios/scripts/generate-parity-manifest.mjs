@@ -218,6 +218,10 @@ function operationMatrix(routes) {
       ['sync.databaseResearch.readState', 'sync'], ['sync.databaseResearch.annotations', 'sync'],
       ['sync.databaseResearch.conflicts', 'sync'], ['sync.databaseResearch.lostAcknowledgement', 'sync'],
       ['consultation.databaseResearch.lazyComposer', 'consultation'], ['consultation.databaseResearch.offlineGallery', 'consultation'],
+      ['generation.databaseResearch.restartIdentity', 'generation'],
+      ['generation.databaseResearch.persistedAvailability', 'generation'],
+      ['generation.databaseResearch.offlineRequest', 'generation'],
+      ['consultation.databaseResearch.evidenceSheet', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }
