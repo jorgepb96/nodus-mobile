@@ -475,3 +475,16 @@ original zoom/retry use these identities; explicit downloaded views do not fetch
 originals from the Mac. Prepared contract cases are **unexecuted**; five added
 acceptance operations remain pending. No current build or device validation is
 claimed, and Actions remain unchanged and unused.
+
+The world atlas now uses the real Desktop Leaflet canvas, marker geometry,
+layers, scale, measured travel, scenes and character track calculations. Its
+provider-free source reads actual Desktop DTOs in one SQLite read transaction.
+The phone owns searchable map/marker/cast navigation, a single native sheet
+presentation, temporal controls and native original-image zoom. In landscape,
+temporal detail opens separately so the map retains room; iPad keeps the broad
+canvas. Map illustrations are verified at full resolution and only downsampled
+for the ephemeral canvas; selected dossiers retain the unchanged original and
+atlas source for offline access. Prepared real-store and Swift ownership cases
+are **unexecuted**, shared map assets have **not been built**, and four new
+acceptance operations remain pending. Current device, orientation, accessibility
+and end-to-end acceptance are still required.

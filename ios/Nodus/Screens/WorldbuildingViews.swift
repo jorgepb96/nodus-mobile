@@ -1167,57 +1167,6 @@ struct WorldRelationsView: View {
     }
 }
 
-struct WorldMapView: View {
-    let session: SpaceSession
-    @State private var maps: [Row] = []
-    @State private var markers: [Row] = []
-    @State private var selectedId: String?
-    @State private var loading = true
-    @State private var error: String?
-
-    private var selected: Row? { maps.first { $0.string("map_id") == selectedId } ?? maps.first }
-    private var visibleMarkers: [Row] { guard let id = selected?.string("map_id") else { return [] }; return markers.filter { $0.string("map_id") == id } }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: NodusSpace.block) {
-                DesktopPageHeader(title: "Maps", subtitle: "Layered maps with normalized markers", systemImage: "map", accent: session.accent, trailing: {
-                    if !maps.isEmpty { Picker("Map", selection: Binding(get: { selected?.string("map_id") ?? "" }, set: { selectedId = $0 })) { ForEach(maps, id: \.columns) { Text($0.text("name") ?? "Map").tag($0.string("map_id") ?? "") } }.frame(width: 220) }
-                })
-                if loading { ProgressView("Loading maps…").frame(maxWidth: .infinity).padding(.vertical, 32) }
-                if let error { NodusNotice(tone: .blocked, title: "Could not load maps", message: LocalizedStringKey(error)) }
-                if let selected {
-                    GeometryReader { proxy in
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 14).fill(LinearGradient(colors: [session.accent.opacity(0.22), Color(uiColor: .secondarySystemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            Canvas { context, size in
-                                var grid = Path()
-                                stride(from: 0.0, through: size.width, by: max(40, size.width / 8)).forEach { x in grid.move(to: CGPoint(x: x, y: 0)); grid.addLine(to: CGPoint(x: x, y: size.height)) }
-                                stride(from: 0.0, through: size.height, by: max(40, size.height / 6)).forEach { y in grid.move(to: CGPoint(x: 0, y: y)); grid.addLine(to: CGPoint(x: size.width, y: y)) }
-                                context.stroke(grid, with: .color(session.accent.opacity(0.12)), lineWidth: 1)
-                            }
-                            ForEach(visibleMarkers, id: \.columns) { marker in
-                                VStack(spacing: 2) { Image(systemName: marker.text("icon") ?? "mappin.circle.fill").font(.title2); Text(marker.text("label") ?? "Marker").font(.caption2.weight(.medium)).lineLimit(1) }
-                                    .foregroundStyle(session.accent.nodusReadable)
-                                    .position(x: CGFloat(marker.double("x") ?? 0.5) * proxy.size.width, y: CGFloat(marker.double("y") ?? 0.5) * proxy.size.height)
-                            }
-                        }
-                    }.frame(minHeight: 440).overlay(alignment: .topLeading) { Text(selected.text("name") ?? "Map").font(.title2.weight(.semibold)).padding(18) }
-                } else if !loading, error == nil { ContentUnavailableView("No maps", systemImage: "map", description: Text("Maps created on Desktop will keep their layers and markers here.")) }
-            }.padding(NodusSpace.page).frame(maxWidth: 1120).frame(maxWidth: .infinity).nodusTopAnchor()
-        }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
-    }
-    private func load() async {
-        loading = true; defer { loading = false }
-        do {
-            let tables = try await worldTables(session, ["world_maps", "map_markers"])
-            maps = tables["world_maps"] ?? []; markers = tables["map_markers"] ?? []
-            if selectedId == nil { selectedId = maps.first?.string("map_id") ?? maps.first?.string("id") }
-            error = nil
-        } catch { maps = []; markers = []; self.error = error.localizedDescription }
-    }
-}
-
 @MainActor
 func worldTables(_ session: SpaceSession, _ names: [String]) async throws -> [String: [Row]] {
     let fixture = session.connection.desktopPairingId == nil ? debugWorldbuildingFixture() : [:]

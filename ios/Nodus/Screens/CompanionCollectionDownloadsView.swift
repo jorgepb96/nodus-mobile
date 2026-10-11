@@ -198,6 +198,11 @@ struct CompanionCollectionDownloadsView: View {
                     try await CompanionChatContext.validateStudyOriginal(original)
                     try retain("getMobileStudyChatOriginal", args, original)
                 }
+                if collection.path == "world-maps" {
+                    let source = try await client.operation(vaultId: vault, method: "getMobileWorldMapReadSource", args: [.string(id)])
+                    try WorldMapReadSource.validate(source, vault: vault, mapId: id)
+                    try retain("getMobileWorldMapReadSource", [.string(id)], source)
+                }
                 if collection.path == "databases" {
                     let pack = try await client.operation(vaultId:vault,method:"getMobileDatabaseResearchSourcePack",args:[.object(["databaseIds":.array([.string(id)])])])
                     guard pack.objectValue?["version"] == .int(1),pack.objectValue?["vaultId"] == .string(vault),

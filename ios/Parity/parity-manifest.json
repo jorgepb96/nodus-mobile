@@ -2017,6 +2017,30 @@
       "category": "consultation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "consultation.world.sharedAtlasOriginalLayersShapesAndScale",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.world.nativeAtlasSheetsSearchAndLandscapeControls",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.world.atlasTemporalCastScenesAndMeasuredTravel",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.world.selectedAtlasSourceAndOriginalOffline",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

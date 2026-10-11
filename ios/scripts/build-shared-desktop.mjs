@@ -45,11 +45,13 @@ if (process.argv.includes('--verify')) {
   console.log('Shared Desktop bundle matches its recorded source and output digests.');
 } else {
   execFileSync(process.execPath, [path.join(desktop, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'vite.mobile-web.config.ts'],
-    { cwd: desktop, env: { ...process.env, NODUS_MOBILE_SURFACE_OUT: output, NODUS_MOBILE_CHAT_READ:'0', NODUS_MOBILE_PROSE_READ:'0' }, stdio: 'inherit' });
+    { cwd: desktop, env: { ...process.env, NODUS_MOBILE_SURFACE_OUT: output, NODUS_MOBILE_CHAT_READ:'0', NODUS_MOBILE_PROSE_READ:'0', NODUS_MOBILE_MAP_READ:'0' }, stdio: 'inherit' });
   execFileSync(process.execPath,[path.join(desktop,'node_modules/vite/bin/vite.js'),'build','--config','vite.mobile-web.config.ts'],
-    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'1',NODUS_MOBILE_PROSE_READ:'0'},stdio:'inherit'});
+    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'1',NODUS_MOBILE_PROSE_READ:'0',NODUS_MOBILE_MAP_READ:'0'},stdio:'inherit'});
   execFileSync(process.execPath,[path.join(desktop,'node_modules/vite/bin/vite.js'),'build','--config','vite.mobile-web.config.ts'],
-    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'0',NODUS_MOBILE_PROSE_READ:'1'},stdio:'inherit'});
+    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'0',NODUS_MOBILE_PROSE_READ:'1',NODUS_MOBILE_MAP_READ:'0'},stdio:'inherit'});
+  execFileSync(process.execPath,[path.join(desktop,'node_modules/vite/bin/vite.js'),'build','--config','vite.mobile-web.config.ts'],
+    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'0',NODUS_MOBILE_PROSE_READ:'0',NODUS_MOBILE_MAP_READ:'1'},stdio:'inherit'});
   execFileSync(path.join(desktop, 'node_modules/esbuild/bin/esbuild'), [path.join(desktop, 'shared/deepResearchReport.ts'),
     '--bundle', '--platform=browser', '--format=iife', '--global-name=NodusReport', '--target=es2020',
     '--outfile='+path.join(output,'report-renderer.js')], {cwd:desktop,stdio:'inherit'});

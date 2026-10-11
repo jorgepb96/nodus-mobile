@@ -7,8 +7,9 @@ import WebKit
 @MainActor final class MobileCorpusImageScheme: NSObject, @preconcurrency WKURLSchemeHandler {
     private let session: SpaceSession
     private let onError: (String) -> Void
+    private let maximumRasterPixels: Int?
     private var tasks: [ObjectIdentifier:Task<Void,Never>] = [:]
-    init(session: SpaceSession,onError: @escaping (String) -> Void) { self.session = session; self.onError = onError }
+    init(session: SpaceSession,maximumRasterPixels: Int? = nil,onError: @escaping (String) -> Void) { self.session = session; self.maximumRasterPixels = maximumRasterPixels; self.onError = onError }
     func webView(_ webView: WKWebView,start urlSchemeTask: any WKURLSchemeTask) {
         let key = ObjectIdentifier(urlSchemeTask as AnyObject)
         tasks[key] = Task {
@@ -16,6 +17,7 @@ import WebKit
             do {
                 guard let url = urlSchemeTask.request.url else { throw DesktopBridgeError.malformedResponse }
                 let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus)
+                guard !pairing.isExpired else { throw DesktopBridgeError.expired }
                 let client = DesktopBridgeClient(pairing:pairing,token:token)
                 let cache = try PrivateBridgeCache(pairingId:pairing.id)
                 let descriptor: DesktopBridgeFileDescriptor, data: Data
@@ -28,17 +30,24 @@ import WebKit
                 }
                 try Task.checkCancellation()
                 guard tasks[key] != nil else { return }
-                let range = try Self.range(urlSchemeTask.request.value(forHTTPHeaderField:"Range"),size:data.count)
-                let content = range.map { data.subdata(in:$0) } ?? data
-                var headers = ["Content-Type":descriptor.mime,"Content-Length":String(content.count),"Accept-Ranges":"bytes","X-Content-Type-Options":"nosniff","Cache-Control":"no-store"]
-                if let range { headers["Content-Range"] = "bytes \(range.lowerBound)-\(range.upperBound-1)/\(data.count)" }
+                let visual: Data, mime: String
+                if let maximumRasterPixels, descriptor.mime.hasPrefix("image/"), descriptor.mime != "image/svg+xml" {
+                    guard let preview = try ReaderRasterImage.preview(data, maxPixelSize: maximumRasterPixels).pngData() else { throw DesktopBridgeError.malformedResponse }
+                    visual = preview; mime = "image/png"
+                } else { visual = data; mime = descriptor.mime }
+                // This optional downsample is an ephemeral canvas presentation.
+                // The verified original and its cache identity stay unchanged.
+                let range = try Self.range(urlSchemeTask.request.value(forHTTPHeaderField:"Range"),size:visual.count)
+                let content = range.map { visual.subdata(in:$0) } ?? visual
+                var headers = ["Content-Type":mime,"Content-Length":String(content.count),"Accept-Ranges":"bytes","X-Content-Type-Options":"nosniff","Cache-Control":"no-store"]
+                if let range { headers["Content-Range"] = "bytes \(range.lowerBound)-\(range.upperBound-1)/\(visual.count)" }
                 guard let response = HTTPURLResponse(url:url,statusCode:range == nil ? 200 : 206,httpVersion:nil,headerFields:headers) else { throw DesktopBridgeError.malformedResponse }
                 urlSchemeTask.didReceive(response)
                 if urlSchemeTask.request.httpMethod != "HEAD" { urlSchemeTask.didReceive(content) }
                 urlSchemeTask.didFinish()
             } catch {
                 guard !Task.isCancelled, tasks[key] != nil else { return }
-                onError(String(localized:"No se pudo cargar un recurso del documento. Comprueba la conexión y los permisos del vault."))
+                onError(error.localizedDescription)
                 urlSchemeTask.didFailWithError(error)
             }
         }
