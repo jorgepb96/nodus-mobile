@@ -432,7 +432,18 @@ private struct WorldManuscriptInspector: View {
     @State private var reviewMessage: String?
     @State private var reviewing = false
     @State private var reviewTask: Task<Void, Never>?
-    private var proseRequest: JSONValue { CompanionAcademicGeneration.sourceRequest(kind: "prose", scene: scene.id, language: CompanionAcademicGeneration.language) }
+    @State private var activeReviewKey: String?
+    private var proseBaseRequest: JSONValue { CompanionAcademicGeneration.sourceRequest(kind: "prose", scene: scene.id, language: CompanionAcademicGeneration.language) }
+    private var proseDraft: JSONValue {
+        .object(["sceneTitle": .string(scene.title), "text": .string(draft), "beats": .array(beats.map { beat in
+            let kind = beat.string("thread_kind") ?? "", id = beat.string("thread_id") ?? ""
+            let table = kind == "rule" ? "world_rules" : "world_threads", field = kind == "rule" ? "rule_id" : "thread_id"
+            let title = (tables[table] ?? []).first { $0.string(field) == id }?.text("title") ?? beat.text("thread_title") ?? id
+            return .object(["threadKind": .string(kind), "threadId": .string(id), "threadTitle": .string(title),
+                "mark": .string(beat.string("mark") ?? ""), "text": beat.text("text").map(JSONValue.string) ?? .null])
+        })])
+    }
+    private var proseRequest: JSONValue { CompanionAcademicGeneration.sourceRequest(kind: "prose", scene: scene.id, language: CompanionAcademicGeneration.language, draft: proseDraft) }
 
     private struct ReviewRow: Identifiable {
         let id: String
@@ -615,8 +626,9 @@ private struct WorldManuscriptInspector: View {
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                 .disabled(reviewing || session.isDemo || !session.connection.role.canSendChanges)
             }
-            if reviewing { Button("Cancelar revisión") { reviewTask?.cancel() }.font(.caption) }
-            if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: proseRequest) }
+            if reviewing { Button("Cancelar revisión") { cancelReview() }.font(.caption) }
+            if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: proseBaseRequest) }
+            Text("La revisión consulta el texto y los latidos actuales de esta escena.").font(.caption2).foregroundStyle(.secondary)
             if let reviewMessage { Text(reviewMessage).font(.caption2).foregroundStyle(.secondary) }
             ForEach(reviewRows) { review in
                 VStack(alignment: .leading, spacing: 2) {
@@ -644,6 +656,12 @@ private struct WorldManuscriptInspector: View {
             guard session.connection.desktopPairingId != nil else { return }
             do { if let saved = try await CompanionAcademicGeneration.saved(session: session, request: proseRequest)?.objectValue { applyReview(saved) } }
             catch { reviewMessage = error.localizedDescription }
+        }
+        .onChange(of: draft) { _, _ in
+            if !reviewRows.isEmpty { reviewRows = []; reviewMessage = "El texto ha cambiado. Revisa de nuevo para consultar este borrador." }
+        }
+        .onChange(of: beats) { _, _ in
+            if !reviewRows.isEmpty { reviewRows = []; reviewMessage = "Los latidos han cambiado. Revisa de nuevo para consultar este borrador." }
         }
     }
 
@@ -749,18 +767,23 @@ private struct WorldManuscriptInspector: View {
 
     private func reviewProse() async {
         reviewing = true; defer { reviewing = false }
+        let request = proseRequest, currentDraft = proseDraft
+        let key = "prose-review:\(scene.id):\(UUID().uuidString)"
         do {
             if session.aiExecutionMode == .autonomous, session.connection.desktopPairingId != nil {
-                let result = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: proseRequest) { reviewMessage = $0 }
+                let result = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: request) { reviewMessage = $0 }
                 guard let object = result.objectValue else { throw DesktopBridgeError.malformedResponse }
+                guard proseDraft == currentDraft else { reviewMessage = "Resultado conservado en Trabajos. El borrador ha cambiado durante la revisión."; return }
                 applyReview(object); return
             }
+            activeReviewKey = key; defer { activeReviewKey = nil }
             let creation = try await session.client.createSpaceAction(
-                idempotencyKey: "prose-review:\(scene.id):\(UUID().uuidString.prefix(8))",
-                kind: .worldbuildingProseReview, payload: ["sceneId": .string(scene.id)],
+                idempotencyKey: key,
+                kind: .worldbuildingProseReview, payload: ["sceneId": .string(scene.id), "language": .string(CompanionAcademicGeneration.language), "draft": currentDraft],
                 inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
             var action = creation.action
+            try Task.checkCancellation()
             for _ in 0..<30 where !action.status.isTerminal {
                 try await Task.sleep(for: .seconds(2))
                 action = try await session.client.spaceAction(id: action.id, in: session.connection.spaceId)
@@ -771,9 +794,26 @@ private struct WorldManuscriptInspector: View {
                     : "Review is still running in Desktop; its result remains visible in Sync Center."
                 return
             }
+            guard proseDraft == currentDraft else { reviewMessage = "Resultado conservado en Trabajos. El borrador ha cambiado durante la revisión."; return }
             applyReview(object)
-        } catch where error.isCancellation { reviewMessage = "Revisión cancelada. El texto permanece intacto." }
+        } catch where error.isCancellation {
+            if session.connection.desktopPairingId != nil, session.aiExecutionMode == .live {
+                await Task {
+                    _ = try? await session.client.cancelSpaceAction(id: DesktopBridgeClient.companionActionIdentity(idempotencyKey: key), in: session.connection.spaceId)
+                }.value
+            }
+            reviewMessage = "Cancelación solicitada. Consulta su estado en Trabajos."
+        }
         catch { reviewMessage = error.localizedDescription }
+    }
+    private func cancelReview() {
+        reviewTask?.cancel()
+        if let key = activeReviewKey, session.connection.desktopPairingId != nil {
+            Task {
+                do { _ = try await session.client.cancelSpaceAction(id: DesktopBridgeClient.companionActionIdentity(idempotencyKey: key), in: session.connection.spaceId) }
+                catch { reviewMessage = error.localizedDescription }
+            }
+        }
     }
 
     private func applyReview(_ object: [String: JSONValue]) {

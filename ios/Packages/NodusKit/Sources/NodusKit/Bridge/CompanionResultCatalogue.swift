@@ -39,6 +39,9 @@ public enum CompanionResultCatalogue {
 
     public static func title(_ request: DesktopJobLedger.Request) -> String {
         let checkpoint = request.checkpoint?.objectValue ?? [:]
+        if request.method == "runMobileSpaceAction", let kind = request.args.first?.objectValue?["kind"]?.stringValue {
+            return ["author.synthesis.generate": "Síntesis de autor", "authors.matrix.generate": "Síntesis de autor y tema", "worldbuilding.proseReview": "Revisión de escena", "argumentMap.generate": "Mapa de argumentos", "writing.generate": "Asistencia de escritura", "idea.saveToNotes": "Nota de una idea", "deepResearch.saveToNotes": "Nota de investigación", "hypothesis.saveToNotes": "Nota de hipótesis", "projects.create": "Proyecto creado", "projects.update": "Proyecto guardado", "pages.restoreRevision": "Versión restaurada", "databases.importCSV": "Importación de CSV"][kind] ?? "Resultado de contenido"
+        }
         if ["saveMobileAcademicResult", "localAcademicGeneration"].contains(request.method) {
             switch checkpoint["request"]?.objectValue?["source"]?.objectValue?["kind"]?.stringValue {
             case "author": return "Síntesis de autor"

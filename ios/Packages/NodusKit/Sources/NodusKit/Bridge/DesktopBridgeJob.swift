@@ -21,6 +21,7 @@ public struct DesktopBridgeJob: Decodable, Sendable, Identifiable {
 }
 
 public extension DesktopBridgeClient {
+    static func companionActionIdentity(idempotencyKey: String) -> String { DesktopCompanionActions.identity(idempotencyKey) }
     static let jobMethods: Set<String> = ["runMobileSpaceAction", "streamMobileCompanionChat", "saveMobileAcademicResult", "saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "saveMobileDatabaseResearchReport", "startDictionaryGeneration", "enqueueDeepResearchJob", "enqueueDatabaseDeepResearch", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport", "generateImmersionSession", "generateWritingWorkshopDraft", "generateContentTranslation", "researchChat", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "buildArgumentMap", "scanDictionaryNewEvidence", "generateConversationTitle"]
     /// Synchronizing an already generated device result or exporting a saved
     /// document does not select or invoke the Mac's research model.

@@ -16,9 +16,10 @@ final class CompanionAcademicGeneration {
         return ["es", "en", "fr", "tr", "de", "pt", "it", "vi", "ja", "ru", "uk", "ko"].contains(code) ? code : "es"
     }
 
-    static func sourceRequest(kind: String, author: String? = nil, theme: String? = nil, scene: String? = nil, language: String) -> JSONValue {
+    static func sourceRequest(kind: String, author: String? = nil, theme: String? = nil, scene: String? = nil, language: String, draft: JSONValue? = nil) -> JSONValue {
         var value: [String: JSONValue] = ["kind": .string(kind), "language": .string(language)]
         if let author { value["authorId"] = .string(author) }; if let theme { value["themeId"] = .string(theme) }; if let scene { value["sceneId"] = .string(scene) }
+        if let draft { value["draft"] = draft }
         return .object(value)
     }
     private static func entity(_ request: JSONValue) throws -> String {
@@ -83,14 +84,17 @@ final class CompanionAcademicGeneration {
     static func source(session: SpaceSession, request: JSONValue) async throws -> JSONValue {
         let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
         let cache = try PrivateBridgeCache(pairingId: pairing.id)
-        let key = try CompanionDocumentOutbox.operationKey("getMobileAcademicSource", [request])
+        var baseline = request.objectValue ?? [:]; baseline["draft"] = nil
+        let baselineRequest = JSONValue.object(baseline)
+        let key = try CompanionDocumentOutbox.operationKey("getMobileAcademicSource", [baselineRequest])
         let chosen = try await cache.downloadedData(vaultId: vault, domain: .corpus, recordId: key)
         let value: JSONValue
         do { value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileAcademicSource", args: [request], timeout: chosen.isEmpty ? nil : 4) }
         catch {
             guard isPrivateBridgeOffline(error) else { throw error }
             guard let bytes = chosen.first else { throw APIError(status: 409, code: "academic_sources_not_downloaded", message: "Descarga estas fuentes para llevar mientras tu Mac esté conectado.") }
-            value = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+            let downloaded = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+            value = request.objectValue?["draft"] == nil ? downloaded : try CompanionProseDraft.source(downloaded, request: request)
         }
         _ = try CompanionAcademicSource(value, request: request); return value
     }
@@ -109,7 +113,7 @@ final class CompanionAcademicGeneration {
         guard session.aiExecutionMode == .autonomous, ["author", "matrix", "prose"].contains(request.objectValue?["kind"]?.stringValue ?? ""), let model = settings.model(for: .synthesis) else {
             throw APIError(status: 409, code: "mobile_synthesis_model_missing", message: "Elige un modelo de síntesis y configura su proveedor en los ajustes del móvil.")
         }
-        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .writing)
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
         guard pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
         let cache = try PrivateBridgeCache(pairingId: pairing.id), entity = try Self.entity(request)
         let key = try CompanionGenerationPublication.recordId(kind: "academic", entity: entity)
@@ -132,15 +136,7 @@ final class CompanionAcademicGeneration {
             try Task.checkCancellation(); try await save()
             if value["context"] == nil {
                 onStatus("Preparando las fuentes de Nodus")
-                let source: JSONValue
-                do { source = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileAcademicSource", args: [request], timeout: 4) }
-                catch {
-                    guard isPrivateBridgeOffline(error) else { throw error }
-                    let records = try await cache.downloadedData(vaultId: vault, domain: .corpus,
-                        recordId: CompanionDocumentOutbox.operationKey("getMobileAcademicSource", [request]))
-                    guard let bytes = records.first else { throw APIError(status: 409, code: "academic_sources_not_downloaded", message: "Descarga estas fuentes para llevar mientras tu Mac esté conectado.") }
-                    source = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
-                }
+                let source = try await Self.source(session: session, request: request)
                 let captured = try CompanionAcademicSource(source, request: request)
                 value["context"] = .object(["source": source, "revision": .string(captured.revision)]); try await save()
             }
