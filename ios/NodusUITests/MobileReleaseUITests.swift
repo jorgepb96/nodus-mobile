@@ -1875,8 +1875,13 @@ final class MobileReleaseUITests: XCTestCase {
         defer { reopened.terminate() }
         let restoredWeb = reopened.otherElements["shared-desktop-workspace"].webViews.firstMatch
         XCTAssertTrue(restoredWeb.waitForExistence(timeout: 45))
+        let restoredSearch = restoredWeb.textFields["Buscar en notas e ideas…"]
+        XCTAssertTrue(restoredSearch.waitForExistence(timeout: 30))
+        restoredSearch.tap(); restoredSearch.typeText(marker + "\n")
         let row = restoredWeb.buttons["Abrir \(defaultTitle)"]
-        if row.waitForExistence(timeout: 8) { row.tap() }
+        XCTAssertTrue(row.waitForExistence(timeout: 30))
+        XCTAssertEqual(restoredWeb.buttons.matching(NSPredicate(format: "label == %@", "Abrir \(defaultTitle)")).count, 1)
+        row.tap()
         let restored = restoredWeb.textViews["Editor del documento"]
         XCTAssertTrue(restored.waitForExistence(timeout: 30))
         XCTAssertTrue((restored.value as? String)?.contains(marker) == true)
