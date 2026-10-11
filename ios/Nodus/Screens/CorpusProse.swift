@@ -335,17 +335,9 @@ struct NoteByIdView: View {
     @State private var row: Row?
     @State private var failure: String?
     @State private var attempt = 0
-    private var privateReference: PrivateCorpusReference? {
-        guard session.connection.desktopPairingId != nil,
-              let target = try? PrivateCorpusReference.collectionReference(path: collection.path, id: id) else { return nil }
-        return try? PrivateCorpusReference(kind: target.kind, id: target.id, timestamp: sourceReference?.timestamp, transcriptId: sourceReference?.transcriptId)
-    }
-
     var body: some View {
         Group {
-            if let privateReference {
-                PrivateCorpusSourceView(session: session, reference: privateReference)
-            } else if let row {
+            if let row {
                 RowDetailView(session: session, collection: nil, row: row, title: "Notes")
             } else if let failure {
                 CorpusOpenFailure(message: failure) { attempt += 1 }
@@ -379,10 +371,17 @@ struct RowByIdView: View {
     @State private var row: Row?
     @State private var failure: String?
     @State private var attempt = 0
+    private var privateReference: PrivateCorpusReference? {
+        guard session.connection.desktopPairingId != nil,
+              let target = try? PrivateCorpusReference.collectionReference(path: collection.path, id: id) else { return nil }
+        return try? PrivateCorpusReference(kind: target.kind, id: target.id, timestamp: sourceReference?.timestamp, transcriptId: sourceReference?.transcriptId)
+    }
 
     var body: some View {
         Group {
-            if let row {
+            if let privateReference {
+                PrivateCorpusSourceView(session: session, reference: privateReference)
+            } else if let row {
                 RowDetailView(session: session, collection: collection, row: row)
             } else if let failure {
                 CorpusOpenFailure(message: failure) { attempt += 1 }
