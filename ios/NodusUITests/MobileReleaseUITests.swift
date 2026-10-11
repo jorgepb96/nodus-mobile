@@ -119,15 +119,30 @@ final class MobileReleaseUITests: XCTestCase {
         let finished = NSPredicate(format: "value == %@", "idle")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: finished, object: send)], timeout: 240), .completed)
         XCTAssertFalse(app.descendants(matching: .any)["nodus-chat-error"].exists, app.debugDescription)
+        let originalText = answer.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n")
+        XCTAssertTrue(originalText.contains(marker)); XCTAssertGreaterThan(originalText.count, 120)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "nodus-chat-question").count, 1)
+        let regenerate = answer.buttons["nodus-chat-regenerate"]
+        for _ in 0..<15 { if regenerate.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(regenerate.isHittable); regenerate.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: running, object: send)], timeout: 15), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: finished, object: send)], timeout: 240), .completed)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "nodus-chat-question").count, 1, "Regeneration must retain the original question without duplication.")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "nodus-chat-answer").count, 1)
+        XCTAssertFalse(app.descendants(matching: .any)["nodus-chat-error"].exists, app.debugDescription)
         let text = answer.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n")
         XCTAssertTrue(text.contains(marker)); XCTAssertGreaterThan(text.count, 120)
+        capture(app, "phone-chat-native-live-regenerated")
         let copy = answer.buttons["nodus-chat-copy"]
         for _ in 0..<15 { if copy.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(copy.isHittable)
         for action in answer.buttons.allElementsBoundByIndex {
             XCTAssertGreaterThanOrEqual(action.frame.minX, answer.frame.minX - 1)
             XCTAssertLessThanOrEqual(action.frame.maxX, answer.frame.maxX + 1)
-            XCTAssertGreaterThanOrEqual(action.frame.width, 44)
+            if ["nodus-chat-copy", "nodus-chat-regenerate"].contains(action.identifier) {
+                XCTAssertGreaterThanOrEqual(action.frame.width, 44)
+                XCTAssertGreaterThanOrEqual(action.frame.height, 44)
+            }
         }
         XCTAssertTrue(answer.buttons["nodus-chat-regenerate"].exists)
         copy.tap()

@@ -190,7 +190,7 @@ struct ChatScreen: View {
                 if session.aiExecutionMode == .live {
                     Button { composerFocused=false;showingLiveOptions=true } label: {
                         Label(liveOptions.modelName(liveOptions.effectiveModel),systemImage:"desktopcomputer")
-                            .font(.caption).lineLimit(1).truncationMode(.middle).frame(minHeight:44)
+                            .font(.caption).lineLimit(1).truncationMode(.middle).frame(minHeight:44).contentShape(Rectangle())
                     }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking).accessibilityIdentifier("nodus-chat-live-options")
                 } else { ChatModelMenu(accent: session.accent, openProviders: openProviders) }
             }
@@ -200,7 +200,7 @@ struct ChatScreen: View {
                 .padding(.horizontal, 48)
                 .frame(maxWidth: .infinity)
                 .overlay(alignment:.leading) {
-                    Button(action:openHistory) { Image(systemName:"clock.arrow.circlepath").frame(width:44,height:44) }
+                    Button(action:openHistory) { Image(systemName:"clock.arrow.circlepath").frame(width:44,height:44).contentShape(Rectangle()) }
                         .buttonStyle(.plain).foregroundStyle(session.accent).accessibilityLabel("Conversation history").accessibilityIdentifier("nodus-chat-history")
                 }
                 .overlay(alignment: .trailing) {
@@ -478,7 +478,7 @@ struct ChatScreen: View {
                 .focused($composerFocused)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 11)
-                .frame(minHeight: 42)
+                .frame(minHeight: 44)
                 .nodusGlass(NodusGlass(.regular, tint: session.accent), in: Capsule())
 
             Button {
@@ -487,7 +487,7 @@ struct ChatScreen: View {
                 Image(systemName: isThinking ? "stop.circle.fill" : "arrow.up.circle.fill")
                     .font(.system(size: 30))
                     .foregroundStyle(session.accent)
-                    .frame(width: 42, height: 42)
+                    .frame(width: 44, height: 44)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
