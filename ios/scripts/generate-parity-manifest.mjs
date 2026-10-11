@@ -338,6 +338,8 @@ function operationMatrix(routes) {
       ['sync.databases.boundedCompleteCalculationDependencyGraph', 'sync'],
       ['sync.databases.linkedCopyEpochAndMissingSourceErrors', 'sync'],
       ['sync.databases.derivedTargetChangesAndRelationDeletion', 'sync'],
+      ['consultation.databases.formulaErrorRecoveryAndInvalidCellVisibility', 'consultation'],
+      ['sync.arguments.completeInspectorDependencyEpoch', 'sync'],
       ['sync.jobs.keyedCancellationBeforeAcknowledgement', 'sync'],
       ['sync.jobs.cancelledReceiptPersistsAcrossMacRestart', 'sync'],
       ['generation.arguments.liveCanonicalSavedMapCatalogue', 'generation'],

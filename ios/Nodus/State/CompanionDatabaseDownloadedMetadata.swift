@@ -35,9 +35,10 @@ enum CompanionDatabaseDownloadedMetadata {
         let computed = Set(columns.filter { ["formula", "rollup"].contains($0.objectValue?["type"]?.stringValue ?? "") }.compactMap { $0.objectValue?["id"]?.stringValue })
         var retained = cells.filter { $0.objectValue?["row_id"] != .string(rowId) || !computed.contains($0.objectValue?["column_id"]?.stringValue ?? "") }
         for column in computed {
-            if let value = values[column], value != .null {
-                guard value.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
-                retained.append(.object(["row_id": .string(rowId), "column_id": .string(column), "database_id": database, "value_text": value]))
+            let value = values[column] ?? .null, error = row.objectValue?["formulaErrors"]?.objectValue?[column], color = row.objectValue?["formulaColors"]?.objectValue?[column]
+            if value != .null || error != nil {
+                guard value == .null || value.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
+                retained.append(.object(["row_id": .string(rowId), "column_id": .string(column), "database_id": database, "value_text": value, "error": error ?? .null, "color": color ?? .null]))
             }
         }
         result["cells"] = .array(retained)

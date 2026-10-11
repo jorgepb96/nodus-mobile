@@ -62,7 +62,7 @@ struct CompanionDatabaseQueryRuntimeTests {
         var columns = try #require(source["columns"]?.arrayValue)
         columns.append(.object(["id": .string("amount"), "type": .string("number"), "config": .object([:]), "options": .array([])]))
         columns.append(.object(["id": .string("sum"), "type": .string("formula"), "config": .object([
-            "formula": .object(["kind": .string("columnStat"), "fn": .string("sum"), "columnId": .string("amount")])]), "options": .array([])]))
+            "formula": .object(["kind": .string("columnStat"), "fn": .string("columnTotal"), "columnId": .string("amount")])]), "options": .array([])]))
         source["columns"] = .array(columns)
         source["rows"] = .array(try #require(source["rows"]?.arrayValue).enumerated().map { index, value in
             var row = value.objectValue!, cells = row["cells"]!.objectValue!

@@ -283,7 +283,9 @@ struct DatabaseRowView: View {
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
                 ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
-                    if case .empty = DatabaseCell.value(of: column, in: context) {
+                    if let id = column.string("id"), context.cells[id]?.text("error")?.isEmpty == false {
+                        field(column)
+                    } else if case .empty = DatabaseCell.value(of: column, in: context) {
                         // A column with nothing in it says nothing. A dossier of forty
                         // headings over forty dashes is worse than a short one.
                         EmptyView()
@@ -312,7 +314,9 @@ struct DatabaseRowView: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
             }
-            value(column)
+            if let id = column.string("id"), let error = context.cells[id]?.text("error"), !error.isEmpty {
+                Label(error, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange).textSelection(.enabled)
+            } else { value(column) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)

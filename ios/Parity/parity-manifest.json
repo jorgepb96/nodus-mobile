@@ -2199,6 +2199,18 @@
       "evidence": []
     },
     {
+      "id": "consultation.databases.formulaErrorRecoveryAndInvalidCellVisibility",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.arguments.completeInspectorDependencyEpoch",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "sync.jobs.keyedCancellationBeforeAcknowledgement",
       "category": "sync",
       "result": "pending",

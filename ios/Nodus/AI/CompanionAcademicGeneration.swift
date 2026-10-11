@@ -45,38 +45,12 @@ final class CompanionAcademicGeneration {
     static func download(session: SpaceSession, request: JSONValue, days: Int) async throws {
         guard [7, 30].contains(days) else { throw PrivateBridgeCache.ReadPackError.invalidSelection }
         let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
-        let value = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileAcademicSource", args: [request])
-        _ = try CompanionAcademicSource(value, request: request)
+        let client = DesktopBridgeClient(pairing: pairing, token: token)
+        let records = try await CompanionArgumentDownload.capture(request: request, maximumBytes: 50 * 1024 * 1024) { method, args in
+            try await client.operation(vaultId: vault, method: method, args: args)
+        }
         let record = try CompanionDocumentOutbox.operationKey("getMobileAcademicSource", [request])
         let selection = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: [record])
-        var records: [PrivateBridgeCache.ReadPackRecord] = [.init(domain: .corpus, recordId: record, data: try JSONEncoder.nodus.encode(value))]
-        if request.objectValue?["kind"] == .string("argument"), let ideas = value.objectValue?["source"]?.objectValue?["ideas"]?.arrayValue {
-            let client = DesktopBridgeClient(pairing: pairing, token: token)
-            let args: [JSONValue] = [.object(["seedIdeaId": request.objectValue?["seedIdeaId"] ?? .null, "language": request.objectValue?["language"] ?? .null])]
-            let structural = try await client.operation(vaultId: vault, method: "getMobileStructuralArgumentMap", args: args)
-            var ids = try CompanionArgumentDownload.ideaIDs(structural)
-            for idea in ideas {
-                guard let id = idea.objectValue?["global_id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
-                ids.insert(id)
-            }
-            var bytes = records[0].data.count
-            for id in ids.sorted() {
-                try Task.checkCancellation()
-                for method in ["getIdeaDetail", "getIdeaEdges"] {
-                    let args: [JSONValue] = [.string(id)], result = try await client.operation(vaultId: vault, method: method, args: args)
-                    guard result != .null else { throw DesktopBridgeError.malformedResponse }
-                    let data = try JSONEncoder.nodus.encode(result); bytes += data.count
-                    guard bytes <= 50 * 1024 * 1024 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
-                    records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey(method, args), data: data))
-                }
-            }
-            records.append(.init(domain: .corpus, recordId: try CompanionDocumentOutbox.operationKey("getMobileStructuralArgumentMap", args), data: try JSONEncoder.nodus.encode(structural)))
-            let current = try await client.operation(vaultId: vault, method: "getMobileAcademicSource", args: [request])
-            let latestMap = try await client.operation(vaultId: vault, method: "getMobileStructuralArgumentMap", args: args)
-            guard current.objectValue?["revision"] == value.objectValue?["revision"],
-                  try CompanionArgumentDownload.semanticMap(latestMap) == CompanionArgumentDownload.semanticMap(structural)
-            else { throw APIError(status: 409, code: "argument_download_changed", message: "Las fuentes del mapa han cambiado durante la descarga. Reintenta para guardar una copia consistente.") }
-        }
         try Task.checkCancellation()
         try await PrivateBridgeCache(pairingId: pairing.id).saveReadPack(id: selection, vaultId: vault, title: "Fuentes de síntesis y revisión",
             expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: records)
