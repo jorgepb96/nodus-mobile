@@ -63,6 +63,10 @@ enum CompanionPageDownload {
                             let count = try JSONEncoder.nodus.encode(payload).count
                             guard count <= maximumBytes - used else { throw PrivateBridgeCache.ReadPackError.tooLarge }
                             used += count; databases[databaseId] = payload
+                            if seen.insert(CompanionDatabasePresentationSource.key(databaseId)).inserted {
+                                let presentation = try await CompanionDatabasePresentationSource.download(client: client, vault: vault, database: databaseId, maximumBytes: maximumBytes - used)
+                                used += presentation.data.count; output.append(presentation)
+                            }
                         }
                     }
                     for tab in tabs {

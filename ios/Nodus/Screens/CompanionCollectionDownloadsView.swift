@@ -235,6 +235,7 @@ struct CompanionCollectionDownloadsView: View {
                     try appendDependencies(linked)
                 }
                 if collection.path == "databases" {
+                    try appendDependencies([try await CompanionDatabasePresentationSource.download(client: client, vault: vault, database: id, maximumBytes: PrivateBridgeCache.defaultReadLimitBytes - bytes)])
                     guard let views=detail["views"]?.arrayValue else {throw DesktopBridgeError.malformedResponse}
                     let viewRecords=try await CompanionDatabaseViewSource.download(client:client,vault:vault,views:views,maximumBytes:PrivateBridgeCache.defaultReadLimitBytes - bytes,existing:Set(sources.map(\.recordId)),ownerDatabase:id) { databaseId,remaining in
                         guard let descriptor=Collections["databases"],let escaped=databaseId.addingPercentEncoding(withAllowedCharacters:allowed) else {throw DesktopBridgeError.malformedResponse}

@@ -5,7 +5,7 @@ import SwiftUI
 import WebKit
 import QuickLook
 
-enum DesktopSurface: String { case graph, dictionary, workspace, page, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
+enum DesktopSurface: String { case graph, dictionary, workspace, page, databasePresentation, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
 
 private struct MobileWritingResultTarget: Identifiable {
     let request: DesktopJobLedger.Request
@@ -60,6 +60,8 @@ struct SharedDesktopSurface: View {
     var initialPageId: String? = nil
     var initialArgumentMap: JSONValue? = nil
     var initialArgumentSeed: String? = nil
+    var initialDatabasePresentation: JSONValue? = nil
+    var onOpenDatabaseRow: ((String) -> Void)? = nil
     var pageDownloadedOnly = false
     @Environment(AISettings.self) private var ai
     @Environment(\.colorScheme) private var theme
@@ -83,7 +85,7 @@ struct SharedDesktopSurface: View {
     @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, pageDownloadedOnly:pageDownloadedOnly, onError: { issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, pageDownloadedOnly:pageDownloadedOnly, onError: { issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -91,6 +93,7 @@ struct SharedDesktopSurface: View {
                 Task { await controller.load(fetchMacProgress: false) }
             } catch { issue = error.localizedDescription }
         }) { kind, id, location, quote in
+            if kind == "databaseRow", let onOpenDatabaseRow { onOpenDatabaseRow(id); return }
             if kind == "pageAsset" {
                 guard id.count == 64, id.allSatisfy(\.isHexDigit), !openingEmbeddedResource else { return }
                 openingEmbeddedResource = true
@@ -317,6 +320,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let initialPageId: String?
     let initialArgumentMap: JSONValue?
     let initialArgumentSeed: String?
+    let initialDatabasePresentation: JSONValue?
     let pageDownloadedOnly: Bool
     let onError: (String) -> Void
     let onExport: (PrivateBridgeFileLease) -> Void
@@ -340,6 +344,7 @@ private struct DesktopWebView: UIViewRepresentable {
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
         if let initialArgumentMap, let bytes = try? JSONEncoder.nodus.encode(initialArgumentMap), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialArgumentMap"] = value }
         if let initialArgumentSeed { data["initialArgumentSeed"] = initialArgumentSeed }
+        if let initialDatabasePresentation, let bytes = try? JSONEncoder.nodus.encode(initialDatabasePresentation), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialDatabasePresentation"] = value }
         if let json = try? JSONSerialization.data(withJSONObject: data), let text = String(data: json, encoding: .utf8) {
             let bootstrap = """
             window.nodusMobileConfig=\(text);
@@ -542,6 +547,35 @@ private struct DesktopWebView: UIViewRepresentable {
                         } else { throw DesktopBridgeError.malformedResponse }
                     } else if method == "openMobileDatabaseRow",args.count == 1,let row=args[0].stringValue,!row.isEmpty,row.utf8.count <= 1024 {
                         onNavigate("databaseRow",row,nil,nil);value = .null
+                    } else if method == "mobileDatabasePresentationRead", args.count == 1,
+                              let request = args[0].objectValue, let action = request["action"]?.stringValue,
+                              let database = request["input"]?.objectValue?["databaseId"]?.stringValue {
+                        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+                        let response = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDatabasePresentationRead", args: args)
+                        value = try CompanionDatabasePresentationSource.value(response, vault: vault, database: database, action: action)
+                    } else if method == "mobileDatabasePresentationSource", args.count == 1, let database = args[0].stringValue,
+                              !database.isEmpty, database.utf8.count <= 1024 {
+                        value = try await CompanionDatabasePresentationSource.downloaded(session: session, database: database)
+                        onOfflineCopy(true)
+                    } else if method == "mobileDatabaseChartExport", args.count == 1, let export = args[0].objectValue,
+                              let database = export["databaseId"]?.stringValue, !database.isEmpty, database.utf8.count <= 1024,
+                              let format = export["format"]?.stringValue, ["svg", "png"].contains(format),
+                              let encoded = export["base64"]?.stringValue, encoded.utf8.count <= 28_000_000,
+                              let expected = export["sha256"]?.stringValue, let bytes = Data(base64Encoded: encoded), bytes.count <= 20_000_000 {
+                        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+                        if pageDownloadedOnly { _ = try await CompanionDatabasePresentationSource.downloaded(session: session, database: database) }
+                        else {
+                            do { _ = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDatabasePresentationRead", args: [.object(["action": .string("metadata"), "input": .object(["databaseId": .string(database)])])]) }
+                            catch { guard isPrivateBridgeOffline(error) else { throw error }; _ = try await CompanionDatabasePresentationSource.downloaded(session: session, database: database) }
+                        }
+                        guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == expected,
+                              format != "png" || UIImage(data: bytes) != nil else { throw DesktopBridgeError.malformedResponse }
+                        if format == "svg" {
+                            guard let svg = String(data: bytes, encoding: .utf8), svg.contains("<svg"), !svg.contains("<script"), !svg.contains("<foreignObject") else { throw DesktopBridgeError.malformedResponse }
+                        }
+                        let filename = "Nodus-chart.\(format)"
+                        onExport(try PrivateBridgeFileLease.write(bytes, filename: filename))
+                        value = .object(["canceled": .bool(false), "path": .string(filename)])
                     } else if method == "openPageResource", args.count == 1, let resource = args[0].objectValue, let source = resource["source"]?.stringValue, let url = URL(string: source) {
                         if url.scheme == "nodus-blob", let hash = url.host, hash.count == 64, hash.allSatisfy(\.isHexDigit) { onNavigate("pageAsset", hash, nil, nil); value = .null }
                         else if CorpusReference(url) != nil { onNavigate("citation", source, nil, nil); value = .null }

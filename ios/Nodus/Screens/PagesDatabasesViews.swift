@@ -606,6 +606,7 @@ struct DatabaseDetailWorkspace: View {
     private var views: [PagesDatabasesParity.SavedView] { PagesDatabasesParity.views(databaseId: database.id, in: tables) }
     private var activeView: PagesDatabasesParity.SavedView? { views.first { $0.id == activeViewId } }
     private var layout: String { activeView?.layout ?? adHocLayout }
+    private var sharedPresentation: Bool { session.connection.desktopPairingId != nil && ["chart", "map", "feed", "dashboard", "calendar", "timeline"].contains(layout) }
     private var viewConfig: [String: JSONValue] { activeView?.config ?? [:] }
     private var visibleColumns: [PagesDatabasesParity.Column] { PagesDatabasesParity.visibleColumns(columns, config: viewConfig) }
     private var cardColumns: [PagesDatabasesParity.Column] { PagesDatabasesParity.cardColumns(columns, config: viewConfig) }
@@ -663,7 +664,7 @@ struct DatabaseDetailWorkspace: View {
                     }
                     Menu {
                         if compactPresentation { Toggle("Tabla completa", isOn: $phoneTable) }
-                        ForEach(["table", "gallery", "board", "calendar", "timeline"], id: \.self) { candidate in Button { activeViewId = nil; adHocLayout = candidate } label: { Label(candidate.capitalized, systemImage: layoutIcon(candidate)) } }
+                        ForEach(["table", "list", "gallery", "board", "calendar", "timeline", "chart", "map", "feed", "dashboard"], id: \.self) { candidate in Button { activeViewId = nil; adHocLayout = candidate } label: { Label(candidate.capitalized, systemImage: layoutIcon(candidate)) } }
                     } label: { Label("View", systemImage: "plus") }.buttonStyle(.bordered)
                 }
             }.scrollIndicators(.hidden)
@@ -677,14 +678,24 @@ struct DatabaseDetailWorkspace: View {
 
     private var content: some View {
         VStack(spacing: 0) {
-            NodusSearchField(text: $query, prompt: "Filter rows and properties", accent: session.accent).padding(10)
+            if !sharedPresentation { NodusSearchField(text: $query, prompt: "Filter rows and properties", accent: session.accent).padding(10) }
             if loadingView {ProgressView("Cargando la vista guardada de Nodus…").padding(12)}
             if let viewIssue {NodusNotice(tone:.caution,title:"No se pudo consultar esta vista",message:LocalizedStringKey(viewIssue)).padding(.horizontal,12);Button("Reintentar"){viewAttempt += 1}.frame(minHeight:44)}
             if let importMessage { Text(importMessage).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 12).frame(maxWidth: .infinity, alignment: .leading) }
             Group {
-                if session.connection.desktopPairingId != nil,activeViewId != nil,canonicalRows == nil {Color.clear}
+                if sharedPresentation {
+                    SharedDesktopSurface(session: session, surface: .databasePresentation,
+                        initialDatabasePresentation: .object(["databaseId": .string(database.id), "viewId": activeViewId.map(JSONValue.string) ?? .null, "layout": .string(layout)]),
+                        onOpenDatabaseRow: { id in
+                            if let row = (viewRows + allRows).first(where: { $0.id == id }) { select(row) }
+                            else { foreignRow = DatabaseForeignRow(id: id) }
+                        }, pageDownloadedOnly: downloadedOnly)
+                        .id("\(database.id):\(activeViewId ?? layout):\(session.companionPublicationRevision)")
+                }
+                else if session.connection.desktopPairingId != nil,activeViewId != nil,canonicalRows == nil {Color.clear}
                 else {switch layout {
                 case "gallery": gallery
+                case "list": phoneRows
                 case "board", "kanban": board
                 case "calendar": calendar
                 case "timeline": timeline
@@ -874,6 +885,7 @@ struct DatabaseDetailWorkspace: View {
     }
     private func loadSavedView() async {
         canonicalRows=nil;viewIssue=nil;selectedRowId=nil
+        if sharedPresentation { loadingView = false; return }
         guard session.connection.desktopPairingId != nil,let view=activeViewId else {loadingView=false;return}
         loadingView=true;defer{loadingView=false}
         do {

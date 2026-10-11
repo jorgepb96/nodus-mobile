@@ -61,6 +61,10 @@ struct CompanionDatabaseViewSource {
                     let count=try JSONEncoder.nodus.encode(payload).count
                     guard count <= maximumBytes - bytes else {throw PrivateBridgeCache.ReadPackError.tooLarge}
                     bytes += count;databases[id]=payload
+                    if seen.insert(CompanionDatabasePresentationSource.key(id)).inserted {
+                        let presentation = try await CompanionDatabasePresentationSource.download(client: client, vault: vault, database: id, maximumBytes: maximumBytes - bytes)
+                        bytes += presentation.data.count; output.append(presentation)
+                    }
                 }
             }
         }
