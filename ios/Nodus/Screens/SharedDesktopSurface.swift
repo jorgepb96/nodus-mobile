@@ -63,6 +63,7 @@ struct SharedDesktopSurface: View {
     @State private var destination: SurfaceDestination?
     @State private var citation: CorpusReference?
     @State private var sourceDocument: SourceDocumentTarget?
+    @State private var nativeReport: SurfaceDestination?
     @State private var issue: String?
     @State private var exportedURL: URL?
     @State private var exportedLease: PrivateBridgeFileLease?
@@ -86,6 +87,10 @@ struct SharedDesktopSurface: View {
                 Task { await controller.load(fetchMacProgress: false) }
             } catch { issue = error.localizedDescription }
         }) { kind, id, location, quote in
+            if kind == "deepResearchReport" {
+                guard surface == .deepResearch, !id.isEmpty, id.utf8.count <= 1024 else { issue = "El informe solicitado no tiene una identidad válida."; return }
+                nativeReport = SurfaceDestination(path: "deep-research", id: id, location: nil, quote: nil); return
+            }
             if kind == "citation" {
                 guard let url = URL(string:id), let reference = CorpusReference(url) else { issue = "No se pudo abrir la fuente de esta cita."; return }
                 citation = reference; return
@@ -178,6 +183,14 @@ struct SharedDesktopSurface: View {
                 .modifier(SourceReaderSheetSizing())
                 .environment(\.dynamicTypeSize, textSize)
                 .nodusTextHierarchy()
+        }
+        .nodusSheet(item: $nativeReport) { target in
+            NavigationStack {
+                PublishedReportReader(session: session, row: Row(["id": .string(target.id)]))
+                    .nodusModalClose(accent: session.accent)
+            }
+            .environment(\.dynamicTypeSize, textSize)
+            .nodusTextHierarchy()
         }
         .sheet(item: $destination) { target in
             NavigationStack {

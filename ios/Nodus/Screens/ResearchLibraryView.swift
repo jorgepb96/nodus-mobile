@@ -1244,6 +1244,7 @@ struct PublishedReportReader: View {
     @State private var detail: DeepResearchReportDetail?
     @State private var error: String?
     @State private var translationOpen = false
+    @State private var loading = false
     private var currentRow: Row { detail?.report ?? row }
     private var imageHash: String? {
         if let detail { return detail.image?.text("hash") }
@@ -1292,6 +1293,7 @@ struct PublishedReportReader: View {
 
                 if let error {
                     NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(error))
+                    Button("Reintentar") { Task { await load() } }.frame(minHeight: 44).disabled(loading).accessibilityIdentifier("report-native-load-retry")
                 }
 
                 if let sections = prose {
@@ -1416,6 +1418,8 @@ struct PublishedReportReader: View {
 
     private func load() async {
         guard let id = row.string("id") else { return }
+        loading = true; error = nil
+        defer { loading = false }
         do {
             let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
             detail = loaded

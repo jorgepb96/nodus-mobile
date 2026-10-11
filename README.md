@@ -488,3 +488,10 @@ atlas source for offline access. Prepared real-store and Swift ownership cases
 are **unexecuted**, shared map assets have **not been built**, and four new
 acceptance operations remain pending. Current device, orientation, accessibility
 and end-to-end acceptance are still required.
+
+Live Deep Research gallery selections now open the native report reader used
+for downloaded reports, including rich prose, the single Nodus selection menu,
+translations and scoped annotations. The gallery and Mac generation continue to
+use Desktop options. Desktop reader tabs keep their original behavior. A failed
+native report load has an explicit retry control. This route remains **pending**
+current local build and device acceptance; no new test or capture was executed.
