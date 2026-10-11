@@ -191,6 +191,10 @@ The paired workshop gallery reads paged metadata, then opens one exact complete 
 it no longer requests a vault snapshot. Offline galleries use only selected encrypted downloads,
 with complete outlines, evidence matrices and bibliography. Source and draft pagination have
 separate, validated contracts and stable identities when timestamps tie.
+Native citation readers recognise Desktop's world, archive/primary-source, study document/material
+and public testimony routes. Primary-source excerpts validate their owning document and internal
+identifiers decode once. Source locators are retained; private prosopography and recording links
+still require their specialised readers and final acceptance.
 Completed autonomous writing assistance opens its durable native result directly from Scriptor
 while publication is pending; it does not fabricate a Mac log ID or replace the original document.
 

@@ -132,8 +132,9 @@ struct CorpusReference: Identifiable, Hashable {
     let kind: String
     /// The record's own identifier: a `global_id`, a `nodus_id`, a `passage_id`.
     let recordId: String
+    var specialised: SpecialisedCorpusReference? = nil
 
-    var id: String { "\(kind)/\(recordId)" }
+    var id: String { "\(kind)/\(recordId)" + (specialised.map { ":\($0.collectionPath):\($0.expectedParentId ?? "")" } ?? "") }
 
     init(kind: String, recordId: String) {
         self.kind = Self.canonical(kind)
@@ -172,19 +173,25 @@ struct CorpusReference: Identifiable, Hashable {
 
     init?(_ url: URL) {
         guard url.scheme?.lowercased() == "nodus" else { return nil }
+        if let target = SpecialisedCorpusReference(url) {
+            kind = url.host?.lowercased() ?? ""; recordId = target.recordId; specialised = target
+            return
+        }
         // `nodus://idea/g-8969` parses as host = "idea", path = "/g-8969". A vault-scoped form
         // like `nodus://world/character/prs_7` puts the kind in the first path component, so
         // both shapes are read the same way: everything after the scheme, split on "/".
-        let parts = ([url.host] + url.pathComponents)
-            .compactMap { $0 }
-            .filter { $0 != "/" && !$0.isEmpty }
-        guard parts.count >= 2 else { return nil }
-        let tail = parts.dropFirst().joined(separator: "/")
-        self.init(kind: parts[0], recordId: tail.removingPercentEncoding ?? tail)
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.user == nil, components.password == nil, components.port == nil,
+              let host = components.host, !host.isEmpty else { return nil }
+        let encoded = components.percentEncodedPath.split(separator: "/", omittingEmptySubsequences: true)
+        let parts = encoded.compactMap { String($0).removingPercentEncoding }
+        guard !parts.isEmpty, parts.count == encoded.count else { return nil }
+        self.init(kind: host, recordId: parts.joined(separator: "/"))
     }
 
     /// The collection that can serve it, when there is one.
     var collection: CollectionDescriptor? {
+        if let specialised { return Collections[specialised.collectionPath] }
         switch kind {
         case "idea": return Collections["ideas"]
         case "work": return Collections["works"]
@@ -274,6 +281,7 @@ struct CorpusReferenceView: View {
             case .collection:
                 if let collection = reference.collection {
                     RowByIdView(session: session, collection: collection, id: reference.recordId)
+                        .sourceCitationTarget(reference.specialised)
                 }
             case .unsupported:
                 ContentUnavailableView(
@@ -340,6 +348,11 @@ struct RowByIdView: View {
     let session: SpaceSession
     let collection: CollectionDescriptor
     let id: String
+    var sourceReference: SpecialisedCorpusReference? = nil
+
+    func sourceCitationTarget(_ value: SpecialisedCorpusReference?) -> RowByIdView {
+        var copy = self; copy.sourceReference = value; return copy
+    }
 
     @State private var row: Row?
     @State private var failure: String?
@@ -355,14 +368,14 @@ struct RowByIdView: View {
                 ProgressView().tint(session.accent)
             }
         }
-        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(attempt)") {
-            guard row == nil else { return }
+        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(session.companionDownloadRevision)|\(attempt)") {
             failure = nil
             do {
                 let loaded = try await session.client.item(collection, id: id, in: session.connection.spaceId)
+                guard sourceReference?.accepts(loaded) != false else { throw SpecialisedCorpusReference.ReadError.sourceMismatch }
                 try Task.checkCancellation(); row = loaded
             } catch where error.isCancellation {
-            } catch { failure = error.localizedDescription }
+            } catch { row = nil; failure = error.localizedDescription }
         }
     }
 }
@@ -717,7 +730,8 @@ struct CorpusProse: View {
                 onReference?(number)
                 return .handled
             }
-            guard session != nil, let reference = CorpusReference(url) else { return .systemAction }
+            guard url.scheme?.lowercased() == "nodus" else { return .systemAction }
+            guard session != nil, let reference = CorpusReference(url) else { return .discarded }
             presenting.reference = reference
             return .handled
         })
