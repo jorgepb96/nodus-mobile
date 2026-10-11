@@ -1711,6 +1711,54 @@
       "category": "sync",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "generation.worldChat.autonomousSharedFacts",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.worldChat.temporalRulesAndKnowledge",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.worldChat.nativeFocusControls",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.worldChat.chosenCoherentOfflineSnapshot",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.worldChat.nativeCalculatedFacts",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.worldChat.selectedSourceSheets",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.worldChat.actualFocusAndSelection",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.worldChat.authoredFactRecovery",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

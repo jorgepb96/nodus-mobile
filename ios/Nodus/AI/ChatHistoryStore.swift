@@ -31,6 +31,7 @@ final class ChatHistoryStore {
         var desktopRecord: JSONValue?
         var studyCitations: [JSONValue]?
         var studyEvidence: JSONValue?
+        var worldFacts: JSONValue?
 
         enum Role: String, Codable { case user, assistant }
         enum Delivery: String, Codable { case streaming, completed, cancelled, failed }
@@ -50,6 +51,7 @@ final class ChatHistoryStore {
         var isLocalRecovery: Bool? = nil
         var databaseIds: [String]? = nil
         var study: CompanionStudyChatOptions? = nil
+        var world: CompanionWorldChatOptions? = nil
 
         var preview: String {
             messages.last(where: { $0.role == .assistant })?.text
@@ -291,14 +293,14 @@ final class ChatHistoryStore {
                 if candidate?.text == raw["content"]?.stringValue,candidate?.role.rawValue == raw["role"]?.stringValue { native = candidate }
             }
             let id = native?.id ?? raw["id"]?.stringValue.flatMap(UUID.init(uuidString:)) ?? UUID()
-            return Message(id:id,role:raw["role"] == .string("assistant") ? .assistant:.user,text:raw["content"]!.stringValue!,citations:native?.citations ?? [],wasSemantic:native?.wasSemantic,warning:native?.warning,delivery:native?.delivery,desktopRecord:record,studyCitations:document.kind == .study ? raw["citations"]?.arrayValue ?? native?.studyCitations:nil,studyEvidence:native?.studyEvidence)
+            return Message(id:id,role:raw["role"] == .string("assistant") ? .assistant:.user,text:raw["content"]!.stringValue!,citations:native?.citations ?? [],wasSemantic:native?.wasSemantic,warning:native?.warning,delivery:native?.delivery,desktopRecord:record,studyCitations:document.kind == .study ? raw["citations"]?.arrayValue ?? native?.studyCitations:nil,studyEvidence:native?.studyEvidence,worldFacts:native?.worldFacts)
         }
         func date(_ key: String,_ alternate: String) -> Date {
             let raw = object[key]?.stringValue ?? object[alternate]?.stringValue ?? ""
             let fractional = ISO8601DateFormatter();fractional.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
             return fractional.date(from:raw) ?? ISO8601DateFormatter().date(from:raw) ?? Date()
         }
-        return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved),databaseIds:object["databaseIds"]?.arrayValue?.compactMap(\.stringValue),study:document.kind == .study ? try CompanionStudyChatOptions.desktop(document.data):nil)
+        return Conversation(id:document.id,title:object["title"]!.stringValue!,messages:messages,createdAt:date("createdAt","created_at"),updatedAt:date("updatedAt","updated_at"),isArchived:object["archived"] == .bool(true),desktop:DesktopSync(kind:document.kind,baseline:document,state:.saved),databaseIds:object["databaseIds"]?.arrayValue?.compactMap(\.stringValue),study:document.kind == .study ? try CompanionStudyChatOptions.desktop(document.data):nil,world:document.kind == .world ? try CompanionWorldChatOptions.desktop(document.data):nil)
     }
     private func request(_ conversation: Conversation,sync: DesktopSync) throws -> JSONValue {
         var fields: [String:JSONValue] = ["version":.int(1),"id":.string(UUID().uuidString),"conversationId":.string(conversation.id),"expectedRevision":sync.baseline.map { .string($0.revision) } ?? .null,"action":.string(sync.deleted ? "delete":"save")]
@@ -329,6 +331,9 @@ final class ChatHistoryStore {
                 }
                 if !proofs.isEmpty { draft["studyEvidence"] = .object(proofs) }
                 fields["draft"] = .object(draft)
+            }
+            if sync.kind == .world,let options = conversation.world {
+                var draft = fields["draft"]!.objectValue!;draft["world"] = try options.value;fields["draft"] = .object(draft)
             }
             var native = conversation.messages
             for index in native.indices { native[index].desktopRecord = nil }

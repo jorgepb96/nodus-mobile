@@ -36,6 +36,7 @@ struct ChatScreen: View {
         var delivery: ChatHistoryStore.Message.Delivery?
         var studyCitations: [JSONValue] = []
         var studyEvidence: JSONValue?
+        var worldFacts: JSONValue?
         /// The material the answer was built from, grouped by kind — ideas, temas, huecos —
         /// so it can be read beside the answer instead of taken on trust.
         var sections: [CorpusRetrieval.MaterialSection] = []
@@ -68,6 +69,8 @@ struct ChatScreen: View {
     @State private var databaseIds: [String] = []
     @State private var showingStudyOptions = false
     @State private var studyOptions = CompanionStudyChatOptions()
+    @State private var worldOptions = CompanionWorldChatOptions()
+    @State private var showingWorldOptions = false
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -124,6 +127,7 @@ struct ChatScreen: View {
             ChatDatabaseSelectionView(session:session,selection:$databaseIds).environment(ai)
         }
         .nodusSheet(isPresented:$showingStudyOptions) { ChatStudyOptionsView(session:session,options:$studyOptions) }
+        .nodusSheet(isPresented:$showingWorldOptions) { ChatWorldOptionsView(session:session,options:$worldOptions) }
         .task {
             // Lent to the chrome, not copied into it: the header ticks layers on and off in the
             // very object the next question is built from.
@@ -196,6 +200,10 @@ struct ChatScreen: View {
                 Button { composerFocused = false;showingStudyOptions = true } label: {
                     Label("Fuentes y opciones de estudio",systemImage:"books.vertical").font(.caption).padding(.horizontal,12).frame(minHeight:44)
                 }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+            } else if session.vaultType == .worldbuilding {
+                Button { composerFocused = false;showingWorldOptions = true } label: {
+                    Label(worldOptions.focus.isEmpty ? "Contexto del mundo":worldOptions.focus.map(\.title).joined(separator:" · "),systemImage:"globe").font(.caption).lineLimit(1).padding(.horizontal,12).frame(minHeight:44)
+                }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
             } else {
                 Menu {
                     ForEach(ContextSectionKind.allCases,id:\.self) { kind in
@@ -242,6 +250,7 @@ struct ChatScreen: View {
         conversationTitle = ""
         databaseIds = []
         studyOptions = CompanionStudyChatOptions()
+        worldOptions = CompanionWorldChatOptions()
     }
 
     private func open(_ conversation: ChatHistoryStore.Conversation) {
@@ -252,6 +261,7 @@ struct ChatScreen: View {
         conversationCreatedAt = conversation.createdAt
         databaseIds = conversation.databaseIds ?? []
         studyOptions = conversation.study ?? CompanionStudyChatOptions()
+        worldOptions = conversation.world ?? CompanionWorldChatOptions()
         // The retrieved material is not kept — see `ChatHistoryStore` — so a re-opened
         // conversation shows what was said and what it cited, and does not pretend to still
         // hold the corpus rows the answer was built from.
@@ -265,7 +275,8 @@ struct ChatScreen: View {
                 warning: message.delivery == .streaming ? String(localized:"This reply was interrupted. The received text is kept here."):message.warning,
                 delivery: message.delivery,
                 studyCitations:message.studyCitations ?? [],
-                studyEvidence:message.studyEvidence
+                studyEvidence:message.studyEvidence,
+                worldFacts:message.worldFacts
             )
         }
     }
@@ -291,14 +302,16 @@ struct ChatScreen: View {
                     warning: turn.warning,
                     delivery: turn.delivery,
                     studyCitations:turn.studyCitations.isEmpty ? nil:turn.studyCitations,
-                    studyEvidence:turn.studyEvidence
+                    studyEvidence:turn.studyEvidence,
+                    worldFacts:turn.worldFacts
                 )
             },
             createdAt: conversationCreatedAt,
             updatedAt: Date(),
             isArchived: history.conversations.first(where:{$0.id == id})?.isArchived ?? false,
             databaseIds: session.vaultType == .databases ? databaseIds:nil,
-            study:isStudy ? studyOptions:nil
+            study:isStudy ? studyOptions:nil,
+            world:session.vaultType == .worldbuilding ? worldOptions:nil
         ))
     }
     private func stopCurrentConversation() {
@@ -388,8 +401,10 @@ struct ChatScreen: View {
                 error = "Elige las fuentes o el alcance de esta pregunta.";showingStudyOptions = true;return
             }
         }
+        if session.vaultType == .worldbuilding,worldOptions.selection.scope == "manual",worldOptions.selection.entryKeys.isEmpty { error = "Elige los elementos del mundo para esta pregunta.";showingWorldOptions = true;return }
         let selectedDatabases = databaseIds
         let selectedStudy = studyOptions
+        let selectedWorld = worldOptions
         let prior = turns.map { ChatMessage(role:$0.role,content:$0.text) }
 
         draft = ""
@@ -415,6 +430,7 @@ struct ChatScreen: View {
                 let material: CorpusRetrieval.Result?
                 let request: ChatRequest
                 var studyContext: CompanionChatContext.StudyPrepared?
+                var worldContext: CompanionChatContext.WorldPrepared?
                 if session.vaultType == .databases {
                     let context = try await CompanionChatContext.database(session:session,settings:ai,ids:selectedDatabases,question:question,history:prior)
                     guard !Task.isCancelled,ownsAnswer() else { return }
@@ -431,6 +447,12 @@ struct ChatScreen: View {
                     if let immediate = context.immediateAnswer {
                         turns[answerIndex].text = immediate;turns[answerIndex].delivery = .completed;return
                     }
+                    request = ChatRequest(model:model,messages:[.init(role:.system,content:context.system),.init(role:.user,content:context.user)],temperature:context.temperature,maxTokens:context.maxTokens)
+                } else if session.vaultType == .worldbuilding {
+                    let context = try await CompanionChatContext.world(session:session,options:selectedWorld,question:question,history:prior)
+                    guard !Task.isCancelled,ownsAnswer() else { return }
+                    material = nil;worldContext = context;worldOptions.focus = context.focus;turns[answerIndex].worldFacts = context.facts
+                    if context.noMaterial { turns[answerIndex].text = "No he encontrado material para esta pregunta en las fuentes disponibles. Nombra un personaje, lugar, escena o regla, o elige el foco de la pregunta.";turns[answerIndex].delivery = .completed;return }
                     request = ChatRequest(model:model,messages:[.init(role:.system,content:context.system),.init(role:.user,content:context.user)],temperature:context.temperature,maxTokens:context.maxTokens)
                 } else {
                     let retrieval = CorpusRetrieval(
@@ -476,6 +498,9 @@ struct ChatScreen: View {
                     guard ownsAnswer(),!Task.isCancelled else { return }
                     turns[answerIndex].text = validated.answer;turns[answerIndex].studyCitations = validated.citations
                     if validated.citationWarning { turns[answerIndex].warning = "La respuesta no incluyó referencias a los fragmentos seleccionados." }
+                } else if let worldContext {
+                    let validated = try await CompanionChatContext.validateWorldAnswer(text,citable:worldContext.citable)
+                    guard ownsAnswer(),!Task.isCancelled else { return };turns[answerIndex].text = validated
                 } else if let material {
                     let validated = CitationValidator.validate(prose:text,against:material.catalog)
                     turns[answerIndex].text = validated.prose
@@ -597,6 +622,9 @@ private struct TurnBubble: View {
     let session: SpaceSession
     @State private var studyCitation: JSONValue?
     @State private var showingStudyCitation = false
+    @State private var showingWorldFacts = false
+    @State private var worldSourceKey: String?
+    @State private var showingWorldSource = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -620,6 +648,9 @@ private struct TurnBubble: View {
                         session: session,
                         labels: Dictionary(turn.citations.map { ($0.token, $0.label) }, uniquingKeysWith: { first, _ in first }),
                         onCitation: { url in
+                            if session.vaultType == .worldbuilding,url.scheme == "nodus",url.host == "world",url.pathComponents.count == 3 {
+                                worldSourceKey = "\(url.pathComponents[1]):\(url.pathComponents[2])";showingWorldSource = true;return true
+                            }
                             guard url.scheme == "nodus",url.host == "study",url.pathComponents.count == 3,url.pathComponents[1] == "evidence",let citation = turn.studyCitations.first(where:{$0.objectValue?["id"]?.stringValue == url.lastPathComponent}) else { return false }
                             studyCitation = citation;showingStudyCitation = true;return true
                         }
@@ -636,6 +667,7 @@ private struct TurnBubble: View {
                         }
                     }
                 }
+                if turn.worldFacts != nil { Button { showingWorldFacts = true } label: { Label("Ver hechos y fuentes del mundo",systemImage:"checkmark.seal").font(.caption).frame(minHeight:44) }.buttonStyle(.plain).foregroundStyle(accent) }
 
                 if !turn.citations.isEmpty {
                     VStack(alignment: .leading, spacing: 5) {
@@ -670,6 +702,8 @@ private struct TurnBubble: View {
                 }
             }
         }.nodusSheet(isPresented:$showingStudyCitation) { if let studyCitation { StudyChatEvidenceView(citation:studyCitation,session:session) } }
+            .nodusSheet(isPresented:$showingWorldFacts) { if let facts = turn.worldFacts { WorldChatFactsView(facts:facts,session:session) } }
+            .nodusSheet(isPresented:$showingWorldSource) { if let key = worldSourceKey { WorldChatSourceView(key:key,session:session) } }
     }
 
     private func icon(_ kind: String) -> String {

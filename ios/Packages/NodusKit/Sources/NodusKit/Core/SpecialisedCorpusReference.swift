@@ -31,7 +31,7 @@ public struct SpecialisedCorpusReference: Sendable, Hashable {
         case "world" where segments.count == 2:
             path = ["character": "persons", "place": "places", "event": "events", "group": "world-groups",
                 "scene": "world-scenes", "article": "world-articles", "map": "world-maps", "thread": "world-threads",
-                "rule": "world-rules", "question": "world-questions", "secret": "world-secrets"][segments[0]]
+                "rule": "world-rules", "question": "world-questions", "secret": "world-secrets", "conflict": "world-threads"][segments[0]]
             identity = segments[1]
         case "study" where segments.count == 2:
             path = ["doc": "study-docs", "material": "study-materials"][segments[0]]

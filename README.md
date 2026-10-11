@@ -326,8 +326,8 @@ JavaScript host runs the deterministic context formatter without providers or cr
 The chosen source IDs persist and reconcile with the actual Desktop conversation. Native
 history/context controls are directly reachable. The comparison against real 650-row
 Desktop profiles in 15 languages and the native host contracts are prepared, not executed.
-The shared resources must be rebuilt during final local compilation. World autonomous
-specialised context/controls still require implementation and acceptance.
+The shared resources must be rebuilt during final local compilation. Specialised contexts
+and controls still require executed contract and device acceptance.
 
 Autonomous Study/Teaching Chat now uses the shared Desktop lexical ranking, extractive
 source compression, task/level/tone/language prompt and citation validator. Its SwiftUI
@@ -340,6 +340,19 @@ verify real quotes even after reindexing, while rejecting forged or foreign-vaul
 Task and source choices persist in the actual Desktop history. The isolated Study/Teaching
 contract campaign and native history/validator regressions are prepared but unexecuted;
 fresh shared resources, local compilation and actual-device acceptance remain required.
+
+World Chat now shares Desktop's actual deterministic focus and temporal calculations.
+Provider-free selected snapshots retain complete sheets, applicable rule chains, place
+ancestry, membership windows, presence records, secret learning dates, scene beats and
+relevant continuity findings in one read transaction. Offline comparisons require a single
+coherent chosen capture containing their focus; independent world states are not merged.
+Native controls preserve automatic/manual focus and follow-up preference, with touch sheets
+for calculated facts and owning prose. Explicit encrypted downloads are capped at 50 MB;
+authored answers and their calculated context persist independently of temporary copies.
+World selection/focus reconcile with actual Desktop history and the shared validator
+removes unsupplied citations. Temporal fixture comparisons across 15 languages and native
+recovery/validator tests are prepared but unexecuted. Rich chat presentation, full visual
+acceptance, local compilation and end-to-end networking still need closure.
 
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and

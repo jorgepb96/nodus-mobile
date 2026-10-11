@@ -24,6 +24,35 @@ enum CompanionChatContext {
         let immediateAnswer: String?
     }
     struct StudyAnswer: Decodable { let answer: String,citations: [JSONValue],citationWarning: Bool }
+    struct WorldPrepared: Decodable {
+        let system: String,user: String
+        let temperature: Double,maxTokens: Int
+        let focus: [CompanionWorldChatOptions.Focus]
+        let citable: [CompanionWorldChatOptions.Focus]
+        let facts: JSONValue
+        let noMaterial: Bool
+    }
+    static func world(session: SpaceSession,options: CompanionWorldChatOptions,question: String,history: [ChatMessage]) async throws -> WorldPrepared {
+        guard session.aiExecutionMode == .autonomous,let vault = session.vaultId else { throw DesktopBridgeError.permissionDenied }
+        let bridge = try ConnectionClient.companionChat(for:session.connection),keys = options.focusKeys
+        var capture: [String:JSONValue] = ["question":.string(question)]
+        if !keys.isEmpty { capture["entryKeys"] = .array(Array(keys.prefix(6)).map(JSONValue.string)) }
+        let packs: [JSONValue]
+        do { packs = [try await bridge.operation(vaultId:vault,method:"getMobileWorldChatSourcePack",args:[.object(capture)])] }
+        catch { guard isPrivateBridgeOffline(error) else { throw error };packs = try await CompanionWorldChatSources.packs(session:session) }
+        let request: JSONValue = .object(["question":.string(question),"focusKeys":.array(keys.map(JSONValue.string)),"history":.array(history.filter{$0.role != .system}.suffix(6).map { .object(["role":.string($0.role.rawValue),"content":.string($0.content)]) })])
+        let result = try await evaluateValue(.object(["vaultId":.string(vault),"packs":.array(packs),"request":request,"language":.string(Prompts.interfaceLanguage)]),operation:.world)
+        return try JSONDecoder.nodus.decode(WorldPrepared.self,from:JSONEncoder.nodus.encode(result))
+    }
+    static func validateWorldAnswer(_ text: String,citable: [CompanionWorldChatOptions.Focus]) async throws -> String {
+        let refs = try JSONDecoder.nodus.decode(JSONValue.self,from:JSONEncoder.nodus.encode(citable))
+        let result = try await evaluateValue(.object(["text":.string(text),"citable":refs,"language":.string(Prompts.interfaceLanguage)]),operation:.worldAnswer)
+        guard let answer = result.objectValue?["text"]?.stringValue else { throw DesktopBridgeError.malformedResponse };return answer
+    }
+    static func validateWorldSources(_ pack: JSONValue,vaultId: String) async throws {
+        let result = try await evaluateValue(.object(["pack":pack,"vaultId":.string(vaultId)]),operation:.worldSources)
+        guard result.objectValue?["valid"] == .bool(true) else { throw DesktopBridgeError.malformedResponse }
+    }
     static func study(session: SpaceSession,options: CompanionStudyChatOptions,question: String,history: [ChatMessage]) async throws -> StudyPrepared {
         guard session.aiExecutionMode == .autonomous,let vault = session.vaultId else { throw DesktopBridgeError.permissionDenied }
         let bridge = try ConnectionClient.companionChat(for:session.connection),selection = try JSONDecoder.nodus.decode(JSONValue.self,from:JSONEncoder.nodus.encode(options.selection))
@@ -64,13 +93,16 @@ enum CompanionChatContext {
         return prepared
     }
     private enum Operation {
-        case database,study,studyAnswer,studySources
+        case database,study,studyAnswer,studySources,world,worldAnswer,worldSources
         var script: String {
             switch self {
             case .database: "return NodusCompanionChat.prepareDatabaseChat(input);"
             case .study: "return NodusCompanionChat.prepareStudyChat(input);"
             case .studyAnswer: "return NodusCompanionChat.validateStudyAssistantAnswer(input.answer,input.citations);"
             case .studySources: "NodusCompanionChat.validateMobileStudyChatSourcePack(input.pack,input.vaultId);return {valid:true};"
+            case .world: "return NodusCompanionChat.prepareWorldChat(input);"
+            case .worldAnswer: "return NodusCompanionChat.validateMobileWorldChatAnswer(input);"
+            case .worldSources: "NodusCompanionChat.validateMobileWorldChatSourcePack(input.pack,input.vaultId);return {valid:true};"
             }
         }
     }

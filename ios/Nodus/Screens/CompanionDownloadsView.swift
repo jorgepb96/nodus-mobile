@@ -18,6 +18,8 @@ struct CompanionDownloadsView: View {
     @State private var showingDownloadedDossiers = false
     @State private var showingStudySources = false
     @State private var studyOptions = CompanionStudyChatOptions()
+    @State private var showingWorldSources = false
+    @State private var worldOptions = CompanionWorldChatOptions()
 
     private var notes: [[String: JSONValue]] {
         (tree?.objectValue?["notes"]?.arrayValue ?? []).compactMap(\.objectValue)
@@ -28,6 +30,7 @@ struct CompanionDownloadsView: View {
         NavigationStack {
             List {
                 Section {
+                    if session.vaultType == .worldbuilding { Button("Contexto del chat de mundos") { showingWorldSources = true }.frame(minHeight:44) }
                     if session.vaultType == .estudio || session.vaultType == .docencia {
                         Button("Fuentes del chat de estudio") { showingStudySources = true }.frame(minHeight:44)
                     }
@@ -109,6 +112,7 @@ struct CompanionDownloadsView: View {
             .task { await load() }
             .nodusSheet(isPresented: $showingDownloadedDossiers) { CompanionDownloadedCollectionsView(session: session) }
             .nodusSheet(isPresented:$showingStudySources) { ChatStudyOptionsView(session:session,options:$studyOptions,downloadOnly:true) }
+            .nodusSheet(isPresented:$showingWorldSources) { ChatWorldOptionsView(session:session,options:$worldOptions,downloadOnly:true) }
             .onDisappear { downloadTask?.cancel() }
         }
     }
