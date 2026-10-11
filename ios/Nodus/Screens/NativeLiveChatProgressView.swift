@@ -17,7 +17,7 @@ struct NativeLiveChatProgressView:View {
                     Text(summary).font(.footnote).multilineTextAlignment(.leading).fixedSize(horizontal:false,vertical:true)
                     Spacer(minLength:8);Image(systemName:"chevron.right").font(.caption)
                 }.foregroundStyle(accent.nodusReadable).frame(minHeight:44)
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).accessibilityIdentifier("nodus-chat-activity")
                 .nodusSheet(isPresented:$showing) {
                     NavigationStack {
                         List {
@@ -53,7 +53,7 @@ struct NativeLiveChatProgressView:View {
                                 Section("Razonamiento recibido") { Text(reasoning).font(.body).textSelection(.enabled).fixedSize(horizontal:false,vertical:true) }
                             }
                         }.navigationTitle("Actividad").navigationBarTitleDisplayMode(.inline)
-                            .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Listo") { showing=false } } }
+                            .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Listo") { showing=false }.accessibilityIdentifier("nodus-chat-activity-close") } }
                     }.tint(accent)
                 }
         }

@@ -83,6 +83,7 @@ struct ChatHistoryView: View {
                         row(conversation)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("nodus-chat-history-conversation-\(conversation.id)")
                     .listRowBackground(Color.clear)
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {

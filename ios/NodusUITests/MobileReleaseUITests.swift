@@ -9,29 +9,15 @@ final class MobileReleaseUITests: XCTestCase {
         let app = try openExistingPrincipal(destination: "researchChat")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
         XCTAssertLessThan(app.windows.firstMatch.frame.width, 600, "Run this test on an iPhone.")
-        let web = app.otherElements["shared-desktop-chat"].webViews.firstMatch
-        XCTAssertTrue(web.waitForExistence(timeout: 30), app.debugDescription)
-        let input = web.textViews.firstMatch
-        XCTAssertTrue(input.waitForExistence(timeout: 45), app.debugDescription)
-        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
-        XCTAssertFalse(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "operation_forbidden")).firstMatch.exists)
+        let input = app.descendants(matching: .any)["nodus-chat-composer"].firstMatch
+        let history = app.buttons["nodus-chat-history"]
+        let send = app.buttons["nodus-chat-send"]
+        XCTAssertTrue(input.waitForExistence(timeout: 30)); XCTAssertTrue(input.isHittable)
         let draft = "Pregunta de prueba sin enviar\nSegunda línea"
-        XCTAssertTrue(input.isHittable); input.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        input.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         input.typeText(draft)
-        XCTAssertEqual(input.value as? String, draft, "Return must insert a line break without sending a live request.")
-        XCTAssertTrue(app.keyboards.firstMatch.exists, "Typing must not dismiss the iPhone keyboard.")
-        capture(app, "phone-chat-keyboard-multiline-draft")
-        let history = web.buttons["Historial de chats"].firstMatch
-        XCTAssertTrue(history.isHittable); history.tap()
-        let dialog = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "Historial de chats,")).firstMatch
-        XCTAssertTrue(dialog.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(dialog.buttons["Cerrar"].isHittable)
-        XCTAssertGreaterThanOrEqual(dialog.frame.width, web.frame.width - 2)
-        capture(app, "phone-chat-separate-history")
-        dialog.buttons["Cerrar"].tap()
-        XCTAssertTrue(dialog.waitForNonExistence(timeout: 10))
         XCTAssertEqual(input.value as? String, draft)
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
             XCUIDevice.shared.orientation = orientation
             let turned = NSPredicate { _, _ in
@@ -39,21 +25,28 @@ final class MobileReleaseUITests: XCTestCase {
                 return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
             }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
-            XCTAssertTrue(input.isHittable); input.tap()
-            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
             XCTAssertEqual(input.value as? String, draft)
-            XCTAssertTrue(history.isHittable)
-            let webSearch = web.switches["Búsqueda web"].firstMatch
-            let effort = web.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Esfuerzo de thinking:")).firstMatch
-            for control in [input, history, web.buttons["Enviar"].firstMatch, webSearch, effort] {
-                XCTAssertTrue(control.exists, app.debugDescription)
-                XCTAssertTrue(control.isHittable, "Every composer control must remain reachable above the keyboard.")
-                XCTAssertGreaterThanOrEqual(control.frame.minY, web.frame.minY - 1)
-                XCTAssertLessThanOrEqual(control.frame.maxY, web.frame.maxY + 1, "A partly clipped control must not count as mobile-friendly.\n\(app.debugDescription)")
+            for control in [input, history, send] {
+                XCTAssertTrue(control.isHittable)
+                XCTAssertTrue(app.windows.firstMatch.frame.contains(control.frame), "The native control must fit completely inside the phone.")
             }
-            XCTAssertFalse(web.staticTexts["para enviar"].exists, "Desktop keyboard instructions do not belong on the iPhone.")
             capture(app, orientation == .portrait ? "phone-chat-keyboard-portrait" : "phone-chat-keyboard-landscape")
         }
+        history.tap()
+        let close = app.buttons["nodus-modal-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 10)); XCTAssertTrue(close.isHittable)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10))
+        capture(app, "phone-chat-separate-history")
+        close.tap(); XCTAssertTrue(close.waitForNonExistence(timeout: 10))
+        XCTAssertEqual(input.value as? String, draft)
+        let options = app.buttons["nodus-chat-live-options"]
+        XCTAssertTrue(options.isHittable); options.tap()
+        XCTAssertTrue(app.buttons["Elegir modelo"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.switches["Búsqueda web"].exists)
+        XCTAssertTrue(app.buttons["nodus-chat-options-close"].isHittable)
+        capture(app, "phone-chat-native-live-options")
+        app.buttons["nodus-chat-options-close"].tap()
+        XCTAssertEqual(input.value as? String, draft, "Opening the Mac options must preserve the unsent question.")
     }
     @MainActor private func openExistingPrincipal(destination: String) throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
@@ -87,104 +80,68 @@ final class MobileReleaseUITests: XCTestCase {
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<8 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.isHittable); mode.tap(); app.buttons["Live · modelos del Mac"].tap()
-        XCTAssertTrue(mode.label.contains("Live · modelos del Mac"))
         app.buttons["nodus-navigation-toggle"].tap()
         let chat = app.buttons["nodus-nav-researchChat"]
         for _ in 0..<8 { if chat.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(chat.isHittable); chat.tap()
-        let web = app.otherElements["shared-desktop-chat"].webViews.firstMatch
-        XCTAssertTrue(web.waitForExistence(timeout: 35))
-        let history = web.buttons["Historial de chats"].firstMatch
-        XCTAssertTrue(history.waitForExistence(timeout: 30)); history.tap()
-        let newChat = web.buttons["Nueva conversación"].firstMatch
-        XCTAssertTrue(newChat.waitForExistence(timeout: 15)); newChat.tap()
-        let input = web.textViews["Pregunta al asistente..."].firstMatch
-        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        let input = app.descendants(matching: .any)["nodus-chat-composer"].firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 35))
+        if app.buttons["nodus-chat-new"].exists { app.buttons["nodus-chat-new"].tap() }
         let marker = "QAChat-\(UUID().uuidString.prefix(8))"
-        let question = "\(marker). Explica en unas 250 palabras cómo el corpus relaciona propaganda turística y fotografía. Incluye dos ideas y sus fuentes. Empieza la respuesta con el marcador \(marker)."
         input.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
-        input.typeText(question)
-        let send = web.buttons["Enviar"].firstMatch
+        input.typeText("\(marker). Explica en unas 250 palabras cómo el corpus relaciona propaganda turística y fotografía. Incluye dos ideas y sus fuentes. Empieza la respuesta con el marcador \(marker).")
+        let send = app.buttons["nodus-chat-send"]
         let ready = NSPredicate(format: "exists == true AND enabled == true")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: send)], timeout: 30), .completed, app.debugDescription)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: send)], timeout: 30), .completed)
         XCTAssertTrue(send.isHittable); send.tap()
         print("NODUS_CHAT_MARKER=\(marker)")
-        let stop = web.buttons["Detener generación"].firstMatch
-        XCTAssertTrue(stop.waitForExistence(timeout: 15), "A real live request must enter generation.")
-        let answer = web.otherElements["Respuesta del asistente"].firstMatch
-        XCTAssertTrue(answer.waitForExistence(timeout: 30), app.debugDescription)
-        let streamingCopy = answer.buttons["Copiar en Markdown"].firstMatch
-        XCTAssertTrue(streamingCopy.exists)
-        for action in answer.buttons.allElementsBoundByIndex {
-            XCTAssertGreaterThanOrEqual(action.frame.minX, answer.frame.minX - 1)
-            XCTAssertLessThanOrEqual(action.frame.maxX, answer.frame.maxX + 1, "Actions must stay inside the response while it streams.")
-            XCTAssertGreaterThanOrEqual(action.frame.minY, answer.frame.minY - 1)
-            XCTAssertLessThanOrEqual(action.frame.maxY, answer.frame.maxY + 1)
-        }
-        capture(app, "phone-chat-live-streaming-actions")
-        let activity = web.buttons["Ampliar actividad"].firstMatch
-        // The assistant placeholder precedes the first polled Mac event. Wait
-        // for its actual touch target; the sheet must still be exercised live.
-        let activityReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: activity)
-        guard XCTWaiter.wait(for: [activityReady], timeout: 30) == .completed else {
-            XCTFail("The Mac's research activity must reach the phone.\n\(app.debugDescription)")
-            return
-        }
-        XCTAssertGreaterThanOrEqual(activity.frame.width, 44); XCTAssertGreaterThanOrEqual(activity.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(activity.frame.minX, web.frame.minX)
-        XCTAssertLessThanOrEqual(activity.frame.maxX, web.frame.maxX, "The activity action must fit inside the phone header.")
-        activity.tap()
-        let activitySheet = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "Actividad del Research chat,", "diálogo")).firstMatch
-        XCTAssertTrue(activitySheet.waitForExistence(timeout: 10), app.debugDescription)
-        capture(app, "phone-chat-live-activity-sheet")
-        XCTAssertTrue(activitySheet.buttons["Cerrar"].isHittable); activitySheet.buttons["Cerrar"].tap()
-        XCTAssertTrue(activitySheet.waitForNonExistence(timeout: 10))
-        XCTAssertTrue(stop.waitForNonExistence(timeout: 240), app.debugDescription)
-        XCTAssertTrue(answer.buttons["Regenerar respuesta"].waitForExistence(timeout: 20), "The request must complete with a usable answer, not an error bubble.\n\(app.debugDescription)")
+        let running = NSPredicate(format: "value == %@", "running")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: running, object: send)], timeout: 15), .completed)
+        let answer = app.descendants(matching: .any)["nodus-chat-answer"].firstMatch
+        XCTAssertTrue(answer.waitForExistence(timeout: 30))
+        let activity = app.buttons["nodus-chat-activity"].firstMatch
+        XCTAssertTrue(activity.waitForExistence(timeout: 45), "Actual Mac activity must reach the native phone interface.")
+        for _ in 0..<10 { if activity.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(activity.isHittable); activity.tap()
+        let activityClose = app.buttons["nodus-chat-activity-close"]
+        XCTAssertTrue(activityClose.waitForExistence(timeout: 10)); XCTAssertTrue(activityClose.isHittable)
+        capture(app, "phone-chat-native-live-activity-sheet"); activityClose.tap()
+        let finished = NSPredicate(format: "value == %@", "idle")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: finished, object: send)], timeout: 240), .completed)
+        XCTAssertFalse(app.descendants(matching: .any)["nodus-chat-error"].exists, app.debugDescription)
         let text = answer.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n")
         XCTAssertTrue(text.contains(marker)); XCTAssertGreaterThan(text.count, 120)
-        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
-        let copy = answer.buttons["Copiar en Markdown"].firstMatch
-        for _ in 0..<10 { if copy.isHittable { break }; web.swipeUp() }
+        let copy = answer.buttons["nodus-chat-copy"]
+        for _ in 0..<15 { if copy.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(copy.isHittable)
-        XCTAssertGreaterThanOrEqual(copy.frame.width, 44); XCTAssertGreaterThanOrEqual(copy.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(copy.frame.minX, answer.frame.minX - 1)
-        XCTAssertLessThanOrEqual(copy.frame.maxX, answer.frame.maxX + 1)
+        for action in answer.buttons.allElementsBoundByIndex {
+            XCTAssertGreaterThanOrEqual(action.frame.minX, answer.frame.minX - 1)
+            XCTAssertLessThanOrEqual(action.frame.maxX, answer.frame.maxX + 1)
+            XCTAssertGreaterThanOrEqual(action.frame.width, 44)
+        }
+        XCTAssertTrue(answer.buttons["nodus-chat-regenerate"].exists)
         copy.tap()
-        // Verify Copy through the user's paste action inside Nodus. Reading the
-        // Runner's pasteboard triggers a cross-app privacy prompt and stalls XCTest.
-        XCTAssertTrue(input.isHittable); input.tap(); input.press(forDuration: 1.1)
+        input.tap(); input.press(forDuration: 1.1)
         let paste = app.menuItems["Pegar"].firstMatch
-        XCTAssertTrue(paste.waitForExistence(timeout: 10), app.debugDescription); paste.tap()
+        XCTAssertTrue(paste.waitForExistence(timeout: 10)); paste.tap()
         let copied = try XCTUnwrap(input.value as? String)
         XCTAssertTrue(copied.contains(marker)); XCTAssertGreaterThan(copied.count, 120)
-        let copiedAttachment = XCTAttachment(string: copied)
-        copiedAttachment.name = "exact-generated-chat-markdown"; copiedAttachment.lifetime = .keepAlways
-        add(copiedAttachment)
-        capture(app, "phone-chat-live-completed-copied")
-        history.tap()
-        // Automatic titles can be identical. The newest row must reopen the
-        // exact unique response below; title uniqueness is not a product contract.
-        let newRow = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Abrir ")).firstMatch
-        XCTAssertTrue(newRow.waitForExistence(timeout: 20), app.debugDescription)
-        let savedTitle = String(newRow.label.dropFirst("Abrir ".count))
-        XCTAssertFalse(savedTitle.isEmpty)
-        print("NODUS_CHAT_TITLE=\(savedTitle)")
+        capture(app, "phone-chat-native-live-completed-copied")
+        app.buttons["nodus-chat-history"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "nodus-chat-history-conversation-")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20))
+        let savedRowId = row.identifier
+        capture(app, "phone-chat-native-live-saved-history")
         app.terminate(); app.launch()
         let principal = app.buttons["space-default"]
         if principal.waitForExistence(timeout: 5) { principal.tap() }
-        let reopened = app.otherElements["shared-desktop-chat"].webViews.firstMatch
-        XCTAssertTrue(reopened.waitForExistence(timeout: 35))
-        reopened.buttons["Historial de chats"].firstMatch.tap()
-        let search = reopened.searchFields["Buscar en el historial"].firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 20), app.debugDescription)
-        search.tap(); search.typeText(savedTitle + "\n")
-        let saved = reopened.buttons["Abrir " + savedTitle].firstMatch
-        XCTAssertTrue(saved.waitForExistence(timeout: 20)); saved.tap()
-        let restored = reopened.otherElements["Respuesta del asistente"].firstMatch
-        XCTAssertTrue(restored.waitForExistence(timeout: 20))
-        XCTAssertEqual(restored.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n"), text, "History must reopen the exact saved response after a full app restart.")
-        capture(app, "phone-chat-live-history-response-reopened")
+        XCTAssertTrue(app.buttons["nodus-chat-history"].waitForExistence(timeout: 35))
+        app.buttons["nodus-chat-history"].tap()
+        let saved = app.buttons[savedRowId]
+        XCTAssertTrue(saved.waitForExistence(timeout: 20)); XCTAssertTrue(saved.isHittable); saved.tap()
+        XCTAssertTrue(answer.waitForExistence(timeout: 20))
+        XCTAssertEqual(answer.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n"), text, "History must retain the actual complete response after restarting.")
+        capture(app, "phone-chat-native-live-history-response-reopened")
     }
     @MainActor
     func testExistingMacPhoneReaderUsesOneSelectionRibbon() throws {
@@ -488,6 +445,8 @@ final class MobileReleaseUITests: XCTestCase {
         }
         let graph = app.webViews.firstMatch
         XCTAssertTrue(graph.waitForExistence(timeout: 10))
+        let themes = graph.buttons["Temas"].firstMatch
+        XCTAssertTrue(themes.waitForExistence(timeout: 10)); themes.tap()
         capture(app, "shared-desktop-graph-before-validation")
         XCTAssertFalse(app.staticTexts["shared-surface-error"].exists, app.staticTexts["shared-surface-error"].label)
         XCTAssertFalse(graph.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "missing")).firstMatch.exists)
@@ -496,7 +455,23 @@ final class MobileReleaseUITests: XCTestCase {
         let failure = graph.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "calculate the layout", "calcular la distribución")).firstMatch
         XCTAssertFalse(failure.waitForExistence(timeout: 4), failure.label)
         capture(app, "shared-desktop-graph-\(style)")
-        let theme = graph.buttons["TEMA · 5 IDEAS Educación y formación del carácter"]
+        if app.windows.firstMatch.frame.width < 600 {
+            let constellation = graph.buttons["Ver constelación"]
+            XCTAssertTrue(constellation.waitForExistence(timeout: 10))
+            let themeRows = graph.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Tema · "))
+            XCTAssertEqual(themeRows.count, 6, "The portrait directory must include every theme.")
+            for row in themeRows.allElementsBoundByIndex {
+                XCTAssertGreaterThanOrEqual(row.frame.minX, graph.frame.minX)
+                XCTAssertLessThanOrEqual(row.frame.maxX, graph.frame.maxX)
+                XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+            }
+            capture(app, "phone-graph-theme-directory-\(style)")
+            constellation.tap()
+            XCTAssertTrue(graph.buttons["Encuadrar"].waitForExistence(timeout: 10))
+            capture(app, "phone-graph-theme-constellation-\(style)")
+            graph.buttons["Ver temas"].tap()
+        }
+        let theme = graph.buttons["Tema · 5 ideas · Educación y formación del carácter"]
         XCTAssertTrue(theme.waitForExistence(timeout: 10)); theme.tap()
         XCTAssertTrue(graph.buttons["Cerrar grafo 2"].waitForExistence(timeout: 10), "Opening a theme must create its Desktop graph tab.")
         capture(app, "shared-desktop-theme-\(style)")
@@ -750,16 +725,18 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testLinkingDoesNotAskForCertificateOrAddress() throws {
-        let app = XCUIApplication(); app.launch()
-        if app.buttons["Connections"].exists { app.buttons["Connections"].tap() }
-        // This test enters the existing connection sheet through its user-facing control.
-        let connect = app.buttons["Connect to a server"]
-        XCTAssertTrue(connect.waitForExistence(timeout: 15))
-        connect.tap()
-        let link = app.buttons["Link Nodus"]
-        XCTAssertTrue(link.waitForExistence(timeout: 10)); link.tap()
-        XCTAssertTrue(app.buttons["Scan QR"].waitForExistence(timeout: 5))
+        let app = launch("home")
+        defer { app.terminate() }
+        let spaces = app.buttons["Cambiar de espacio"]
+        XCTAssertTrue(spaces.waitForExistence(timeout: 20)); spaces.tap()
+        let link = app.buttons["nodus-add-server"]
+        XCTAssertTrue(link.waitForExistence(timeout: 15)); link.tap()
+        XCTAssertTrue(app.buttons["pairing-scan-qr"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["pairing-code"].exists)
+        XCTAssertTrue(app.buttons["pairing-find-mac"].exists)
         XCTAssertFalse(app.textFields["SHA-256 certificate fingerprint"].exists)
+        XCTAssertFalse(app.textFields["nodus-server-address"].exists)
+        XCTAssertFalse(app.buttons["pairing-advanced-connection"].exists)
         capture(app, "link-nodus")
     }
     @MainActor
@@ -2319,7 +2296,7 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "downloaded-research-repaired-reader")
     }
     @MainActor
-    func testPrimaryConnectionUsesCodeAndKeepsServerAdvanced() throws {
+    func testPrimaryConnectionUsesCodeAndKeepsAdvancedConnectionsHidden() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         if let style = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_INTERFACE_STYLE"] { app.launchArguments += ["-nodus.prefs.interfaceStyle", style] }
@@ -2357,11 +2334,9 @@ final class MobileReleaseUITests: XCTestCase {
         app.swipeUp()
         let keyboardHidden = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.keyboards.firstMatch)
         XCTAssertEqual(XCTWaiter.wait(for: [keyboardHidden], timeout: 10), .completed, app.debugDescription)
-        let advanced = app.buttons["pairing-advanced-connection"]
-        for _ in 0..<8 { if advanced.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(advanced.isHittable); advanced.tap()
-        XCTAssertTrue(app.textFields["nodus-server-address"].waitForExistence(timeout: 15), app.debugDescription)
-        capture(app, "primary-connection-server-is-advanced")
+        XCTAssertFalse(app.buttons["pairing-advanced-connection"].exists)
+        XCTAssertFalse(app.textFields["nodus-server-address"].exists)
+        capture(app, "primary-connection-advanced-connections-hidden")
     }
     @MainActor
     func testLinkMacByTypedCodeWithoutAddressOrFingerprint() throws {

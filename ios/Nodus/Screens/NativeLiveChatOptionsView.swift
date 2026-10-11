@@ -45,7 +45,7 @@ struct NativeLiveChatOptionsView:View {
                 if let issue=mutationIssue { Text(issue).foregroundStyle(.red) }
             }
             .navigationTitle("Opciones del chat live").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Listo") { do { try options.persist();dismiss() } catch { mutationIssue=error.localizedDescription } } } }
+            .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Listo") { do { try options.persist();dismiss() } catch { mutationIssue=error.localizedDescription } }.accessibilityIdentifier("nodus-chat-options-close") } }
             .task { await options.load(session:session,conversationId:conversationId) }
         }.tint(session.accent)
     }

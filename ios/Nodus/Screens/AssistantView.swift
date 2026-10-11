@@ -89,7 +89,8 @@ struct ChatScreen: View {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         if turns.isEmpty { emptyState }
                         ForEach(turns) { turn in
-                            TurnBubble(turn: turn, accent: session.accent, session: session, conversationId:conversationId)
+                            TurnBubble(turn: turn, accent: session.accent, session: session, conversationId:conversationId,
+                                       regenerate: canRegenerate && turn.id == turns.last?.id ? { ask(regenerating: true) } : nil)
                                 .id(turn.id)
                         }
                         if let pending=conversationId.flatMap({id in history.conversations.first(where:{$0.id == id})?.pendingLive }) {
@@ -104,6 +105,7 @@ struct ChatScreen: View {
                         }
                         if let error {
                             NodusNotice(tone: .blocked, title: "The query failed", message: LocalizedStringKey(error))
+                                .accessibilityIdentifier("nodus-chat-error")
                         }
                     }
                     .padding(16)
@@ -189,7 +191,7 @@ struct ChatScreen: View {
                     Button { composerFocused=false;showingLiveOptions=true } label: {
                         Label(liveOptions.modelName(liveOptions.effectiveModel),systemImage:"desktopcomputer")
                             .font(.caption).lineLimit(1).truncationMode(.middle).frame(minHeight:44)
-                    }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+                    }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking).accessibilityIdentifier("nodus-chat-live-options")
                 } else { ChatModelMenu(accent: session.accent, openProviders: openProviders) }
             }
                 // Room at both ends for the compose button overlaid at the trailing edge, taken
@@ -215,6 +217,7 @@ struct ChatScreen: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(session.accent)
                         .accessibilityLabel("New conversation")
+                        .accessibilityIdentifier("nodus-chat-new")
                     }
                 }
 
@@ -403,10 +406,15 @@ struct ChatScreen: View {
             if generationId == identity { running=nil;refreshLive(id) }
         }
     }
-    private func askLive() {
+    private var canRegenerate: Bool {
+        !isThinking && session.connection.role.canSendChanges && turns.count >= 2 &&
+        turns.last?.role == .assistant && turns[turns.count - 2].role == .user
+    }
+    private func askLive(regenerating: Bool = false) {
         guard !isThinking,session.aiExecutionMode == .live else { return }
+        if regenerating && !canRegenerate { return }
         guard let pairing=session.connection.desktopPairingId,session.connection.role.canSendChanges else { error="Vincula Nodus con tu Mac para generar en modo live.";return }
-        let question=draft.trimmingCharacters(in:.whitespacesAndNewlines);guard !question.isEmpty else { return }
+        let question=(regenerating ? turns[turns.count - 2].text : draft).trimmingCharacters(in:.whitespacesAndNewlines);guard !question.isEmpty else { return }
         if session.vaultType == .databases,databaseIds.isEmpty { error="Elige al menos una base de datos.";showingDatabases=true;return }
         if isStudy {
             let selection=studyOptions.selection
@@ -420,11 +428,13 @@ struct ChatScreen: View {
             let kind=CompanionChatKind(vaultType:session.vaultType)
             try history.bind(kind:kind)
             let generation=try liveOptions.generation(kind:kind)
-            turns.append(Turn(role:.user,text:question))
+            if regenerating { turns.removeLast() }
+            else { turns.append(Turn(role:.user,text:question)) }
             if conversationId == nil { conversationCreatedAt=Date() }
             let proposal=conversationForSaving(),answerId=UUID()
             _=try history.beginLive(proposal,pairingId:pairing,generation:generation,answerId:answerId)
-            draft="";error=nil;composerFocused=false
+            if !regenerating { draft="" }
+            error=nil;composerFocused=false
             refreshLive(proposal.id);observeLive(proposal.id)
         } catch {
             turns=prior;conversationId=priorId;conversationTitle=priorTitle;conversationCreatedAt=priorDate
@@ -483,6 +493,7 @@ struct ChatScreen: View {
             .buttonStyle(.plain)
             .disabled(!isThinking && draft.trimmingCharacters(in: .whitespaces).isEmpty)
             .accessibilityLabel(isThinking ? "Stop" : "Send").accessibilityIdentifier("nodus-chat-send")
+            .accessibilityValue(isThinking ? "running" : "idle")
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, NodusSpace.page)
@@ -497,14 +508,15 @@ struct ChatScreen: View {
         Text("Ask a question").foregroundColor(.nodusTertiaryText)
     }
 
-    private func ask() {
-        if session.aiExecutionMode == .live { askLive();return }
+    private func ask(regenerating: Bool = false) {
+        if session.aiExecutionMode == .live { askLive(regenerating: regenerating);return }
         guard !isThinking,session.aiExecutionMode == .autonomous else { return }
+        if regenerating && !canRegenerate { return }
         guard let model = ai.model(for: .chat) else {
             error = String(localized: "Choose a chat model under Providers.")
             return
         }
-        let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let question = (regenerating ? turns[turns.count - 2].text : draft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
         if session.vaultType == .databases,databaseIds.isEmpty { error = String(localized:"Choose at least one database for this question.");showingDatabases = true;return }
         if isStudy {
@@ -518,15 +530,18 @@ struct ChatScreen: View {
         let selectedStudy = studyOptions
         let selectedWorld = worldOptions
         let selectedProject = conversationId.flatMap { id in history.conversations.first(where:{$0.id == id})?.placement?.projectId }
-        let prior = turns.map { ChatMessage(role:$0.role,content:$0.text) }
+        let previousTurns = turns, previousDraft = draft
+        if regenerating { turns.removeLast() }
+        let contextTurns = regenerating ? Array(turns.dropLast()) : turns
+        let prior = contextTurns.map { ChatMessage(role:$0.role,content:$0.text) }
 
-        draft = ""
+        if !regenerating { draft = "" }
         error = nil
-        turns.append(Turn(role: .user, text: question))
+        if !regenerating { turns.append(Turn(role: .user, text: question)) }
         let answerIndex = turns.count
         turns.append(Turn(role: .assistant, text: "",delivery:.streaming))
         if conversationId == nil { conversationCreatedAt = Date() }
-        do { try persist() } catch { self.error = error.localizedDescription;return }
+        do { try persist() } catch { turns = previousTurns; draft = previousDraft; self.error = error.localizedDescription;return }
         let identity = UUID(),answerId = turns[answerIndex].id
         generationId = identity;isThinking = true
         func ownsAnswer() -> Bool { generationId == identity && turns.indices.contains(answerIndex) && turns[answerIndex].id == answerId }
@@ -741,6 +756,7 @@ private struct TurnBubble: View {
     let accent: Color
     let session: SpaceSession
     let conversationId:String?
+    var regenerate: (() -> Void)?
     @State private var studyCitation: JSONValue?
     @State private var showingStudyCitation = false
     @State private var showingWorldFacts = false
@@ -827,11 +843,18 @@ private struct TurnBubble: View {
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 0)
+                        if let regenerate {
+                            Button(action: regenerate) { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44) }
+                                .buttonStyle(.plain).foregroundStyle(accent)
+                                .accessibilityLabel("Regenerar respuesta").accessibilityIdentifier("nodus-chat-regenerate")
+                        }
                         AnswerCopyButton(markdown: turn.text, accent: accent)
                     }
                 }
             }
-        }.nodusSheet(isPresented:$showingStudyCitation) { if let studyCitation { StudyChatEvidenceView(citation:studyCitation,session:session) } }
+        }.accessibilityElement(children: .contain)
+            .accessibilityIdentifier(turn.role == .user ? "nodus-chat-question" : "nodus-chat-answer")
+            .nodusSheet(isPresented:$showingStudyCitation) { if let studyCitation { StudyChatEvidenceView(citation:studyCitation,session:session) } }
             .nodusSheet(isPresented:$showingWorldFacts) { if let facts = turn.worldFacts { WorldChatFactsView(facts:facts,session:session) } }
             .nodusSheet(isPresented:$showingWorldSource) { if let key = worldSourceKey { WorldChatSourceView(key:key,session:session) } }
             .nodusSheet(isPresented:$showingRichAnswer) { RichChatAnswerView(session:session,content:turn.text,conversationId:conversationId,studyCitations:turn.studyCitations,desktopRecord:turn.desktopRecord) }
@@ -889,6 +912,7 @@ private struct AnswerCopyButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(accent)
         .accessibilityLabel("Copy the answer")
+        .accessibilityIdentifier("nodus-chat-copy")
         .contextMenu {
             Button {
                 copy(ReadingCopy.text(from: markdown))

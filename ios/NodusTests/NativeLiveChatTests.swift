@@ -5,6 +5,42 @@ import NodusKit
 
 @Suite("Native live chat durable questions") @MainActor
 struct NativeLiveChatTests {
+    @Test("Regeneration keeps the original question and checks the saved Mac revision in every chat family")
+    func regenerateSavedAnswer() throws {
+        for kind in CompanionChatKind.allCases {
+            let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString), space = UUID().uuidString
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = ChatHistoryStore(spaceId: space, root: root, backup: nil)
+            try store.bind(kind: kind)
+            let question = ChatHistoryStore.Message(role: .user, text: "Pregunta original 🌊", citations: [], createdAt: Date(timeIntervalSince1970: 1000))
+            var proposed = ChatHistoryStore.Conversation(id: UUID().uuidString, title: "Consulta", messages: [question], createdAt: Date(), updatedAt: Date(), isArchived: false)
+            if kind == .study { proposed.study = CompanionStudyChatOptions() }
+            if kind == .world { proposed.world = CompanionWorldChatOptions() }
+            if kind == .database { proposed.databaseIds = ["database-a"] }
+            let first = try store.beginLive(proposed, pairingId: "Mac", generation: .object([:]), answerId: UUID())
+            let original = try snapshot(first, answer: "Primera respuesta del Mac")
+            try store.finishLive(.object(["version": .int(1), "requestId": .string(first.requestId), "kind": .string(kind.rawValue), "document": try json(original), "interrupted": .bool(false)]), request: first)
+            var retry = try #require(store.active.first)
+            let originalQuestion = retry.messages[0]
+            retry.messages.removeLast()
+            let second = try store.beginLive(retry, pairingId: "Mac", generation: .object([:]), answerId: UUID())
+            let draft = try #require(second.edit.objectValue?["draft"]?.objectValue?["messages"]?.arrayValue)
+            #expect(second.edit.objectValue?["expectedRevision"] == .string(original.revision))
+            #expect(draft.count == 1)
+            #expect(store.active.first?.messages.first == originalQuestion)
+            #expect(store.active.first?.desktop?.baseline == original)
+            let reopened = ChatHistoryStore(spaceId: space, root: root, backup: nil)
+            try reopened.bind(kind: kind)
+            #expect(reopened.active.first?.pendingLive?.request == second)
+            let replacement = try snapshot(second, answer: "Respuesta regenerada del Mac")
+            try reopened.finishLive(.object(["version": .int(1), "requestId": .string(second.requestId), "kind": .string(kind.rawValue), "document": try json(replacement), "interrupted": .bool(false)]), request: second)
+            #expect(reopened.active.first?.messages.count == 2)
+            #expect(reopened.active.first?.messages.first == originalQuestion)
+            #expect(reopened.active.first?.messages.last?.text == "Respuesta regenerada del Mac")
+            #expect(reopened.active.first?.messages.last?.id == UUID(uuidString: second.answerId))
+            #expect(reopened.active.first?.pendingLive == nil)
+        }
+    }
     @Test("Every chat family freezes a question, keeps partial text and imports the actual rich Mac answer")
     func recoverAllKinds() async throws {
         for kind in CompanionChatKind.allCases {

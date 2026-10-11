@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { mobileRoot, nodusRepo, nodusRequire } from './nodus-repo.mjs';
 
 const output = path.resolve(process.argv[2] ?? path.join(mobileRoot, 'artifacts/parity/manual/desktop.png'));
@@ -11,6 +12,7 @@ const desktop = nodusRepo();
 const { _electron: electron } = nodusRequire('playwright-core');
 const electronPath = nodusRequire('electron');
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-mobile-parity-'));
+const recoveryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-mobile-parity-recovery-'));
 const libraryRoot = path.join(userData, 'backups');
 const libraryFixtures = [
   path.join(userData, 'Arendt - La condicion humana.md'),
@@ -32,13 +34,13 @@ delete env.ELECTRON_RUN_AS_NODE;
 fs.mkdirSync(path.dirname(output), { recursive: true });
 let app;
 try {
-  app = await electron.launch({ executablePath: electronPath, args: [desktop], env });
+  app = await electron.launch({ executablePath: electronPath, args: [desktop], env, timeout: 60_000 });
   const page = await app.firstWindow();
   page.on('pageerror', (error) => console.error(`[desktop renderer] ${error.stack ?? error.message}`));
   page.setDefaultTimeout(30_000);
   await page.setViewportSize({ width: 1440, height: 1024 });
   await page.waitForFunction(() => Boolean(document.getElementById('root')?.children.length));
-  await page.evaluate(async ({ version, libraryRoot, libraryFixtures, route }) => {
+  await page.evaluate(async ({ version, libraryRoot, libraryFixtures, route, recoveryRoot, recoveryPassword }) => {
     localStorage.setItem('nodus.lastSeenVersion', version);
     localStorage.setItem('nodus.mobileTeaserSeen.3.2.4', '1');
     localStorage.setItem('nodus.platformHighlightsSeen.2026-07', '1');
@@ -47,7 +49,6 @@ try {
     await window.nodus.updateSettings({
       onboardingComplete: true,
       basicsTutorialVersion: 999,
-      recoverySetupVersion: 999,
       tourComplete: true,
       advancedTourComplete: true,
       uiLanguage: 'es',
@@ -56,11 +57,15 @@ try {
       ...(route === 'library' ? { autoBackupFolder: libraryRoot } : {}),
     });
     await window.nodus.seedDemoData();
+    if ((await window.nodus.getRecoveryStatus()).needsSetup) {
+      const result = await window.nodus.initializeRecoveryFolder(recoveryRoot, recoveryPassword, 'es');
+      if (!result.ok) throw new Error(`Isolated Desktop recovery setup failed: ${result.message}`);
+    }
     if (route === 'library') {
       await window.nodus.getGlobalLibraryStatus();
       await window.nodus.importDroppedGlobalLibraryFiles(libraryFixtures, null);
     }
-  }, { version: nodusRequire(path.join(desktop, 'package.json')).version, libraryRoot, libraryFixtures, route });
+  }, { version: nodusRequire(path.join(desktop, 'package.json')).version, libraryRoot, libraryFixtures, route, recoveryRoot, recoveryPassword: randomBytes(32).toString('base64url') });
   await page.reload();
   await page.waitForFunction(() => Boolean(document.getElementById('root')?.children.length));
   const dismissUpdate = async (timeout = 5_000) => {
@@ -77,6 +82,11 @@ try {
   if (hasWhatsNew) {
     await whatsNew.getByRole('button', { name: 'Cerrar', exact: true }).click();
     await whatsNew.waitFor({ state: 'detached' });
+  }
+  const presenterAnnouncement = page.getByTestId('pdf-presenter-tutorial-announcement');
+  if (await presenterAnnouncement.waitFor({ state: 'visible', timeout: 4_000 }).then(() => true, () => false)) {
+    await presenterAnnouncement.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await presenterAnnouncement.waitFor({ state: 'detached' });
   }
   // Startup surfaces are serialised. Closing What's New may be what allows the update
   // status modal to mount, so drain it once more before touching the workspace.
@@ -106,6 +116,13 @@ try {
     await page.getByRole('button', { name: 'Servidor', exact: true }).click();
     await page.getByTestId('nodus-server-mode-switch').waitFor({ state: 'visible' });
   }
+  if (route === 'settings' && detail === 'mobile') {
+    await page.getByRole('button', { name: 'Conexión móvil', exact: true }).click();
+    const pairing = page.getByRole('region', { name: 'Vincular móvil', exact: true });
+    await pairing.getByRole('button', { name: 'Generar código y QR', exact: true }).click();
+    await pairing.getByRole('img', { name: 'Código QR para vincular Nodus', exact: true }).waitFor({ state: 'visible' });
+    await pairing.getByRole('link', { name: 'Abrir enlace de vinculación', exact: true }).waitFor({ state: 'visible' });
+  }
   if (route === 'deepResearch') {
     const demoTitle = 'Informe profundo · ciencia del aprendizaje';
     await page.getByRole('heading', { name: 'Deep Research', exact: true }).waitFor({ state: 'visible' });
@@ -119,7 +136,12 @@ try {
   await page.waitForTimeout(350);
   await page.screenshot({ path: output });
   console.log(output);
+} catch (error) {
+  const page = app && (await app.windows())[0];
+  if (page) await page.screenshot({ path: output.replace(/\.png$/, '-failed.png') }).catch(() => {});
+  throw error;
 } finally {
   if (app) await app.close();
+  fs.rmSync(recoveryRoot, { recursive: true, force: true });
   fs.rmSync(userData, { recursive: true, force: true });
 }
