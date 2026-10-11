@@ -20,7 +20,7 @@ final class NativeChatMobileUITests: XCTestCase {
             composer.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
             try clearNativeChatComposer(composer, in: app)
-            let draft = "Consulta sin enviar\nSegunda linea"
+            let draft = "Consulta sin enviar\n" + String(repeating: "Una pregunta sobre las ideas y sus fuentes. ", count: 8)
             composer.typeText(draft)
             XCTAssertEqual(composer.value as? String, draft)
             XCTAssertTrue(app.keyboards.firstMatch.exists, "Typing must not dismiss the keyboard.")
@@ -75,7 +75,13 @@ final class NativeChatMobileUITests: XCTestCase {
 @MainActor func clearNativeChatComposer(_ composer: XCUIElement, in app: XCUIApplication) throws {
     guard let value = composer.value as? String, !value.isEmpty, value != composer.placeholderValue else { return }
     composer.press(forDuration: 1.1)
-    let all = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label == %@", "Seleccionar todo", "Select All")).firstMatch
+    let all = app.menuItems.matching(NSPredicate(format: "label == %@ OR label == %@", "Seleccionar todo", "Select All")).firstMatch
+    for _ in 0..<5 {
+        if all.exists && all.isHittable { break }
+        let next = app.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Adelante", "Forward")).firstMatch
+        guard next.waitForExistence(timeout: 2), next.isHittable else { break }
+        next.tap()
+    }
     XCTAssertTrue(all.waitForExistence(timeout: 8), "The native composer must support selecting its complete restored draft.\n" + app.debugDescription)
     all.tap()
     composer.typeText(XCUIKeyboardKey.delete.rawValue)
