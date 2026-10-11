@@ -44,6 +44,7 @@ final class SpaceSession {
     private(set) var companionResultRevision = 0
     private(set) var companionDownloadRevision = 0
     private(set) var companionImmersionProgressRevision = 0
+    private(set) var companionDatabaseReadingRevision = 0
     private(set) var companionPublicationUpdates: [JSONValue] = []
 
     /// A durable device result refreshes native readers without reporting an
@@ -51,6 +52,7 @@ final class SpaceSession {
     func didSaveCompanionResult() { companionResultRevision += 1 }
     func didChangeCompanionDownloads() { companionDownloadRevision += 1 }
     func didChangeImmersionProgress() { companionImmersionProgressRevision += 1 }
+    func didChangeDatabaseReading() { companionDatabaseReadingRevision += 1 }
 
     /// Told to `AppModel` so the space picker can say the same thing this screen says.
     private let onFailure: (ConnectionFailure) -> Void
@@ -366,6 +368,12 @@ final class SpaceSession {
                     try await bridge.saveImmersionProgress(vaultId: vaultId, sessionId: sessionId, request: request)
                 }
                 if await progress.revision != before { companionImmersionProgressRevision += 1 }
+            }
+            if let pairingId = connection.desktopPairingId,
+               let reading = try? await CompanionDatabaseReadingOutboxes.shared.outbox(pairingId:pairingId,vaultId:vaultId) {
+                let before = await reading.revision
+                try? await reading.synchronize { id,request in try await bridge.saveDatabaseResearchReading(vaultId:vaultId,reportId:id,request:request) }
+                if await reading.revision != before { companionDatabaseReadingRevision += 1 }
             }
             // Portable results synchronize in either mode. New Mac generation
             // resumes only while live remains explicitly selected, including

@@ -93,8 +93,14 @@ Database Deep Research now opens its actual structured report component through 
 mobile route. Its stable, paginated gallery transfers metadata instead of every report body;
 details preserve the saved charts, sections, evidence and annotations. Native export uses
 the scoped file bridge. The isolated 241-report regression scenario is prepared but has not
-run. Autonomous query execution, durable database research mutations and chosen offline
-report packs remain pending; none of these operations is certified by this implementation.
+run. Chosen reports now have bounded 7/30-day packs with their complete sections, charts and
+evidence. The gallery defers database/row loading until the creation form opens. Read markers,
+highlights, comments and bookmarks use a separate encrypted durable journal, stable identities,
+source/revision checks and atomic acknowledgements. Reconnect preserves newer device edits;
+conflicts have an explicit mobile/Mac comparison and export of device annotations. A deleted,
+changed or malformed report is an error, never a partial empty report. Autonomous query
+execution and durable database generation remain pending. These changes and their prepared
+Desktop/Swift regressions have not run or passed acceptance.
 Live chats select the actual World, Study/Teaching or Database adapter for their vault rather
 than the academic adapter. The scoped bridge carries their histories, projects, notebooks and
 stream events; source links retain page, slide, transcript version and recording timestamp.

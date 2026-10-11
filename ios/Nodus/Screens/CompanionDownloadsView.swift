@@ -26,6 +26,10 @@ struct CompanionDownloadsView: View {
         NavigationStack {
             List {
                 Section {
+                    if session.vaultType == .databases {
+                        NavigationLink("Informes de bases de datos") { CompanionDatabaseResearchDownloadsView(session:session) }
+                            .accessibilityIdentifier("companion-download-database-research")
+                    }
                     Button { showingDownloadedDossiers = true } label: {
                         Label("Consultar dossiers descargados", systemImage: "arrow.down.circle")
                     }.frame(minHeight: 44).accessibilityIdentifier("companion-open-downloaded-dossiers")

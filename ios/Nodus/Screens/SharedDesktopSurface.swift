@@ -72,7 +72,7 @@ struct SharedDesktopSurface: View {
     @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, onError: { issue = $0 }, onExport: { exportedURL = $0 }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -105,6 +105,7 @@ struct SharedDesktopSurface: View {
                 }.padding(.leading, 12).padding(.vertical, 4).background(.thinMaterial)
             }
             CompanionResultsButton(session: session, surface: surface, generationStatus: autonomousStatus)
+            if surface == .databaseResearch { DatabaseReadingStatusButton(session:session) }
             if surface == .immersion, let controller = immersionController {
                 Button { showImmersionProgress = true } label: {
                     Label(controller.state == .conflict ? "Revisar progreso de inmersión" : controller.state == .pending ? "Progreso guardado · pendiente de sincronizar" : "Progreso de inmersión",
@@ -259,6 +260,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let textScale: Double
     let publicationRevision: Int
     let corpusRevision: String?
+    let databaseReadingRevision:Int
     let onError: (String) -> Void
     let onExport: (URL) -> Void
     let onAutonomousStatus: (String?) -> Void
@@ -351,6 +353,7 @@ private struct DesktopWebView: UIViewRepresentable {
         context.coordinator.setRouteActive(routeActive)
         context.coordinator.sendPublicationUpdates()
         context.coordinator.sendCorpusUpdate()
+        context.coordinator.sendDatabaseReadingUpdate()
         view.evaluateJavaScript("document.documentElement.classList.toggle('dark',\(dark));document.documentElement.classList.toggle('light',\(!dark));document.documentElement.style.fontSize='\(16 * textScale)px';document.documentElement.style.setProperty('--nodus-mobile-text-scale','\(textScale)');", completionHandler: nil)
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
@@ -380,7 +383,7 @@ private struct DesktopWebView: UIViewRepresentable {
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             setRouteActive(routeActive)
-            surfaceReady = true; sendPublicationUpdates(); sendCorpusUpdate()
+            surfaceReady = true; sendPublicationUpdates(); sendCorpusUpdate(); sendDatabaseReadingUpdate()
         }
         let session: SpaceSession
         let autonomous: AutonomousSurfaceProvider
@@ -394,6 +397,13 @@ private struct DesktopWebView: UIViewRepresentable {
         let onOpenWritingResult: (MobileWritingResultTarget) -> Void
         let onImmersionSource: (String, JSONValue) -> Void
         private lazy var immersionProgress = ImmersionSurfaceProgressBridge(session: session)
+        private lazy var databaseReading = DatabaseResearchSurfaceBridge(session:session)
+        private var databaseReadingRevision = 0
+        func sendDatabaseReadingUpdate() {
+            guard surfaceReady,routeActive,databaseReadingRevision != session.companionDatabaseReadingRevision else { return }
+            databaseReadingRevision = session.companionDatabaseReadingRevision
+            webView?.evaluateJavaScript("window.nodusMobileEvent({channel:'mobile:databaseReading:changed',args:[]});",completionHandler:nil)
+        }
         lazy var images = MobileCorpusImageScheme(session:session,onError:onError)
         var tasks: [Task<Void, Never>] = []
         var runningJobs: [String: (DesktopBridgeClient, String, String)] = [:]
@@ -539,7 +549,9 @@ private struct DesktopWebView: UIViewRepresentable {
                                 throw DesktopBridgeError.permissionDenied
                             }
                         }
-                        if ImmersionSurfaceProgressBridge.writeMethods.contains(method) {
+                        if DatabaseResearchSurfaceBridge.methods.contains(method) {
+                            value = try await databaseReading.perform(method,args:args,client:client,pairing:pairing,vaultId:vaultId,onOffline:onOfflineCopy)
+                        } else if ImmersionSurfaceProgressBridge.writeMethods.contains(method) {
                             value = try await immersionProgress.write(method: method, args: args, pairing: pairing, vaultId: vaultId)
                         } else if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }

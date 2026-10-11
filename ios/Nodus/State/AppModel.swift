@@ -497,6 +497,7 @@ final class AppModel {
         await DesktopJobLedgers.shared.forget(pairingId: pairing.id)
         await CompanionDocumentOutboxes.shared.forget(pairingId: pairing.id)
         await CompanionImmersionProgressOutboxes.shared.forget(pairingId: pairing.id)
+        await CompanionDatabaseReadingOutboxes.shared.forget(pairingId:pairing.id)
         for linked in connections.filter({ $0.desktopPairingId == pairing.id }) { forget(linked) }
     }
 

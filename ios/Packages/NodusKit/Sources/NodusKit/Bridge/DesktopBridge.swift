@@ -549,6 +549,23 @@ public actor DesktopBridgeClient {
         let value = try JSONDecoder.nodus.decode(CompanionImmersionProgress.Snapshot.self, from: response.data)
         try value.validate(sessionId: sessionId); return value
     }
+    private func databaseReadingPath(vaultId:String,reportId:String) throws -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn:"-._~"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters:allowed),let report = reportId.addingPercentEncoding(withAllowedCharacters:allowed) else { throw DesktopBridgeError.malformedResponse }
+        return "/bridge/v2/vaults/\(vault)/writing/database-research/\(report)/reading"
+    }
+    public func databaseResearchReading(vaultId:String,reportId:String) async throws -> CompanionDatabaseResearch.Snapshot {
+        let response = try await raw(path:databaseReadingPath(vaultId:vaultId,reportId:reportId),method:"GET",timeout:4)
+        let value = try JSONDecoder.nodus.decode(CompanionDatabaseResearch.Snapshot.self,from:response.data)
+        try value.validate(id:reportId); return value
+    }
+    public func saveDatabaseResearchReading(vaultId:String,reportId:String,request:CompanionDatabaseResearch.Request) async throws -> CompanionDatabaseResearch.Receipt {
+        let body = try JSONDecoder.nodus.decode(JSONValue.self,from:JSONEncoder.nodus.encode(request))
+        let response = try await raw(path:databaseReadingPath(vaultId:vaultId,reportId:reportId),method:"POST",body:body,timeout:10)
+        let receipt = try JSONDecoder.nodus.decode(CompanionDatabaseResearch.Receipt.self,from:response.data)
+        guard receipt.id == request.id else { throw DesktopBridgeError.malformedResponse }
+        try receipt.snapshot.validate(id:reportId); return receipt
+    }
     public func saveImmersionProgress(vaultId: String, sessionId: String, request: CompanionImmersionProgress.Request) async throws -> CompanionImmersionProgress.Receipt {
         let body = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(request))
         let response = try await raw(path: immersionProgressPath(vaultId: vaultId, sessionId: sessionId), method: "POST", body: body, timeout: 10)
