@@ -138,13 +138,13 @@ struct ProjectsMobileView: View {
 
     private func update(section: AcademicProjectSection, status: String) async {
         do {
-            _ = try await session.client.createSpaceAction(
+            let result = try await session.client.createSpaceAction(
                 idempotencyKey: "project-section:\(section.id):\(status):\(session.publishedRevision ?? "local")",
                 kind: .projectsSectionUpdate,
                 payload: ["id": .string(section.id), "status": .string(status)], inputRevision: session.publishedRevision,
                 executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            message = String(localized: "Section update queued once for Desktop.")
+            message = result.action.receiptMessage
         } catch { self.error = error.localizedDescription }
     }
 
@@ -157,7 +157,7 @@ struct ProjectsMobileView: View {
             guard data.count <= 500_000, let text = String(data: data, encoding: .utf8) else {
                 throw AcademicCreateFailure.importTooLargeOrBinary
             }
-            _ = try await session.client.createSpaceAction(
+            let result = try await session.client.createSpaceAction(
                 idempotencyKey: "project-chapter:\(project.id):\(stableActionFingerprint(text))",
                 kind: .projectsChapterImport,
                 payload: [
@@ -165,7 +165,7 @@ struct ProjectsMobileView: View {
                     "sourceFormat": .string(url.pathExtension.lowercased() == "md" ? "markdown" : "txt"), "text": .string(text),
                 ], inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            message = String(localized: "Chapter import queued once. Desktop will version it and link it to the manuscript.")
+            message = result.action.receiptMessage
         } catch { self.error = error.localizedDescription }
     }
 
@@ -182,6 +182,7 @@ private struct ProjectCreateForm: View {
     @State private var brief = ""
     @State private var targetWords = 50_000
     @State private var sending = false
+    @State private var creationIdentity = UUID().uuidString
     @State private var error: String?
 
     var body: some View {
@@ -207,12 +208,12 @@ private struct ProjectCreateForm: View {
         sending = true; defer { sending = false }
         do {
             let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            _ = try await session.client.createSpaceAction(
-                idempotencyKey: "project-create:\(stableActionFingerprint("\(normalized)|\(kind)|\(brief)"))", kind: .projectsCreate,
+            let result = try await session.client.createSpaceAction(
+                idempotencyKey: "project-create:\(creationIdentity):\(stableActionFingerprint("\(normalized)|\(kind)|\(brief)"))", kind: .projectsCreate,
                 payload: ["title": .string(normalized), "kind": .string(kind), "brief": .string(brief), "targetWords": .int(Int64(targetWords))],
                 inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            onQueued("Project creation queued once. Desktop will initialise every canonical section and publish it.")
+            onQueued(result.action.receiptMessage)
         } catch { self.error = error.localizedDescription }
     }
 }

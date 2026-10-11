@@ -56,6 +56,18 @@ public struct SpaceAction: Sendable, Hashable, Codable, Identifiable {
     public let updatedAt: Date
     public let claimedAt: Date?
     public let finishedAt: Date?
+
+    public var receiptMessage: String {
+        switch status {
+        case .queued, .claimed:
+            return sequence == 0 ? "Solicitud guardada en el móvil · pendiente de conectar con Nodus."
+                : "Solicitud aceptada por Nodus · pendiente de ejecución."
+        case .running: return "Nodus está ejecutando la solicitud. Puedes consultar su estado en Trabajos."
+        case .applied: return "Resultado guardado y disponible en Nodus."
+        case .cancelled: return "Solicitud cancelada."
+        case .failed, .refused: return "No se pudo completar la solicitud: \(errorCode ?? status.rawValue). Consulta Trabajos."
+        }
+    }
 }
 
 public struct SpaceActionPage: Sendable, Hashable, Decodable {

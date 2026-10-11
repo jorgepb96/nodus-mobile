@@ -283,7 +283,7 @@ private struct ArgumentMapDocumentView: View {
                 inputRevision: session.publishedRevision,
                 executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            remoteState = result.duplicate ? String(localized: "The AI trace is already queued.") : String(localized: "AI trace queued for Desktop; its state is visible in Sync Center.")
+            remoteState = result.action.receiptMessage
         } catch { remoteState = error.localizedDescription }
     }
 }

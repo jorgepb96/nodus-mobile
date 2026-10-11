@@ -211,6 +211,7 @@ private struct PageDocumentWorkspace: View {
     @State private var saving = false
     @State private var compactInspector = false
     @State private var actionError: String?
+    @State private var actionMessage: String?
     private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var blocks: [PagesDatabasesParity.Block] { PagesDatabasesParity.blocks(pageId: page.id, in: tables) }
@@ -224,6 +225,7 @@ private struct PageDocumentWorkspace: View {
             documentHeader.padding(NodusSpace.page)
             Divider()
             if let actionError { NodusNotice(tone: .blocked, title: "Page action failed", message: LocalizedStringKey(actionError)).padding(.horizontal, NodusSpace.page).padding(.top, 8) }
+            if let actionMessage { Text(actionMessage).font(.caption).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).padding(.top, 8) }
             if !compactPresentation {
                 HStack(spacing: 0) { editor; Divider(); inspectorRail.frame(width: 320) }
             } else {
@@ -422,9 +424,10 @@ private struct PageDocumentWorkspace: View {
     private func restoreRevision(_ row: Row) async {
         guard let revision = row.int("revision") else { return }
         do {
-            _ = try await session.client.createSpaceAction(idempotencyKey: "page-restore:\(page.id):\(revision)", kind: .pageRestoreRevision, payload: ["pageId": .string(page.id), "revision": .int(Int64(revision))], inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId)
+            let result = try await session.client.createSpaceAction(idempotencyKey: "page-restore:\(page.id):\(revision)", kind: .pageRestoreRevision, payload: ["pageId": .string(page.id), "revision": .int(Int64(revision))], inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId)
             actionError = nil
-        } catch { actionError = error.localizedDescription }
+            actionMessage = result.action.receiptMessage
+        } catch { actionMessage = nil; actionError = error.localizedDescription }
     }
 }
 
@@ -873,7 +876,7 @@ struct DatabaseDetailWorkspace: View {
                 idempotencyKey: "database-import:\(UUID().uuidString)", kind: .databaseImportCSV,
                 payload: payload, inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            importMessage = "CSV queued for Desktop as \(result.action.id). It will appear after the vault republishes."
+            importMessage = result.action.receiptMessage
         } catch {
             importMessage = "CSV import could not be queued: \(error.localizedDescription)"
         }

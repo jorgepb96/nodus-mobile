@@ -116,9 +116,7 @@ struct WorldContinuityView: View {
                 kind: .worldbuildingContinuity, payload: [:], inputRevision: session.publishedRevision,
                 executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            message = creation.duplicate
-                ? "This revision is already queued for the full Desktop audit."
-                : "Full audit queued. Its typed result will appear in the Sync Center when Desktop finishes."
+            message = creation.action.receiptMessage
         } catch { self.error = error.localizedDescription }
     }
 

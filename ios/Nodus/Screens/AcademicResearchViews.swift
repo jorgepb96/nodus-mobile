@@ -162,12 +162,12 @@ struct HypothesisLabMobileView: View {
         """
         do {
             let key = "hypothesis-note:\(candidate.id):\(session.publishedRevision ?? "local")"
-            _ = try await session.client.createSpaceAction(
+            let result = try await session.client.createSpaceAction(
                 idempotencyKey: key, kind: .hypothesisSaveToNotes,
                 payload: ["title": .string(candidate.title), "markdown": .string(markdown), "hypothesisId": .string(candidate.id)],
                 inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            actionStatus = "Queued once. The owner Desktop will add this grounded dossier to Notes."
+            actionStatus = result.action.receiptMessage
         } catch { self.error = error.localizedDescription }
     }
 }

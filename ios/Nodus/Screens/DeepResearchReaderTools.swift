@@ -12,6 +12,7 @@ struct DeepResearchSaveToNotesButton: View {
     @State private var sending = false
     @State private var queued = false
     @State private var failure: String?
+    @State private var receipt: String?
 
     var body: some View {
         Button { save() } label: {
@@ -21,7 +22,7 @@ struct DeepResearchSaveToNotesButton: View {
                 } else {
                     Image(systemName: queued ? "checkmark.circle" : "note.text.badge.plus")
                 }
-                Text(queued ? "Queued for Notes" : "Save to Notes")
+                Text(queued ? "Solicitud guardada" : "Save to Notes")
                     .font(.subheadline.weight(.semibold))
             }
             .foregroundStyle(session.accent.nodusReadable)
@@ -32,13 +33,13 @@ struct DeepResearchSaveToNotesButton: View {
         .buttonStyle(.plain)
         .disabled(sending || !session.connection.role.canSendChanges || queued)
         .accessibilityHint("The owner desktop creates the vault note through a typed action.")
-        .alert("Couldn’t save to Notes", isPresented: Binding(
-            get: { failure != nil },
-            set: { if !$0 { failure = nil } }
+        .alert("Guardar en notas", isPresented: Binding(
+            get: { failure != nil || receipt != nil },
+            set: { if !$0 { failure = nil; receipt = nil } }
         )) {
-            Button("OK", role: .cancel) { failure = nil }
+            Button("OK", role: .cancel) { failure = nil; receipt = nil }
         } message: {
-            Text(failure ?? "Unknown error")
+            Text(failure ?? receipt ?? "")
         }
     }
 
@@ -47,7 +48,7 @@ struct DeepResearchSaveToNotesButton: View {
         sending = true
         Task {
             do {
-                _ = try await session.client.createSpaceAction(
+                let result = try await session.client.createSpaceAction(
                     idempotencyKey: "deep-research-note:\(reportId)",
                     kind: .deepResearchSaveToNotes,
                     payload: [
@@ -58,7 +59,8 @@ struct DeepResearchSaveToNotesButton: View {
                     inputRevision: session.publishedRevision,
                     executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
                 )
-                queued = true
+                queued = ![.failed, .refused, .cancelled].contains(result.action.status)
+                receipt = result.action.receiptMessage
             } catch {
                 failure = error.localizedDescription
             }

@@ -328,8 +328,8 @@ private struct IdeaWorkspaceDocument: View {
                 kind: kind, payload: ["ideaId": .string(id)], inputRevision: session.publishedRevision,
                 executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            actionState = result.duplicate ? String(localized: "This action was already queued.") : String(localized: "Queued for Desktop · \(result.action.status.rawValue)")
-            if kind == .ideaDelete { workspaceTabs.close(tabId, in: NodusRoute.ideas.rawValue) }
+            actionState = result.action.receiptMessage
+            if kind == .ideaDelete, ![.failed, .refused, .cancelled].contains(result.action.status) { workspaceTabs.close(tabId, in: NodusRoute.ideas.rawValue) }
         } catch { actionState = error.localizedDescription }
     }
 }
@@ -679,7 +679,7 @@ private struct AuthorWorkspaceDocument: View {
                 kind: .authorSynthesisGenerate, payload: ["authorId": .string(id)], inputRevision: session.publishedRevision,
                 executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            actionState = result.duplicate ? String(localized: "This synthesis is already queued.") : String(localized: "Synthesis queued for Desktop.")
+            actionState = result.action.receiptMessage
         } catch { actionState = error.localizedDescription }
     }
     private func freshestSynthesis(_ remote: AuthorDossierSynthesis?) -> AuthorDossierSynthesis? {
@@ -797,12 +797,12 @@ private struct AuthorSynthesisMatrixView: View {
                 let value = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: sourceRequest(authorId, themeId)) { generated[key] = $0 }
                 localCells[key] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(value)); return
             }
-            _ = try await session.client.createSpaceAction(
+            let result = try await session.client.createSpaceAction(
                 idempotencyKey: "ios:matrix:\(session.connection.spaceId):\(authorId):\(themeId):\(session.publishedRevision ?? "local")",
                 kind: .authorsMatrixGenerate, payload: ["authorId": .string(authorId), "themeId": .string(themeId)],
                 inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            generated[key] = "Queued"
+            generated[key] = result.action.receiptMessage
         } catch { generated[key] = error.localizedDescription }
     }
     private func sourceRequest(_ authorId: String, _ themeId: String) -> JSONValue {
