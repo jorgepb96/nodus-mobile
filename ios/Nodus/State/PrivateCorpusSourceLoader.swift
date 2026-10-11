@@ -4,6 +4,10 @@ import NodusKit
 @MainActor
 func loadPrivateCorpusSource(_ session: SpaceSession, reference: PrivateCorpusReference, downloadedOnly: Bool = false,
     progress: @escaping (Int, Int) -> Void = { _, _ in }) async throws -> (CompanionPrivateSourceCopy, Bool) {
+#if DEBUG
+    if session.connection.desktopPairingId == nil, !downloadedOnly, reference.kind == .recording,
+       let copy = try debugPrivateRecordingCopies().first(where: { $0.source.id == reference.id }) { return (copy, false) }
+#endif
     let (vault, pairing, token) = try privateBridgeConnection(session, domain: reference.kind.domain)
     guard !pairing.isExpired else { throw DesktopBridgeError.expired }
     let cache = try PrivateBridgeCache(pairingId: pairing.id)

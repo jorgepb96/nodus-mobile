@@ -67,7 +67,7 @@ struct PrivateSourceCatalogueView: View {
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.right").foregroundStyle(.secondary)
                         }.frame(minHeight: 44).desktopContentRow(accent: session.accent)
-                    }.buttonStyle(NodusCardButtonStyle())
+                    }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("private-source-\(kind.rawValue)-\(item.id)")
                 }
                 if hasMore {
                     Button { Task { await loadMore() } } label: {
@@ -92,6 +92,17 @@ struct PrivateSourceCatalogueView: View {
         loading = true; issue = nil; items = []; hasMore = false; revision = nil
         defer { loading = false }
         do {
+#if DEBUG
+            if session.connection.desktopPairingId == nil, !downloadedOnly, kind == .recording {
+                let fixtures = try debugPrivateRecordingCopies()
+                if !fixtures.isEmpty {
+                    items = fixtures.map { CompanionPrivateSourceCopy.CatalogueEntry(source: $0.source).item }
+                        .filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
+                    total = items.count; offline = false
+                    return
+                }
+            }
+#endif
             let (vault, pairing, token) = try privateBridgeConnection(session, domain: kind.domain)
             guard !pairing.isExpired else { throw DesktopBridgeError.expired }
             if downloadedOnly { try await loadDownloaded(vault: vault, pairing: pairing); return }

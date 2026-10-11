@@ -1,6 +1,7 @@
 import NodusKit
 import NodusUI
 import SwiftUI
+import CryptoKit
 
 enum StudyTeachingWorkspaceMode: String {
     case courses, materials, schedule, calendar, recordings
@@ -706,5 +707,40 @@ private func debugStudyTeachingFixture() -> [String: [Row]] {
     return object.compactMapValues { $0.arrayValue?.compactMap { $0.objectValue.map(Row.init) } }
 #else
     return [:]
+#endif
+}
+
+/// The screenshot fixture exercises the same addressed reader as the real Mac.
+/// It is unavailable in Release and never acts as a fallback for failed grants.
+func debugPrivateRecordingCopies() throws -> [CompanionPrivateSourceCopy] {
+#if DEBUG
+    let tables = debugStudyTeachingFixture()
+    return try (tables["study_recordings"] ?? []).map { root in
+        guard let id = root.string("id") else { throw DesktopBridgeError.malformedResponse }
+        let reference = try PrivateCorpusReference(kind: .recording, id: id)
+        let transcripts = (tables["study_transcripts"] ?? []).filter { $0.string("recording_id") == id }
+        let transcriptIds = Set(transcripts.compactMap { $0.string("id") })
+        let owned: [String: [Row]] = ["transcripts": transcripts,
+            "segments": (tables["study_transcript_segments"] ?? []).filter { $0.string("transcript_id").map(transcriptIds.contains) == true },
+            "markers": (tables["study_audio_markers"] ?? []).filter { $0.string("recording_id") == id }]
+        let rows = owned.mapValues { records in records.enumerated().map { ordinal, row in
+            var row = row; row.columns["_bridge_cursor"] = .int(ordinal + 1)
+            if let seconds = row.columns["seconds"], row.columns["t_seconds"] == nil { row.columns["t_seconds"] = seconds }
+            return row
+        } }
+        func digest(_ value: JSONValue) throws -> String {
+            SHA256.hash(data: try JSONEncoder.nodus.encode(value)).map { String(format: "%02x", $0) }.joined()
+        }
+        let groups: [JSONValue] = try reference.kind.groups.map { key in
+            let records = JSONValue.array((rows[key] ?? []).map { .object($0.columns) })
+            return .object(["key": .string(key), "title": .string(key), "total": .int(rows[key]?.count ?? 0), "revision": .string(try digest(records))])
+        }
+        let json: JSONValue = .object(["version": .int(1), "kind": .string(reference.kind.rawValue), "id": .string(id),
+            "root": .object(root.columns), "groups": .array(groups), "revision": .string(try digest(.object(root.columns)))])
+        let source = try JSONDecoder.nodus.decode(PrivateCorpusSource.self, from: JSONEncoder.nodus.encode(json))
+        return try CompanionPrivateSourceCopy(source: source, rows: rows, reference: reference)
+    }
+#else
+    return []
 #endif
 }

@@ -1229,14 +1229,18 @@ final class MobileReleaseUITests: XCTestCase {
         let file = app.buttons["bridge-file-studyRecording-\(record)"]
         XCTAssertTrue(file.waitForExistence(timeout: 20), app.debugDescription)
         capture(app, "live-private-recording-dossier"); file.tap()
-        let preview = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "acceptance-private-audio")).firstMatch
+        let preview = app.descendants(matching: .any)["saved-audio-player-scroll"]
         XCTAssertTrue(preview.waitForExistence(timeout: 30), app.debugDescription)
         capture(app, "live-private-audio-preview")
-        let play = app.buttons["QLMediaItemViewControllerBarPlayButtonPlayingAccessibilityIdentifier"]
+        let play = app.buttons["saved-audio-play"]
         XCTAssertTrue(play.waitForExistence(timeout: 15), app.debugDescription)
         play.tap()
-        let elapsed = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@ AND NOT label CONTAINS %@", "Tiempo transcurrido:", "0 segundos")).firstMatch
-        XCTAssertTrue(elapsed.waitForExistence(timeout: 10), "Downloaded audio must actually play and advance its timeline.\n\(app.debugDescription)")
+        let elapsed = app.descendants(matching: .any)["saved-audio-seek"]
+        XCTAssertTrue(elapsed.waitForExistence(timeout: 10), app.debugDescription)
+        let clock = app.staticTexts["saved-audio-elapsed"]
+        let advances = NSPredicate { _, _ in !clock.label.isEmpty && !clock.label.contains("0:00") }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advances, object: nil)], timeout: 10), .completed,
+            "Downloaded audio must actually play and advance its timeline.\n\(app.debugDescription)")
         capture(app, "live-private-audio-playback")
     }
     @MainActor

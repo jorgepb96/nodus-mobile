@@ -725,12 +725,12 @@ final class NodusParityUITests: XCTestCase {
         attachScreenshot(named: "teaching-gradebook")
 
         openRoute("studyRecordings", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["study-recordings-workspace"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["private-source-catalogue-study-recording"].waitForExistence(timeout: 10))
         let recording = app.staticTexts["Seminar · conflicting witnesses"].firstMatch
         XCTAssertTrue(recording.waitForExistence(timeout: 5))
         recording.tap()
-        XCTAssertTrue(app.staticTexts["Transcript"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'We model disagreement'" )).firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["private-corpus-source-study-recording"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "We model disagreement", "We model disagreement")).firstMatch.waitForExistence(timeout: 5))
         attachScreenshot(named: "study-private-recording")
     }
 
