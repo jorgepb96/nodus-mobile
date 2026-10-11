@@ -57,7 +57,7 @@ public struct CompanionWorkshopSource: Sendable {
         guard let key = collectionKeys[path], !ids.isEmpty, ids.count <= 200 else { throw DesktopBridgeError.malformedResponse }
         return .object(groups.mapValues { _ in .array([]) }.merging([key: .array(ids.sorted().map(JSONValue.string))]) { _, new in new })
     }
-    public static func cataloguePage(_ value: JSONValue) throws -> Page<Row> {
+    public static func cataloguePage(_ value: JSONValue, idKey: String = "selection_id", labelKey: String = "label") throws -> Page<Row> {
         guard let body = value.objectValue, let items = body["items"]?.arrayValue,
               let total = body["total"]?.intValue, total >= 0,
               let limit = body["limit"]?.intValue, (1...200).contains(limit),
@@ -69,8 +69,8 @@ public struct CompanionWorkshopSource: Sendable {
         else { throw DesktopBridgeError.malformedResponse }
         var seen: Set<String> = []
         let rows = try items.map { value -> Row in
-            guard let row = value.objectValue, let identity = row["selection_id"]?.stringValue,
-                  !identity.isEmpty, seen.insert(identity).inserted, row["label"]?.stringValue != nil
+            guard let row = value.objectValue, let identity = row[idKey]?.stringValue,
+                  !identity.isEmpty, seen.insert(identity).inserted, row[labelKey]?.stringValue != nil
             else { throw DesktopBridgeError.malformedResponse }
             return Row(row)
         }

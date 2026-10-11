@@ -187,6 +187,10 @@ Specialised study/world content still requires its own autonomous source contrac
 writing workshop now supports all six formats, Desktop languages and seven source categories,
 with paged source selection, selected-source downloads, structured device results and idempotent
 provider-free publication. Its new contract and native tests are prepared, not executed.
+The paired workshop gallery reads paged metadata, then opens one exact complete draft on demand;
+it no longer requests a vault snapshot. Offline galleries use only selected encrypted downloads,
+with complete outlines, evidence matrices and bibliography. Source and draft pagination have
+separate, validated contracts and stable identities when timestamps tie.
 Completed autonomous writing assistance opens its durable native result directly from Scriptor
 while publication is pending; it does not fabricate a Mac log ID or replace the original document.
 

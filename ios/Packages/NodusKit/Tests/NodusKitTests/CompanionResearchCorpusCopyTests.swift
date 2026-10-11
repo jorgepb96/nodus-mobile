@@ -46,6 +46,23 @@ struct CompanionResearchCorpusCopyTests {
         #expect(try copy.nativeResponse(path: "deep-research", query: [.init(name: "q", value: "unsupported")], percentEncoded: false) == nil)
     }
 
+    @Test("a native workshop gallery reads exact chosen structured drafts without an ordinary snapshot")
+    func workshopRecords() throws {
+        var pack = Self.copy(count: 1, firstId: "workshop", withImage: false, withRelations: false).objectValue!
+        var entry = pack["entries"]!.arrayValue![0].objectValue!
+        var detail = entry["detail"]!.objectValue!, report = detail["report"]!.objectValue!, draft = report["draft"]!.objectValue!
+        draft["brief"] = .object(["kind": .string("literature_review"), "objective": .string("Preguntar con las fuentes elegidas")])
+        draft["outline"] = .array([.object(["title": .string("Esquema íntegro")])])
+        draft["matrix"] = .array([.object(["evidence": .string("Cita literal completa")])])
+        draft["bibliography"] = .array([.string("Fuente completa")])
+        report["draft"] = .object(draft); detail["report"] = .object(report)
+        entry["detail"] = .object(detail); pack["entries"] = .array([.object(entry)])
+        let selected = try CompanionResearchCorpusCopy(copies: [.object(pack)]).selectedReports
+        #expect(selected == [.object(report)])
+        #expect(selected[0].objectValue?["draft"]?.objectValue?["matrix"] == draft["matrix"])
+        #expect(selected[0].objectValue?["draft"]?.objectValue?["draftMarkdown"] == draft["draftMarkdown"])
+    }
+
     @Test("newer removals and reserved identities do not revive old content or move to another source")
     func ownersAndValidation() throws {
         let id = "report/a%2F#x"

@@ -8,6 +8,12 @@ public struct CompanionResearchCorpusCopy: Sendable {
     private let entries: [JSONValue]
     private let revision: String
 
+    /// These are exact chosen reports, including non-Deep-Research workshop
+    /// formats. Metadata for a native gallery never masquerades as a full draft.
+    public var selectedReports: [JSONValue] {
+        entries.map { $0.objectValue!["detail"]!.objectValue!["report"]! }
+    }
+
     public init(copies: [JSONValue]) throws {
         guard !copies.isEmpty else { throw DesktopBridgeError.malformedResponse }
         var entries: [JSONValue] = [], seen = Set<String>()
