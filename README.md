@@ -503,3 +503,12 @@ rows or materialising formulas. Native row reading checks every page and can loc
 the row in complete, explicitly selected database downloads on a transport failure.
 Prepared real-store and Swift identity cases are **unexecuted**; both new acceptance
 operations remain pending current compilation and device navigation.
+
+Pages and databases keep phone navigation in both orientations rather than
+enabling Desktop rails when an iPhone reports a regular horizontal size class.
+Page details open in a native sheet. Database rows default to vertical summaries
+with all properties in the native inspector; the full table remains selectable.
+The row's saved universal page opens its actual content, comments and history
+instead of an informational placeholder. iPad retains broad tables and panels.
+These two acceptance operations are **pending** current compilation, orientation,
+keyboard, text-size and device checks; no current capture is claimed.

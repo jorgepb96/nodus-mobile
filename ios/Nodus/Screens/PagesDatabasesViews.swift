@@ -28,6 +28,7 @@ struct PagesWorkspaceView: View {
     @State private var showTrash = false
 
     private let section = "pages"
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
     private var activeId: String? { workspaceTabs.activeTabId(in: section) }
     private var activePage: PagesDatabasesParity.Page? { pages.first { $0.id == activeId } }
     private var visiblePages: [PagesDatabasesParity.Page] {
@@ -38,7 +39,7 @@ struct PagesWorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Pages", catalogueImage: "note.text", accent: session.accent)
-            if sizeClass == .regular {
+            if !compactPresentation {
                 HStack(spacing: 0) {
                     pageTree.frame(width: 285)
                     Divider()
@@ -111,9 +112,9 @@ struct PagesWorkspaceView: View {
                     Button { Task { await createPage(parentId: nil) } } label: { Label("New page", systemImage: "plus") }
                         .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil)
                 })
-                if sizeClass == .compact { NodusSearchField(text: $query, prompt: "Search pages", accent: session.accent) }
+                if compactPresentation { NodusSearchField(text: $query, prompt: "Search pages", accent: session.accent) }
                 if let error { NodusNotice(tone: .blocked, title: "Pages could not load", message: LocalizedStringKey(error)) }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: sizeClass == .compact ? 280 : 320), spacing: 10)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: compactPresentation ? 280 : 320), spacing: 10)], spacing: 10) {
                     ForEach(visiblePages) { page in
                         Button { open(page) } label: {
                             VStack(alignment: .leading, spacing: 8) {
@@ -210,6 +211,7 @@ private struct PageDocumentWorkspace: View {
     @State private var saving = false
     @State private var compactInspector = false
     @State private var actionError: String?
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var blocks: [PagesDatabasesParity.Block] { PagesDatabasesParity.blocks(pageId: page.id, in: tables) }
     private var backlinks: [PagesDatabasesParity.Backlink] { PagesDatabasesParity.backlinks(pageId: page.id, in: tables) }
@@ -222,23 +224,26 @@ private struct PageDocumentWorkspace: View {
             documentHeader.padding(NodusSpace.page)
             Divider()
             if let actionError { NodusNotice(tone: .blocked, title: "Page action failed", message: LocalizedStringKey(actionError)).padding(.horizontal, NodusSpace.page).padding(.top, 8) }
-            if sizeClass == .regular {
+            if !compactPresentation {
                 HStack(spacing: 0) { editor; Divider(); inspectorRail.frame(width: 320) }
             } else {
-                if compactInspector { inspectorRail } else { editor }
+                editor
             }
         }
         .onAppear { seedDrafts() }
         .onChange(of: page.id) { _, _ in seedDrafts() }
+        .nodusSheet(isPresented: $compactInspector) {
+            NavigationStack { inspectorRail.navigationTitle("Detalles de la página").nodusModalClose(accent: session.accent) }
+        }
         .accessibilityIdentifier("page-document-\(page.id)")
     }
 
     private var documentHeader: some View {
         DesktopPageHeader(title: LocalizedStringKey(page.title), subtitle: "Revision \(page.revision) · \(blocks.count) blocks", systemImage: "doc.text", accent: session.accent, trailing: {
             HStack(spacing: 7) {
-                if sizeClass == .compact {
-                    Button { compactInspector.toggle() } label: { Image(systemName: compactInspector ? "doc.text" : "sidebar.right") }
-                        .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel(compactInspector ? "Show document" : "Show page details")
+                if compactPresentation {
+                    Button { compactInspector = true } label: { Image(systemName: "info.circle") }
+                        .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Detalles de la página")
                 }
                 Menu {
                     Button { Task { await addBlock(type: "paragraph") } } label: { Label("Paragraph", systemImage: "text.alignleft") }
@@ -432,6 +437,7 @@ struct DatabasesWorkspaceView: View {
     @State private var error: String?
 
     private let section = "databases"
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
     private var activeId: String? { workspaceTabs.activeTabId(in: section) }
     private var activeDatabase: PagesDatabasesParity.Database? { databases.first { $0.id == activeId } }
 
@@ -450,7 +456,7 @@ struct DatabasesWorkspaceView: View {
     private var workspace: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Databases", catalogueImage: "tablecells", accent: session.accent)
-            if sizeClass == .regular {
+            if !compactPresentation {
                 HStack(spacing: 0) {
                     databaseSidebar.frame(width: 250)
                     Divider()
@@ -493,7 +499,7 @@ struct DatabasesWorkspaceView: View {
                 DesktopPageHeader(title: "Databases", subtitle: "Typed properties, linked views and automations", systemImage: "tablecells", accent: session.accent, trailing: {
                     Button { Task { await createDatabase() } } label: { Label("New database", systemImage: "plus") }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil)
                 })
-                if sizeClass == .compact { NodusSearchField(text: $query, prompt: "Find a database", accent: session.accent) }
+                if compactPresentation { NodusSearchField(text: $query, prompt: "Find a database", accent: session.accent) }
                 if let error { NodusNotice(tone: .blocked, title: "Databases could not load", message: LocalizedStringKey(error)) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 10)], spacing: 10) {
                     ForEach(filteredDatabases) { database in
@@ -561,6 +567,8 @@ private struct DatabaseDetailWorkspace: View {
     @State private var creatingColumn = false
     @State private var importingCSV = false
     @State private var importMessage: String?
+    @State private var phoneTable = false
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var columns: [PagesDatabasesParity.Column] { PagesDatabasesParity.columns(databaseId: database.id, in: tables) }
     private var allRows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.rows(databaseId: database.id, in: tables) }
@@ -582,12 +590,12 @@ private struct DatabaseDetailWorkspace: View {
             Divider()
             HStack(spacing: 0) {
                 content
-                if sizeClass == .regular, let selectedRow { Divider(); DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).frame(width: 330) }
+                if !compactPresentation, let selectedRow { Divider(); DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).frame(width: 330) }
             }
         }
         .onAppear { if activeViewId == nil { activeViewId = views.first?.id; adHocLayout = views.first?.layout ?? "table" } }
         .onChange(of: database.id) { _, _ in activeViewId = views.first?.id; selectedRowId = nil }
-        .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).navigationTitle("Row details") }.nodusModalClose(accent: session.accent) } }
+        .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
         .nodusSheet(isPresented: $creatingColumn) { NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox) }
         .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             guard case .success(let url) = result else { return }
@@ -618,6 +626,7 @@ private struct DatabaseDetailWorkspace: View {
                             .buttonStyle(.bordered).tint(activeViewId == view.id ? session.accent : .secondary)
                     }
                     Menu {
+                        if compactPresentation { Toggle("Tabla completa", isOn: $phoneTable) }
                         ForEach(["table", "gallery", "board", "calendar", "timeline"], id: \.self) { candidate in Button { activeViewId = nil; adHocLayout = candidate } label: { Label(candidate.capitalized, systemImage: layoutIcon(candidate)) } }
                     } label: { Label("View", systemImage: "plus") }.buttonStyle(.bordered)
                 }
@@ -640,7 +649,7 @@ private struct DatabaseDetailWorkspace: View {
                 case "board", "kanban": board
                 case "calendar": calendar
                 case "timeline": timeline
-                default: table
+                default: if compactPresentation && !phoneTable { phoneRows } else { table }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -661,6 +670,32 @@ private struct DatabaseDetailWorkspace: View {
             .scrollIndicators(.visible)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var phoneRows: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                if rows.isEmpty { ContentUnavailableView("No hay filas", systemImage: "tablecells", description: Text(query.isEmpty ? "Añade una fila para empezar." : "Prueba otro término de búsqueda.")) }
+                ForEach(rows) { row in
+                    Button { select(row) } label: {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(rowTitle(row)).font(.headline).multilineTextAlignment(.leading)
+                                Spacer(minLength: 6)
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                            }
+                            ForEach(columns.filter { $0.type != "title" }.prefix(3)) { column in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Label(column.name, systemImage: propertyIcon(column.type)).font(.caption).foregroundStyle(.secondary)
+                                    Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor")
+                                        .font(.subheadline).lineLimit(3).multilineTextAlignment(.leading)
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading).desktopContentRow(accent: session.accent)
+                    }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("database-row-\(row.id)")
+                }
+            }.padding(NodusSpace.page)
+        }.scrollDismissesKeyboard(.interactively)
     }
 
     private var databaseTableHeader: some View {
@@ -754,7 +789,7 @@ private struct DatabaseDetailWorkspace: View {
         }
     }
 
-    private func select(_ row: PagesDatabasesParity.DataRow) { selectedRowId = row.id; if sizeClass == .compact { showInspector = true } }
+    private func select(_ row: PagesDatabasesParity.DataRow) { selectedRowId = row.id; if compactPresentation { showInspector = true } }
     private func rowTitle(_ row: PagesDatabasesParity.DataRow) -> String { columns.first(where: { $0.type == "title" }).map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) }?.nonEmpty ?? "Untitled row" }
     private func value(_ column: PagesDatabasesParity.Column?, _ row: PagesDatabasesParity.DataRow) -> String { column.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } ?? "" }
     private func columnWidth(_ column: PagesDatabasesParity.Column) -> CGFloat { column.type == "title" ? 250 : column.type == "formula" ? 125 : 160 }
@@ -763,7 +798,7 @@ private struct DatabaseDetailWorkspace: View {
         guard let outbox else { return }; let id = "drow_\(UUID().uuidString)", now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let row: [String: JSONValue] = ["id": .string(id), "database_id": .string(database.id), "position": .double((allRows.last?.position ?? -1) + 1), "unique_sequence": .int(Int64(allRows.count + 1)), "revision": .int(1), "created_by": .string("mobile"), "updated_by": .string("mobile"), "created_at": .string(now), "updated_at": .string(now)]
         tables["db_rows", default: []].append(Row(row)); _ = await outbox.syncMutation(kind: .upsert, table: .databaseRows, key: [id], row: row, title: "Add database row"); selectedRowId = id
-        if sizeClass == .compact { showInspector = true }
+        if compactPresentation { showInspector = true }
     }
 
     private func requestDesktopImport(_ url: URL) async {
@@ -804,6 +839,7 @@ private struct DatabaseRowInspector: View {
     @State private var drafts: [String: String] = [:]
     @State private var tab = "Properties"
     @State private var saving = false
+    @State private var rowPageOpen = false
 
     private var columns: [PagesDatabasesParity.Column] { PagesDatabasesParity.columns(databaseId: database.id, in: tables) }
     private var allRows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.rows(databaseId: database.id, in: tables) }
@@ -812,11 +848,16 @@ private struct DatabaseRowInspector: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack { VStack(alignment: .leading) { Text(rowTitle).font(.headline).lineLimit(2); Text("Row \(row.id)").font(.caption2.monospaced()).foregroundStyle(.secondary) }; Spacer(); Button { Task { await save() } } label: { if saving { ProgressView() } else { Image(systemName: "checkmark") } }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving) }.padding(12)
-            Picker("Row panel", selection: $tab) { Text("Properties").tag("Properties"); Text("Relations").tag("Relations"); Text("Page").tag("Page") }.pickerStyle(.segmented).padding(.horizontal, 10).padding(.bottom, 10)
+            HStack(alignment: .top) { VStack(alignment: .leading, spacing: 4) { Text(rowTitle).font(.headline).fixedSize(horizontal: false, vertical: true); Text(database.name).font(.caption).foregroundStyle(.secondary) }; Spacer(minLength: 8); Button { Task { await save() } } label: { if saving { ProgressView() } else { Label("Guardar", systemImage: "checkmark") } }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving).accessibilityIdentifier("database-row-save") }.padding(12)
+            Picker("Detalle de la fila", selection: $tab) { Text("Propiedades").tag("Properties"); Text("Enlaces").tag("Relations"); Text("Página").tag("Page") }.pickerStyle(.segmented).padding(.horizontal, 10).padding(.bottom, 10)
             Divider()
-            ScrollView { VStack(alignment: .leading, spacing: 10) { if tab == "Relations" { relationsPanel } else if tab == "Page" { pagePanel } else { propertiesPanel } }.padding(11) }
+            ScrollView { VStack(alignment: .leading, spacing: 16) { if tab == "Relations" { relationsPanel } else if tab == "Page" { pagePanel } else { propertiesPanel } }.padding(NodusSpace.page) }.scrollDismissesKeyboard(.interactively)
         }.background(Color(uiColor: .secondarySystemBackground).opacity(0.42)).onAppear { seed() }.onChange(of: row.id) { _, _ in seed() }.accessibilityIdentifier("database-row-inspector")
+        .nodusSheet(isPresented: $rowPageOpen) {
+            if let page = linkedPage {
+                NavigationStack { PageDocumentWorkspace(session: session, page: page, tables: $tables, outbox: outbox).navigationTitle(page.title).navigationBarTitleDisplayMode(.inline).nodusModalClose(accent: session.accent) }
+            }
+        }
     }
 
     private var propertiesPanel: some View {
@@ -852,12 +893,25 @@ private struct DatabaseRowInspector: View {
         }
     }
 
+    private var linkedPage: PagesDatabasesParity.Page? {
+        guard let id = (tables["pages"] ?? []).first(where: { $0.string("row_id") == row.id })?.string("id") else { return nil }
+        return PagesDatabasesParity.pages(in: tables).first { $0.id == id }
+    }
+
     private var pagePanel: some View {
-        let page = (tables["pages"] ?? []).first { $0.string("row_id") == row.id }
-        return Group {
-            Label("Universal row page", systemImage: "doc.text").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            if let page { Text(page.text("title") ?? rowTitle).font(.headline); Text("The row page keeps blocks, comments, backlinks and ACLs under stable ID \(page.string("id") ?? "").").font(.caption).foregroundStyle(.secondary) }
-            else { Text("Desktop will materialize the universal page when this queued row is applied.").font(.caption).foregroundStyle(.secondary) }
+        Group {
+            if let page = linkedPage {
+                Button { rowPageOpen = true } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "doc.text").foregroundStyle(session.accent)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(page.title).font(.headline).multilineTextAlignment(.leading)
+                            Text("Contenido, comentarios, enlaces e historial").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                        }
+                        Spacer(minLength: 6); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }.frame(minHeight: 44)
+                }.buttonStyle(.plain).accessibilityIdentifier("database-row-page-open")
+            } else { ContentUnavailableView("Página no disponible", systemImage: "doc.text", description: Text("Todavía no hay una página guardada para esta fila. Vuelve a consultarla cuando se sincronice con Nodus.")) }
         }
     }
 
