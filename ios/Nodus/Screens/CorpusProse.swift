@@ -559,6 +559,7 @@ struct CorpusProse: View {
         /// The same text with every bare `nodus://` token already turned into a Markdown link.
         /// For a heading, which carries no citations, this is the text itself.
         let source: String
+        let images: [ReaderImageSource.Reference]
     }
 
     /// Split into headings and paragraphs, then linkify each. See `blocks` for why this runs
@@ -573,7 +574,8 @@ struct CorpusProse: View {
                     id: result.count,
                     level: level,
                     text: text,
-                    source: level == 0 ? linkify(text, labels: labels) : text
+                    source: level == 0 ? linkify(text, labels: labels) : text,
+                    images: ReaderImageSource.references(in:text)
                 )
             )
         }
@@ -626,7 +628,7 @@ struct CorpusProse: View {
                         bookmarkAim: $0.bookmarkAim
                     )
                 } ?? []
-                Group {
+                VStack(alignment:.leading,spacing:12) {
                     if block.level > 0 {
                         heading(block, path: path)
                     } else if reading.document {
@@ -713,6 +715,7 @@ struct CorpusProse: View {
                             .font(reading.font(.callout, dynamicTypeSize: dynamicTypeSize))
                             .textSelection(.enabled)
                     }
+                    ForEach(block.images) { reference in ReaderInlineImage(reference:reference,session:session,accent:accent) }
                 }
                 .nodusRevealed(search?.revealed == path)
                 .id(PageSearchAnchor(path: path))

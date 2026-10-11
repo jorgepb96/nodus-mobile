@@ -27196,6 +27196,28 @@
           }
         }
       }
+    },
+    "Open image": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir imagen"
+          }
+        }
+      }
+    },
+    "Could not open image": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido abrir la imagen"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

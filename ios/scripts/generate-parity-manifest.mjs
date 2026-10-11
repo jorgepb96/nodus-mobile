@@ -254,6 +254,9 @@ function operationMatrix(routes) {
       ['sync.chat.preserveRichDesktopTurns', 'sync'],
       ['consultation.studyChat.longHistory', 'consultation'],
       ['sync.chat.downloadRevocation', 'sync'],
+      ['consultation.nativeReader.scopedInlineImages', 'consultation'],
+      ['consultation.nativeReader.imageAnnotationAnchors', 'consultation'],
+      ['consultation.nativeReader.imageTransportFailures', 'consultation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

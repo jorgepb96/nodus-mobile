@@ -310,6 +310,13 @@ files are errors, and Desktop Study follow-ups no longer trim the stored history
 These contracts and native regressions are prepared but unexecuted. The full autonomous
 behaviour of specialised chats and final device/network/visual acceptance remain unfinished.
 
+Native Markdown readers now hydrate inline raster/SVG images through the existing
+verified owning-vault file contracts, with offline fallback restricted to actual transport
+loss and the retained scoped resource. Authored data images retain their bytes. HTTPS images
+use a credential-free, size-bounded loader. Code examples do not trigger image loads. Image
+visuals keep existing prose blocks and annotation offsets; failures show a retry state.
+Prepared native image parsing/identity/grant regressions remain unexecuted.
+
 Mobile and its extension target **0.1.0**, with configured Apple build **1001**, in
 `ios/project.yml`. QA iteration numbers in local logs are not Apple build numbers. Desktop and
 Server retain their own version contract. Native acceptance records the actual Desktop/mobile
