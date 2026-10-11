@@ -298,6 +298,16 @@ function operationMatrix(routes) {
       ['sync.chat.selectedRichAnswerDownloadsAndExpiry', 'sync'],
       ['consultation.chat.readOnlyCapabilityAdapters', 'consultation'],
       ['generation.databaseChat.newestChosenCapture', 'generation'],
+      ['generation.chat.nativeLiveMacProvidersAndModels', 'generation'],
+      ['generation.chat.questionAcknowledgedBeforeProvider', 'generation'],
+      ['sync.chat.durablePartialAndExactJobRecovery', 'sync'],
+      ['sync.chat.explicitCancellationAfterLostAcknowledgement', 'sync'],
+      ['sync.chat.liveCASConflictPreservesBothDevices', 'sync'],
+      ['consultation.chat.nativeLiveComposerHistoryAndKeyboard', 'consultation'],
+      ['generation.chat.nativeMacContextPromptsEffortSkillsAndConcilium', 'generation'],
+      ['consultation.chat.liveActivityAndOriginalMemberResults', 'consultation'],
+      ['sync.chat.noAutomaticModeFallback', 'sync'],
+      ['generation.chat.checkpointsPreservePendingRichAssets', 'generation'],
     ].map(([id, category]) => ({ id, category, result: 'pending', evidence: [] })),
   ];
 }

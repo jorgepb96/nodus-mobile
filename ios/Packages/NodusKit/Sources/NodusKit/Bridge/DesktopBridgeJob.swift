@@ -18,7 +18,7 @@ public struct DesktopBridgeJob: Decodable, Sendable, Identifiable {
 }
 
 public extension DesktopBridgeClient {
-    static let jobMethods: Set<String> = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "saveMobileDatabaseResearchReport", "startDictionaryGeneration", "enqueueDeepResearchJob", "enqueueDatabaseDeepResearch", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport", "generateImmersionSession", "generateWritingWorkshopDraft", "generateContentTranslation", "researchChat", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "buildArgumentMap", "scanDictionaryNewEvidence", "generateConversationTitle"]
+    static let jobMethods: Set<String> = ["streamMobileCompanionChat", "saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "saveMobileDatabaseResearchReport", "startDictionaryGeneration", "enqueueDeepResearchJob", "enqueueDatabaseDeepResearch", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport", "generateImmersionSession", "generateWritingWorkshopDraft", "generateContentTranslation", "researchChat", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "buildArgumentMap", "scanDictionaryNewEvidence", "generateConversationTitle"]
     /// Synchronizing an already generated device result or exporting a saved
     /// document does not select or invoke the Mac's research model.
     static let providerFreeJobMethods: Set<String> = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveWritingWorkshopFromMobile", "saveMobileDatabaseResearchReport", "exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport"]
@@ -34,6 +34,11 @@ public extension DesktopBridgeClient {
     }
     func readJob(vaultId: String, id: String, cursor: Int = 0) async throws -> DesktopBridgeJob {
         try await jobRequest(vaultId: vaultId, id: id, query: [URLQueryItem(name: "cursor", value: String(cursor))], method: "GET").job
+    }
+    func jobForRequest(vaultId:String,requestId:String) async throws -> DesktopBridgeJob? {
+        guard UUID(uuidString:requestId) != nil else { throw DesktopBridgeError.malformedResponse }
+        do { return try await jobRequest(vaultId:vaultId,query:[URLQueryItem(name:"requestId",value:requestId)],method:"GET").job }
+        catch let error as APIError where error.status == 404 { return nil }
     }
     func cancelJob(vaultId: String, id: String) async throws -> DesktopBridgeJob {
         try await jobRequest(vaultId: vaultId, id: id, method: "DELETE").job

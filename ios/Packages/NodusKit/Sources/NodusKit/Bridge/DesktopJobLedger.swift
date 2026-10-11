@@ -16,6 +16,7 @@ public actor DesktopJobLedger {
         public var result: JSONValue?
         public var checkpointRecordId: String?
         public var checkpoint: JSONValue?
+        public var cancellationRequested:Bool? = nil
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
@@ -93,6 +94,8 @@ public actor DesktopJobLedger {
     public func update(id: String, job: DesktopBridgeJob) async throws {
         guard var request = requests[id], job.vaultId == vaultId, job.method == request.method,
               request.jobId == nil || request.jobId == job.id else { throw DesktopBridgeError.malformedResponse }
+        if request.method == "streamMobileCompanionChat",request.argsFingerprint != nil,
+           ["available","failed","interrupted","cancelled"].contains(request.state) { return }
         // A poll and an in-flight submission acknowledgement can arrive out of
         // order. An older accepted/running snapshot cannot undo a terminal save.
         if request.state == "available", job.state != .available { return }
@@ -112,6 +115,20 @@ public actor DesktopJobLedger {
     public func disconnected(id: String, issue: String) async throws {
         guard var request = requests[id] else { return }
         request.issue = issue; requests[id] = request; try await persist()
+    }
+    public func requestCancellation(id:String) async throws {
+        guard var request=requests[id] else { throw DesktopBridgeError.malformedResponse }
+        request.cancellationRequested=true;requests[id]=request;try await persist()
+    }
+    /// Only after the Mac confirms no request with this identity exists.
+    public func cancelUnsubmitted(id:String) async throws {
+        guard var request=requests[id],request.jobId == nil,request.cancellationRequested == true,request.state == "pending" else { throw DesktopBridgeError.malformedResponse }
+        request.state="cancelled";requests[id]=request;try await persist()
+    }
+    public func releaseLivePayload(id:String) async throws {
+        guard var request=requests[id],request.method == "streamMobileCompanionChat",["available","failed","interrupted","cancelled"].contains(request.state) else { throw DesktopBridgeError.malformedResponse }
+        if request.argsFingerprint == nil { request.argsFingerprint=try fingerprint(request.args) }
+        request.args=[];request.result=nil;requests[id]=request;try await persist()
     }
     /// A real successful Mac probe may recover previously authorised sends.
     /// Accepted jobs are only observed; failed/interrupted work is never restarted
@@ -134,6 +151,7 @@ public actor DesktopJobLedger {
                 continue
             }
             guard durablyPrepared.contains(request.id), requests[request.id]?.state == "pending" else { continue }
+            guard requests[request.id]?.cancellationRequested != true else { continue }
             guard await canSubmit(request) else { continue }
             do {
                 let job = try await submit(request)

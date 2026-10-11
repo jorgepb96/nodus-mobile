@@ -35,6 +35,8 @@ final class ChatHistoryStore {
         /// Optional for histories written by earlier releases. Each newly
         /// authored turn keeps its own time across reopening and synchronization.
         var createdAt: Date? = nil
+        var reasoning:String? = nil
+        var liveActivities:[JSONValue]? = nil
 
         enum Role: String, Codable { case user, assistant }
         enum Delivery: String, Codable { case streaming, completed, cancelled, failed }
@@ -56,12 +58,23 @@ final class ChatHistoryStore {
         var study: CompanionStudyChatOptions? = nil
         var world: CompanionWorldChatOptions? = nil
         var placement: CompanionChatPlacement? = nil
+        var pendingLive: PendingLive? = nil
 
         var preview: String {
             messages.last(where: { $0.role == .assistant })?.text
                 ?? messages.first?.text
                 ?? ""
         }
+    }
+
+    struct PendingLive: Codable,Hashable {
+        let pairingId:String
+        let request:CompanionLiveChatRequest
+        var sequence=0
+        var issue:String?
+        var activities:[JSONValue]? = nil
+        var reasoning:String? = nil
+        var concilium:JSONValue? = nil
     }
 
     struct DesktopSync: Codable, Hashable {
@@ -158,6 +171,7 @@ final class ChatHistoryStore {
         stored.updatedAt = Date()
         stored.downloadedUntil = nil
         if let existing = conversations.first(where:{$0.id == stored.id}) {
+            guard existing.pendingLive == nil else { throw Self.liveInProgress }
             guard existing.desktop?.deleted != true else { throw APIError(status:409,code:"chat_deleted_locally",message:"This conversation is waiting to be deleted. Start a new conversation to continue.") }
             stored.isLocalRecovery = existing.isLocalRecovery
             if stored.placement == nil { stored.placement = existing.placement }
@@ -246,6 +260,7 @@ final class ChatHistoryStore {
 
     func delete(_ id: String) throws {
         guard Self.validId(id) else { throw DesktopBridgeError.malformedResponse }
+        guard conversations.first(where:{$0.id == id})?.pendingLive == nil else { throw Self.liveInProgress }
         if var conversation = conversations.first(where:{$0.id == id}),var sync = conversation.desktop {
             sync.deleted = true;sync.generation += 1
             if sync.state == .saved { sync.state = .pending }
@@ -300,7 +315,7 @@ final class ChatHistoryStore {
         }
     }
     private func recoverInterruptedReplies() {
-        for var conversation in conversations where conversation.messages.contains(where:{$0.delivery == .streaming}) {
+        for var conversation in conversations where conversation.pendingLive == nil && conversation.messages.contains(where:{$0.delivery == .streaming}) {
             for index in conversation.messages.indices where conversation.messages[index].delivery == .streaming {
                 conversation.messages[index].delivery = .cancelled
                 conversation.messages[index].warning = String(localized:"This reply was interrupted. The received text is kept here.")
@@ -354,7 +369,7 @@ final class ChatHistoryStore {
                 if candidate?.text == raw["content"]?.stringValue,candidate?.role.rawValue == raw["role"]?.stringValue { native = candidate }
             }
             let id = native?.id ?? raw["id"]?.stringValue.flatMap(UUID.init(uuidString:)) ?? UUID()
-            return Message(id:id,role:raw["role"] == .string("assistant") ? .assistant:.user,text:raw["content"]!.stringValue!,citations:native?.citations ?? [],wasSemantic:native?.wasSemantic,warning:native?.warning,delivery:native?.delivery,desktopRecord:record,studyCitations:document.kind == .study ? raw["citations"]?.arrayValue ?? native?.studyCitations:nil,studyEvidence:native?.studyEvidence,worldFacts:native?.worldFacts,createdAt:raw["createdAt"]?.stringValue.flatMap(Self.messageDate) ?? native?.createdAt)
+            return Message(id:id,role:raw["role"] == .string("assistant") ? .assistant:.user,text:raw["content"]!.stringValue!,citations:native?.citations ?? [],wasSemantic:native?.wasSemantic,warning:native?.warning,delivery:native?.delivery,desktopRecord:record,studyCitations:document.kind == .study ? raw["citations"]?.arrayValue ?? native?.studyCitations:nil,studyEvidence:native?.studyEvidence,worldFacts:native?.worldFacts,createdAt:raw["createdAt"]?.stringValue.flatMap(Self.messageDate) ?? native?.createdAt,reasoning:native?.reasoning,liveActivities:native?.liveActivities)
         }
         func date(_ key: String,_ alternate: String) -> Date {
             let raw = object[key]?.stringValue ?? object[alternate]?.stringValue ?? ""
@@ -372,7 +387,7 @@ final class ChatHistoryStore {
         if !sync.deleted {
             let messages = conversation.messages.map { message -> JSONValue in
                 var raw = message.desktopRecord?.objectValue ?? [:]
-                if raw["id"] == nil && [.research,.study].contains(sync.kind) { raw["id"] = .string(message.id.uuidString) }
+                if raw["id"] == nil && (message.desktopRecord == nil || [.research,.study].contains(sync.kind)) { raw["id"] = .string(message.id.uuidString) }
                 raw["role"] = .string(message.role.rawValue);raw["content"] = .string(message.text)
                 if raw["createdAt"] == nil,let createdAt = message.createdAt {
                     let formatter = ISO8601DateFormatter();formatter.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
@@ -415,6 +430,130 @@ final class ChatHistoryStore {
         guard try JSONEncoder.nodus.encode(request).count <= 20 * 1024 * 1024 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
         return request
     }
+    private static var liveInProgress:APIError {
+        APIError(status:409,code:"chat_live_pending",message:"Esta conversación tiene una respuesta pendiente del Mac. Puedes recuperarla o detenerla antes de cambiarla.")
+    }
+    /// One atomic own-file write freezes the question and creates its local
+    /// reply placeholder. Ordinary history synchronization cannot send the
+    /// placeholder while the Mac writes the acknowledged answer.
+    func beginLive(_ proposed:Conversation,pairingId:String,generation:JSONValue,answerId:UUID) throws -> CompanionLiveChatRequest {
+        guard !synchronizing,Self.validId(proposed.id),let kind=linkedKind else { throw Self.liveInProgress }
+        var conversation=proposed
+        let existing=conversations.first(where:{$0.id == proposed.id})
+        guard existing?.pendingLive == nil,existing?.desktop?.deleted != true,
+              existing?.desktop?.sending == nil,existing?.isLocalRecovery != true else { throw Self.liveInProgress }
+        var sync=existing?.desktop ?? DesktopSync(kind:kind,baseline:nil)
+        guard sync.kind == kind,[.saved,.pending].contains(sync.state) else { throw Self.liveInProgress }
+        conversation.desktop=sync;conversation.placement=existing?.placement ?? proposed.placement
+        conversation.updatedAt=Date();conversation.downloadedUntil=nil
+        let id=UUID().uuidString
+        var edit=try request(conversation,sync:sync).objectValue!
+        edit["id"] = .string(id)
+        let frozen=try CompanionLiveChatRequest(requestId:id,kind:kind,answerId:answerId.uuidString,edit:.object(edit),generation:generation)
+        conversation.messages.append(Message(id:answerId,role:.assistant,text:"",citations:[],delivery:.streaming,createdAt:Date()))
+        conversation.pendingLive=PendingLive(pairingId:pairingId,request:frozen)
+        sync.state = .pending;sync.generation += 1;sync.issue=nil;conversation.desktop=sync
+        try write(conversation);return frozen
+    }
+    func applyLiveEvents(id:String,requestId:String,events:[DesktopBridgeJob.Event]) throws {
+        guard var conversation=conversations.first(where:{$0.id == id}),var pending=conversation.pendingLive,pending.request.requestId == requestId,
+              let index=conversation.messages.firstIndex(where:{$0.id == UUID(uuidString:pending.request.answerId)}) else { return }
+        var changed=false
+        for event in events.sorted(by:{$0.sequence < $1.sequence}) where event.sequence > pending.sequence {
+            pending.sequence=event.sequence;changed=true
+            guard event.args.first == .string(requestId) else { continue }
+            switch event.channel {
+            case "mobile:chat:delta": if let text=event.args.dropFirst().first?.stringValue { conversation.messages[index].text += text }
+            case "mobile:chat:replace": if let text=event.args.dropFirst().first?.stringValue { conversation.messages[index].text=text }
+            case "mobile:chat:reasoning": if let text=event.args.dropFirst().first?.stringValue { pending.reasoning=(pending.reasoning ?? "")+text }
+            case "mobile:chat:concilium": if let value=event.args.dropFirst().first,value.objectValue != nil { pending.concilium=value }
+            case "mobile:chat:activity":
+                if let value=event.args.dropFirst().first,let identity=value.objectValue?["id"]?.stringValue {
+                    var activities=pending.activities ?? []
+                    if let position=activities.firstIndex(where:{$0.objectValue?["id"] == .string(identity)}) { activities[position]=value } else { activities.append(value) }
+                    if activities.count>120,let position=activities.firstIndex(where:{$0.objectValue?["status"] != .string("active")}) { activities.remove(at:position) }
+                    pending.activities=activities
+                }
+            case "mobile:chat:checkpoint":
+                if let raw=event.args.dropFirst().first?.objectValue?["delivery"]?.stringValue,let delivery=Message.Delivery(rawValue:raw) { conversation.messages[index].delivery=delivery }
+            default: break
+            }
+        }
+        guard changed else { return };conversation.pendingLive=pending;conversation.updatedAt=Date();try write(conversation)
+    }
+    func liveIssue(id:String,requestId:String,issue:String) throws {
+        guard var conversation=conversations.first(where:{$0.id == id}),conversation.pendingLive?.request.requestId == requestId else { return }
+        conversation.pendingLive?.issue=issue;try write(conversation)
+    }
+    func cancelUnsubmittedLive(id:String,request:CompanionLiveChatRequest) throws {
+        guard var conversation=conversations.first(where:{$0.id == id}),conversation.pendingLive?.request == request else { return }
+        conversation.messages.removeAll { $0.id == UUID(uuidString:request.answerId) && $0.text.isEmpty }
+        conversation.pendingLive=nil;conversation.desktop?.state = .pending;conversation.desktop?.issue=nil
+        try write(conversation)
+    }
+    func finishLive(_ value:JSONValue,request:CompanionLiveChatRequest) throws {
+        let result=try CompanionLiveChatResult.decode(value,request:request)
+        guard let original=conversations.first(where:{$0.id == request.conversationId}),original.pendingLive?.request == request else { return }
+        var conversation=try Self.conversation(result.document)
+        conversation.downloadedUntil=nil
+        if let index=conversation.messages.firstIndex(where:{$0.id == UUID(uuidString:request.answerId)}) {
+            conversation.messages[index].delivery=result.interrupted ? .cancelled:.completed
+            conversation.messages[index].reasoning=original.pendingLive?.reasoning
+            conversation.messages[index].liveActivities=Self.settleActivities(original.pendingLive?.activities,cancelled:result.interrupted)
+            if result.interrupted { conversation.messages[index].warning="La generación se detuvo. El texto recibido se ha guardado." }
+        }
+        try write(conversation)
+    }
+    /// A cancelled/failed job has no successful result envelope. Recover the
+    /// real Mac checkpoint if it still belongs to this frozen question. A CAS
+    /// conflict keeps the mobile draft and exposes the remote for explicit choice.
+    func finishInterruptedLive(id:String,request:CompanionLiveChatRequest,remote:CompanionChatDocument?,state:String,issue:String?) throws {
+        guard var local=conversations.first(where:{$0.id == id}),local.pendingLive?.request == request else { return }
+        for index in local.messages.indices where local.messages[index].id == UUID(uuidString:request.answerId) {
+            local.messages[index].reasoning=local.pendingLive?.reasoning;local.messages[index].liveActivities=Self.settleActivities(local.pendingLive?.activities,cancelled:state == "cancelled")
+        }
+        if let remote {
+            try remote.validate(kind:request.kind,id:id)
+            if issue?.contains("chat_revision_conflict") == true {
+                local.pendingLive=nil;local.desktop?.state = .conflict;local.desktop?.remote=remote;local.desktop?.issue=issue
+                for index in local.messages.indices where local.messages[index].id == UUID(uuidString:request.answerId) { local.messages[index].delivery = .failed;local.messages[index].warning="El historial cambió en otro dispositivo. Se conserva esta respuesta para revisar el conflicto." }
+                try write(local);return
+            }
+            let frozenQuestion=request.edit.objectValue?["draft"]?.objectValue?["messages"]?.arrayValue?.last
+            let records=remote.data.objectValue?["messages"]?.arrayValue ?? []
+            let questionPresent=records.contains(where:{$0.objectValue?["id"] == frozenQuestion?.objectValue?["id"] && $0.objectValue?["content"] == frozenQuestion?.objectValue?["content"]})
+            if questionPresent {
+                var recovered=try Self.conversation(remote);recovered.downloadedUntil=nil
+                if let index=recovered.messages.firstIndex(where:{$0.id == UUID(uuidString:request.answerId)}) {
+                    recovered.messages[index].delivery=state == "cancelled" ? .cancelled:.failed
+                    recovered.messages[index].reasoning=local.pendingLive?.reasoning;recovered.messages[index].liveActivities=Self.settleActivities(local.pendingLive?.activities,cancelled:state == "cancelled")
+                    recovered.messages[index].warning=issue ?? "Respuesta interrumpida. El texto recibido se conserva."
+                } else if let partial=local.messages.first(where:{$0.id == UUID(uuidString:request.answerId)}),!partial.text.isEmpty {
+                    var partial=partial;partial.delivery = .failed;partial.warning=issue;recovered.messages.append(partial)
+                    recovered.desktop?.state = .pending;recovered.desktop?.generation += 1
+                } else if !recovered.messages.isEmpty {
+                    recovered.messages[recovered.messages.count-1].warning=issue ?? "La respuesta no pudo completarse. La pregunta se ha guardado."
+                }
+                try write(recovered);return
+            }
+            if state == "cancelled",remote.revision == local.desktop?.baseline?.revision { try cancelUnsubmittedLive(id:id,request:request);return }
+            local.desktop?.state = .conflict;local.desktop?.remote=remote
+        } else {
+            if state == "cancelled",local.desktop?.baseline == nil { try cancelUnsubmittedLive(id:id,request:request);return }
+            local.desktop?.state = .blocked
+        }
+        local.pendingLive=nil;local.desktop?.issue=issue
+        for index in local.messages.indices where local.messages[index].id == UUID(uuidString:request.answerId) {
+            local.messages[index].delivery=state == "cancelled" ? .cancelled:.failed;local.messages[index].warning=issue
+        }
+        try write(local)
+    }
+    private static func settleActivities(_ events:[JSONValue]?,cancelled:Bool) -> [JSONValue]? {
+        events?.map { value in
+            guard var raw=value.objectValue,raw["status"] == .string("active") else { return value }
+            raw["status"] = .string(cancelled ? "cancelled":"failed");raw["finishedAt"] = .double(Date().timeIntervalSince1970*1000);return .object(raw)
+        }
+    }
     /// Serializes pending own work with revision checks and frozen request IDs.
     /// Edits arriving while a send awaits keep their newer generation. Read packs
     /// and metadata browsing never manufacture a saved acknowledgement.
@@ -424,7 +563,7 @@ final class ChatHistoryStore {
         let ids = conversations.filter { $0.desktop?.state == .pending }.map(\.id)
         for id in ids {
             guard var conversation = conversations.first(where:{$0.id == id}),var sync = conversation.desktop,
-                  !conversation.messages.contains(where:{$0.delivery == .streaming}) else { continue }
+                  conversation.pendingLive == nil,!conversation.messages.contains(where:{$0.delivery == .streaming}) else { continue }
             do {
                 if sync.sending == nil {
                     if sync.deleted && sync.baseline == nil {
@@ -493,8 +632,9 @@ final class ChatHistoryStore {
             try write(recovered)
             let messages = remote.data.objectValue?["messages"]?.arrayValue ?? []
             for index in conversation.messages.indices {
-                let rawId = conversation.messages[index].desktopRecord?.objectValue?["id"]
-                let raw = rawId.flatMap { identity in messages.first { $0.objectValue?["id"] == identity } }
+                let message=conversation.messages[index]
+                let rawId = message.desktopRecord?.objectValue?["id"]
+                let raw = rawId.flatMap { identity in messages.first { $0.objectValue?["id"] == identity } } ?? messages.first { $0.objectValue?["id"]?.stringValue.flatMap(UUID.init(uuidString:)) == message.id }
                 if let raw { conversation.messages[index].desktopRecord = raw }
             }
         }

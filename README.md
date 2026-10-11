@@ -417,3 +417,22 @@ draft PRs: the privileged CLA workflow also runs on PR updates and ignores `[ski
 
 Proprietary. All rights reserved — see [LICENSE](LICENSE), including its note on the revisions that
 were published under MIT before the code moved here.
+
+Native live chat now uses the native iPhone/iPad composer, conversation history and options
+sheet in both execution modes. A closed Mac job acknowledges the frozen question before
+calling its real Research, Worldbuilding, Database or Study/Teaching adapter, periodically
+commits its received answer, and returns the actual saved document. Model catalogues,
+subscription sessions, local providers, prompts, source filters, notebooks, retrieval limits,
+effort, skills and Concilium stay on the Mac. Provider credentials never enter the native
+request. Jobs and cancellation intents retain their identity through disconnection or
+reopening; leaving a screen stops observation without cancelling accepted Mac work. The
+ordinary history queue cannot overwrite a live partial. Conflicts preserve the mobile draft
+and the actual remote document, and successful imports release duplicated ledger payloads.
+
+Rich-result cleanup is deferred while a live adapter produces attachments/artifacts. Final
+cleanup reads the actual saved conversation and includes original Concilium member answers.
+Native live activity and received reasoning remain consultable with the authored answer.
+The new Desktop contract fixtures and Swift protocol/history regressions are **prepared, not
+executed**. All ten new acceptance rows are pending: no compilation, provider call, device
+walkthrough, screenshot or TestFlight availability is claimed for this change. Existing
+workflows remain unchanged; intermediate work is committed locally without triggering CI.

@@ -1879,6 +1879,66 @@
       "category": "generation",
       "result": "pending",
       "evidence": []
+    },
+    {
+      "id": "generation.chat.nativeLiveMacProvidersAndModels",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.chat.questionAcknowledgedBeforeProvider",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.durablePartialAndExactJobRecovery",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.explicitCancellationAfterLostAcknowledgement",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.liveCASConflictPreservesBothDevices",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.nativeLiveComposerHistoryAndKeyboard",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.chat.nativeMacContextPromptsEffortSkillsAndConcilium",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.chat.liveActivityAndOriginalMemberResults",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.chat.noAutomaticModeFallback",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.chat.checkpointsPreservePendingRichAssets",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
     }
   ],
   "sourceOfTruth": {

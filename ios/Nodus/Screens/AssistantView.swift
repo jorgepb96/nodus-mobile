@@ -24,6 +24,7 @@ struct ChatScreen: View {
         self.session = session
         self.openProviders = openProviders
         _history = State(initialValue: ChatHistoryStore.shared(spaceId: session.connection.storageId))
+        _liveOptions = State(initialValue:NativeLiveChatOptions(spaceId:session.connection.storageId))
     }
 
     struct Turn: Identifiable {
@@ -39,6 +40,8 @@ struct ChatScreen: View {
         var worldFacts: JSONValue?
         var createdAt: Date? = Date()
         var desktopRecord:JSONValue?
+        var reasoning:String?
+        var liveActivities:[JSONValue] = []
         /// The material the answer was built from, grouped by kind — ideas, temas, huecos —
         /// so it can be read beside the answer instead of taken on trust.
         var sections: [CorpusRetrieval.MaterialSection] = []
@@ -61,6 +64,8 @@ struct ChatScreen: View {
     /// nothing in it at all. Nothing about a store that reads one small file justifies the
     /// window in which it does not exist.
     @State private var history: ChatHistoryStore
+    @State private var liveOptions:NativeLiveChatOptions
+    @State private var showingLiveOptions=false
     /// The conversation these turns belong to. Nil until the first question is asked, so an
     /// opened-and-abandoned tab leaves nothing behind.
     @State private var conversationId: String?
@@ -86,6 +91,9 @@ struct ChatScreen: View {
                         ForEach(turns) { turn in
                             TurnBubble(turn: turn, accent: session.accent, session: session, conversationId:conversationId)
                                 .id(turn.id)
+                        }
+                        if let pending=conversationId.flatMap({id in history.conversations.first(where:{$0.id == id})?.pendingLive }) {
+                            NativeLiveChatProgressView(activities:pending.activities ?? [],reasoning:pending.reasoning,concilium:pending.concilium,accent:session.accent)
                         }
                         // Only while nothing has arrived: once the first token lands the
                         // prose itself is the progress, and two indicators is one too many.
@@ -130,6 +138,7 @@ struct ChatScreen: View {
         }
         .nodusSheet(isPresented:$showingStudyOptions) { ChatStudyOptionsView(session:session,options:$studyOptions) }
         .nodusSheet(isPresented:$showingWorldOptions) { ChatWorldOptionsView(session:session,options:$worldOptions) }
+        .nodusSheet(isPresented:$showingLiveOptions) { NativeLiveChatOptionsView(session:session,options:liveOptions,conversationId:conversationId) }
         .task {
             // Lent to the chrome, not copied into it: the header ticks layers on and off in the
             // very object the next question is built from.
@@ -138,10 +147,18 @@ struct ChatScreen: View {
             if session.connection.desktopPairingId != nil,session.connection.role.canSendChanges {
                 do { try history.bind(kind:CompanionChatKind(vaultType:session.vaultType)) } catch { self.error = error.localizedDescription }
             }
+            if session.aiExecutionMode == .live {
+                await liveOptions.load(session:session,conversationId:conversationId)
+                if let id=conversationId,history.conversations.first(where:{$0.id == id})?.pendingLive != nil { observeLive(id) }
+                else if turns.isEmpty,let pending=history.active.first(where:{$0.pendingLive != nil}) { open(pending) }
+            }
         }
         // A fetch from iCloud writes conversation files underneath this store, which would
         // otherwise keep showing the list it read when the screen opened.
         .onChange(of: cloud?.lastFetchedAt) { _, _ in history.reload() }
+        .onChange(of:conversationId.flatMap { id in history.conversations.first(where:{$0.id == id})?.updatedAt }) { _,_ in
+            if let id=conversationId,history.conversations.first(where:{$0.id == id})?.pendingLive != nil || isThinking && session.aiExecutionMode == .live { refreshLive(id) }
+        }
         .onDisappear {
             // Only if they are still ours. On iPad the detail column really does swap screens,
             // and a chat that has been replaced should not leave its controls on the header.
@@ -167,7 +184,14 @@ struct ChatScreen: View {
     /// name was chosen.
     private var modelBar: some View {
         VStack(spacing: 2) {
-            ChatModelMenu(accent: session.accent, openProviders: openProviders)
+            Group {
+                if session.aiExecutionMode == .live {
+                    Button { composerFocused=false;showingLiveOptions=true } label: {
+                        Label(liveOptions.modelName(liveOptions.effectiveModel),systemImage:"desktopcomputer")
+                            .font(.caption).lineLimit(1).truncationMode(.middle).frame(minHeight:44)
+                    }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+                } else { ChatModelMenu(accent: session.accent, openProviders: openProviders) }
+            }
                 // Room at both ends for the compose button overlaid at the trailing edge, taken
                 // symmetrically so a long model name is truncated rather than drawn under it —
                 // and so the pill stays on the centre line whatever it is naming.
@@ -206,6 +230,10 @@ struct ChatScreen: View {
                 Button { composerFocused = false;showingWorldOptions = true } label: {
                     Label(worldOptions.focus.isEmpty ? "Contexto del mundo":worldOptions.focus.map(\.title).joined(separator:" · "),systemImage:"globe").font(.caption).lineLimit(1).padding(.horizontal,12).frame(minHeight:44)
                 }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+            } else if session.aiExecutionMode == .live {
+                Button { composerFocused=false;showingLiveOptions=true } label: {
+                    Label("Contexto y opciones",systemImage:"square.3.layers.3d").font(.caption).frame(minHeight:44)
+                }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
             } else {
                 Menu {
                     ForEach(ContextSectionKind.allCases,id:\.self) { kind in
@@ -226,6 +254,10 @@ struct ChatScreen: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .padding(.horizontal, 52)
+            }
+            if let pending=conversationId.flatMap({ id in history.conversations.first(where:{$0.id == id})?.pendingLive }),let issue=pending.issue {
+                Text(issue).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                Button("Recuperar respuesta del Mac") { if let id=conversationId { observeLive(id) } }.font(.caption).frame(minHeight:44)
             }
         }
         .padding(.horizontal, 8)
@@ -253,10 +285,16 @@ struct ChatScreen: View {
         databaseIds = []
         studyOptions = CompanionStudyChatOptions()
         worldOptions = CompanionWorldChatOptions()
+        liveOptions.preferences.attachmentIds=[]
+        liveOptions.preferences.systemPromptId=nil;liveOptions.preferences.useMacPrompt=true
     }
 
     private func open(_ conversation: ChatHistoryStore.Conversation) {
         stopCurrentConversation()
+        displayConversation(conversation)
+        if conversation.pendingLive != nil { observeLive(conversation.id) }
+    }
+    private func displayConversation(_ conversation:ChatHistoryStore.Conversation) {
         error = nil
         conversationId = conversation.id
         conversationTitle = conversation.title
@@ -264,6 +302,11 @@ struct ChatScreen: View {
         databaseIds = conversation.databaseIds ?? []
         studyOptions = conversation.study ?? CompanionStudyChatOptions()
         worldOptions = conversation.world ?? CompanionWorldChatOptions()
+        if let generation=conversation.pendingLive?.request.generation.objectValue {
+            liveOptions.preferences.model=generation["model"]
+            liveOptions.preferences.thinkingEffort=generation["thinkingEffort"]?.stringValue ?? "standard"
+            if let selection=generation["selection"] { liveOptions.preferences.selection=selection }
+        } else { liveOptions.adoptConversation(conversation.desktop?.baseline) }
         // The retrieved material is not kept — see `ChatHistoryStore` — so a re-opened
         // conversation shows what was said and what it cited, and does not pretend to still
         // hold the corpus rows the answer was built from.
@@ -274,13 +317,15 @@ struct ChatScreen: View {
                 text: message.text,
                 citations: message.citations,
                 mode: message.wasSemantic.map { $0 ? .semantic : .lexical },
-                warning: message.delivery == .streaming ? String(localized:"This reply was interrupted. The received text is kept here."):message.warning,
+                warning: message.delivery == .streaming && conversation.pendingLive == nil ? String(localized:"This reply was interrupted. The received text is kept here."):message.warning,
                 delivery: message.delivery,
                 studyCitations:message.studyCitations ?? [],
                 studyEvidence:message.studyEvidence,
                 worldFacts:message.worldFacts,
                 createdAt:message.createdAt,
-                desktopRecord:message.desktopRecord
+                desktopRecord:message.desktopRecord,
+                reasoning:message.reasoning,
+                liveActivities:message.liveActivities ?? []
             )
         }
     }
@@ -288,12 +333,15 @@ struct ChatScreen: View {
     /// Save the accepted question, periodic received text and terminal state.
     private func persist() throws {
         guard !turns.isEmpty else { return }
+        try history.save(conversationForSaving())
+    }
+    private func conversationForSaving() -> ChatHistoryStore.Conversation {
         let id = conversationId ?? UUID().uuidString
         conversationId = id
         if conversationTitle.isEmpty {
             conversationTitle = ChatHistoryStore.title(from: turns.first?.text ?? "")
         }
-        try history.save(ChatHistoryStore.Conversation(
+        return ChatHistoryStore.Conversation(
             id: id,
             title: history.conversations.first(where:{$0.id == id})?.title ?? conversationTitle,
             messages: turns.map { turn in
@@ -309,7 +357,9 @@ struct ChatScreen: View {
                     studyCitations:turn.studyCitations.isEmpty ? nil:turn.studyCitations,
                     studyEvidence:turn.studyEvidence,
                     worldFacts:turn.worldFacts,
-                    createdAt:turn.createdAt
+                    createdAt:turn.createdAt,
+                    reasoning:turn.reasoning,
+                    liveActivities:turn.liveActivities.isEmpty ? nil:turn.liveActivities
                 )
             },
             createdAt: conversationCreatedAt,
@@ -318,14 +368,68 @@ struct ChatScreen: View {
             databaseIds: session.vaultType == .databases ? databaseIds:nil,
             study:isStudy ? studyOptions:nil,
             world:session.vaultType == .worldbuilding ? worldOptions:nil
-        ))
+        )
     }
-    private func stopCurrentConversation() {
+    private func stopCurrentConversation(cancelMac:Bool = false) {
+        if let id=conversationId,history.conversations.first(where:{$0.id == id})?.pendingLive != nil {
+            generationId=nil;running?.cancel();running=nil
+            if cancelMac {
+                isThinking=true
+                running=Task {
+                    do { _=try await NativeLiveChat.step(id:id,session:session,cancel:true) }
+                    catch { NativeLiveChat.recordIssue(id:id,session:session,error:error) }
+                    if conversationId == id { refreshLive(id) }
+                }
+            } else { isThinking=false }
+            return
+        }
         if isThinking {
             if let index = turns.indices.last,turns[index].role == .assistant { turns[index].delivery = .cancelled;turns[index].warning = String(localized:"Cancelled.") }
             do { try persist() } catch { self.error = error.localizedDescription }
         }
         generationId = nil;running?.cancel();running = nil;isThinking = false
+    }
+    private func refreshLive(_ id:String) {
+        guard conversationId == id,let conversation=history.conversations.first(where:{$0.id == id}) else { return }
+        displayConversation(conversation);isThinking=conversation.pendingLive != nil
+    }
+    private func observeLive(_ id:String) {
+        running?.cancel();isThinking=true
+        let identity=UUID();generationId=identity
+        running=Task {
+            await NativeLiveChat.observe(id:id,session:session) {
+                if generationId == identity { refreshLive(id) }
+            }
+            if generationId == identity { running=nil;refreshLive(id) }
+        }
+    }
+    private func askLive() {
+        guard !isThinking,session.aiExecutionMode == .live else { return }
+        guard let pairing=session.connection.desktopPairingId,session.connection.role.canSendChanges else { error="Vincula Nodus con tu Mac para generar en modo live.";return }
+        let question=draft.trimmingCharacters(in:.whitespacesAndNewlines);guard !question.isEmpty else { return }
+        if session.vaultType == .databases,databaseIds.isEmpty { error="Elige al menos una base de datos.";showingDatabases=true;return }
+        if isStudy {
+            let selection=studyOptions.selection
+            if selection.scope == "manual" && selection.sourceKeys.isEmpty || selection.scope == "course" && selection.courseId == nil || selection.scope == "subject" && selection.subjectId == nil || selection.scope == "topic" && selection.topicId == nil {
+                error="Elige las fuentes o el alcance de esta pregunta.";showingStudyOptions=true;return
+            }
+        }
+        if session.vaultType == .worldbuilding,worldOptions.selection.scope == "manual",worldOptions.selection.entryKeys.isEmpty { error="Elige los elementos del mundo para esta pregunta.";showingWorldOptions=true;return }
+        let prior=turns,priorId=conversationId,priorTitle=conversationTitle,priorDate=conversationCreatedAt
+        do {
+            let kind=CompanionChatKind(vaultType:session.vaultType)
+            try history.bind(kind:kind)
+            let generation=try liveOptions.generation(kind:kind)
+            turns.append(Turn(role:.user,text:question))
+            if conversationId == nil { conversationCreatedAt=Date() }
+            let proposal=conversationForSaving(),answerId=UUID()
+            _=try history.beginLive(proposal,pairingId:pairing,generation:generation,answerId:answerId)
+            draft="";error=nil;composerFocused=false
+            refreshLive(proposal.id);observeLive(proposal.id)
+        } catch {
+            turns=prior;conversationId=priorId;conversationTitle=priorTitle;conversationCreatedAt=priorDate
+            self.error=error.localizedDescription
+        }
     }
 
     private var emptyState: some View {
@@ -367,7 +471,7 @@ struct ChatScreen: View {
                 .nodusGlass(NodusGlass(.regular, tint: session.accent), in: Capsule())
 
             Button {
-                if isThinking { stopCurrentConversation() } else { ask() }
+                if isThinking { stopCurrentConversation(cancelMac:true) } else { ask() }
             } label: {
                 Image(systemName: isThinking ? "stop.circle.fill" : "arrow.up.circle.fill")
                     .font(.system(size: 30))
@@ -393,6 +497,7 @@ struct ChatScreen: View {
     }
 
     private func ask() {
+        if session.aiExecutionMode == .live { askLive();return }
         guard !isThinking,session.aiExecutionMode == .autonomous else { return }
         guard let model = ai.model(for: .chat) else {
             error = String(localized: "Choose a chat model under Providers.")
@@ -650,9 +755,10 @@ private struct TurnBubble: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .nodusGlass(NodusGlass(.regular, tint: accent))
                 if hasSavedDetails { Button { showingRichAnswer=true } label: { Label("Ver adjuntos y detalles",systemImage:"paperclip").frame(minHeight:44) }.buttonStyle(.plain).foregroundStyle(accent) }
+                if let warning=turn.warning { NodusNotice(tone:.caution,title:"Estado de la solicitud",message:LocalizedStringKey(warning)) }
             } else {
                 if let warning = turn.warning {
-                    NodusNotice(tone: .caution, title: "Lexical retrieval", message: LocalizedStringKey(warning))
+                    NodusNotice(tone: .caution, title: turn.mode == .lexical ? "Lexical retrieval":"Estado de la respuesta", message: LocalizedStringKey(warning))
                 }
                 if turn.text.isEmpty {
                     Text("…").frame(maxWidth: .infinity, alignment: .leading)
@@ -711,6 +817,7 @@ private struct TurnBubble: View {
                 if !turn.sections.isEmpty {
                     MaterialBrowser(sections: turn.sections, accent: accent, session: session)
                 }
+                NativeLiveChatProgressView(activities:turn.liveActivities,reasoning:turn.reasoning,concilium:nil,accent:accent)
 
                 if !turn.text.isEmpty {
                     HStack(spacing: 8) {

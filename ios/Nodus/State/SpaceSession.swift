@@ -391,12 +391,16 @@ final class SpaceSession {
                let ledger = try? await DesktopJobLedgers.shared.ledger(pairingId: pairingId, vaultId: vaultId) {
                 let before = Dictionary(uniqueKeysWithValues: await ledger.all().map { ($0.id, $0.state) })
                 try? await ledger.synchronize(list: { try await bridge.listJobs(vaultId: vaultId) }, canSubmit: { request in
+                    // Native chat serializes submit/cancel/recovery with its
+                    // durable conversation; this ledger only observes its jobs.
+                    if request.method == "streamMobileCompanionChat" { return false }
                     if DesktopBridgeClient.providerFreeJobMethods.contains(request.method) { return true }
                     return await MainActor.run { self.aiExecutionMode == .live }
                 }, submit: { request in
                     try await bridge.submitJob(vaultId: vaultId, method: request.method, args: request.args, idempotencyKey: request.id)
                 })
                 let changed = await ledger.all().filter { before[$0.id] != $0.state }
+                await NativeLiveChat.reconcile(session:self)
                 if let progress = try? await CompanionImmersionProgressOutboxes.shared.outbox(pairingId: pairingId, vaultId: vaultId) {
                     let beforeProgress = await progress.revision
                     for result in await ledger.all() where result.method == "saveImmersionGeneratedSession" && result.state == "available" {

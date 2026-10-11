@@ -220,18 +220,14 @@ struct ChatTab: View {
 
     var body: some View {
         Group {
-            if session.aiExecutionMode == .live, session.connection.desktopPairingId != nil {
-                SharedDesktopSurface(session: session, surface: .chat)
-            } else {
-                // The chat's model menu offers the pinned models; everything else — the full
-                // catalogue, the keys — is behind this sheet, which the tab owns.
-                ChatScreen(session: session, openProviders: { showingProviders = true })
-            }
+            ChatScreen(session: session, openProviders: { showingProviders = true })
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingProviders = true } label: { Image(systemName: "key") }
-                    .tint(session.accent)
+                if session.aiExecutionMode == .autonomous {
+                    Button { showingProviders = true } label: { Image(systemName: "key") }
+                        .tint(session.accent)
+                }
             }
             if showsModalDone {
                 ToolbarItem(placement: .topBarTrailing) {
