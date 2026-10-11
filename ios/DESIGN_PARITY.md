@@ -22,7 +22,8 @@ and camera scanning acceptance remains pending.
 1. **Auditable contract baseline (phase 0)** — Desktop's 73 routes, 1,595 public actions and 49 mutable
    tables are captured in `Parity/parity-manifest.json`. The check rejects Desktop drift,
    unknown delivery channels and any `implemented` claim with no named test evidence. The
-   only explicit product exclusion is generated Deep Research audio.
+   phase-0 exclusion of generated Deep Research audio is historical; the current operation
+   matrix defines the release scope, including consultation of saved narration.
 2. **Deterministic visual baseline** — `NodusUITests` opens the bundled public-domain vault at a
    requested route on iPhone and iPad. The Electron and simulator capture tools produce the
    three comparable images under `artifacts/parity/<phase>/` without reading a real vault.
