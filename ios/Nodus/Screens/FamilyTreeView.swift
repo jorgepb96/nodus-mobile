@@ -2,15 +2,8 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
-/// The family tree, walked one person at a time.
-///
-/// The desktop draws a whole pedigree at once on a canvas the width of a monitor. A phone has
-/// no such canvas, so this inverts it: one person is the focus, their parents sit above and
-/// their children below, and tapping any of them makes *them* the focus. Panning a
-/// three-generation chart on a 400-point screen is worse than walking it.
-///
-/// Everything comes from `relationships`, whose `kind` says what the edge is. The rows are
-/// published; nothing here needs the desktop.
+/// Recorded kinship can be consulted as focused relatives or as a complete,
+/// pannable pedigree. Both use the same authenticated/offline corpus reads.
 struct FamilyTreeView: View {
     let session: SpaceSession
     /// Where to start. Nil opens on whoever has the most relatives, which is nearly always the
@@ -27,6 +20,18 @@ struct FamilyTreeView: View {
     @State private var isLoading = true
     @State private var error: String?
     @State private var history: [String] = []
+    @State private var query = ""
+    @State private var showPedigree = false
+    @State private var ancestorsAbove = true
+    @State private var paternalVisible = true
+    @State private var maternalVisible = true
+    @State private var paternalColor = Color.blue
+    @State private var maternalColor = Color.pink
+    @State private var zoom = 1.0
+
+    private var projection: FamilyTreeProjection {
+        FamilyTreeProjection(people: Array(people.values), relationships: relationships)
+    }
 
     /// REST rows become available as soon as the publication changes; portrait assets become
     /// available after the optional mirror has finished importing that same revision.
@@ -44,20 +49,27 @@ struct FamilyTreeView: View {
                 if isLoading, focus == nil {
                     ProgressView().tint(session.accent).padding(.top, 60)
                 } else if let focus {
-                    generation(parents, title: "Parents", icon: "arrow.up")
-                    focusCard(focus)
-                    if !partners.isEmpty {
-                        generation(partners, title: "Partner", icon: "heart")
-                    }
-                    if !siblings.isEmpty {
-                        generation(siblings, title: "Siblings", icon: "arrow.left.and.right")
-                    }
-                    generation(children, title: "Children", icon: "arrow.down")
+                    treeControls
+                    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { searchResults }
+                    if showPedigree {
+                        pedigree
+                        focusCard(focus)
+                    } else {
+                        generation(parents, title: "Parents", icon: "arrow.up")
+                        focusCard(focus)
+                        if !partners.isEmpty {
+                            generation(partners, title: "Partner", icon: "heart")
+                        }
+                        if !siblings.isEmpty {
+                            generation(siblings, title: "Siblings", icon: "arrow.left.and.right")
+                        }
+                        generation(children, title: "Children", icon: "arrow.down")
 
-                    if parents.isEmpty, children.isEmpty, partners.isEmpty, siblings.isEmpty {
-                        Text("This person has no relationships recorded in the publication.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                            .padding(.top, 12)
+                        if parents.isEmpty, children.isEmpty, partners.isEmpty, siblings.isEmpty {
+                            Text("This person has no relationships recorded in the publication.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                                .padding(.top, 12)
+                        }
                     }
                 } else if !isLoading {
                     ContentUnavailableView(
@@ -87,9 +99,142 @@ struct FamilyTreeView: View {
             }
         }
         .task(id: loadID) { await load() }
+        .accessibilityIdentifier("genealogy-family-tree")
     }
 
     // MARK: Pieces
+
+    private var treeControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            NodusSearchField(text: $query, prompt: "Find a person", accent: session.accent, isBusy: false)
+                .accessibilityIdentifier("family-tree-search")
+            Picker("Tree view", selection: $showPedigree) {
+                Text("Relatives").tag(false)
+                Text("Pedigree").tag(true)
+            }.pickerStyle(.segmented).accessibilityIdentifier("family-tree-mode")
+            if showPedigree {
+                DisclosureGroup("Tree controls") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker("Orientation", selection: $ancestorsAbove) {
+                            Text("Ancestors above").tag(true)
+                            Text("Descendants above").tag(false)
+                        }.pickerStyle(.segmented).accessibilityIdentifier("family-tree-orientation")
+                        Toggle("Paternal branch", isOn: $paternalVisible).accessibilityIdentifier("family-tree-paternal-visible")
+                        ColorPicker("Paternal branch color", selection: $paternalColor, supportsOpacity: false)
+                            .accessibilityIdentifier("family-tree-paternal-color")
+                        Toggle("Maternal branch", isOn: $maternalVisible).accessibilityIdentifier("family-tree-maternal-visible")
+                        ColorPicker("Maternal branch color", selection: $maternalColor, supportsOpacity: false)
+                            .accessibilityIdentifier("family-tree-maternal-color")
+                        HStack {
+                            Text("Zoom")
+                            Slider(value: $zoom, in: 0.6...1.8, step: 0.1).accessibilityIdentifier("family-tree-zoom")
+                            Text(zoom, format: .percent.precision(.fractionLength(0))).font(.caption.monospacedDigit())
+                        }
+                        Button("Reset view") {
+                            zoom = 1; ancestorsAbove = true; paternalVisible = true; maternalVisible = true
+                            paternalColor = .blue; maternalColor = .pink
+                        }.accessibilityIdentifier("family-tree-reset")
+                    }.padding(.top, 8)
+                }
+                HStack {
+                    Label("Parent", systemImage: "arrow.up").foregroundStyle(.secondary)
+                    Label("Partner", systemImage: "heart").foregroundStyle(.pink)
+                    Label("Siblings", systemImage: "arrow.left.and.right").foregroundStyle(.orange)
+                }.font(.caption2).foregroundStyle(.secondary)
+                Text("Dashed parent lines indicate adoption.").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var searchResults: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let results = projection.search(query)
+            if results.isEmpty { Text("No matches").foregroundStyle(.secondary) }
+            ForEach(results, id: \.self) { id in
+                if let person = people[id] {
+                    Button { refocus(on: id, remember: true); query = "" } label: { relativeChip(person) }
+                        .buttonStyle(.plain).accessibilityIdentifier("family-tree-search-result-\(id)")
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Each person in the recorded component appears once. Two-axis scrolling keeps
+    /// every generation reachable without squeezing names to fit a phone screen.
+    private var pedigree: some View {
+        let source = projection
+        let nodes = source.pedigree(focus: focus?.string("person_id") ?? "")
+            .filter { $0.visible(paternal: paternalVisible, maternal: maternalVisible) }
+        let layout = source.layout(focus: focus?.string("person_id") ?? "")
+        let visibleIds = Set(nodes.map(\.id))
+        let cardWidth = 156.0 * zoom, cardHeight = 132.0 * zoom
+        let gap = 28.0 * zoom
+        let width = max(320, layout.width * zoom + gap * 2)
+        let height = max(120, layout.height * zoom + gap * 2)
+        let points = Dictionary(uniqueKeysWithValues: layout.nodes.filter { visibleIds.contains($0.id) }.map { node in
+            let y = ancestorsAbove ? node.y : layout.height - 132 - node.y
+            return (node.id, CGPoint(x: gap + node.x * zoom, y: gap + y * zoom))
+        })
+        return ScrollViewReader { reader in
+            VStack(alignment: .leading, spacing: 8) {
+                Button("Center on focus person") {
+                    if let id = focus?.string("person_id") { withAnimation { reader.scrollTo(id, anchor: .center) } }
+                }.font(.caption).accessibilityIdentifier("family-tree-center")
+                ScrollView([.horizontal, .vertical]) {
+                    ZStack(alignment: .topLeading) {
+                        Canvas { context, _ in
+                            for edge in source.edges {
+                                guard let from = points[edge.from], let to = points[edge.to] else { continue }
+                                var line = Path()
+                                line.move(to: CGPoint(x: from.x + cardWidth / 2, y: from.y + cardHeight / 2))
+                                line.addLine(to: CGPoint(x: to.x + cardWidth / 2, y: to.y + cardHeight / 2))
+                                let color: Color = edge.kind == .spouse ? .pink : edge.kind == .sibling ? .orange : .secondary
+                                context.stroke(line, with: .color(color), style: StrokeStyle(lineWidth: 2, dash: edge.adoptive ? [6, 4] : []))
+                            }
+                        }.frame(width: width, height: height).accessibilityHidden(true)
+                        ForEach(nodes) { node in
+                            if let person = people[node.id], let point = points[node.id] {
+                                Button { refocus(on: node.id, remember: true) } label: {
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(person.text("display_name") ?? "Sin nombre").font(.footnote.weight(.semibold)).lineLimit(2)
+                                        if let years = lifespan(person) { Text(years).font(.caption2).lineLimit(1) }
+                                        if node.branches.contains(.paternal) { Text("Paternal branch").font(.caption2).foregroundStyle(paternalColor) }
+                                        if node.branches.contains(.maternal) { Text("Maternal branch").font(.caption2).foregroundStyle(maternalColor) }
+                                        if source.edges.contains(where: { $0.adoptive && $0.to == node.id && points[$0.from] != nil }) {
+                                            Text("Adoptive").font(.caption2)
+                                        }
+                                    }
+                                    .frame(width: 140, height: 116, alignment: .leading).padding(8)
+                                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                                    .overlay { RoundedRectangle(cornerRadius: 12).stroke(node.id == focus?.string("person_id") ? session.accent : branchColor(node.branches), lineWidth: 2) }
+                                    .scaleEffect(zoom, anchor: .topLeading)
+                                    .frame(width: cardWidth, height: cardHeight, alignment: .topLeading)
+                                }
+                                .buttonStyle(.plain).id(node.id)
+                                .accessibilityIdentifier("family-tree-person-\(node.id)")
+                                .position(x: point.x + cardWidth / 2, y: point.y + cardHeight / 2)
+                            }
+                        }
+                    }.frame(width: width, height: height)
+                }
+                .frame(height: min(480, height))
+                .accessibilityIdentifier("family-tree-pedigree")
+                .onAppear {
+                    if let id = focus?.string("person_id") { reader.scrollTo(id, anchor: .center) }
+                }
+                .onChange(of: focus?.string("person_id")) { _, id in
+                    if let id { reader.scrollTo(id, anchor: .center) }
+                }
+            }
+        }
+    }
+
+    private func branchColor(_ branches: Set<FamilyTreeProjection.Branch>) -> Color {
+        if branches.contains(.paternal) && branches.contains(.maternal) { return session.accent }
+        if branches.contains(.paternal) { return paternalColor }
+        if branches.contains(.maternal) { return maternalColor }
+        return Color.secondary.opacity(0.5)
+    }
 
     private func focusCard(_ person: Row) -> some View {
         VStack(spacing: 10) {
@@ -144,7 +289,13 @@ struct FamilyTreeView: View {
                                 guard let id = person.string("person_id") else { return }
                                 refocus(on: id, remember: true)
                             } label: {
-                                relativeChip(person)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    relativeChip(person)
+                                    if let selected = focus?.string("person_id"), let id = person.string("person_id"),
+                                       projection.isAdoptive(between: selected, and: id) {
+                                        Label("Adoptive", systemImage: "person.2").font(.caption2).padding(.horizontal, 11)
+                                    }
+                                }
                             }
                             .buttonStyle(.plain)
                         }
@@ -225,7 +376,9 @@ struct FamilyTreeView: View {
 
             let preferred = currentFocusId ?? rootPersonId
             let start = preferred.flatMap { people[$0] == nil ? nil : $0 } ?? mostConnectedPerson()
+            history.removeAll { people[$0] == nil }
             if let start { refocus(on: start, remember: false) }
+            else { focus = nil; parents = []; children = []; partners = []; siblings = [] }
             error = nil
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
@@ -234,83 +387,18 @@ struct FamilyTreeView: View {
         }
     }
 
-    /// Whoever appears in the most relationships. In a family vault that is the person it was
-    /// built around, which is a better landing place than whatever row happens to be first.
-    private func mostConnectedPerson() -> String? {
-        var degree: [String: Int] = [:]
-        for relationship in relationships {
-            for key in ["from_person", "to_person", "from_person_id", "to_person_id"] {
-                guard let id = relationship.string(key) else { continue }
-                degree[id, default: 0] += 1
-            }
-        }
-        return degree.max { $0.value < $1.value }?.key ?? people.keys.first
-    }
-
-    /// The real column names, taken from the data rather than assumed.
-    ///
-    /// `relationships` is `{rel_id, from_person, to_person, type, subtype}` — not the
-    /// `*_person_id` / `kind` shape the rest of the records ontology uses. Guessing cost a
-    /// whole screen that reported "no parentescos" over twenty-nine of them, and the server's
-    /// own person dossier has the same bug: `corpus.mjs:242` filters on `from_person_id` and
-    /// `to_person_id`, so it returns an empty list for every person in a genealogy vault.
-    ///
-    /// `type` is `parent` or `spouse`. On a parent edge, `from_person` is the parent.
-    private struct Edge {
-        let parent: String?
-        let child: String?
-        let partners: (String, String)?
-
-        init?(_ row: Row) {
-            guard
-                let from = row.string("from_person") ?? row.string("from_person_id"),
-                let to = row.string("to_person") ?? row.string("to_person_id")
-            else { return nil }
-            let type = (row.string("type") ?? row.string("kind") ?? "").lowercased()
-
-            switch type {
-            case "parent", "padre", "madre":
-                parent = from; child = to; partners = nil
-            case "child", "hijo", "hija":
-                parent = to; child = from; partners = nil
-            case "spouse", "partner", "conyuge", "pareja":
-                parent = nil; child = nil; partners = (from, to)
-            default:
-                return nil
-            }
-        }
-    }
+    private func mostConnectedPerson() -> String? { projection.defaultFocus }
 
     private func refocus(on personId: String, remember: Bool) {
-        if remember, let current = focus?.string("person_id") { history.append(current) }
-        focus = people[personId]
-
-        let edges = relationships.compactMap(Edge.init)
-
-        parents = resolve(edges.compactMap { $0.child == personId ? $0.parent : nil })
-        children = resolve(edges.compactMap { $0.parent == personId ? $0.child : nil })
-        partners = resolve(edges.compactMap { edge in
-            guard let pair = edge.partners else { return nil }
-            if pair.0 == personId { return pair.1 }
-            if pair.1 == personId { return pair.0 }
-            return nil
-        })
-
-        // Siblings: everyone who shares a parent with the focus, minus the focus itself.
-        let ownParents = Set(edges.compactMap { $0.child == personId ? $0.parent : nil })
-        let siblingIds = Set(edges.compactMap { edge -> String? in
-            guard let parent = edge.parent, ownParents.contains(parent) else { return nil }
-            guard let child = edge.child, child != personId else { return nil }
-            return child
-        })
-        siblings = resolve(Array(siblingIds))
+        guard let selected = people[personId] else { return }
+        if remember, let current = focus?.string("person_id"), current != personId { history.append(current) }
+        focus = selected
+        let source = projection
+        parents = resolve(source.parents(of: personId))
+        children = resolve(source.children(of: personId))
+        partners = resolve(source.partners(of: personId))
+        siblings = resolve(source.siblings(of: personId))
     }
 
-    private func resolve(_ ids: [String]) -> [Row] {
-        var seen = Set<String>()
-        return ids.compactMap { id in
-            guard seen.insert(id).inserted else { return nil }
-            return people[id]
-        }
-    }
+    private func resolve(_ ids: [String]) -> [Row] { ids.compactMap { people[$0] } }
 }
