@@ -306,6 +306,8 @@ private struct ProsopographyWorkspace: View {
     @State private var issue: String?
     @State private var cached = false
     @State private var pairing = false
+    @State private var personSource: PrivateCorpusReference?
+    @State private var personSourceIssue: String?
     private let section = "prosopPersons"
 
     private var people: [SensitiveRecordsParity.ProsopPerson] {
@@ -330,7 +332,10 @@ private struct ProsopographyWorkspace: View {
                     } else {
                         peopleCatalogue
                     }
-                case .prosopSources: sourcesView
+                case .prosopSources:
+                    if session.connection.desktopPairingId != nil {
+                        PrivateSourceCatalogueView(session: session, kind: .source, title: "Sources", icon: "doc.text.magnifyingglass")
+                    } else { sourcesView }
                 case .prosopAnalysis: analysisView
                 case .prosopNetworks: networksView
                 default: EmptyView()
@@ -340,6 +345,14 @@ private struct ProsopographyWorkspace: View {
         .nodusPageBackdrop(accent: session.accent)
         .task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
+        .nodusSheet(isPresented: Binding(
+            get: { personSource != nil },
+            set: { if !$0 { personSource = nil } }
+        )) {
+            if let reference = personSource {
+                PrivateCorpusSourceView(session: session, reference: reference).presentationDetents([.large])
+            }
+        }
         .accessibilityIdentifier("prosopography-\(mode.rawValue)-workspace")
     }
 
@@ -417,7 +430,18 @@ private struct ProsopographyWorkspace: View {
             }
         }
     }
-    private func personDossier(_ person: SensitiveRecordsParity.ProsopPerson) -> some View { page(title: LocalizedStringKey(person.displayName), subtitle: "\(person.identityStatus) · \(person.reviewStatus)", image: "person.crop.circle") { personIdentity(person); HStack { metric("Completeness", Int((person.completeness ?? 0) * 100), suffix: "%"); metric("Factoids", person.factoidCount); metric("Statements", person.statementCount); metric("Authorities", person.authorityCount) }; ForEach(statements(person.id), id: \.columns) { row in VStack(alignment: .leading, spacing: 5) { HStack { Text(row.text("statement_type") ?? "Statement").font(.caption.weight(.semibold)).foregroundStyle(session.accent); Spacer(); NodusChip(key: row.text("status") ?? "draft", tint: session.accent) }; Text(row.text("literal_value") ?? row.text("value_text") ?? "").font(.body); Text("Reading: \(row.text("reading_certainty") ?? "unknown")").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }; ForEach((tables["prosop_authority_ids"] ?? []).filter { $0.string("entity_id") == person.id }, id: \.columns) { row in LabeledContent(row.text("scheme") ?? "Authority", value: row.text("external_id") ?? "").desktopContentRow(accent: session.accent) }; ForEach((tables["prosop_audit_log"] ?? []).filter { $0.string("entity_id") == person.id }, id: \.columns) { row in VStack(alignment: .leading) { Label(row.text("action") ?? "Audit", systemImage: "clock.arrow.circlepath"); Text(row.text("reason") ?? "").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) } } }
+    private func personDossier(_ person: SensitiveRecordsParity.ProsopPerson) -> some View { page(title: LocalizedStringKey(person.displayName), subtitle: "\(person.identityStatus) · \(person.reviewStatus)", image: "person.crop.circle") { personIdentity(person); if session.connection.desktopPairingId != nil {
+            Button {
+                do { personSource = try .init(kind: .person, id: person.id); personSourceIssue = nil }
+                catch { personSourceIssue = error.localizedDescription }
+            } label: {
+                Label("Sources and mentions", systemImage: "text.quote").frame(minHeight: 44)
+            }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                .accessibilityIdentifier("prosop-person-sources")
+            if let personSourceIssue {
+                Text(personSourceIssue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("prosop-person-source-error")
+            }
+        }; HStack { metric("Completeness", Int((person.completeness ?? 0) * 100), suffix: "%"); metric("Factoids", person.factoidCount); metric("Statements", person.statementCount); metric("Authorities", person.authorityCount) }; ForEach(statements(person.id), id: \.columns) { row in VStack(alignment: .leading, spacing: 5) { HStack { Text(row.text("statement_type") ?? "Statement").font(.caption.weight(.semibold)).foregroundStyle(session.accent); Spacer(); NodusChip(key: row.text("status") ?? "draft", tint: session.accent) }; Text(row.text("literal_value") ?? row.text("value_text") ?? "").font(.body); Text("Reading: \(row.text("reading_certainty") ?? "unknown")").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }; ForEach((tables["prosop_authority_ids"] ?? []).filter { $0.string("entity_id") == person.id }, id: \.columns) { row in LabeledContent(row.text("scheme") ?? "Authority", value: row.text("external_id") ?? "").desktopContentRow(accent: session.accent) }; ForEach((tables["prosop_audit_log"] ?? []).filter { $0.string("entity_id") == person.id }, id: \.columns) { row in VStack(alignment: .leading) { Label(row.text("action") ?? "Audit", systemImage: "clock.arrow.circlepath"); Text(row.text("reason") ?? "").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) } } }
     private func personCard(_ person: SensitiveRecordsParity.ProsopPerson) -> some View { HStack { Circle().fill(session.accent.opacity(0.15)).frame(width: 40, height: 40).overlay { Text(person.displayName.prefix(1)).font(.headline).foregroundStyle(session.accent) }; VStack(alignment: .leading) { Text(person.displayName).font(.headline); Text("\(person.identityStatus) · \(person.factoidCount) factoids · \(person.statementCount) statements").font(.caption).foregroundStyle(.secondary) }; Spacer(); ProgressView(value: person.completeness ?? 0).frame(width: 75).tint(session.accent) }.desktopContentRow(accent: session.accent) }
     private func sourceCard(_ source: Row) -> some View { VStack(alignment: .leading, spacing: 5) { HStack { Image(systemName: "archivebox").foregroundStyle(session.accent); Text(source.text("title") ?? "Source").font(.headline); Spacer(); NodusChip(key: source.text("access_status") ?? "open", tint: session.accent) }; Text(source.text("citation") ?? "").font(.caption.monospaced()).foregroundStyle(.secondary); Text(source.text("description") ?? "").font(.callout) }.desktopContentRow(accent: session.accent) }
     private var networkCanvas: some View { Canvas { context, size in let nodes = SensitiveRecordsParity.prosopPersons(in: tables); let edges = SensitiveRecordsParity.networkEdges(in: tables["prosop_network_edges"] ?? []); let center = CGPoint(x: size.width / 2, y: size.height / 2); let radius = min(size.width, size.height) * 0.34; let points = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { index, node in (node.id, CGPoint(x: center.x + cos(Double(index) / Double(max(1, nodes.count)) * .pi * 2) * radius, y: center.y + sin(Double(index) / Double(max(1, nodes.count)) * .pi * 2) * radius)) }); for edge in edges { guard let a = points[edge.sourceId], let b = points[edge.targetId] else { continue }; var path = Path(); path.move(to: a); path.addLine(to: b); context.stroke(path, with: .color(edge.origin == "explicit" ? session.accent : .orange), lineWidth: max(1, min(5, edge.weight))) }; for node in nodes { guard let point = points[node.id] else { continue }; context.fill(Path(ellipseIn: CGRect(x: point.x - 11, y: point.y - 11, width: 22, height: 22)), with: .color(session.accent)); context.draw(Text(node.displayName).font(.caption2), at: CGPoint(x: point.x, y: point.y + 22)) } }.frame(height: 320).desktopContentRow(accent: session.accent).accessibilityHidden(true) }

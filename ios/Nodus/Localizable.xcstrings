@@ -27391,6 +27391,23 @@
           }
         }
       }
+    },
+    "Sources and mentions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sources and mentions"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fuentes y menciones"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
