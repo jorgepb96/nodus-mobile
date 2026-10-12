@@ -1209,6 +1209,108 @@
       "evidence": []
     },
     {
+      "id": "writing.study.createDocument",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "writing.study.duplicateDocument",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "writing.study.trashDocument",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.study.annotationRoundTripAndConflicts",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.scriptor.annotationRoundTripAndConflicts",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.scriptor.versionRestorePreservesStructuredDocument",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.scriptor.duplicatePreservesFullDocumentAndPlacement",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.scriptor.trashTombstoneAndLostAcknowledgement",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.synthesis.explicitRegenerationAndPendingRecovery",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.worldMap.live",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.worldMap.autonomous",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.worldMap.imageCoordinatesAtomicAndSourceConflicts",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.worldMap.autonomousPaidResponseRecovery",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.downloads.selectedFileVersionExactBytes",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.pairing.authoringRecoveryAfterRevocation",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.chat.providerSelectionDuringCatalogueLoading",
+      "category": "generation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "visual.teaching.gradebookPhoneHeaderAndTable",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "generation.writingWorkshop.live",
       "category": "generation",
       "result": "pending",
