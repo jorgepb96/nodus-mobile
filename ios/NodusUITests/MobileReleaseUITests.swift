@@ -157,7 +157,7 @@ final class MobileReleaseUITests: XCTestCase {
         for reopen in 0..<2 {
             let app = try openExistingVault(destination: "prosopSources", vaultId: value("vaultId"))
             defer { app.terminate() }
-            let catalogue = app.descendants(matching: .any)["private-source-catalogue-prosop-source"].firstMatch
+            let catalogue = app.descendants(matching: .any)["prosopography-prosopSources-workspace"].firstMatch
             XCTAssertTrue(catalogue.waitForExistence(timeout: 45))
             let row = app.buttons["private-source-prosop-source-" + sourceId]
             XCTAssertTrue(row.waitForExistence(timeout: 45), app.debugDescription)
