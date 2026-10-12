@@ -47,6 +47,7 @@ private struct StudyCoursesWorkspace: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let session: SpaceSession
     @State private var tables: [String: [Row]] = [:]
+    @State private var tablesFromDevice = false
     @State private var query = ""
     @State private var error: String?
     @State private var documentTarget: StudyCourseDocumentTarget?
@@ -203,14 +204,21 @@ private struct StudyCoursesWorkspace: View {
     }
 
     private func metric(_ title: LocalizedStringKey, _ value: Int, _ image: String) -> some View { VStack(alignment: .leading, spacing: 5) { Image(systemName: image).foregroundStyle(session.accent); Text("\(value)").font(.title2.bold().monospacedDigit()); Text(title).font(.caption2).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent).frame(maxWidth: .infinity) }
-    private func linkedDocuments(courseId: String) -> [Row] { let ids = Set((tables["study_placements"] ?? []).filter { $0.string("course_id") == courseId }.compactMap { $0.string("document_id") }); return (tables["study_docs"] ?? []).filter { ids.contains($0.string("id") ?? "") } }
+    private func linkedDocuments(courseId: String) -> [Row] {
+        let ids = Set((tables["study_placements"] ?? []).filter {
+            $0.string("course_id") == courseId && $0.text("deleted_at") == nil && $0.text("archived_at") == nil
+        }.compactMap { $0.string("document_id") })
+        return (tables["study_docs"] ?? []).filter {
+            ids.contains($0.string("id") ?? "") && $0.text("deleted_at") == nil && $0.text("archived_at") == nil
+        }
+    }
     private func open(_ course: StudyTeachingParity.Course) { tabs.open(.init(id: course.id, title: course.name, systemImage: course.icon ?? "graduationcap", kind: .document, payload: .reference(kind: "study-course", id: course.id)), in: section) }
     private func overlayDocuments() async throws {
         guard session.connection.desktopPairingId != nil else { return }
         let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault, kind: .studyDocument)
-        tables = await queue.overlayStudyTables(tables)
+        tables = await queue.overlayStudyTables(tables, authoritative: !tablesFromDevice)
     }
     private func createDocument() async {
         guard !creating, let course = active else { return }
@@ -222,14 +230,21 @@ private struct StudyCoursesWorkspace: View {
             let document = try await queue.createStudyDocument(input: .object(["title": .string(newDocumentTitle), "kind": .string(newDocumentKind),
                 "placement": .object(["courseId": .string(course.id)])]))
             guard let id = document.objectValue?["id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
-            tables = await queue.overlayStudyTables(tables)
+            tables = await queue.overlayStudyTables(tables, authoritative: !tablesFromDevice)
             newlyCreatedDocument = id; newDocumentPresented = false
             Task { await session.synchronizeCompanionChanges() }
         } catch { creationIssue = error.localizedDescription }
     }
     private func load() async {
         do {
-            tables = try await loadStudyTeachingTables(session, studyPublicTables)
+            if session.connection.desktopPairingId != nil, session.mirror == nil {
+                let snapshot = try await session.client.snapshot(in: session.connection.spaceId)
+                tables = Dictionary(uniqueKeysWithValues: studyPublicTables.map { ($0, snapshot.tables[$0] ?? []) })
+                tablesFromDevice = snapshot.fromDevice
+            } else {
+                tables = try await loadStudyTeachingTables(session, studyPublicTables)
+                tablesFromDevice = session.mirror != nil
+            }
             try await overlayDocuments()
             error = nil
 #if DEBUG

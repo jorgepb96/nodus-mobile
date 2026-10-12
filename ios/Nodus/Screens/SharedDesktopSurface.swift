@@ -437,11 +437,10 @@ struct StudyEvidenceDocument: View {
         if method == "getStudyDocEditorData", args.count == 1 { return try await load() }
         if ["duplicateMobileStudyDocument", "trashMobileStudyDocument"].contains(method), args.count == 1 {
             guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
-            try await queue.synchronize { request in try await client.saveWorkspaceEdit(vaultId: vaultId, request: request, kind: .studyDocument) }
-            guard await queue.pendingCount() == 0, await queue.editorData(noteId: id) == nil else {
-                throw APIError(status: 409, code: "study_changes_pending", message: "Resuelve o sincroniza los cambios del documento antes de duplicarlo o enviarlo a la papelera.")
-            }
-            return try await client.operation(vaultId: vaultId, method: method, args: args)
+            _ = try await load()
+            let result = try await queue.enqueueStudyCommand(noteId: id, action: method == "duplicateMobileStudyDocument" ? "duplicate" : "trash")
+            Task { await session.synchronizeCompanionChanges() }
+            return result
         }
         guard pairing.domains.contains(.writing), session.connection.role.canSendChanges, args.count == 2 else { throw DesktopBridgeError.permissionDenied }
         let result: JSONValue

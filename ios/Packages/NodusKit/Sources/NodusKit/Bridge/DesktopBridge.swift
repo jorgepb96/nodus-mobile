@@ -407,6 +407,10 @@ public actor DesktopBridgeClient {
         ]
         if kind == .studyDocument, !pairing.domains.contains(.corpus) { throw DesktopBridgeError.permissionDenied }
         if let creation = request.creation { body["creation"] = creation }
+        if let command = request.command {
+            guard kind == .studyDocument else { throw DesktopBridgeError.permissionDenied }
+            body["command"] = command
+        }
         guard try JSONEncoder.nodus.encode(JSONValue.object(body)).count <= CompanionDocumentOutbox.maximumRequestBytes else {
             throw APIError(status: 413, code: "workspace_edit_too_large", message: "La nota y sus archivos superan el tamaño permitido para sincronizar.")
         }
