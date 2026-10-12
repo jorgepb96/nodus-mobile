@@ -175,6 +175,7 @@ struct DesktopWorkspaceScopeTests {
         let fresh = try f.cache()
         #expect(try await f.recovery.adopt(pairing: original, macDeviceId: "actual-Mac", cache: fresh) == retired.count)
         await #expect(throws: DesktopBridgeError.permissionDenied) { _ = try await cache.store(Data("stale overwrite".utf8), vaultId: "removed", domain: .writing, recordId: "companion-documents-v1") }
+        await #expect(throws: DesktopBridgeError.permissionDenied) { try await cache.remove(vaultId: "removed", domain: .writing, recordId: "companion-documents-v1") }
         #expect(try await fresh.data(vaultId: "removed", domain: .corpus, recordId: "reusable") == nil)
         #expect(try await fresh.readPacks(vaultId: "removed").isEmpty)
         let restored = try CompanionDocumentOutbox(cache: fresh, vaultId: "removed", data: await fresh.data(vaultId: "removed", domain: .writing, recordId: "companion-documents-v1"))

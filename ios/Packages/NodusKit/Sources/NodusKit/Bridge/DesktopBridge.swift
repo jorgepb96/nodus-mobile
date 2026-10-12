@@ -1314,6 +1314,8 @@ public actor PrivateBridgeCache {
 
     public func remove(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws {
         try Self.diskLock.withLock {
+            if Self.isDurable(domain) { try requireWritable() } else { try requireReadingAllowed() }
+            try requireVaultScope(vaultId)
             try removeIfPresent(fileURL(vaultId: vaultId, domain: domain, recordId: recordId))
             try removeIfPresent(legacyURL(vaultId: vaultId, domain: domain, recordId: recordId))
         }
