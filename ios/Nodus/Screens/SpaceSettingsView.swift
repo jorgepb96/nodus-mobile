@@ -2,6 +2,7 @@ import NodusKit
 import NodusUI
 import SwiftUI
 import QuickLook
+import UIKit
 
 struct SpaceSettingsView: View {
     @Environment(AppModel.self) private var model
@@ -41,7 +42,10 @@ struct SpaceSettingsView: View {
                 .padding(.bottom, 10)
 
                 List {
-                if session.connection.desktopPairingId != nil { macConnectionSection }
+                if session.connection.desktopPairingId != nil {
+                    macConnectionSection
+                    RecoveredAuthoringSettings(session: session)
+                }
 
                 Section("Space") {
                     labelled("Name", session.connection.spaceName)
@@ -323,7 +327,7 @@ struct SpaceSettingsView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This device will lose access to every vault linked through this connection. You can link it again from Nodus on your Mac.")
+            Text("This device will lose access to every vault linked through this connection. Downloaded reading copies will be deleted. Your local drafts and generated work will stay encrypted. You can recover them through a verified link to the same Mac, or export them from settings.")
         }
         .confirmationDialog("Recuperar en \(session.connection.spaceName)", isPresented: $showingLegacyRecovery, titleVisibility: .visible) {
             Button("Recuperar documentos locales") {
@@ -750,4 +754,110 @@ private struct CompanionCopySettings: View {
         }
         catch { issue = error.localizedDescription }
     }
+}
+
+
+private struct RecoveredAuthoringSettings: View {
+    let session: SpaceSession
+    @State private var archives: [PrivateBridgeAuthoringRecovery.ArchiveInfo] = []
+    @State private var requests: [DesktopJobLedger.Request] = []
+    @State private var issue: String?
+    @State private var reviewing: String?
+    @State private var selected: DesktopJobLedger.Request?
+    @State private var exportLease: PrivateBridgeFileLease?
+    var body: some View {
+        Group {
+            if !archives.isEmpty || !requests.isEmpty || session.connection.authoringRecoveryNotice != nil {
+                Section {
+                    if let notice = session.connection.authoringRecoveryNotice { Text(notice).font(.footnote) }
+                    ForEach(requests) { request in
+                        Button { selected = request } label: { Label(CompanionResultCatalogue.title(request), systemImage: "doc.text") }
+                            .frame(minHeight: 44).accessibilityIdentifier("recovered-work-review")
+                    }
+                    ForEach(archives) { archive in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(archive.createdAt, format: .dateTime.day().month().year())
+                            Text(archive.adopted ? "Los borradores conservados se han recuperado bajo este enlace." : "El archivo original permanece cifrado y puede exportarse.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if !archive.macIdentityKnown { Text("No se pudo verificar el Mac al cerrar el enlace. El archivo se conserva sin incorporarlo automáticamente a otro espacio.").font(.caption) }
+                            Button("Exportar trabajo conservado") { Task { await export(archive.id) } }
+                                .frame(minHeight: 44).accessibilityIdentifier("recovered-work-export")
+                        }
+                    }
+                    if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
+                } header: { Text("Trabajo local conservado") } footer: {
+                    Text("Los cambios de un enlace anterior necesitan revisión. Publicar un resultado ya creado no vuelve a ejecutar el modelo.")
+                }
+            }
+        }
+        .task { await refresh() }
+        .nodusSheet(item: $selected) { request in
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(CompanionResultCatalogue.title(request)).font(.title2.bold())
+                        Text("Revisa el resultado antes de guardarlo en el Mac. Los cambios del origen se comprobarán al enviarlo.").font(.footnote).foregroundStyle(.secondary)
+                        if let text = resultText(request) { CorpusProse(text, accent: session.accent, session: session) }
+                        if let encoded = request.checkpoint?.objectValue?["bytes"]?.stringValue, let data = Data(base64Encoded: encoded), let image = UIImage(data: data) {
+                            Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
+                        }
+                        if let result = request.result { DossierValueView(session: session, value: result, field: "", linkedCollection: nil, onOpenRelated: nil) }
+                        if PrivateBridgeAuthoringRecovery.canReviewResult(request) {
+                            Button("Guardar este resultado en el Mac") { Task { await approve(request) } }
+                                .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(reviewing != nil)
+                                .accessibilityIdentifier("recovered-work-publish")
+                        } else { Text("El resultado se conserva para consulta. No se repetirá la generación automáticamente.").font(.footnote) }
+                        if let issue { Text(issue).foregroundStyle(Color.nodusDanger) }
+                    }.padding(NodusSpace.page)
+                }
+                .navigationTitle("Revisar trabajo")
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { selected = nil } } }
+            }
+        }
+        .sheet(isPresented: Binding(get: { exportLease != nil }, set: { if !$0 { exportLease = nil } })) {
+            if let exportLease { RecoveredAuthoringShare(lease: exportLease) }
+        }
+    }
+    private func refresh() async {
+        guard let pairing = session.connection.desktopPairingId else { return }
+        do {
+            archives = try await PrivateBridgeAuthoringRecovery.shared.summaries(macDeviceId: session.connection.macDeviceId, pairingId: pairing)
+            if let vault = session.vaultId { requests = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault).all().filter { $0.state == "recoveryReview" } }
+        } catch { issue = error.localizedDescription }
+    }
+    private func export(_ id: UUID) async {
+        do { exportLease = try PrivateBridgeFileLease.write(try await PrivateBridgeAuthoringRecovery.shared.export(id: id), filename: "Nodus-local-work.json") }
+        catch { issue = error.localizedDescription }
+    }
+    private func approve(_ original: DesktopJobLedger.Request) async {
+        guard let pairing = session.connection.desktopPairingId, let vault = session.vaultId else { return }
+        reviewing = original.id; issue = nil
+        defer { reviewing = nil }
+        do {
+            let bridge = try ConnectionClient.companionChat(for: session.connection)
+            let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault)
+            let approved: DesktopJobLedger.Request
+            if let publication = try PrivateBridgeAuthoringRecovery.publicationForReview(original) { approved = try await ledger.approveRecoveredPublication(publication) }
+            else { approved = try await ledger.approveRecoveredSavedResult(id: original.id) }
+            do {
+                let job = try await bridge.submitJob(vaultId: vault, method: approved.method, args: approved.args, idempotencyKey: approved.id)
+                try await ledger.update(id: approved.id, job: job)
+                selected = nil; await refresh()
+            } catch {
+                if let api = error as? APIError, [400,403,404,409,422].contains(api.status) { try await ledger.rejectUnsubmitted(id: approved.id, issue: api.localizedDescription) }
+                else { try await ledger.disconnected(id: approved.id, issue: error.localizedDescription) }
+                throw error
+            }
+        } catch { issue = error.localizedDescription }
+    }
+    private func resultText(_ request: DesktopJobLedger.Request) -> String? {
+        let row = request.checkpoint?.objectValue ?? [:], preview = row["preview"]?.objectValue ?? [:]
+        let candidates = [preview["draftMarkdown"], preview["text"], row["markdown"], row["definition"]?.objectValue?["contentMarkdown"], row["detail"]?.objectValue?["report"]?.objectValue?["markdown"], row["raw"]]
+        return candidates.compactMap { $0?.stringValue }.first { !$0.isEmpty }
+    }
+}
+private struct RecoveredAuthoringShare: UIViewControllerRepresentable {
+    let lease: PrivateBridgeFileLease
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: [lease.url], applicationActivities: nil) }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) { }
 }

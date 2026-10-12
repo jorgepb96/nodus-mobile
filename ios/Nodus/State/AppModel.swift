@@ -29,6 +29,8 @@ final class AppModel {
         var addedAt: Date?
         var vaultId: String?
         var desktopPairingId: String?
+        var macDeviceId: String? = nil
+        var authoringRecoveryNotice: String? = nil
 
         nonisolated var id: String {
             if desktopPairingId != nil, spaceId.hasPrefix("live:") { return spaceId }
@@ -261,6 +263,42 @@ final class AppModel {
         if let expectedMacId, capabilities.deviceId != expectedMacId { throw DesktopBridgeError.permissionDenied }
         guard !capabilities.vaults.isEmpty,
               Set(capabilities.vaults.map(\.id)).isSubset(of: pairing.vaultIds) else { throw DesktopBridgeError.permissionDenied }
+        // Retire previous grants only after the new pinned handshake proves the same Mac.
+        let pairingStore = DesktopBridgePairingStore()
+        var retired = Set<String>()
+        for linked in connections where linked.desktopPairingId != nil && linked.desktopPairingId != pairing.id {
+            guard let oldId = linked.desktopPairingId, !retired.contains(oldId),
+                  let old = pairingStore.pairings().first(where: { $0.id == oldId }),
+                  old.certificateFingerprint == pairing.certificateFingerprint,
+                  let vault = linked.vaultId,
+                  linked.macDeviceId == capabilities.deviceId || (linked.macDeviceId == nil && linked.spaceId == "live:\(capabilities.deviceId):\(vault)") else { continue }
+            // The freshly approved address reaches the same pinned installation, even
+            // when its previous LAN address no longer exists.
+            if let oldToken = pairingStore.credential(for: old) {
+                let reachable = try DesktopBridgePairing(id: old.id, origin: pairing.origin,
+                    certificateFingerprint: old.certificateFingerprint, deviceId: old.deviceId,
+                    deviceName: old.deviceName, vaultIds: old.vaultIds, domains: old.domains,
+                    pairedAt: old.pairedAt, expiresAt: old.expiresAt,
+                    alternateOrigins: pairing.alternateOrigins ?? [])
+                try pairingStore.save(reachable, token: oldToken)
+            }
+            for index in connections.indices where connections[index].desktopPairingId == oldId {
+                guard let oldVault = connections[index].vaultId,
+                      connections[index].spaceId == "live:\(capabilities.deviceId):\(oldVault)" else { throw DesktopBridgeError.permissionDenied }
+                connections[index].macDeviceId = capabilities.deviceId
+            }
+            try await revokeDesktop(connections.first { $0.id == linked.id } ?? linked)
+            retired.insert(oldId)
+        }
+        var recoveryNotice: String?
+        do {
+            let cache = try PrivateBridgeCache(pairingId: pairing.id)
+            try await cache.freezeForRevocation(false)
+            let restored = try await PrivateBridgeAuthoringRecovery.shared.adopt(pairing: pairing, macDeviceId: capabilities.deviceId, cache: cache)
+            if restored > 0 { recoveryNotice = "Tu trabajo local se ha recuperado. Revisa los cambios y resultados antes de enviarlos al Mac." }
+        } catch {
+            recoveryNotice = "Algunos borradores requieren recuperación manual. Los originales siguen conservados y pueden exportarse desde los ajustes de este espacio."
+        }
         try DesktopBridgePairingStore().save(pairing, token: token)
         for vault in capabilities.vaults {
             let spaceId = "live:\(capabilities.deviceId):\(vault.id)"
@@ -268,7 +306,8 @@ final class AppModel {
             try keychain.set(token, for: KeychainStore.deviceTokenKey(origin: pairing.origin, spaceId: spaceId))
             let connection = Connection(origin: pairing.origin, spaceId: spaceId, spaceName: vault.name,
                 serverName: capabilities.deviceName, role: pairing.domains.contains(.writing) ? .writer : .reader, vaultType: vault.type, vaultName: vault.name,
-                lastOpenedAt: previous?.lastOpenedAt, addedAt: previous?.addedAt ?? Date(), vaultId: vault.id, desktopPairingId: pairing.id)
+                lastOpenedAt: previous?.lastOpenedAt, addedAt: previous?.addedAt ?? Date(), vaultId: vault.id, desktopPairingId: pairing.id,
+                macDeviceId: capabilities.deviceId, authoringRecoveryNotice: recoveryNotice ?? previous?.authoringRecoveryNotice)
             connections.removeAll { $0.id == connection.id || ($0.desktopPairingId != nil && $0.spaceId == spaceId) }
             connections.append(connection)
         }
@@ -492,8 +531,44 @@ final class AppModel {
         let store = DesktopBridgePairingStore()
         guard let pairing = store.pairings().first(where: { $0.id == connection.desktopPairingId }),
               let token = store.credential(for: pairing) else { throw DesktopBridgeError.permissionDenied }
-        try await DesktopBridgeClient(pairing: pairing, token: token).revoke()
-        try store.revokeLocally(pairing)
+        let bridge = DesktopBridgeClient(pairing: pairing, token: token)
+        let identities = Set(connections.filter { $0.desktopPairingId == pairing.id }.compactMap(\.macDeviceId))
+        guard identities.count <= 1 else { throw DesktopBridgeError.permissionDenied }
+        var macIdentity = identities.first
+        if macIdentity == nil, let capabilities = try? await bridge.liveCapabilities() {
+            let linked = connections.filter { $0.desktopPairingId == pairing.id }
+            guard linked.allSatisfy({ connection in
+                guard let vault = connection.vaultId else { return false }
+                return connection.spaceId == "live:\(capabilities.deviceId):\(vault)"
+            }) else { throw DesktopBridgeError.permissionDenied }
+            macIdentity = capabilities.deviceId
+        }
+        try await CompanionDocumentOutboxes.shared.prepareForRevocation(pairingId: pairing.id)
+        let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        try await cache.freezeForRevocation(true)
+        var receipt: PrivateBridgeAuthoringRecovery.Receipt?
+        var revokedOnMac = false
+        do {
+            let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: pairing.vaultIds)
+            receipt = try await PrivateBridgeAuthoringRecovery.shared.preserve(snapshot: snapshot, pairing: pairing, macDeviceId: macIdentity)
+            for linked in connections.filter({ $0.desktopPairingId == pairing.id }) {
+                if MutationOutbox.exists(spaceId: linked.storageId, directory: ConnectionClient.spacesDirectory) {
+                    let outbox = try MutationOutbox(spaceId: linked.storageId, directory: ConnectionClient.spacesDirectory)
+                    try await outbox.suspendAuthorisedForRelink()
+                }
+            }
+            do { if !pairing.isExpired { try await bridge.revoke() } }
+            catch let error as APIError where error.status == 401 { /* The Mac has already revoked this credential. */ }
+            revokedOnMac = true
+            try store.revokeLocally(pairing, authoringRecovery: receipt)
+            if let receipt { try await PrivateBridgeAuthoringRecovery.shared.completeRevocation(receipt) }
+        } catch {
+            if !revokedOnMac {
+                try? await cache.freezeForRevocation(false)
+                if let receipt { try? await PrivateBridgeAuthoringRecovery.shared.discard(receipt) }
+            }
+            throw error
+        }
         await DesktopJobLedgers.shared.forget(pairingId: pairing.id)
         await CompanionDocumentOutboxes.shared.forget(pairingId: pairing.id)
         await CompanionPageDocumentStores.shared.forget(pairingId: pairing.id)
