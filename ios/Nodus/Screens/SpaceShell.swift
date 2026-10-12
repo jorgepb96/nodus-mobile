@@ -360,13 +360,13 @@ struct SpaceShell: View {
             SensitiveRecordsWorkspaceView(session: session, mode: .testimonyContrasts)
         case .timeline:
             if displayedVaultType(for: session) == .worldbuilding { WorldTimelineView(session: session) }
-            else { collection("events") }
+            else { GenealogyTimelineView(session: session) }
         case .relations:
             if displayedVaultType(for: session) == .worldbuilding { WorldRelationsView(session: session) }
             else { collection("relationships") }
         case .map:
             if displayedVaultType(for: session) == .worldbuilding { WorldMapView(session: session) }
-            else { collection("places") }
+            else { GenealogyMapView(session: session) }
         case .tree:
             if displayedVaultType(for: session) == .worldbuilding { WorldHierarchyView(session: session) }
             else { FamilyTreeView(session: session) }
