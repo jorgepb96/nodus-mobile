@@ -2171,6 +2171,51 @@ final class MobileReleaseUITests: XCTestCase {
         capture(reopened, "scriptor-mac-choice-reopened")
     }
     @MainActor
+    func testOfflineScriptorCreatesCommentAndReopensWithoutChangingDocument() async throws {
+        try await verifyOwningMacUnavailable()
+        let marker = "ScriptorComment-" + UUID().uuidString.prefix(8)
+        var original: String?
+        for reopen in 0..<2 {
+            let app = try openExistingPrincipal(destination: "workspace")
+            defer { app.terminate() }
+            let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+            XCTAssertTrue(web.waitForExistence(timeout: 45), app.debugDescription)
+            let note = web.buttons["Abrir Aceptación Scriptor móvil 0.1.0"]
+            if !note.waitForExistence(timeout: 8) {
+                let catalogue = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Nodus Scriptor")).firstMatch
+                XCTAssertTrue(catalogue.isHittable, app.debugDescription); catalogue.tap()
+            }
+            XCTAssertTrue(note.waitForExistence(timeout: 20), app.debugDescription); note.tap()
+            let editor = web.textViews["Editor del documento"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 30), app.debugDescription)
+            let content = try XCTUnwrap(editor.value as? String)
+            if reopen == 0 {
+                original = content
+                let add = web.buttons["Añadir comentario"].firstMatch
+                XCTAssertTrue(add.isHittable, app.debugDescription); add.tap()
+                let comment = web.textViews["Comentario"]
+                XCTAssertTrue(comment.waitForExistence(timeout: 10), app.debugDescription)
+                comment.tap(); comment.typeText(String(marker))
+                let save = web.buttons["Guardar"].firstMatch
+                XCTAssertTrue(save.isHittable, app.debugDescription); save.tap()
+                XCTAssertTrue(comment.waitForNonExistence(timeout: 20), "The comment must be persisted while the owning Mac is actually unavailable.\n" + app.debugDescription)
+            } else { XCTAssertEqual(content, original, "A comment must preserve the entire structured document across process restart.") }
+            let comments = web.buttons["Comentarios"].firstMatch
+            if !comments.exists {
+                let context = web.switches["Contexto"].firstMatch
+                XCTAssertTrue(context.isHittable, app.debugDescription); context.tap()
+            }
+            XCTAssertTrue(comments.waitForExistence(timeout: 10), app.debugDescription); comments.tap()
+            let saved = web.staticTexts[String(marker)].firstMatch
+            XCTAssertTrue(saved.waitForExistence(timeout: 20), app.debugDescription)
+            XCTAssertEqual(web.staticTexts[String(marker)].count, 1, "Reopening must retain one comment, without replay duplicates.")
+            XCTAssertFalse(app.staticTexts["shared-surface-error"].exists, app.debugDescription)
+            print("NODUS_SCRIPTOR_COMMENT=\(marker)")
+            capture(app, "scriptor-offline-comment-reopen-\(reopen)")
+            app.terminate()
+        }
+    }
+    @MainActor
     func testOfflineScriptorCreatesDocumentAndReopens() async throws {
         try await createOfflineCompanionItem(menuItem: "Nota", defaultTitle: "Nota sin título")
     }
