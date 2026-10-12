@@ -15,6 +15,17 @@ struct CollectionDossierBody: View {
     private var selectedReaderOnly: Bool { downloadedOnly || inheritedDownloadedOnly }
     @State private var selectedPrivateSource: PrivateCorpusReference?
 
+    private var citationHandler: ((URL) -> Bool)? {
+        guard selectedReaderOnly else { return nil }
+        return openSelectedCitation
+    }
+
+    private var sectionKeys: [String] {
+        let contextual: Set<String> = session.vaultType == .genealogy
+            ? Set(GenealogyDossierContext.sections(dossier).map(\.id)).union(["evidenceAccess"]) : []
+        return dossier.sections.keys.filter { !contextual.contains($0) }.sorted()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
             if showConnectionState, dossier.fromDevice {
@@ -22,30 +33,30 @@ struct CollectionDossierBody: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if displayPrimary {
-                DossierValueView(session: session, value: .object(dossier.primary.columns), field: "", linkedCollection: nil, onOpenRelated: onOpenRelated, onCitation: selectedReaderOnly ? openSelectedCitation : nil)
+                DossierValueView(session: session, value: .object(dossier.primary.columns), field: "", linkedCollection: nil, onOpenRelated: onOpenRelated, onCitation: citationHandler)
             }
             if session.vaultType == .genealogy {
                 GenealogyDossierContextView(session: session, dossier: dossier, onOpenRelated: onOpenRelated, downloadedOnly: selectedReaderOnly)
             }
-            let contextual = session.vaultType == .genealogy
-                ? Set(GenealogyDossierContext.sections(dossier).map(\.id)).union(["evidenceAccess"]) : []
-            ForEach(dossier.sections.keys.filter { !contextual.contains($0) }.sorted(), id: \.self) { key in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(Self.label(key)).font(.headline)
-                        if let count = dossier.sections[key]?.arrayValue?.count { Text(count.formatted()).font(.caption).foregroundStyle(.secondary) }
-                    }
-                    if key == "documentProfile" {
-                        Text("Guía de orientación del documento. Las citas se consultan en sus evidencias y pasajes.")
-                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                    DossierValueView(session: session, value: dossier.sections[key]!, field: key, linkedCollection: dossier.linkedCollection(for: key), onOpenRelated: onOpenRelated, onCitation: selectedReaderOnly ? openSelectedCitation : nil)
-                }
-            }
+            ForEach(sectionKeys, id: \.self) { key in sectionView(key) }
         }.frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.downloadedReaderOnly, selectedReaderOnly)
         .nodusSheet(isPresented: Binding(get: { selectedPrivateSource != nil }, set: { if !$0 { selectedPrivateSource = nil } })) {
             if let selectedPrivateSource { PrivateCorpusSourceSheet(session: session, reference: selectedPrivateSource, downloadedOnly: true) }
+        }
+    }
+
+    private func sectionView(_ key: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(Self.label(key)).font(.headline)
+                if let count = dossier.sections[key]?.arrayValue?.count { Text(count.formatted()).font(.caption).foregroundStyle(.secondary) }
+            }
+            if key == "documentProfile" {
+                Text("Guía de orientación del documento. Las citas se consultan en sus evidencias y pasajes.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            DossierValueView(session: session, value: dossier.sections[key]!, field: key, linkedCollection: dossier.linkedCollection(for: key), onOpenRelated: onOpenRelated, onCitation: citationHandler)
         }
     }
 
