@@ -75,6 +75,142 @@ struct CompanionDocumentOutboxTests {
         return .object(response)
     }
 
+    private static func workspaceEditor(_ id: String = "note-a", revision: Int = 7, kind: String = "idea", text: String = "Original", fingerprint: String = String(repeating: "a", count: 64)) -> JSONValue {
+        var editor = Self.studyEditor(id, revision: revision, text: text).objectValue!
+        editor["mobileCommandSource"] = .object(["version": .int(1), "fingerprint": .string(fingerprint), "placements": .array([]),
+            "document": .object(["id": .string(id), "title": .string("Private document"), "content": .string(text), "kind": .string(kind), "folderId": .string("folder-a"), "tags": .array([.string("Research")]), "orderIdx": .int(4), "source": kind == "idea" ? .object(["note": .string("manual-idea"), "ref": .string("manual-original")]) : .null, "trashedAt": .null])])
+        return .object(editor)
+    }
+    private actor WorkspaceServer {
+        var editors: [String: JSONValue], copies: [String: JSONValue], receipts: [String: JSONValue] = [:]
+        var copyCount = 0, trashCount = 0
+        init(source: JSONValue, copies: [String: JSONValue] = [:]) {
+            let id = source.objectValue!["mobileCommandSource"]!.objectValue!["document"]!.objectValue!["id"]!.stringValue!
+            editors = [id: source]; self.copies = copies
+        }
+        func counts() -> (Int,Int) { (copyCount,trashCount) }
+        func apply(_ request: CompanionDocumentOutbox.Request) throws -> JSONValue {
+            if let receipt = receipts[request.id] { return receipt }
+            if editors[request.noteId] == nil, let creation = request.creation?.objectValue {
+                var value = CompanionDocumentOutboxTests.workspaceEditor(request.noteId, revision: 0, kind: creation["kind"]?.stringValue ?? "markdown").objectValue!
+                var source = value["mobileCommandSource"]!.objectValue!, note = source["document"]!.objectValue!
+                note["folderId"] = creation["folderId"] ?? .null; note["tags"] = creation["tags"] ?? .array([]); note["orderIdx"] = .int(0)
+                note["source"] = creation["globalId"].map { .object(["note": .string("manual-idea"), "ref": $0]) } ?? .null
+                source["document"] = .object(note); value["mobileCommandSource"] = .object(source); editors[request.noteId] = .object(value)
+            }
+            guard var editor = editors[request.noteId]?.objectValue,
+                  editor["revision"] == request.input.objectValue?["expectedRevision"] else { throw APIError(status: 409, code: "revision_conflict", message: "Changed source", details: ["remote": editors[request.noteId] ?? .null]) }
+            let action = request.command?.objectValue?["action"]?.stringValue
+            if action?.hasPrefix("annotation") == true {
+                let target = request.command!.objectValue!["annotationId"]!
+                var rows = editor["annotations"]!.arrayValue!; rows.removeAll { $0.objectValue?["id"] == target }
+                if let annotation = CompanionStudyAnnotation.projected(command: request.command!, documentId: request.noteId, timestamp: "canonical-comment-time") { rows.append(annotation) }
+                editor["annotations"] = .array(rows)
+            } else {
+                for (key,value) in request.input.objectValue! where !["expectedRevision", "reason"].contains(key) { editor[key == "title" ? "documentTitle" : key] = value }
+                editor["revision"] = .int(Int64(editor["revision"]!.intValue! + 1))
+            }
+            var source = editor["mobileCommandSource"]!.objectValue!, note = source["document"]!.objectValue!
+            note["title"] = editor["documentTitle"]; note["content"] = editor["contentMarkdown"]; note["editorRevision"] = editor["revision"]
+            var result: JSONValue?
+            if action == "duplicate" {
+                let target = request.command!.objectValue!["targetId"]!.stringValue!
+                var copy = copies[target]!.objectValue!, copyNote = note
+                copy["revision"] = .int(1); copyNote["id"] = .string(target); copyNote["kind"] = .string("markdown"); copyNote["source"] = .null
+                copyNote["title"] = copy["documentTitle"]; copyNote["content"] = copy["contentMarkdown"]; copyNote["editorRevision"] = .int(1)
+                var copySource = source; copySource["document"] = .object(copyNote); copy["mobileCommandSource"] = .object(copySource)
+                editors[target] = .object(copy); copyCount += 1; result = .object(["document": .object(copyNote), "editorData": .object(copy)])
+            } else if action == "trash" { note["trashedAt"] = .string("2026-10-12T19:00:00Z"); trashCount += 1; result = .object(["document": .object(note)]) }
+            source["document"] = .object(note); editor["mobileCommandSource"] = .object(source); editors[request.noteId] = .object(editor)
+            var response: [String:JSONValue] = ["id": .string(request.id), "note": .object(note), "editorData": .object(editor)]
+            if let result { response["commandResult"] = result }
+            let receipt = JSONValue.object(response); receipts[request.id] = receipt; return receipt
+        }
+    }
+    @Test("offline Scriptor duplication and trash preserve pending source comments and replay one stable identity")
+    func workspaceLifecycleReplay() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(), baseline = Self.workspaceEditor()
+        try await queue.seed(noteId: "note-a", editorData: baseline)
+        let original = baseline.objectValue!["mobileCommandSource"]!.objectValue!["document"]!
+        let tree = JSONValue.object(["notes": .array([original]), "folders": .array([.object(["id": .string("folder-a"), "name": .string("Actual folder"), "parentId": .null])])])
+        try await queue.rememberTree(tree)
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "Captured source"))
+        _ = try await queue.enqueueWorkspaceAnnotation(noteId: "note-a", method: "createWorkspaceAnnotation", patch: .object(["from": .int(0), "to": .int(8), "selectedText": .string("Captured"), "comment": .string("Keep source comment"), "locked": .bool(true)]))
+        let note = try await queue.enqueueWorkspaceCommand(noteId: "note-a", action: "duplicate")
+        let target = try #require(note.objectValue?["id"]?.stringValue), copied = try #require(await queue.editorData(noteId: target))
+        #expect(note.objectValue?["kind"] == .string("markdown")); #expect(note.objectValue?["source"] == .null)
+        #expect(note.objectValue?["folderId"] == .string("folder-a")); #expect(note.objectValue?["tags"] == .array([.string("Research")]))
+        let bootstrap = try #require(await queue.confirmedTree())
+        #expect(bootstrap.objectValue?["notes"]?.arrayValue?.contains { $0.objectValue?["id"] == .string(target) } == true)
+        #expect(bootstrap.objectValue?["folders"]?.arrayValue?.first?.objectValue?["name"] == .string("Actual folder"))
+        #expect(copied.objectValue?["annotations"]?.arrayValue?.isEmpty == true)
+        #expect(copied.objectValue?["nativeDocument"]?.arrayValue?.first?.objectValue?["id"] != .string("table-1"))
+        let server = WorkspaceServer(source: baseline, copies: [target: copied]), sent = Requests()
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in
+            await sent.append(request); let result = try await server.apply(request)
+            if request.command?.objectValue?["action"] == .string("duplicate") { throw URLError(.networkConnectionLost) }
+            return result
+        } }
+        let reopened = try await fixture.open()
+        try await reopened.synchronize { request in await sent.append(request); return try await server.apply(request) }
+        let packets = await sent.all()
+        #expect(packets.count == 4); #expect(packets[0].command == nil)
+        #expect(packets[1].command?.objectValue?["action"] == .string("annotationCreate"))
+        #expect(packets[2].command?.objectValue?["action"] == .string("duplicate")); #expect(packets[2] == packets[3])
+        #expect(await server.counts().0 == 1)
+        #expect(await reopened.confirmedEditorData(noteId: "note-a")?.objectValue?["annotations"]?.arrayValue?.count == 1)
+        #expect(await reopened.confirmedEditorData(noteId: target)?.objectValue?["contentMarkdown"] == .string("Captured source"))
+        _ = try await reopened.enqueueWorkspaceCommand(noteId: "note-a", action: "trash")
+        #expect(await reopened.overlayTree(tree, includeConfirmedEdits: true).objectValue?["notes"]?.arrayValue?.contains { $0.objectValue?["id"] == .string("note-a") } == false)
+        await #expect(throws: URLError.self) { try await reopened.synchronize { request in await sent.append(request); _ = try await server.apply(request); throw URLError(.networkConnectionLost) } }
+        let final = try await fixture.open()
+        try await final.synchronize { request in await sent.append(request); return try await server.apply(request) }
+        #expect(await server.counts().1 == 1); #expect(await final.pendingCount() == 0)
+        #expect(await final.overlayTree(tree, includeConfirmedEdits: true).objectValue?["notes"]?.arrayValue?.contains { $0.objectValue?["id"] == .string("note-a") } == false)
+        #expect(await final.confirmedEditorData(noteId: "note-a")?.objectValue?["annotations"]?.arrayValue?.count == 1)
+    }
+    @Test("new authored source copies wait their exact creation and comment receipts, without inventing Mac source identity")
+    func workspaceNewSourceCopy() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        let created = try await queue.create(input: .object(["title": .string("New source"), "content": .string("")]))
+        let id = try #require(created.objectValue?["id"]?.stringValue)
+        _ = try await queue.enqueueWorkspaceAnnotation(noteId: id, method: "createWorkspaceAnnotation", patch: .object(["from": .int(0), "to": .int(0), "selectedText": .string(""), "comment": .string("Creation comment")]))
+        let copy = try await queue.enqueueWorkspaceCommand(noteId: id, action: "duplicate")
+        let target = try #require(copy.objectValue?["id"]?.stringValue), editor = try #require(await queue.editorData(noteId: target))
+        let server = WorkspaceServer(source: Self.workspaceEditor(), copies: [target: editor]), sent = Requests()
+        try await queue.synchronize { request in await sent.append(request); return try await server.apply(request) }
+        let packets = await sent.all()
+        #expect(packets.count == 3); #expect(packets[0].noteId == id); #expect(packets[0].creation != nil)
+        #expect(packets[1].command?.objectValue?["action"] == .string("annotationCreate"))
+        #expect(packets[2].command?.objectValue?["action"] == .string("duplicate"))
+        #expect(packets[2].input.objectValue?["expectedRevision"] == .int(1))
+        #expect(await queue.pendingCount() == 0)
+    }
+    @Test("older downloads cannot invent copy metadata and overtaken comment anchors preserve explicit conflicts")
+    func workspaceLifecycleSourceSafety() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        try await queue.seed(noteId: "old", editorData: Self.editor())
+        await #expect(throws: APIError.self) { try await queue.enqueueWorkspaceCommand(noteId: "old", action: "duplicate") }
+        let baseline = Self.workspaceEditor(); try await queue.seed(noteId: "note-a", editorData: baseline)
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "First source"))
+        _ = try await queue.enqueueWorkspaceAnnotation(noteId: "note-a", method: "createWorkspaceAnnotation", patch: .object(["from": .int(0), "to": .int(5), "selectedText": .string("First"), "comment": .string("Retain anchor")]))
+        _ = try await queue.save(noteId: "note-a", input: Self.input(-1, text: "Later source"))
+        let copied = try await queue.enqueueWorkspaceCommand(noteId: "note-a", action: "duplicate")
+        let target = try #require(copied.objectValue?["id"]?.stringValue), copyEditor = try #require(await queue.editorData(noteId: target))
+        let server = WorkspaceServer(source: baseline, copies: [target: copyEditor]), sent = Requests()
+        try await queue.synchronize { request in await sent.append(request); return try await server.apply(request) }
+        #expect(await sent.all().count == 1); #expect(await server.counts().0 == 0)
+        let local = try #require(await queue.editorData(noteId: "note-a"))
+        #expect(local.objectValue?["mobileSyncState"] == .string("conflict"))
+        #expect(local.objectValue?["annotations"]?.arrayValue?.first?.objectValue?["comment"] == .string("Retain anchor"))
+        #expect(await queue.editorData(noteId: target)?.objectValue?["contentMarkdown"] == .string("Later source"))
+        try await queue.prepareForRevocation()
+        let reopened = try await fixture.open()
+        #expect(await reopened.editorData(noteId: "note-a")?.objectValue?["mobileSyncState"] == .string("conflict"))
+    }
     @Test("Scriptor annotations use the workspace receipt lane and preserve full note content through lost ACK")
     func workspaceAnnotationReplay() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
