@@ -84,6 +84,8 @@ struct DeepResearchImageEditorSheet: View {
     @State private var direction = ""
     @State private var generating = false
     @State private var failure: String?
+    @State private var progress: String?
+    @State private var recovering = false
 
     var body: some View {
         NavigationStack {
@@ -96,7 +98,7 @@ struct DeepResearchImageEditorSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         Button(role: .destructive) { removeImage() } label: {
                             Label("Remove image", systemImage: "trash")
-                        }
+                        }.disabled(generating || recovering)
                     }
                     Picker("Style", selection: $style) {
                         ForEach(DecorativeImageStyle.allCases, id: \.self) { option in
@@ -106,6 +108,12 @@ struct DeepResearchImageEditorSheet: View {
                     .pickerStyle(.menu)
                     TextField("Optional art direction", text: $direction, axis: .vertical)
                         .lineLimit(2...5).padding(12).nodusFieldSurface(accent: session.accent)
+                    Text(session.aiExecutionMode == .live ? "La imagen se genera en el Mac con su modelo configurado." : "La imagen se genera en este dispositivo con su modelo configurado.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if session.aiExecutionMode == .live, saved.vaultRowId == nil {
+                        NodusNotice(tone: .info, title: "Guarda el informe en el Mac", message: "La generación Live necesita un informe guardado en el vault vinculado.")
+                    }
+                    if let progress { Text(progress).font(.callout).foregroundStyle(.secondary).accessibilityIdentifier("report-image-progress") }
                     if let failure {
                         NodusNotice(tone: .blocked, title: "Image generation failed", message: LocalizedStringKey(failure))
                     }
@@ -114,7 +122,8 @@ struct DeepResearchImageEditorSheet: View {
                         else { Label("Generate new image", systemImage: "photo.badge.plus").frame(maxWidth: .infinity) }
                     }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                    .disabled(generating || ai.model(for: .image) == nil || ai.model(for: .deepResearch) == nil)
+                    .disabled(generating || recovering || (session.aiExecutionMode == .live ? saved.vaultRowId == nil || session.connection.desktopPairingId == nil || !session.connection.role.canSendChanges : ai.model(for: .image) == nil || ai.model(for: .deepResearch) == nil))
+                    .accessibilityIdentifier("report-image-generate")
                 }
                 .padding(NodusSpace.page)
                 .frame(maxWidth: 680).frame(maxWidth: .infinity)
@@ -123,11 +132,13 @@ struct DeepResearchImageEditorSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .nodusPageBackdrop(accent: session.accent)
         }
+        .task(id: session.aiExecutionMode) { if session.aiExecutionMode == .live { await recoverMacImage() } }
     }
 
     private func generate() {
-        guard !generating,
-              let imageModel = ai.model(for: .image),
+        guard !generating else { return }
+        if session.aiExecutionMode == .live { generateOnMac(); return }
+        guard let imageModel = ai.model(for: .image),
               let textModel = ai.model(for: .deepResearch)
         else { return }
         generating = true
@@ -158,6 +169,71 @@ struct DeepResearchImageEditorSheet: View {
                 failure = error.localizedDescription
             }
             generating = false
+        }
+    }
+
+    private func generateOnMac() {
+        guard let remoteId = saved.vaultRowId, !generating, !recovering else { return }
+        generating = true; failure = nil; progress = "Preparando la solicitud en el Mac"
+        let requestedStyle = style.rawValue, requestedDirection = direction
+        Task {
+            defer { generating = false }
+            do {
+                let (vault, pairing, token) = try privateBridgeConnection(session, domain: .researchGeneration)
+                guard pairing.domains.contains(.writing), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
+                let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
+                let id = UUID().uuidString.lowercased()
+                let request: JSONValue = .object(["entityId": .string(remoteId), "style": .string(requestedStyle), "visualContext": .string(requestedDirection)])
+                let record = try await ledger.prepare(id: id, method: "generateReportImage", args: [request])
+                try await observeMacImage(record, ledger: ledger, client: DesktopBridgeClient(pairing: pairing, token: token), vault: vault, reportId: remoteId)
+            } catch { failure = error.localizedDescription }
+        }
+    }
+
+    private func recoverMacImage() async {
+        guard let remoteId = saved.vaultRowId else { return }
+        recovering = true
+        defer { recovering = false }
+        do {
+            let (vault, pairing, token) = try privateBridgeConnection(session, domain: .researchGeneration)
+            let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
+            guard let record = await ledger.all().first(where: { $0.method == "generateReportImage" && $0.args.first?.objectValue?["entityId"] == .string(remoteId) }) else { return }
+            guard !["failed", "cancelled", "interrupted"].contains(record.state) else { failure = record.issue; return }
+            try await observeMacImage(record, ledger: ledger, client: DesktopBridgeClient(pairing: pairing, token: token), vault: vault, reportId: remoteId)
+        } catch is CancellationError { }
+        catch { failure = error.localizedDescription }
+    }
+
+    private func observeMacImage(_ record: DesktopJobLedger.Request, ledger: DesktopJobLedger, client: DesktopBridgeClient, vault: String, reportId: String) async throws {
+        do {
+            let job: DesktopBridgeJob
+            if let id = record.jobId { job = try await client.readJob(vaultId: vault, id: id) }
+            else { job = try await client.submitJob(vaultId: vault, method: record.method, args: record.args, idempotencyKey: record.id) }
+            try await ledger.update(id: record.id, job: job)
+            _ = try await client.awaitJob(vaultId: vault, job: job, onState: { current in
+                try await ledger.update(id: record.id, job: current)
+                await MainActor.run { progress = "Mac · \(current.state.rawValue)" }
+            }, onEvents: { events in
+                guard let phase = events.last(where: { $0.channel == "mobile:reportImage:progress" })?.args.first?.objectValue?["phase"]?.stringValue else { return }
+                await MainActor.run {
+                    switch phase {
+                    case "context": progress = "Preparando el contexto visual en el Mac"
+                    case "generating": progress = "Generando la imagen en el Mac"
+                    case "saving": progress = "Guardando la imagen en el vault"
+                    default: break
+                    }
+                }
+            })
+            let metadata = try await client.operation(vaultId: vault, method: "getDecorativeImage", args: [.string("deep_research"), .string(reportId)])
+            let dataURL = try await client.operation(vaultId: vault, method: "getDecorativeImageDataUrl", args: [.string("deep_research"), .string(reportId), .bool(false)])
+            let image = try CompanionReportImage.bytes(metadata: metadata, dataURL: dataURL, reportId: reportId)
+            guard store.attach(GeneratedImage(data: image.data, mimeType: image.mime), to: saved.id) != nil else {
+                throw APIError(status: 507, code: "report_image_device_save_failed", message: "La imagen está guardada en el Mac, pero no pudo conservarse en este dispositivo. Vuelve a abrir este panel para recuperarla.")
+            }
+            progress = "Imagen guardada en el Mac y en este dispositivo"
+        } catch {
+            try? await ledger.disconnected(id: record.id, issue: error.localizedDescription)
+            throw error
         }
     }
 

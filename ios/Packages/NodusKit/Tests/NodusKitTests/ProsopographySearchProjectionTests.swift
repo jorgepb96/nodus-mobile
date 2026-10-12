@@ -30,6 +30,18 @@ struct ProsopographySearchProjectionTests {
         #expect(hits.first?.targetId == "f")
     }
 
+    @Test func privateStatementSearchMatchesDesktopOwnerAccess() {
+        let tables: [String: [Row]] = [
+            "prosop_person_profiles": [Row(["person_id": .string("p"), "privacy_status": .string("restricted")])],
+            "prosop_statement_entities": [Row(["statement_id": .string("s"), "entity_kind": .string("person"), "entity_id": .string("p")])],
+            "prosop_factoids": [Row(["factoid_id": .string("f")])],
+            "prosop_statements": [Row(["statement_id": .string("s"), "factoid_id": .string("f"), "literal_value": .string("merchant")])],
+        ]
+        // Canonical private Desktop search excludes variable sensitivity here,
+        // rather than applying the public snapshot's person privacy projection.
+        #expect(ProsopographySearchProjection.search("merchant", in: tables).first?.id == "statement:s")
+    }
+
     @Test func restrictedIdentityAlsoRemovesLiteralMentions() {
         let tables: [String: [Row]] = [
             "persons": [Row(["person_id": .string("p"), "display_name": .string("Hidden")])],
