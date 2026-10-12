@@ -4,6 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {mobileRoot,nodusRepo} from './nodus-repo.mjs';
+import {acceptanceResultPaths,acceptanceReceiptPath} from './acceptance-evidence.mjs';
 
 // Historical attempts remain evidence of their actual result. Inventory and
 // successful individual scenarios never automatically approve an operation.
@@ -26,10 +27,11 @@ const appleRecordPath=path.join(folder,'app-store-connect-record.json');
 const appleRecord=fs.existsSync(appleRecordPath)?JSON.parse(fs.readFileSync(appleRecordPath,'utf8')):null;
 const summaries=path.join(folder,'xctest-summaries');fs.mkdirSync(summaries,{recursive:true});
 const attempts=[];
-for(const name of fs.readdirSync(folder).filter(name=>name.endsWith('.xcresult')).sort()) {
+for(const name of acceptanceResultPaths(folder)) {
   const artifact=path.join(folder,name),output=path.join(summaries,name.replace('.xcresult','.json'));
   try {
     const summary=JSON.parse(execFileSync('xcrun',['xcresulttool','get','test-results','summary','--path',artifact],{encoding:'utf8',stdio:['ignore','pipe','pipe']}));
+    fs.mkdirSync(path.dirname(output),{recursive:true});
     fs.writeFileSync(output,JSON.stringify(summary,null,2)+'\n');
     attempts.push({artifact:name,result:summary.result,executed:summary.totalTestCount,passed:summary.passedTests,
       failed:summary.failedTests,skipped:summary.skippedTests,expectedFailures:summary.expectedFailures,
@@ -79,7 +81,7 @@ const scenarios=coverage.scenarios.map(scenario=>{
   const reviewPaths=scenario.reviews ?? [scenario.review];
   if(!Array.isArray(reviewPaths)||!reviewPaths.length)throw new Error(`Missing reviews for scenario ${scenario.id}`);
   const reviews=reviewPaths.map(evidenceFile);
-  const receipts=results.map(attempt=>evidenceFile(attempt.artifact.replace(/\.xcresult$/,'.source.json')));
+  const receipts=results.map(attempt=>evidenceFile(acceptanceReceiptPath(folder,attempt.artifact)));
   return {...scenario,result:'historicalScenarioPassed',completeOperation:false,releaseApproved:false,
     executed:results.reduce((sum,item)=>sum+item.executed,0),evidence:[...reviews,...receipts,...results.map(item=>item.summary)]};
 });
