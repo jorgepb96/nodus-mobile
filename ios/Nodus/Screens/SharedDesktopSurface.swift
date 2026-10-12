@@ -91,6 +91,7 @@ struct SharedDesktopSurface: View {
     @State private var immersionController: ImmersionProgressController?
     @State private var immersionPlan: ImmersionPlan?
     @State private var showImmersionProgress = false
+    @State private var showWorkspaceOrganization = false
 
     var body: some View {
         DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
@@ -172,6 +173,10 @@ struct SharedDesktopSurface: View {
                         .font(.caption).fixedSize(horizontal: false, vertical: true).frame(minHeight: 44).frame(maxWidth: .infinity, alignment: .leading)
                 }.padding(.horizontal, 12).background(.thinMaterial).accessibilityIdentifier("shared-immersion-private-progress")
             }
+            if surface == .workspace, session.connection.desktopPairingId != nil {
+                Button { showWorkspaceOrganization = true } label: { Label("Cambios de organización", systemImage: "folder.badge.gearshape").font(.caption).frame(minHeight: 44).frame(maxWidth: .infinity, alignment: .leading) }
+                    .padding(.horizontal, 12).background(.thinMaterial).accessibilityIdentifier("workspace-organization-review")
+            }
             if offlineCopy {
                 Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
@@ -188,6 +193,10 @@ struct SharedDesktopSurface: View {
         .sheet(item: $exportedURL,onDismiss:{ exportedLease = nil }) { ActivityShareSheet(items: [$0]) }
         .quickLookPreview($embeddedPreview)
         .onChange(of:embeddedPreview) { _, value in if value == nil { embeddedLease = nil } }
+        .sheet(isPresented: $showWorkspaceOrganization, onDismiss: { reloadRevision += 1 }) {
+            NavigationStack { WorkspaceOrganizationReview(session: session).nodusModalClose(accent: session.accent) }
+                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showImmersionProgress) {
             NavigationStack {
                 if let controller = immersionController, let plan = immersionPlan {
@@ -391,12 +400,139 @@ struct StudyEvidenceDocument: View {
     }
 }
 
+private struct WorkspaceOrganizationReview: View {
+    let session: SpaceSession
+    @State private var operations: [JSONValue] = []
+    @State private var error: String?
+    @State private var busy = false
+    var body: some View {
+        List {
+            if let error { Text(error).foregroundStyle(.red) }
+            if operations.isEmpty { Text("No hay cambios de organización pendientes.").foregroundStyle(.secondary) }
+            ForEach(operations, id: \.self) { value in
+                let fields = value.objectValue ?? [:], op = fields["operation"]?.objectValue ?? [:]
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(label(op["type"]?.stringValue ?? "")).font(.headline)
+                    Text(op["name"]?.stringValue ?? op["id"]?.stringValue ?? "").font(.caption).foregroundStyle(.secondary)
+                    Text(fields["state"] == .string("conflict") ? "Conflicto · revisa el cambio actual en Nodus" : fields["state"] == .string("blocked") ? "Bloqueado · conservado en este dispositivo" : "Guardado en el móvil · pendiente de sincronizar").font(.caption)
+                    if let issue = fields["issue"]?.stringValue { Text(issue).font(.caption).foregroundStyle(.secondary) }
+                    Button("Cancelar este cambio", role: .destructive) { Task { await cancel(fields["id"]?.stringValue) } }
+                        .frame(minHeight: 44).disabled(busy || !session.connection.role.canSendChanges)
+                }.padding(.vertical, 4)
+            }
+            Button("Actualizar estado") { Task { await load() } }.frame(minHeight: 44).disabled(busy)
+            Button("Sincronizar cambios") { Task { busy = true; await session.synchronizeCompanionChanges(); busy = false; await load() } }
+                .frame(minHeight: 44).disabled(busy || !session.connection.role.canSendChanges)
+            Text("Cancelar conserva los documentos y comentarios. Si falta confirmar un recibo, sincroniza antes de cancelar. Tras resolver un conflicto puedes volver a ejecutar la acción sobre el estado actual.").font(.caption).foregroundStyle(.secondary)
+        }.navigationTitle("Organización de Scriptor").task { await load() }
+            .onChange(of: session.companionPublicationRevision) { _, _ in Task { await load() } }
+    }
+    private func label(_ type: String) -> String {
+        ["move": "Mover documento", "tags": "Cambiar etiquetas", "restore": "Restaurar documento", "folderCreate": "Crear carpeta", "folderRename": "Renombrar carpeta", "folderTrash": "Enviar carpeta a la papelera"][type] ?? "Cambio de organización"
+    }
+    @MainActor private func queue() async throws -> CompanionDocumentOutbox {
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        return try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault)
+    }
+    @MainActor private func load() async {
+        do { operations = try await queue().workspaceOrganizationIssues().arrayValue ?? []; error = nil }
+        catch { self.error = error.localizedDescription }
+    }
+    @MainActor private func cancel(_ id: String?) async {
+        guard let id, session.connection.role.canSendChanges else { return }
+        busy = true; defer { busy = false }
+        do {
+            _ = try privateBridgeConnection(session, domain: .writing)
+            try await queue().cancelWorkspaceOrganization(id: id)
+            await load()
+        } catch { self.error = error.localizedDescription }
+    }
+}
+
+@MainActor private enum WorkspaceOrganizationSurfaceBridge {
+    static let methods: Set<String> = ["moveNote", "patchNoteTags", "restoreNotes", "createNoteFolder", "renameNoteFolder", "trashNoteFolder"]
+    static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
+                        pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, onOffline: (Bool) -> Void) async throws -> JSONValue {
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+        let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
+        let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        let variants: [[JSONValue]] = [[.bool(true)], [], [.bool(false)]]
+        var localTree: JSONValue?
+        for variant in variants {
+            let key = try CompanionDocumentOutbox.operationKey("getNotesTree", variant)
+            let bytes: Data?
+            if downloadedOnly { bytes = try await cache.downloadedData(vaultId: vaultId, domain: .corpus, recordId: key).first }
+            else { bytes = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key) }
+            if let bytes {
+                let value = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+                let candidate = value.objectValue?["mobileOrganizationTree"] ?? value
+                if candidate.objectValue?["mobileOrganizationComplete"] == .bool(true) { localTree = candidate; break }
+                if localTree == nil { localTree = candidate }
+            }
+        }
+        if localTree == nil { localTree = await queue.workspaceOrganizationTree(includeConsulted: !downloadedOnly) }
+        var tree: JSONValue, authoritative = false
+        if downloadedOnly {
+            guard let localTree else { throw APIError(status: 409, code: "organization_not_downloaded", message: "Descarga la organización de Scriptor antes de modificarla sin conexión.") }
+            tree = localTree; onOffline(true)
+        } else {
+            do {
+                let value = try await client.operation(vaultId: vaultId, method: "getNotesTree", args: [.bool(true)], timeout: localTree == nil ? nil : 4)
+                tree = value.objectValue?["mobileOrganizationTree"] ?? value
+                let key = try CompanionDocumentOutbox.operationKey("getNotesTree", [.bool(true)])
+                try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
+                authoritative = true; onOffline(false)
+            } catch {
+                guard isPrivateBridgeOffline(error), let localTree else { throw error }
+                tree = localTree; onOffline(true)
+            }
+        }
+        let (currentVault, currentPairing, _) = try privateBridgeConnection(session, domain: .writing)
+        guard !currentPairing.isExpired, currentVault == vaultId, currentPairing.id == pairing.id, currentPairing.domains.contains(.corpus), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+        try await queue.rememberTree(tree, authoritative: authoritative)
+        func enqueue(_ type: String, _ id: String?, _ arguments: JSONValue = .object([:])) async throws -> JSONValue {
+            let result = try await queue.enqueueWorkspaceOrganization(type: type, id: id, arguments: arguments, tree: tree, authoritative: authoritative)
+            Task { await session.synchronizeCompanionChanges() }
+            return result
+        }
+        if method == "createNoteFolder", args.count == 1, args[0].objectValue != nil { return try await enqueue("folderCreate", nil, args[0]) }
+        if method == "patchNoteTags", args.count == 2, let ids = args[0].arrayValue, args[1].objectValue != nil {
+            var result: [JSONValue] = [], seen = Set<String>()
+            do {
+                for value in ids { guard let id = value.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.malformedResponse }; if seen.insert(id).inserted { result += try await enqueue("tags", id, args[1]).arrayValue ?? [] } }
+            } catch {
+                guard !result.isEmpty else { throw error }
+                throw APIError(status: 409, code: "organization_partial_success", message: "Se han guardado cambios de etiquetas para \(result.count) documentos. Revisa Cambios de organización; los restantes no se han modificado. \(error.localizedDescription)")
+            }
+            return .array(result)
+        }
+        if method == "restoreNotes", args.count == 1, let ids = args[0].arrayValue {
+            var count: Int64 = 0, seen = Set<String>()
+            do {
+                for value in ids { guard let id = value.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.malformedResponse }; if seen.insert(id).inserted { _ = try await enqueue("restore", id); count += 1 } }
+            } catch {
+                guard count > 0 else { throw error }
+                throw APIError(status: 409, code: "organization_partial_success", message: "Se han guardado \(count) restauraciones. Revisa Cambios de organización; los documentos restantes no se han modificado. \(error.localizedDescription)")
+            }
+            return .int(count)
+        }
+        guard let id = args.first?.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.malformedResponse }
+        if method == "moveNote", args.count == 2, args[1] == .null || args[1].stringValue != nil { return try await enqueue("move", id, .object(["folderId": args[1]])) }
+        if method == "renameNoteFolder", args.count == 2, let name = args[1].stringValue { return try await enqueue("folderRename", id, .object(["name": .string(name)])) }
+        if method == "trashNoteFolder", args.count == 1 { return try await enqueue("folderTrash", id) }
+        throw DesktopBridgeError.malformedResponse
+    }
+}
+
 @MainActor private enum CompanionDocumentSurfaceBridge {
     static let methods: Set<String> = ["getStudyDocEditorData", "updateStudyDoc", "restoreStudyDocVersion", "resolveMobileStudyConflict", "duplicateMobileStudyDocument", "trashMobileStudyDocument", "createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation"]
     static let workspaceMethods: Set<String> = ["getWorkspaceNoteEditorData", "restoreWorkspaceNoteVersion", "createWorkspaceAnnotation", "updateWorkspaceAnnotation", "deleteWorkspaceAnnotation", "duplicateMobileWorkspaceNote", "trashMobileWorkspaceNote"]
     static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
                         pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, kind: CompanionDocumentOutbox.Kind = .studyDocument, onOffline: (Bool) -> Void) async throws -> JSONValue {
-        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
               let id = args.first?.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.permissionDenied }
         let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: kind)
         let cache = try PrivateBridgeCache(pairingId: pairing.id)
@@ -1020,6 +1156,8 @@ private struct DesktopWebView: UIViewRepresentable {
                             let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: .studyDocument)
                             value = try await queue.createStudyDocument(input: args[0])
                             Task { await session.synchronizeCompanionChanges() }
+                        } else if WorkspaceOrganizationSurfaceBridge.methods.contains(method) {
+                            value = try await WorkspaceOrganizationSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, onOffline: onOfflineCopy)
                         } else if CompanionDocumentSurfaceBridge.methods.contains(method) {
                             value = try await CompanionDocumentSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, onOffline: onOfflineCopy)
                         } else if CompanionDocumentSurfaceBridge.workspaceMethods.contains(method) {
@@ -1075,7 +1213,7 @@ private struct DesktopWebView: UIViewRepresentable {
                                 }
                                 if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue { try await documents.seed(noteId: noteId, editorData: value) }
                                 if method == "getNotesTree" {
-                                    try await documents.rememberTree(value, authoritative: !privateReadFromDevice)
+                                    try await documents.rememberTree(value.objectValue?["mobileOrganizationTree"] ?? value, authoritative: !privateReadFromDevice)
                                     value = await documents.overlayTree(value, includeConfirmedEdits: privateReadFromDevice, includeTrashed: includeTrashed)
                                 }
                             }

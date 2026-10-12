@@ -325,8 +325,25 @@ public actor CompanionDocumentOutbox {
     }
     /// Completeness comes only from a real downloaded full snapshot. Ownership
     /// recovery removes this consulted baseline, retaining command preconditions.
-    public func workspaceOrganizationTree() -> JSONValue? {
+    public func workspaceOrganizationTree(includeConsulted: Bool = true) -> JSONValue? {
         guard kind == .workspaceNote else { return nil }
+        if !includeConsulted {
+            var owned = (confirmedTree(includeTrashed: true) ?? .object(["notes": .array([]), "folders": .array([])])).objectValue ?? [:]
+            var notes = owned["notes"]?.arrayValue ?? [], folders = owned["folders"]?.arrayValue ?? []
+            let sources = records.values.compactMap { $0.createdNote ?? $0.baseline.objectValue?["mobileCommandSource"]?.objectValue?["document"] }
+                + annotationSources.values.compactMap { $0.objectValue?["mobileCommandSource"]?.objectValue?["document"] }
+            for note in sources {
+                if let id = note.objectValue?["id"], !notes.contains(where: { $0.objectValue?["id"] == id }) { notes.append(note) }
+                var cursor = note.objectValue?["folderId"]?.stringValue, seen = Set<String>()
+                while let id = cursor, seen.insert(id).inserted, let folder = knownFolders[id] {
+                    if !folders.contains(where: { $0.objectValue?["id"] == .string(id) }) { folders.append(folder) }
+                    cursor = folder.objectValue?["parentId"]?.stringValue
+                }
+            }
+            owned["notes"] = .array(notes); owned["folders"] = .array(folders)
+            guard !notes.isEmpty || !workspaceOrganizationCommands.isEmpty else { return nil }
+            return overlayTree(Self.organizationMetadata(.object(owned)), includeConfirmedEdits: true, includeTrashed: true)
+        }
         let base: JSONValue
         if let snapshot = workspaceOrganizationSnapshot { base = snapshot }
         else if !knownFolders.isEmpty || !knownNotes.isEmpty || !workspaceOrganizationCommands.isEmpty {

@@ -113,6 +113,7 @@ struct CompanionDocumentOutboxTests {
         let tree: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([.object(["id": .string("downloaded-folder"), "parentId": .null, "name": .string("Downloaded")])]), "notes": .array([.object(["id": .string("downloaded-note"), "title": .string("Source"), "folderId": .string("downloaded-folder"), "tags": .array([]), "trashedAt": .null, "content": .string("PRIVATE BODY MUST NOT ENTER METADATA SNAPSHOT"), "nativeDocument": .array([.string("PRIVATE NATIVE")])])])])
         try await queue.rememberTree(tree, authoritative: false)
         let reopened = try await fixture.open()
+        #expect(await reopened.workspaceOrganizationTree(includeConsulted: false) == nil)
         let snapshot = try #require(await reopened.workspaceOrganizationTree())
         #expect(snapshot.objectValue?["mobileOrganizationComplete"] == .bool(true))
         #expect(snapshot.objectValue?["notes"]?.arrayValue?.first?.objectValue?["content"] == nil)

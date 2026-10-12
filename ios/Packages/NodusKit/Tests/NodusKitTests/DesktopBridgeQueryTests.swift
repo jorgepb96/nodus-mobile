@@ -81,6 +81,30 @@ struct DesktopBridgeQueryTests {
         #expect(CorpusQueryProtocol.state.calls().isEmpty)
     }
 
+    @Test("workspace organization packets retain metadata preconditions and are refused for study, weak and expired grants")
+    func workspaceOrganizationWire() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing]); defer { session.invalidateAndCancel() }
+        let id = UUID().uuidString, requestID = UUID().uuidString
+        let operation: JSONValue = .object(["type": .string("restore"), "id": .string(id), "expectedTrashedAt": .string("2026-10-12T10:00:00.000Z"), "expectedFolderId": .null])
+        let request = CompanionDocumentOutbox.Request(id: requestID, noteId: id, input: .object([:]), command: .object(["action": .string("workspaceOrganization"), "operation": operation]), generation: 0)
+        _ = try await bridge.saveWorkspaceEdit(vaultId: "Mac/vault", request: request)
+        let call = try #require(CorpusQueryProtocol.state.calls().last)
+        #expect(call.request.url?.absoluteString == "https://mac.nodus.test:7443/bridge/v2/vaults/Mac%2Fvault/workspace-edits")
+        let wire = try JSONDecoder.nodus.decode(JSONValue.self, from: call.body).objectValue!
+        #expect(wire["id"] == .string(requestID) && wire["noteId"] == .string(id) && wire["input"] == .object([:]))
+        #expect(wire["command"] == request.command)
+        let count = CorpusQueryProtocol.state.calls().count
+        await #expect(throws: DesktopBridgeError.self) { try await bridge.saveWorkspaceEdit(vaultId: "Mac/vault", request: request, kind: .studyDocument) }
+        await #expect(throws: DesktopBridgeError.self) { try await bridge.saveWorkspaceEdit(vaultId: "Foreign vault", request: request) }
+        #expect(CorpusQueryProtocol.state.calls().count == count)
+        let (weak, weakSession) = try fixture(domains: [.writing]); defer { weakSession.invalidateAndCancel() }
+        await #expect(throws: DesktopBridgeError.self) { try await weak.saveWorkspaceEdit(vaultId: "Mac/vault", request: request) }
+        #expect(CorpusQueryProtocol.state.calls().isEmpty)
+        let (expired, expiredSession) = try fixture(domains: [.corpus, .writing], expiresAt: Date(timeIntervalSinceNow: -1)); defer { expiredSession.invalidateAndCancel() }
+        await #expect(throws: DesktopBridgeError.self) { try await expired.saveWorkspaceEdit(vaultId: "Mac/vault", request: request) }
+        #expect(CorpusQueryProtocol.state.calls().isEmpty)
+    }
+
     private func fixture(domains: Set<DesktopBridgeDomain> = [.corpus], expiresAt: Date? = nil) throws -> (DesktopBridgeClient, URLSession) {
         let pair = try DesktopBridgePairing(id: UUID().uuidString, origin: "https://mac.nodus.test:7443",
             certificateFingerprint: String(repeating: "a", count: 64), deviceId: "phone", deviceName: "phone",
