@@ -50,6 +50,9 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertEqual(input.value as? String, draft, "Opening the Mac options must preserve the unsent question.")
     }
     @MainActor private func openExistingPrincipal(destination: String) throws -> XCUIApplication {
+        try openExistingVault(destination: destination, vaultId: "default")
+    }
+    @MainActor private func openExistingVault(destination: String, vaultId: String) throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let env = ProcessInfo.processInfo.environment
         for key in ["NODUS_ACCEPTANCE_LINK", "NODUS_ACCEPTANCE_PAIRING_CODE", "NODUS_ACCEPTANCE_SNAPSHOT_FILENAME", "NODUS_START_ROUTE"] {
@@ -62,7 +65,7 @@ final class MobileReleaseUITests: XCTestCase {
         let navigation = app.buttons["nodus-navigation-toggle"]
         XCTAssertTrue(navigation.waitForExistence(timeout: 45), app.debugDescription)
         app.buttons["Cambiar de espacio"].tap()
-        let principal = app.buttons["space-default"]
+        let principal = app.buttons["space-" + vaultId]
         XCTAssertTrue(principal.waitForExistence(timeout: 20), "The previously linked workspace must be available.")
         for _ in 0..<8 { if principal.isHittable { break }; app.swipeDown() }
         XCTAssertTrue(principal.isHittable); principal.tap()
@@ -73,6 +76,36 @@ final class MobileReleaseUITests: XCTestCase {
         for _ in 0..<8 { if route.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(route.isHittable); route.tap()
         return app
+    }
+    @MainActor
+    func testLiveProsopographyReadsCompletePersonIdentityAndReopens() throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_PERSON_DOSSIER"])
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
+        func value(_ key: String) throws -> String { try XCTUnwrap(fixture[key] as? String) }
+        let vault = try value("vaultId"), person = try value("personId")
+        let name = try value("name"), biography = try value("biographySnippet"), notes = try value("notes")
+        let fields = try [value("birthDate"), value("deathDate"), value("nationalId")]
+        for reopen in 0..<2 {
+            let app = try openExistingVault(destination: "prosopPersons", vaultId: vault)
+            defer { app.terminate() }
+            let row = app.buttons["prosop-person-open-" + person]
+            XCTAssertTrue(row.waitForExistence(timeout: 45), app.debugDescription)
+            for _ in 0..<10 { if row.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(row.isHittable); row.tap()
+            XCTAssertTrue(app.staticTexts[name].firstMatch.waitForExistence(timeout: 15))
+            for field in fields { XCTAssertTrue(app.staticTexts[field].waitForExistence(timeout: 15)) }
+            for (identifier, text) in [("prosop-person-biography", biography), ("prosop-person-notes", notes)] {
+                let section = app.descendants(matching: .any)[identifier].firstMatch
+                XCTAssertTrue(section.waitForExistence(timeout: 15), app.debugDescription)
+                let paragraph = section.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)).firstMatch
+                XCTAssertTrue(paragraph.waitForExistence(timeout: 15), "The actual saved text must load, not only its section heading.")
+                for _ in 0..<10 { if paragraph.isHittable { break }; app.swipeUp() }
+                XCTAssertTrue(paragraph.isHittable)
+                capture(app, "live-person-\(identifier)-reopen-\(reopen)")
+            }
+            XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+            app.terminate()
+        }
     }
     @MainActor
     func testLivePhoneChatStreamsCopiesAndReopensFromHistory() throws {

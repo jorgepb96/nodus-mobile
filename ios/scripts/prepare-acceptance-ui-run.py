@@ -19,6 +19,7 @@ parser.add_argument("--bridge-pid", type=int)
 parser.add_argument("--style", choices=["light", "dark"], required=True)
 parser.add_argument("--source-citation", action="store_true")
 parser.add_argument("--dictionary", action="store_true")
+parser.add_argument("--person-dossier", action="store_true")
 parser.add_argument("--text-size", choices=["standard", "accessibility3"])
 parser.add_argument("--mac-unavailable", action="store_true")
 parser.add_argument("--research-marker")
@@ -143,6 +144,12 @@ if args.dictionary:
                       NODUS_ACCEPTANCE_DICTIONARY_BODY_SNIPPET=snippet,
                       NODUS_ACCEPTANCE_DICTIONARY_AUTHOR_NAME=authors[0]["name"],
                       NODUS_ACCEPTANCE_DICTIONARY_WORK_TITLE=work)
+
+if args.person_dossier:
+    person = json.loads((args.lab / "person-dossier-acceptance-input.json").read_text())
+    if person.get("personId") != "person-acceptance-mobile-010" or person.get("providerCalls") != 0:
+        raise SystemExit("An explicitly isolated fictional person fixture is required")
+    values["NODUS_ACCEPTANCE_PERSON_DOSSIER"] = json.dumps(person, ensure_ascii=False)
 
 configuration = plistlib.loads(args.base.read_bytes())
 target = configuration["NodusUITests"]
