@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "desktopCommit": "bba5135f164fc131c6085c28761566083541a7fd",
-  "sourceDigest": "37e9538e562981f173bb871bbc0dab0c0cb93d5f1f0bf12eaa6743c5658f8592",
+  "desktopCommit": "61fbad0c94af109c0bea50511a8ed895e0315139",
+  "sourceDigest": "64e9350ada3bc77554332a571d6fdda92200327077d33f6c99accd89bbf6fda7",
   "files": {
     "chat-read.css": "6b81a44ca1103c6a3033973474103d21c1066feea9c2f4745a11dee6943560e8",
     "chat-read.html": "f11bc0e21820903b7539c97d81a490ef1871ad6ddfadbd50c8032297b59b5118",
