@@ -109,6 +109,8 @@ final class DeepResearchTranslationStore {
 
     func translation(language: String) -> ContentTranslation? { translations.first { $0.language == language } }
 
+    func isPendingDeletion(language: String) -> Bool { deletedLanguages.contains(language) }
+
     @discardableResult
     func save(reportId: String, language: String, markdown: String, model: ModelRef) -> ContentTranslation {
         let now = Date()
