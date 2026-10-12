@@ -2208,7 +2208,7 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertTrue(comments.waitForExistence(timeout: 10), app.debugDescription); comments.tap()
             let saved = web.staticTexts[String(marker)].firstMatch
             XCTAssertTrue(saved.waitForExistence(timeout: 20), app.debugDescription)
-            XCTAssertEqual(web.staticTexts[String(marker)].count, 1, "Reopening must retain one comment, without replay duplicates.")
+            XCTAssertEqual(web.staticTexts.matching(NSPredicate(format: "label == %@", String(marker))).count, 1, "Reopening must retain one comment, without replay duplicates.")
             XCTAssertFalse(app.staticTexts["shared-surface-error"].exists, app.debugDescription)
             print("NODUS_SCRIPTOR_COMMENT=\(marker)")
             capture(app, "scriptor-offline-comment-reopen-\(reopen)")
