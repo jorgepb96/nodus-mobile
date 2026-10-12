@@ -15,8 +15,10 @@ struct DesktopBridgeRenewalTests {
         func grant(expiry: Date, domains: Set<DesktopBridgeDomain> = [.corpus, .writing], fingerprint: String = String(repeating: "a", count: 64), origin: String = "https://mac.nodus.test:7443", vaults: Set<String> = ["vault"], device: String = "mac") throws -> DesktopBridgePairing {
             try DesktopBridgePairing(id: id, origin: origin, certificateFingerprint: fingerprint, deviceId: device, deviceName: "Mac", vaultIds: vaults, domains: domains, pairedAt: created, expiresAt: expiry)
         }
-        let initial = try grant(expiry: Date().addingTimeInterval(0.5))
-        try store.save(initial, token: "old")
+        // The constructor is stale before the first request. Authoritative metadata
+        // must be read immediately, independent of scheduler or machine load.
+        let initial = try grant(expiry: created.addingTimeInterval(-60))
+        try store.save(grant(expiry: created.addingTimeInterval(3_600)), token: "old")
         defer { try? store.revokeLocally(initial) }
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [RenewalProtocol.self]
@@ -28,9 +30,8 @@ struct DesktopBridgeRenewalTests {
         defer { try? FileManager.default.removeItem(at: cacheRoot) }
         let nodus = NodusClient(address: try ServerAddress(validating: initial.origin), cache: ResponseCache(directory: cacheRoot), desktopBridge: client, vaultId: "vault")
         _ = try await nodus.snapshot(in: "vault")
-        let expiry = Date().addingTimeInterval(60)
+        let expiry = created.addingTimeInterval(7_200)
         try store.save(grant(expiry: expiry), token: "renewed")
-        try await Task.sleep(for: .milliseconds(600))
         #expect(initial.isExpired)
         _ = try await nodus.snapshot(in: "vault")
         #expect(RenewalProtocol.state.tokens() == ["Bearer old", "Bearer renewed"])
