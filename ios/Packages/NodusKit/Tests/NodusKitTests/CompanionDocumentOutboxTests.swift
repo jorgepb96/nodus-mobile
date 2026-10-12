@@ -40,6 +40,261 @@ struct CompanionDocumentOutboxTests {
         func append(_ value: CompanionDocumentOutbox.Request) { values.append(value) }
         func all() -> [CompanionDocumentOutbox.Request] { values }
     }
+    private static func studyEditor(_ id: String = "study-a", revision: Int = 7, text: String = "Original", fingerprint: String = String(repeating: "a", count: 64)) -> JSONValue {
+        var value = editor(revision, text: text).objectValue!
+        value["academicMetadata"] = .object(["bibliography": .array([.string("Citation 2024")])])
+        value["schemaVersion"] = .int(2); value["spellcheckLanguage"] = .string("es-ES"); value["customDictionary"] = .array([.string("lemma")])
+        value["mobileCommandSource"] = .object(["version": .int(1), "fingerprint": .string(fingerprint),
+            "document": .object(["id": .string(id), "title": value["documentTitle"]!, "kind": .string("articulo"), "description": .string("Academic source"), "color": .string("indigo"), "deletedAt": .null, "archivedAt": .null]),
+            "placements": .array([.object(["id": .string("place-a"), "document_id": .string(id), "course_id": .string("course-a"), "subject_id": .string("subject-a"), "position": .int(3)]),
+                                  .object(["id": .string("place-b"), "document_id": .string(id), "course_id": .string("course-b"), "position": .int(8)])])])
+        return .object(value)
+    }
+    private static func studyReceipt(_ request: CompanionDocumentOutbox.Request, revision: Int) -> JSONValue {
+        var editor = studyEditor(request.noteId, revision: revision, text: request.input.objectValue!["contentMarkdown"]!.stringValue!).objectValue!
+        for (key, value) in request.input.objectValue! where !["expectedRevision", "reason"].contains(key) { editor[key == "title" ? "documentTitle" : key] = value }
+        var source = editor["mobileCommandSource"]!.objectValue!, note = source["document"]!.objectValue!
+        note["title"] = editor["documentTitle"]; note["contentMarkdown"] = editor["contentMarkdown"]
+        if request.command?.objectValue?["action"] == .string("trash") { note["deletedAt"] = .string("2026-10-12T15:00:00Z") }
+        source["document"] = .object(note); editor["mobileCommandSource"] = .object(source)
+        var response: [String: JSONValue] = ["id": .string(request.id), "note": .object(note), "editorData": .object(editor)]
+        if let command = request.command?.objectValue {
+            if let target = command["targetId"]?.stringValue {
+                var copy = editor, copyNote = note
+                copy["revision"] = .int(0); copy["documentTitle"] = .string(editor["documentTitle"]!.stringValue! + " (copia)")
+                copyNote["id"] = .string(target); copyNote["title"] = copy["documentTitle"]
+                var copySource = source; copySource["document"] = .object(copyNote)
+                copySource["placements"] = .array((source["placements"]?.arrayValue ?? []).enumerated().map { index, value in
+                    var placement = value.objectValue!; placement["document_id"] = .string(target); placement["id"] = .string("canonical-\(target)-\(index)")
+                    return .object(placement)
+                })
+                copy["mobileCommandSource"] = .object(copySource)
+                response["commandResult"] = .object(["document": .object(copyNote), "editorData": .object(copy)])
+            } else { response["commandResult"] = .object(["document": .object(note)]) }
+        }
+        return .object(response)
+    }
+
+    @Test("offline duplication keeps structured metadata and placements and replays one identity after a lost acknowledgement")
+    func studyDuplicateReplay() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        let duplicate = try await queue.enqueueStudyCommand(noteId: "study-a", action: "duplicate")
+        let target = try #require(duplicate.objectValue?["id"]?.stringValue)
+        #expect(duplicate.objectValue?["kind"] == .string("articulo"))
+        #expect(duplicate.objectValue?["description"] == .string("Academic source"))
+        #expect(duplicate.objectValue?["mobileStudyPlacements"]?.arrayValue?.count == 2)
+        let attempts = Requests()
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in await attempts.append(request); throw URLError(.networkConnectionLost) } }
+        let reopened = try await fixture.open(kind: .studyDocument)
+        let local = try #require(await reopened.editorData(noteId: target))
+        #expect(local.objectValue?["academicMetadata"] == Self.studyEditor().objectValue?["academicMetadata"])
+        #expect(local.objectValue?["nativeDocument"]?.arrayValue?.first?.objectValue?["id"] != Self.studyEditor().objectValue?["nativeDocument"]?.arrayValue?.first?.objectValue?["id"])
+        #expect(local.objectValue?["nativeDocument"]?.arrayValue?.first?.objectValue?["content"] == Self.studyEditor().objectValue?["nativeDocument"]?.arrayValue?.first?.objectValue?["content"])
+        #expect(local.objectValue?["customDictionary"] == .array([.string("lemma")]))
+        let tables = await reopened.overlayStudyTables([:])
+        #expect(tables["study_docs"]?.first { $0.string("id") == target }?.string("title") == "Private document (copia)")
+        #expect(tables["study_placements"]?.count == 2)
+        try await reopened.synchronize { request in await attempts.append(request); return Self.studyReceipt(request, revision: 8) }
+        let sent = await attempts.all()
+        #expect(sent.count == 2); #expect(sent[0] == sent[1]); #expect(sent[0].command?.objectValue?["targetId"] == .string(target))
+        let final = try await fixture.open(kind: .studyDocument)
+        #expect(await final.pendingCount() == 0)
+        #expect(await final.confirmedEditorData(noteId: target)?.objectValue?["documentTitle"] == .string("Private document (copia)"))
+        let finalPlacements = await final.overlayStudyTables([:], includeConfirmedEdits: true)["study_placements"] ?? []
+        #expect(finalPlacements.count == 4)
+        #expect(finalPlacements.filter { $0.string("document_id") == target }.allSatisfy { $0.string("id")?.hasPrefix("canonical-") == true })
+    }
+    @Test("an offline native copy remaps academic evidence and footnote blocks without changing their text")
+    func studyDuplicateAcademicIds() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        var source = Self.studyEditor().objectValue!
+        source["academicMetadata"] = .object(["formatVersion": .int(1), "style": .string("apa"), "locale": .string("es-ES"), "placement": .string("footnote"),
+            "notes": .object(["note-a": .object(["placement": .string("footnote"), "document": .array([.object(["id": .string("footnote-source"), "type": .string("paragraph"), "content": .string("Private note")])])])]),
+            "evidence": .array([.object(["id": .string("evidence-a"), "blockId": .string("table-1"), "text": .string("Protected evidence"), "status": .string("checked")])])])
+        try await queue.seed(noteId: "study-a", editorData: .object(source))
+        let copy = try await queue.enqueueStudyCommand(noteId: "study-a", action: "duplicate")
+        let target = try #require(copy.objectValue?["id"]?.stringValue)
+        let editor = try #require(await queue.editorData(noteId: target)?.objectValue)
+        let clonedId = editor["nativeDocument"]?.arrayValue?.first?.objectValue?["id"]
+        #expect(clonedId != .string("table-1"))
+        #expect(editor["academicMetadata"]?.objectValue?["evidence"]?.arrayValue?.first?.objectValue?["blockId"] == clonedId)
+        let footnote = editor["academicMetadata"]?.objectValue?["notes"]?.objectValue?["note-a"]?.objectValue?["document"]?.arrayValue?.first?.objectValue
+        #expect(footnote?["id"] != .string("footnote-source")); #expect(footnote?["content"] == .string("Private note"))
+    }
+
+    @Test("authoritative snapshots cannot resurrect acknowledged copies or overwrite later Mac trash and metadata")
+    func studyAuthoritativeProjection() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        let duplicate = try await queue.enqueueStudyCommand(noteId: "study-a", action: "duplicate")
+        let target = try #require(duplicate.objectValue?["id"]?.stringValue)
+        #expect(await queue.overlayStudyTables([:], authoritative: true)["study_docs"]?.contains { $0.string("id") == target } == true)
+        try await queue.synchronize { request in Self.studyReceipt(request, revision: 8) }
+        #expect(await queue.overlayStudyTables([:], authoritative: true)["study_docs"]?.isEmpty == true)
+        let remote: [String: [Row]] = ["study_docs": [Row(["id": .string(target), "title": .string("Mac title"), "content_markdown": .string("Mac content"), "editor_revision": .int(11), "description": .string("Changed on Mac"), "deleted_at": .string("2026-10-12T16:00:00Z")])]]
+        let projected = await queue.overlayStudyTables(remote, includeConfirmedEdits: true, authoritative: true)
+        #expect(projected["study_docs"]?.first?.string("title") == "Mac title")
+        #expect(projected["study_docs"]?.first?.string("description") == "Changed on Mac")
+        #expect(projected["study_docs"]?.first?.string("deleted_at") != nil)
+        #expect(await queue.overlayStudyTables([:], includeConfirmedEdits: true)["study_docs"]?.contains { $0.string("id") == target } == true)
+    }
+
+    @Test("duplication commits the captured pending draft atomically and orders later source and copy edits behind it")
+    func studyDuplicatePendingEdits() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        _ = try await queue.save(noteId: "study-a", input: Self.input(7, text: "At duplication"))
+        let duplicate = try await queue.enqueueStudyCommand(noteId: "study-a", action: "duplicate")
+        let target = try #require(duplicate.objectValue?["id"]?.stringValue)
+        _ = try await queue.save(noteId: "study-a", input: Self.input(-1, text: "Later source edit"))
+        _ = try await queue.save(noteId: target, input: Self.input(0, text: "Later copy edit"))
+        let sent = Requests()
+        try await queue.synchronize { request in
+            await sent.append(request)
+            return Self.studyReceipt(request, revision: request.command == nil ? (request.noteId == target ? 1 : 9) : 8)
+        }
+        let requests = await sent.all()
+        #expect(requests.count == 3)
+        #expect(requests[0].command?.objectValue?["action"] == .string("duplicate"))
+        #expect(requests[0].input.objectValue?["contentMarkdown"] == .string("At duplication"))
+        #expect(requests.first { $0.command == nil && $0.noteId == "study-a" }?.input.objectValue?["expectedRevision"] == .int(8))
+        #expect(requests.first { $0.command == nil && $0.noteId == target }?.input.objectValue?["expectedRevision"] == .int(0))
+        #expect(await queue.confirmedEditorData(noteId: "study-a")?.objectValue?["contentMarkdown"] == .string("Later source edit"))
+        #expect(await queue.confirmedEditorData(noteId: target)?.objectValue?["contentMarkdown"] == .string("Later copy edit"))
+    }
+    @Test("trash is a durable tombstone and an explicit remote choice restores visibility after a source conflict")
+    func studyTrashConflict() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        _ = try await queue.save(noteId: "study-a", input: Self.input(7, text: "Before trash"))
+        _ = try await queue.enqueueStudyCommand(noteId: "study-a", action: "trash")
+        let source: [String: [Row]] = ["study_docs": [Row(["id": .string("study-a"), "title": .string("Original"), "deleted_at": .null])]]
+        #expect(await queue.overlayStudyTables(source)["study_docs"]?.first?.string("deleted_at") != nil)
+        let reopened = try await fixture.open(kind: .studyDocument)
+        #expect(await reopened.overlayStudyTables(source)["study_docs"]?.first?.string("deleted_at") != nil)
+        await #expect(throws: APIError.self) { try await reopened.synchronize { _ in throw APIError(status: 409, code: "source_conflict", message: "Placement changed", details: ["remote": Self.studyEditor(revision: 9, fingerprint: String(repeating: "b", count: 64))]) } }
+        #expect(await reopened.editorData(noteId: "study-a")?.objectValue?["mobileSyncState"] == .string("conflict"))
+        _ = try await reopened.resolve(noteId: "study-a", keepMobile: false)
+        #expect(await reopened.overlayStudyTables(source, includeConfirmedEdits: true)["study_docs"]?.first?.string("deleted_at") == nil)
+        #expect(await reopened.pendingCount() == 0)
+    }
+    @Test("new source duplication waits for its stable creation receipt and never invents a source identity")
+    func studyDuplicateNewSource() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        let document = try await queue.createStudyDocument(input: .object(["title": .string("New source"), "kind": .string("apunte")]))
+        let source = try #require(document.objectValue?["id"]?.stringValue)
+        _ = try await queue.save(noteId: source, input: Self.input(-1, text: "Captured before copy"))
+        _ = try await queue.enqueueStudyCommand(noteId: source, action: "duplicate")
+        let attempts = Requests()
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in await attempts.append(request); throw URLError(.timedOut) } }
+        let reopened = try await fixture.open(kind: .studyDocument)
+        try await reopened.synchronize { request in await attempts.append(request); return Self.studyReceipt(request, revision: request.creation == nil ? 2 : 1) }
+        let requests = await attempts.all()
+        #expect(requests.count == 3); #expect(requests[0] == requests[1])
+        #expect(requests[0].creation != nil); #expect(requests[0].command == nil)
+        #expect(requests[2].creation == nil); #expect(requests[2].command?.objectValue?["action"] == .string("duplicate"))
+        #expect(requests[2].noteId == source); #expect(requests[2].input.objectValue?["expectedRevision"] == .int(1))
+        #expect(requests[2].input.objectValue?["contentMarkdown"] == .string("Captured before copy"))
+    }
+    @Test("a command waits for an already frozen source save then uses its acknowledged revision exactly once")
+    func studyDuplicateFrozenSource() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        _ = try await queue.save(noteId: "study-a", input: Self.input(7, text: "Already sent"))
+        let attempts = Requests()
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in await attempts.append(request); throw URLError(.networkConnectionLost) } }
+        _ = try await queue.save(noteId: "study-a", input: Self.input(-1, text: "At duplication"))
+        _ = try await queue.enqueueStudyCommand(noteId: "study-a", action: "duplicate")
+        let reopened = try await fixture.open(kind: .studyDocument)
+        try await reopened.synchronize { request in await attempts.append(request); return Self.studyReceipt(request, revision: request.command == nil ? 8 : 9) }
+        let sent = await attempts.all()
+        #expect(sent.count == 3); #expect(sent[0] == sent[1])
+        #expect(sent[2].input.objectValue?["expectedRevision"] == .int(8))
+        #expect(sent[2].input.objectValue?["contentMarkdown"] == .string("At duplication"))
+        #expect(sent[2].command != nil); #expect(await reopened.pendingCount() == 0)
+    }
+    @Test("explicit command conflict resolution keeps the same target and issues a fresh receipt against the selected remote revision")
+    func studyDuplicateConflictKeep() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        _ = try await queue.save(noteId: "study-a", input: Self.input(7, text: "Captured copy"))
+        let copy = try await queue.enqueueStudyCommand(noteId: "study-a", action: "duplicate")
+        let target = try #require(copy.objectValue?["id"]?.stringValue)
+        let attempts = Requests()
+        await #expect(throws: APIError.self) { try await queue.synchronize { request in
+            await attempts.append(request)
+            throw APIError(status: 409, code: "source_conflict", message: "Moved on Mac", details: ["remote": Self.studyEditor(revision: 9, text: "Mac text", fingerprint: String(repeating: "b", count: 64))])
+        } }
+        _ = try await queue.resolve(noteId: target, keepMobile: true)
+        try await queue.synchronize { request in await attempts.append(request); return Self.studyReceipt(request, revision: 10) }
+        let sent = await attempts.all()
+        #expect(sent.count == 2); #expect(sent[0].id != sent[1].id)
+        #expect(sent[0].command?.objectValue?["targetId"] == sent[1].command?.objectValue?["targetId"])
+        #expect(sent[1].input.objectValue?["expectedRevision"] == .int(9))
+        #expect(sent[1].command?.objectValue?["sourceFingerprint"] == .string(String(repeating: "b", count: 64)))
+        #expect(sent[1].input.objectValue?["contentMarkdown"] == .string("Captured copy"))
+        #expect(await queue.pendingCount() == 0)
+    }
+
+    @Test("a rejected new-source dependency retains a blocked local copy and cannot invent a Mac duplicate")
+    func studyDuplicateBlockedCreation() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        let source = try await queue.createStudyDocument(input: .object(["title": .string("New source"), "kind": .string("apunte")]))
+        let sourceId = try #require(source.objectValue?["id"]?.stringValue)
+        let copy = try await queue.enqueueStudyCommand(noteId: sourceId, action: "duplicate")
+        let target = try #require(copy.objectValue?["id"]?.stringValue)
+        let sent = Requests()
+        await #expect(throws: APIError.self) { try await queue.synchronize { request in
+            await sent.append(request); throw APIError(status: 400, code: "placement_unavailable", message: "Destination no longer exists")
+        } }
+        let reopened = try await fixture.open(kind: .studyDocument)
+        #expect(await reopened.editorData(noteId: target)?.objectValue?["mobileSyncState"] == .string("blocked"))
+        try await reopened.synchronize { request in await sent.append(request); return Self.studyReceipt(request, revision: 1) }
+        #expect(await sent.all().count == 1)
+        #expect(await reopened.pendingCount() == 0)
+        #expect(await reopened.overlayStudyTables([:])["study_docs"]?.contains { $0.string("id") == target } == true)
+    }
+    @Test("a later canonical restore and metadata edit replaces an acknowledged local trash when seeding its reader")
+    func studyLaterRemoteMetadata() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        _ = try await queue.enqueueStudyCommand(noteId: "study-a", action: "trash")
+        try await queue.synchronize { request in Self.studyReceipt(request, revision: 8) }
+        #expect(await queue.overlayStudyTables([:], includeConfirmedEdits: true)["study_docs"]?.first?.string("deleted_at") != nil)
+        var restored = Self.studyEditor(revision: 9, text: "Restored on Mac").objectValue!
+        var source = restored["mobileCommandSource"]!.objectValue!, note = source["document"]!.objectValue!
+        note["description"] = .string("New canonical metadata"); note["deletedAt"] = .null
+        source["document"] = .object(note); restored["mobileCommandSource"] = .object(source)
+        try await queue.seed(noteId: "study-a", editorData: .object(restored))
+        let reopened = try await fixture.open(kind: .studyDocument)
+        let row = await reopened.overlayStudyTables([:], includeConfirmedEdits: true)["study_docs"]?.first
+        #expect(row?.string("deleted_at") == nil)
+        #expect(row?.string("description") == "New canonical metadata")
+        #expect(row?.string("content_markdown") == "Restored on Mac")
+    }
+
+    @Test("old downloads without complete command metadata fail explicitly and retain their ordinary editor draft")
+    func studyOldDownloadCommandMissing() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "study-a", input: Self.input(7, text: "Retained"))
+        await #expect(throws: APIError.self) { try await queue.enqueueStudyCommand(noteId: "study-a", action: "duplicate") }
+        #expect(await queue.editorData(noteId: "study-a")?.objectValue?["contentMarkdown"] == .string("Retained"))
+        #expect(await queue.pendingCount() == 1)
+    }
+
     private static let creationInput: JSONValue = .object(["title": .string("New offline document"), "content": .string(""),
         "kind": .string("markdown"), "folderId": .string("folder-a"), "tags": .array([.string("offline")])])
     @Test("new study documents retain identity, placement and edits across restart, retry and acknowledgement")

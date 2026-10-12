@@ -13,6 +13,7 @@ struct DesktopBridgeQueryTests {
         for selection: SnapshotConsultation in [.dictionary, .sources] {
             let snapshot = try await client.snapshot(in: "different-publication", consultation: selection)
             #expect(snapshot.document["requestedProjection"]?.stringValue == selection.rawValue)
+            #expect(!snapshot.fromDevice)
         }
         #expect(try await client.snapshot(in: "different-publication").document["requestedProjection"] == .string("complete"))
         let calls = CorpusQueryProtocol.state.calls()
@@ -25,9 +26,36 @@ struct DesktopBridgeQueryTests {
             CorpusQueryProtocol.state.respond(.offline)
             let restored = try await client.snapshot(in: "different-publication", consultation: selection)
             #expect(restored.document["requestedProjection"]?.stringValue == selection.rawValue)
+            #expect(restored.fromDevice)
         }
         CorpusQueryProtocol.state.respond(.offline)
-        #expect(try await client.snapshot(in: "different-publication").document["requestedProjection"] == .string("complete"))
+        let offlineComplete = try await client.snapshot(in: "different-publication")
+        #expect(offlineComplete.document["requestedProjection"] == .string("complete"))
+        #expect(offlineComplete.fromDevice)
+    }
+
+    @Test("study writes preserve creation and durable commands at their owning-vault boundary")
+    func studyWriteWire() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing]); defer { session.invalidateAndCancel() }
+        let doc = UUID().uuidString, target = UUID().uuidString
+        let input: JSONValue = .object(["title": .string("Apunte"), "contentMarkdown": .string("Texto"), "expectedRevision": .int(0)])
+        let creation: JSONValue = .object(["kind": .string("apunte")])
+        let command: JSONValue = .object(["action": .string("duplicate"), "sourceFingerprint": .string(String(repeating: "a", count: 64)), "targetId": .string(target)])
+        for request in [CompanionDocumentOutbox.Request(id: UUID().uuidString, noteId: doc, input: input, creation: creation, generation: 1),
+                        CompanionDocumentOutbox.Request(id: UUID().uuidString, noteId: doc, input: input, command: command, generation: 2)] {
+            let response = try await bridge.saveWorkspaceEdit(vaultId: "Mac/vault", request: request, kind: .studyDocument)
+            #expect(response.objectValue?["note"]?.objectValue?["id"] == .string(doc))
+            let call = try #require(CorpusQueryProtocol.state.calls().last)
+            #expect(call.request.url?.absoluteString == "https://mac.nodus.test:7443/bridge/v2/vaults/Mac%2Fvault/study-edits")
+            let wire = try JSONDecoder.nodus.decode(JSONValue.self, from: call.body).objectValue!
+            #expect(wire["documentId"] == .string(doc) && wire["noteId"] == nil)
+            #expect(wire["creation"] == request.creation && wire["command"] == request.command)
+        }
+        let calls = CorpusQueryProtocol.state.calls().count
+        let forbidden = CompanionDocumentOutbox.Request(id: UUID().uuidString, noteId: doc, input: input, command: command, generation: 3)
+        await #expect(throws: DesktopBridgeError.self) { try await bridge.saveWorkspaceEdit(vaultId: "Mac/vault", request: forbidden) }
+        await #expect(throws: DesktopBridgeError.self) { try await bridge.saveWorkspaceEdit(vaultId: "Other vault", request: forbidden, kind: .studyDocument) }
+        #expect(CorpusQueryProtocol.state.calls().count == calls)
     }
 
     private func fixture(domains: Set<DesktopBridgeDomain> = [.corpus], expiresAt: Date? = nil) throws -> (DesktopBridgeClient, URLSession) {
@@ -329,6 +357,14 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocolDidFinishLoading(self); return
         }
         let projection = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "projection" })?.value ?? "complete"
+        if request.url?.path.hasSuffix("/study-edits") == true,
+           let body = try? JSONDecoder.nodus.decode(JSONValue.self, from: bytes).objectValue,
+           let id = body["id"], let document = body["documentId"] {
+            let response: JSONValue = .object(["id": id, "document": .object(["id": document]), "editorData": .object(["revision": .int(1), "documentTitle": .string("Apunte"), "contentMarkdown": .string("Texto")])])
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: try! JSONEncoder.nodus.encode(response))
+            client?.urlProtocolDidFinishLoading(self); return
+        }
         let result = request.url?.path.hasSuffix("/snapshot") == true
             ? "{\"format\":\"nodus.server-snapshot\",\"formatVersion\":2,\"tables\":{},\"requestedProjection\":\"\(projection)\"}"
             : request.url?.path.hasSuffix("/jobs") == true || request.url?.path.contains("/jobs/") == true

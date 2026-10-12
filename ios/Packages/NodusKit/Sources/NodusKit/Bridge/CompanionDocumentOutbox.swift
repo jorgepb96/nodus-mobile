@@ -18,6 +18,7 @@ public actor CompanionDocumentOutbox {
         public let noteId: String
         public let input: JSONValue
         public var creation: JSONValue? = nil
+        public var command: JSONValue? = nil
         let generation: Int
     }
     private struct Record: Codable {
@@ -31,6 +32,28 @@ public actor CompanionDocumentOutbox {
         var creation: JSONValue?
         var createdNote: JSONValue?
     }
+    private struct StudyCommand: Codable {
+        var id: String
+        let sourceId: String
+        let action: String
+        let targetId: String?
+        var expectedRevision: Int
+        var sourceFingerprint: String?
+        let input: JSONValue
+        let sourceEditor: JSONValue
+        var sourceNote: JSONValue
+        var sourcePlacements: JSONValue
+        let targetEditor: JSONValue?
+        let capturedGeneration: Int
+        var dependencyRequestId: String?
+        var needsCreation: Bool
+        var sending: Request?
+        var state: State
+        var remote: JSONValue?
+        var issue: String?
+        var cancelled: Bool? = nil
+        let createdAt: Date
+    }
     private struct Authored: Codable {
         var editorData: JSONValue
         var note: JSONValue?
@@ -42,6 +65,7 @@ public actor CompanionDocumentOutbox {
         var authored: [String: Authored]
         var folders: [String: JSONValue]?
         var kind: Kind? = nil
+        var studyCommands: [String: StudyCommand]? = nil
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
@@ -52,6 +76,7 @@ public actor CompanionDocumentOutbox {
     private var knownNotes: [String: JSONValue] = [:]
     private var baselines: [String: JSONValue] = [:]
     private var acknowledgedLocalRevisions: [String: Int] = [:]
+    private var studyCommands: [String: StudyCommand] = [:]
     private var synchronizing = false
     private var diskTask: Task<Void, any Error>?
     private var diskTaskId: UUID?
@@ -61,7 +86,21 @@ public actor CompanionDocumentOutbox {
         self.cache = cache; self.vaultId = vaultId; self.kind = kind
         if let data, let state = try? JSONDecoder.nodus.decode(StoredState.self, from: data), state.version == 2 {
             guard state.vaultId == vaultId, (state.kind ?? .workspaceNote) == kind else { throw DesktopBridgeError.malformedResponse }
-            records = state.records; authored = state.authored; knownFolders = state.folders ?? [:]
+            records = state.records; authored = state.authored; studyCommands = state.studyCommands ?? [:]; knownFolders = state.folders ?? [:]
+            for (key, command) in studyCommands {
+                guard kind == .studyDocument, key == command.id, UUID(uuidString: key) != nil,
+                      !command.sourceId.isEmpty, command.sourceId.utf8.count <= 128,
+                      ["duplicate", "trash"].contains(command.action), command.expectedRevision >= 0, command.capturedGeneration >= 0,
+                      command.input.objectValue?["title"]?.stringValue != nil, command.input.objectValue?["contentMarkdown"]?.stringValue != nil,
+                      command.sourceNote.objectValue?["id"] == .string(command.sourceId), command.sourcePlacements.arrayValue != nil,
+                      command.action == "duplicate" ? command.targetId.flatMap(UUID.init(uuidString:)) != nil && command.targetId != command.sourceId && command.targetEditor?.objectValue?["documentTitle"]?.stringValue != nil : command.targetId == nil,
+                      command.needsCreation || command.sourceFingerprint?.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw DesktopBridgeError.malformedResponse }
+                if let sending = command.sending {
+                    guard sending.id == command.id, sending.noteId == command.sourceId,
+                          sending.command?.objectValue?["action"] == .string(command.action),
+                          sending.command?.objectValue?["sourceFingerprint"] == command.sourceFingerprint.map(JSONValue.string) else { throw DesktopBridgeError.malformedResponse }
+                }
+            }
             for (id, source) in authored {
                 guard source.editorData.objectValue?["revision"]?.intValue.map({ $0 >= 0 }) == true,
                       source.editorData.objectValue?["documentTitle"]?.stringValue != nil,
@@ -90,11 +129,15 @@ public actor CompanionDocumentOutbox {
         baselines[noteId] = editorData
         if var owned = authored[noteId], editorData != owned.editorData,
            revision >= (owned.editorData.objectValue?["revision"]?.intValue ?? 0) {
-            owned.editorData = editorData; authored[noteId] = owned; try await persist()
+            owned.editorData = editorData
+            if kind == .studyDocument, let note = editorData.objectValue?["mobileCommandSource"]?.objectValue?["document"], note.objectValue?["id"] == .string(noteId) {
+                owned.note = enrichedStudyNote(note, editor: editorData)
+            }
+            authored[noteId] = owned; try await persist()
         }
     }
     public func confirmedEditorData(noteId: String) -> JSONValue? { authored[noteId]?.editorData }
-    public func hasBaseline(noteId: String) -> Bool { records[noteId] != nil || baselines[noteId] != nil }
+    public func hasBaseline(noteId: String) -> Bool { records[noteId] != nil || baselines[noteId] != nil || studyCommands.values.contains { $0.sourceId == noteId || $0.targetId == noteId } }
     private static func validParent(_ parent: JSONValue?) -> Bool {
         parent == nil || parent == .null || parent?.stringValue.map({ !$0.isEmpty }) == true
     }
@@ -141,15 +184,23 @@ public actor CompanionDocumentOutbox {
         return overlayTree(.object(["notes": .array(notes), "folders": .array(folders.keys.sorted().compactMap { folders[$0] }), "mobileSourceScope": .string("authoredDocuments")]), includeConfirmedEdits: true, includeTrashed: includeTrashed)
     }
     public func editorData(noteId: String) -> JSONValue? {
-        guard let record = records[noteId] else { return nil }
+        guard let record = records[noteId] else {
+            guard let command = studyCommands.values.first(where: { $0.targetId == noteId || ($0.sourceId == noteId && $0.cancelled != true) }) else { return nil }
+            var editor = (command.targetId == noteId ? command.targetEditor : command.sourceEditor)?.objectValue ?? [:]
+            editor["mobileSyncState"] = .string(command.state.rawValue)
+            editor["mobileSyncIssue"] = command.issue.map(JSONValue.string) ?? .null
+            if let remote = command.remote { editor["mobileConflictRemote"] = remote }
+            return .object(editor)
+        }
         var editor = record.baseline.objectValue ?? [:]
         for (key, value) in record.draft.objectValue ?? [:] where !["expectedRevision", "reason"].contains(key) {
             editor[key == "title" ? "documentTitle" : key] = value
         }
         editor["revision"] = .int(-Int64(record.generation))
-        editor["mobileSyncState"] = .string(record.state.rawValue)
-        editor["mobileSyncIssue"] = record.issue.map(JSONValue.string) ?? .null
-        if let remote = record.remote { editor["mobileConflictRemote"] = remote }
+        let command = studyCommands.values.first { ($0.sourceId == noteId || $0.targetId == noteId) && $0.cancelled != true }
+        editor["mobileSyncState"] = .string(command?.state.rawValue ?? record.state.rawValue)
+        editor["mobileSyncIssue"] = (command?.issue ?? record.issue).map(JSONValue.string) ?? .null
+        if let remote = command?.remote ?? record.remote { editor["mobileConflictRemote"] = remote }
         return .object(editor)
     }
     private static func isVisibleNote(_ note: JSONValue) -> Bool { note.objectValue?["trashedAt"] == nil || note.objectValue?["trashedAt"] == .null }
@@ -229,19 +280,34 @@ public actor CompanionDocumentOutbox {
         return noteResult(noteId: id)
     }
 
-    public func overlayStudyTables(_ source: [String: [Row]], includeConfirmedEdits: Bool = false) -> [String: [Row]] {
+    public func overlayStudyTables(_ source: [String: [Row]], includeConfirmedEdits: Bool = false, authoritative: Bool = false) -> [String: [Row]] {
         guard kind == .studyDocument else { return source }
-        var tables = source, local = authored.compactMapValues(\.note)
-        for (id, record) in records { if let note = record.createdNote { local[id] = note } }
+        var tables = source, local = authoritative ? [:] : authored.compactMapValues(\.note)
+        for (id, record) in records {
+            if let note = record.createdNote, !authoritative || record.creation != nil { local[id] = note }
+        }
+        for command in studyCommands.values {
+            if let target = command.targetId { local[target] = studyCommandNote(command) }
+            else if command.cancelled != true { local[command.sourceId] = studyCommandNote(command) }
+        }
         var documents = tables["study_docs"] ?? [], placements = tables["study_placements"] ?? []
         for id in Set(local.keys).union(records.keys).sorted() {
             let index = documents.firstIndex { $0.string("id") == id }
-            let editor = editorData(noteId: id) ?? (includeConfirmedEdits || index == nil ? confirmedEditorData(noteId: id) : nil)
+            let editor = editorData(noteId: id) ?? (!authoritative && (includeConfirmedEdits || index == nil) ? confirmedEditorData(noteId: id) : nil)
             guard let editor = editor?.objectValue else { continue }
             var fields = index.map { documents[$0].columns } ?? ["id": .string(id)]
             if let note = local[id]?.objectValue {
-                for (key, column) in [("kind", "kind"), ("shortId", "short_id"), ("description", "description"), ("createdAt", "created_at"), ("updatedAt", "updated_at"), ("deletedAt", "deleted_at"), ("archivedAt", "archived_at")] { if let value = note[key] { fields[column] = value } }
-                if let placement = note["mobileStudyPlacement"]?.objectValue, !placements.contains(where: { $0.string("document_id") == id }) {
+                for (key, column) in [("kind", "kind"), ("shortId", "short_id"), ("description", "description"), ("color", "color"), ("icon", "icon"), ("emoji", "emoji"), ("imageData", "image_data"), ("year", "year"), ("favorite", "favorite"), ("position", "position"), ("createdAt", "created_at"), ("updatedAt", "updated_at"), ("deletedAt", "deleted_at"), ("archivedAt", "archived_at")] { if let value = note[key] { fields[column] = value } }
+                if let copied = note["mobileStudyPlacements"]?.arrayValue, !placements.contains(where: { $0.string("document_id") == id }) {
+                    placements += copied.enumerated().compactMap { index, value in
+                        guard var placement = value.objectValue else { return nil }
+                        if placement["document_id"] != .string(id) {
+                            placement["id"] = .string("mobile-\(id)-\(index)"); placement["document_id"] = .string(id)
+                            placement["deleted_at"] = .null; placement["archived_at"] = .null
+                        }
+                        return Row(placement)
+                    }
+                } else if let placement = note["mobileStudyPlacement"]?.objectValue, !placements.contains(where: { $0.string("document_id") == id }) {
                     var location: [String: JSONValue] = ["id": .string("mobile-\(id)"), "document_id": .string(id)]
                     for (key, column) in [("courseId", "course_id"), ("subjectId", "subject_id"), ("topicId", "topic_id"), ("folderId", "folder_id")] { location[column] = placement[key] ?? .null }
                     placements.append(Row(location))
@@ -254,6 +320,197 @@ public actor CompanionDocumentOutbox {
         tables["study_docs"] = documents; tables["study_placements"] = placements
         return tables
     }
+    /// Persist the command and its exact local draft before reporting success.
+    /// An old selected download without organization metadata cannot silently
+    /// invent a kind, placement or source revision.
+    public func enqueueStudyCommand(noteId: String, action: String) async throws -> JSONValue {
+        guard kind == .studyDocument, ["duplicate", "trash"].contains(action) else { throw DesktopBridgeError.permissionDenied }
+        if let existing = studyCommands.values.first(where: { $0.sourceId == noteId && $0.cancelled != true }) {
+            guard existing.action == action else { throw APIError(status: 409, code: "study_command_pending", message: "Hay otra solicitud pendiente para este documento.") }
+            try await persist()
+            return action == "duplicate" ? studyCommandNote(existing) : .null
+        }
+        guard let editor = editorData(noteId: noteId) ?? baselines[noteId] ?? authored[noteId]?.editorData,
+              let fields = editor.objectValue,
+              let baseline = records[noteId]?.baseline ?? baselines[noteId] ?? authored[noteId]?.editorData,
+              let revision = baseline.objectValue?["revision"]?.intValue, revision >= 0,
+              let title = fields["documentTitle"]?.stringValue, fields["contentMarkdown"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
+        let source = baseline.objectValue?["mobileCommandSource"]?.objectValue
+        let needsCreation = records[noteId]?.creation != nil
+        let note: JSONValue
+        let placements: JSONValue
+        let fingerprint: String?
+        if needsCreation, let created = records[noteId]?.createdNote {
+            note = created; fingerprint = nil
+            if let placement = created.objectValue?["mobileStudyPlacement"]?.objectValue {
+                var fields: [String: JSONValue] = ["id": .string("mobile-\(noteId)"), "document_id": .string(noteId), "deleted_at": .null]
+                for (key, column) in [("courseId", "course_id"), ("subjectId", "subject_id"), ("topicId", "topic_id"), ("folderId", "folder_id"), ("position", "position")] { fields[column] = placement[key] ?? .null }
+                placements = .array([.object(fields)])
+            } else { placements = .array([]) }
+        } else {
+            guard source?["version"] == .int(1), let sourceNote = source?["document"], sourceNote.objectValue?["id"] == .string(noteId),
+                  let hash = source?["fingerprint"]?.stringValue, hash.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+                  let sourcePlacements = source?["placements"], sourcePlacements.arrayValue != nil else {
+                throw APIError(status: 409, code: "study_command_source_missing", message: "Esta copia no incluye los datos completos para duplicar o enviar el documento a la papelera. Actualiza la descarga con Nodus conectado.")
+            }
+            note = sourceNote; placements = sourcePlacements; fingerprint = hash
+        }
+        var input: [String: JSONValue] = ["title": .string(title), "contentMarkdown": fields["contentMarkdown"]!, "expectedRevision": .int(Int64(revision))]
+        for key in ["nativeDocument", "schemaVersion", "academicMetadata", "style", "spellcheckLanguage", "customDictionary"] { if let value = fields[key] { input[key] = value } }
+        let target = action == "duplicate" ? UUID().uuidString.lowercased() : nil
+        var targetEditor = Self.cloneStudyEditor(fields)
+        targetEditor["documentTitle"] = .string(title + " (copia)"); targetEditor["revision"] = .int(0)
+        for key in ["versions", "annotations", "outgoingLinks", "backlinks"] { targetEditor[key] = .array([]) }
+        targetEditor["mobileCommandSource"] = nil; targetEditor["mobileConflictRemote"] = nil
+        var dependency = records[noteId]?.sending?.id
+        var newlyFrozenCreation: Request?
+        if needsCreation, let record = records[noteId], record.sending == nil {
+            var wire = record.draft.objectValue!; wire["expectedRevision"] = .int(Int64(revision))
+            newlyFrozenCreation = Request(id: UUID().uuidString, noteId: noteId, input: .object(wire), creation: record.creation, generation: record.generation)
+            dependency = newlyFrozenCreation?.id
+        }
+        var capturedEditor = fields; capturedEditor["mobileCommandSource"] = nil
+        let id = UUID().uuidString.lowercased()
+        let command = StudyCommand(id: id, sourceId: noteId, action: action, targetId: target, expectedRevision: Int(revision),
+            sourceFingerprint: fingerprint, input: .object(input), sourceEditor: .object(capturedEditor), sourceNote: note, sourcePlacements: placements,
+            targetEditor: target.map { _ in .object(targetEditor) }, capturedGeneration: records[noteId]?.generation ?? 0,
+            dependencyRequestId: dependency, needsCreation: needsCreation, state: .pending, createdAt: Date())
+        guard try JSONEncoder.nodus.encode(JSONValue.object(input)).count <= Self.maximumRequestBytes - 65_536 else { throw DesktopBridgeError.malformedResponse }
+        if let newlyFrozenCreation, var record = records[noteId] { record.sending = newlyFrozenCreation; records[noteId] = record }
+        studyCommands[id] = command
+        do { try await persist() } catch {
+            studyCommands[id] = nil
+            if newlyFrozenCreation != nil, var record = records[noteId], record.sending?.id == dependency { record.sending = nil; records[noteId] = record }
+            throw error
+        }
+        return action == "duplicate" ? studyCommandNote(command) : .null
+    }
+    /// Block identities are global links. A local copy receives its own ids,
+    /// including academic evidence references and structured footnote blocks.
+    private static func cloneStudyEditor(_ fields: [String: JSONValue]) -> [String: JSONValue] {
+        var ids: [String: String] = [:]
+        func clone(_ value: JSONValue) -> JSONValue {
+            guard let blocks = value.arrayValue else { return value }
+            return .array(blocks.map { block in
+                guard var fields = block.objectValue else { return block }
+                if let old = fields["id"]?.stringValue { let id = UUID().uuidString.lowercased(); ids[old] = id; fields["id"] = .string(id) }
+                if let children = fields["children"] { fields["children"] = clone(children) }
+                return .object(fields)
+            })
+        }
+        var result = fields
+        if let native = result["nativeDocument"] { result["nativeDocument"] = clone(native) }
+        if var metadata = result["academicMetadata"]?.objectValue {
+            if var notes = metadata["notes"]?.objectValue {
+                for key in notes.keys {
+                    guard var note = notes[key]?.objectValue, let document = note["document"] else { continue }
+                    note["document"] = clone(document); notes[key] = .object(note)
+                }
+                metadata["notes"] = .object(notes)
+            }
+            if let evidence = metadata["evidence"]?.arrayValue {
+                metadata["evidence"] = .array(evidence.map { value in
+                    guard var item = value.objectValue, let old = item["blockId"]?.stringValue, let id = ids[old] else { return value }
+                    item["blockId"] = .string(id); return .object(item)
+                })
+            }
+            result["academicMetadata"] = .object(metadata)
+        }
+        return result
+    }
+    private func studyCommandNote(_ command: StudyCommand) -> JSONValue {
+        var note = command.sourceNote.objectValue ?? [:]
+        let editor = (command.targetId == nil ? command.sourceEditor : command.targetEditor)?.objectValue ?? [:]
+        let id = command.targetId ?? command.sourceId
+        note["id"] = .string(id); note["title"] = editor["documentTitle"]; note["contentMarkdown"] = editor["contentMarkdown"]
+        note["editorRevision"] = editor["revision"]; note["mobileSyncState"] = .string(command.state.rawValue)
+        note["mobileSyncIssue"] = command.issue.map(JSONValue.string) ?? .null
+        if command.targetId != nil {
+            note["shortId"] = nil; note["deletedAt"] = .null; note["archivedAt"] = .null; note["favorite"] = .bool(false)
+            note["createdAt"] = .string(command.createdAt.ISO8601Format()); note["updatedAt"] = note["createdAt"]
+            note["mobileStudyPlacements"] = command.sourcePlacements
+        } else if command.cancelled != true { note["deletedAt"] = .string(command.createdAt.ISO8601Format()) }
+        return .object(note)
+    }
+    private func synchronizeStudyCommands(send: @Sendable (Request) async throws -> JSONValue) async throws {
+        for key in studyCommands.values.sorted(by: { $0.createdAt < $1.createdAt }).map(\.id) {
+            guard var command = studyCommands[key], command.state == .pending, command.cancelled != true else { continue }
+            // A source identity must exist canonically, and an already sent save
+            // must be acknowledged before this command can freeze its revision.
+            guard command.dependencyRequestId == nil, !command.needsCreation else { continue }
+            if command.sending == nil {
+                guard let fingerprint = command.sourceFingerprint else { throw DesktopBridgeError.malformedResponse }
+                var input = command.input.objectValue!; input["expectedRevision"] = .int(Int64(command.expectedRevision))
+                var action: [String: JSONValue] = ["action": .string(command.action), "sourceFingerprint": .string(fingerprint)]
+                if let target = command.targetId { action["targetId"] = .string(target) }
+                command.sending = Request(id: command.id, noteId: command.sourceId, input: .object(input), command: .object(action), generation: command.capturedGeneration)
+                studyCommands[key] = command; try await persist()
+            }
+            let request = command.sending!
+            let response: JSONValue
+            do { response = try await send(request) }
+            catch {
+                guard var latest = studyCommands[key] else { throw error }
+                if let api = error as? APIError, ["revision_conflict", "source_conflict"].contains(api.code), let remote = api.details["remote"] {
+                    latest.state = .conflict; latest.remote = remote
+                } else if !Self.isTransportLoss(error) { latest.state = .blocked }
+                latest.issue = error.localizedDescription; studyCommands[key] = latest; try await persist(); throw error
+            }
+            guard response.objectValue?["id"] == .string(request.id), let committed = response.objectValue?["editorData"],
+                  let revision = committed.objectValue?["revision"]?.intValue, revision >= 0,
+                  let sourceNote = response.objectValue?["note"], sourceNote.objectValue?["id"] == .string(command.sourceId),
+                  let result = response.objectValue?["commandResult"]?.objectValue,
+                  Self.completeStudyCommandEditor(committed, noteId: command.sourceId) else { throw DesktopBridgeError.malformedResponse }
+            if let target = command.targetId {
+                guard result["document"]?.objectValue?["id"] == .string(target), let editor = result["editorData"],
+                      Self.completeStudyCommandEditor(editor, noteId: target) else { throw DesktopBridgeError.malformedResponse }
+            } else {
+                guard result["document"]?.objectValue?["id"] == .string(command.sourceId), sourceNote.objectValue?["deletedAt"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
+            }
+            authored[command.sourceId] = Authored(editorData: committed, note: enrichedStudyNote(sourceNote, editor: committed))
+            baselines[command.sourceId] = committed
+            if var sourceDraft = records[command.sourceId] {
+                let draft = sourceDraft.draft.objectValue ?? [:]
+                var currentDraft: [String: JSONValue] = [:], capturedDraft = command.input.objectValue ?? [:]
+                for key in Set(draft.keys).union(capturedDraft.keys) where !["expectedRevision", "reason"].contains(key) {
+                    currentDraft[key] = draft[key] ?? sourceDraft.baseline.objectValue?[key == "title" ? "documentTitle" : key]
+                }
+                capturedDraft["expectedRevision"] = nil; capturedDraft["reason"] = nil
+                if sourceDraft.generation <= command.capturedGeneration || currentDraft == capturedDraft { records[command.sourceId] = nil }
+                else {
+                    sourceDraft.baseline = committed; sourceDraft.sending = nil; sourceDraft.state = .pending; sourceDraft.remote = nil; sourceDraft.issue = nil
+                    records[command.sourceId] = sourceDraft
+                }
+            }
+            acknowledgedLocalRevisions[command.sourceId] = -command.capturedGeneration
+            if let target = command.targetId {
+                guard let note = result["document"], note.objectValue?["id"] == .string(target),
+                      let editor = result["editorData"], editor.objectValue?["revision"]?.intValue.map({ $0 >= 0 }) == true else { throw DesktopBridgeError.malformedResponse }
+                let enriched = enrichedStudyNote(note, editor: editor)
+                authored[target] = Authored(editorData: editor, note: enriched); baselines[target] = editor
+                if var targetDraft = records[target] { targetDraft.baseline = editor; targetDraft.createdNote = enriched; records[target] = targetDraft }
+                try await cache.store(JSONEncoder.nodus.encode(editor), vaultId: vaultId, domain: .corpus, recordId: Self.operationKey(kind.editorMethod, [.string(target)]))
+            }
+            try await cache.store(JSONEncoder.nodus.encode(committed), vaultId: vaultId, domain: .corpus, recordId: Self.operationKey(kind.editorMethod, [.string(command.sourceId)]))
+            // Retire only after the canonical source and target are durable.
+            try await persist(); studyCommands[key] = nil
+            do { try await persist() } catch { studyCommands[key] = command; throw error }
+        }
+    }
+    private static func completeStudyCommandEditor(_ editor: JSONValue, noteId: String) -> Bool {
+        guard let fields = editor.objectValue, fields["documentTitle"]?.stringValue != nil, fields["contentMarkdown"]?.stringValue != nil,
+              fields["revision"]?.intValue.map({ $0 >= 0 }) == true,
+              let source = fields["mobileCommandSource"]?.objectValue, source["version"] == .int(1),
+              source["document"]?.objectValue?["id"] == .string(noteId), source["placements"]?.arrayValue != nil,
+              let hash = source["fingerprint"]?.stringValue, hash.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { return false }
+        return true
+    }
+    private func enrichedStudyNote(_ note: JSONValue, editor: JSONValue) -> JSONValue {
+        guard var fields = note.objectValue else { return note }
+        if let placements = editor.objectValue?["mobileCommandSource"]?.objectValue?["placements"] { fields["mobileStudyPlacements"] = placements }
+        return .object(fields)
+    }
+
     public func createManualIdea(input: JSONValue) async throws -> JSONValue {
         guard var fields = input.objectValue, fields.keys.allSatisfy({ ["title", "folderId"].contains($0) }) else { throw DesktopBridgeError.malformedResponse }
         if fields["title"] == nil { fields["title"] = .string("Idea sin título") }
@@ -360,10 +617,13 @@ public actor CompanionDocumentOutbox {
         guard try JSONEncoder.nodus.encode(input).count <= Self.maximumRequestBytes - 65_536 else {
             throw APIError(status: 413, code: "workspace_edit_too_large", message: "La nota y sus archivos superan el tamaño permitido para sincronizar. Reduce los archivos adjuntos; el borrador anterior se conserva.")
         }
+        if studyCommands.values.contains(where: { $0.sourceId == noteId && $0.action == "trash" && $0.cancelled != true }) {
+            throw APIError(status: 409, code: "study_document_pending_trash", message: "El documento está pendiente de enviarse a la papelera. Resuelve esa solicitud antes de seguir editando.")
+        }
         guard let fields = input.objectValue, fields["title"]?.stringValue != nil,
               fields["contentMarkdown"]?.stringValue != nil,
               let expected = fields["expectedRevision"]?.intValue,
-              let baseline = records[noteId]?.baseline ?? baselines[noteId],
+              let baseline = records[noteId]?.baseline ?? baselines[noteId] ?? studyCommands.values.first(where: { $0.targetId == noteId })?.targetEditor ?? studyCommands.values.first(where: { $0.sourceId == noteId })?.sourceEditor,
               let baseRevision = baseline.objectValue?["revision"]?.intValue else { throw DesktopBridgeError.malformedResponse }
         let existing = records[noteId]
         guard existing.map({ expected == -$0.generation }) ?? (expected == baseRevision || expected == acknowledgedLocalRevisions[noteId]) else {
@@ -378,6 +638,9 @@ public actor CompanionDocumentOutbox {
         // A rejected input never committed. A transport failure might have
         // committed, so keep that immutable request while coalescing later edits.
         if record.state == .blocked { record.sending = nil; record.state = .pending; record.issue = nil }
+        if studyCommands.values.contains(where: { $0.targetId == noteId && $0.cancelled == true }) {
+            record.state = .blocked; record.issue = "La copia local se conserva, pero su duplicación fue descartada."
+        }
         records[noteId] = record
         let result = noteResult(noteId: noteId)
         try await persist()
@@ -391,12 +654,18 @@ public actor CompanionDocumentOutbox {
         if kind == .studyDocument { note["contentMarkdown"] = editor["contentMarkdown"]; note["favorite"] = .bool(false) }
         return .object(note)
     }
-    public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count }
+    public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count + studyCommands.values.filter { $0.state == .pending && $0.cancelled != true }.count }
     public func synchronize(send: @Sendable (Request) async throws -> JSONValue) async throws {
         guard !synchronizing else { return }
         synchronizing = true; defer { synchronizing = false }
+        try await synchronizeEdits(send: send)
+        try await synchronizeStudyCommands(send: send)
+        try await synchronizeEdits(send: send)
+    }
+    private func synchronizeEdits(send: @Sendable (Request) async throws -> JSONValue) async throws {
         for noteId in records.keys.sorted() {
             while var record = records[noteId], record.state == .pending {
+                if record.sending == nil, studyCommands.values.contains(where: { $0.targetId == noteId || ($0.sourceId == noteId && $0.cancelled != true) }), record.creation == nil { break }
                 if record.sending == nil {
                     var wire = record.draft.objectValue!
                     wire["expectedRevision"] = record.baseline.objectValue!["revision"]
@@ -413,12 +682,18 @@ public actor CompanionDocumentOutbox {
                     } else if !Self.isTransportLoss(error) {
                         latest.state = .blocked; latest.generation += 1
                     }
-                    latest.issue = error.localizedDescription; records[noteId] = latest; try await persist()
-                    throw error
+                    latest.issue = error.localizedDescription; records[noteId] = latest
+                    if latest.state != .pending {
+                        for key in studyCommands.keys {
+                            guard var command = studyCommands[key], command.dependencyRequestId == request.id else { continue }
+                            command.state = latest.state; command.remote = latest.remote; command.issue = latest.issue; studyCommands[key] = command
+                        }
+                    }
+                    try await persist(); throw error
                 }
                 if kind == .studyDocument, var envelope = response.objectValue, var note = envelope["note"]?.objectValue {
                     note["mobileStudyPlacement"] = request.creation?.objectValue?["placement"] ?? records[noteId]?.createdNote?.objectValue?["mobileStudyPlacement"] ?? authored[noteId]?.note?.objectValue?["mobileStudyPlacement"]
-                    envelope["note"] = .object(note); response = .object(envelope)
+                    envelope["note"] = enrichedStudyNote(.object(note), editor: envelope["editorData"] ?? .null); response = .object(envelope)
                 }
                 guard response.objectValue?["id"]?.stringValue == request.id,
                       let committed = response.objectValue?["editorData"],
@@ -457,6 +732,18 @@ public actor CompanionDocumentOutbox {
                 // Disk writes await another actor. An autosave can arrive during
                 // that wait, so read its latest generation after storing the ack.
                 guard var latest = records[noteId], latest.sending?.id == request.id else { throw DesktopBridgeError.malformedResponse }
+                for key in studyCommands.keys {
+                    guard var command = studyCommands[key], command.dependencyRequestId == request.id else { continue }
+                    command.expectedRevision = Int(revision)
+                    if command.needsCreation {
+                        guard let source = committed.objectValue?["mobileCommandSource"]?.objectValue,
+                              let fingerprint = source["fingerprint"]?.stringValue,
+                              let note = source["document"] else { throw DesktopBridgeError.malformedResponse }
+                        command.sourceFingerprint = fingerprint; command.sourceNote = note; command.sourcePlacements = source["placements"] ?? .array([])
+                        command.needsCreation = false
+                    }
+                    command.dependencyRequestId = nil; studyCommands[key] = command
+                }
                 baselines[noteId] = committed
                 acknowledgedLocalRevisions[noteId] = -request.generation
                 if latest.generation == request.generation { records[noteId] = nil }
@@ -472,6 +759,29 @@ public actor CompanionDocumentOutbox {
     /// Conflict resolution is an explicit choice and receives a fresh request
     /// identity. Neither side silently overwrites the other's changes.
     public func resolve(noteId: String, keepMobile: Bool) async throws -> JSONValue {
+        if let key = studyCommands.keys.first(where: { studyCommands[$0]?.sourceId == noteId || studyCommands[$0]?.targetId == noteId }),
+           var command = studyCommands[key], command.state == .conflict, let remote = command.remote,
+           let revision = remote.objectValue?["revision"]?.intValue, revision >= 0,
+           let source = remote.objectValue?["mobileCommandSource"]?.objectValue,
+           let fingerprint = source["fingerprint"]?.stringValue, let note = source["document"] {
+            baselines[command.sourceId] = remote
+            authored[command.sourceId] = Authored(editorData: remote, note: enrichedStudyNote(note, editor: remote))
+            if keepMobile {
+                studyCommands[key] = nil; command.id = UUID().uuidString.lowercased()
+                command.expectedRevision = revision; command.sourceFingerprint = fingerprint
+                command.sourceNote = note; command.sourcePlacements = source["placements"] ?? .array([])
+                command.sending = nil; command.remote = nil; command.issue = nil; command.state = .pending
+                command.dependencyRequestId = nil; command.needsCreation = false
+                studyCommands[command.id] = command
+            } else {
+                command.cancelled = true; command.state = .blocked; command.sending = nil
+                command.issue = "La solicitud se descartó. El contenido de la copia local se conserva."
+                studyCommands[key] = command; records[command.sourceId] = nil
+                if let target = command.targetId, var draft = records[target] { draft.state = .blocked; draft.issue = command.issue; records[target] = draft }
+            }
+            try await persist()
+            return editorData(noteId: noteId) ?? remote
+        }
         guard var record = records[noteId], record.state == .conflict, let remote = record.remote,
               let revision = remote.objectValue?["revision"]?.intValue, revision >= 0,
               remote.objectValue?["documentTitle"]?.stringValue != nil,
@@ -490,7 +800,7 @@ public actor CompanionDocumentOutbox {
         return result
     }
     private func persist() async throws {
-        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind))
+        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind, studyCommands: studyCommands))
         let previous = diskTask, id = UUID(), cache = self.cache, vault = vaultId, storage = kind.storageKey
         let task = Task {
             if let previous { _ = try? await previous.value }

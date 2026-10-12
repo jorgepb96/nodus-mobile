@@ -28,7 +28,9 @@ public extension NodusClient {
             extraHeaders: ["Accept": SnapshotFormat.contentType]
         ))
 
-        return try SnapshotDownload.read(response.data, revision: response.revision)
+        var snapshot = try SnapshotDownload.read(response.data, revision: response.revision)
+        snapshot.fromDevice = hasDesktopBridge && response.fromCache
+        return snapshot
     }
 }
 
@@ -56,6 +58,9 @@ public struct SnapshotAssetRef: Sendable, Hashable, Codable {
 }
 
 public struct SnapshotDownload: Sendable {
+    /// True only when this response came from an actual transport cache. Local
+    /// mirrors carry their own provenance at the reader, never inferred from rows.
+    public var fromDevice: Bool = false
     public let document: [String: JSONValue]
     public let formatVersion: Int
     public let revision: String?
