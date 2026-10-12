@@ -30,9 +30,9 @@ final class AuthoringRecoveryUITests: XCTestCase {
             XCTAssertTrue(export.isHittable)
             XCTAssertGreaterThanOrEqual(export.frame.height, 44)
             export.tap()
-            let filename = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Nodus-local-work")).firstMatch
+            let filename = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label == %@", "LP.CaptionBar.TopCaption", "Nodus-local-work")).firstMatch
             XCTAssertTrue(filename.waitForExistence(timeout: 15), "A real file must reach the native share sheet.\n" + app.debugDescription)
-            let copy = app.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Copiar", "Copy")).firstMatch
+            let copy = app.cells.matching(NSPredicate(format: "label == %@ OR label == %@", "Copiar", "Copy")).firstMatch
             XCTAssertTrue(copy.waitForExistence(timeout: 10), "The native export activity must be available.")
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = "offline-authoring-export-\(restart)"; attachment.lifetime = .keepAlways; add(attachment)
