@@ -25,11 +25,17 @@ struct RichCorpusProse: View {
     @State private var attempt = 0
     @State private var plain = false
     @State private var image: OpenImage?
+    @State private var formula: OpenFormula?
     struct OpenImage: Identifiable {
         let id = UUID()
         let content: ReaderImageSource.Content
         let preview: UIImage?
         let title: String
+    }
+    struct OpenFormula: Identifiable {
+        let id = UUID()
+        let latex: String
+        let width: CGFloat
     }
     private var path: PageSearch.Path { searchPath + [0] }
     var body: some View {
@@ -47,7 +53,7 @@ struct RichCorpusProse: View {
                 RichProseWebView(source: source, session: session, fontSize: reading.size(.callout, dynamicTypeSize: dynamicTypeSize), accent: accent,
                     dark: colorScheme == .dark, justify: sizeClass == .regular && !dynamicTypeSize.isAccessibilitySize,
                     annotations: annotations, bookmarks: bookmarks, chat: chat, search: search, path: path,
-                    height: $height, issue: $issue, onOpen: onOpen, onImage: { image = $0 })
+                    height: $height, issue: $issue, onOpen: onOpen, onImage: { image = $0 }, onFormula: { formula = $0 })
                     .frame(height: height).id(attempt)
                     .id(PageSearchAnchor(path: path))
                     .nodusRevealed(search?.revealed == path)
@@ -55,12 +61,45 @@ struct RichCorpusProse: View {
         }
         .onDisappear { search?.unregister(path) }
         .nodusSheet(item: $image) { item in ReaderImageViewer(content: item.content, image: item.preview, title: item.title, accent: accent) }
+        .nodusSheet(item: $formula) { item in
+            RichFormulaInspector(formula: item, fontSize: reading.size(.callout, dynamicTypeSize: dynamicTypeSize), accent: accent, dark: colorScheme == .dark)
+        }
     }
     /// Ordinary paragraphs retain the fast TextKit reader. Rich content must
     /// not be flattened into literal table delimiters or mathematical source.
     static func isRequired(_ source: String) -> Bool {
         source.range(of: #"(?m)^\s*\|?.+\|.+\n\s*\|?\s*:?-{3,}:?\s*\|"#, options: .regularExpression) != nil
         || source.range(of: #"(?s)(?<!\\)\${1,2}[^$\n]+\${1,2}|(?m)^\s*\$\$|(?i)<img\b|(?m)^\s*(`{3,}|~{3,})"#, options: .regularExpression) != nil
+    }
+}
+
+private struct RichFormulaInspector: View {
+    let formula: RichCorpusProse.OpenFormula
+    let fontSize: CGFloat
+    let accent: Color
+    let dark: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var height: CGFloat = 100
+    @State private var issue: String?
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geometry in
+                // Panning is deliberate inside this expanded inspector. The report
+                // keeps its own fixed measure and the original equation stays intact.
+                ScrollView([.horizontal, .vertical]) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        RichProseWebView(source: "$$\n\(formula.latex)\n$$", session: nil, fontSize: fontSize, accent: accent,
+                            dark: dark, justify: false, annotations: nil, bookmarks: nil, chat: nil, search: nil, path: [],
+                            height: $height, issue: $issue, onOpen: { _ in false }, onImage: { _ in })
+                            .frame(height: height)
+                        if let issue { Text(issue).foregroundStyle(Color.nodusDanger) }
+                    }.padding(16).frame(width: max(geometry.size.width, formula.width + 124), alignment: .leading)
+                }
+            }
+            .navigationTitle("Fórmula completa").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
     }
 }
 
@@ -96,6 +135,7 @@ private struct RichProseWebView: UIViewRepresentable {
     @Binding var issue: String?
     let onOpen: (URL) -> Bool
     let onImage: (RichCorpusProse.OpenImage) -> Void
+    var onFormula: ((RichCorpusProse.OpenFormula) -> Void)? = nil
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> RichProseWKView {
         let config = WKWebViewConfiguration()
@@ -105,6 +145,7 @@ private struct RichProseWebView: UIViewRepresentable {
         view.isOpaque = false; view.backgroundColor = .clear; view.scrollView.backgroundColor = .clear
         view.scrollView.isScrollEnabled = false; view.scrollView.bounces = false
         view.navigationDelegate = context.coordinator
+        view.uiDelegate = context.coordinator
         view.accessibilityElementsHidden = !routeActive
         context.coordinator.webView = view
         let menu = UIEditMenuInteraction(delegate: context.coordinator); view.addInteraction(menu); context.coordinator.menu = menu
@@ -127,10 +168,10 @@ private struct RichProseWebView: UIViewRepresentable {
         coordinator.stopped = true; coordinator.deadline?.cancel(); coordinator.menu?.dismissMenu()
         coordinator.tasks.values.forEach { $0.cancel() }; coordinator.tasks.removeAll()
         coordinator.parent.search?.unregister(coordinator.parent.path)
-        view.stopLoading(); view.navigationDelegate = nil
+        view.stopLoading(); view.navigationDelegate = nil; view.uiDelegate = nil
         view.configuration.userContentController.removeScriptMessageHandler(forName: "proseRead")
     }
-    @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, UIEditMenuInteractionDelegate {
+    @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UIEditMenuInteractionDelegate {
         var parent: RichProseWebView
         weak var webView: RichProseWKView?
         var menu: UIEditMenuInteraction?
@@ -222,11 +263,28 @@ private struct RichProseWebView: UIViewRepresentable {
                 guard let string = payload.stringValue, string.count <= 4096, let url = URL(string: string) else { return }
                 if parent.onOpen(url) { clearSelection(); return }
                 if ["https", "http"].contains(url.scheme), url.user == nil, url.password == nil { Task { await UIApplication.shared.open(url) } }
+            case "formula":
+                guard let latex = payload.objectValue?["latex"]?.stringValue, !latex.isEmpty, latex.utf8.count <= 100_000,
+                      parent.source.contains(latex), let width = payload.objectValue?["width"]?.doubleValue,
+                      width.isFinite, width > 0, width <= 20_000 else { return }
+                clearSelection()
+                parent.onFormula?(.init(latex: latex, width: CGFloat(width)))
             case "image", "openImage": image(payload, requestId: fields["id"]?.stringValue, opening: method == "openImage")
             case "cancelImage":
                 if let id = payload.stringValue, id.count <= 32 { tasks[id]?.cancel() }
             case "issue": if let message = payload.stringValue { parent.issue = String(message.prefix(2000)) }
             default: break
+            }
+        }
+        func webView(_ view: WKWebView, willPresentEditMenuWithAnimator animator: any UIEditMenuInteractionAnimating) {
+            // WebKit can present its own menu after the asynchronous range message
+            // already opened ours. Dismiss only internal WebKit interactions, then
+            // let the revalidated range rebuild the single Nodus action ribbon.
+            animator.addCompletion { [weak self, weak view] in
+                guard let self, !self.stopped, let view else { return }
+                view.evaluateJavaScript("window.nodusProseRefreshSelection?.() === true") { [weak view] value, _ in
+                    if value as? Bool == true { (view as? RichProseWKView)?.dismissSystemMenu() }
+                }
             }
         }
         private func anchor(_ value: JSONValue) -> ReaderAnnotationAnchor? {
