@@ -9,14 +9,17 @@ struct ReaderInlineImage: View {
     let session: SpaceSession?
     let accent: Color
     var downloadedOnly = false
+    @Environment(\.downloadedReaderOnly) private var inheritedDownloadedOnly
+    private var selectedReaderOnly: Bool { downloadedOnly || inheritedDownloadedOnly }
     @State private var content: ReaderImageSource.Content?
+    @State private var loadedDownloadedOnly: Bool?
     @State private var preview: UIImage?
     @State private var issue: String?
     @State private var attempt = 0
     @State private var showingImage = false
     var body: some View {
         VStack(alignment:.leading,spacing:8) {
-            if let content {
+            if let content, loadedDownloadedOnly == selectedReaderOnly {
                 Button { showingImage = true } label: {
                     visual(content).frame(maxWidth:.infinity)
                 }.buttonStyle(.plain).accessibilityLabel(reference.alternative.isEmpty ? String(localized:"Open image"):reference.alternative)
@@ -25,19 +28,20 @@ struct ReaderInlineImage: View {
                 Button("Retry") { attempt += 1 }.frame(minHeight:44)
             } else { ProgressView().frame(maxWidth:.infinity,minHeight:72) }
         }
-        .task(id:"\(reference.id)|\(attempt)") {
-            content = nil;preview = nil;issue = nil
+        .task(id:"\(reference.id)|\(selectedReaderOnly)|\(attempt)") {
+            content = nil;preview = nil;issue = nil;loadedDownloadedOnly = nil
             do {
-                let loaded = try await ReaderImageSource.load(reference.source,session:session,downloadedOnly:downloadedOnly)
+                let loaded = try await ReaderImageSource.load(reference.source,session:session,downloadedOnly:selectedReaderOnly)
                 guard ReaderImageSource.supported(loaded.mime) else { throw DesktopBridgeError.malformedResponse }
                 let decoded = loaded.mime == "image/svg+xml" ? nil:try ReaderRasterImage.preview(loaded.data)
                 let image = loaded.mime == "image/gif" ? nil:decoded
-                try Task.checkCancellation();preview = image;content = loaded;issue = nil
+                try Task.checkCancellation();preview = image;content = loaded;issue = nil;loadedDownloadedOnly = selectedReaderOnly
             } catch is CancellationError { /* A disappeared reader must not replace its next image. */ }
             catch { issue = error.localizedDescription }
         }
         .nodusSheet(isPresented:$showingImage) {
-            if let content { ReaderImageViewer(content:content,image:preview,title:reference.alternative.isEmpty ? String(localized:"Image"):reference.alternative,accent:accent) }
+            if let content, loadedDownloadedOnly == selectedReaderOnly { ReaderImageViewer(content:content,image:preview,title:reference.alternative.isEmpty ? String(localized:"Image"):reference.alternative,accent:accent) }
+            else { ContentUnavailableView("Image not downloaded", systemImage: "arrow.down.circle") }
         }
     }
     @ViewBuilder private func visual(_ content: ReaderImageSource.Content) -> some View {

@@ -270,11 +270,17 @@ enum CorpusReferenceTone: Equatable {
 /// library reaches; everything else is fetched as a row and rendered by the generic detail view.
 /// A kind this build does not know about says so rather than showing an empty page.
 struct CorpusReferenceView: View {
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     let session: SpaceSession
     let reference: CorpusReference
 
     var body: some View {
         Group {
+            if downloadedOnly, reference.destination != .privateSource, reference.destination != .unsupported {
+                if let path = reference.collection?.path ?? ["idea": "ideas", "work": "works", "note": "notes", "passage": "passages", "contradiction": "debates"][reference.kind] {
+                    DownloadedReaderReferenceView(session: session, path: path, id: reference.recordId, specialised: reference.specialised)
+                } else { ContentUnavailableView("Source not downloaded", systemImage: "arrow.down.circle") }
+            } else {
             switch reference.destination {
             case .idea:
                 IdeaByIdView(session: session, globalId: reference.recordId)
@@ -294,9 +300,9 @@ struct CorpusReferenceView: View {
             case .privateSource:
                 if let source = reference.privateSource {
                     if session.connection.desktopPairingId == nil, let path = source.publishedCollectionPath, let collection = Collections[path] {
-                        RowByIdView(session: session, collection: collection, id: source.id)
+                        RowByIdView(session: session, collection: collection, id: source.publishedRecordId)
                             .sourceCitationTarget(reference.specialised)
-                    } else { PrivateCorpusSourceView(session: session, reference: source) }
+                    } else { PrivateCorpusSourceView(session: session, reference: source, downloadedOnly: downloadedOnly) }
                 }
             case .unsupported:
                 ContentUnavailableView(
@@ -304,6 +310,7 @@ struct CorpusReferenceView: View {
                     systemImage: "questionmark.circle",
                     description: Text("It refers to a “\(reference.kind)”, which this space does not publish.")
                 )
+            }
             }
         }
         // The detail screens carry their own; this covers the loading and the dead end, which
@@ -359,6 +366,7 @@ struct NoteByIdView: View {
 
 /// Any collection row, fetched by its id alone.
 struct RowByIdView: View {
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     let session: SpaceSession
     let collection: CollectionDescriptor
     let id: String
@@ -380,7 +388,9 @@ struct RowByIdView: View {
     var body: some View {
         Group {
             if let privateReference {
-                PrivateCorpusSourceView(session: session, reference: privateReference)
+                PrivateCorpusSourceView(session: session, reference: privateReference, downloadedOnly: downloadedOnly)
+            } else if downloadedOnly {
+                DownloadedReaderReferenceView(session: session, path: collection.path, id: id, specialised: sourceReference)
             } else if let row {
                 RowDetailView(session: session, collection: collection, row: row)
             } else if let failure {
@@ -389,8 +399,8 @@ struct RowByIdView: View {
                 ProgressView().tint(session.accent)
             }
         }
-        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(session.companionDownloadRevision)|\(attempt)") {
-            guard privateReference == nil else { return }
+        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(session.companionDownloadRevision)|\(downloadedOnly)|\(attempt)") {
+            guard privateReference == nil, !downloadedOnly else { return }
             failure = nil
             do {
                 let loaded = try await session.client.item(collection, id: id, in: session.connection.spaceId)
@@ -478,6 +488,7 @@ struct CorpusProse: View {
     /// still covered the screen. Swiping the sheet down did not, because then the same work lands
     /// in the middle of the dismissal, which is exactly the pause a reader saw.
     @State private var presenting = Presentation()
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     @Environment(\.nodusReadingStyle) private var reading
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -504,6 +515,7 @@ struct CorpusProse: View {
         /// Whether the reader has pressed on their own bookmark and is being asked about
         /// removing it.
         var isRemovingBookmark = false
+        var scopeIssue: String?
     }
 
     init(
@@ -616,7 +628,10 @@ struct CorpusProse: View {
             RichCorpusProse(source: richSource, accent: accent, session: session, onOpen: { [presenting] url in
                 if onCitation?(url) == true { return true }
                 if let number = PageChatReference.number(in: url) { onReference?(number); return true }
-                guard session != nil, let reference = CorpusReference(url) else { return false }
+                guard session != nil, let reference = CorpusReference(url) else {
+                    if downloadedOnly, ["https", "http"].contains(url.scheme) { presenting.scopeIssue = "This external source is not included in this download."; return true }
+                    return false
+                }
                 presenting.reference = reference; return true
             }).background { ProseSheets(session: session, presenting: presenting, removeBookmark: { [bookmarks] in bookmarks?.clear() }) }
         } else { nativeProse }
@@ -725,7 +740,10 @@ struct CorpusProse: View {
                                     onReference?(number)
                                     return true
                                 }
-                                guard let reference = CorpusReference(url) else { return false }
+                                guard let reference = CorpusReference(url) else {
+                                    if downloadedOnly, ["https", "http"].contains(url.scheme) { presenting.scopeIssue = "This external source is not included in this download."; return true }
+                                    return false
+                                }
                                 presenting.reference = reference
                                 return true
                             }
@@ -735,7 +753,7 @@ struct CorpusProse: View {
                             .font(reading.font(.callout, dynamicTypeSize: dynamicTypeSize))
                             .textSelection(.enabled)
                     }
-                    ForEach(block.images) { reference in ReaderInlineImage(reference:reference,session:session,accent:accent) }
+                    ForEach(block.images) { reference in ReaderInlineImage(reference:reference,session:session,accent:accent,downloadedOnly:downloadedOnly) }
                 }
                 .nodusRevealed(search?.revealed == path)
                 .id(PageSearchAnchor(path: path))
@@ -777,7 +795,10 @@ struct CorpusProse: View {
                 onReference?(number)
                 return .handled
             }
-            guard url.scheme?.lowercased() == "nodus" else { return .systemAction }
+            guard url.scheme?.lowercased() == "nodus" else {
+                if downloadedOnly, ["https", "http"].contains(url.scheme) { presenting.scopeIssue = "This external source is not included in this download."; return .handled }
+                return .systemAction
+            }
             guard session != nil, let reference = CorpusReference(url) else { return .discarded }
             presenting.reference = reference
             return .handled
@@ -980,8 +1001,12 @@ private struct ProseSheets: View {
         // storage invalidates the view whether or not anybody read it.
         let reference = presenting.reference
         let isRemovingBookmark = presenting.isRemovingBookmark
+        let scopeIssue = presenting.scopeIssue
 
         return Color.clear
+            .alert("Source not downloaded", isPresented: Binding(get: { scopeIssue != nil }, set: { if !$0 { presenting.scopeIssue = nil } })) {
+                Button("OK") { presenting.scopeIssue = nil }
+            } message: { Text(scopeIssue ?? "") }
             .nodusSheet(
                 item: Binding(get: { reference }, set: { presenting.reference = $0 })
             ) { reference in

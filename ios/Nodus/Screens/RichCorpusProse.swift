@@ -11,6 +11,7 @@ struct RichCorpusProse: View {
     let accent: Color
     let session: SpaceSession?
     let onOpen: (URL) -> Bool
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     @Environment(\.nodusReadingStyle) private var reading
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -54,12 +55,14 @@ struct RichCorpusProse: View {
                     dark: colorScheme == .dark, justify: sizeClass == .regular && !dynamicTypeSize.isAccessibilitySize,
                     annotations: annotations, bookmarks: bookmarks, chat: chat, search: search, path: path,
                     height: $height, issue: $issue, onOpen: onOpen, onImage: { image = $0 }, onFormula: { formula = $0 })
+                    .id(downloadedOnly)
                     .frame(height: height).id(attempt)
                     .id(PageSearchAnchor(path: path))
                     .nodusRevealed(search?.revealed == path)
             }
         }
         .onDisappear { search?.unregister(path) }
+        .onChange(of: downloadedOnly) { _, _ in image = nil; issue = nil }
         .nodusSheet(item: $image) { item in ReaderImageViewer(content: item.content, image: item.preview, title: item.title, accent: accent) }
         .nodusSheet(item: $formula) { item in
             RichFormulaInspector(formula: item, fontSize: reading.size(.callout, dynamicTypeSize: dynamicTypeSize), accent: accent, dark: colorScheme == .dark)
@@ -120,6 +123,7 @@ private final class RichProseWKView: WKWebView {
 
 private struct RichProseWebView: UIViewRepresentable {
     @Environment(\.nodusResidentRouteActive) private var routeActive
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     let source: String
     let session: SpaceSession?
     let fontSize: CGFloat
@@ -161,6 +165,11 @@ private struct RichProseWebView: UIViewRepresentable {
     }
     func updateUIView(_ view: RichProseWKView, context: Context) {
         view.accessibilityElementsHidden = !routeActive
+        if context.coordinator.parent.downloadedOnly != downloadedOnly {
+            context.coordinator.tasks.values.forEach { $0.cancel() }; context.coordinator.tasks.removeAll()
+            context.coordinator.images.removeAll(); context.coordinator.imageLanes = [nil, nil, nil, nil]
+            context.coordinator.sent = nil
+        }
         context.coordinator.parent = self
         if context.coordinator.ready { context.coordinator.update() }
     }
@@ -262,7 +271,10 @@ private struct RichProseWebView: UIViewRepresentable {
             case "open":
                 guard let string = payload.stringValue, string.count <= 4096, let url = URL(string: string) else { return }
                 if parent.onOpen(url) { clearSelection(); return }
-                if ["https", "http"].contains(url.scheme), url.user == nil, url.password == nil { Task { await UIApplication.shared.open(url) } }
+                if ["https", "http"].contains(url.scheme), url.user == nil, url.password == nil {
+                    if parent.downloadedOnly { parent.issue = "This external source is not included in this download." }
+                    else { Task { await UIApplication.shared.open(url) } }
+                }
             case "formula":
                 guard let latex = payload.objectValue?["latex"]?.stringValue, !latex.isEmpty, latex.utf8.count <= 100_000,
                       parent.source.contains(latex), let width = payload.objectValue?["width"]?.doubleValue,
@@ -357,7 +369,7 @@ private struct RichProseWebView: UIViewRepresentable {
                     await previous?.value; try Task.checkCancellation()
                     let content: ReaderImageSource.Content
                     if let cached = self.images[source] { content = cached }
-                    else { content = try await ReaderImageSource.load(source, session: self.parent.session) }
+                    else { content = try await ReaderImageSource.load(source, session: self.parent.session, downloadedOnly: self.parent.downloadedOnly) }
                     let preview = content.mime == "image/svg+xml" ? nil : try ReaderRasterImage.preview(content.data)
                     try Task.checkCancellation(); guard !self.stopped else { return }
                     if self.images.values.reduce(0, { $0 + $1.data.count }) + content.data.count <= 64 * 1024 * 1024 { self.images[source] = content }
