@@ -136,6 +136,13 @@ public struct PublishedLibraryDocumentPage: Sendable, Hashable, Codable {
     public let generatedAt: Date
 }
 
+public struct PublishedLibraryCatalogue: Sendable {
+    public let collections: [PublishedLibraryCollection]
+    public let documents: [PublishedLibraryDocument]
+    public let generatedAt: Date
+    public let fromDevice: Bool
+}
+
 private struct PublishedLibraryCollectionsEnvelope: Decodable {
     let collections: [PublishedLibraryCollection]
     let generatedAt: Date
@@ -164,6 +171,28 @@ public extension NodusClient {
         limit: Int = 200,
         offset: Int = 0
     ) async throws -> PublishedLibraryDocumentPage {
+        try await publishedLibraryDocumentRead(in: spaceId, query: query, collectionId: collectionId, limit: limit, offset: offset).page
+    }
+
+    /// A catalogue must name one publication, including its collection tree.
+    func publishedLibraryCatalogue(in spaceId: String) async throws -> PublishedLibraryCatalogue {
+        for _ in 0..<3 {
+            let collectionResponse = try await perform(.init(path: address.spacePath(spaceId, "/library/collections"), cacheable: true))
+            let collections = try decode(PublishedLibraryCollectionsEnvelope.self, from: collectionResponse)
+            let source = collectionResponse.fromCache && hasDesktopBridge
+            let documents = try await PageTraversal.complete(identity: { $0.id }) { offset in
+                let read = try await self.publishedLibraryDocumentRead(in: spaceId, query: nil, collectionId: nil, limit: 200, offset: offset)
+                return Page(items: read.page.items, total: read.page.total, limit: read.page.limit, offset: read.page.offset,
+                    hasMore: read.page.hasMore, revision: String(read.page.generatedAt.timeIntervalSince1970), fromDevice: read.fromDevice)
+            }
+            guard documents.revision == String(collections.generatedAt.timeIntervalSince1970), documents.fromDevice == source else { continue }
+            return PublishedLibraryCatalogue(collections: collections.collections, documents: documents.items,
+                generatedAt: collections.generatedAt, fromDevice: source)
+        }
+        throw PageTraversalError.changingRevision
+    }
+
+    private func publishedLibraryDocumentRead(in spaceId: String, query: String?, collectionId: String?, limit: Int, offset: Int) async throws -> (page: PublishedLibraryDocumentPage, fromDevice: Bool) {
         var queryItems = [
             URLQueryItem(name: "limit", value: String(max(1, min(200, limit)))),
             URLQueryItem(name: "offset", value: String(max(0, offset))),
@@ -173,7 +202,11 @@ public extension NodusClient {
         let response = try await perform(.init(
             path: address.spacePath(spaceId, "/library/documents"), query: queryItems, cacheable: true
         ))
-        return try decode(PublishedLibraryDocumentPage.self, from: response)
+        let page = try decode(PublishedLibraryDocumentPage.self, from: response)
+        let fromDevice = response.fromCache && hasDesktopBridge
+        try CataloguePageIntegrity.validate(Page(items: page.items, total: page.total, limit: page.limit, offset: page.offset,
+            hasMore: page.hasMore, revision: String(page.generatedAt.timeIntervalSince1970), fromDevice: fromDevice))
+        return (page, fromDevice)
     }
 
     func publishedLibraryDocument(_ id: String, in spaceId: String) async throws -> PublishedLibraryDocument {

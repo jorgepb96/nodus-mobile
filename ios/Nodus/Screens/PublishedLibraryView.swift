@@ -21,6 +21,8 @@ struct PublishedLibraryView: View {
     @State private var selection: Set<String> = []
     @State private var loading = true
     @State private var error: String?
+    @State private var catalogueFromDevice = false
+    @State private var loadGeneration = UUID()
     @State private var pendingDeletion: Deletion?
     @State private var showingDeletionConfirmation = false
     @State private var metadataDocument: PublishedLibraryDocument?
@@ -102,11 +104,17 @@ struct PublishedLibraryView: View {
                 NodusSearchField(text: $query, prompt: "Search title, author or tag", accent: session.accent, isBusy: loading)
                 libraryControlBar
                 if loading, documents.isEmpty { ProgressView().tint(session.accent).frame(maxWidth: .infinity) }
-                if let error, documents.isEmpty {
+                if catalogueFromDevice {
+                    Label("Catálogo conservado en este dispositivo", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary)
+                }
+                if let error {
                     NodusNotice(tone: .caution, title: "Could not update the library", message: LocalizedStringKey(error))
+                    if !documents.isEmpty { Text("Last successfully loaded catalogue").font(.caption).foregroundStyle(.secondary) }
+                    Button("Retry library") { Task { await load(remoteOnly: true) } }.frame(minHeight: 44).disabled(loading)
+                        .accessibilityIdentifier("published-library-catalogue-retry")
                 }
                 ForEach(visible) { document in row(document) }
-                if !loading, visible.isEmpty {
+                if !loading, visible.isEmpty, error == nil {
                     ContentUnavailableView("No documents", systemImage: "books.vertical", description: Text("Try another search or collection."))
                 }
             }
@@ -318,27 +326,23 @@ struct PublishedLibraryView: View {
     }
 
     private func load(remoteOnly: Bool) async {
+        let generation = UUID(); loadGeneration = generation
         loading = true
+        defer { if loadGeneration == generation { loading = false } }
         if !remoteOnly, let cached = await store.catalog() {
-            collections = cached.collections; documents = cached.documents
+            guard loadGeneration == generation else { return }
+            collections = cached.collections; documents = cached.documents; catalogueFromDevice = true
         }
-        downloaded = Set(await store.allDownloads().map(\.id))
+        let copies = await store.allDownloads()
+        guard loadGeneration == generation else { return }
+        downloaded = Set(copies.map(\.id))
         do {
-            async let foundCollections = session.client.publishedLibraryCollections(in: session.connection.spaceId)
-            var all: [PublishedLibraryDocument] = []
-            var offset = 0
-            while true {
-                try Task.checkCancellation()
-                let page = try await session.client.publishedLibraryDocuments(in: session.connection.spaceId, limit: 200, offset: offset)
-                guard page.offset == offset, !page.hasMore || !page.items.isEmpty else {
-                    throw APIError(status: 502, code: "invalid_pagination", message: String(localized: "The library returned an incomplete page. Retry to load the full catalogue."))
-                }
-                all.append(contentsOf: page.items)
-                if !page.hasMore { break }
-                offset += page.items.count
-            }
-            collections = try await foundCollections
-            documents = all
+            let catalogue = try await session.client.publishedLibraryCatalogue(in: session.connection.spaceId)
+            try Task.checkCancellation()
+            guard loadGeneration == generation else { return }
+            catalogueFromDevice = catalogue.fromDevice
+            collections = catalogue.collections
+            documents = catalogue.documents
             await store.saveCatalog(collections: collections, documents: documents)
             error = nil
 #if DEBUG
@@ -347,10 +351,11 @@ struct PublishedLibraryView: View {
                 for document in documents.prefix(2) { open(document) }
             }
 #endif
-        } catch {
+        } catch where error.isCancellation { }
+        catch {
+            guard loadGeneration == generation else { return }
             self.error = error.localizedDescription
         }
-        loading = false
     }
 }
 

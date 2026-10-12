@@ -26,6 +26,7 @@ struct CollectionListView: View {
     @State private var error: String?
     @State private var fromDevice = false
     @State private var loadTask: Task<Void, Never>?
+    @State private var requestGeneration = UUID()
 
     var body: some View {
         if let workspaceRoute {
@@ -63,6 +64,9 @@ struct CollectionListView: View {
             LazyVStack(alignment: .leading, spacing: 9) {
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load", message: LocalizedStringKey(error))
+                if !rows.isEmpty { Text("Last successfully loaded results").font(.caption).foregroundStyle(.secondary) }
+                Button("Retry catalogue") { Task { await reload() } }.frame(minHeight: 44)
+                    .accessibilityIdentifier("collection-catalogue-retry")
             }
 
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -70,13 +74,13 @@ struct CollectionListView: View {
             }
 
             if hasMore {
-                HStack {
-                    Spacer()
-                    ProgressView().tint(session.accent)
-                    Spacer()
-                }
-                .padding()
-                .task { await loadMore() }
+                Button { Task { await loadMore() } } label: {
+                    HStack {
+                        if isLoading { ProgressView().tint(session.accent) }
+                        else { Label("Load more", systemImage: "chevron.down") }
+                    }.frame(maxWidth: .infinity, minHeight: 44)
+                }.disabled(isLoading).buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .accessibilityIdentifier("collection-catalogue-load-more")
             }
 
             if rows.isEmpty, !isLoading, error == nil {
@@ -199,6 +203,7 @@ struct CollectionListView: View {
     /// list feels worse than one that waits a beat.
     private func scheduleReload() {
         loadTask?.cancel()
+        requestGeneration = UUID()
         loadTask = Task {
             try? await Task.sleep(for: .milliseconds(320))
             guard !Task.isCancelled else { return }
@@ -207,16 +212,20 @@ struct CollectionListView: View {
     }
 
     private func reload() async {
+        let generation = UUID(), requestedQuery = query
+        requestGeneration = generation
         isLoading = true
-        defer { isLoading = false }
+        defer { if requestGeneration == generation { isLoading = false } }
         do {
             let page = try await session.client.list(
                 collection,
                 in: session.connection.spaceId,
-                query: query.isEmpty ? nil : query,
+                query: requestedQuery.isEmpty ? nil : requestedQuery,
                 limit: 60,
                 offset: 0
             )
+            guard generation == requestGeneration, requestedQuery == query else { return }
+            try CataloguePageIntegrity.validateRows(page, idField: collection.idField, offset: 0)
             rows = page.items
             total = page.total
             hasMore = page.hasMore
@@ -231,42 +240,43 @@ struct CollectionListView: View {
             }
 #endif
         } catch let apiError as APIError where apiError.isNotPublished {
+            guard generation == requestGeneration else { return }
             rows = []; total = 0; hasMore = false; error = nil
         } catch is CancellationError {
             // Superseded by a newer keystroke.
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
+            guard generation == requestGeneration else { return }
             self.error = error.localizedDescription
         }
     }
 
     private func loadMore() async {
-        guard !isLoading, hasMore else { return }
+        guard !isLoading, hasMore, let revision else { return }
+        let generation = requestGeneration, requestedQuery = query
+        let previous = Page(items: rows, total: total, limit: max(1, rows.count), offset: 0, hasMore: hasMore,
+            revision: revision, fromDevice: fromDevice)
         isLoading = true
-        defer { isLoading = false }
+        defer { if requestGeneration == generation { isLoading = false } }
         do {
-            let page = try await session.client.list(
-                collection,
-                in: session.connection.spaceId,
-                query: query.isEmpty ? nil : query,
-                limit: 60,
-                offset: rows.count
-            )
-            // Two pages from different publications are two different corpora. Stitching them
-            // would show a state the vault was never in, so the list restarts instead.
-            guard page.revision == revision else {
-                await reload()
-                return
-            }
+            let page = try await session.client.list(collection, in: session.connection.spaceId,
+                query: requestedQuery.isEmpty ? nil : requestedQuery, limit: 60, offset: previous.items.count)
+            guard generation == requestGeneration, requestedQuery == query else { return }
+            try CataloguePageIntegrity.validateRows(page, idField: collection.idField, offset: previous.items.count, previous: previous)
             rows.append(contentsOf: page.items)
-            fromDevice = page.fromDevice
-            hasMore = page.hasMore
-        } catch {
+            hasMore = page.hasMore; error = nil
+        } catch PageTraversalError.changingRevision {
+            guard generation == requestGeneration else { return }
+            await reload()
+        } catch where error.isCancellation { }
+        catch {
+            guard generation == requestGeneration else { return }
             hasMore = false
             self.error = error.localizedDescription
         }
     }
+
 }
 
 struct RowCell: View {

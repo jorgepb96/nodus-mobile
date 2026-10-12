@@ -50,33 +50,9 @@ public extension NodusClient {
     /// Complete catalogues must not silently stop at the server's page bound.
     /// A changing publication or broken offset is an error, never a shorter list.
     func allItems(_ collection: CollectionDescriptor, in spaceId: String, query: String? = nil) async throws -> [Row] {
-        var rows: [Row] = []
-        var identities = Set<String>()
-        var offset = 0
-        var revision: String?
-        var total: Int?
-        while true {
-            try Task.checkCancellation()
-            let page = try await list(collection, in: spaceId, query: query, limit: PageBounds.maxLimit, offset: offset)
-            guard page.offset == offset, page.limit > 0, page.total >= 0,
-                  revision == nil || revision == page.revision, total == nil || total == page.total else {
-                throw TransportError.malformedResponse(expected: "a stable paginated catalogue; refresh the catalogue")
-            }
-            revision = page.revision; total = page.total
-            for row in page.items {
-                guard let id = row.string(collection.idField), !id.isEmpty, identities.insert(id).inserted else {
-                    throw TransportError.malformedResponse(expected: "unique record identities across catalogue pages")
-                }
-                rows.append(row)
-            }
-            offset += page.items.count
-            guard offset <= page.total else { throw TransportError.malformedResponse(expected: "the catalogue's declared record count") }
-            if !page.hasMore {
-                guard offset == page.total else { throw TransportError.malformedResponse(expected: "all catalogue records") }
-                return rows
-            }
-            guard !page.items.isEmpty, offset < page.total else { throw TransportError.malformedResponse(expected: "a progressing catalogue page") }
-        }
+        try await PageTraversal.complete(identity: { $0.string(collection.idField) }) { offset in
+            try await self.list(collection, in: spaceId, query: query, limit: PageBounds.maxLimit, offset: offset)
+        }.items
     }
 
     /// The primary row of a dossier, under its declared domain key.
@@ -406,15 +382,17 @@ extension NodusClient {
             // error at all, so it is named rather than allowed to look like an empty vault.
             throw TransportError.malformedResponse(expected: "an array under \"\(key)\"")
         }
-        return Page(
-            items: array.compactMap { $0.objectValue.map(Row.init) },
-            total: object["total"]?.intValue ?? array.count,
-            limit: object["limit"]?.intValue ?? PageBounds.defaultLimit,
-            offset: object["offset"]?.intValue ?? 0,
-            hasMore: object["hasMore"]?.boolValue ?? false,
-            revision: object["revision"]?.stringValue ?? "",
-            fromDevice: response.fromCache
-        )
+        guard case .int(let rawTotal) = object["total"], let total = Int(exactly: rawTotal),
+              case .int(let rawLimit) = object["limit"], let limit = Int(exactly: rawLimit),
+              case .int(let rawOffset) = object["offset"], let offset = Int(exactly: rawOffset),
+              case .bool(let hasMore) = object["hasMore"],
+              case .string(let revision) = object["revision"] else {
+            throw TransportError.malformedResponse(expected: "a complete pagination envelope for \"\(key)\"")
+        }
+        let page = Page(items: array.compactMap { $0.objectValue.map(Row.init) }, total: total, limit: limit,
+            offset: offset, hasMore: hasMore, revision: revision, fromDevice: response.fromCache && hasDesktopBridge)
+        try CataloguePageIntegrity.validate(page)
+        return page
     }
 }
 
