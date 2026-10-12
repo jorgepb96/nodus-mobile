@@ -392,7 +392,7 @@ struct StudyEvidenceDocument: View {
 }
 
 @MainActor private enum StudyDocumentSurfaceBridge {
-    static let methods: Set<String> = ["getStudyDocEditorData", "updateStudyDoc", "restoreStudyDocVersion", "resolveMobileStudyConflict", "duplicateMobileStudyDocument", "trashMobileStudyDocument"]
+    static let methods: Set<String> = ["getStudyDocEditorData", "updateStudyDoc", "restoreStudyDocVersion", "resolveMobileStudyConflict", "duplicateMobileStudyDocument", "trashMobileStudyDocument", "createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation"]
     static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
                         pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, onOffline: (Bool) -> Void) async throws -> JSONValue {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
@@ -433,6 +433,22 @@ struct StudyEvidenceDocument: View {
             }
             try await queue.seed(noteId: id, editorData: value)
             return value
+        }
+        if ["createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation"].contains(method) {
+            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+            let documentId: String
+            if method == "createStudyAnnotation", args.count == 2 {
+                _ = try await load(); documentId = id
+            } else if (method == "updateStudyAnnotation" && args.count == 2) || (method == "deleteStudyAnnotation" && args.count == 1),
+                      let owner = await queue.studyAnnotationDocumentId(annotationId: id) {
+                documentId = owner
+            } else {
+                throw APIError(status: 409, code: "study_annotation_source_missing", message: "Abre el documento de esta anotación antes de modificarla.")
+            }
+            let result = try await queue.enqueueStudyAnnotation(documentId: documentId, method: method,
+                annotationId: method == "createStudyAnnotation" ? nil : id, patch: args.count == 2 ? args[1] : nil)
+            Task { await session.synchronizeCompanionChanges() }
+            return result
         }
         if method == "getStudyDocEditorData", args.count == 1 { return try await load() }
         if ["duplicateMobileStudyDocument", "trashMobileStudyDocument"].contains(method), args.count == 1 {
