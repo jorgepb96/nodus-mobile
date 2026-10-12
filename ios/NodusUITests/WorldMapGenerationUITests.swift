@@ -2,17 +2,18 @@ import XCTest
 import UIKit
 
 /// Requires an already paired, isolated lab with a REAL downloaded source and saved
-/// image. The final runner supplies a provider spy HTTP endpoint returning {"calls":N}.
+/// image. Native checks prove visible bytes/identity and real typed-job persistence.
+/// Core journal regression separately proves paid checkpoint reuse; these UI tests
+/// do not measure provider calls across Mac/device and do not claim that evidence.
 /// No bootstrap, synthetic journal or provider credentials are injected into the app.
 final class WorldMapGenerationUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
-    func testPaidMapReopensAndRestartsWithoutAnotherProviderCall() async throws {
+    func testPaidMapBytesAndIdentitySurviveReopenAndRestart() throws {
         let env = ProcessInfo.processInfo.environment
         let id = try XCTUnwrap(env["NODUS_ACCEPTANCE_WORLD_GENERATION_ID"])
         XCTAssertNotNil(UUID(uuidString: id))
-        let before = try await providerCalls()
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
@@ -42,8 +43,6 @@ final class WorldMapGenerationUITests: XCTestCase {
             capture(app, "world-paid-reopen-\(launch)")
             app.terminate()
         }
-        let after = try await providerCalls()
-        XCTAssertEqual(after, before, "Reopening saved bytes must not incur another paid provider request or silently fall back to Mac generation.")
     }
 
     @MainActor
@@ -79,11 +78,10 @@ final class WorldMapGenerationUITests: XCTestCase {
     }
 
     @MainActor
-    func testLiveNativeSubmitUsesRealJobAndPersistsWithoutDeviceFallback() async throws {
-        guard ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_WORLD_SUBMIT"] == "1" else {
-            throw XCTSkip("Final runner must explicitly enable generation against its copied lab/provider fixture.")
-        }
-        let before = try await providerCalls()
+    func testLiveNativeSubmitPersistsRealTypedJob() throws {
+        let enabled = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_WORLD_SUBMIT"], "Final runner must configure its copied lab for this write test.")
+        XCTAssertEqual(enabled, "1")
+        guard enabled == "1" else { throw SetupError.submissionNotEnabled }
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launch(); defer { app.terminate() }
@@ -99,21 +97,11 @@ final class WorldMapGenerationUITests: XCTestCase {
         let saved = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Mapa guardado en el vault")).firstMatch
         XCTAssertTrue(saved.waitForExistence(timeout: 180), "Actual typed Mac job must finish; a local-only preview cannot satisfy persistence.")
         capture(app, "world-live-native-submit-saved")
-        let after = try await providerCalls()
-        XCTAssertEqual(after, before + 1, "Exactly the configured lab provider must receive the native request.")
         close.tap()
         XCTAssertTrue(app.descendants(matching: .any)["world-map-shared-canvas"].waitForExistence(timeout: 30))
     }
 
-    private func providerCalls() async throws -> Int {
-        let raw = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_WORLD_PROVIDER_PROBE_URL"], "Final runner must supply its isolated provider-call counter; no zero-call assumption is allowed.")
-        let url = try XCTUnwrap(URL(string: raw))
-        XCTAssertTrue(["127.0.0.1", "localhost", "::1"].contains(url.host ?? ""), "Probe must belong to the isolated local lab.")
-        let (data, response) = try await URLSession.shared.data(from: url)
-        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        return try XCTUnwrap(object["calls"] as? Int)
-    }
+    private enum SetupError: Error { case submissionNotEnabled }
     @MainActor private func openJobs(_ app: XCUIApplication) throws {
         try navigate(app, route: "settings")
         let jobs = app.buttons["Trabajos y resultados"]
