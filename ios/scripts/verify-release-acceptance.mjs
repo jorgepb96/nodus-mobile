@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mobileRoot } from './nodus-repo.mjs';
+import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
+import {acceptanceRevisionIssues} from './acceptance-evidence.mjs';
 
 const manifest = JSON.parse(fs.readFileSync(path.join(mobileRoot, 'ios/Parity/parity-manifest.json'), 'utf8'));
 const input = process.argv[2];
@@ -16,7 +17,7 @@ const issues = [];
 for (const [repo, commit] of Object.entries(manifest.referenceCommits)) {
   if (campaign.referenceCommits?.[repo] !== commit) issues.push(`Missing reference commit: ${repo}`);
 }
-if (!campaign.revisionDigests?.desktop || !campaign.revisionDigests?.mobile) issues.push('The exact tested code revisions must be recorded.');
+issues.push(...acceptanceRevisionIssues(campaign.revisionDigests,{desktop:nodusRepo(),mobile:mobileRoot}));
 for (const operation of manifest.operations.filter(operation => operation.category !== 'desktopExclusive')) {
   const result = campaign.operations?.find(item => item.id === operation.id);
   if (!result || result.result !== 'passed' || result.executed < 1 || result.skipped !== 0) {

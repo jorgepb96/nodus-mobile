@@ -4,24 +4,13 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {mobileRoot,nodusRepo} from './nodus-repo.mjs';
-import {acceptanceResultPaths,acceptanceReceiptPath} from './acceptance-evidence.mjs';
+import {acceptanceResultPaths,acceptanceReceiptPath,acceptanceSourceRevision as sourceRevision} from './acceptance-evidence.mjs';
 
 // Historical attempts remain evidence of their actual result. Inventory and
 // successful individual scenarios never automatically approve an operation.
 const folder=path.join(mobileRoot,'artifacts/acceptance-0.1.0');
 fs.mkdirSync(folder,{recursive:true});
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
-function sourceRevision(root) {
-  const files=execFileSync('git',['ls-files','--cached','--others','--exclude-standard','-z'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean).sort();
-  const hash=createHash('sha256');
-  for(const file of files) {
-    const absolute=path.join(root,file);
-    if(!fs.existsSync(absolute)) {hash.update(`deleted:${file}\0`);continue;}
-    if(!fs.statSync(absolute).isFile())continue;
-    hash.update(file);hash.update('\0');hash.update(fs.readFileSync(absolute));hash.update('\0');
-  }
-  return {commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),sourceDigest:hash.digest('hex')};
-}
 const manifest=JSON.parse(fs.readFileSync(path.join(mobileRoot,'ios/Parity/parity-manifest.json'),'utf8'));
 const appleRecordPath=path.join(folder,'app-store-connect-record.json');
 const appleRecord=fs.existsSync(appleRecordPath)?JSON.parse(fs.readFileSync(appleRecordPath,'utf8')):null;

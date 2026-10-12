@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {acceptanceResultPaths, acceptanceReceiptPath} from './acceptance-evidence.mjs';
+import {execFileSync} from 'node:child_process';
+import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues} from './acceptance-evidence.mjs';
 
 function laboratory(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-evidence-index-'));
@@ -39,4 +40,25 @@ test('missing, ambiguous, external and symlink receipts cannot be attributed to 
   assert.throws(() => acceptanceReceiptPath(root, 'app-phone.xcresult'), /ambiguous/);
   fs.symlinkSync(path.join(root, 'phone.source.json'), path.join(root, 'linked.source.json'));
   assert.throws(() => acceptanceReceiptPath(root, 'linked.xcresult'), /Missing/);
+});
+
+test('release evidence cannot approve a different current checkout, including uncommitted changes', t => {
+  const root=laboratory(t);
+  const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
+  git('init','-q');
+  fs.writeFileSync(path.join(root,'.gitignore'),'artifacts/\n');
+  fs.writeFileSync(path.join(root,'source.swift'),'let value = 1\n');
+  git('add','.');git('-c','user.name=Acceptance fixture','-c','user.email=acceptance@example.test','commit','-qm','Initial isolated source');
+  const tested=acceptanceSourceRevision(root),roots={mobile:root};
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),[]);
+  fs.mkdirSync(path.join(root,'artifacts'));fs.writeFileSync(path.join(root,'artifacts','results.json'),'{}');
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),[],'ignored evidence does not change the candidate');
+  fs.writeFileSync(path.join(root,'source.swift'),'let value = 2\n');
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),['Code changed since acceptance: mobile']);
+  fs.writeFileSync(path.join(root,'source.swift'),'let value = 1\n');
+  fs.writeFileSync(path.join(root,'new.swift'),'let added = true\n');
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),['Code changed since acceptance: mobile']);
+  fs.unlinkSync(path.join(root,'new.swift'));fs.unlinkSync(path.join(root,'source.swift'));
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),['Code changed since acceptance: mobile']);
+  assert.deepEqual(acceptanceRevisionIssues({mobile:'unverified-hash'},roots),['Missing exact tested code revision: mobile']);
 });

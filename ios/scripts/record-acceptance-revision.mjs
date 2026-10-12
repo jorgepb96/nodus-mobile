@@ -4,6 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {mobileRoot,nodusRepo} from './nodus-repo.mjs';
+import {acceptanceSourceRevision as revision} from './acceptance-evidence.mjs';
 
 const name=process.argv[2];
 if(!name || !/^[a-z0-9-]+$/.test(name))throw new Error('A unique, safe acceptance attempt name is required.');
@@ -11,17 +12,6 @@ const folder=path.join(mobileRoot,'artifacts/acceptance-0.1.0');fs.mkdirSync(fol
 const output=path.join(folder,name+'.source.json');
 if(fs.existsSync(output))throw new Error('An acceptance source receipt cannot be overwritten. Use a new attempt name.');
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
-function revision(root) {
-  const digest=createHash('sha256');
-  const files=execFileSync('git',['ls-files','--cached','--others','--exclude-standard','-z'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean).sort();
-  for(const file of files) {
-    const absolute=path.join(root,file);
-    if(!fs.existsSync(absolute)){digest.update(`deleted:${file}\0`);continue;}
-    if(!fs.statSync(absolute).isFile())continue;
-    digest.update(file);digest.update('\0');digest.update(fs.readFileSync(absolute));digest.update('\0');
-  }
-  return {commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),sourceDigest:digest.digest('hex')};
-}
 const manifest=JSON.parse(fs.readFileSync(path.join(mobileRoot,'ios/Parity/parity-manifest.json'),'utf8'));
 const bundle=path.join(mobileRoot,'ios/Nodus/Resources/SharedDesktop');
 execFileSync(process.execPath,[path.join(mobileRoot,'ios/scripts/build-shared-desktop.mjs'),'--verify'],{stdio:'pipe'});
