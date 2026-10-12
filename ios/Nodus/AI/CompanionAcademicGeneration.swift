@@ -125,6 +125,8 @@ final class CompanionAcademicGeneration {
         let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
         guard pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
         let cache = try PrivateBridgeCache(pairingId: pairing.id), entity = try Self.entity(request)
+        try cache.beginAuthoringActivity()
+        defer { cache.endAuthoringActivity() }
         let key = try CompanionGenerationPublication.recordId(kind: "academic", entity: entity)
         let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
         let modelJSON = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(model))
