@@ -98,8 +98,11 @@ final class CompanionWorkshopGeneration {
                     value["sourceScope"] = .string("linked_corpus")
                 } catch {
                     guard isPrivateBridgeOffline(error) else { throw error }
-                    guard pairing.domains.contains(.corpus), !pairing.isExpired,
-                          let downloaded = try await CompanionWorkshopSource.downloaded(cache: cache, vaultId: vault)
+                    let (currentVault, currentPairing, _) = try privateBridgeConnection(session, domain: .corpus)
+                    guard currentVault == vault, currentPairing.id == pairing.id, currentPairing.domains.contains(.writing) else {
+                        throw DesktopBridgeError.permissionDenied
+                    }
+                    guard let downloaded = try await CompanionWorkshopSource.downloaded(cache: cache, vaultId: vault)
                     else { throw CompanionWorkshopSource.SourceError.notDownloaded }
                     source = try downloaded.selected(selection)
                     value["sourceScope"] = .string("device_downloads")
