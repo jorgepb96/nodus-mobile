@@ -4,7 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues, nativeAcceptanceArtifacts, verifyNativeAcceptanceBuild} from './acceptance-evidence.mjs';
+import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues, nativeAcceptanceArtifacts, verifyNativeAcceptanceBuild, nativeAcceptanceRunIssues} from './acceptance-evidence.mjs';
 
 function laboratory(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-evidence-index-'));
@@ -91,4 +91,18 @@ test('native evidence rejects stale sources, changed binaries and another applic
   assert.throws(() => verifyNativeAcceptanceBuild(root, app), /Native sources changed/);
   fs.unlinkSync(file);
   assert.throws(() => verifyNativeAcceptanceBuild(root, app), /ENOENT/);
+});
+
+test('a passing native run cannot be relabelled with newer source, a different build or post-run evidence', () => {
+  const revisions = {mobile: {commit: 'a'.repeat(40), sourceDigest: 'b'.repeat(64)}, desktop: {commit: 'c'.repeat(40), sourceDigest: 'd'.repeat(64)}};
+  const artifacts = {Nodus: 'e'.repeat(64), 'Info.plist': 'f'.repeat(64), uiTests: '1'.repeat(64)};
+  const receipt = {revisions, nativeBuild: artifacts, bridgeBuild: revisions.desktop,
+    recordedBeforeExecutionAt: '2026-10-12T12:00:01Z', nativeBuildReceipt: {version: 1, revision: revisions.mobile,
+      completedAt: '2026-10-12T12:00:00Z', artifacts}};
+  const start = Date.parse('2026-10-12T12:00:02Z') / 1000;
+  assert.deepEqual(nativeAcceptanceRunIssues(receipt, revisions, start), []);
+  assert(nativeAcceptanceRunIssues({...receipt, nativeBuildReceipt: null}, revisions, start).length > 0);
+  assert(nativeAcceptanceRunIssues(receipt, {...revisions, mobile: {...revisions.mobile, sourceDigest: '2'.repeat(64)}}, start).length > 0);
+  assert(nativeAcceptanceRunIssues({...receipt, nativeBuild: {...artifacts, uiTests: '3'.repeat(64)}}, revisions, start).length > 0);
+  assert(nativeAcceptanceRunIssues({...receipt, recordedBeforeExecutionAt: '2026-10-12T12:00:03Z'}, revisions, start).length > 0);
 });

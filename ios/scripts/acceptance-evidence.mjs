@@ -54,6 +54,28 @@ export function verifyNativeAcceptanceBuild(root, app) {
   return receipt;
 }
 
+export function nativeAcceptanceRunIssues(receipt, revisions, startTime) {
+  const issues = [];
+  for (const name of ['mobile', 'desktop']) {
+    if (!revisions?.[name]?.commit || !revisions?.[name]?.sourceDigest ||
+        receipt?.revisions?.[name]?.commit !== revisions[name].commit || receipt?.revisions?.[name]?.sourceDigest !== revisions[name].sourceDigest)
+      issues.push(`Native run used another source revision: ${name}`);
+  }
+  const native = receipt?.nativeBuildReceipt;
+  if (native?.version !== 1 || native.revision?.commit !== revisions?.mobile?.commit ||
+      native.revision?.sourceDigest !== revisions?.mobile?.sourceDigest) issues.push('Native run lacks its successful compiled-source receipt.');
+  const recorded = Date.parse(receipt?.recordedBeforeExecutionAt ?? ''), completed = Date.parse(native?.completedAt ?? '');
+  if (!Number.isFinite(startTime) || !Number.isFinite(recorded) || !Number.isFinite(completed) ||
+      completed > recorded || recorded > startTime * 1000) issues.push('Native source evidence was not recorded after compilation and before execution.');
+  const artifacts = receipt?.nativeBuild ?? {}, compiled = native?.artifacts ?? {};
+  const keys = Object.keys(artifacts).sort();
+  if (!artifacts.Nodus || !artifacts['Info.plist'] || !artifacts.uiTests ||
+      JSON.stringify(keys) !== JSON.stringify(Object.keys(compiled).sort()) || keys.some(key => artifacts[key] !== compiled[key]))
+    issues.push('Native run artifacts do not match their compiled-source receipt.');
+  if (receipt?.bridgeBuild?.sourceDigest !== revisions?.desktop?.sourceDigest) issues.push('Native run used another laboratory Bridge.');
+  return issues;
+}
+
 // Daily runs keep their logs, captures and result bundles together. Never walk
 // inside xcresult bundles or capture folders, and never follow a symlink out
 // of the private acceptance folder.

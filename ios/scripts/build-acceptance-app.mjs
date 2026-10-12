@@ -5,19 +5,19 @@ import {spawn} from 'node:child_process';
 import {mobileRoot} from './nodus-repo.mjs';
 import {acceptanceSourceRevision, nativeAcceptanceArtifacts} from './acceptance-evidence.mjs';
 
-const [attempt, device, derivedData] = process.argv.slice(2);
-if (!attempt || !/^[a-z0-9-]+$/.test(attempt) || !device || !derivedData || !path.isAbsolute(derivedData))
-  throw new Error('Usage: build-acceptance-app.mjs unique-attempt simulator-UUID absolute-derived-data');
+const [attempt, device, derivedData, target = 'simulator'] = process.argv.slice(2);
+if (!attempt || !/^[a-z0-9-]+$/.test(attempt) || !device || !derivedData || !path.isAbsolute(derivedData) || !['simulator', 'physical'].includes(target))
+  throw new Error('Usage: build-acceptance-app.mjs unique-attempt device-ID absolute-derived-data [simulator|physical]');
 const result = path.join(mobileRoot, 'artifacts/acceptance-0.1.0/local-' + new Date().toISOString().slice(0, 10), attempt + '.xcresult');
 if (fs.existsSync(result)) throw new Error('Build evidence cannot be overwritten.');
 fs.mkdirSync(path.dirname(result), {recursive: true});
-const app = path.join(derivedData, 'Build/Products/Debug-iphonesimulator/Nodus.app');
+const app = path.join(derivedData, 'Build/Products', target === 'physical' ? 'Debug-iphoneos' : 'Debug-iphonesimulator', 'Nodus.app');
 const receipt = app + '.acceptance-build.json';
 fs.rmSync(receipt, {force: true});
 const before = acceptanceSourceRevision(mobileRoot);
 const code = await new Promise((resolve, reject) => {
   const child = spawn('xcodebuild', ['build-for-testing', '-project', 'ios/Nodus.xcodeproj', '-scheme', 'Nodus',
-    '-destination', 'platform=iOS Simulator,id=' + device, '-derivedDataPath', derivedData, '-resultBundlePath', result],
+    '-destination', `platform=${target === 'physical' ? 'iOS' : 'iOS Simulator'},id=${device}`, '-derivedDataPath', derivedData, '-resultBundlePath', result],
     {cwd: mobileRoot, stdio: 'inherit'});
   child.on('error', reject);
   child.on('exit', (code, signal) => signal ? reject(new Error(`Native build terminated: ${signal}`)) : resolve(code));

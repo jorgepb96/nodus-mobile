@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
-import {acceptanceRevisionIssues} from './acceptance-evidence.mjs';
+import {acceptanceRevisionIssues, nativeAcceptanceRunIssues} from './acceptance-evidence.mjs';
 
 const manifest = JSON.parse(fs.readFileSync(path.join(mobileRoot, 'ios/Parity/parity-manifest.json'), 'utf8'));
 const input = process.argv[2];
@@ -40,6 +40,11 @@ for (const required of ['desktop', 'iphoneSimulator', 'ipadSimulator', 'physical
     if (required !== 'desktop') {
       try {
         const result = JSON.parse(execFileSync('xcrun', ['xcresulttool', 'get', 'test-results', 'summary', '--path', artifact], { encoding: 'utf8' }));
+        if (!run.sourceReceipt) issues.push(`Missing native compiled-source evidence: ${required}`);
+        else {
+          const receipt = JSON.parse(fs.readFileSync(path.resolve(path.dirname(input), run.sourceReceipt), 'utf8'));
+          issues.push(...nativeAcceptanceRunIssues(receipt, campaign.revisionDigests, result.startTime).map(issue => `${required}: ${issue}`));
+        }
         if (result.result !== 'Passed' || result.totalTestCount < 1 || result.failedTests !== 0 || result.skippedTests !== 0 || result.expectedFailures !== 0 || result.passedTests !== run.executed) issues.push(`Actual XCTest result does not pass: ${required}`);
         const platforms = result.devicesAndConfigurations?.map(item => item.device.platform) ?? [];
         if (required === 'physicalIphone' && !platforms.includes('iOS')) issues.push('Physical iPhone evidence must come from a physical iOS device.');
