@@ -1299,6 +1299,18 @@
       "evidence": []
     },
     {
+      "id": "sync.pairing.dynamicWorkspaceVaultCatalogue",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.pairing.remoteRevocationClearsGrantKeepsAuthorship",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "generation.chat.providerSelectionDuringCatalogueLoading",
       "category": "generation",
       "result": "pending",

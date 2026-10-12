@@ -212,6 +212,8 @@ function operationMatrix(routes) {
       ['sync.worldMap.autonomousPaidResponseRecovery', 'sync'],
       ['consultation.downloads.selectedFileVersionExactBytes', 'consultation'],
       ['sync.pairing.authoringRecoveryAfterRevocation', 'sync'],
+      ['sync.pairing.dynamicWorkspaceVaultCatalogue', 'sync'],
+      ['sync.pairing.remoteRevocationClearsGrantKeepsAuthorship', 'sync'],
       ['generation.chat.providerSelectionDuringCatalogueLoading', 'generation'],
       ['visual.teaching.gradebookPhoneHeaderAndTable', 'consultation'],
       ['generation.writingWorkshop.live', 'generation'], ['generation.writingWorkshop.autonomous', 'generation'],
