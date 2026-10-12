@@ -677,17 +677,19 @@ private struct AuthorWorkspaceDocument: View {
     private func generateSynthesis() async {
         guard canAct else { return }
         do {
-            if session.aiExecutionMode == .autonomous, session.connection.desktopPairingId != nil {
+            if session.aiExecutionMode == .autonomous {
+                guard session.connection.desktopPairingId != nil else { throw APIError(status: 409, code: "autonomous_synthesis_pairing_required", message: "Vincula este workspace para conservar sus fuentes de síntesis en el móvil, o selecciona expresamente el modo Live.") }
                 let value = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: sourceRequest) { actionState = $0 }
                 localSynthesis = try JSONDecoder.nodus.decode(AuthorDossierSynthesis.self, from: JSONEncoder.nodus.encode(value))
                 return
             }
-            let result = try await session.client.createSpaceAction(
-                idempotencyKey: "ios:author-synthesis:\(session.connection.spaceId):\(id):\(session.publishedRevision ?? "local")",
-                kind: .authorSynthesisGenerate, payload: ["authorId": .string(id)], inputRevision: session.publishedRevision,
-                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
-            )
-            actionState = result.action.receiptMessage
+            let action = try await CompanionLiveGenerationAction.run(session: session, kind: .authorSynthesisGenerate,
+                payload: ["authorId": .string(id)]) { actionState = $0 }
+            actionState = action.receiptMessage
+            if action.status == .applied {
+                guard let value = action.result else { throw DesktopBridgeError.malformedResponse }
+                localSynthesis = try JSONDecoder.nodus.decode(AuthorDossierSynthesis.self, from: JSONEncoder.nodus.encode(value))
+            }
         } catch { actionState = error.localizedDescription }
     }
     private func freshestSynthesis(_ remote: AuthorDossierSynthesis?) -> AuthorDossierSynthesis? {
@@ -801,16 +803,18 @@ private struct AuthorSynthesisMatrixView: View {
     private func generate(_ authorId: String, _ themeId: String, key: String) async {
         guard !generating.contains(key) else { return }; generating.insert(key); defer { generating.remove(key) }
         do {
-            if session.aiExecutionMode == .autonomous, session.connection.desktopPairingId != nil {
+            if session.aiExecutionMode == .autonomous {
+                guard session.connection.desktopPairingId != nil else { throw APIError(status: 409, code: "autonomous_synthesis_pairing_required", message: "Vincula este workspace para conservar sus fuentes de síntesis en el móvil, o selecciona expresamente el modo Live.") }
                 let value = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: sourceRequest(authorId, themeId)) { generated[key] = $0 }
                 localCells[key] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(value)); return
             }
-            let result = try await session.client.createSpaceAction(
-                idempotencyKey: "ios:matrix:\(session.connection.spaceId):\(authorId):\(themeId):\(session.publishedRevision ?? "local")",
-                kind: .authorsMatrixGenerate, payload: ["authorId": .string(authorId), "themeId": .string(themeId)],
-                inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
-            )
-            generated[key] = result.action.receiptMessage
+            let action = try await CompanionLiveGenerationAction.run(session: session, kind: .authorsMatrixGenerate,
+                payload: ["authorId": .string(authorId), "themeId": .string(themeId)]) { generated[key] = $0 }
+            generated[key] = action.receiptMessage
+            if action.status == .applied {
+                guard let value = action.result else { throw DesktopBridgeError.malformedResponse }
+                localCells[key] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(value))
+            }
         } catch { generated[key] = error.localizedDescription }
     }
     private func sourceRequest(_ authorId: String, _ themeId: String) -> JSONValue {
