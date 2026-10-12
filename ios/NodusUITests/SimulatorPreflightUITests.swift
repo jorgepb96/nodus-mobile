@@ -6,6 +6,21 @@ final class SimulatorPreflightUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
+    func testPhoneControlCenterOrientationState() throws {
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.press(.home)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let window = springboard.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        defer { XCUIDevice.shared.press(.home) }
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.015))
+            .press(forDuration: 0.1, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.50)))
+        capture("phone-system-control-center", springboard)
+        let rotation = springboard.buttons.matching(NSPredicate(format: "label CONTAINS[cd] %@ OR label CONTAINS[cd] %@", "orientación", "Rotation Lock")).firstMatch
+        XCTAssertTrue(rotation.waitForExistence(timeout: 10), springboard.debugDescription)
+    }
+
+    @MainActor
     func testIPadControlCenterAndPointerInput() throws {
         XCUIDevice.shared.orientation = .portrait
         XCUIDevice.shared.press(.home)
