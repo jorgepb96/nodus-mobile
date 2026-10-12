@@ -297,12 +297,12 @@ struct StudyEvidenceDocument: View {
         .navigationTitle(row?.text("title") ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack {
-                        ReadingSizeButtons(accent: session.accent)
-                        if session.connection.desktopPairingId != nil && session.connection.role.canSendChanges {
-                            Button("Editar") { editing = true }.frame(minHeight: 44).buttonStyle(.plain).accessibilityIdentifier("study-document-edit")
-                        }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                ReadingSizeButtons(accent: session.accent)
+                if session.connection.desktopPairingId != nil && session.connection.role.canSendChanges {
+                    Button { editing = true } label: { Label("Edit", systemImage: "pencil") }
+                        .labelStyle(.iconOnly).frame(width: 44, height: 44).fixedSize()
+                        .buttonStyle(.plain).accessibilityIdentifier("study-document-edit")
                 }
             }
         }
@@ -316,7 +316,7 @@ struct StudyEvidenceDocument: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button("Listo") {
+                            Button("Done") {
                                 Task {
                                     guard let editorFlush, await editorFlush() else { return }
                                     editing = false

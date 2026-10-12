@@ -254,7 +254,10 @@ final class MobileReleaseUITests: XCTestCase {
             for _ in 0..<10 { if document.isHittable { break }; app.swipeUp() }
             XCTAssertTrue(document.isHittable); document.tap()
             let edit = app.buttons["study-document-edit"]
-            XCTAssertTrue(edit.waitForExistence(timeout: 20)); edit.tap()
+            XCTAssertTrue(edit.waitForExistence(timeout: 20))
+            XCTAssertTrue(edit.isHittable); XCTAssertGreaterThanOrEqual(edit.frame.width, 44)
+            capture(app, "live-study-reader-edit-control-before-writing")
+            edit.tap()
             let web = app.descendants(matching: .any)["shared-desktop-studyDocument"].firstMatch.webViews.firstMatch
             let editor = web.textViews["Editor del documento"]
             XCTAssertTrue(editor.waitForExistence(timeout: 45), app.debugDescription)
