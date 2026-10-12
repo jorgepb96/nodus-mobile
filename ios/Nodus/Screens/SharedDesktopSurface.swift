@@ -268,6 +268,7 @@ struct StudyEvidenceDocument: View {
     var location: String? = nil
     var quote: String? = nil
     var downloadedOnly = false
+    var startEditing = false
     var downloadedDossier: CollectionDossier? = nil
     var onOpenRelated: ((CollectionDescriptor, Row) -> Void)? = nil
     @State private var row: Row?
@@ -344,7 +345,7 @@ struct StudyEvidenceDocument: View {
         .onChange(of: editing) { _, active in if !active { Task { await loadReader() } } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("study-evidence-reader")
-        .task(id: id) { await loadReader() }
+        .task(id: id) { await loadReader(); if startEditing, row != nil { editing = true } }
     }
     private func loadReader() async {
         error = nil
@@ -983,6 +984,12 @@ private struct DesktopWebView: UIViewRepresentable {
                             value = try await databaseReading.perform(method,args:args,client:client,pairing:pairing,vaultId:vaultId,onOffline:onOfflineCopy)
                         } else if ImmersionSurfaceProgressBridge.writeMethods.contains(method) {
                             value = try await immersionProgress.write(method: method, args: args, pairing: pairing, vaultId: vaultId)
+                        } else if method == "createStudyDocument", args.count == 1 {
+                            guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
+                                  pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+                            let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: .studyDocument)
+                            value = try await queue.createStudyDocument(input: args[0])
+                            Task { await session.synchronizeCompanionChanges() }
                         } else if StudyDocumentSurfaceBridge.methods.contains(method) {
                             value = try await StudyDocumentSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, onOffline: onOfflineCopy)
                         } else if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {

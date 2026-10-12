@@ -405,7 +405,6 @@ public actor DesktopBridgeClient {
         var body: [String: JSONValue] = [
             "id": .string(request.id), (kind == .workspaceNote ? "noteId" : "documentId"): .string(request.noteId), "input": request.input
         ]
-        if kind == .studyDocument, request.creation != nil { throw DesktopBridgeError.permissionDenied }
         if kind == .studyDocument, !pairing.domains.contains(.corpus) { throw DesktopBridgeError.permissionDenied }
         if let creation = request.creation { body["creation"] = creation }
         guard try JSONEncoder.nodus.encode(JSONValue.object(body)).count <= CompanionDocumentOutbox.maximumRequestBytes else {

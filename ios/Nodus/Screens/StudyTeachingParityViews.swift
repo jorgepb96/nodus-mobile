@@ -39,6 +39,7 @@ private let studyPublicTables = [
 
 private struct StudyCourseDocumentTarget: Identifiable {
     let id: String
+    var startEditing = false
 }
 
 private struct StudyCoursesWorkspace: View {
@@ -49,6 +50,15 @@ private struct StudyCoursesWorkspace: View {
     @State private var query = ""
     @State private var error: String?
     @State private var documentTarget: StudyCourseDocumentTarget?
+    @State private var newDocumentPresented = false
+    @State private var newDocumentTitle = ""
+    @State private var newDocumentKind = "apunte"
+    @State private var creating = false
+    @State private var creationIssue: String?
+    @State private var newlyCreatedDocument: String?
+    private let documentKinds = [("apunte", "Apunte"), ("manual", "Manual"), ("libro", "Libro"), ("articulo", "Artículo"),
+        ("presentacion", "Presentación"), ("grabacion", "Grabación"), ("transcripcion", "Transcripción"),
+        ("banco", "Banco de preguntas"), ("test", "Test"), ("examen", "Examen")]
 
     private let section = "studyCourses"
     private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
@@ -72,9 +82,36 @@ private struct StudyCoursesWorkspace: View {
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("study-courses-workspace")
         .task(id: session.publishedRevision) { await load() }
+        .onChange(of: documentTarget?.id) { _, id in if id == nil { Task { await load() } } }
+        .sheet(isPresented: $newDocumentPresented, onDismiss: {
+            if let id = newlyCreatedDocument {
+                newlyCreatedDocument = nil
+                documentTarget = StudyCourseDocumentTarget(id: id, startEditing: true)
+            }
+        }) {
+            NavigationStack {
+                Form {
+                    TextField("Título", text: $newDocumentTitle).accessibilityIdentifier("study-new-document-title")
+                    Picker("Tipo", selection: $newDocumentKind) {
+                        ForEach(documentKinds, id: \.0) { kind in Text(kind.1).tag(kind.0) }
+                    }
+                    if let creationIssue { Text(creationIssue).foregroundStyle(.red) }
+                }
+                .navigationTitle("Nuevo documento")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { newDocumentPresented = false }.disabled(creating) }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button { Task { await createDocument() } } label: {
+                            if creating { ProgressView() } else { Text("Crear").frame(minWidth: 44, minHeight: 44) }
+                        }.disabled(creating).accessibilityIdentifier("study-new-document-create")
+                    }
+                }
+                .interactiveDismissDisabled(creating)
+            }.environment(\.nodusHasTabBar, false)
+        }
         .nodusSheet(item: $documentTarget) { target in
             NavigationStack {
-                StudyEvidenceDocument(session: session, id: target.id)
+                StudyEvidenceDocument(session: session, id: target.id, startEditing: target.startEditing)
                     .nodusModalClose(accent: session.accent)
             }
         }
@@ -126,6 +163,13 @@ private struct StudyCoursesWorkspace: View {
             VStack(alignment: .leading, spacing: 14) {
                 DesktopPageHeader(title: LocalizedStringKey(course.name), subtitle: "\(course.shortId) · \(subjects.count) subjects", systemImage: course.icon ?? "graduationcap", accent: session.accent)
                 Text(course.description).font(.callout).foregroundStyle(.secondary)
+                if session.connection.desktopPairingId != nil, session.connection.role.canSendChanges {
+                    Button {
+                        newDocumentTitle = ""; newDocumentKind = "apunte"; creationIssue = nil
+                        newDocumentPresented = true
+                    } label: { Label("Nuevo documento", systemImage: "doc.badge.plus").frame(minHeight: 44) }
+                    .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).accessibilityIdentifier("study-new-document")
+                }
                 HStack { metric("Subjects", subjects.count, "books.vertical"); metric("Topics", StudyTeachingParity.topics(in: tables).filter { subjectIds.contains($0.subjectId) }.count, "list.bullet.indent"); metric("Documents", documents.count, "doc.text") }
                 ForEach(subjects) { subject in
                     VStack(alignment: .leading, spacing: 9) {
@@ -161,9 +205,32 @@ private struct StudyCoursesWorkspace: View {
     private func metric(_ title: LocalizedStringKey, _ value: Int, _ image: String) -> some View { VStack(alignment: .leading, spacing: 5) { Image(systemName: image).foregroundStyle(session.accent); Text("\(value)").font(.title2.bold().monospacedDigit()); Text(title).font(.caption2).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent).frame(maxWidth: .infinity) }
     private func linkedDocuments(courseId: String) -> [Row] { let ids = Set((tables["study_placements"] ?? []).filter { $0.string("course_id") == courseId }.compactMap { $0.string("document_id") }); return (tables["study_docs"] ?? []).filter { ids.contains($0.string("id") ?? "") } }
     private func open(_ course: StudyTeachingParity.Course) { tabs.open(.init(id: course.id, title: course.name, systemImage: course.icon ?? "graduationcap", kind: .document, payload: .reference(kind: "study-course", id: course.id)), in: section) }
+    private func overlayDocuments() async throws {
+        guard session.connection.desktopPairingId != nil else { return }
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault, kind: .studyDocument)
+        tables = await queue.overlayStudyTables(tables)
+    }
+    private func createDocument() async {
+        guard !creating, let course = active else { return }
+        creating = true; defer { creating = false }
+        do {
+            let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+            guard !pairing.isExpired, pairing.domains.contains(.corpus), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+            let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault, kind: .studyDocument)
+            let document = try await queue.createStudyDocument(input: .object(["title": .string(newDocumentTitle), "kind": .string(newDocumentKind),
+                "placement": .object(["courseId": .string(course.id)])]))
+            guard let id = document.objectValue?["id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+            tables = await queue.overlayStudyTables(tables)
+            newlyCreatedDocument = id; newDocumentPresented = false
+            Task { await session.synchronizeCompanionChanges() }
+        } catch { creationIssue = error.localizedDescription }
+    }
     private func load() async {
         do {
             tables = try await loadStudyTeachingTables(session, studyPublicTables)
+            try await overlayDocuments()
             error = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", tabs.tabs(in: section).isEmpty {

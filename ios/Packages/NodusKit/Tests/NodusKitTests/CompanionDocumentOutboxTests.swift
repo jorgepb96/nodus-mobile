@@ -42,6 +42,57 @@ struct CompanionDocumentOutboxTests {
     }
     private static let creationInput: JSONValue = .object(["title": .string("New offline document"), "content": .string(""),
         "kind": .string("markdown"), "folderId": .string("folder-a"), "tags": .array([.string("offline")])])
+    @Test("new study documents retain identity, placement and edits across restart, retry and acknowledgement")
+    func studyCreationReplay() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        let document = try await queue.createStudyDocument(input: .object(["title": .string("Nuevo apunte"), "kind": .string("apunte"), "placement": .object(["courseId": .string("course-a")])]))
+        let id = try #require(document.objectValue?["id"]?.stringValue)
+        #expect(UUID(uuidString: id) != nil)
+        let initial = await queue.overlayStudyTables([:])
+        #expect(initial["study_docs"]?.first?.string("title") == "Nuevo apunte")
+        #expect(initial["study_placements"]?.first?.string("course_id") == "course-a")
+        _ = try await queue.save(noteId: id, input: Self.input(-1, text: "Mi nuevo apunte"))
+        let requests = Requests()
+        do { try await queue.synchronize { request in await requests.append(request); throw URLError(.networkConnectionLost) }; Issue.record("Expected transport loss") }
+        catch is URLError {}
+        let reopened = try await fixture.open(kind: .studyDocument)
+        try await reopened.synchronize { request in
+            await requests.append(request)
+            var result = Self.receipt(request, revision: 1).objectValue!
+            result["note"] = .object(["id": .string(request.noteId), "title": .string("Private document"), "kind": .string("apunte")])
+            return .object(result)
+        }
+        let sent = await requests.all()
+        #expect(sent.count == 2 && sent[0] == sent[1])
+        #expect(sent[0].creation?.objectValue?["placement"]?.objectValue?["courseId"] == .string("course-a"))
+        #expect(sent[0].input.objectValue?["expectedRevision"] == .int(0))
+        #expect(sent[0].input.objectValue?["contentMarkdown"] == .string("Mi nuevo apunte"))
+        #expect(await reopened.pendingCount() == 0)
+        let confirmed = try await fixture.open(kind: .studyDocument)
+        let restored = await confirmed.overlayStudyTables([:])
+        #expect(restored["study_docs"]?.count == 1)
+        #expect(restored["study_placements"]?.first?.string("course_id") == "course-a")
+        let mac: [String: [Row]] = ["study_docs": [Row(["id": .string(id), "title": .string("Más reciente en el Mac"), "content_markdown": .string("Mac revision 2"), "editor_revision": .int(2)])]]
+        #expect(await confirmed.overlayStudyTables(mac)["study_docs"]?.first?.string("title") == "Más reciente en el Mac")
+        #expect(await confirmed.overlayStudyTables(mac, includeConfirmedEdits: true)["study_docs"]?.first?.string("content_markdown") == "Mi nuevo apunte")
+        #expect(await confirmed.confirmedTree() == nil, "Study creation must not contaminate the Scriptor notes tree")
+    }
+
+    @Test("study creation rejects malformed metadata and cannot be placed in a workspace-note queue")
+    func studyCreationValidation() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        let valid: [String: JSONValue] = ["title": .string("Apunte"), "kind": .string("apunte")]
+        for (key, value) in [("kind", JSONValue.string("markdown")), ("year", .double(1.5)), ("placement", .object([:])), ("placement", .object(["courseId": .string("")])), ("source", .string("private"))] {
+            var input = valid; input[key] = value
+            await #expect(throws: DesktopBridgeError.self) { try await queue.createStudyDocument(input: .object(input)) }
+        }
+        #expect(await queue.pendingCount() == 0)
+        let notes = try await fixture.open()
+        await #expect(throws: DesktopBridgeError.self) { try await notes.createStudyDocument(input: .object(valid)) }
+    }
+
     @Test("study drafts have a separate durable identity and preserve the same request after a lost acknowledgement")
     func studyDraftIsolationAndReplay() async throws {
         let fixture = try Fixture(readLimitBytes: 2 * 1024 * 1024); defer { fixture.cleanup() }

@@ -134,6 +134,7 @@ public actor CompanionDocumentOutbox {
         return result
     }
     public func confirmedTree(includeTrashed: Bool = false) -> JSONValue? {
+        guard kind == .workspaceNote else { return nil }
         let notes = authored.keys.sorted().compactMap { authored[$0]?.note }.filter { includeTrashed || Self.isVisibleNote($0) }
         guard !notes.isEmpty else { return nil }
         let folders = authoredFolders()
@@ -177,6 +178,81 @@ public actor CompanionDocumentOutbox {
     public func create(input: JSONValue) async throws -> JSONValue {
         guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
         return try await createDocument(input: input, ideaId: nil)
+    }
+    private static func isSafeInteger(_ value: JSONValue?) -> Bool {
+        switch value {
+        case .int(let number): return number >= -9_007_199_254_740_991 && number <= 9_007_199_254_740_991
+        case .double(let number): return number.isFinite && number.rounded() == number && abs(number) <= 9_007_199_254_740_991
+        default: return false
+        }
+    }
+    /// Allocate the document before contacting the Mac. Its placement and
+    /// structured save travel together under the same replayable request.
+    public func createStudyDocument(input: JSONValue) async throws -> JSONValue {
+        guard kind == .studyDocument, let fields = input.objectValue,
+              fields.keys.allSatisfy({ ["title", "kind", "placement", "description", "color", "icon", "emoji", "imageData", "year"].contains($0) }),
+              let title = fields["title"]?.stringValue, title.utf16.count <= 4096,
+              let documentKind = fields["kind"]?.stringValue,
+              ["apunte", "manual", "libro", "articulo", "presentacion", "grabacion", "transcripcion", "banco", "test", "examen"].contains(documentKind)
+        else { throw DesktopBridgeError.malformedResponse }
+        if let placement = fields["placement"], placement != .null {
+            guard let parents = placement.objectValue,
+                  parents.keys.allSatisfy({ ["courseId", "subjectId", "topicId", "folderId", "position"].contains($0) }),
+                  ["courseId", "subjectId", "topicId", "folderId"].contains(where: { parents[$0]?.stringValue != nil }),
+                  ["courseId", "subjectId", "topicId", "folderId"].allSatisfy({ Self.validParent(parents[$0]) && (parents[$0]?.stringValue?.utf8.count ?? 0) <= 128 }),
+                  parents["position"] == nil || Self.isSafeInteger(parents["position"]) else { throw DesktopBridgeError.malformedResponse }
+        }
+        for key in ["description", "color", "icon", "emoji", "imageData"] {
+            if let value = fields[key], value != .null {
+                let limit = key == "imageData" ? 16 * 1024 * 1024 : key == "description" ? 65_536 : 128
+                guard let text = value.stringValue, text.utf16.count <= limit else { throw DesktopBridgeError.malformedResponse }
+            }
+        }
+        guard fields["year"] == nil || fields["year"] == .null || Self.isSafeInteger(fields["year"]) else { throw DesktopBridgeError.malformedResponse }
+        let id = UUID().uuidString, titleValue = JSONValue.string(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Documento sin título" : title)
+        let timestamp = JSONValue.string(ISO8601DateFormatter().string(from: Date()))
+        var creation = fields; creation["title"] = nil
+        var note = fields
+        note.merge(["id": .string(id), "title": titleValue, "contentMarkdown": .string(""), "createdAt": timestamp, "updatedAt": timestamp,
+                    "deletedAt": .null, "archivedAt": .null, "position": .int(0)], uniquingKeysWith: { _, new in new })
+        note["mobileStudyPlacement"] = fields["placement"] ?? .null
+        let baseline: JSONValue = .object(["revision": .int(0), "documentTitle": titleValue, "contentMarkdown": .string(""),
+            "nativeDocument": .array([]), "schemaVersion": .int(2), "academicMetadata": .null,
+            "versions": .array([]), "annotations": .array([]), "outgoingLinks": .array([]), "backlinks": .array([]),
+            "style": .object(["fontFamily": .string("serif"), "fontSize": .int(18), "lineHeight": .double(1.75), "pageWidth": .int(820), "marginX": .int(56),
+                              "paragraphSpacing": .double(0.8), "firstLineIndent": .int(0), "alignment": .string("justify"), "theme": .string("paper")]),
+            "spellcheckLanguage": .string("es-ES"), "customDictionary": .array([])])
+        let draft: JSONValue = .object(["expectedRevision": .int(0), "title": titleValue, "contentMarkdown": .string(""), "nativeDocument": .array([]), "schemaVersion": .int(2)])
+        guard try JSONEncoder.nodus.encode(input).count <= Self.maximumRequestBytes - 65_536 else { throw DesktopBridgeError.malformedResponse }
+        records[id] = Record(baseline: baseline, draft: draft, generation: 1, sending: nil, state: .pending, creation: .object(creation), createdNote: .object(note))
+        do { try await persist() } catch { records[id] = nil; throw error }
+        return noteResult(noteId: id)
+    }
+
+    public func overlayStudyTables(_ source: [String: [Row]], includeConfirmedEdits: Bool = false) -> [String: [Row]] {
+        guard kind == .studyDocument else { return source }
+        var tables = source, local = authored.compactMapValues(\.note)
+        for (id, record) in records { if let note = record.createdNote { local[id] = note } }
+        var documents = tables["study_docs"] ?? [], placements = tables["study_placements"] ?? []
+        for id in Set(local.keys).union(records.keys).sorted() {
+            let index = documents.firstIndex { $0.string("id") == id }
+            let editor = editorData(noteId: id) ?? (includeConfirmedEdits || index == nil ? confirmedEditorData(noteId: id) : nil)
+            guard let editor = editor?.objectValue else { continue }
+            var fields = index.map { documents[$0].columns } ?? ["id": .string(id)]
+            if let note = local[id]?.objectValue {
+                for (key, column) in [("kind", "kind"), ("shortId", "short_id"), ("description", "description"), ("createdAt", "created_at"), ("updatedAt", "updated_at"), ("deletedAt", "deleted_at"), ("archivedAt", "archived_at")] { if let value = note[key] { fields[column] = value } }
+                if let placement = note["mobileStudyPlacement"]?.objectValue, !placements.contains(where: { $0.string("document_id") == id }) {
+                    var location: [String: JSONValue] = ["id": .string("mobile-\(id)"), "document_id": .string(id)]
+                    for (key, column) in [("courseId", "course_id"), ("subjectId", "subject_id"), ("topicId", "topic_id"), ("folderId", "folder_id")] { location[column] = placement[key] ?? .null }
+                    placements.append(Row(location))
+                }
+            }
+            fields["title"] = editor["documentTitle"]; fields["content_markdown"] = editor["contentMarkdown"]
+            fields["editor_revision"] = editor["revision"]; fields["mobile_sync_state"] = editor["mobileSyncState"] ?? .string("available")
+            if let index { documents[index] = Row(fields) } else if local[id] != nil { documents.append(Row(fields)) }
+        }
+        tables["study_docs"] = documents; tables["study_placements"] = placements
+        return tables
     }
     public func createManualIdea(input: JSONValue) async throws -> JSONValue {
         guard var fields = input.objectValue, fields.keys.allSatisfy({ ["title", "folderId"].contains($0) }) else { throw DesktopBridgeError.malformedResponse }
@@ -328,7 +404,7 @@ public actor CompanionDocumentOutbox {
                     records[noteId] = record; try await persist()
                 }
                 let request = record.sending!
-                let response: JSONValue
+                var response: JSONValue
                 do { response = try await send(request) }
                 catch {
                     guard var latest = records[noteId] else { throw error }
@@ -339,6 +415,10 @@ public actor CompanionDocumentOutbox {
                     }
                     latest.issue = error.localizedDescription; records[noteId] = latest; try await persist()
                     throw error
+                }
+                if kind == .studyDocument, var envelope = response.objectValue, var note = envelope["note"]?.objectValue {
+                    note["mobileStudyPlacement"] = request.creation?.objectValue?["placement"] ?? records[noteId]?.createdNote?.objectValue?["mobileStudyPlacement"] ?? authored[noteId]?.note?.objectValue?["mobileStudyPlacement"]
+                    envelope["note"] = .object(note); response = .object(envelope)
                 }
                 guard response.objectValue?["id"]?.stringValue == request.id,
                       let committed = response.objectValue?["editorData"],
@@ -356,7 +436,7 @@ public actor CompanionDocumentOutbox {
                     authored[noteId] = Authored(editorData: committed, note: note); try await persist()
                     // A confirmed new document must remain discoverable after the
                     // queue retires, including when its selected catalogue predates it.
-                    for args: [JSONValue] in [[], [.bool(true)]] {
+                    for args: [JSONValue] in kind == .workspaceNote ? [[], [.bool(true)]] : [] {
                         let key = try Self.operationKey("getNotesTree", args)
                         if let data = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key),
                            var tree = try JSONDecoder.nodus.decode(JSONValue.self, from: data).objectValue,
