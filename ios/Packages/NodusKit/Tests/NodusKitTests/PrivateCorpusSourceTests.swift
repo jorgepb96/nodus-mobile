@@ -113,7 +113,7 @@ struct PrivateCorpusSourceTests {
                 "root": .object(["person_id": .string(target.id), "display_name": .string("Identidad de trabajo"), "public_name": .string(name)]),
                 "groups": .array(target.kind.groups.map { .object(["key": .string($0), "title": .string($0), "total": .int(0), "revision": .string(String(repeating: "b", count: 64))]) })])
             let value = try JSONDecoder.nodus.decode(PrivateCorpusSource.self, from: JSONEncoder.nodus.encode(json))
-            try value.validate(reference: target)
+            try value.validate(for: target)
             return value
         }
         let publicIdentity = try dossier("Seudónimo público")
