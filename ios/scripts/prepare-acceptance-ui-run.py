@@ -21,6 +21,7 @@ parser.add_argument("--source-citation", action="store_true")
 parser.add_argument("--dictionary", action="store_true")
 parser.add_argument("--person-dossier", action="store_true")
 parser.add_argument("--testimonies", action="store_true")
+parser.add_argument("--world-dossiers", action="store_true")
 parser.add_argument("--text-size", choices=["standard", "accessibility3"])
 parser.add_argument("--mac-unavailable", action="store_true")
 parser.add_argument("--research-marker")
@@ -183,6 +184,19 @@ if args.testimonies:
             "interview":{"id":interview["id"], "title":interview["title"], "body":interview["objective"]},
             "participant":{"id":participant["person_id"], "title":participant["public_name"], "body":participant["biographical_note"]},
             "contrast":{"id":contrast["id"], "title":contrast["title"], "body":snippet}}, ensure_ascii=False)
+
+if args.world_dossiers:
+    registry = json.loads((args.lab / "vaults.json").read_text())
+    vault = next(vault for vault in registry["vaults"] if vault["type"] == "worldbuilding")
+    database = Path(vault["path"]).resolve()
+    if not database.is_relative_to(args.lab.resolve()):
+        raise SystemExit("World dossier expectations must come from the copied vault")
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        connection.row_factory = sqlite3.Row
+        record = connection.execute("SELECT s.scene_id,s.title AS sceneTitle,s.summary AS sceneBody,p.place_id,p.name AS placeTitle,q.atmosphere AS placeBody,c.person_id,c.display_name AS characterTitle,f.personality AS characterBody FROM world_scenes s JOIN places p ON p.place_id=s.place_id JOIN place_profiles q ON q.place_id=p.place_id JOIN scene_characters l ON l.scene_id=s.scene_id JOIN persons c ON c.person_id=l.person_id JOIN character_profiles f ON f.person_id=c.person_id WHERE length(s.summary)>40 AND length(q.atmosphere)>40 AND length(f.personality)>40 ORDER BY s.scene_id,c.person_id LIMIT 1").fetchone()
+        if record is None:
+            raise SystemExit("Actual connected scenes, places and character profiles are required")
+        values["NODUS_ACCEPTANCE_WORLD_DOSSIERS"] = json.dumps({"vaultId":vault["id"], **dict(record)}, ensure_ascii=False)
 
 configuration = plistlib.loads(args.base.read_bytes())
 target = configuration["NodusUITests"]

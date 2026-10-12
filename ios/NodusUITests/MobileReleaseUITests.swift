@@ -186,6 +186,42 @@ final class MobileReleaseUITests: XCTestCase {
     func testLiveTestimonyContrastReadsSavedMemoAndReopens() throws {
         try readSavedTestimony(kind: "contrast", route: "testimonyContrasts")
     }
+    @MainActor
+    func testLiveWorldSceneTraversesStoredPlaceAndCharacterProfiles() throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_WORLD_DOSSIERS"])
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: String])
+        func value(_ key: String) throws -> String { try XCTUnwrap(fixture[key]) }
+        let app = try openExistingVault(destination: "scenes", vaultId: value("vaultId"))
+        defer { app.terminate() }
+        let row = app.buttons["world-catalogue-world_scenes-" + (try value("scene_id"))]
+        XCTAssertTrue(row.waitForExistence(timeout: 45), app.debugDescription)
+        for _ in 0..<12 { if row.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(row.isHittable); row.tap()
+        func revealBody(_ key: String) throws {
+            let text = try value(key)
+            let paragraph = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", String(text.prefix(100)), String(text.prefix(100)))).firstMatch
+            XCTAssertTrue(paragraph.waitForExistence(timeout: 20), "The complete saved world dossier must load.")
+            for _ in 0..<16 { if paragraph.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(paragraph.isHittable)
+            capture(app, "live-world-" + key)
+        }
+        try revealBody("sceneBody")
+        let place = app.buttons["world-field-link-place_id"]
+        for _ in 0..<16 { if place.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(place.isHittable); XCTAssertTrue(place.label.contains(try value("placeTitle"))); place.tap()
+        try revealBody("placeBody")
+        let closePlace = app.buttons["world-connected-close-" + (try value("place_id"))]
+        XCTAssertTrue(closePlace.isHittable); closePlace.tap()
+        let character = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "world-connected-record-scene_characters-", try value("characterTitle"))).firstMatch
+        XCTAssertTrue(character.waitForExistence(timeout: 15))
+        for _ in 0..<18 { if character.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(character.isHittable); character.tap()
+        try revealBody("characterBody")
+        let closeCharacter = app.buttons["world-connected-close-" + (try value("person_id"))]
+        XCTAssertTrue(closeCharacter.isHittable); closeCharacter.tap()
+        XCTAssertTrue(app.buttons["workspace-tab-scenes-" + (try value("scene_id"))].exists)
+        capture(app, "live-world-returns-to-original-scene")
+    }
     @MainActor private func readSavedTestimony(kind: String, route: String) throws {
         let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TESTIMONIES"])
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
