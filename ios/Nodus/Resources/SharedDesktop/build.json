@@ -1,24 +1,24 @@
 {
   "version": 1,
-  "desktopCommit": "4ffa23b4051fcc8418f2ce9709845e3d075301d4",
-  "sourceDigest": "57ccaa0179adc3d7aaff22bf4118c4faa148a1af586a27cbd3b80f26850340b6",
+  "desktopCommit": "bba5135f164fc131c6085c28761566083541a7fd",
+  "sourceDigest": "37e9538e562981f173bb871bbc0dab0c0cb93d5f1f0bf12eaa6743c5658f8592",
   "files": {
     "chat-read.css": "6b81a44ca1103c6a3033973474103d21c1066feea9c2f4745a11dee6943560e8",
     "chat-read.html": "f11bc0e21820903b7539c97d81a490ef1871ad6ddfadbd50c8032297b59b5118",
-    "chat-read.iife.js": "24bdaee5fc9a338c3996440325c893c2fee390c3eb7e996aad00d47bc7430f6e",
+    "chat-read.iife.js": "41f0d293f5f1fb1149bb08d888a3ca4ac6ab5af69efa59176b74d1ae66d2d765",
     "companion-chat.js": "06d0274716465c05840bc53582c11f24e6ebd42a16089fdaa2f5815964dc103d",
     "database-query.html": "96dfd67373e6212d1698fb8f5799d4c2f6e77b1a28fbd34345879e379a422d2f",
     "database-query.js": "4fdaacaa0dfbb65562deb8b72b45b7f2ea2737536129bd2360242a17ba54ba53",
     "index.html": "67a42d1126272372cef667c00edcda63985e9463a1ed679b561afbeae274c3b3",
     "map-read.css": "95d8c5473048f5f1c348c74b5a56c345493f5618b3a323de5a7c976e4e4dbf26",
     "map-read.html": "d775be14af882fe629320de04aa3df9d8f063c258c78e2a09a31436bff7f8cc9",
-    "map-read.iife.js": "7c7bd64e3c1e7502bad677422f0bac5df59d12b369c416aa9b010fce8a7e1531",
-    "operations.json": "5782de9af4b843de5ed5fdad816b524edf755045cf47bd9fbc0163da45f5fa98",
-    "prose-read.css": "57d020197ae433bfc1dca9ba5a73293285a12e3d132aa733af204bb1204a039a",
+    "map-read.iife.js": "70d224736835393a207fac93e4943cd587e540ac71a405380ff61c52dfe2ae5d",
+    "operations.json": "f348587eae8c5562efecc3bc21b57e88ac55cfb045408b3245e9ea9c285a2b66",
+    "prose-read.css": "e62a74fc0a2654385a90f6a4b78404e64aa5a97b629a5b6ab0711500f907ff5b",
     "prose-read.html": "54ec56e83b05cde7ace8b3ccce99f9cbb2917b9a8253eff4f6bc12cb38804327",
-    "prose-read.iife.js": "e3e63d7a4784ff1d90123f43292dcf165a5d51bbdc4468750784206e22f384df",
+    "prose-read.iife.js": "50280e2e3919d6b5434d02fbf1a625f65f8cf1d4ed3fcaf12d2c284900b272fb",
     "report-renderer.js": "b96aec3cfb12c0a61014938e670fa89651bb63e585dd03f5b06e04a02e698a84",
     "surface.css": "0e2c47904c1629e92487ac9b224a772125cca78218faeaa36e75b4cd6a71faf6",
-    "surface.iife.js": "3dc67483d3efcb77b53691bcac03ad5bc8bd3f1a4eff5dd50b652357e467cac8"
+    "surface.iife.js": "b231aef7684c4d72524ba85adc1660ff6bd7e40a59dc3427686250666dd96a63"
   }
 }
