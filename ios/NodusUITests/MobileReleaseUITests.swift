@@ -200,9 +200,16 @@ final class MobileReleaseUITests: XCTestCase {
         func revealBody(_ key: String) throws {
             let text = try value(key)
             let paragraph = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", String(text.prefix(100)), String(text.prefix(100)))).firstMatch
-            XCTAssertTrue(paragraph.waitForExistence(timeout: 20), "The complete saved world dossier must load.")
-            for _ in 0..<16 { if paragraph.isHittable { break }; app.swipeUp() }
-            XCTAssertTrue(paragraph.isHittable)
+            let route = key == "sceneBody" ? "scenes" : key == "placeBody" ? "places" : "characters"
+            // The iPad sheet occupies only the centre of the window. A swipe on
+            // the whole app can hit the underlying scene instead of its dossier.
+            for _ in 0..<20 {
+                if paragraph.exists && paragraph.isHittable { break }
+                let readers = app.scrollViews.matching(identifier: "world-workspace-" + route).allElementsBoundByIndex
+                let reader = try XCTUnwrap(readers.last)
+                reader.swipeUp()
+            }
+            XCTAssertTrue(paragraph.exists && paragraph.isHittable, "The complete saved world dossier must load.\n" + app.debugDescription)
             capture(app, "live-world-" + key)
         }
         try revealBody("sceneBody")
@@ -221,6 +228,44 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(closeCharacter.isHittable); XCTAssertGreaterThanOrEqual(closeCharacter.frame.height, 44); closeCharacter.tap()
         XCTAssertTrue(app.buttons["workspace-tab-scenes-scenes-" + (try value("scene_id"))].exists)
         capture(app, "live-world-returns-to-original-scene")
+    }
+    @MainActor
+    func testLiveStudyCourseDocumentReadsSavedBodyAndReturns() throws {
+        try readSavedCourseDocument(kind: "estudio")
+    }
+    @MainActor
+    func testLiveTeachingCourseDocumentReadsSavedBodyAndReturns() throws {
+        try readSavedCourseDocument(kind: "docencia")
+    }
+    @MainActor private func readSavedCourseDocument(kind: String) throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_STUDY_DOCUMENTS"])
+        let cases = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: [String: String]])
+        let fixture = try XCTUnwrap(cases[kind])
+        func value(_ key: String) throws -> String { try XCTUnwrap(fixture[key]) }
+        for reopen in 0..<2 {
+            let app = try openExistingVault(destination: "studyCourses", vaultId: value("vaultId"))
+            defer { app.terminate() }
+            let course = app.buttons["study-course-open-" + (try value("courseId"))].firstMatch
+            XCTAssertTrue(course.waitForExistence(timeout: 45), app.debugDescription)
+            for _ in 0..<10 { if course.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(course.isHittable); course.tap()
+            let document = app.buttons["study-course-document-" + (try value("documentId"))]
+            XCTAssertTrue(document.waitForExistence(timeout: 20), app.debugDescription)
+            for _ in 0..<10 { if document.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(document.isHittable); XCTAssertGreaterThanOrEqual(document.frame.height, 44); document.tap()
+            let reader = app.descendants(matching: .any)["study-evidence-reader"].firstMatch
+            XCTAssertTrue(reader.waitForExistence(timeout: 30), app.debugDescription)
+            let body = try value("body")
+            let paragraph = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", body, body)).firstMatch
+            XCTAssertTrue(paragraph.waitForExistence(timeout: 20), "The document must open its saved body rather than only its metadata.")
+            XCTAssertTrue(paragraph.isHittable)
+            capture(app, "live-\(kind)-course-document-reopen-\(reopen)")
+            let close = app.buttons["nodus-modal-close"]
+            XCTAssertTrue(close.isHittable); XCTAssertGreaterThanOrEqual(close.frame.height, 44); close.tap()
+            XCTAssertTrue(reader.waitForNonExistence(timeout: 10))
+            XCTAssertTrue(document.isHittable, "Closing the document must preserve its owning course.")
+            app.terminate()
+        }
     }
     @MainActor private func readSavedTestimony(kind: String, route: String) throws {
         let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TESTIMONIES"])

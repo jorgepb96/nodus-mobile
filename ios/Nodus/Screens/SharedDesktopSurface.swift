@@ -254,11 +254,11 @@ private struct SourceReaderSheetSizing: ViewModifier {
 
 private struct SurfaceDestination: Identifiable { let path: String; let id: String; let location: String?; let quote: String? }
 
-private struct StudyEvidenceDocument: View {
+struct StudyEvidenceDocument: View {
     let session: SpaceSession
     let id: String
-    let location: String?
-    let quote: String?
+    var location: String? = nil
+    var quote: String? = nil
     @State private var row: Row?
     @State private var error: String?
     @Environment(AppPreferences.self) private var preferences
@@ -288,7 +288,8 @@ private struct StudyEvidenceDocument: View {
         .toolbar { ToolbarItem(placement: .topBarTrailing) { ReadingSizeButtons(accent: session.accent) } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("study-evidence-reader")
-        .task {
+        .task(id: id) {
+            row = nil; error = nil
             do {
                 guard let collection = Collections.byPath["study-docs"] else { throw DesktopBridgeError.malformedResponse }
                 row = try await session.client.item(collection, id: id, in: session.connection.spaceId)

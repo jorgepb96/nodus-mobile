@@ -22,6 +22,7 @@ parser.add_argument("--dictionary", action="store_true")
 parser.add_argument("--person-dossier", action="store_true")
 parser.add_argument("--testimonies", action="store_true")
 parser.add_argument("--world-dossiers", action="store_true")
+parser.add_argument("--study-documents", action="store_true")
 parser.add_argument("--text-size", choices=["standard", "accessibility3"])
 parser.add_argument("--mac-unavailable", action="store_true")
 parser.add_argument("--research-marker")
@@ -197,6 +198,24 @@ if args.world_dossiers:
         if record is None:
             raise SystemExit("Actual connected scenes, places and character profiles are required")
         values["NODUS_ACCEPTANCE_WORLD_DOSSIERS"] = json.dumps({"vaultId":vault["id"], **dict(record)}, ensure_ascii=False)
+
+if args.study_documents:
+    registry = json.loads((args.lab / "vaults.json").read_text())
+    cases = {}
+    for kind in ("estudio", "docencia"):
+        vault = next(v for v in registry["vaults"] if v["type"] == kind)
+        database = Path(vault["path"]).resolve()
+        if not database.is_relative_to(args.lab.resolve()):
+            raise SystemExit("Study document expectations must come from the copied vault")
+        with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+            record = connection.execute("SELECT c.id,c.name,d.id,d.title,d.content_markdown FROM study_courses c JOIN study_placements p ON p.course_id=c.id JOIN study_docs d ON d.id=p.document_id WHERE d.deleted_at IS NULL AND p.deleted_at IS NULL AND length(d.content_markdown)>40 ORDER BY length(d.content_markdown),d.id LIMIT 1").fetchone()
+            if record is None:
+                raise SystemExit("An actual course with a readable saved document is required")
+            paragraph = next((line for line in record[4].splitlines() if len(line)>40 and not line.startswith("#")), "")
+            if not paragraph:
+                raise SystemExit("A saved study document paragraph is required")
+            cases[kind] = dict(vaultId=vault["id"], courseId=record[0], courseTitle=record[1], documentId=record[2], documentTitle=record[3], body=paragraph)
+    values["NODUS_ACCEPTANCE_STUDY_DOCUMENTS"] = json.dumps(cases, ensure_ascii=False)
 
 configuration = plistlib.loads(args.base.read_bytes())
 target = configuration["NodusUITests"]

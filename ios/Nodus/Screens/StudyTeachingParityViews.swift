@@ -37,6 +37,10 @@ private let studyPublicTables = [
 
 // MARK: - Study catalogue
 
+private struct StudyCourseDocumentTarget: Identifiable {
+    let id: String
+}
+
 private struct StudyCoursesWorkspace: View {
     @Environment(WorkspaceTabs.self) private var tabs
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -44,6 +48,7 @@ private struct StudyCoursesWorkspace: View {
     @State private var tables: [String: [Row]] = [:]
     @State private var query = ""
     @State private var error: String?
+    @State private var documentTarget: StudyCourseDocumentTarget?
 
     private let section = "studyCourses"
 
@@ -66,6 +71,12 @@ private struct StudyCoursesWorkspace: View {
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("study-courses-workspace")
         .task(id: session.publishedRevision) { await load() }
+        .nodusSheet(item: $documentTarget) { target in
+            NavigationStack {
+                StudyEvidenceDocument(session: session, id: target.id)
+                    .nodusModalClose(accent: session.accent)
+            }
+        }
     }
 
     private var courseSidebar: some View {
@@ -123,7 +134,23 @@ private struct StudyCoursesWorkspace: View {
                 }
                 if !documents.isEmpty {
                     DesktopSectionHeader(title: "Documents", subtitle: "Placed in this course", systemImage: "doc.text", accent: session.accent)
-                    ForEach(documents, id: \.columns) { document in HStack { Image(systemName: "doc.richtext").foregroundStyle(session.accent); VStack(alignment: .leading) { Text(document.text("title") ?? "Document").font(.callout.weight(.medium)); Text(document.text("description") ?? document.text("kind") ?? "").font(.caption2).foregroundStyle(.secondary) }; Spacer() }.desktopContentRow(accent: session.accent) }
+                    ForEach(documents, id: \.columns) { document in
+                        if let id = document.string("id") {
+                            Button { documentTarget = StudyCourseDocumentTarget(id: id) } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "doc.richtext").foregroundStyle(session.accent)
+                                    VStack(alignment: .leading) {
+                                        Text(document.text("title") ?? String(localized: "Document")).font(.callout.weight(.medium))
+                                        Text(document.text("description") ?? document.text("kind") ?? "").font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                                }.frame(minHeight: 44).desktopContentRow(accent: session.accent)
+                            }
+                            .buttonStyle(NodusCardButtonStyle())
+                            .accessibilityIdentifier("study-course-document-\(id)")
+                        }
+                    }
                 }
             }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor()
         }.accessibilityIdentifier("study-course-detail-\(course.id)")
