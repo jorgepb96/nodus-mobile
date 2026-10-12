@@ -275,11 +275,13 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
             let menu = app.buttons["archive-detail-menu"]
             XCTAssertTrue(menu.isHittable); XCTAssertTrue(app.windows.firstMatch.frame.contains(menu.frame))
+            XCTAssertFalse(app.descendants(matching: .any)["archive-hierarchy-rail"].exists, "The iPhone keeps its full-width reader in landscape.")
             try read("excerpt")
             capture(app, "live-archive-phone-landscape")
         }
     }
     @MainActor private func readSavedCourseDocument(kind: String) throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
         let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_STUDY_DOCUMENTS"])
         let cases = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: [String: String]])
         let fixture = try XCTUnwrap(cases[kind])
@@ -291,6 +293,12 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertTrue(course.waitForExistence(timeout: 45), app.debugDescription)
             for _ in 0..<10 { if course.isHittable { break }; app.swipeUp() }
             XCTAssertTrue(course.isHittable); course.tap()
+            if app.windows.firstMatch.frame.width < 600 && reopen == 1 {
+                XCUIDevice.shared.orientation = .landscapeLeft
+                let turned = NSPredicate { _, _ in app.windows.firstMatch.frame.width > app.windows.firstMatch.frame.height }
+                XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+                XCTAssertFalse(app.descendants(matching: .any)["study-course-sidebar"].exists, "The iPhone keeps its full-width course in landscape.")
+            }
             let document = app.buttons["study-course-document-" + (try value("documentId"))]
             XCTAssertTrue(document.waitForExistence(timeout: 20), app.debugDescription)
             for _ in 0..<10 { if document.isHittable { break }; app.swipeUp() }

@@ -97,7 +97,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Archive", catalogueImage: "archivebox", accent: session.accent)
-            if sizeClass == .regular {
+            if !compactPresentation {
                 HStack(spacing: 0) {
                     hierarchyRail.frame(width: 292)
                     Divider()
@@ -152,6 +152,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
             }
         }
         .background(Color(uiColor: .secondarySystemBackground).opacity(0.48))
+        .accessibilityIdentifier("archive-hierarchy-rail")
     }
 
     private var catalogue: some View {
@@ -164,7 +165,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
                     accent: session.accent
                 )
                 PrivateDomainBanner(cached: cached, issue: issue, accent: session.accent) { pairing = true }
-                if sizeClass == .compact {
+                if compactPresentation {
                     Menu {
                         Button("Entire archive") { selectedUnit = nil }
                         ForEach(units) { unit in Button(unit.title) { selectedUnit = unit.id } }

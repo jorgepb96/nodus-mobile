@@ -51,6 +51,7 @@ private struct StudyCoursesWorkspace: View {
     @State private var documentTarget: StudyCourseDocumentTarget?
 
     private let section = "studyCourses"
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var courses: [StudyTeachingParity.Course] {
         let all = StudyTeachingParity.courses(in: tables)
@@ -61,7 +62,7 @@ private struct StudyCoursesWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Courses", catalogueImage: "graduationcap", accent: session.accent)
-            if sizeClass == .regular {
+            if !compactPresentation {
                 HStack(spacing: 0) {
                     courseSidebar.frame(width: 292); Divider()
                     if let active { courseDetail(active) } else { catalogue }
@@ -85,13 +86,14 @@ private struct StudyCoursesWorkspace: View {
             NodusSearchField(text: $query, prompt: "Find a course", accent: session.accent).padding(.horizontal, 9).padding(.bottom, 8)
             ScrollView { LazyVStack(spacing: 3) { ForEach(courses) { courseRow($0) } }.padding(7) }
         }.background(Color(uiColor: .secondarySystemBackground).opacity(0.48))
+        .accessibilityIdentifier("study-course-sidebar")
     }
 
     private var catalogue: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 DesktopPageHeader(title: "Study", subtitle: "Courses, subjects, topics and progress", systemImage: "graduationcap", accent: session.accent)
-                if sizeClass == .compact { NodusSearchField(text: $query, prompt: "Find a course", accent: session.accent) }
+                if compactPresentation { NodusSearchField(text: $query, prompt: "Find a course", accent: session.accent) }
                 if let error { NodusNotice(tone: .blocked, title: "Study could not load", message: LocalizedStringKey(error)) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 10)], spacing: 10) {
                     ForEach(courses) { course in Button { open(course) } label: { courseCard(course) }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("study-course-open-\(course.id)") }
