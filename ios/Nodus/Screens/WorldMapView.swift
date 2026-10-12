@@ -33,12 +33,13 @@ struct WorldMapView: View {
 
     enum Explorer: String, Identifiable { case maps = "Mapas", markers = "Marcadores", characters = "Personajes", scenes = "Escenas"; var id: String { rawValue } }
     enum Panel: Identifiable {
-        case marker(Selection), related(Related), original(RichCorpusProse.OpenImage), timeline, explorer(Explorer)
+        case marker(Selection), related(Related), original(RichCorpusProse.OpenImage), timeline, explorer(Explorer), generation
         var id: String {
             switch self {
             case .marker(let item): "marker:" + item.id
             case .related(let item): "related:" + item.id
             case .original: "original"
+            case .generation: "generation"
             case .timeline: "timeline"
             case .explorer(let item): "explorer:" + item.id
             }
@@ -110,6 +111,7 @@ struct WorldMapView: View {
         case .original(let image): ReaderImageViewer(content: image.content, image: image.preview, title: image.title, accent: session.accent)
         case .timeline: NavigationStack { ScrollView { timeline.padding(.vertical) }.navigationTitle("Tiempo y personajes").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { self.panel = nil } } } }
         case .explorer(let kind): browser(kind)
+        case .generation: if let source { WorldMapGenerationSheet(session: session, source: source) { attempt += 1; rendererAttempt += 1 } }
         }
     }
     private var mapPicker: some View {
@@ -121,6 +123,7 @@ struct WorldMapView: View {
     private var controls: some View {
         Menu {
             if let source {
+                if session.connection.role.canSendChanges { Button("Generar o ampliar mapa") { panel = .generation } }
                 Menu("Capas") {
                     ForEach(source.layers, id: \.columns) { layer in
                         if let id = layer.string("layerId") {
