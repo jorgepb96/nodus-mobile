@@ -13,6 +13,10 @@ struct RootView: View {
     @State private var showingConnect = false
     @State private var didRestoreSession = false
     @State private var pairingLink: String?
+#if DEBUG
+    @State private var recoveryFixtureReady = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] == nil
+    @State private var recoveryFixtureIssue: String?
+#endif
     /// The queue belongs to the device rather than to a space, so it lives above the branch
     /// that decides whether a space is open at all.
     @State private var tray = OutboxTrayModel()
@@ -28,18 +32,33 @@ struct RootView: View {
         return systemTextSize
     }
 
+    @ViewBuilder private var rootContent: some View {
+        if let session = model.session {
+            SpaceShell(session: session)
+        } else if model.isOpeningLocalCorpus {
+            ProgressView("Abriendo el vault…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("nodus-opening-corpus")
+        } else {
+            SpacePickerView(showingConnect: $showingConnect)
+        }
+    }
+
     var body: some View {
         Group {
-            if let session = model.session {
-                SpaceShell(session: session)
-            } else if model.isOpeningLocalCorpus {
-                ProgressView("Abriendo el vault…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("nodus-opening-corpus")
+#if DEBUG
+            if let issue = recoveryFixtureIssue {
+                Text(issue).accessibilityIdentifier("recovery-fixture-error")
+            } else if !recoveryFixtureReady {
+                ProgressView("Preparing isolated recovery fixture")
             } else {
-                SpacePickerView(showingConnect: $showingConnect)
+                rootContent
             }
+#else
+            rootContent
+#endif
         }
+
         // Over everything, including any sheet: a settings screen presented before the app went
         // away must not be readable through the lock.
         .overlay {
@@ -88,6 +107,11 @@ struct RootView: View {
             guard !didRestoreSession else { return }
             didRestoreSession = true
 #if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] != nil {
+                do { try await model.prepareAuthoringRecoveryAcceptance(); recoveryFixtureReady = true }
+                catch { recoveryFixtureIssue = error.localizedDescription }
+                return
+            }
             if let filename = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SNAPSHOT_FILENAME"] {
                 do { try await model.openAcceptanceSnapshot(filename) }
                 catch { model.reportAcceptanceFailure(error) }

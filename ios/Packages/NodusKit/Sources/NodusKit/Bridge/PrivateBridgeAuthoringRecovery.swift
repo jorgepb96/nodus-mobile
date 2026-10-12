@@ -67,7 +67,14 @@ public actor PrivateBridgeAuthoringRecovery {
             }
         }
     }
-    public static var defaultDirectory: URL { URL.applicationSupportDirectory.appendingPathComponent("NodusAuthoringRecovery", isDirectory: true) }
+    public static var defaultDirectory: URL {
+#if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"], let id = UUID(uuidString: raw) {
+            return URL.applicationSupportDirectory.appendingPathComponent("AcceptanceLab/recovery-" + id.uuidString, isDirectory: true)
+        }
+#endif
+        return URL.applicationSupportDirectory.appendingPathComponent("NodusAuthoringRecovery", isDirectory: true)
+    }
     private let directory: URL
     private let keychain: KeychainStore
     public init(directory: URL = PrivateBridgeAuthoringRecovery.defaultDirectory, keychain: KeychainStore = KeychainStore()) {

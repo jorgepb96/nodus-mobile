@@ -790,6 +790,7 @@ private struct RecoveredAuthoringSettings: View {
                         if let text = resultText(request) { CorpusProse(text, accent: session.accent, session: session) }
                         if let encoded = request.checkpoint?.objectValue?["bytes"]?.stringValue, let data = Data(base64Encoded: encoded), let image = UIImage(data: data) {
                             Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
+                                .accessibilityIdentifier("recovered-work-image")
                         }
                         if let result = request.result { DossierValueView(session: session, value: result, field: "", linkedCollection: nil, onOpenRelated: nil) }
                         if PrivateBridgeAuthoringRecovery.canReviewResult(request) {

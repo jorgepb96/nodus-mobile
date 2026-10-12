@@ -246,6 +246,40 @@ final class AppModel {
         return connection
     }
 
+#if DEBUG
+    /// An explicit lab marker and UUID confine every fixture write; ordinary connections
+    /// are hidden only in memory and are never removed or persisted by this fixture.
+    func prepareAuthoringRecoveryAcceptance() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let raw = env["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"], let id = UUID(uuidString: raw) else { throw DesktopBridgeError.permissionDenied }
+        let lab = URL.applicationSupportDirectory.appendingPathComponent("AcceptanceLab", isDirectory: true)
+        guard (try? String(contentsOf: lab.appendingPathComponent(".nodus-mobile-acceptance-lab"), encoding: .utf8)) == "Nodus Mobile isolated acceptance fixture\n" else { throw DesktopBridgeError.permissionDenied }
+        connections = []; session = nil
+        let ready = lab.appendingPathComponent("recovery-" + id.uuidString + ".ready")
+        if FileManager.default.fileExists(atPath: ready.path) { return }
+        let grant = "recovery-ui-" + id.uuidString
+        let cache = try PrivateBridgeCache(pairingId: grant)
+        let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: grant, vaultId: "recovery-ui-vault")
+        _ = try await queue.create(input: .object(["title": .string("Borrador aislado de recuperación"), "content": .string("")]))
+        try await cache.store(Data("Consulted source must not survive".utf8), vaultId: "recovery-ui-vault", domain: .corpus, recordId: "consulted")
+        let pairing = try DesktopBridgePairing(id: grant, origin: "https://recovery.invalid:7443", certificateFingerprint: String(repeating: "a", count: 64), deviceId: "isolated-phone", deviceName: "Isolated fixture", vaultIds: ["recovery-ui-vault"], domains: [.writing, .corpus], pairedAt: Date(), expiresAt: Date().addingTimeInterval(600))
+        let suite = "nodus.recovery.ui." + id.uuidString
+        guard let defaults = UserDefaults(suiteName: suite) else { throw DesktopBridgeError.malformedResponse }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = DesktopBridgePairingStore(defaults: defaults)
+        try store.save(pairing, token: "isolated-fixture-not-a-real-grant")
+        try await CompanionDocumentOutboxes.shared.prepareForRevocation(pairingId: grant)
+        try await cache.freezeForRevocation(true)
+        let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: pairing.vaultIds)
+        let receipt = try await PrivateBridgeAuthoringRecovery.shared.preserve(snapshot: snapshot, pairing: pairing, macDeviceId: nil)
+        try store.revokeLocally(pairing, authoringRecovery: receipt)
+        try await PrivateBridgeAuthoringRecovery.shared.completeRevocation(receipt)
+        await CompanionDocumentOutboxes.shared.forget(pairingId: grant)
+        guard store.credential(for: pairing) == nil else { throw DesktopBridgeError.permissionDenied }
+        try Data("complete".utf8).write(to: ready, options: .atomic)
+    }
+#endif
+
     // MARK: - Opening
 
     func connectDesktop(pairing: DesktopBridgePairing, token: String, expectedMacId: String? = nil) async throws {
