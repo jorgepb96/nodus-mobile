@@ -30,6 +30,7 @@ public extension DesktopBridgeClient {
     /// A stable key can be resubmitted after transport failure; the Mac returns the
     /// existing job instead of generating and saving the same content twice.
     func submitJob(vaultId: String, method: String, args: [JSONValue], idempotencyKey: String) async throws -> DesktopBridgeJob {
+        try refreshPairing()
         guard Self.jobMethods.contains(method) else { throw DesktopBridgeError.permissionDenied }
         var key = idempotencyKey
         if method == "runMobileSpaceAction" {

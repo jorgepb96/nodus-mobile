@@ -122,15 +122,39 @@ extension DesktopBridgeError: LocalizedError {
 /// pairing and blocks redirects, so a DNS or captive-portal change cannot move a private
 /// request to another host.
 public actor DesktopBridgeClient {
-    let pairing: DesktopBridgePairing
+    private let trustAnchor: DesktopBridgePairing
+    private(set) var pairing: DesktopBridgePairing
     private var directOrigin: String
     private let session: URLSession
     private var token: String
     private let relay: DesktopRelayConfiguration?
     private let store: DesktopBridgePairingStore
-    private let requiresStoredCredential: Bool
+    private var requiresStoredCredential: Bool
+
+    /// Stored authorization is authoritative, but cannot replace the explicitly linked Mac.
+    func refreshPairing() throws {
+        if let current = store.pairings().first(where: { $0.id == trustAnchor.id }) {
+            requiresStoredCredential = true
+            guard current.deviceId == trustAnchor.deviceId,
+                  // Persisted ISO dates retain milliseconds, unlike a freshly created Date.
+                  abs(current.pairedAt.timeIntervalSince(trustAnchor.pairedAt)) < 0.001,
+                  current.certificateFingerprint == trustAnchor.certificateFingerprint else {
+                throw DesktopBridgeError.permissionDenied
+            }
+            let approvedOrigins = [current.origin] + (current.alternateOrigins ?? [])
+            for origin in approvedOrigins { try DesktopBridgePairing.validateOrigin(origin) }
+            if !approvedOrigins.contains(directOrigin) { directOrigin = current.origin }
+            pairing = current
+        } else if requiresStoredCredential {
+            throw DesktopBridgeError.permissionDenied
+        }
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        if let currentToken = store.credential(for: pairing) { token = currentToken }
+        else if requiresStoredCredential { throw DesktopBridgeError.locked }
+    }
 
     func validateCompanionScope(vaultId: String, domains: Set<DesktopBridgeDomain>) throws {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), domains.isSubset(of: pairing.domains) else { throw DesktopBridgeError.permissionDenied }
         if requiresStoredCredential {
             guard store.pairings().contains(where: { $0.id == pairing.id }) else { throw DesktopBridgeError.permissionDenied }
@@ -139,6 +163,7 @@ public actor DesktopBridgeClient {
     }
 
     public init(pairing: DesktopBridgePairing, token: String, keychain: KeychainStore = KeychainStore()) {
+        self.trustAnchor = pairing
         self.pairing = pairing
         self.directOrigin = pairing.origin
         self.token = token
@@ -157,7 +182,7 @@ public actor DesktopBridgeClient {
     }
 
     init(pairing: DesktopBridgePairing, token: String, store: DesktopBridgePairingStore, session: URLSession) {
-        self.pairing = pairing; self.directOrigin = pairing.origin; self.token = token
+        self.trustAnchor = pairing; self.pairing = pairing; self.directOrigin = pairing.origin; self.token = token
         self.store = store; self.requiresStoredCredential = store.pairings().contains { $0.id == pairing.id }
         self.relay = store.relay(for: pairing); self.session = session
     }
@@ -300,6 +325,7 @@ public actor DesktopBridgeClient {
     }
 
     private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        try refreshPairing()
         guard let url = request.url, var target = URLComponents(string: directOrigin),
               let original = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw DesktopBridgeError.invalidOrigin }
         target.percentEncodedPath = original.percentEncodedPath; target.percentEncodedQuery = original.percentEncodedQuery
@@ -331,17 +357,21 @@ public actor DesktopBridgeClient {
     }
 
     public func capabilities() async throws -> DesktopBridgeCapabilitiesDocument {
-        try await request("/bridge/v1/capabilities", as: DesktopBridgeCapabilitiesDocument.self)
+        try refreshPairing()
+        return try await request("/bridge/v1/capabilities", as: DesktopBridgeCapabilitiesDocument.self)
     }
 
     public func liveCapabilities() async throws -> DesktopLiveCapabilities {
-        try await request("/bridge/v2/capabilities", as: DesktopLiveCapabilities.self)
+        try refreshPairing()
+        return try await request("/bridge/v2/capabilities", as: DesktopLiveCapabilities.self)
     }
 
     public func revoke() async throws {
+        try refreshPairing()
         _ = try await raw(path: "/bridge/v2/pairing", method: "DELETE")
     }
     public func renew() async throws -> String {
+        try refreshPairing()
         let candidate = try store.prepareRenewal(for: pairing)
         let response = try await raw(path: "/bridge/v2/pairing/renew", method: "POST", body: .object(["nextToken": .string(candidate)]))
         let value = try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
@@ -351,10 +381,12 @@ public actor DesktopBridgeClient {
         return candidate
     }
     public func controlPlane(_ path: String) async throws -> DesktopBridgeResponse {
+        try refreshPairing()
         guard ["health", "server-capabilities"].contains(path) else { throw DesktopBridgeError.permissionDenied }
         return try await raw(path: "/bridge/v2/\(path)", method: "GET")
     }
     public func sendMutations(vaultId: String, body: Data) async throws -> DesktopBridgeResponse {
+        try refreshPairing()
         guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing), !pairing.isExpired else { throw DesktopBridgeError.permissionDenied }
         let value = try JSONDecoder.nodus.decode(JSONValue.self, from: body)
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
@@ -363,6 +395,7 @@ public actor DesktopBridgeClient {
     }
 
     private func chatHistoryPath(vaultId: String,kind: CompanionChatKind,id: String? = nil,writing: Bool = false) throws -> String {
+        try refreshPairing()
         guard !pairing.isExpired,pairing.vaultIds.contains(vaultId),pairing.domains.contains(.corpus),!writing || pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn:"-._~"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters:allowed) else { throw DesktopBridgeError.invalidOrigin }
@@ -374,6 +407,7 @@ public actor DesktopBridgeClient {
         return path
     }
     public func chatHistoryPage(vaultId: String,kind: CompanionChatKind,cursor: Int = 0,revision: String? = nil) async throws -> CompanionChatPage {
+        try refreshPairing()
         guard cursor >= 0 else { throw DesktopBridgeError.malformedResponse }
         var query = [URLQueryItem(name:"cursor",value:String(cursor))]
         if let revision { query.append(URLQueryItem(name:"revision",value:revision)) }
@@ -386,6 +420,7 @@ public actor DesktopBridgeClient {
         return page
     }
     public func chatDocument(vaultId: String,kind: CompanionChatKind,id: String) async throws -> CompanionChatDocument {
+        try refreshPairing()
         let response = try await raw(path:chatHistoryPath(vaultId:vaultId,kind:kind,id:id),method:"GET",timeout:12)
         guard response.data.count <= 20 * 1024 * 1024 else { throw DesktopBridgeError.malformedResponse }
         let document = try JSONDecoder.nodus.decode(CompanionChatDocument.self,from:response.data)
@@ -393,12 +428,14 @@ public actor DesktopBridgeClient {
         return document
     }
     public func saveChatEdit(vaultId: String,kind: CompanionChatKind,request: JSONValue) async throws -> JSONValue {
+        try refreshPairing()
         guard try JSONEncoder.nodus.encode(request).count <= 20 * 1024 * 1024 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
         let response = try await raw(path:chatHistoryPath(vaultId:vaultId,kind:kind,writing:true),method:"POST",body:request)
         return try JSONDecoder.nodus.decode(JSONValue.self,from:response.data)
     }
 
     public func saveWorkspaceEdit(vaultId: String, request: CompanionDocumentOutbox.Request, kind: CompanionDocumentOutbox.Kind = .workspaceNote) async throws -> JSONValue {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
@@ -425,6 +462,7 @@ public actor DesktopBridgeClient {
     }
 
     public func savePageDocument(vaultId: String, request: CompanionPageDocuments.Request) async throws -> JSONValue {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
@@ -435,6 +473,7 @@ public actor DesktopBridgeClient {
     }
 
     public func operation(vaultId: String, method: String, args: [JSONValue], timeout: TimeInterval? = nil) async throws -> JSONValue {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
         if let timeout, !timeout.isFinite || timeout <= 0 || timeout > 120 { throw DesktopBridgeError.malformedResponse }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
@@ -454,6 +493,7 @@ public actor DesktopBridgeClient {
     }
 
     func jobRequest(vaultId: String, id: String? = nil, query: [URLQueryItem] = [], method: String, body: JSONValue? = nil) async throws -> DesktopBridgeJobEnvelope {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed),
@@ -462,6 +502,7 @@ public actor DesktopBridgeClient {
         return try JSONDecoder.nodus.decode(DesktopBridgeJobEnvelope.self, from: response.data)
     }
     public func listJobs(vaultId: String) async throws -> [DesktopBridgeJob] {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
@@ -471,6 +512,7 @@ public actor DesktopBridgeClient {
     }
 
     public func exportedFile(vaultId: String, id: String, sha256: String) async throws -> Data {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), UUID(uuidString: id) != nil else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
@@ -483,6 +525,7 @@ public actor DesktopBridgeClient {
     /// as the shared surfaces. Only transport loss permits fallback; revoked
     /// grants, invalid certificates and server errors always remain errors.
     public func corpusWithOfflineCopy(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", body: JSONValue? = nil, percentEncoded: Bool = false, cache suppliedCache: PrivateBridgeCache? = nil) async throws -> (response: DesktopBridgeResponse, fromCache: Bool) {
+        try refreshPairing()
         if method == "POST", path == "context" {
             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), query.isEmpty,
                   let body, body.objectValue != nil else { throw DesktopBridgeError.permissionDenied }
@@ -495,6 +538,7 @@ public actor DesktopBridgeClient {
                 guard hasSelected, let offline = error as? URLError,
                       [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut].contains(offline.code)
                 else { throw error }
+                try validateCompanionScope(vaultId: vaultId, domains: [.corpus])
                 guard let selected = try await CompanionSelectedContext.downloaded(cache: cache, vaultId: vaultId, domains: Array(pairing.domains)) else { throw error }
                 return (try selected.response(body: body), true)
             }
@@ -531,6 +575,7 @@ public actor DesktopBridgeClient {
             if response.status == 200 { try await cache.store(JSONEncoder.nodus.encode(response), vaultId: vaultId, domain: .corpus, recordId: identity) }
             return (response, false)
         } catch {
+            try validateCompanionScope(vaultId: vaultId, domains: [.corpus])
             // The Mac can legitimately return 404 before acknowledging a new
             // authored identity. Only that device's actual pending creation is
             // eligible; a deleted Mac record never falls back to an old download.
@@ -554,6 +599,7 @@ public actor DesktopBridgeClient {
     }
 
     public func corpus(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", body: JSONValue? = nil, percentEncoded: Bool = false, timeout: TimeInterval? = nil) async throws -> DesktopBridgeResponse {
+        try refreshPairing()
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         let readQuery = method == "POST" && ["search/semantic", "context"].contains(path)
         guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
@@ -567,6 +613,7 @@ public actor DesktopBridgeClient {
     }
 
     func fileRequest(vaultId: String, kind: DesktopBridgeFileKind, id: String, action: String, query: [URLQueryItem] = [], timeout: TimeInterval? = nil) async throws -> DesktopBridgeResponse {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(kind.domain),
               !id.isEmpty, id != ".", id != "..", ["descriptor", "content"].contains(action) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
@@ -587,6 +634,7 @@ public actor DesktopBridgeClient {
     }
 
     private func raw(path: String, query: [URLQueryItem] = [], method: String, body: JSONValue? = nil, timeout: TimeInterval? = nil) async throws -> DesktopBridgeResponse {
+        try refreshPairing()
         guard var url = URLComponents(string: pairing.origin + path) else { throw DesktopBridgeError.invalidOrigin }
         url.queryItems = query.isEmpty ? nil : query
         guard let address = url.url else { throw DesktopBridgeError.invalidOrigin }
@@ -607,27 +655,32 @@ public actor DesktopBridgeClient {
     }
 
     private func immersionProgressPath(vaultId: String, sessionId: String) throws -> String {
+        try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing), !sessionId.isEmpty else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed), let session = sessionId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.malformedResponse }
         return "/bridge/v2/vaults/\(vault)/writing/immersion/\(session)/progress"
     }
     public func immersionProgress(vaultId: String, sessionId: String) async throws -> CompanionImmersionProgress.Snapshot {
+        try refreshPairing()
         let response = try await raw(path: immersionProgressPath(vaultId: vaultId, sessionId: sessionId), method: "GET", timeout: 4)
         let value = try JSONDecoder.nodus.decode(CompanionImmersionProgress.Snapshot.self, from: response.data)
         try value.validate(sessionId: sessionId); return value
     }
     private func databaseReadingPath(vaultId:String,reportId:String) throws -> String {
+        try refreshPairing()
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn:"-._~"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters:allowed),let report = reportId.addingPercentEncoding(withAllowedCharacters:allowed) else { throw DesktopBridgeError.malformedResponse }
         return "/bridge/v2/vaults/\(vault)/writing/database-research/\(report)/reading"
     }
     public func databaseResearchReading(vaultId:String,reportId:String) async throws -> CompanionDatabaseResearch.Snapshot {
+        try refreshPairing()
         let response = try await raw(path:databaseReadingPath(vaultId:vaultId,reportId:reportId),method:"GET",timeout:4)
         let value = try JSONDecoder.nodus.decode(CompanionDatabaseResearch.Snapshot.self,from:response.data)
         try value.validate(id:reportId); return value
     }
     public func saveDatabaseResearchReading(vaultId:String,reportId:String,request:CompanionDatabaseResearch.Request) async throws -> CompanionDatabaseResearch.Receipt {
+        try refreshPairing()
         let body = try JSONDecoder.nodus.decode(JSONValue.self,from:JSONEncoder.nodus.encode(request))
         let response = try await raw(path:databaseReadingPath(vaultId:vaultId,reportId:reportId),method:"POST",body:body,timeout:10)
         let receipt = try JSONDecoder.nodus.decode(CompanionDatabaseResearch.Receipt.self,from:response.data)
@@ -635,6 +688,7 @@ public actor DesktopBridgeClient {
         try receipt.snapshot.validate(id:reportId); return receipt
     }
     public func saveImmersionProgress(vaultId: String, sessionId: String, request: CompanionImmersionProgress.Request) async throws -> CompanionImmersionProgress.Receipt {
+        try refreshPairing()
         let body = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(request))
         let response = try await raw(path: immersionProgressPath(vaultId: vaultId, sessionId: sessionId), method: "POST", body: body, timeout: 10)
         let receipt = try JSONDecoder.nodus.decode(CompanionImmersionProgress.Receipt.self, from: response.data)
@@ -642,6 +696,7 @@ public actor DesktopBridgeClient {
         try receipt.snapshot.validate(sessionId: sessionId); return receipt
     }
     public func privateSource(vaultId: String, reference: PrivateCorpusReference) async throws -> PrivateCorpusSource {
+        try refreshPairing()
         try requirePrivateSourceGrant(vaultId: vaultId, reference: reference)
         let response = try await raw(path: reference.path(vaultId: vaultId), method: "GET", timeout: 4)
         let source = try JSONDecoder.nodus.decode(PrivateCorpusSource.self, from: response.data)
@@ -650,6 +705,7 @@ public actor DesktopBridgeClient {
     }
 
     public func privateSourceCatalogue(vaultId: String, kind: PrivateCorpusReference.Kind, offset: Int = 0, query: String = "", state: String = "active") async throws -> PrivateCorpusSource.Catalogue {
+        try refreshPairing()
         let target = try PrivateCorpusReference(kind: kind, id: "catalogue")
         try requirePrivateSourceGrant(vaultId: vaultId, reference: target)
         guard offset >= 0 else { throw DesktopBridgeError.malformedResponse }
@@ -665,6 +721,7 @@ public actor DesktopBridgeClient {
 
     public func privateSourcePage(vaultId: String, reference: PrivateCorpusReference,
         group: PrivateCorpusSource.Group, cursor: Int = 0) async throws -> PrivateCorpusSource.Page {
+        try refreshPairing()
         try requirePrivateSourceGrant(vaultId: vaultId, reference: reference)
         guard reference.kind.groups.contains(group.key), cursor >= 0 else { throw DesktopBridgeError.permissionDenied }
         let response = try await raw(path: reference.path(vaultId: vaultId), query: [
@@ -678,6 +735,7 @@ public actor DesktopBridgeClient {
     }
 
     private func requirePrivateSourceGrant(vaultId: String, reference: PrivateCorpusReference) throws {
+        try refreshPairing()
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(reference.kind.domain) else { throw DesktopBridgeError.permissionDenied }
     }
@@ -688,6 +746,7 @@ public actor DesktopBridgeClient {
         path: String,
         as type: T.Type = T.self
     ) async throws -> T {
+        try refreshPairing()
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(domain) else {
             throw DesktopBridgeError.permissionDenied
@@ -708,6 +767,7 @@ public actor DesktopBridgeClient {
         cursor: Int = 0,
         limit: Int = 50
     ) async throws -> DesktopBridgeRecordPage {
+        try refreshPairing()
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(domain) else {
             throw DesktopBridgeError.permissionDenied
@@ -729,11 +789,13 @@ public actor DesktopBridgeClient {
     }
 
     private func request<T: Decodable & Sendable>(_ path: String, as type: T.Type) async throws -> T {
+        try refreshPairing()
         guard let url = URL(string: pairing.origin + path) else { throw DesktopBridgeError.invalidOrigin }
         return try await request(url, as: type)
     }
 
     private func request<T: Decodable & Sendable>(_ url: URL, as type: T.Type) async throws -> T {
+        try refreshPairing()
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
