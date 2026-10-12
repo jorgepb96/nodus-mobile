@@ -4,7 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues} from './acceptance-evidence.mjs';
+import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues, nativeAcceptanceArtifacts, verifyNativeAcceptanceBuild} from './acceptance-evidence.mjs';
 
 function laboratory(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-evidence-index-'));
@@ -61,4 +61,34 @@ test('release evidence cannot approve a different current checkout, including un
   fs.unlinkSync(path.join(root,'new.swift'));fs.unlinkSync(path.join(root,'source.swift'));
   assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),['Code changed since acceptance: mobile']);
   assert.deepEqual(acceptanceRevisionIssues({mobile:'unverified-hash'},roots),['Missing exact tested code revision: mobile']);
+});
+
+test('native evidence rejects stale sources, changed binaries and another application receipt', t => {
+  const root = laboratory(t);
+  const git = (...args) => execFileSync('git', args, {cwd: root, stdio: 'pipe'});
+  git('init', '-q');
+  fs.writeFileSync(path.join(root, '.gitignore'), 'artifacts/\n');
+  const source = path.join(root, 'source.swift');
+  fs.writeFileSync(source, 'let value = 1\n');
+  git('add', '.'); git('-c', 'user.name=Acceptance fixture', '-c', 'user.email=acceptance@example.test', 'commit', '-qm', 'Isolated native source');
+  const app = path.join(root, 'artifacts/Nodus.app');
+  fs.mkdirSync(app, {recursive: true});
+  fs.writeFileSync(path.join(app, 'Nodus'), 'native artifact fixture');
+  fs.writeFileSync(path.join(app, 'Info.plist'), 'plist artifact fixture');
+  const uiTests = path.join(path.dirname(app), 'NodusUITests-Runner.app/PlugIns/NodusUITests.xctest/NodusUITests');
+  fs.mkdirSync(path.dirname(uiTests), {recursive: true}); fs.writeFileSync(uiTests, 'test artifact fixture');
+  const receipt = {version: 1, builtApp: fs.realpathSync(app), revision: acceptanceSourceRevision(root), artifacts: nativeAcceptanceArtifacts(app)};
+  const file = app + '.acceptance-build.json';
+  fs.writeFileSync(file, JSON.stringify(receipt));
+  assert.deepEqual(verifyNativeAcceptanceBuild(root, app), receipt);
+  fs.writeFileSync(source, 'let value = 2\n');
+  assert.throws(() => verifyNativeAcceptanceBuild(root, app), /Native sources changed/);
+  fs.writeFileSync(source, 'let value = 1\n');
+  fs.writeFileSync(uiTests, 'older or changed test runner');
+  assert.throws(() => verifyNativeAcceptanceBuild(root, app), /Native artifacts changed/);
+  fs.writeFileSync(uiTests, 'test artifact fixture');
+  fs.writeFileSync(file, JSON.stringify({...receipt, builtApp: path.join(root, 'another.app')}));
+  assert.throws(() => verifyNativeAcceptanceBuild(root, app), /Native sources changed/);
+  fs.unlinkSync(file);
+  assert.throws(() => verifyNativeAcceptanceBuild(root, app), /ENOENT/);
 });

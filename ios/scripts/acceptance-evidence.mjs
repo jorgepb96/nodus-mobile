@@ -29,6 +29,31 @@ export function acceptanceRevisionIssues(revisions, roots) {
   return issues;
 }
 
+export function nativeAcceptanceArtifacts(app) {
+  const digest = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const files = {};
+  for (const name of ['Nodus', 'Info.plist', 'Nodus.debug.dylib']) {
+    const file = path.join(app, name);
+    if (fs.existsSync(file)) files[name] = digest(file);
+    else if (name !== 'Nodus.debug.dylib') throw new Error(`Missing native build artifact: ${name}`);
+  }
+  const uiTests = path.join(path.dirname(app), 'NodusUITests-Runner.app/PlugIns/NodusUITests.xctest/NodusUITests');
+  if (fs.existsSync(uiTests)) files.uiTests = digest(uiTests);
+  return files;
+}
+
+export function verifyNativeAcceptanceBuild(root, app) {
+  const canonicalApp = fs.realpathSync(app);
+  const receipt = JSON.parse(fs.readFileSync(canonicalApp + '.acceptance-build.json', 'utf8'));
+  const revision = acceptanceSourceRevision(root);
+  if (receipt.version !== 1 || receipt.builtApp !== canonicalApp ||
+      receipt.revision?.commit !== revision.commit || receipt.revision?.sourceDigest !== revision.sourceDigest)
+    throw new Error('Native sources changed since the successful build. Rebuild before recording acceptance.');
+  if (JSON.stringify(nativeAcceptanceArtifacts(canonicalApp)) !== JSON.stringify(receipt.artifacts))
+    throw new Error('Native artifacts changed since their successful build receipt.');
+  return receipt;
+}
+
 // Daily runs keep their logs, captures and result bundles together. Never walk
 // inside xcresult bundles or capture folders, and never follow a symlink out
 // of the private acceptance folder.

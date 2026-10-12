@@ -4,7 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {mobileRoot,nodusRepo} from './nodus-repo.mjs';
-import {acceptanceSourceRevision as revision} from './acceptance-evidence.mjs';
+import {acceptanceSourceRevision as revision, verifyNativeAcceptanceBuild} from './acceptance-evidence.mjs';
 
 const name=process.argv[2];
 if(!name || !/^[a-z0-9-]+$/.test(name))throw new Error('A unique, safe acceptance attempt name is required.');
@@ -18,6 +18,7 @@ execFileSync(process.execPath,[path.join(mobileRoot,'ios/scripts/build-shared-de
 const builtApp=process.env.NODUS_ACCEPTANCE_BUILT_APP;
 const buildFiles={};
 const nativeBuild={};
+const nativeBuildReceipt = builtApp ? verifyNativeAcceptanceBuild(mobileRoot, builtApp) : null;
 if(builtApp) {
   for(const file of ['Nodus','Nodus.debug.dylib','Info.plist']) {
     const absolute=path.join(builtApp,file);
@@ -38,5 +39,5 @@ for(const file of bundledFiles) {
 }
 fs.writeFileSync(output,JSON.stringify({version:1,attempt:name,recordedBeforeExecutionAt:new Date().toISOString(),
   referenceCommits:manifest.referenceCommits,revisions:{desktop:desktopRevision,mobile:revision(mobileRoot)},
-  bridgeBuild,sharedBundle:buildFiles,nativeBuild,builtApp:builtApp??null},null,2)+'\n');
+  bridgeBuild,sharedBundle:buildFiles,nativeBuild,nativeBuildReceipt,builtApp:builtApp??null},null,2)+'\n');
 console.log(JSON.stringify({attempt:name,sourceReceipt:output,sharedBundleVerified:Boolean(builtApp)}));
