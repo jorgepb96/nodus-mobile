@@ -50,6 +50,8 @@ final class DesktopWorkspaceUITests: XCTestCase {
     @MainActor
     func testMacRevokedGrantRemovesEveryLinkedVaultAndRetainsExport() throws {
         let ids = try JSONDecoder().decode([String].self, from: Data(required("NODUS_ACCEPTANCE_REVOKED_VAULT_IDS").utf8))
+        let previousArchives = try XCTUnwrap(Int(required("NODUS_ACCEPTANCE_PREVIOUS_ARCHIVE_COUNT")))
+        XCTAssertGreaterThanOrEqual(previousArchives, 0)
         XCTAssertFalse(ids.isEmpty); XCTAssertEqual(Set(ids).count, ids.count)
         for restart in 0..<2 {
             let app = try launchLinkedPicker()
@@ -62,7 +64,14 @@ final class DesktopWorkspaceUITests: XCTestCase {
             XCTAssertTrue(saved.isHittable); saved.tap()
             let export = app.buttons["recovered-work-export"].firstMatch
             XCTAssertTrue(export.waitForExistence(timeout: 20), app.debugDescription)
+            XCTAssertEqual(app.buttons.matching(identifier: "recovered-work-export").count, previousArchives + 1,
+                "An older archive must not mask failure to preserve this grant's actual authored work; a restart must not archive it twice.")
             XCTAssertTrue(export.isHittable)
+            // Archives are displayed newest first. Root also checks this exported
+            // file's grant ID and exact authored marker in the simulator container.
+            export.tap()
+            let file = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label == %@", "LP.CaptionBar.TopCaption", "Nodus-local-work")).firstMatch
+            XCTAssertTrue(file.waitForExistence(timeout: 20), "The newly retained work must reach the actual native file share sheet.\n" + app.debugDescription)
             capture(app, "mac-revoked-grant-authoring-export-\(restart)")
             app.terminate()
         }
