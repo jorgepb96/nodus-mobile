@@ -52,7 +52,7 @@ struct DesktopBridgeQueryTests {
             #expect(wire["creation"] == request.creation && wire["command"] == request.command)
         }
         let calls = CorpusQueryProtocol.state.calls().count
-        let forbidden = CompanionDocumentOutbox.Request(id: UUID().uuidString, noteId: doc, input: input, command: command, generation: 3)
+        let forbidden = CompanionDocumentOutbox.Request(id: UUID().uuidString, noteId: doc, input: input, command: .object(["action": .string("runArbitraryTool")]), generation: 3)
         await #expect(throws: DesktopBridgeError.self) { try await bridge.saveWorkspaceEdit(vaultId: "Mac/vault", request: forbidden) }
         await #expect(throws: DesktopBridgeError.self) { try await bridge.saveWorkspaceEdit(vaultId: "Other vault", request: forbidden, kind: .studyDocument) }
         #expect(CorpusQueryProtocol.state.calls().count == calls)

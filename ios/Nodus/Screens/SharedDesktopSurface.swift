@@ -393,7 +393,7 @@ struct StudyEvidenceDocument: View {
 
 @MainActor private enum CompanionDocumentSurfaceBridge {
     static let methods: Set<String> = ["getStudyDocEditorData", "updateStudyDoc", "restoreStudyDocVersion", "resolveMobileStudyConflict", "duplicateMobileStudyDocument", "trashMobileStudyDocument", "createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation"]
-    static let workspaceMethods: Set<String> = ["getWorkspaceNoteEditorData", "restoreWorkspaceNoteVersion", "createWorkspaceAnnotation", "updateWorkspaceAnnotation", "deleteWorkspaceAnnotation"]
+    static let workspaceMethods: Set<String> = ["getWorkspaceNoteEditorData", "restoreWorkspaceNoteVersion", "createWorkspaceAnnotation", "updateWorkspaceAnnotation", "deleteWorkspaceAnnotation", "duplicateMobileWorkspaceNote", "trashMobileWorkspaceNote"]
     static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
                         pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, kind: CompanionDocumentOutbox.Kind = .studyDocument, onOffline: (Bool) -> Void) async throws -> JSONValue {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
@@ -456,6 +456,13 @@ struct StudyEvidenceDocument: View {
             return result
         }
         if method == readMethod, args.count == 1 { return try await load() }
+        if ["duplicateMobileWorkspaceNote", "trashMobileWorkspaceNote"].contains(method), args.count == 1, kind == .workspaceNote {
+            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+            _ = try await load()
+            let result = try await queue.enqueueWorkspaceCommand(noteId: id, action: method == "duplicateMobileWorkspaceNote" ? "duplicate" : "trash")
+            Task { await session.synchronizeCompanionChanges() }
+            return result
+        }
         if ["duplicateMobileStudyDocument", "trashMobileStudyDocument"].contains(method), args.count == 1 {
             guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
             _ = try await load()
