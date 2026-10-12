@@ -336,7 +336,7 @@ private struct TeachingGradebookWorkspace: View {
     private var gradeRows: [StudyTeachingParity.GradebookRow] { StudyTeachingParity.gradebook(students: students, items: items, entries: StudyTeachingParity.gradeEntries(in: tables["teaching_grade_entries"] ?? [])) }
     var body: some View {
         GeometryReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
+            ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
                     if let bridgeIssue {
@@ -346,14 +346,22 @@ private struct TeachingGradebookWorkspace: View {
                                 .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
                         }
                         .padding(NodusSpace.page)
-                        .frame(width: 760)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         metrics
-                        gradeHeader
-                        ForEach(gradeRows) { gradeRow($0) }
+                        ScrollView(.horizontal) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                gradeHeader
+                                ForEach(gradeRows) { gradeRow($0) }
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(minWidth: proxy.size.width, alignment: .leading)
+                        }
+                        .accessibilityIdentifier("teaching-gradebook-table")
                     }
                 }
-                .frame(minWidth: 900, minHeight: proxy.size.height, alignment: .topLeading)
+                .frame(width: proxy.size.width, alignment: .leading)
+                .frame(minHeight: proxy.size.height, alignment: .topLeading)
             }
         }
         .nodusPageBackdrop(accent: session.accent)
@@ -362,7 +370,7 @@ private struct TeachingGradebookWorkspace: View {
         .accessibilityIdentifier("teaching-gradebook-workspace")
     }
     private var header: some View { DesktopPageHeader(title: "Gradebook", subtitle: "Computed locally from a versioned assessment plan", systemImage: "chart.bar", accent: session.accent).padding(NodusSpace.page) }
-    private var metrics: some View { let d = StudyTeachingParity.distribution(gradeRows); return HStack { gradeMetric("Evaluated", "\(d.evaluated)"); gradeMetric("Pass rate", d.passRate.map { "\(Int($0*100))%" } ?? "—"); gradeMetric("Mean", d.mean.map { String(format:"%.2f",$0) } ?? "—"); gradeMetric("Median", d.median.map { String(format:"%.2f",$0) } ?? "—") }.padding(.horizontal,NodusSpace.page).padding(.bottom,12) }
+    private var metrics: some View { let d = StudyTeachingParity.distribution(gradeRows); return LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], alignment: .leading, spacing: 12) { gradeMetric("Evaluated", "\(d.evaluated)"); gradeMetric("Pass rate", d.passRate.map { "\(Int($0*100))%" } ?? "—"); gradeMetric("Mean", d.mean.map { String(format:"%.2f",$0) } ?? "—"); gradeMetric("Median", d.median.map { String(format:"%.2f",$0) } ?? "—") }.padding(.horizontal,NodusSpace.page).padding(.bottom,12) }
     private func gradeMetric(_ title: LocalizedStringKey, _ value: String) -> some View { VStack(alignment:.leading){Text(value).font(.title2.bold().monospacedDigit());Text(title).font(.caption).foregroundStyle(.secondary)}.desktopContentRow(accent:session.accent).frame(maxWidth:.infinity) }
     private var gradeHeader: some View { HStack(spacing:0) { cell("Student",220,true); ForEach(items) { cell($0.name,150,true) }; cell("Final",100,true) }.background(Color(uiColor:.secondarySystemBackground)) }
     private func gradeRow(_ row: StudyTeachingParity.GradebookRow) -> some View {
