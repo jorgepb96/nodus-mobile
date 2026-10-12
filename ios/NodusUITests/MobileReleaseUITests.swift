@@ -93,6 +93,8 @@ final class MobileReleaseUITests: XCTestCase {
         for reopen in 0..<2 {
             let app = try openExistingVault(destination: "prosopPersons", vaultId: vault)
             defer { app.terminate() }
+            let catalogue = app.buttons["workspace-catalogue-prosopPersons"]
+            if catalogue.waitForExistence(timeout: 10), catalogue.isHittable { catalogue.tap() }
             let row = app.buttons["prosop-person-open-" + person]
             XCTAssertTrue(row.waitForExistence(timeout: 45), app.debugDescription)
             for _ in 0..<10 { if row.isHittable { break }; app.swipeUp() }
@@ -102,7 +104,7 @@ final class MobileReleaseUITests: XCTestCase {
             for (identifier, text) in [("prosop-person-biography", biography), ("prosop-person-notes", notes)] {
                 let section = app.descendants(matching: .any)[identifier].firstMatch
                 XCTAssertTrue(section.waitForExistence(timeout: 15), app.debugDescription)
-                let paragraph = section.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)).firstMatch
+                let paragraph = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND (label CONTAINS %@ OR value CONTAINS %@)", identifier, text, text)).firstMatch
                 XCTAssertTrue(paragraph.waitForExistence(timeout: 15), "The actual saved text must load, not only its section heading.")
                 for _ in 0..<10 { if paragraph.isHittable { break }; app.swipeUp() }
                 XCTAssertTrue(paragraph.isHittable)
