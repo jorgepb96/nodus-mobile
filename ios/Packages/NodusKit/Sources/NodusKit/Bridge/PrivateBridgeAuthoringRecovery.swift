@@ -138,6 +138,13 @@ public actor PrivateBridgeAuthoringRecovery {
         }
         return count
     }
+    /// Device-local export remains reachable without any surviving connection or credential.
+    public func allSummaries() throws -> [ArchiveInfo] {
+        try archives().filter { !$0.records.isEmpty }.map {
+            ArchiveInfo(id: $0.id, createdAt: $0.createdAt, recordCount: $0.records.count,
+                macIdentityKnown: $0.macDeviceId != nil, adopted: !$0.adoptedBy.isEmpty)
+        }
+    }
     public func summaries(macDeviceId: String?, pairingId: String) throws -> [ArchiveInfo] {
         try archives().filter { $0.macDeviceId == nil || $0.macDeviceId == macDeviceId }.map {
             ArchiveInfo(id: $0.id, createdAt: $0.createdAt, recordCount: $0.records.count, macIdentityKnown: $0.macDeviceId != nil, adopted: !($0.adoptedBy[pairingId] ?? []).isEmpty)
@@ -224,6 +231,7 @@ public actor PrivateBridgeAuthoringRecovery {
         }
         if record.ledger { value = blocked(value) }
         else if var object = value.objectValue, object["records"] != nil {
+            object["workspaceOrganizationSnapshot"] = nil
             for key in ["records", "studyCommands", "annotationCommands", "workspaceOrganizationCommands"] { if let rows = object[key] { object[key] = blocked(rows) } }
             value = .object(object)
         } else { value = blocked(value) }

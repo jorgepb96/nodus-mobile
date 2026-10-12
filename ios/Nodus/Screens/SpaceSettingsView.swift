@@ -764,7 +764,6 @@ private struct RecoveredAuthoringSettings: View {
     @State private var issue: String?
     @State private var reviewing: String?
     @State private var selected: DesktopJobLedger.Request?
-    @State private var exportLease: PrivateBridgeFileLease?
     var body: some View {
         Group {
             if !archives.isEmpty || !requests.isEmpty || session.connection.authoringRecoveryNotice != nil {
@@ -774,16 +773,7 @@ private struct RecoveredAuthoringSettings: View {
                         Button { selected = request } label: { Label(CompanionResultCatalogue.title(request), systemImage: "doc.text") }
                             .frame(minHeight: 44).accessibilityIdentifier("recovered-work-review")
                     }
-                    ForEach(archives) { archive in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(archive.createdAt, format: .dateTime.day().month().year())
-                            Text(archive.adopted ? "Los borradores conservados se han recuperado bajo este enlace." : "El archivo original permanece cifrado y puede exportarse.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            if !archive.macIdentityKnown { Text("No se pudo verificar el Mac al cerrar el enlace. El archivo se conserva sin incorporarlo automáticamente a otro espacio.").font(.caption) }
-                            Button("Exportar trabajo conservado") { Task { await export(archive.id) } }
-                                .frame(minHeight: 44).accessibilityIdentifier("recovered-work-export")
-                        }
-                    }
+                    ForEach(archives) { archive in RecoveredAuthoringArchiveRow(archive: archive) }
                     if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
                 } header: { Text("Trabajo local conservado") } footer: {
                     Text("Los cambios de un enlace anterior necesitan revisión. Publicar un resultado ya creado no vuelve a ejecutar el modelo.")
@@ -814,9 +804,6 @@ private struct RecoveredAuthoringSettings: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { selected = nil } } }
             }
         }
-        .sheet(isPresented: Binding(get: { exportLease != nil }, set: { if !$0 { exportLease = nil } })) {
-            if let exportLease { RecoveredAuthoringShare(lease: exportLease) }
-        }
     }
     private func refresh() async {
         guard let pairing = session.connection.desktopPairingId else { return }
@@ -824,10 +811,6 @@ private struct RecoveredAuthoringSettings: View {
             archives = try await PrivateBridgeAuthoringRecovery.shared.summaries(macDeviceId: session.connection.macDeviceId, pairingId: pairing)
             if let vault = session.vaultId { requests = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault).all().filter { $0.state == "recoveryReview" } }
         } catch { issue = error.localizedDescription }
-    }
-    private func export(_ id: UUID) async {
-        do { exportLease = try PrivateBridgeFileLease.write(try await PrivateBridgeAuthoringRecovery.shared.export(id: id), filename: "Nodus-local-work.json") }
-        catch { issue = error.localizedDescription }
     }
     private func approve(_ original: DesktopJobLedger.Request) async {
         guard let pairing = session.connection.desktopPairingId, let vault = session.vaultId else { return }
@@ -856,6 +839,29 @@ private struct RecoveredAuthoringSettings: View {
         return candidates.compactMap { $0?.stringValue }.first { !$0.isEmpty }
     }
 }
+struct RecoveredAuthoringArchiveRow: View {
+    let archive: PrivateBridgeAuthoringRecovery.ArchiveInfo
+    @State private var lease: PrivateBridgeFileLease?
+    @State private var issue: String?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(archive.createdAt, format: .dateTime.day().month().year())
+            Text("El archivo original permanece cifrado y puede exportarse.").font(.caption).foregroundStyle(.secondary)
+            if !archive.macIdentityKnown { Text("El trabajo se conserva sin incorporarlo automáticamente a otro espacio.").font(.caption) }
+            Button("Exportar trabajo conservado") {
+                Task {
+                    do { lease = try PrivateBridgeFileLease.write(try await PrivateBridgeAuthoringRecovery.shared.export(id: archive.id), filename: "Nodus-local-work.json") }
+                    catch { issue = error.localizedDescription }
+                }
+            }.frame(minHeight: 44).accessibilityIdentifier("recovered-work-export")
+            if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
+        }
+        .sheet(isPresented: Binding(get: { lease != nil }, set: { if !$0 { lease = nil } })) {
+            if let lease { RecoveredAuthoringShare(lease: lease) }
+        }
+    }
+}
+
 private struct RecoveredAuthoringShare: UIViewControllerRepresentable {
     let lease: PrivateBridgeFileLease
     func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: [lease.url], applicationActivities: nil) }

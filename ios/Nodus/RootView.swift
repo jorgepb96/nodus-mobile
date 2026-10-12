@@ -178,6 +178,8 @@ struct SpacePickerView: View {
     @State private var vaultFilter: VaultType?
     /// The connection whose diagnostics are open, presented from the notice above the list.
     @State private var diagnosing: AppModel.Connection?
+    @State private var savedWork: [PrivateBridgeAuthoringRecovery.ArchiveInfo] = []
+    @State private var showingSavedWork = false
 
     private let accent = Color(hex: VaultType.academic.accentHex)
 
@@ -232,6 +234,10 @@ struct SpacePickerView: View {
                     // about this device, and the picker is the only screen that belongs to the
                     // device rather than to a vault.
                     if tray.outbox.hasAnything { queueControl }
+                    if !savedWork.isEmpty {
+                        Button("Trabajo guardado", systemImage: "doc.text") { showingSavedWork = true }
+                            .frame(minHeight: 44).accessibilityIdentifier("saved-local-work")
+                    }
 
                     if let stranded = model.needsSignIn {
                         signInAgainNotice(stranded)
@@ -306,6 +312,18 @@ struct SpacePickerView: View {
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity)
                     .background { NodusBackdrop(accent: accent) }
+            }
+        }
+        .task { savedWork = (try? await PrivateBridgeAuthoringRecovery.shared.allSummaries()) ?? [] }
+        .nodusSheet(isPresented: $showingSavedWork) {
+            NavigationStack {
+                List {
+                    Section {
+                        ForEach(savedWork) { archive in RecoveredAuthoringArchiveRow(archive: archive) }
+                    } footer: { Text("Puedes exportar tu trabajo sin conexión. Enlaza el mismo Mac para recuperarlo y revisar los cambios antes de enviarlos.") }
+                }
+                .navigationTitle("Trabajo guardado")
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingSavedWork = false } } }
             }
         }
         .nodusSheet(item: $diagnosing) { connection in

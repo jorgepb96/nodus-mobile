@@ -1294,7 +1294,12 @@ public actor PrivateBridgeCache {
                 }
                 guard let scope else { throw PrivateBridgeAuthoringRecovery.RecoveryError.unclassifiedWork }
                 if let capturedVault = value.objectValue?["vaultId"]?.stringValue, capturedVault != scope.vault { throw PrivateBridgeAuthoringRecovery.RecoveryError.unclassifiedWork }
-                records.append(.init(filename: "work-" + base, vaultId: scope.vault, data: data, ledger: scope.ledger, writing: scope.writing, recordId: scope.recordId, generationKind: scope.kind))
+                var authoredData = data
+                if scope.writing, var fields = value.objectValue {
+                    fields["workspaceOrganizationSnapshot"] = nil
+                    authoredData = try JSONEncoder.nodus.encode(JSONValue.object(fields))
+                }
+                records.append(.init(filename: "work-" + base, vaultId: scope.vault, data: authoredData, ledger: scope.ledger, writing: scope.writing, recordId: scope.recordId, generationKind: scope.kind))
             }
             return .init(records: records, fingerprints: fingerprints)
         }
@@ -1302,6 +1307,7 @@ public actor PrivateBridgeCache {
     public func adoptAuthoringRecovery(_ records: [PrivateBridgeAuthoringRecovery.Record], requiresReview: Bool) throws {
         try Self.diskLock.withLock {
             var payloads: [String: Data] = [:]
+            var mergedRecoveryIndices = Set<String>()
             for record in records {
                 guard PrivateBridgeAuthoringRecovery.validFilename(record.filename) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
                 payloads[record.filename] = requiresReview ? try PrivateBridgeAuthoringRecovery.reviewed(record) : record.data
@@ -1317,6 +1323,15 @@ public actor PrivateBridgeCache {
                     ledger = try JSONDecoder.nodus.decode([String: DesktopJobLedger.Request].self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: folder.appendingPathComponent(name))), using: key))
                 }
                 if ledger[recovered.id] == nil { ledger[recovered.id] = recovered }
+                else if var existing = ledger[recovered.id], existing.state == "recoveryReview",
+                        existing.checkpoint == nil, existing.method == recovered.method,
+                        existing.args == recovered.args {
+                    // A normal map save prepares its exact args before a checkpoint is
+                    // attached. Join that durable output without replacing receipts/IDs.
+                    existing.checkpoint = recovered.checkpoint
+                    existing.checkpointRecordId = recovered.checkpointRecordId
+                    ledger[existing.id] = existing
+                }
                 payloads[name] = try JSONEncoder.nodus.encode(ledger)
             }
             if requiresReview {
@@ -1330,6 +1345,8 @@ public actor PrivateBridgeCache {
                         } }
                     }
                     let name = fileURL(vaultId: vault, domain: .researchGeneration, recordId: "authoring-recovery-generations-v1").lastPathComponent
+                    if let imported = payloads[name] { ids.formUnion(try JSONDecoder.nodus.decode([String].self, from: imported)) }
+                    mergedRecoveryIndices.insert(name)
                     if let bytes = try? Data(contentsOf: folder.appendingPathComponent(name)), let opened = try? AES.GCM.open(AES.GCM.SealedBox(combined: bytes), using: key) {
                         ids.formUnion(try JSONDecoder.nodus.decode([String].self, from: opened))
                     }
@@ -1342,7 +1359,10 @@ public actor PrivateBridgeCache {
                 let target = folder.appendingPathComponent(name)
                 if FileManager.default.fileExists(atPath: target.path) {
                     let current = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: target)), using: key)
-                    guard current == data else { throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired }
+                    if current != data {
+                        guard mergedRecoveryIndices.contains(name), let encrypted = try AES.GCM.seal(data, using: key).combined else { throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired }
+                        staged.append((target, encrypted))
+                    }
                 } else {
                     guard let encrypted = try AES.GCM.seal(data, using: key).combined else { throw DesktopBridgeError.malformedResponse }
                     staged.append((target, encrypted))
