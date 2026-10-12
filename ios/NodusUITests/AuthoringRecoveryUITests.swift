@@ -49,6 +49,8 @@ final class AuthoringRecoveryUITests: XCTestCase {
         let vault = try XCTUnwrap(env["NODUS_ACCEPTANCE_RECOVERY_VAULT"])
         let title = try XCTUnwrap(env["NODUS_ACCEPTANCE_RECOVERY_TITLE"])
         let kind = try XCTUnwrap(env["NODUS_ACCEPTANCE_RECOVERY_KIND"])
+        XCTAssertFalse(vault.isEmpty)
+        XCTAssertFalse(title.isEmpty)
         XCTAssertTrue(["text", "image"].contains(kind))
         for forbidden in ["NODUS_UI_TEST_DEMO", "NODUS_ACCEPTANCE_AUTHORING_RECOVERY", "NODUS_ACCEPTANCE_PAIRING_LINK", "NODUS_ACCEPTANCE_SNAPSHOT_FILENAME"] {
             XCTAssertNil(env[forbidden], "This scenario requires the actual already relinked laboratory connection.")
@@ -73,11 +75,13 @@ final class AuthoringRecoveryUITests: XCTestCase {
             let review = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "recovered-work-review", title)).firstMatch
             for _ in 0..<16 { if review.isHittable { break }; app.swipeUp() }
             XCTAssertTrue(review.waitForExistence(timeout: 20), "No automatic send may remove the review requirement.")
+            XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "recovered-work-review", title)).count, 1, "The fixture must identify one exact retained result.")
             XCTAssertTrue(review.isHittable); review.tap()
             if kind == "image" {
                 XCTAssertTrue(app.images["recovered-work-image"].waitForExistence(timeout: 15), "The retained real image must render, not a base64 dump.")
             } else {
                 let snippet = try XCTUnwrap(env["NODUS_ACCEPTANCE_RECOVERY_SNIPPET"])
+                XCTAssertFalse(snippet.isEmpty, "An empty excerpt would not prove the retained result.")
                 XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", snippet)).firstMatch.waitForExistence(timeout: 15), "The retained real text must render.")
             }
             let publish = app.buttons["recovered-work-publish"]
