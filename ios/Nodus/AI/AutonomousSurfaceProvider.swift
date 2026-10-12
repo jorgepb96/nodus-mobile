@@ -289,7 +289,6 @@ final class AutonomousSurfaceProvider {
         let scope = try session.surfaceStorageScope()
         let vault = scope.recordVaultId
         let model = try JSONDecoder.nodus.decode(ModelRef.self, from: JSONEncoder.nodus.encode(modelJSON))
-        guard settings.hasKey(for: model.provider) else { throw ProviderError.missingKey(model.provider) }
         let cache = try PrivateBridgeCache(pairingId: scope.cacheId)
         // Hold through the paid-response write, so unlink cannot retire the
         // encryption key between the provider returning and durable recovery.
@@ -301,6 +300,7 @@ final class AutonomousSurfaceProvider {
             return try JSONDecoder.nodus.decode(JSONValue.self, from: saved)
         }
         try await cache.requireGenerationExecutionAllowed(vaultId: vault, generationId: generation)
+        guard settings.hasKey(for: model.provider) else { throw ProviderError.missingKey(model.provider) }
         let temperature: Double?
         switch request["temperature"] { case .double(let value): temperature = value; case .int(let value): temperature = Double(value); case .null: temperature = nil; default: temperature = 0 }
         let options = request["researchParameters"]?.objectValue ?? [:]
