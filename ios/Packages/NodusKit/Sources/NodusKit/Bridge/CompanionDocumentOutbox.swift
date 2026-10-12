@@ -55,6 +55,17 @@ public actor CompanionDocumentOutbox {
         var cancelled: Bool? = nil
         let createdAt: Date
     }
+    private struct WorkspaceOrganizationCommand: Codable {
+        let id: String
+        let operation: JSONValue
+        let affectedNotes: [String]
+        let createdAt: Date
+        var sending: Request?
+        var state: State
+        var remote: JSONValue?
+        var issue: String?
+        var confirmedTree: JSONValue?
+    }
     private struct AnnotationCommand: Codable {
         var id: String
         let documentId: String
@@ -85,12 +96,16 @@ public actor CompanionDocumentOutbox {
         var studyCommands: [String: StudyCommand]? = nil
         var annotationCommands: [String: AnnotationCommand]? = nil
         var annotationSources: [String: JSONValue]? = nil
+        var workspaceOrganizationCommands: [String: WorkspaceOrganizationCommand]? = nil
+        var workspaceOrganizationSnapshot: JSONValue? = nil
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
     private let kind: Kind
     private var records: [String: Record]
     private var authored: [String: Authored] = [:]
+    private var workspaceOrganizationSnapshot: JSONValue?
+    private var workspaceOrganizationCommands: [String: WorkspaceOrganizationCommand] = [:]
     private var knownFolders: [String: JSONValue] = [:]
     private var knownNotes: [String: JSONValue] = [:]
     private var baselines: [String: JSONValue] = [:]
@@ -120,6 +135,12 @@ public actor CompanionDocumentOutbox {
                 _ = try CompanionStudyAnnotation.command(action: action, id: target, expected: fields["expectedAnnotation"] == .null ? nil : fields["expectedAnnotation"], patch: fields["patch"])
                 if let dependency = command.dependencyId { guard dependency != key, annotationCommands[dependency]?.documentId == command.documentId else { throw DesktopBridgeError.malformedResponse } }
                 if let sending = command.sending { guard sending.id == key, sending.noteId == command.documentId, sending.command == command.command else { throw DesktopBridgeError.malformedResponse } }
+            }
+            workspaceOrganizationCommands = state.workspaceOrganizationCommands ?? [:]
+            workspaceOrganizationSnapshot = state.workspaceOrganizationSnapshot
+            for (key, command) in workspaceOrganizationCommands {
+                guard kind == .workspaceNote, key == command.id, UUID(uuidString: key) != nil, ["move", "tags", "restore", "folderCreate", "folderRename", "folderTrash"].contains(command.operation.objectValue?["type"]?.stringValue ?? ""), command.operation.objectValue?["id"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
+                if let sending = command.sending { guard sending.id == key, sending.command == .object(["action": .string("workspaceOrganization"), "operation": command.operation]), sending.input == .object([:]) else { throw DesktopBridgeError.malformedResponse } }
             }
             for (key, command) in studyCommands {
                 guard key == command.id, UUID(uuidString: key) != nil,
@@ -190,6 +211,13 @@ public actor CompanionDocumentOutbox {
                   Self.validParent(note.objectValue?["folderId"]) else { throw DesktopBridgeError.malformedResponse }
         }
         var changed = false
+        if tree.objectValue?["mobileOrganizationComplete"] == .bool(true) {
+            let snapshot = Self.organizationMetadata(tree)
+            if authoritative || workspaceOrganizationSnapshot == nil { workspaceOrganizationSnapshot = snapshot; changed = true }
+        }
+        if authoritative, tree.objectValue?["mobileOrganizationComplete"] == .bool(true) {
+            for key in workspaceOrganizationCommands.keys where workspaceOrganizationCommands[key]?.confirmedTree != nil { workspaceOrganizationCommands[key] = nil; changed = true }
+        }
         for folder in folders {
             let id = folder.objectValue!["id"]!.stringValue!
             if (authoritative || knownFolders[id] == nil), knownFolders[id] != folder { knownFolders[id] = folder; changed = true }
@@ -201,7 +229,7 @@ public actor CompanionDocumentOutbox {
                 source.note = note; authored[id] = source; changed = true
             }
         }
-        if changed, !authored.isEmpty { try await persist() }
+        if changed { try await persist() }
     }
     private func authoredFolders() -> [String: JSONValue] {
         var result: [String: JSONValue] = [:]
@@ -278,12 +306,89 @@ public actor CompanionDocumentOutbox {
             value["title"] = editor["documentTitle"]; value["content"] = editor["contentMarkdown"]
             value["editorRevision"] = editor["revision"]; value["mobileSyncState"] = editor["mobileSyncState"] ?? .string("available")
             return .object(value)
-        }.filter { includeTrashed || Self.isVisibleNote($0) })
+        })
         if includeConfirmedEdits, let folders = object["folders"]?.arrayValue {
             let retained = authoredFolders(), presentFolders = Set(folders.compactMap { $0.objectValue?["id"]?.stringValue })
             object["folders"] = .array(folders.map { retained[$0.objectValue?["id"]?.stringValue ?? ""] ?? $0 } + retained.keys.sorted().filter { !presentFolders.contains($0) }.compactMap { retained[$0] })
         }
-        return .object(object)
+        var organized = JSONValue.object(object)
+        for command in workspaceOrganizationCommands.values.sorted(by: { $0.createdAt < $1.createdAt }) {
+            if command.confirmedTree == nil { organized = CompanionWorkspaceOrganization.project(command.operation, onto: organized, timestamp: command.createdAt.ISO8601Format(), state: command.state.rawValue) }
+            else if includeConfirmedEdits { organized = CompanionWorkspaceOrganization.project(command.operation, onto: organized, timestamp: command.createdAt.ISO8601Format(), state: "available") }
+        }
+        if !includeTrashed, var final = organized.objectValue { final["notes"] = .array((final["notes"]?.arrayValue ?? []).filter(Self.isVisibleNote)); organized = .object(final) }
+        return organized
+    }
+    private static func organizationMetadata(_ tree: JSONValue) -> JSONValue {
+        func rows(_ key: String, fields: Set<String>) -> JSONValue { .array((tree.objectValue?[key]?.arrayValue ?? []).map { .object(($0.objectValue ?? [:]).filter { fields.contains($0.key) }) }) }
+        return .object(["mobileOrganizationComplete": tree.objectValue?["mobileOrganizationComplete"] ?? .bool(false), "folders": rows("folders", fields: ["id", "parentId", "name", "summary", "orderIdx", "createdAt", "updatedAt"]), "notes": rows("notes", fields: ["id", "title", "kind", "folderId", "tags", "trashedAt", "orderIdx", "createdAt", "updatedAt"])])
+    }
+    /// Completeness comes only from a real downloaded full snapshot. Ownership
+    /// recovery removes this consulted baseline, retaining command preconditions.
+    public func workspaceOrganizationTree() -> JSONValue? {
+        guard kind == .workspaceNote else { return nil }
+        let base: JSONValue
+        if let snapshot = workspaceOrganizationSnapshot { base = snapshot }
+        else if !knownFolders.isEmpty || !knownNotes.isEmpty || !workspaceOrganizationCommands.isEmpty {
+            base = .object(["mobileOrganizationComplete": .bool(false), "folders": .array(Array(knownFolders.values)), "notes": .array(Array(knownNotes.values))])
+        } else { return nil }
+        return overlayTree(base, includeConfirmedEdits: true, includeTrashed: true)
+    }
+    /// Organization commands never carry or replace editor content.
+    public func enqueueWorkspaceOrganization(type: String, id: String? = nil, arguments: JSONValue, tree: JSONValue, authoritative: Bool = false) async throws -> JSONValue {
+        guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
+        let target = id ?? UUID().uuidString.lowercased()
+        let projected = overlayTree(tree, includeConfirmedEdits: !authoritative, includeTrashed: true)
+        if type == "folderTrash", projected.objectValue?["mobileOrganizationComplete"] != .bool(true) { throw APIError(status: 409, code: "organization_snapshot_incomplete", message: "Descarga el árbol completo, incluida la papelera, antes de eliminar una carpeta sin conexión.") }
+        let operation = try CompanionWorkspaceOrganization.operation(type: type, id: target, arguments: arguments, tree: projected)
+        let affected = type == "folderTrash" ? (operation.objectValue?["expectedSubtree"]?.objectValue?["notes"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue } : (["move", "tags", "restore"].contains(type) ? [target] : [])
+        let key = UUID().uuidString.lowercased(), now = Date()
+        workspaceOrganizationCommands[key] = WorkspaceOrganizationCommand(id: key, operation: operation, affectedNotes: affected, createdAt: now, state: .pending)
+        do { try await persist() } catch { workspaceOrganizationCommands[key] = nil; throw error }
+        let next = CompanionWorkspaceOrganization.project(operation, onto: projected, timestamp: now.ISO8601Format())
+        if type == "folderCreate" || type == "folderRename" { return next.objectValue?["folders"]?.arrayValue?.first { $0.objectValue?["id"] == .string(target) } ?? .null }
+        if type == "folderTrash" { return .array(affected.map(JSONValue.string)) }
+        if type == "restore" { return .int(1) }
+        let notes = (next.objectValue?["notes"]?.arrayValue ?? []).filter { $0.objectValue?["id"] == .string(target) }
+        return type == "tags" ? .array(notes) : notes.first ?? .null
+    }
+    public func workspaceOrganizationIssues() -> JSONValue {
+        .array(workspaceOrganizationCommands.values.filter { $0.confirmedTree == nil }.sorted { $0.createdAt < $1.createdAt }.map { .object(["id": .string($0.id), "operation": $0.operation, "state": .string($0.state.rawValue), "issue": $0.issue.map(JSONValue.string) ?? .null, "remote": $0.remote ?? .null]) })
+    }
+    /// Cancel is available for conflicts and unsent commands; an unknown ACK
+    /// requires replay with the original identity before discarding intent.
+    public func cancelWorkspaceOrganization(id: String) async throws {
+        guard let value = workspaceOrganizationCommands[id], value.confirmedTree == nil else { return }
+        guard value.sending == nil || value.state == .conflict || value.state == .blocked else { throw APIError(status: 409, code: "organization_ack_pending", message: "Confirma el recibo pendiente antes de cancelar la operación.") }
+        workspaceOrganizationCommands[id] = nil
+        do { try await persist() } catch { workspaceOrganizationCommands[id] = value; throw error }
+    }
+    private func synchronizeWorkspaceOrganization(send: @Sendable (Request) async throws -> JSONValue, preparatoryOnly: Bool = false) async throws {
+        for key in workspaceOrganizationCommands.values.sorted(by: { $0.createdAt < $1.createdAt }).map(\.id) {
+            guard var command = workspaceOrganizationCommands[key], command.confirmedTree == nil else { continue }
+            if preparatoryOnly, !["folderCreate", "folderRename"].contains(command.operation.objectValue?["type"]?.stringValue ?? "") { continue }
+            // FIFO parent dependencies and conflicts stop later organization,
+            // while independent native saves/comments remain synchronizable.
+            guard command.state == .pending else { break }
+            if command.affectedNotes.contains(where: { note in records[note] != nil || annotationCommands.values.contains { $0.documentId == note } }) {
+                let blocked = command.affectedNotes.contains { note in records[note]?.state != nil && records[note]?.state != .pending || annotationCommands.values.contains { $0.documentId == note && $0.state != .pending } }
+                if blocked { command.state = .conflict; command.issue = "Resuelve primero el documento o comentario conservado antes de cambiar su organización."; workspaceOrganizationCommands[key] = command; try await persist() }
+                break
+            }
+            if studyCommands.values.contains(where: { command.affectedNotes.contains($0.sourceId) || command.affectedNotes.contains($0.targetId ?? "") }) { break }
+            let request = command.sending ?? Request(id: key, noteId: command.operation.objectValue?["id"]?.stringValue ?? "", input: .object([:]), command: .object(["action": .string("workspaceOrganization"), "operation": command.operation]), generation: 0)
+            command.sending = request; workspaceOrganizationCommands[key] = command; try await persist()
+            do {
+                let response = try await send(request)
+                guard let tree = response.objectValue?["tree"], tree.objectValue?["notes"]?.arrayValue != nil, tree.objectValue?["folders"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
+                command.confirmedTree = .bool(true); command.issue = nil; workspaceOrganizationCommands[key] = command
+                for note in tree.objectValue?["notes"]?.arrayValue ?? [] { if let id = note.objectValue?["id"]?.stringValue { knownNotes[id] = note; if var previous = authored[id]?.note?.objectValue, let incoming = note.objectValue { previous.merge(incoming) { _, new in new }; authored[id]?.note = .object(previous) } } }
+                try await persist()
+            } catch {
+                if let failure = error as? APIError, failure.status < 500 { command.state = (failure.code ?? "").contains("conflict") || (failure.code ?? "").contains("unavailable") ? .conflict : .blocked; command.remote = failure.details["remote"] }
+                command.issue = error.localizedDescription; workspaceOrganizationCommands[key] = command; try await persist(); throw error
+            }
+        }
     }
     /// A new authored document has a stable identity before any Mac request.
     /// The same frozen creation and its latest structured edit commit together.
@@ -873,15 +978,17 @@ public actor CompanionDocumentOutbox {
             do { try await persist() } catch { annotationCommands[key] = item; throw error }
         }
     }
-    public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count + studyCommands.values.filter { $0.state == .pending && $0.cancelled != true }.count + annotationCommands.values.filter { $0.state == .pending }.count }
+    public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count + studyCommands.values.filter { $0.state == .pending && $0.cancelled != true }.count + annotationCommands.values.filter { $0.state == .pending }.count + workspaceOrganizationCommands.values.filter { $0.state == .pending && $0.confirmedTree == nil }.count }
     public func synchronize(send: @Sendable (Request) async throws -> JSONValue) async throws {
         guard !synchronizing else { return }
         synchronizing = true; defer { synchronizing = false }
+        try await synchronizeWorkspaceOrganization(send: send, preparatoryOnly: true)
         try await synchronizeEdits(send: send)
         try await synchronizeAnnotations(send: send)
         try await synchronizeStudyCommands(send: send)
         try await synchronizeEdits(send: send)
         try await synchronizeAnnotations(send: send)
+        try await synchronizeWorkspaceOrganization(send: send)
     }
     private func synchronizeEdits(send: @Sendable (Request) async throws -> JSONValue) async throws {
         for noteId in records.keys.sorted() {
@@ -1077,7 +1184,7 @@ public actor CompanionDocumentOutbox {
             else { sourceKey = SHA256.hash(data: try JSONEncoder.nodus.encode(editor)).map { String(format: "%02x", $0) }.joined() }
             sources[sourceKey] = editor; item.sourceKey = sourceKey; item.sourceEditor = nil; storedCommands[key] = item
         }
-        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind, studyCommands: studyCommands, annotationCommands: storedCommands, annotationSources: sources))
+        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind, studyCommands: studyCommands, annotationCommands: storedCommands, annotationSources: sources, workspaceOrganizationCommands: workspaceOrganizationCommands, workspaceOrganizationSnapshot: workspaceOrganizationSnapshot))
         let previous = diskTask, id = UUID(), cache = self.cache, vault = vaultId, storage = kind.storageKey
         let task = Task {
             if let previous { _ = try? await previous.value }

@@ -35,6 +35,92 @@ struct CompanionDocumentOutboxTests {
     private static func receipt(_ request: CompanionDocumentOutbox.Request, revision: Int) -> JSONValue {
         .object(["id": .string(request.id), "editorData": editor(revision, text: request.input.objectValue!["contentMarkdown"]!.stringValue!)])
     }
+    @Test("workspace organization survives reopen and unknown acknowledgements with stable FIFO parent identities")
+    func workspaceOrganizationReplay() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(), calls = Requests()
+        let tree: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([]), "notes": .array([])])
+        let parent = try await queue.enqueueWorkspaceOrganization(type: "folderCreate", arguments: .object(["name": .string("Parent")]), tree: tree)
+        let parentID = try #require(parent.objectValue?["id"]?.stringValue)
+        let child = try await queue.enqueueWorkspaceOrganization(type: "folderCreate", arguments: .object(["name": .string("Child"), "parentId": .string(parentID)]), tree: tree)
+        #expect(child.objectValue?["parentId"] == .string(parentID))
+        do { try await queue.synchronize { request in await calls.append(request); throw URLError(.networkConnectionLost) }; Issue.record("Expected unknown acknowledgement") } catch {}
+        let first = try #require(await calls.all().first)
+        #expect(first.noteId == parentID)
+        #expect(first.input == .object([:]))
+        await #expect(throws: APIError.self) { try await queue.cancelWorkspaceOrganization(id: first.id) }
+        let reopened = try await fixture.open()
+        let local = await reopened.overlayTree(tree, includeTrashed: true)
+        #expect(local.objectValue?["folders"]?.arrayValue?.count == 2)
+        try await reopened.synchronize { request in await calls.append(request); return .object(["tree": local]) }
+        let requests = await calls.all()
+        #expect(requests.count == 3)
+        #expect(requests[0] == requests[1])
+        #expect(requests[2].command?.objectValue?["operation"]?.objectValue?["parentAncestry"]?.arrayValue?.first?.objectValue?["id"] == .string(parentID))
+        #expect(await reopened.pendingCount() == 0)
+    }
+    @Test("organization waits native saves and conflicted operations remain cancelable without discarding documents")
+    func workspaceOrganizationSaveAndConflict() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(), calls = Requests()
+        try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "Authored native body"))
+        let tree: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([]), "notes": .array([.object(["id": .string("note-a"), "title": .string("A"), "folderId": .null, "tags": .array([]), "trashedAt": .null])])])
+        _ = try await queue.enqueueWorkspaceOrganization(type: "tags", id: "note-a", arguments: .object(["add": .array([.string("tag")])]), tree: tree)
+        do { try await queue.synchronize { request in
+            await calls.append(request)
+            if request.command == nil { return Self.receipt(request, revision: 8) }
+            throw APIError(status: 409, code: "organization_conflict", message: "Changed Mac placement", details: ["remote": tree])
+        }; Issue.record("Expected conflict") } catch {}
+        let values = await calls.all()
+        #expect(values.count == 2)
+        #expect(values.first?.input.objectValue?["contentMarkdown"] == .string("Authored native body"))
+        let issue = try #require(await queue.workspaceOrganizationIssues().arrayValue?.first?.objectValue)
+        #expect(issue["state"] == .string("conflict"))
+        try await queue.cancelWorkspaceOrganization(id: try #require(issue["id"]?.stringValue))
+        #expect(await queue.confirmedEditorData(noteId: "note-a")?.objectValue?["contentMarkdown"] == .string("Authored native body"))
+        #expect(await queue.workspaceOrganizationIssues() == .array([]))
+    }
+    @Test("stable offline folder is committed before a new note and live full snapshot retires old organization overlays")
+    func workspaceFolderCreationDependency() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(), calls = Requests()
+        let tree: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([]), "notes": .array([])])
+        let folder = try await queue.enqueueWorkspaceOrganization(type: "folderCreate", arguments: .object(["name": .string("Original name")]), tree: tree)
+        let id = try #require(folder.objectValue?["id"]?.stringValue)
+        try await queue.rememberTree(await queue.overlayTree(tree, includeTrashed: true), authoritative: false)
+        let note = try await queue.create(input: .object(["title": .string("New note"), "content": .string(""), "kind": .string("markdown"), "folderId": .string(id)]))
+        let noteID = try #require(note.objectValue?["id"]?.stringValue)
+        try await queue.synchronize { request in
+            await calls.append(request)
+            if request.command != nil { return .object(["tree": .object(["folders": .array([folder]), "notes": .array([])])]) }
+            var editor = Self.editor(1, text: "").objectValue!; editor["documentTitle"] = .string("New note")
+            return .object(["id": .string(request.id), "note": note, "editorData": .object(editor)])
+        }
+        let packets = await calls.all()
+        #expect(packets.count == 2)
+        #expect(packets.first?.command?.objectValue?["operation"]?.objectValue?["type"] == .string("folderCreate"))
+        #expect(packets.last?.noteId == noteID)
+        var renamed = folder.objectValue!; renamed["name"] = .string("Later Mac name")
+        let live: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([.object(renamed)]), "notes": .array([note])])
+        try await queue.rememberTree(live, authoritative: true)
+        #expect(await queue.overlayTree(live, includeConfirmedEdits: true).objectValue?["folders"]?.arrayValue?.first?.objectValue?["name"] == .string("Later Mac name"))
+    }
+    @Test("offline organization consultation keeps one real complete metadata snapshot and excludes bodies")
+    func organizationDownloadedSnapshot() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        let tree: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([.object(["id": .string("downloaded-folder"), "parentId": .null, "name": .string("Downloaded")])]), "notes": .array([.object(["id": .string("downloaded-note"), "title": .string("Source"), "folderId": .string("downloaded-folder"), "tags": .array([]), "trashedAt": .null, "content": .string("PRIVATE BODY MUST NOT ENTER METADATA SNAPSHOT"), "nativeDocument": .array([.string("PRIVATE NATIVE")])])])])
+        try await queue.rememberTree(tree, authoritative: false)
+        let reopened = try await fixture.open()
+        let snapshot = try #require(await reopened.workspaceOrganizationTree())
+        #expect(snapshot.objectValue?["mobileOrganizationComplete"] == .bool(true))
+        #expect(snapshot.objectValue?["notes"]?.arrayValue?.first?.objectValue?["content"] == nil)
+        let bytes = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        #expect(!String(decoding: bytes, as: UTF8.self).contains("PRIVATE BODY"))
+        _ = try await reopened.enqueueWorkspaceOrganization(type: "folderTrash", id: "downloaded-folder", arguments: .object([:]), tree: snapshot)
+        #expect(await reopened.pendingCount() == 1)
+    }
     private actor Requests {
         var values: [CompanionDocumentOutbox.Request] = []
         func append(_ value: CompanionDocumentOutbox.Request) { values.append(value) }
