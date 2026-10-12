@@ -20,6 +20,7 @@ parser.add_argument("--style", choices=["light", "dark"], required=True)
 parser.add_argument("--source-citation", action="store_true")
 parser.add_argument("--dictionary", action="store_true")
 parser.add_argument("--person-dossier", action="store_true")
+parser.add_argument("--testimonies", action="store_true")
 parser.add_argument("--text-size", choices=["standard", "accessibility3"])
 parser.add_argument("--mac-unavailable", action="store_true")
 parser.add_argument("--research-marker")
@@ -160,6 +161,28 @@ if args.person_dossier:
             raise SystemExit("An actual saved source with a readable citation is required")
         person.update(sourceId=source[0], sourceTitle=source[1], sourceCitation=source[2])
     values["NODUS_ACCEPTANCE_PERSON_DOSSIER"] = json.dumps(person, ensure_ascii=False)
+
+if args.testimonies:
+    registry = json.loads((args.lab / "vaults.json").read_text())
+    vault = next(vault for vault in registry["vaults"] if vault["type"] == "testimonios")
+    database = Path(vault["path"]).resolve()
+    if not database.is_relative_to(args.lab.resolve()):
+        raise SystemExit("Testimony expectations must come from the isolated copied vault")
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        connection.row_factory = sqlite3.Row
+        interview = connection.execute("SELECT id,title,objective FROM testimony_interviews WHERE archived_at IS NULL AND deleted_at IS NULL AND length(objective)>40 ORDER BY id LIMIT 1").fetchone()
+        participant = connection.execute("SELECT person_id,public_name,biographical_note FROM testimony_participant_profiles WHERE length(biographical_note)>40 ORDER BY person_id LIMIT 1").fetchone()
+        contrast = connection.execute("SELECT id,title,memo_markdown FROM testimony_contrasts WHERE length(memo_markdown)>40 ORDER BY id LIMIT 1").fetchone()
+        if interview is None or participant is None or contrast is None:
+            raise SystemExit("Actual interviews, participant profiles and contrasts are required")
+        snippet = next((line for line in contrast["memo_markdown"].splitlines() if len(line)>40 and not line.startswith("#")), "")
+        snippet = re.sub(r"[*_`]+", "", snippet).strip()[:100]
+        if len(snippet) < 40:
+            raise SystemExit("A readable saved contrast paragraph is required")
+        values["NODUS_ACCEPTANCE_TESTIMONIES"] = json.dumps({"vaultId":vault["id"],
+            "interview":{"id":interview["id"], "title":interview["title"], "body":interview["objective"]},
+            "participant":{"id":participant["person_id"], "title":participant["public_name"], "body":participant["biographical_note"]},
+            "contrast":{"id":contrast["id"], "title":contrast["title"], "body":snippet}}, ensure_ascii=False)
 
 configuration = plistlib.loads(args.base.read_bytes())
 target = configuration["NodusUITests"]

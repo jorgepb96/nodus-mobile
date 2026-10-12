@@ -175,6 +175,42 @@ final class MobileReleaseUITests: XCTestCase {
         }
     }
     @MainActor
+    func testLiveTestimonyInterviewReadsSavedObjectiveAndReopens() throws {
+        try readSavedTestimony(kind: "interview", route: "testimonyInterviews")
+    }
+    @MainActor
+    func testLiveTestimonyParticipantReadsSavedProfileAndReopens() throws {
+        try readSavedTestimony(kind: "participant", route: "testimonyParticipants")
+    }
+    @MainActor
+    func testLiveTestimonyContrastReadsSavedMemoAndReopens() throws {
+        try readSavedTestimony(kind: "contrast", route: "testimonyContrasts")
+    }
+    @MainActor private func readSavedTestimony(kind: String, route: String) throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_TESTIMONIES"])
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
+        let vault = try XCTUnwrap(fixture["vaultId"] as? String)
+        let saved = try XCTUnwrap(fixture[kind] as? [String: String])
+        let id = try XCTUnwrap(saved["id"]), title = try XCTUnwrap(saved["title"]), body = try XCTUnwrap(saved["body"])
+        for reopen in 0..<2 {
+            let app = try openExistingVault(destination: route, vaultId: vault)
+            defer { app.terminate() }
+            let row = app.buttons["private-source-testimony-\(kind)-\(id)"]
+            XCTAssertTrue(row.waitForExistence(timeout: 45), app.debugDescription)
+            for _ in 0..<12 { if row.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(row.isHittable); XCTAssertGreaterThanOrEqual(row.frame.height, 44); row.tap()
+            XCTAssertTrue(app.descendants(matching: .any)["private-corpus-source-testimony-" + kind].firstMatch.waitForExistence(timeout: 45))
+            XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+            let paragraph = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", body, body)).firstMatch
+            XCTAssertTrue(paragraph.waitForExistence(timeout: 20), "The exact saved dossier text must load, not only its catalogue title.")
+            for _ in 0..<12 { if paragraph.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(paragraph.isHittable)
+            XCTAssertTrue(app.descendants(matching: .any)["private-source-group-picker"].firstMatch.exists)
+            capture(app, "live-testimony-\(kind)-saved-body-reopen-\(reopen)")
+            app.terminate()
+        }
+    }
+    @MainActor
     func testLivePhoneChatStreamsCopiesAndReopensFromHistory() throws {
         let app = try openExistingPrincipal(destination: "settings")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
