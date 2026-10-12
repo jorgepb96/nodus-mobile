@@ -173,7 +173,13 @@ struct PrivateCorpusSourceView: View {
             }
             if reference.kind == .person, selectedGroup == "authorities" {
                 if let scheme = row.text("scheme"), let identifier = row.text("external_id") {
-                    LabeledContent(scheme, value: identifier).textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(scheme).font(.caption).foregroundStyle(.secondary)
+                        Text(identifier).font(.body.monospaced())
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
                 }
             }
             fields(row, keys: ["summary", "quoted_text", "locator_display", "citation", "description", "context", "role_or_title",
