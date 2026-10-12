@@ -190,7 +190,12 @@ private struct DownloadedCollectionDossier: View {
                 if target.collectionPath == "databases" {
                     CompanionDownloadedDatabaseWorkspace(session:session,dossier:dossier)
                 } else if target.collectionPath == "pages" {
-                    SharedDesktopSurface(session:session,surface:.page,initialPageId:target.id,pageDownloadedOnly:true)
+                    SharedDesktopSurface(session:session,surface:.page,initialPageId:target.id,downloadedOnly:true)
+                } else if target.collectionPath == "study-docs" {
+                    StudyEvidenceDocument(session: session, id: target.id, downloadedOnly: true, downloadedDossier: dossier,
+                        onOpenRelated: { collection, row in
+                            if let id = row.string(collection.idField) { open(.init(collectionPath: collection.path, id: id)) }
+                        })
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: NodusSpace.block) {

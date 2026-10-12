@@ -96,7 +96,7 @@ struct DatabaseLinkedRowReader: View {
         }.task(id: attempt) { await load() }
         .nodusSheet(isPresented: $pageOpen) {
             if let pageId {
-                NavigationStack { SharedDesktopSurface(session: session, surface: .page, initialPageId: pageId, pageDownloadedOnly: offline).nodusModalClose(accent: session.accent) }
+                NavigationStack { SharedDesktopSurface(session: session, surface: .page, initialPageId: pageId, downloadedOnly: offline).nodusModalClose(accent: session.accent) }
             }
         }
     }

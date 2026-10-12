@@ -31,8 +31,8 @@ struct CompanionCollectionDownloadsView: View {
         List {
             Section {
                 Picker("Colección", selection: $path) {
-                    ForEach(collections, id: \.path) { Text($0.label).tag($0.path) }
-                }.disabled(progress != nil)
+                    ForEach(collections, id: \.path) { Text($0.label).tag($0.path).accessibilityIdentifier("companion-download-collection-\($0.path)") }
+                }.disabled(progress != nil).accessibilityIdentifier("companion-download-collection")
                 Picker("Conservar la descarga", selection: $days) {
                     Text("7 días").tag(7); Text("30 días").tag(30)
                 }.disabled(progress != nil)

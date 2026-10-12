@@ -23,6 +23,7 @@ parser.add_argument("--person-dossier", action="store_true")
 parser.add_argument("--testimonies", action="store_true")
 parser.add_argument("--world-dossiers", action="store_true")
 parser.add_argument("--study-documents", action="store_true")
+parser.add_argument("--study-download", action="store_true")
 parser.add_argument("--archive-dossier", action="store_true")
 parser.add_argument("--text-size", choices=["standard", "accessibility3"])
 parser.add_argument("--mac-unavailable", action="store_true")
@@ -230,6 +231,18 @@ if args.study_documents:
             last_paragraph = next(line for line in reversed(record[4].splitlines()) if len(line)>40 and not line.startswith("#"))
             cases[kind] = dict(vaultId=vault["id"], courseId=record[0], courseTitle=record[1], documentId=record[2], documentTitle=record[3], body=paragraph, lastBody=last_paragraph)
     values["NODUS_ACCEPTANCE_STUDY_DOCUMENTS"] = json.dumps(cases, ensure_ascii=False)
+
+if args.study_download:
+    registry = json.loads((args.lab / "vaults.json").read_text())
+    vault = next(v for v in registry["vaults"] if v["type"] == "estudio")
+    database = Path(vault["path"]).resolve()
+    if not database.is_relative_to(args.lab.resolve()):
+        raise SystemExit("Study download acceptance requires the isolated copied vault")
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        record = connection.execute("SELECT d.id,d.title,d.content_markdown FROM study_docs d JOIN study_placements p ON p.document_id=d.id JOIN study_courses c ON c.id=p.course_id WHERE d.deleted_at IS NULL AND p.deleted_at IS NULL AND c.name='Aceptación grafo 0.1.0' ORDER BY length(d.content_markdown) DESC LIMIT 1").fetchone()
+        if record is None or len(record[2]) < 1000:
+            raise SystemExit("An actual long fixture document is required for offline study editing")
+        values["NODUS_ACCEPTANCE_STUDY_DOWNLOAD"] = json.dumps(dict(vaultId=vault["id"], documentId=record[0], documentTitle=record[1]), ensure_ascii=False)
 
 configuration = plistlib.loads(args.base.read_bytes())
 target = configuration["NodusUITests"]

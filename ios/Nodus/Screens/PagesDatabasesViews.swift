@@ -705,7 +705,7 @@ struct DatabaseDetailWorkspace: View {
                         onOpenDatabaseRow: { id in
                             if let row = (viewRows + allRows).first(where: { $0.id == id }) { select(row) }
                             else { foreignRow = DatabaseForeignRow(id: id) }
-                        }, pageDownloadedOnly: downloadedOnly)
+                        }, downloadedOnly: downloadedOnly)
                         .id("\(database.id):\(activeViewId ?? layout):\(session.companionPublicationRevision):\(presentationRevision)")
                 }
                 else if session.connection.desktopPairingId != nil,activeViewId != nil,canonicalRows == nil {Color.clear}

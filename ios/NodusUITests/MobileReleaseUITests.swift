@@ -290,6 +290,83 @@ final class MobileReleaseUITests: XCTestCase {
         }
     }
     @MainActor
+    func testDownloadsStudyDocumentWithoutOpeningItsEditor() throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_STUDY_DOWNLOAD"])
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: String])
+        let vault = try XCTUnwrap(fixture["vaultId"]), document = try XCTUnwrap(fixture["documentId"])
+        let app = try openExistingVault(destination: "settings", vaultId: vault)
+        defer { app.terminate() }
+        let carry = app.buttons["companion-download-select"]
+        for _ in 0..<16 { if carry.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(carry.isHittable, app.debugDescription); carry.tap()
+        let copies = app.buttons["companion-download-collections"]
+        XCTAssertTrue(copies.waitForExistence(timeout: 20), app.debugDescription)
+        for _ in 0..<16 { if copies.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(copies.isHittable, app.debugDescription); copies.tap()
+        let collection = app.buttons["companion-download-collection"]
+        XCTAssertTrue(collection.waitForExistence(timeout: 20), app.debugDescription); collection.tap()
+        let documents = app.descendants(matching: .any)["companion-download-collection-study-docs"].firstMatch
+        XCTAssertTrue(documents.waitForExistence(timeout: 10), app.debugDescription); documents.tap()
+        let record = app.buttons["companion-download-record-study-docs-" + document]
+        XCTAssertTrue(record.waitForExistence(timeout: 30), app.debugDescription)
+        for _ in 0..<12 { if record.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(record.isHittable); record.tap()
+        XCTAssertEqual(record.value as? String, "Seleccionado")
+        app.buttons["companion-collection-download-start"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["companion-collection-download-ready"].firstMatch.waitForExistence(timeout: 90), app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["companion-collection-download-error"].firstMatch.exists)
+        capture(app, "study-selected-document-downloaded-without-opening-editor")
+    }
+    @MainActor
+    func testEditsDownloadedStudyDocumentWithMacUnavailable() async throws {
+        let env = ProcessInfo.processInfo.environment
+        let input = try XCTUnwrap(env["NODUS_ACCEPTANCE_STUDY_DOWNLOAD"])
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: String])
+        let vault = try XCTUnwrap(fixture["vaultId"]), document = try XCTUnwrap(fixture["documentId"])
+        let origin = try XCTUnwrap(env["NODUS_ACCEPTANCE_OFFLINE_ORIGIN"])
+        let address = try XCTUnwrap(URL(string: origin + "/bridge/v2/capabilities"))
+        let probe = URLSession(configuration: .ephemeral)
+        defer { probe.invalidateAndCancel() }
+        var request = URLRequest(url: address); request.timeoutInterval = 10
+        do {
+            _ = try await probe.data(for: request)
+            XCTFail("The isolated Mac Bridge must actually be unavailable during offline editing."); return
+        } catch {
+            let transport = try XCTUnwrap(error as? URLError)
+            XCTAssertTrue([.cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet, .timedOut].contains(transport.code))
+        }
+        let marker = "StudyOffline-" + UUID().uuidString.prefix(8)
+        for reopen in 0..<2 {
+            let app = try openExistingVault(destination: "studyLibrary", vaultId: vault)
+            defer { app.terminate() }
+            let downloads = app.buttons["workspace-downloads-studyLibrary"]
+            XCTAssertTrue(downloads.waitForExistence(timeout: 25), app.debugDescription); downloads.tap()
+            let documents = app.buttons["downloaded-collection-study-docs"]
+            XCTAssertTrue(documents.waitForExistence(timeout: 20), app.debugDescription); documents.tap()
+            let row = app.buttons["downloaded-dossier-study-docs-" + document]
+            XCTAssertTrue(row.waitForExistence(timeout: 20), app.debugDescription); row.tap()
+            let edit = app.buttons["study-document-edit"]
+            XCTAssertTrue(edit.waitForExistence(timeout: 20)); edit.tap()
+            let web = app.descendants(matching: .any)["shared-desktop-studyDocument"].firstMatch.webViews.firstMatch
+            let editor = web.textViews["Editor del documento"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 45), app.debugDescription)
+            capture(app, "study-selected-offline-editor-before-writing-reopen-\(reopen)")
+            if reopen == 0 {
+                editor.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: min(120, editor.frame.width / 4), dy: 28)).tap()
+                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+                editor.typeText(" \(marker).")
+            }
+            let containsEdit = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", marker), object: editor)
+            XCTAssertEqual(XCTWaiter.wait(for: [containsEdit], timeout: 20), .completed, app.debugDescription)
+            app.buttons["study-editor-close"].tap()
+            XCTAssertTrue(web.waitForNonExistence(timeout: 30), app.debugDescription)
+            let rendered = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", marker, marker)).firstMatch
+            XCTAssertTrue(rendered.waitForExistence(timeout: 20), app.debugDescription)
+            capture(app, "study-offline-persisted-\(marker)-reopen-\(reopen)")
+            app.terminate()
+        }
+    }
+    @MainActor
     func testLiveArchiveReadsSavedDescriptionTextAndExcerpt() throws {
         let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_ARCHIVE_DOSSIER"])
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: String])
