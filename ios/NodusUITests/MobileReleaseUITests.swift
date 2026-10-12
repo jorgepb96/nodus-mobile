@@ -1362,6 +1362,12 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(web.staticTexts["ACTIVO"].waitForExistence(timeout: 20), app.debugDescription)
         capture(app, "phone-dictionary-compact-badges-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
+        let landscape = NSPredicate { _, _ in
+            let frame = app.windows.firstMatch.frame
+            return frame.width > frame.height
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: nil)], timeout: 15), .completed,
+            "The dictionary must actually rotate before its landscape capture can verify that layout.")
         XCTAssertTrue(web.staticTexts["ACTIVO"].waitForExistence(timeout: 15))
         capture(app, "phone-dictionary-compact-badges-landscape")
         XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
