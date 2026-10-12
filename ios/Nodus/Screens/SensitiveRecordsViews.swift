@@ -328,6 +328,7 @@ private struct ProsopographyWorkspace: View {
     let mode: SensitiveRecordsWorkspaceMode
     @State private var tables: [String: [Row]] = [:]
     @State private var query = ""
+    @State private var searchLimit = 100
     @State private var issue: String?
     @State private var cached = false
     @State private var pairing = false
@@ -382,7 +383,36 @@ private struct ProsopographyWorkspace: View {
     }
 
     private var privateBanner: some View { PrivateDomainBanner(cached: cached, issue: issue, accent: session.accent) { pairing = true } }
-    private var searchView: some View { page(title: "Prosopography search", subtitle: "People, literal attestations, sources and factoids", image: "magnifyingglass") { privateBanner; NodusSearchField(text: $query, prompt: "Search the private corpus", accent: session.accent); ForEach(people) { personCard($0) }; ForEach((tables["prosop_sources"] ?? []).filter { query.isEmpty || $0.searchableText.localizedCaseInsensitiveContains(query) }, id: \.columns) { sourceCard($0) } } }
+    private var searchView: some View {
+        page(title: "Prosopography search", subtitle: "People, literal attestations, sources and statements", image: "magnifyingglass") {
+            privateBanner
+            NodusSearchField(text: $query, prompt: "Search the private corpus", accent: session.accent)
+            let hits = ProsopographySearchProjection.search(query, in: tables)
+            Text("\(hits.count) results").font(.caption).foregroundStyle(.secondary)
+            if hits.isEmpty, issue == nil {
+                ContentUnavailableView("No matches", systemImage: "magnifyingglass", description: Text("Search names, literal mentions, source citations or statement values."))
+            }
+            ForEach(Array(hits.prefix(searchLimit))) { hit in
+                Button {
+                    do { personSource = try .init(kind: hit.kind, id: hit.targetId); personSourceIssue = nil }
+                    catch { personSourceIssue = error.localizedDescription }
+                } label: {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(hit.category).font(.caption.weight(.semibold)).foregroundStyle(session.accent)
+                        Text(hit.title).font(.headline).foregroundStyle(.primary)
+                        if !hit.detail.isEmpty { Text(hit.detail).font(.callout).foregroundStyle(.secondary).lineLimit(4) }
+                        Label("Open evidence", systemImage: "chevron.right").font(.caption).foregroundStyle(session.accent)
+                    }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .multilineTextAlignment(.leading).desktopContentRow(accent: session.accent)
+                }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("prosop-search-\(hit.id)")
+            }
+            if hits.count > searchLimit {
+                Button("Load more results") { searchLimit += 100 }
+                    .frame(minHeight: 44).buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+            }
+            if let personSourceIssue { Text(personSourceIssue).foregroundStyle(Color.nodusDanger) }
+        }.onChange(of: query) { _, _ in searchLimit = 100 }
+    }
     private var populationView: some View { page(title: "Population", subtitle: "Explicit criteria, membership decisions and missingness", image: "person.3") { privateBanner; ForEach(tables["prosop_studies"] ?? [], id: \.columns) { study in VStack(alignment: .leading, spacing: 8) { Text(study.text("title") ?? "Study").font(.title2.bold()); Text(study.text("research_question") ?? "").font(.headline); Text(study.text("population_definition") ?? "").font(.callout).foregroundStyle(.secondary); HStack { metric("Expected", study.int("expected_population") ?? 0); metric("Included", memberships("included")); metric("Uncertain", memberships("uncertain")) } }.desktopContentRow(accent: session.accent) }; ForEach(tables["prosop_population_criteria"] ?? [], id: \.columns) { row in HStack { Image(systemName: row.text("kind") == "include" ? "checkmark.circle" : "minus.circle").foregroundStyle(session.accent); VStack(alignment: .leading) { Text(row.text("label") ?? "Criterion").font(.callout.weight(.medium)); Text(row.text("description") ?? "").font(.caption).foregroundStyle(.secondary) }; Spacer(); if row.int("required") == 1 { NodusChip(key: "required", tint: session.accent) } }.desktopContentRow(accent: session.accent) } } }
     private var peopleCatalogue: some View { page(title: "People", subtitle: "Identity, evidence, authority and completeness", image: "person.2") { privateBanner; NodusSearchField(text: $query, prompt: "Search people", accent: session.accent); ForEach(people) { person in Button { open(person) } label: { personCard(person) }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("prosop-person-open-\(person.id)") } } }
     private var sourcesView: some View { page(title: "Sources", subtitle: "Provenance, literal segments and source assessment", image: "archivebox") { privateBanner; ForEach(tables["prosop_sources"] ?? [], id: \.columns) { sourceCard($0) } } }
@@ -392,19 +422,31 @@ private struct ProsopographyWorkspace: View {
             privateBanner
             networkCanvas
             ForEach(SensitiveRecordsParity.networkEdges(in: tables["prosop_network_edges"] ?? [])) { edge in
-                HStack {
-                    Text(name(edge.sourceId))
-                    Image(systemName: "arrow.left.and.right").foregroundStyle(session.accent)
-                    Text(name(edge.targetId))
-                    Spacer()
-                    NodusChip(key: edge.origin, tint: edge.origin == "explicit" ? session.accent : .orange)
-                    Text(String(format: "%.0f×", edge.weight)).font(.caption.monospacedDigit())
+                VStack(alignment: .leading, spacing: 9) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack { networkPerson(edge.sourceId); Image(systemName: "arrow.left.and.right").foregroundStyle(session.accent); networkPerson(edge.targetId) }
+                        VStack(alignment: .leading, spacing: 4) { networkPerson(edge.sourceId); networkPerson(edge.targetId) }
+                    }
+                    HStack {
+                        NodusChip(key: edge.origin, tint: edge.origin == "explicit" ? session.accent : .orange)
+                        Text(String(format: "%.0f×", edge.weight)).font(.caption.monospacedDigit())
+                    }
                 }
                 .desktopContentRow(accent: session.accent)
-                .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("prosop-network-edge-\(edge.id)-\(edge.origin)")
             }
         }
+    }
+
+    private func networkPerson(_ id: String) -> some View {
+        Button {
+            do { personSource = try .init(kind: .person, id: id); personSourceIssue = nil }
+            catch { personSourceIssue = error.localizedDescription }
+        } label: {
+            Label(name(id), systemImage: "person.crop.circle")
+                .multilineTextAlignment(.leading).frame(minHeight: 44)
+        }.buttonStyle(.plain).foregroundStyle(session.accent)
+            .accessibilityLabel("Open person \(name(id))")
     }
 
     private struct PersonIdentityField: Identifiable {
@@ -481,7 +523,7 @@ private struct ProsopographyWorkspace: View {
     private func open(_ person: SensitiveRecordsParity.ProsopPerson) { tabs.open(.init(id: person.id, title: person.displayName, systemImage: "person.crop.circle", kind: .document, payload: .reference(kind: "prosop-person", id: person.id)), in: section) }
     private func load() async {
         do {
-            let names = ["persons", "prosop_studies", "prosop_population_criteria", "prosop_population_memberships", "prosop_person_profiles", "prosop_sources", "prosop_source_segments", "prosop_factoids", "prosop_statements", "prosop_statement_entities", "prosop_authority_ids", "prosop_analysis_definitions", "prosop_analysis_runs", "prosop_network_layers", "prosop_network_edges", "prosop_audit_log"]
+            let names = ["persons", "prosop_studies", "prosop_population_criteria", "prosop_population_memberships", "prosop_person_profiles", "prosop_sources", "prosop_source_segments", "prosop_factoids", "prosop_name_attestations", "prosop_variable_revisions", "prosop_statements", "prosop_statement_entities", "prosop_authority_ids", "prosop_analysis_definitions", "prosop_analysis_runs", "prosop_network_layers", "prosop_network_edges", "prosop_audit_log"]
             let snapshot = try await loadPrivateBridgeTables(session, domain: .prosopographyPrivate, names: names, fixture: debugSensitiveFixture(for: ["prosopography"]))
             try Task.checkCancellation()
             tables = snapshot.tables; cached = snapshot.readFromEncryptedCache; issue = nil
