@@ -38,6 +38,7 @@ final class NativeLiveChatOptions {
     @ObservationIgnored private let file:URL
     @ObservationIgnored private var restored=false
     @ObservationIgnored private var configurationRequest=UUID()
+    @ObservationIgnored private var catalogueRequest=UUID()
     nonisolated static let defaultSelection:JSONValue = .object([
         "ideas":.bool(true),"themes":.bool(true),"contradictions":.bool(true),"gaps":.bool(true),"readingPath":.bool(true),"authors":.bool(true),"graph":.bool(true),"documents":.bool(true),"passages":.bool(true),
         "graphParts":.object(["ideaNodes":.bool(true),"themeNodes":.bool(true),"ideaEdges":.bool(true),"authorGraph":.bool(true)]),"layers":.object(["ideas":.bool(true),"documents":.bool(true)])
@@ -117,10 +118,19 @@ final class NativeLiveChatOptions {
         catch { if configurationRequest == identity { issue=error.localizedDescription } }
     }
     func catalogue(provider:String,session:SpaceSession) async {
-        guard let vault=session.vaultId,!catalogLoading else { return };catalogLoading=true;defer { catalogLoading=false }
-        do {
+        guard let vault=session.vaultId else { return }
+        await catalogue(provider:provider) {
             let bridge=try ConnectionClient.companionChat(for:session.connection)
-            let result=try await bridge.operation(vaultId:vault,method:"getModelCatalog",args:[.string(provider)],timeout:30)
+            return try await bridge.operation(vaultId:vault,method:"getModelCatalog",args:[.string(provider)],timeout:30)
+        }
+    }
+    /// Every selection loads its own catalogue; only the latest intent may update the picker.
+    func catalogue(provider:String,request:() async throws -> JSONValue) async {
+        let identity=UUID();catalogueRequest=identity;catalogLoading=true
+        defer { if catalogueRequest == identity { catalogLoading=false } }
+        do {
+            let result=try await request()
+            guard catalogueRequest == identity else { return }
             guard result.objectValue?["status"] == .string("read"),let rows=result.objectValue?["selectableModels"]?.arrayValue else { throw APIError(status:503,code:"mac_model_catalogue_unavailable",message:"El Mac no ha podido consultar este proveedor. Revisa su conexión o sesión en Nodus.") }
             var available=rows.compactMap { value -> JSONValue? in
                 guard let id=value.objectValue?["id"]?.stringValue ?? value.stringValue,!id.isEmpty else { return nil }
@@ -130,7 +140,7 @@ final class NativeLiveChatOptions {
             if let current=effectiveModel,!available.contains(current) { available.insert(current,at:0) }
             models=available;issue=rows.isEmpty ? "El Mac no ha devuelto modelos para este proveedor.":nil
         } catch where error.isCancellation { return }
-        catch { issue=error.localizedDescription }
+        catch { if catalogueRequest == identity { issue=error.localizedDescription } }
     }
     private static func named(_ value:JSONValue?,name:String) -> [Named] {
         (value?.arrayValue ?? []).compactMap { value in
