@@ -26,7 +26,7 @@ struct LiveJobsView: View {
                             Text(deviceMapState(summary.objectValue?["state"]?.stringValue ?? "")).font(.subheadline)
                             if let error = summary.objectValue?["error"]?.stringValue { Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
                         }
-                    }.frame(minHeight: 44)
+                    }.frame(minHeight: 44).accessibilityIdentifier("world-device-job-\(item.id)")
                 }
             }
             ForEach(pending) { request in
@@ -40,7 +40,7 @@ struct LiveJobsView: View {
                         : status(job?.state.rawValue ?? request.state)).font(.subheadline)
                     Text(request.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
                     if request.method == "saveMobileWorldMapImage", request.args.first?.objectValue?["bytes"]?.stringValue != nil {
-                        NavigationLink("Abrir imagen guardada") { WorldMapDeviceResultView(session: session, scope: "", savedRequest: request) }.frame(minHeight: 44)
+                        NavigationLink("Abrir imagen guardada") { WorldMapDeviceResultView(session: session, scope: "", savedRequest: request) }.frame(minHeight: 44).accessibilityIdentifier("world-saved-result-\(request.id)")
                     } else if let checkpoint = request.checkpoint {
                         NavigationLink("Abrir resultado guardado") {
                             CompanionGeneratedResultView(session: session, request: request, checkpoint: checkpoint)

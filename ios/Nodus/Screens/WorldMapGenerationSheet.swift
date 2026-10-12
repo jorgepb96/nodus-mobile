@@ -43,12 +43,13 @@ struct WorldMapGenerationSheet: View {
                         Text("Cambiar estilo").tag("restyle")
                         Text("Ampliar geografía").tag("expand")
                     }
+                    .accessibilityIdentifier("world-generation-mode")
                     if mode == "expand" {
                         Picker("Borde", selection: $edge) { Text("Norte").tag("north"); Text("Sur").tag("south"); Text("Este").tag("east"); Text("Oeste").tag("west") }
                         Picker("Ampliación", selection: $fraction) { Text("25 %").tag(0.25); Text("50 %").tag(0.5); Text("100 %").tag(1.0); Text("200 %").tag(2.0) }
                         Text("La imagen y todas las coordenadas del mapa se ampliarán juntas.").font(.caption)
                     } else { Picker("Estilo", selection: $style) { ForEach(styles, id: \.0) { item in Text(item.1).tag(item.0) } } }
-                    TextField("Indicaciones para esta generación", text: $extra, axis: .vertical).lineLimit(3...8)
+                    TextField("Indicaciones para esta generación", text: $extra, axis: .vertical).lineLimit(3...8).accessibilityIdentifier("world-generation-directions")
                 }.disabled(running)
                 Section {
                     if session.aiExecutionMode == .autonomous {
@@ -62,13 +63,13 @@ struct WorldMapGenerationSheet: View {
                     }
                     if let preview { Image(uiImage: preview).resizable().scaledToFit().accessibilityLabel("Resultado de generación conservado en este dispositivo") }
                     Button(record?.state == "available" ? "Generar de nuevo" : "Generar") { start(explicit: true) }
-                        .frame(minHeight: 44).disabled(running || downloading || extra.utf16.count > 300 || !session.connection.role.canSendChanges)
+                        .accessibilityIdentifier("world-generation-submit").frame(minHeight: 44).disabled(running || downloading || extra.utf16.count > 300 || !session.connection.role.canSendChanges)
                     if running { Button("Cancelar trabajo", role: .destructive) { Task { await cancel() } }.frame(minHeight: 44) }
                     if let status { Text(status).fixedSize(horizontal: false, vertical: true) }
                     if let issue { Text(issue).foregroundStyle(Color.nodusDanger).fixedSize(horizontal: false, vertical: true); Button("Reintentar la misma solicitud") { start(explicit: false) }.frame(minHeight: 44).disabled(running) }
                 }
             }.navigationTitle("Generar mapa")
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { dismiss() }.accessibilityIdentifier("world-generation-close") } }
                 .task { style = initialStyle; await recover() }
 
         }
