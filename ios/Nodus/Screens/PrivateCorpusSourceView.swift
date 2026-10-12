@@ -188,7 +188,10 @@ struct PrivateCorpusSourceView: View {
                 "public_name", "identity_mode", "pronunciation", "biographical_note", "attribution_note", "role", "speaker_label",
                 "field_notes", "scheduled_at", "recorded_at", "language", "location_text", "file_name", "media_kind", "mime_type",
                 "text", "quote_snapshot", "memo", "note", "label", "link_status", "access_level", "embargo_until", "attribution_mode",
-                "restrictions_markdown", "narrator_review_notes", "narrator_review_status", "documented_at"])
+                "restrictions_markdown", "narrator_review_notes", "narrator_review_status", "documented_at"].filter { key in
+                    reference.kind != .person || selectedGroup != "profile" ||
+                        !["preferred_name_basis", "identity_status", "review_status", "privacy_status"].contains(key)
+                })
             if isTestimony {
                 if let start = row.double("t_start") { Text("\(time(start)) – \(time(row.double("t_end") ?? start))").font(.caption).foregroundStyle(.secondary) }
                 if let version = row.int("version_no") { Text("Versión \(version)").font(.caption).foregroundStyle(.secondary) }

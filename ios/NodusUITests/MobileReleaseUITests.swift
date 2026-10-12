@@ -133,7 +133,7 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(sources.isHittable); XCTAssertGreaterThanOrEqual(sources.frame.height, 44); sources.tap()
         let reader = app.descendants(matching: .any)["private-corpus-source-prosop-person"].firstMatch
         XCTAssertTrue(reader.waitForExistence(timeout: 45))
-        let identity = app.staticTexts["provisional"]
+        let identity = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Estado de identidad", "provisional")).firstMatch
         for _ in 0..<10 { if identity.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(identity.exists && identity.isHittable, "The profile must render its actual identity state instead of an empty card.")
         capture(app, "prosopography-documented-identity")
