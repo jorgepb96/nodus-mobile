@@ -338,22 +338,32 @@ struct StudyEvidenceDocument: View {
     }
     private func loadReader() async {
         error = nil
+        var confirmed: JSONValue?
         do {
             if session.connection.desktopPairingId != nil,
                let (vault, pairing, _) = try? privateBridgeConnection(session, domain: .corpus) {
+                guard !pairing.isExpired else { throw DesktopBridgeError.expired }
                 let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault, kind: .studyDocument)
-                let pending = await queue.editorData(noteId: id)
-                let confirmed = await queue.confirmedEditorData(noteId: id)
-                if let editor = pending ?? confirmed {
-                    var fields = row?.columns ?? ["id": .string(id)]
-                    fields["title"] = editor.objectValue?["documentTitle"]
-                    fields["content_markdown"] = editor.objectValue?["contentMarkdown"]
-                    row = Row(fields); return
-                }
+                if let pending = await queue.editorData(noteId: id) { showEditor(pending); return }
+                confirmed = await queue.confirmedEditorData(noteId: id)
             }
             guard let collection = Collections.byPath["study-docs"] else { throw DesktopBridgeError.malformedResponse }
-            row = try await session.client.item(collection, id: id, in: session.connection.spaceId)
-        } catch { self.error = error.localizedDescription }
+            let dossier = try await session.client.dossier(collection, id: id, in: session.connection.spaceId)
+            // An acknowledged mobile edit can be newer than a downloaded
+            // dossier. A live Mac response must still replace it when Desktop
+            // has changed the document since that acknowledgement.
+            if dossier.fromDevice, let confirmed { showEditor(confirmed) }
+            else { row = dossier.primary }
+        } catch {
+            if isPrivateBridgeOffline(error), let confirmed { showEditor(confirmed) }
+            else { self.error = error.localizedDescription }
+        }
+    }
+    private func showEditor(_ editor: JSONValue) {
+        var fields = row?.columns ?? ["id": .string(id)]
+        fields["title"] = editor.objectValue?["documentTitle"]
+        fields["content_markdown"] = editor.objectValue?["contentMarkdown"]
+        row = Row(fields)
     }
 }
 

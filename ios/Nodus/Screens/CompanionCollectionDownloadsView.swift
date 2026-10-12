@@ -251,6 +251,17 @@ struct CompanionCollectionDownloadsView: View {
                     sources.append(.init(domain:.corpus,recordId:"companion:database-source:v1:\(id)",data:data))
                 }
                 if collection.path == "study-docs" {
+                    let editor = try await client.operation(vaultId: vault, method: "getStudyDocEditorData", args: [.string(id)])
+                    guard let primary = CompanionCollectionCopy.primaryRow(collection, detail: detail),
+                          editor.objectValue?["documentTitle"] == primary["title"],
+                          editor.objectValue?["contentMarkdown"] == primary["content_markdown"],
+                          editor.objectValue?["revision"]?.intValue.map({ $0 >= 0 }) == true,
+                          ["versions", "annotations", "outgoingLinks", "backlinks", "customDictionary"].allSatisfy({ editor.objectValue?[$0]?.arrayValue != nil }),
+                          editor.objectValue?["style"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
+                    // Keep the canonical structured document with its selected
+                    // copy, so offline editing does not depend on opening the
+                    // editor once while the Mac is still connected.
+                    try retain("getStudyDocEditorData", [.string(id)], editor)
                     let args: [JSONValue] = [.object(["documentId": .string(id)])]
                     let source = try await client.operation(vaultId: vault, method: "getStudyImprovementOfflineSource", args: args)
                     guard source.objectValue?["version"] == .int(1), source.objectValue?["documentId"] == .string(id),

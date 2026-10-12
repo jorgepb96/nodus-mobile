@@ -262,13 +262,17 @@ final class MobileReleaseUITests: XCTestCase {
             let web = app.descendants(matching: .any)["shared-desktop-studyDocument"].firstMatch.webViews.firstMatch
             let editor = web.textViews["Editor del documento"]
             XCTAssertTrue(editor.waitForExistence(timeout: 45), app.debugDescription)
+            capture(app, "live-study-shared-editor-before-keyboard-reopen-\(reopen)")
             if reopen == 0 {
-                editor.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+                // The iPad editor includes the blank page below the text. Tap
+                // inside the first visible block rather than the page centre.
+                editor.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.08)).tap()
+                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
                 editor.typeText(" \(marker).")
-                XCTAssertTrue((editor.value as? String)?.contains(marker) == true)
-            } else {
-                XCTAssertTrue((editor.value as? String)?.contains(marker) == true, "The structured mobile edit must survive process restart.")
             }
+            let containsEdit = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", marker), object: editor)
+            XCTAssertEqual(XCTWaiter.wait(for: [containsEdit], timeout: 20), .completed,
+                "The complete edit must appear in the structured editor, including after process restart.\n" + app.debugDescription)
             let close = app.buttons["study-editor-close"]
             XCTAssertTrue(close.isHittable); XCTAssertGreaterThanOrEqual(close.frame.height, 44)
             XCTAssertGreaterThanOrEqual(close.frame.width, 44)
