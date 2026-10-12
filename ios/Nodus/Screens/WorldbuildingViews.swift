@@ -820,7 +820,11 @@ private struct WorldEntityDossier: View {
         } else {
             VStack(alignment: .leading, spacing: 5) {
                 Text(LocalizedStringKey(field.label)).textCase(.uppercase).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                Text(display(field, from: source)).font(field.kind == .prose ? .body : .callout).textSelection(.enabled)
+                if field.kind == .prose {
+                    CorpusProse(display(field, from: source), accent: session.accent, session: session)
+                } else {
+                    Text(display(field, from: source)).font(.callout).textSelection(.enabled)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .desktopContentRow(accent: session.accent)

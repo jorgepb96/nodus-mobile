@@ -237,6 +237,48 @@ final class MobileReleaseUITests: XCTestCase {
     func testLiveTeachingCourseDocumentReadsSavedBodyAndReturns() throws {
         try readSavedCourseDocument(kind: "docencia")
     }
+    @MainActor
+    func testLiveArchiveReadsSavedDescriptionTextAndExcerpt() throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_ARCHIVE_DOSSIER"])
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: String])
+        func value(_ key: String) throws -> String { try XCTUnwrap(fixture[key]) }
+        let app = try openExistingVault(destination: "archive", vaultId: value("vaultId"))
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        let row = app.buttons["archive-open-" + (try value("itemId"))]
+        XCTAssertTrue(row.waitForExistence(timeout: 45), app.debugDescription)
+        for _ in 0..<12 { if row.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(row.isHittable); row.tap()
+        func read(_ key: String) throws {
+            let body = String(try value(key).prefix(100))
+            let paragraph = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", body, body)).firstMatch
+            XCTAssertTrue(paragraph.waitForExistence(timeout: 20), "The actual saved archive \(key) must be available.\n" + app.debugDescription)
+            XCTAssertTrue(paragraph.isHittable)
+            capture(app, "live-archive-saved-" + key)
+        }
+        try read("description")
+        for (section, key, spanish) in [("Text", "text", "Texto"), ("Excerpts", "excerpt", "Extractos")] {
+            let menu = app.buttons["archive-detail-menu"]
+            if menu.exists {
+                XCTAssertTrue(menu.isHittable); XCTAssertGreaterThanOrEqual(menu.frame.height, 44)
+                XCTAssertTrue(app.windows.firstMatch.frame.contains(menu.frame)); menu.tap()
+                let option = app.buttons["archive-detail-option-" + section]
+                XCTAssertTrue(option.waitForExistence(timeout: 10), app.debugDescription); option.tap()
+            } else {
+                let option = app.segmentedControls.buttons[spanish]
+                XCTAssertTrue(option.waitForExistence(timeout: 10), app.debugDescription); option.tap()
+            }
+            try read(key)
+        }
+        if app.windows.firstMatch.frame.width < 600 {
+            XCUIDevice.shared.orientation = .landscapeLeft
+            let turned = NSPredicate { _, _ in app.windows.firstMatch.frame.width > app.windows.firstMatch.frame.height }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+            let menu = app.buttons["archive-detail-menu"]
+            XCTAssertTrue(menu.isHittable); XCTAssertTrue(app.windows.firstMatch.frame.contains(menu.frame))
+            try read("excerpt")
+            capture(app, "live-archive-phone-landscape")
+        }
+    }
     @MainActor private func readSavedCourseDocument(kind: String) throws {
         let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_STUDY_DOCUMENTS"])
         let cases = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: [String: String]])

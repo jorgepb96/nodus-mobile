@@ -78,6 +78,8 @@ private struct PrimarySourcesArchiveWorkspace: View {
     @State private var pairing = false
     @State private var detailSection = "Description"
     private let section = "archive"
+    private let detailSections = ["Description", "Files", "Text", "Excerpts", "Analysis", "Audit"]
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var units: [SensitiveRecordsParity.ArchiveUnit] {
         SensitiveRecordsParity.archiveUnits(in: tables["archive_description_units"] ?? [])
@@ -210,10 +212,32 @@ private struct PrimarySourcesArchiveWorkspace: View {
                     title: LocalizedStringKey(item.title), subtitle: "\(item.dateDisplay) · \(item.provenance)",
                     systemImage: "doc.richtext", accent: session.accent
                 )
-                Picker("Archive detail", selection: $detailSection) {
-                    ForEach(["Description", "Files", "Text", "Excerpts", "Analysis", "Audit"], id: \.self) { Text($0) }
+                if compactPresentation {
+                    Menu {
+                        ForEach(detailSections, id: \.self) { value in
+                            Button { detailSection = value } label: {
+                                if detailSection == value { Label(LocalizedStringKey(value), systemImage: "checkmark") }
+                                else { Text(LocalizedStringKey(value)) }
+                            }.accessibilityIdentifier("archive-detail-option-\(value)")
+                        }
+                    } label: {
+                        HStack {
+                            Text(LocalizedStringKey(detailSection))
+                            Spacer(minLength: 12)
+                            Image(systemName: "chevron.up.chevron.down")
+                        }.frame(minHeight: 44)
+                    }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .accessibilityLabel("Archive detail")
+                    .accessibilityValue(LocalizedStringKey(detailSection))
+                    .accessibilityIdentifier("archive-detail-menu")
+                } else {
+                    Picker("Archive detail", selection: $detailSection) {
+                        ForEach(detailSections, id: \.self) { Text(LocalizedStringKey($0)) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("archive-detail-picker")
                 }
-                .pickerStyle(.segmented)
                 detail(item)
             }
             .padding(NodusSpace.page).frame(maxWidth: 1050).frame(maxWidth: .infinity).nodusTopAnchor()

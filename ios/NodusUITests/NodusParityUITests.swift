@@ -735,6 +735,39 @@ final class NodusParityUITests: XCTestCase {
     }
 
     @MainActor
+    func testPhoneRubricDescriptorsStayReadableInBothOrientations() throws {
+        let app = makeApp()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "teachingRubrics"
+        app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "docencia"
+        app.launch()
+        defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        XCTAssertLessThan(app.windows.firstMatch.frame.width, 600, "Run this layout fixture on an iPhone.")
+        let row = app.buttons["teaching-rubric-open-rubric-brief"]
+        XCTAssertTrue(row.waitForExistence(timeout: 20), app.debugDescription); row.tap()
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let turned = NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+            for label in ["Precise, contestable and bounded", "Clear and supportable", "Broad or partly implicit", "Descriptive only", "Triangulated with provenance", "Relevant and attributed", "Partial support", "Unsupported"] {
+                let descriptor = app.staticTexts[label].firstMatch
+                XCTAssertTrue(descriptor.waitForExistence(timeout: 5), app.debugDescription)
+                for _ in 0..<12 {
+                    if descriptor.isHittable { break }
+                    if descriptor.frame.minY < 80 { app.swipeDown() } else { app.swipeUp() }
+                }
+                XCTAssertTrue(descriptor.isHittable)
+                XCTAssertGreaterThanOrEqual(descriptor.frame.minX, 0)
+                XCTAssertLessThanOrEqual(descriptor.frame.maxX, app.windows.firstMatch.frame.maxX)
+            }
+            attachScreenshot(named: orientation == .portrait ? "phone-rubric-vertical-cards" : "phone-rubric-landscape-cards")
+        }
+    }
+
+    @MainActor
     func testSensitiveRecordsStayPrivateAndKeepDesktopDossierTabs() throws {
         let archive = makeApp()
         archive.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"

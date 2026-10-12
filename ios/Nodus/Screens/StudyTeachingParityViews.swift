@@ -388,10 +388,11 @@ private struct TeachingRubricsWorkspace: View {
     @State private var issue: String?
     private var rubrics: [StudyTeachingParity.Rubric] { StudyTeachingParity.rubrics(in: tables["teaching_rubrics"] ?? []) }
     private var active: StudyTeachingParity.Rubric? { rubrics.first { $0.id == selected } }
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     var body: some View {
         Group {
-            if sizeClass == .compact {
+            if compactPresentation {
                 if let active { rubric(active, showsBackButton: true) } else { rubricList }
             } else {
                 HStack(spacing: 0) { rubricList.frame(width: 260); Divider(); if let active { rubric(active) } else { emptyDetail } }
@@ -405,7 +406,7 @@ private struct TeachingRubricsWorkspace: View {
     private var rubricList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                if sizeClass == .compact { DesktopPageHeader(title: "Rubrics", subtitle: "Criteria, levels and descriptors", systemImage: "tablecells", accent: session.accent) }
+                if compactPresentation { DesktopPageHeader(title: "Rubrics", subtitle: "Criteria, levels and descriptors", systemImage: "tablecells", accent: session.accent) }
                 else { Text("RUBRICS").font(.caption2.bold()).foregroundStyle(.secondary) }
                 if loading { ProgressView("Loading rubrics…").frame(maxWidth: .infinity).padding(.vertical, 32) }
                 if let issue { NodusNotice(tone: .blocked, title: "Could not load rubrics", message: LocalizedStringKey(issue)) }
@@ -413,22 +414,37 @@ private struct TeachingRubricsWorkspace: View {
                     Button { selected = rubric.id } label: {
                         HStack { Text(rubric.title).font(.callout); Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary) }
                             .desktopContentRow(accent: session.accent)
-                    }.buttonStyle(NodusCardButtonStyle())
+                    }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("teaching-rubric-open-\(rubric.id)")
                 }
                 if rubrics.isEmpty, !loading, issue == nil { ContentUnavailableView("No rubrics", systemImage: "tablecells") }
-            }.padding(sizeClass == .compact ? NodusSpace.page : 12).nodusTopAnchor()
+            }.padding(compactPresentation ? NodusSpace.page : 12).nodusTopAnchor()
         }.background(Color(uiColor: .secondarySystemBackground).opacity(0.48))
     }
 
     private var emptyDetail: some View { ContentUnavailableView("Select a rubric", systemImage: "tablecells", description: Text("Choose a rubric to inspect its criteria.")) }
 
     private func rubric(_ rubric: StudyTeachingParity.Rubric, showsBackButton: Bool = false) -> some View {
-        ScrollView([.horizontal, .vertical]) {
+        ScrollView(compactPresentation ? .vertical : [.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 12) {
                 if showsBackButton { Button { selected = nil } label: { Label("Rubrics", systemImage: "chevron.left") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent)) }
                 DesktopPageHeader(title: LocalizedStringKey(rubric.title), subtitle: "\(rubric.criteria.count) criteria · scale \(String(format: "%.0f", rubric.scaleMax))", systemImage: "tablecells", accent: session.accent)
                 Text(rubric.description).font(.callout).foregroundStyle(.secondary)
-                VStack(spacing: 0) {
+                if compactPresentation {
+                    ForEach(rubric.criteria) { criterion in
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text(criterion.label).font(.headline).textSelection(.enabled)
+                            Text("Weight \(criterion.weight, specifier: "%.0f")").font(.caption).foregroundStyle(.secondary)
+                            ForEach(rubric.levels) { level in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(level.label).font(.subheadline.weight(.semibold)).foregroundStyle(session.accent.nodusReadable)
+                                    Text(criterion.descriptors[level.id] ?? "—").font(.body).textSelection(.enabled)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                    .accessibilityIdentifier("teaching-rubric-descriptor-\(criterion.id)-\(level.id)")
+                            }
+                        }.desktopContentRow(accent: session.accent)
+                    }
+                } else {
+                  VStack(spacing: 0) {
                     HStack(spacing: 0) { Text("Criterion").frame(width: 200, alignment: .leading); ForEach(rubric.levels) { Text($0.label).frame(width: 190, alignment: .leading) } }
                         .font(.caption.bold()).padding(9).background(Color(uiColor: .secondarySystemBackground))
                     ForEach(rubric.criteria) { criterion in
@@ -437,12 +453,13 @@ private struct TeachingRubricsWorkspace: View {
                             ForEach(rubric.levels) { level in Text(criterion.descriptors[level.id] ?? "—").font(.caption).frame(width: 190, alignment: .leading) }
                         }.padding(9).overlay(alignment: .bottom) { Divider() }
                     }
+                  }
                 }
             }.padding(NodusSpace.page).nodusTopAnchor()
         }
     }
 
-    private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil; if sizeClass != .compact { selected = selected ?? rubrics.first?.id } } catch { tables = [:]; issue = error.localizedDescription } }
+    private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil; if !compactPresentation { selected = selected ?? rubrics.first?.id } } catch { tables = [:]; issue = error.localizedDescription } }
 }
 
 private struct DesktopSectionHeader: View {

@@ -23,6 +23,7 @@ parser.add_argument("--person-dossier", action="store_true")
 parser.add_argument("--testimonies", action="store_true")
 parser.add_argument("--world-dossiers", action="store_true")
 parser.add_argument("--study-documents", action="store_true")
+parser.add_argument("--archive-dossier", action="store_true")
 parser.add_argument("--text-size", choices=["standard", "accessibility3"])
 parser.add_argument("--mac-unavailable", action="store_true")
 parser.add_argument("--research-marker")
@@ -198,6 +199,18 @@ if args.world_dossiers:
         if record is None:
             raise SystemExit("Actual connected scenes, places and character profiles are required")
         values["NODUS_ACCEPTANCE_WORLD_DOSSIERS"] = json.dumps({"vaultId":vault["id"], **dict(record)}, ensure_ascii=False)
+
+if args.archive_dossier:
+    registry = json.loads((args.lab / "vaults.json").read_text())
+    vault = next(v for v in registry["vaults"] if v["type"] == "primary_sources")
+    database = Path(vault["path"]).resolve()
+    if not database.is_relative_to(args.lab.resolve()):
+        raise SystemExit("Archive expectations must come from the copied vault")
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        record = connection.execute("SELECT i.item_id,i.title,i.description,t.content,e.quoted_text FROM archive_items i JOIN archive_text_versions t ON t.item_id=i.item_id JOIN archive_excerpts e ON e.item_id=i.item_id WHERE length(i.description)>40 AND length(t.content)>40 AND length(e.quoted_text)>40 ORDER BY i.item_id,t.text_version_id,e.excerpt_id LIMIT 1").fetchone()
+        if record is None:
+            raise SystemExit("A saved archive item, text version and excerpt are required")
+        values["NODUS_ACCEPTANCE_ARCHIVE_DOSSIER"] = json.dumps(dict(vaultId=vault["id"], itemId=record[0], title=record[1], description=record[2], text=record[3], excerpt=record[4]), ensure_ascii=False)
 
 if args.study_documents:
     registry = json.loads((args.lab / "vaults.json").read_text())
