@@ -75,6 +75,60 @@ struct CompanionDocumentOutboxTests {
         return .object(response)
     }
 
+    @Test("Scriptor annotations use the workspace receipt lane and preserve full note content through lost ACK")
+    func workspaceAnnotationReplay() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        let baseline = Self.editor()
+        try await queue.seed(noteId: "note-a", editorData: baseline)
+        let patch = JSONValue.object(["from": .int(0), "to": .int(8), "selectedText": .string("Original"), "comment": .string("Scriptor comment"), "locked": .bool(true)])
+        await #expect(throws: DesktopBridgeError.self) { try await queue.enqueueStudyAnnotation(documentId: "note-a", method: "createStudyAnnotation", patch: patch) }
+        let created = try await queue.enqueueWorkspaceAnnotation(noteId: "note-a", method: "createWorkspaceAnnotation", patch: patch)
+        let annotationId = try #require(created.objectValue?["id"]?.stringValue)
+        #expect(await queue.workspaceAnnotationDocumentId(annotationId: annotationId) == "note-a")
+        let sent = Requests()
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in await sent.append(request); throw URLError(.networkConnectionLost) } }
+        let reopened = try await fixture.open(), server = AnnotationServer(baseline: baseline)
+        try await reopened.synchronize { request in await sent.append(request); return await server.apply(request) }
+        let packets = await sent.all()
+        #expect(packets.count == 2); #expect(packets[0] == packets[1])
+        #expect(packets[0].command?.objectValue?["action"] == .string("annotationCreate"))
+        #expect(await reopened.confirmedEditorData(noteId: "note-a")?.objectValue?["nativeDocument"] == baseline.objectValue?["nativeDocument"])
+        #expect(await reopened.confirmedEditorData(noteId: "note-a")?.objectValue?["revision"] == .int(7))
+        _ = try await reopened.enqueueWorkspaceAnnotation(noteId: "note-a", method: "updateWorkspaceAnnotation", annotationId: annotationId, patch: .object(["comment": .string("Edited locked note comment"), "resolved": .bool(true)]))
+        try await reopened.synchronize { await server.apply($0) }
+        #expect(await reopened.confirmedEditorData(noteId: "note-a")?.objectValue?["annotations"]?.arrayValue?.first?.objectValue?["locked"] == .bool(true))
+        _ = try await reopened.enqueueWorkspaceAnnotation(noteId: "note-a", method: "deleteWorkspaceAnnotation", annotationId: annotationId)
+        try await reopened.synchronize { await server.apply($0) }
+        #expect(await reopened.confirmedEditorData(noteId: "note-a")?.objectValue?["annotations"]?.arrayValue?.isEmpty == true)
+    }
+    @Test("a downloaded Scriptor version restores native structure and academic metadata as a durable save")
+    func workspaceOfflineVersionRestore() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        let native = JSONValue.array([.object(["id": .string("old-equation"), "type": .string("paragraph"), "content": .array([.object(["type": .string("text"), "text": .string("Original $x^2$"), "styles": .object(["italic": .bool(true)])])])])])
+        let academic = JSONValue.object(["formatVersion": .int(1), "notes": .object(["exact-note": .object(["id": .string("exact-note"), "content": .string("Original citation")])])])
+        let version = JSONValue.object(["id": .string("version-a"), "documentId": .string("note-a"), "title": .string("Old title"), "contentMarkdown": .string("Original $x^2$"), "nativeDocument": native, "schemaVersion": .int(2), "academicMetadata": academic, "style": .object(["fontFamily": .string("serif")])])
+        var baseline = Self.editor().objectValue!; baseline["versions"] = .array([version])
+        try await queue.seed(noteId: "note-a", editorData: .object(baseline))
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "Pending draft"))
+        let restored = try await queue.restoreWorkspaceVersion(noteId: "note-a", versionId: "version-a")
+        #expect(restored.objectValue?["editorRevision"] == .int(-2))
+        let local = try #require(await queue.editorData(noteId: "note-a"))
+        #expect(local.objectValue?["nativeDocument"] == native); #expect(local.objectValue?["academicMetadata"] == academic)
+        #expect(local.objectValue?["documentTitle"] == .string("Old title"))
+        let reopened = try await fixture.open(), sent = Requests()
+        try await reopened.synchronize { request in
+            await sent.append(request)
+            #expect(request.command == nil); #expect(request.input.objectValue?["reason"] == .string("restore"))
+            #expect(request.input.objectValue?["expectedRevision"] == .int(7))
+            #expect(request.input.objectValue?["nativeDocument"] == native); #expect(request.input.objectValue?["academicMetadata"] == academic)
+            var committed = local.objectValue!; committed["revision"] = .int(8)
+            return .object(["id": .string(request.id), "editorData": .object(committed)])
+        }
+        #expect(await sent.all().count == 1)
+        await #expect(throws: APIError.self) { try await reopened.restoreWorkspaceVersion(noteId: "note-a", versionId: "not-downloaded") }
+    }
     @Test("one hundred same-source comments share one durable full source snapshot")
     func annotationSnapshotDeduplication() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }

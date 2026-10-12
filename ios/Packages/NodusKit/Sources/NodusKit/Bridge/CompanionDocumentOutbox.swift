@@ -109,7 +109,7 @@ public actor CompanionDocumentOutbox {
             records = state.records; authored = state.authored; annotationCommands = state.annotationCommands ?? [:]; annotationSources = state.annotationSources ?? [:]; studyCommands = state.studyCommands ?? [:]; knownFolders = state.folders ?? [:]
             for (key, command) in annotationCommands {
                 let editor = command.sourceKey.flatMap { state.annotationSources?[$0] } ?? command.sourceEditor
-                guard kind == .studyDocument, key == command.id, UUID(uuidString: key) != nil,
+                guard key == command.id, UUID(uuidString: key) != nil,
                       !command.documentId.isEmpty, command.documentId.utf8.count <= 128, command.sourceRevision >= 0,
                       command.sourceGeneration.map({ $0 > 0 }) ?? true,
                       editor?.objectValue?["annotations"]?.arrayValue != nil,
@@ -710,11 +710,13 @@ public actor CompanionDocumentOutbox {
     }
     /// Keeps a stable create identity and receipt before the editor reports success.
     public func enqueueStudyAnnotation(documentId: String, method: String, annotationId: String? = nil, patch: JSONValue? = nil) async throws -> JSONValue {
-        guard kind == .studyDocument, let baseline = records[documentId]?.baseline ?? baselines[documentId] ?? authored[documentId]?.editorData ?? annotationCommands.values.first(where: { $0.documentId == documentId }).flatMap({ annotationSource($0) }),
+        guard let baseline = records[documentId]?.baseline ?? baselines[documentId] ?? authored[documentId]?.editorData ?? annotationCommands.values.first(where: { $0.documentId == documentId }).flatMap({ annotationSource($0) }),
               let revision = baseline.objectValue?["revision"].flatMap(CompanionStudyAnnotation.exactInteger),
               baseline.objectValue?["annotations"]?.arrayValue != nil else { throw APIError(status: 409, code: "study_annotation_source_missing", message: "Descarga el documento completo antes de editar sus comentarios sin conexión.") }
         guard !studyCommands.values.contains(where: { $0.sourceId == documentId || $0.targetId == documentId }) else { throw APIError(status: 409, code: "study_command_pending", message: "Espera a confirmar la operación pendiente de este documento.") }
-        let actions = ["createStudyAnnotation": "annotationCreate", "updateStudyAnnotation": "annotationUpdate", "deleteStudyAnnotation": "annotationDelete"]
+        let actions = kind == .studyDocument
+            ? ["createStudyAnnotation": "annotationCreate", "updateStudyAnnotation": "annotationUpdate", "deleteStudyAnnotation": "annotationDelete"]
+            : ["createWorkspaceAnnotation": "annotationCreate", "updateWorkspaceAnnotation": "annotationUpdate", "deleteWorkspaceAnnotation": "annotationDelete"]
         guard let action = actions[method] else { throw DesktopBridgeError.malformedResponse }
         let target = annotationId ?? UUID().uuidString.lowercased()
         let predecessor = annotationCommands.values.filter { $0.command.objectValue?["annotationId"] == .string(target) }.sorted { $0.createdAt < $1.createdAt }.last
@@ -741,6 +743,28 @@ public actor CompanionDocumentOutbox {
         annotationCommands[id] = item
         do { try await persist() } catch { annotationCommands[id] = nil; throw error }
         return projected ?? .null
+    }
+    public func enqueueWorkspaceAnnotation(noteId: String, method: String, annotationId: String? = nil, patch: JSONValue? = nil) async throws -> JSONValue {
+        guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
+        return try await enqueueStudyAnnotation(documentId: noteId, method: method, annotationId: annotationId, patch: patch)
+    }
+    public func workspaceAnnotationDocumentId(annotationId: String) -> String? {
+        guard kind == .workspaceNote else { return nil }
+        return studyAnnotationDocumentId(annotationId: annotationId)
+    }
+    /// A downloaded canonical version becomes an ordinary durable native save;
+    /// no live restore RPC or Mac version identity is invented.
+    public func restoreWorkspaceVersion(noteId: String, versionId: String) async throws -> JSONValue {
+        guard kind == .workspaceNote,
+              let current = editorData(noteId: noteId) ?? baselines[noteId] ?? authored[noteId]?.editorData,
+              let version = current.objectValue?["versions"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(versionId) })?.objectValue,
+              let title = version["title"]?.stringValue, let content = version["contentMarkdown"]?.stringValue,
+              let revision = current.objectValue?["revision"] else { throw APIError(status: 409, code: "workspace_version_not_downloaded", message: "Esta versión no está incluida en la copia del dispositivo.") }
+        var input: [String: JSONValue] = ["title": .string(title), "contentMarkdown": .string(content), "expectedRevision": revision, "reason": .string("restore")]
+        for key in ["nativeDocument", "schemaVersion", "academicMetadata", "style"] {
+            if let value = version[key], key != "nativeDocument" || value != .null { input[key] = value }
+        }
+        return try await save(noteId: noteId, input: .object(input))
     }
     private func annotationSource(_ item: AnnotationCommand) -> JSONValue? { item.sourceKey.flatMap { annotationSources[$0] } ?? item.sourceEditor }
     public func studyAnnotationDocumentId(annotationId: String) -> String? {
