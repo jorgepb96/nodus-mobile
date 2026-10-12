@@ -147,7 +147,10 @@ public struct PrivateCorpusSource: Codable, Sendable {
     private static func isRevision(_ value: String) -> Bool {
         value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
     }
-    public var title: String { root.text("title") ?? root.text("display_name") ?? root.text("literal_name") ?? root.text("summary") ?? root.text("file_name") ?? root.text("short_id") ?? id }
+    public var title: String {
+        if kind == .participant, let name = root.text("public_name"), !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return name }
+        return root.text("title") ?? root.text("display_name") ?? root.text("literal_name") ?? root.text("summary") ?? root.text("file_name") ?? root.text("short_id") ?? id
+    }
 }
 
 /// A complete, explicitly chosen dossier, kept in the source's encrypted grant.

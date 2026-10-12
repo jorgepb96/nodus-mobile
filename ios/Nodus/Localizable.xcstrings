@@ -27476,6 +27476,23 @@
           }
         }
       }
+    },
+    "Working identity": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working identity"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Identidad de trabajo"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

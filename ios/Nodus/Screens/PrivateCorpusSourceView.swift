@@ -106,6 +106,10 @@ struct PrivateCorpusSourceView: View {
     }
 
     @ViewBuilder private func rootDetails(_ row: Row) -> some View {
+        if reference.kind == .participant, let working = row.text("display_name"),
+           let publicName = row.text("public_name"), !publicName.isEmpty, working != publicName {
+            LabeledContent("Working identity", value: working).textSelection(.enabled)
+        }
         fields(row, keys: ["date_display", "citation", "repository", "reference_code", "description", "coverage_notes",
             "reliability_notes", "rights_notes", "summary", "context", "role_or_title", "birth_date", "death_date", "language", "notes", "biography",
             "abstract", "objective", "context_markdown", "guide_markdown", "memo_markdown", "workflow_status", "conducted_at", "location_text", "repository_name", "accession_id"])

@@ -104,4 +104,21 @@ struct PrivateCorpusSourceTests {
         #expect(throws: (any Error).self) { try page(items: 20).validate(offset: 100) }
         #expect(throws: (any Error).self) { try page(items: 21).validate(offset: 0) }
     }
+    @Test("participant titles prefer public attribution while retaining the authorized working identity")
+    func participantPublicTitle() throws {
+        let target = try PrivateCorpusReference(kind: .participant, id: "participant")
+        func dossier(_ name: String) throws -> PrivateCorpusSource {
+            let json: JSONValue = .object(["version": .int(1), "kind": .string(target.kind.rawValue),
+                "id": .string(target.id), "revision": .string(String(repeating: "a", count: 64)),
+                "root": .object(["person_id": .string(target.id), "display_name": .string("Identidad de trabajo"), "public_name": .string(name)]),
+                "groups": .array(target.kind.groups.map { .object(["key": .string($0), "title": .string($0), "total": .int(0), "revision": .string(String(repeating: "b", count: 64))]) })])
+            let value = try JSONDecoder.nodus.decode(PrivateCorpusSource.self, from: JSONEncoder.nodus.encode(json))
+            try value.validate(reference: target)
+            return value
+        }
+        let publicIdentity = try dossier("Seudónimo público")
+        #expect(publicIdentity.title == "Seudónimo público")
+        #expect(publicIdentity.root.text("display_name") == "Identidad de trabajo")
+        #expect(try dossier("").title == "Identidad de trabajo")
+    }
 }

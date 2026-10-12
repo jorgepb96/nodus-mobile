@@ -171,7 +171,7 @@ if args.testimonies:
     with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
         connection.row_factory = sqlite3.Row
         interview = connection.execute("SELECT id,title,objective FROM testimony_interviews WHERE archived_at IS NULL AND deleted_at IS NULL AND length(objective)>40 ORDER BY id LIMIT 1").fetchone()
-        participant = connection.execute("SELECT person_id,public_name,biographical_note FROM testimony_participant_profiles WHERE length(biographical_note)>40 ORDER BY person_id LIMIT 1").fetchone()
+        participant = connection.execute("SELECT p.person_id,p.public_name,p.biographical_note FROM testimony_participant_profiles p JOIN persons r ON r.person_id=p.person_id WHERE length(p.biographical_note)>40 AND length(p.public_name)>0 AND p.public_name<>r.display_name ORDER BY p.person_id LIMIT 1").fetchone()
         contrast = connection.execute("SELECT id,title,memo_markdown FROM testimony_contrasts WHERE length(memo_markdown)>40 ORDER BY id LIMIT 1").fetchone()
         if interview is None or participant is None or contrast is None:
             raise SystemExit("Actual interviews, participant profiles and contrasts are required")
