@@ -4,7 +4,7 @@ import Foundation
 /// contacts and media bytes are deliberately outside this context projection.
 public struct PrivateCorpusSourceMaterial: Sendable {
     private static let routes: [PrivateCorpusReference.Kind: String] = [
-        .recording: "study/recording", .person: "prosop/person", .source: "prosop/source",
+        .archive: "primary-source", .recording: "study/recording", .person: "prosop/person", .source: "prosop/source",
         .factoid: "prosop/factoid", .mention: "prosop/mention", .participant: "testimonios/participant",
         .interview: "testimonios/interview", .testimonyTranscript: "testimonios/transcript", .contrast: "testimonios/contrast",
     ]
@@ -57,6 +57,16 @@ public struct PrivateCorpusSourceMaterial: Sendable {
             result.append(try Self(row: Row(fields)).row)
         }
         switch kind {
+        case .archive:
+            for key in ["profile", "excerpts", "textVersions", "files"] {
+                guard (copy.rows[key] ?? []).allSatisfy({ $0.string("item_id") == id }) else { throw DesktopBridgeError.malformedResponse }
+            }
+            let versions = Set((copy.rows["textVersions"] ?? []).compactMap { $0.string("text_version_id") })
+            guard (copy.rows["segments"] ?? []).allSatisfy({ versions.contains($0.string("text_version_id") ?? "") }),
+                  (copy.rows["evidence"] ?? []).allSatisfy({ $0.string("source_kind") == "archive" && $0.string("nodus_id") == id }) else { throw DesktopBridgeError.malformedResponse }
+            let literal = [text(root,["extracted_text"]), records("textVersions",["content","normalized_text"]),
+                (copy.rows["segments"] ?? []).map { text($0,["content","text"]) }.filter { !$0.isEmpty }.joined(separator: "\n\n"), records("excerpts",["locator_display","quoted_text"])].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            try add(kind,id,[text(root,["title","description"]),literal].filter { !$0.isEmpty }.joined(separator: "\n\n"),record: !literal.isEmpty)
         case .recording, .interview, .testimonyTranscript:
             if kind != .testimonyTranscript { try add(kind,id,text(root,kind == .interview ? ["title","objective","context_markdown","abstract"] : ["title","session_label"]),record: false) }
             let transcripts = kind == .testimonyTranscript ? [root] : copy.rows["transcripts"] ?? []

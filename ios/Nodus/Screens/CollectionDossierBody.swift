@@ -10,6 +10,10 @@ struct CollectionDossierBody: View {
     var displayPrimary = true
     var showConnectionState = true
     var onOpenRelated: ((CollectionDescriptor, Row) -> Void)?
+    var downloadedOnly = false
+    @Environment(\.downloadedReaderOnly) private var inheritedDownloadedOnly
+    private var selectedReaderOnly: Bool { downloadedOnly || inheritedDownloadedOnly }
+    @State private var selectedPrivateSource: PrivateCorpusReference?
 
     var body: some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
@@ -18,10 +22,10 @@ struct CollectionDossierBody: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if displayPrimary {
-                DossierValueView(session: session, value: .object(dossier.primary.columns), field: "", linkedCollection: nil, onOpenRelated: onOpenRelated)
+                DossierValueView(session: session, value: .object(dossier.primary.columns), field: "", linkedCollection: nil, onOpenRelated: onOpenRelated, onCitation: selectedReaderOnly ? openSelectedCitation : nil)
             }
             if session.vaultType == .genealogy {
-                GenealogyDossierContextView(session: session, dossier: dossier, onOpenRelated: onOpenRelated)
+                GenealogyDossierContextView(session: session, dossier: dossier, onOpenRelated: onOpenRelated, downloadedOnly: selectedReaderOnly)
             }
             let contextual = session.vaultType == .genealogy
                 ? Set(GenealogyDossierContext.sections(dossier).map(\.id)).union(["evidenceAccess"]) : []
@@ -35,10 +39,25 @@ struct CollectionDossierBody: View {
                         Text("Guía de orientación del documento. Las citas se consultan en sus evidencias y pasajes.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    DossierValueView(session: session, value: dossier.sections[key]!, field: key, linkedCollection: dossier.linkedCollection(for: key), onOpenRelated: onOpenRelated)
+                    DossierValueView(session: session, value: dossier.sections[key]!, field: key, linkedCollection: dossier.linkedCollection(for: key), onOpenRelated: onOpenRelated, onCitation: selectedReaderOnly ? openSelectedCitation : nil)
                 }
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
+        .environment(\.downloadedReaderOnly, selectedReaderOnly)
+        .nodusSheet(isPresented: Binding(get: { selectedPrivateSource != nil }, set: { if !$0 { selectedPrivateSource = nil } })) {
+            if let selectedPrivateSource { PrivateCorpusSourceSheet(session: session, reference: selectedPrivateSource, downloadedOnly: true) }
+        }
+    }
+
+    private func openSelectedCitation(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "nodus" else { return false }
+        if let reference = PrivateCorpusReference(url) { selectedPrivateSource = reference; return true }
+        if let reference = CorpusReference(url), let collection = reference.collection, let onOpenRelated {
+            onOpenRelated(collection, Row([collection.idField: .string(reference.recordId)])); return true
+        }
+        // With no catalogue callback, the native reader inherits selected-only
+        // scope and can resolve another explicit copy or its real missing-copy error.
+        return false
     }
 
     static func label(_ key: String) -> String {
@@ -65,6 +84,7 @@ struct DossierValueView: View {
     let field: String
     let linkedCollection: CollectionDescriptor?
     var onOpenRelated: ((CollectionDescriptor, Row) -> Void)?
+    var onCitation: ((URL) -> Bool)? = nil
     @State private var visibleCount = 30
 
     var body: some View { content }
@@ -110,7 +130,7 @@ struct DossierValueView: View {
                 return child(parsed, field: String(field.dropLast(5)), linked: nil)
             }
             if ["content_markdown", "contentMarkdown", "markdown", "body_markdown", "definition_markdown", "normalized_text", "quote", "text", "body", "answer", "explanation"].contains(field) {
-                return AnyView(CorpusProse(text, accent: session.accent, session: session))
+                return AnyView(CorpusProse(text, accent: session.accent, session: session, onCitation: onCitation))
             }
             return AnyView(Text(text).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true))
         case .bool(let value):
@@ -121,7 +141,7 @@ struct DossierValueView: View {
     }
 
     private func child(_ value: JSONValue, field: String, linked: CollectionDescriptor?) -> AnyView {
-        AnyView(DossierValueView(session: session, value: value, field: field, linkedCollection: linked, onOpenRelated: onOpenRelated))
+        AnyView(DossierValueView(session: session, value: value, field: field, linkedCollection: linked, onOpenRelated: onOpenRelated, onCitation: onCitation))
     }
     private static func technical(_ key: String) -> Bool {
         key == "id" || key.hasSuffix("_id") || key.hasSuffix("Id") || key.hasSuffix("_hash") ||

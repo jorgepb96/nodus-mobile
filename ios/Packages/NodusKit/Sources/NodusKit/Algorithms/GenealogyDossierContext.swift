@@ -18,6 +18,17 @@ public enum GenealogyDossierContext {
 
     /// Only explicit bibliography pointers use the public Works reader. Archive
     /// source pointers cannot be relabelled as works or fabricate an archive row.
+    public static func archiveSources(_ dossier: CollectionDossier) -> [PrivateCorpusReference] {
+        var seen = Set<String>()
+        return (dossier.sections["evidence"]?.arrayValue ?? []).compactMap { value in
+            guard let object = value.objectValue, object["source_kind"] == .string("archive"),
+                  let id = object["nodus_id"]?.stringValue else { return nil }
+            let excerpt = object["excerpt_id"]?.stringValue
+            guard seen.insert("\(id):\(excerpt ?? "")").inserted else { return nil }
+            return try? PrivateCorpusReference(kind: .archive, id: id, annotationId: excerpt)
+        }
+    }
+
     public static func bibliographySources(_ dossier: CollectionDossier) -> [Entry] {
         (dossier.sections["evidence"]?.arrayValue ?? []).enumerated().compactMap { offset, value in
             guard let object = value.objectValue, object["source_kind"] == .string("work"),

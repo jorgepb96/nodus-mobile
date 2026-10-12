@@ -9,6 +9,8 @@ struct GenealogyDossierContextView: View {
     let session: SpaceSession
     let dossier: CollectionDossier
     var onOpenRelated: ((CollectionDescriptor, Row) -> Void)?
+    var downloadedOnly = false
+    @State private var archiveSource: PrivateCorpusReference?
     @State private var limits: [String: Int] = [:]
 
     var body: some View {
@@ -17,6 +19,12 @@ struct GenealogyDossierContextView: View {
                 NodusNotice(tone: .caution, title: "Evidence requires permission",
                     message: "Link your workspace again from your Mac to consult genealogy evidence.")
                     .accessibilityIdentifier("genealogy-evidence-permission")
+            }
+            let sources = GenealogyDossierContext.archiveSources(dossier)
+            ForEach(sources.indices, id: \.self) { index in
+                let reference = sources[index]
+                Button { archiveSource = reference } label: { Label("Open archival source", systemImage: "doc.richtext").frame(minHeight: 44) }
+                    .accessibilityIdentifier("genealogy-evidence-archive-\(reference.id)-\(reference.annotationId ?? "root")")
             }
             ForEach(GenealogyDossierContext.bibliographySources(dossier)) { source in
                 if let target = source.target, let collection = Collections[source.collectionPath] {
@@ -52,6 +60,9 @@ struct GenealogyDossierContextView: View {
                 }
                 .accessibilityIdentifier("genealogy-context-\(section.id)")
             }
+        }
+        .nodusSheet(isPresented: Binding(get: { archiveSource != nil }, set: { if !$0 { archiveSource = nil } })) {
+            if let archiveSource { PrivateCorpusSourceSheet(session: session, reference: archiveSource, downloadedOnly: downloadedOnly) }
         }
     }
     private func title(_ key: String) -> LocalizedStringKey {

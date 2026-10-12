@@ -32,6 +32,8 @@ struct PrivateCorpusSourceView: View {
     let session: SpaceSession
     let reference: PrivateCorpusReference
     var downloadedOnly = false
+    @Environment(\.downloadedReaderOnly) private var inheritedDownloadedOnly
+    private var selectedReaderOnly: Bool { downloadedOnly || inheritedDownloadedOnly }
     @State private var copy: CompanionPrivateSourceCopy?
     @State private var offline = false
     @State private var issue: String?
@@ -55,6 +57,7 @@ struct PrivateCorpusSourceView: View {
     private var isTestimony: Bool { reference.kind.domain == .testimonies }
     private var subtitle: LocalizedStringKey {
         switch reference.kind {
+        case .archive: "Fuente de archivo y evidencias"
         case .recording: "Grabación y transcripciones"
         case .participant: "Participante de testimonios"
         case .interview: "Entrevista y sesiones"
@@ -74,9 +77,20 @@ struct PrivateCorpusSourceView: View {
                     } else if let copy {
                         DesktopPageHeader(title: LocalizedStringKey(copy.source.title),
                             subtitle: subtitle,
-                            systemImage: reference.kind == .recording ? "waveform" : "person.text.rectangle", accent: session.accent)
+                            systemImage: reference.kind == .recording ? "waveform" : reference.kind == .archive ? "doc.richtext" : "person.text.rectangle", accent: session.accent)
                         if offline { Label("Copia descargada · los cambios del Mac se consultarán al reconectar", systemImage: "wifi.slash").font(.caption).foregroundStyle(.secondary) }
                         rootDetails(copy.source.root)
+                        if reference.kind == .archive {
+                            if copy.source.root.int("original_available") == 1 {
+                                PrivateFileButton(session: session, kind: .archiveItem, id: reference.id, downloadedOnly: selectedReaderOnly)
+                            } else if (copy.rows["files"] ?? []).isEmpty { Text("El original no está disponible en el Mac").font(.caption).foregroundStyle(.secondary) }
+                            ForEach(["kind", "file_name", "mime_type"], id: \.self) { key in
+                                if let value = copy.source.root.text(key) { LabeledContent(LocalizedStringKey(FieldNames.label(for: key)), value: value).textSelection(.enabled) }
+                            }
+                            if let bytes = copy.source.root.int("bytes") { LabeledContent("Size", value: ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) }
+                            if let text = copy.source.root.text("extracted_text") { archiveProse(text) }
+                            if selectedReaderOnly { Text("Los originales se descargan por separado. Solo se abren los archivos conservados en este dispositivo.").font(.caption).foregroundStyle(.secondary) }
+                        }
                         HStack {
                             Menu {
                                 Button("Conservar 7 días") { save(days: 7) }
@@ -88,7 +102,7 @@ struct PrivateCorpusSourceView: View {
                             Spacer(minLength: 0)
                         }
                         if reference.kind == .recording {
-                            PrivateFileButton(session: session, kind: .studyRecording, id: reference.id, initialTimestamp: reference.timestamp, downloadedOnly: downloadedOnly)
+                            PrivateFileButton(session: session, kind: .studyRecording, id: reference.id, initialTimestamp: reference.timestamp, downloadedOnly: selectedReaderOnly)
                             recordingReader
                         } else {
                             Menu {
@@ -105,7 +119,10 @@ struct PrivateCorpusSourceView: View {
                             } else {
                                 let rows = copy.rows[selectedGroup] ?? []
                                 if rows.isEmpty { Text("Esta sección no contiene registros.").foregroundStyle(.secondary) }
-                                ForEach(rows, id: \.columns) { row in relatedRecord(row).id(row.string("id") ?? row.string("annotation_id") ?? "row:\(row.columns.hashValue)") }
+                                ForEach(rows, id: \.columns) { row in
+                                    if reference.kind == .archive { archiveRecord(row).id(row.string("excerpt_id") ?? row.string("segment_id") ?? row.string("text_version_id") ?? row.string("file_id") ?? "row:\(row.columns.hashValue)") }
+                                    else { relatedRecord(row).id(row.string("id") ?? row.string("annotation_id") ?? "row:\(row.columns.hashValue)") }
+                                }
                             }
                         }
                     }
@@ -123,6 +140,7 @@ struct PrivateCorpusSourceView: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
+        .environment(\.downloadedReaderOnly, selectedReaderOnly)
         .navigationTitle(reference.kind == .recording ? "Grabación" : reference.kind == .participant ? "Participante" : "Fuente privada")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: loadKey) { await load() }
@@ -141,7 +159,7 @@ struct PrivateCorpusSourceView: View {
             Link("Abrir referencia original", destination: address).frame(minHeight: 44)
         }
         ForEach(relatedLinks(row), id: \.id) { link in
-            NavigationLink { PrivateCorpusSourceView(session: session, reference: link.reference, downloadedOnly: downloadedOnly) }
+            NavigationLink { PrivateCorpusSourceView(session: session, reference: link.reference, downloadedOnly: selectedReaderOnly) }
                 label: { Label(link.title, systemImage: "arrow.up.right").frame(minHeight: 44) }
         }
     }
@@ -157,7 +175,7 @@ struct PrivateCorpusSourceView: View {
             }.pickerStyle(.menu).frame(minHeight: 44)
             if let transcript {
                 if isTestimony, let media = transcript.string("media_id") {
-                    PrivateFileButton(session: session, kind: .testimonyMedia, id: media, initialTimestamp: reference.timestamp, downloadedOnly: downloadedOnly)
+                    PrivateFileButton(session: session, kind: .testimonyMedia, id: media, initialTimestamp: reference.timestamp, downloadedOnly: selectedReaderOnly)
                 }
                 if let status = transcript.text("status"), status != "completed" {
                     Text("Estado: \(status)").font(.caption).foregroundStyle(.secondary)
@@ -170,7 +188,7 @@ struct PrivateCorpusSourceView: View {
                         Text("\(time(segment.double("t_start") ?? 0)) · \(segment.text("speaker") ?? segment.text("speaker_label") ?? "")").font(.caption).foregroundStyle(.secondary)
                         CorpusProse(segment.text("text") ?? "", accent: session.accent, session: session)
                         if isTestimony { ForEach(relatedLinks(segment), id: \.id) { link in
-                            NavigationLink { PrivateCorpusSourceView(session: session, reference: link.reference, downloadedOnly: downloadedOnly) }
+                            NavigationLink { PrivateCorpusSourceView(session: session, reference: link.reference, downloadedOnly: selectedReaderOnly) }
                                 label: { Label(link.title, systemImage: "person.crop.circle").frame(minHeight: 44) }
                         } }
                     }.id(segment.string("id") ?? "").desktopContentRow(accent: session.accent)
@@ -224,7 +242,7 @@ struct PrivateCorpusSourceView: View {
                 if let start = row.double("t_start") { Text("\(time(start)) – \(time(row.double("t_end") ?? start))").font(.caption).foregroundStyle(.secondary) }
                 if let version = row.int("version_no") { Text("Versión \(version)").font(.caption).foregroundStyle(.secondary) }
                 if let media = selectedGroup == "media" ? row.string("id") : row.string("document_media_id") {
-                    if row.text("deleted_at") == nil { PrivateFileButton(session: session, kind: .testimonyMedia, id: media, downloadedOnly: downloadedOnly) }
+                    if row.text("deleted_at") == nil { PrivateFileButton(session: session, kind: .testimonyMedia, id: media, downloadedOnly: selectedReaderOnly) }
                     else { Text("Archivo retirado").font(.caption).foregroundStyle(.secondary) }
                 }
                 if let note = row.string("note_id") { NavigationLink("Abrir nota vinculada") { NoteByIdView(session: session, noteId: note) }.frame(minHeight: 44) }
@@ -236,7 +254,7 @@ struct PrivateCorpusSourceView: View {
             if let number = row.double("value_number") { Text(number.formatted()) }
             if let boolean = row.int("value_boolean") { Text(boolean == 0 ? "No" : "Sí") }
             ForEach(relatedLinks(row), id: \.id) { link in
-                NavigationLink { PrivateCorpusSourceView(session: session, reference: link.reference, downloadedOnly: downloadedOnly) }
+                NavigationLink { PrivateCorpusSourceView(session: session, reference: link.reference, downloadedOnly: selectedReaderOnly) }
                     label: { Label(link.title, systemImage: "arrow.up.right").frame(minHeight: 44) }
             }
         }.desktopContentRow(accent: session.accent)
@@ -272,7 +290,10 @@ struct PrivateCorpusSourceView: View {
     }
     @ViewBuilder private func fields(_ row: Row, keys: [String]) -> some View {
         ForEach(keys, id: \.self) { key in
-            if let text = row.text(key), !text.isEmpty { CorpusProse(text, accent: session.accent, session: session) }
+            if let text = row.text(key), !text.isEmpty {
+                if reference.kind == .archive { archiveProse(text) }
+                else { CorpusProse(text, accent: session.accent, session: session) }
+            }
         }
     }
     private func time(_ seconds: Double) -> String {
@@ -282,18 +303,62 @@ struct PrivateCorpusSourceView: View {
         loading = true; issue = nil; copy = nil; saved = false
         defer { loading = false }
         do {
-            let result = try await loadPrivateCorpusSource(session, reference: reference, downloadedOnly: downloadedOnly) { loaded = $0; total = $1 }
+            let result = try await loadPrivateCorpusSource(session, reference: reference, downloadedOnly: selectedReaderOnly) { loaded = $0; total = $1 }
             try Task.checkCancellation()
             copy = result.0; offline = result.1
             let candidates = transcripts.filter { reference.sessionId == nil || $0.string("session_id") == reference.sessionId }
             if let requested = reference.transcriptId, !candidates.contains(where: { $0.string("id") == requested }) { throw PrivateSourceLocatorFailure.missing }
             if let requested = reference.sessionId, !((copy?.rows["sessions"] ?? []).contains { $0.string("id") == requested }), copy?.source.root.string("session_id") != requested { throw PrivateSourceLocatorFailure.missing }
-            if let requested = reference.annotationId, !((copy?.rows["annotations"] ?? []).contains { $0.string("id") == requested }) { throw PrivateSourceLocatorFailure.missing }
+            if let requested = reference.annotationId {
+                let matched = reference.kind == .archive
+                    ? (copy?.rows["excerpts"] ?? []).contains { $0.string("excerpt_id") == requested }
+                    : (copy?.rows["annotations"] ?? []).contains { $0.string("id") == requested }
+                guard matched else { throw PrivateSourceLocatorFailure.missing }
+            }
             selectedTranscript = reference.transcriptId ?? candidates.first?.string("id") ?? ""
-            selectedGroup = reference.annotationId != nil ? "annotations" : reference.kind == .testimonyTranscript ? "segments" : reference.transcriptId != nil || reference.timestamp != nil ? "transcripts" : reference.sessionId != nil ? "sessions" : copy?.source.groups.first?.key ?? ""
+            selectedGroup = reference.annotationId != nil ? (reference.kind == .archive ? "excerpts" : "annotations") : reference.kind == .testimonyTranscript ? "segments" : reference.transcriptId != nil || reference.timestamp != nil ? "transcripts" : reference.sessionId != nil ? "sessions" : copy?.source.groups.first?.key ?? ""
         } catch is CancellationError { }
         catch { copy = nil; issue = error.localizedDescription }
     }
+    private func archiveProse(_ text: String) -> some View {
+        // The inherited reader scope keeps selected neighbours and inline media
+        // in their own downloaded stores; an absent copy stays an explicit error.
+        CorpusProse(text, accent: session.accent, session: session)
+    }
+    private func archiveRecord(_ row: Row) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let name = row.text("title") ?? row.text("original_file_name") ?? row.text("name") { Text(name).font(.headline).textSelection(.enabled) }
+            if let version = row.int("version_no") { LabeledContent("Version", value: String(version)) }
+            if let sequence = row.int("sequence_no") { LabeledContent("Sequence", value: String(sequence)) }
+            if let bytes = row.int("byte_size") { LabeledContent("Size", value: ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) }
+            ForEach(["kind", "source_type", "date_display", "provenance_text", "reference_code", "citation", "locator_display", "page_label", "page_number", "language", "language_code", "status", "date_certainty", "access_status", "sensitivity", "embargo_until", "processing_status", "description_status", "analysis_status", "citation_status", "rights_status", "mime_type", "role", "evidence_role", "review_status", "verification_status", "confidence", "certainty", "level", "local_level_label", "title_type", "creator_display", "extent_display", "identifier", "address", "country_code", "reference", "created_at"], id: \.self) { key in
+                if let value = row[key]?.stringValue, !value.isEmpty {
+                    LabeledContent(LocalizedStringKey(FieldNames.label(for: key)), value: value).textSelection(.enabled)
+                }
+            }
+            ForEach(["description", "scope_note", "provenance", "rights_statement", "reproduction_conditions", "editorial_conventions", "quoted_text", "content", "normalized_text", "text", "quote", "notes", "scope_content", "arrangement", "administrative_biographical_history", "custodial_history", "acquisition_info", "access_conditions", "physical_characteristics", "finding_aids", "related_units", "contact_notes", "access_notes", "citation_template", "origin_notes", "purpose_audience", "content_form", "perspective_bias", "silences_limits", "authenticity_notes", "representativeness", "corroboration", "questions"], id: \.self) { key in
+                if let text = row.text(key) {
+                    Text(LocalizedStringKey(FieldNames.label(for: key))).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    archiveProse(text)
+                }
+            }
+            ForEach(["website_url", "catalog_url", "source_catalog_url"], id: \.self) { key in
+                if let value = row.text(key), let url = URL(string: value), ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
+                    Link(LocalizedStringKey(FieldNames.label(for: key)), destination: url).frame(minHeight: 44)
+                }
+            }
+            if let metadata = row.embeddedJSON("metadata_json") {
+                DossierValueView(session: session, value: metadata, field: "metadata", linkedCollection: nil)
+            }
+            if selectedGroup == "files", let id = row.string("file_id") {
+                if row.int("original_available") == 1 { PrivateFileButton(session: session, kind: .archiveFile, id: id, downloadedOnly: selectedReaderOnly) }
+                else { Text("El original no está disponible en el Mac").font(.caption).foregroundStyle(.secondary) }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
+            .nodusGlass(NodusGlass(.thin, tint: session.accent))
+            .accessibilityIdentifier("archive-source-record-\(selectedGroup)-\(row.string("file_id") ?? row.string("text_version_id") ?? row.string("excerpt_id") ?? row.string("segment_id") ?? row.string("id") ?? String(row.int("_bridge_cursor") ?? 0))")
+    }
+
     private func save(days: Int) {
         guard let copy else { return }
         saving = true; issue = nil

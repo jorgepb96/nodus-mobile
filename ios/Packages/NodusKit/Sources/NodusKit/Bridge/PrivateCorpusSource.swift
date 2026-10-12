@@ -6,18 +6,20 @@ import Foundation
 public struct PrivateCorpusReference: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, CaseIterable, Hashable, Sendable {
         case recording = "study-recording", person = "prosop-person", source = "prosop-source"
+        case archive = "archive-source"
         case factoid = "prosop-factoid", mention = "prosop-mention"
         case participant = "testimony-participant"
         case interview = "testimony-interview", testimonyTranscript = "testimony-transcript", contrast = "testimony-contrast"
         public var domain: DesktopBridgeDomain {
-            switch self { case .recording: .studyRecordings; case .participant, .interview, .testimonyTranscript, .contrast: .testimonies; default: .prosopographyPrivate }
+            switch self { case .archive: .primarySourceFiles; case .recording: .studyRecordings; case .participant, .interview, .testimonyTranscript, .contrast: .testimonies; default: .prosopographyPrivate }
         }
         public var primaryKey: String {
-            switch self { case .recording, .interview, .testimonyTranscript, .contrast: "id"; case .person, .participant: "person_id"; case .source: "source_id"
+            switch self { case .archive: "item_id"; case .recording, .interview, .testimonyTranscript, .contrast: "id"; case .person, .participant: "person_id"; case .source: "source_id"
             case .factoid: "factoid_id"; case .mention: "attestation_id" }
         }
         public var groups: [String] {
             switch self {
+            case .archive: ["profile", "excerpts", "textVersions", "segments", "analysis", "evidence", "units", "repository", "files"]
             case .recording: ["transcripts", "segments", "markers"]
             case .participant: ["profile", "participation"]
             case .interview: ["participants", "sessions", "media", "transcripts", "segments", "agreements", "annotations", "codes", "annotationCodes", "noteLinks"]
@@ -37,17 +39,21 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
     public let sessionId: String?
     public let annotationId: String?
     public static func collectionReference(path: String, id: String) throws -> Self? {
-        let kind: Kind? = ["testimony-interviews": .interview, "testimony-transcripts": .testimonyTranscript, "testimony-contrasts": .contrast][path]
+        let kind: Kind? = ["archive-items": .archive, "testimony-interviews": .interview, "testimony-transcripts": .testimonyTranscript, "testimony-contrasts": .contrast][path]
         return try kind.map { try Self(kind: $0, id: id) }
     }
     public var publishedCollectionPath: String? {
         switch kind {
+        case .archive: annotationId == nil ? "archive-items" : "archive-excerpts"
         case .participant: "persons"
         case .interview: "testimony-interviews"
         case .testimonyTranscript: "testimony-transcripts"
         case .contrast: "testimony-contrasts"
         default: nil
         }
+    }
+    public var publishedRecordId: String {
+        kind == .archive ? annotationId ?? id : id
     }
     public init(kind: Kind, id: String, timestamp: Double? = nil, transcriptId: String? = nil, sessionId: String? = nil, annotationId: String? = nil) throws {
         guard !id.isEmpty, id.count <= 256, id != ".", id != "..",
@@ -62,6 +68,14 @@ public struct PrivateCorpusReference: Codable, Hashable, Sendable {
               parts.user == nil, parts.password == nil, parts.port == nil else { return nil }
         let encoded = parts.percentEncodedPath.split(separator: "/", omittingEmptySubsequences: true)
         let segments = encoded.compactMap { String($0).removingPercentEncoding }
+        if segments.count == 3, encoded.count == 3, parts.host?.lowercased() == "primary-source", segments[1] == "excerpt" {
+            guard let reference = try? Self(kind: .archive, id: segments[0], annotationId: segments[2]) else { return nil }
+            self = reference; return
+        }
+        if segments.count == 1, encoded.count == 1, ["archive", "primary-source"].contains(parts.host?.lowercased() ?? "") {
+            guard let reference = try? Self(kind: .archive, id: segments[0]) else { return nil }
+            self = reference; return
+        }
         guard segments.count == 2, segments.count == encoded.count,
               segments.allSatisfy({ !$0.isEmpty && $0.count <= 256 && $0 != "." && $0 != ".." && !$0.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) }) else { return nil }
         let target: Kind?

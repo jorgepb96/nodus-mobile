@@ -33,6 +33,11 @@ struct GenealogyDossierContextTests {
         #expect(sources[0].target?.string("nodus_id") == "work")
         #expect(sources[0].collectionPath == "works")
         #expect(sources[0].association.text("quote") == "Exact quotation")
+        let archives = GenealogyDossierContext.archiveSources(dossier)
+        #expect(archives.count == 1)
+        #expect(archives[0].kind == .archive)
+        #expect(archives[0].id == "archive")
+        #expect(archives[0].kind.domain == .primarySourceFiles)
         // All operations above are pure selected-copy reads: no client/session or socket exists.
     }
     @Test func participantRolesAndPlaceAssociationsRemainBoundToActualPeople() throws {

@@ -204,7 +204,7 @@ private struct DownloadedCollectionDossier: View {
                             CollectionDossierBody(session: session, dossier: dossier, showConnectionState: false,
                                 onOpenRelated: { collection, row in
                                     if let id = row.string(collection.idField) { open(.init(collectionPath: collection.path, id: id)) }
-                                })
+                                }, downloadedOnly: true)
                             DossierOriginalResourcesView(session: session, dossier: dossier, downloadedOnly: true)
                         }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity)
                     }
