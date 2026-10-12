@@ -43,7 +43,15 @@ try {
   const vaultRow = page.getByTestId('vault-type-icon-prosopography').locator('..');
   assert.equal(await vaultRow.getByText(target.name, { exact: true }).count(), 1);
   await vaultRow.getByTitle('Cargar', { exact: true }).click();
-  await page.waitForFunction(async id => (await window.nodus.getActiveVault()).id === id, target.id);
+  const deadline = Date.now() + 15_000;
+  while ((await page.evaluate(() => window.nodus.getActiveVault())).id !== target.id) {
+    assert(Date.now() < deadline, 'The actual Desktop vault switch must finish');
+    await page.waitForTimeout(100);
+  }
+  // Only copied-profile setup flags change. Models and research data remain the
+  // same; a newly copied workspace has not necessarily completed its UI tour.
+  await page.evaluate(() => window.nodus.updateSettings({ onboardingComplete: true,
+    basicsTutorialVersion: 1, tourComplete: true, advancedTourComplete: true }));
   await page.locator('[data-tour="nav-prosopPersons"]').click();
   const view = page.getByTestId('prosop-persons-view');
   const name = fixture.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
