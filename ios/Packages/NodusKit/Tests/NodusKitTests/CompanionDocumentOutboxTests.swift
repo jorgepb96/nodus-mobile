@@ -122,6 +122,113 @@ struct CompanionDocumentOutboxTests {
         _ = try await reopened.enqueueWorkspaceOrganization(type: "folderTrash", id: "downloaded-folder", arguments: .object([:]), tree: snapshot)
         #expect(await reopened.pendingCount() == 1)
     }
+    @Test("closing rejects every new manual mutation before queue or metadata state changes")
+    func closingRejectsManualState() async throws {
+        let f = try Fixture(); defer { f.cleanup() }
+        let queue = try await f.open()
+        try await queue.seed(noteId: "note-a", editorData: Self.workspaceEditor())
+        let tree: JSONValue = .object(["folders": .array([]), "notes": .array([])])
+        let before = try await f.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey)
+        try f.cache.beginClosingForRevocation()
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.save(noteId: "note-a", input: Self.input(7, text: "Must not enter state")) }
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.create(input: .object(["title": .string("Must not create"), "content": .string("")])) }
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.createManualIdea(input: .object(["statement": .string("Must not create idea")])) }
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.seed(noteId: "new-baseline", editorData: Self.editor()) }
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.rememberTree(tree) }
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.enqueueWorkspaceOrganization(type: "folderCreate", arguments: .object(["name": .string("Must not create folder")]), tree: tree) }
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.enqueueWorkspaceAnnotation(noteId: "note-a", method: "createWorkspaceAnnotation", patch: .object(["from": .int(0), "to": .int(0), "selectedText": .string(""), "comment": .string("Must not enqueue")])) }
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.enqueueWorkspaceCommand(noteId: "note-a", action: "duplicate") }
+        #expect(await queue.pendingCount() == 0)
+        #expect(await queue.editorData(noteId: "note-a") == nil)
+        #expect(await queue.hasBaseline(noteId: "new-baseline") == false)
+        #expect(await queue.workspaceOrganizationIssues() == .array([]))
+        #expect(try await f.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey) == before)
+        try await f.cache.freezeForRevocation(false)
+    }
+    private actor PausedAcknowledgement {
+        var request: CompanionDocumentOutbox.Request?
+        private var continuation: CheckedContinuation<JSONValue, Never>?
+        func send(_ value: CompanionDocumentOutbox.Request) async -> JSONValue {
+            request = value
+            return await withCheckedContinuation { continuation = $0 }
+        }
+        func started() async throws -> CompanionDocumentOutbox.Request {
+            while request == nil { try await Task.sleep(for: .milliseconds(5)) }
+            return request!
+        }
+        func complete(_ value: JSONValue) { continuation?.resume(returning: value); continuation = nil }
+    }
+    @Test("an accepted native write finishes and its acknowledgement remains durable while new mutations close")
+    func activeWriteFinishesDuringClosing() async throws {
+        let f = try Fixture(); defer { f.cleanup() }
+        let queue = try await f.open(), server = PausedAcknowledgement()
+        try await queue.seed(noteId: "note-a", editorData: Self.editor())
+        _ = try await queue.save(noteId: "note-a", input: Self.input(7, text: "Accepted full native draft"))
+        let task = Task { try await queue.synchronize { await server.send($0) } }
+        let request = try await server.started()
+        try f.cache.beginClosingForRevocation()
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await f.cache.freezeForRevocation(true) }
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.save(noteId: "note-a", input: Self.input(-1, text: "Late mutation must be rejected")) }
+        #expect(await queue.editorData(noteId: "note-a")?.objectValue?["contentMarkdown"] == .string("Accepted full native draft"))
+        let preparation = Task { try await queue.prepareForRevocation() }
+        preparation.cancel() // A canceled UI retirement still waits for the durable ACK.
+        await server.complete(Self.receipt(request, revision: 8))
+        try await task.value; try await preparation.value
+        #expect(await queue.confirmedEditorData(noteId: "note-a")?.objectValue?["contentMarkdown"] == .string("Accepted full native draft"))
+        try await f.cache.freezeForRevocation(true)
+        let snapshot = try await f.cache.authoringRecoverySnapshot(vaultIds: ["vault-a"])
+        #expect(snapshot.records.contains { String(decoding: $0.data, as: UTF8.self).contains("Accepted full native draft") })
+        try await f.cache.freezeForRevocation(false)
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await queue.save(noteId: "note-a", input: Self.input(8, text: "Old actor after unfreeze")) }
+        let fresh = try await f.open()
+        #expect(await fresh.confirmedEditorData(noteId: "note-a")?.objectValue?["contentMarkdown"] == .string("Accepted full native draft"))
+    }
+    @Test("scoped retirement seals only removed actors and leaves other live queues usable")
+    func scopedRegistryRetirement() async throws {
+        let f = try Fixture(); defer { f.cleanup() }
+        let registry = CompanionDocumentOutboxes(directory: f.directory, keychain: f.keychain)
+        let removed = try await registry.outbox(pairingId: f.pairing, vaultId: "vault-a")
+        let kept = try await registry.outbox(pairingId: f.pairing, vaultId: "kept")
+        _ = try await removed.create(input: .object(["title": .string("Removed source"), "content": .string("")]))
+        _ = try await kept.create(input: .object(["title": .string("Kept source"), "content": .string("")]))
+        try f.cache.beginClosingForRevocation()
+        try await registry.prepareForRevocation(pairingId: f.pairing, vaultIds: ["vault-a"])
+        try await f.cache.freezeForRevocation(true); try await f.cache.freezeForRevocation(false)
+        await registry.forget(pairingId: f.pairing, vaultIds: ["vault-a"])
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await removed.create(input: .object(["title": .string("Forbidden late write"), "content": .string("")])) }
+        _ = try await kept.create(input: .object(["title": .string("Kept remains editable"), "content": .string("")]))
+        let same = try await registry.outbox(pairingId: f.pairing, vaultId: "kept")
+        #expect(same === kept)
+        #expect(await kept.pendingCount() == 2)
+        await registry.forget(pairingId: f.pairing)
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await kept.create(input: .object(["title": .string("Old retained actor"), "content": .string("")])) }
+    }
+    @Test("a retired source can return only through a fresh actor with archived work requiring review")
+    func returnedVaultFreshReview() async throws {
+        let f = try Fixture(); defer { f.cleanup() }
+        let old = try await f.open()
+        let note = try await old.create(input: .object(["title": .string("Authored removed vault"), "content": .string("")]))
+        let id = try #require(note.objectValue?["id"]?.stringValue)
+        try f.cache.beginClosingForRevocation(); try await old.prepareForRevocation(); try await f.cache.freezeForRevocation(true)
+        let snapshot = try await f.cache.authoringRecoverySnapshot(vaultIds: ["vault-a"])
+        let recovery = PrivateBridgeAuthoringRecovery(directory: f.directory.appendingPathComponent("recovery"), keychain: f.keychain)
+        let pairing = try DesktopBridgePairing(id: f.pairing, origin: "https://fixture.local", certificateFingerprint: String(repeating: "a", count: 64), deviceId: "phone", deviceName: "Phone", vaultIds: ["vault-a"], domains: [.corpus, .writing], pairedAt: Date(), expiresAt: nil)
+        let receipt = try await recovery.preserve(snapshot: snapshot, pairing: pairing, macDeviceId: "Mac", forceReview: true)
+        try await f.cache.retireArchivedVaultRecords(snapshot.records, receipt: receipt); try await recovery.completeRevocation(receipt)
+        try await f.cache.freezeForRevocation(false)
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await old.save(noteId: id, input: Self.input(-1, text: "Cannot resurrect the retired file")) }
+        for record in snapshot.records {
+            #expect(!FileManager.default.fileExists(atPath: f.directory.appendingPathComponent("bridge-" + f.pairing).appendingPathComponent(record.filename).path))
+        }
+        let recoveryCache = try PrivateBridgeCache(pairingId: f.pairing, directory: f.directory, keychain: f.keychain)
+        #expect(try await recovery.adopt(pairing: pairing, macDeviceId: "Mac", cache: recoveryCache) == snapshot.records.count)
+        let returnedCache = try PrivateBridgeCache(pairingId: f.pairing, directory: f.directory, keychain: f.keychain)
+        let fresh = try await CompanionDocumentOutbox(cache: returnedCache, vaultId: "vault-a", data: returnedCache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        #expect(await fresh.editorData(noteId: id)?.objectValue?["mobileSyncState"] == .string("blocked"))
+        try await fresh.synchronize { _ in Issue.record("Returning source must never replay before explicit review"); throw DesktopBridgeError.permissionDenied }
+        try? f.keychain.remove(receipt.recoveryKeyName)
+    }
+
     private actor Requests {
         var values: [CompanionDocumentOutbox.Request] = []
         func append(_ value: CompanionDocumentOutbox.Request) { values.append(value) }

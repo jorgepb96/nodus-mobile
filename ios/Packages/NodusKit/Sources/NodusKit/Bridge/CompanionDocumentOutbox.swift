@@ -102,6 +102,8 @@ public actor CompanionDocumentOutbox {
     private let cache: PrivateBridgeCache
     private let vaultId: String
     private let kind: Kind
+    private var acceptsNewOperations = true
+    private var activeOperations = 0
     private var records: [String: Record]
     private var authored: [String: Authored] = [:]
     private var workspaceOrganizationSnapshot: JSONValue?
@@ -177,6 +179,11 @@ public actor CompanionDocumentOutbox {
         "operation:\(method):" + SHA256.hash(data: try JSONEncoder.nodus.encode(args)).map { String(format: "%02x", $0) }.joined()
     }
     public func seed(noteId: String, editorData: JSONValue) async throws {
+        try beginOperation()
+        defer { endOperation() }
+        try await seedInActivity(noteId: noteId, editorData: editorData)
+    }
+    private func seedInActivity(noteId: String, editorData: JSONValue) async throws {
         guard let revision = editorData.objectValue?["revision"]?.intValue, revision >= 0,
               editorData.objectValue?["documentTitle"]?.stringValue != nil,
               editorData.objectValue?["contentMarkdown"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
@@ -200,6 +207,11 @@ public actor CompanionDocumentOutbox {
         parent == nil || parent == .null || parent?.stringValue.map({ !$0.isEmpty }) == true
     }
     public func rememberTree(_ tree: JSONValue, authoritative: Bool = true) async throws {
+        try beginOperation()
+        defer { endOperation() }
+        try await rememberTreeInActivity(tree, authoritative: authoritative)
+    }
+    private func rememberTreeInActivity(_ tree: JSONValue, authoritative: Bool = true) async throws {
         guard let folders = tree.objectValue?["folders"]?.arrayValue, let notes = tree.objectValue?["notes"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
         var folderIds = Set<String>(), noteIds = Set<String>()
         for folder in folders {
@@ -353,6 +365,11 @@ public actor CompanionDocumentOutbox {
     }
     /// Organization commands never carry or replace editor content.
     public func enqueueWorkspaceOrganization(type: String, id: String? = nil, arguments: JSONValue, tree: JSONValue, authoritative: Bool = false) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await enqueueWorkspaceOrganizationInActivity(type: type, id: id, arguments: arguments, tree: tree, authoritative: authoritative)
+    }
+    private func enqueueWorkspaceOrganizationInActivity(type: String, id: String? = nil, arguments: JSONValue, tree: JSONValue, authoritative: Bool = false) async throws -> JSONValue {
         guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
         let target = id ?? UUID().uuidString.lowercased()
         let projected = overlayTree(tree, includeConfirmedEdits: !authoritative, includeTrashed: true)
@@ -375,6 +392,11 @@ public actor CompanionDocumentOutbox {
     /// Cancel is available for conflicts and unsent commands; an unknown ACK
     /// requires replay with the original identity before discarding intent.
     public func cancelWorkspaceOrganization(id: String) async throws {
+        try beginOperation()
+        defer { endOperation() }
+        try await cancelWorkspaceOrganizationInActivity(id: id)
+    }
+    private func cancelWorkspaceOrganizationInActivity(id: String) async throws {
         guard let value = workspaceOrganizationCommands[id], value.confirmedTree == nil else { return }
         guard value.sending == nil || value.state == .conflict || value.state == .blocked else { throw APIError(status: 409, code: "organization_ack_pending", message: "Confirma el recibo pendiente antes de cancelar la operación.") }
         workspaceOrganizationCommands[id] = nil
@@ -410,6 +432,11 @@ public actor CompanionDocumentOutbox {
     /// A new authored document has a stable identity before any Mac request.
     /// The same frozen creation and its latest structured edit commit together.
     public func create(input: JSONValue) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await createInActivity(input: input)
+    }
+    private func createInActivity(input: JSONValue) async throws -> JSONValue {
         guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
         return try await createDocument(input: input, ideaId: nil)
     }
@@ -423,6 +450,11 @@ public actor CompanionDocumentOutbox {
     /// Allocate the document before contacting the Mac. Its placement and
     /// structured save travel together under the same replayable request.
     public func createStudyDocument(input: JSONValue) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await createStudyDocumentInActivity(input: input)
+    }
+    private func createStudyDocumentInActivity(input: JSONValue) async throws -> JSONValue {
         guard kind == .studyDocument, let fields = input.objectValue,
               fields.keys.allSatisfy({ ["title", "kind", "placement", "description", "color", "icon", "emoji", "imageData", "year"].contains($0) }),
               let title = fields["title"]?.stringValue, title.utf16.count <= 4096,
@@ -507,6 +539,11 @@ public actor CompanionDocumentOutbox {
     /// An old selected download without organization metadata cannot silently
     /// invent a kind, placement or source revision.
     public func enqueueStudyCommand(noteId: String, action: String) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await enqueueStudyCommandInActivity(noteId: noteId, action: action)
+    }
+    private func enqueueStudyCommandInActivity(noteId: String, action: String) async throws -> JSONValue {
         guard kind == .workspaceNote || !annotationCommands.values.contains(where: { $0.documentId == noteId }) else { throw APIError(status: 409, code: "study_annotation_pending", message: "Confirma los comentarios pendientes antes de duplicar o enviar este documento a la papelera.") }
 
         guard ["duplicate", "trash"].contains(action) else { throw DesktopBridgeError.permissionDenied }
@@ -575,8 +612,13 @@ public actor CompanionDocumentOutbox {
     /// Block identities are global links. A local copy receives its own ids,
     /// including academic evidence references and structured footnote blocks.
     public func enqueueWorkspaceCommand(noteId: String, action: String) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await enqueueWorkspaceCommandInActivity(noteId: noteId, action: action)
+    }
+    private func enqueueWorkspaceCommandInActivity(noteId: String, action: String) async throws -> JSONValue {
         guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
-        return try await enqueueStudyCommand(noteId: noteId, action: action)
+        return try await enqueueStudyCommandInActivity(noteId: noteId, action: action)
     }
     private static func cloneWorkspaceEditor(_ original: [String: JSONValue]) -> [String: JSONValue] {
         var result = cloneStudyEditor(original), ids: [String:String] = [:]
@@ -717,9 +759,9 @@ public actor CompanionDocumentOutbox {
                 let enriched = enrichedStudyNote(note, editor: editor)
                 authored[target] = Authored(editorData: editor, note: enriched); baselines[target] = editor
                 if var targetDraft = records[target] { targetDraft.baseline = editor; targetDraft.createdNote = enriched; records[target] = targetDraft }
-                try await cache.store(JSONEncoder.nodus.encode(editor), vaultId: vaultId, domain: .corpus, recordId: Self.operationKey(kind.editorMethod, [.string(target)]))
+                try await cacheConsultedValue(editor, recordId: Self.operationKey(kind.editorMethod, [.string(target)]))
             }
-            try await cache.store(JSONEncoder.nodus.encode(committed), vaultId: vaultId, domain: .corpus, recordId: Self.operationKey(kind.editorMethod, [.string(command.sourceId)]))
+            try await cacheConsultedValue(committed, recordId: Self.operationKey(kind.editorMethod, [.string(command.sourceId)]))
             // Retire only after the canonical source and target are durable.
             try await persist(); studyCommands[key] = nil
             do { try await persist() } catch { studyCommands[key] = command; throw error }
@@ -741,6 +783,11 @@ public actor CompanionDocumentOutbox {
     }
 
     public func createManualIdea(input: JSONValue) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await createManualIdeaInActivity(input: input)
+    }
+    private func createManualIdeaInActivity(input: JSONValue) async throws -> JSONValue {
         guard var fields = input.objectValue, fields.keys.allSatisfy({ ["title", "folderId"].contains($0) }) else { throw DesktopBridgeError.malformedResponse }
         if fields["title"] == nil { fields["title"] = .string("Idea sin título") }
         fields["content"] = .string(""); fields["kind"] = .string("idea")
@@ -843,6 +890,11 @@ public actor CompanionDocumentOutbox {
         return noteResult(noteId: noteId)
     }
     public func save(noteId: String, input: JSONValue) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await saveInActivity(noteId: noteId, input: input)
+    }
+    private func saveInActivity(noteId: String, input: JSONValue) async throws -> JSONValue {
         guard try JSONEncoder.nodus.encode(input).count <= Self.maximumRequestBytes - 65_536 else {
             throw APIError(status: 413, code: "workspace_edit_too_large", message: "La nota y sus archivos superan el tamaño permitido para sincronizar. Reduce los archivos adjuntos; el borrador anterior se conserva.")
         }
@@ -885,6 +937,11 @@ public actor CompanionDocumentOutbox {
     }
     /// Keeps a stable create identity and receipt before the editor reports success.
     public func enqueueStudyAnnotation(documentId: String, method: String, annotationId: String? = nil, patch: JSONValue? = nil) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await enqueueStudyAnnotationInActivity(documentId: documentId, method: method, annotationId: annotationId, patch: patch)
+    }
+    private func enqueueStudyAnnotationInActivity(documentId: String, method: String, annotationId: String? = nil, patch: JSONValue? = nil) async throws -> JSONValue {
         guard let baseline = records[documentId]?.baseline ?? baselines[documentId] ?? authored[documentId]?.editorData ?? annotationCommands.values.first(where: { $0.documentId == documentId }).flatMap({ annotationSource($0) }),
               let revision = baseline.objectValue?["revision"].flatMap(CompanionStudyAnnotation.exactInteger),
               baseline.objectValue?["annotations"]?.arrayValue != nil else { throw APIError(status: 409, code: "study_annotation_source_missing", message: "Descarga el documento completo antes de editar sus comentarios sin conexión.") }
@@ -920,8 +977,13 @@ public actor CompanionDocumentOutbox {
         return projected ?? .null
     }
     public func enqueueWorkspaceAnnotation(noteId: String, method: String, annotationId: String? = nil, patch: JSONValue? = nil) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await enqueueWorkspaceAnnotationInActivity(noteId: noteId, method: method, annotationId: annotationId, patch: patch)
+    }
+    private func enqueueWorkspaceAnnotationInActivity(noteId: String, method: String, annotationId: String? = nil, patch: JSONValue? = nil) async throws -> JSONValue {
         guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
-        return try await enqueueStudyAnnotation(documentId: noteId, method: method, annotationId: annotationId, patch: patch)
+        return try await enqueueStudyAnnotationInActivity(documentId: noteId, method: method, annotationId: annotationId, patch: patch)
     }
     public func workspaceAnnotationDocumentId(annotationId: String) -> String? {
         guard kind == .workspaceNote else { return nil }
@@ -930,6 +992,11 @@ public actor CompanionDocumentOutbox {
     /// A downloaded canonical version becomes an ordinary durable native save;
     /// no live restore RPC or Mac version identity is invented.
     public func restoreWorkspaceVersion(noteId: String, versionId: String) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await restoreWorkspaceVersionInActivity(noteId: noteId, versionId: versionId)
+    }
+    private func restoreWorkspaceVersionInActivity(noteId: String, versionId: String) async throws -> JSONValue {
         guard kind == .workspaceNote,
               let current = editorData(noteId: noteId) ?? baselines[noteId] ?? authored[noteId]?.editorData,
               let version = current.objectValue?["versions"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(versionId) })?.objectValue,
@@ -939,7 +1006,7 @@ public actor CompanionDocumentOutbox {
         for key in ["nativeDocument", "schemaVersion", "academicMetadata", "style"] {
             if let value = version[key], key != "nativeDocument" || value != .null { input[key] = value }
         }
-        return try await save(noteId: noteId, input: .object(input))
+        return try await saveInActivity(noteId: noteId, input: .object(input))
     }
     private func annotationSource(_ item: AnnotationCommand) -> JSONValue? { item.sourceKey.flatMap { annotationSources[$0] } ?? item.sourceEditor }
     public func studyAnnotationDocumentId(annotationId: String) -> String? {
@@ -977,7 +1044,7 @@ public actor CompanionDocumentOutbox {
                   editor.objectValue?["revision"] == .int(Int64(item.sourceRevision)), let rows = editor.objectValue?["annotations"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
             let target = item.command.objectValue?["annotationId"]
             guard item.command.objectValue?["action"] == .string("annotationDelete") ? !rows.contains(where: { $0.objectValue?["id"] == target }) : rows.contains(where: { $0.objectValue?["id"] == target }) else { throw DesktopBridgeError.malformedResponse }
-            try await cache.store(JSONEncoder.nodus.encode(editor), vaultId: vaultId, domain: .corpus, recordId: Self.operationKey(kind.editorMethod, [.string(item.documentId)]))
+            try await cacheConsultedValue(editor, recordId: Self.operationKey(kind.editorMethod, [.string(item.documentId)]))
             baselines[item.documentId] = editor
             authored[item.documentId] = Authored(editorData: editor, note: response.objectValue?["note"] ?? authored[item.documentId]?.note)
             if var record = records[item.documentId] { record.baseline = editor; records[item.documentId] = record }
@@ -997,6 +1064,11 @@ public actor CompanionDocumentOutbox {
     }
     public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count + studyCommands.values.filter { $0.state == .pending && $0.cancelled != true }.count + annotationCommands.values.filter { $0.state == .pending }.count + workspaceOrganizationCommands.values.filter { $0.state == .pending && $0.confirmedTree == nil }.count }
     public func synchronize(send: @Sendable (Request) async throws -> JSONValue) async throws {
+        try beginOperation()
+        defer { endOperation() }
+        try await synchronizeInActivity(send: send)
+    }
+    private func synchronizeInActivity(send: @Sendable (Request) async throws -> JSONValue) async throws {
         guard !synchronizing else { return }
         synchronizing = true; defer { synchronizing = false }
         try await synchronizeWorkspaceOrganization(send: send, preparatoryOnly: true)
@@ -1062,12 +1134,12 @@ public actor CompanionDocumentOutbox {
                     // queue retires, including when its selected catalogue predates it.
                     for args: [JSONValue] in kind == .workspaceNote ? [[], [.bool(true)]] : [] {
                         let key = try Self.operationKey("getNotesTree", args)
-                        if let data = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key),
+                        if let data = try await consultedData(recordId: key),
                            var tree = try JSONDecoder.nodus.decode(JSONValue.self, from: data).objectValue,
                            var notes = tree["notes"]?.arrayValue {
                             notes.removeAll { $0.objectValue?["id"]?.stringValue == noteId }; notes.append(note)
                             tree["notes"] = .array(notes)
-                            try await cache.store(JSONEncoder.nodus.encode(JSONValue.object(tree)), vaultId: vaultId, domain: .corpus, recordId: key)
+                            try await cacheConsultedValue(.object(tree), recordId: key)
                         }
                     }
                 } else {
@@ -1076,8 +1148,7 @@ public actor CompanionDocumentOutbox {
                 }
                 // Make a confirmed document consultable before retiring its
                 // durable queue. Failure here leaves the same replayable receipt.
-                try await cache.store(JSONEncoder.nodus.encode(committed), vaultId: vaultId, domain: .corpus,
-                                      recordId: Self.operationKey(kind.editorMethod, [.string(noteId)]))
+                try await cacheConsultedValue(committed, recordId: Self.operationKey(kind.editorMethod, [.string(noteId)]))
                 // Disk writes await another actor. An autosave can arrive during
                 // that wait, so read its latest generation after storing the ack.
                 guard var latest = records[noteId], latest.sending?.id == request.id else { throw DesktopBridgeError.malformedResponse }
@@ -1120,6 +1191,11 @@ public actor CompanionDocumentOutbox {
     /// Conflict resolution is an explicit choice and receives a fresh request
     /// identity. Neither side silently overwrites the other's changes.
     public func resolve(noteId: String, keepMobile: Bool) async throws -> JSONValue {
+        try beginOperation()
+        defer { endOperation() }
+        return try await resolveInActivity(noteId: noteId, keepMobile: keepMobile)
+    }
+    private func resolveInActivity(noteId: String, keepMobile: Bool) async throws -> JSONValue {
         if let item = annotationCommands.values.first(where: { $0.documentId == noteId && $0.state == .conflict }), let remote = item.remote {
             if keepMobile {
                 guard remote.objectValue?["revision"] == .int(Int64(item.sourceRevision)), item.command.objectValue?["action"] != .string("annotationCreate"),
@@ -1136,7 +1212,7 @@ public actor CompanionDocumentOutbox {
                 do { try await persist() } catch { annotationCommands = previous; throw error }
                 return editorData(noteId: noteId) ?? remote
             }
-            try await cache.store(JSONEncoder.nodus.encode(remote), vaultId: vaultId, domain: .corpus, recordId: Self.operationKey(kind.editorMethod, [.string(noteId)]))
+            try await cacheResolvedSource(remote, noteId: noteId)
             baselines[noteId] = remote
             if var owned = authored[noteId] { owned.editorData = remote; authored[noteId] = owned }
             let previous = annotationCommands, previousRecord = records[noteId]
@@ -1144,7 +1220,7 @@ public actor CompanionDocumentOutbox {
             annotationCommands = annotationCommands.filter { $0.value.documentId != noteId }
             for commandKey in studyCommands.keys where studyCommands[commandKey]?.sourceId == noteId { studyCommands[commandKey]?.annotationDependencies = [] }
             do { try await persist() } catch { annotationCommands = previous; records[noteId] = previousRecord; throw error }
-            try await seed(noteId: noteId, editorData: remote)
+            try await seedInActivity(noteId: noteId, editorData: remote)
             return editorData(noteId: noteId) ?? remote
         }
 
@@ -1176,8 +1252,7 @@ public actor CompanionDocumentOutbox {
               remote.objectValue?["documentTitle"]?.stringValue != nil,
               remote.objectValue?["contentMarkdown"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
         authored[noteId] = Authored(editorData: remote, note: authored[noteId]?.note ?? record.createdNote ?? knownNotes[noteId])
-        try await cache.store(JSONEncoder.nodus.encode(remote), vaultId: vaultId, domain: .corpus,
-                              recordId: Self.operationKey(kind.editorMethod, [.string(noteId)]))
+        try await cacheResolvedSource(remote, noteId: noteId)
         baselines[noteId] = remote
         acknowledgedLocalRevisions[noteId] = nil
         if keepMobile {
@@ -1190,7 +1265,57 @@ public actor CompanionDocumentOutbox {
     }
     /// Revocation captures the latest durable drafts and frozen receipts first.
     /// The cache owner must then freeze writes before making its encrypted archive.
-    public func prepareForRevocation() async throws { try await persist() }
+    private func cacheResolvedSource(_ remote: JSONValue, noteId: String) async throws {
+        try await cacheConsultedValue(remote, recordId: Self.operationKey(kind.editorMethod, [.string(noteId)]))
+    }
+    private func consultedData(recordId: String) async throws -> Data? {
+        do { return try await cache.data(vaultId: vaultId, domain: .corpus, recordId: recordId) }
+        catch PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites {
+            guard activeOperations > 0 else { throw PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites }
+            return nil
+        }
+    }
+    private func cacheConsultedValue(_ value: JSONValue, recordId: String) async throws {
+        do { try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: recordId) }
+        catch PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites {
+            // A held activity prevents freezing. This is a consulted-cache close,
+            // not permission to start a new mutation or restore reading copies.
+            guard activeOperations > 0 else { throw PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites }
+        }
+    }
+    private func beginOperation() throws {
+        guard acceptsNewOperations else { throw PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites }
+        try cache.beginAuthoringActivity()
+        activeOperations += 1
+    }
+    private func endOperation() {
+        activeOperations -= 1
+        cache.endAuthoringActivity()
+    }
+    private func waitForOperations() async {
+        // Retirement must not abandon an accepted ACK when its UI task cancels.
+        // This independent waiter yields the actor and completes only after each
+        // accepted operation has made its final durable checkpoint.
+        let waiter = Task.detached { [self] in
+            while await self.activeOperations > 0 { try? await Task.sleep(for: .milliseconds(10)) }
+        }
+        await waiter.value
+    }
+    public func prepareForRevocation() async throws {
+        acceptsNewOperations = false
+        await waitForOperations()
+        try await persist()
+    }
+    /// Other vaults remain open after a scoped retirement. The cache closing gate
+    /// already excludes new work while their existing operations finish.
+    public func flushForPreservation() async throws {
+        await waitForOperations()
+        try await persist()
+    }
+    func retireForScopeChange() async {
+        acceptsNewOperations = false
+        await waitForOperations()
+    }
 
     private func persist() async throws {
         var storedCommands = annotationCommands, sources: [String: JSONValue] = [:]
@@ -1226,27 +1351,39 @@ public actor CompanionDocumentOutbox {
 
 public actor CompanionDocumentOutboxes {
     public static let shared = CompanionDocumentOutboxes()
-    private var stores: [String: Task<CompanionDocumentOutbox, any Error>] = [:]
+    private struct Store { let vaultId: String; let task: Task<CompanionDocumentOutbox, any Error> }
+    private var stores: [String: Store] = [:]
+    private let directory: URL
+    private let keychain: KeychainStore
+    public init(directory: URL = PrivateBridgeCache.defaultDirectory, keychain: KeychainStore = KeychainStore()) {
+        self.directory = directory; self.keychain = keychain
+    }
     public func outbox(pairingId: String, vaultId: String, kind: CompanionDocumentOutbox.Kind = .workspaceNote) async throws -> CompanionDocumentOutbox {
         let key = "\(pairingId)|\(vaultId)" + (kind == .workspaceNote ? "" : "|\(kind.rawValue)")
-        if let task = stores[key] { return try await task.value }
+        if let entry = stores[key] { return try await entry.task.value }
+        let directory = self.directory, keychain = self.keychain
         let task = Task {
-            let cache = try PrivateBridgeCache(pairingId: pairingId)
+            let cache = try PrivateBridgeCache(pairingId: pairingId, directory: directory, keychain: keychain)
             return try await CompanionDocumentOutbox(cache: cache, vaultId: vaultId,
                 data: cache.data(vaultId: vaultId, domain: .writing, recordId: kind.storageKey), kind: kind)
         }
-        stores[key] = task
+        stores[key] = Store(vaultId: vaultId, task: task)
         do { return try await task.value } catch { stores[key] = nil; throw error }
     }
-    public func prepareForRevocation(pairingId: String) async throws {
+    public func prepareForRevocation(pairingId: String, vaultIds: Set<String>? = nil) async throws {
         var visited = Set<String>()
         while let next = stores.first(where: { $0.key.hasPrefix("\(pairingId)|") && !visited.contains($0.key) }) {
-            let queue = try await next.value.value
-            try await queue.prepareForRevocation()
+            let queue = try await next.value.task.value
+            if vaultIds == nil || vaultIds!.contains(next.value.vaultId) { try await queue.prepareForRevocation() }
+            else { try await queue.flushForPreservation() }
             visited.insert(next.key)
         }
     }
-    public func forget(pairingId: String) {
-        for key in stores.keys.filter({ $0.hasPrefix("\(pairingId)|") }) { stores[key] = nil }
+    public func forget(pairingId: String, vaultIds: Set<String>? = nil) async {
+        let selected = stores.filter { $0.key.hasPrefix("\(pairingId)|") && (vaultIds == nil || vaultIds!.contains($0.value.vaultId)) }
+        for (key, entry) in selected {
+            if let queue = try? await entry.task.value { await queue.retireForScopeChange() }
+            stores[key] = nil
+        }
     }
 }
