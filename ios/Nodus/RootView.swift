@@ -259,8 +259,10 @@ struct SpacePickerView: View {
                     // device rather than to a vault.
                     if tray.outbox.hasAnything { queueControl }
                     if !savedWork.isEmpty {
-                        Button("Trabajo guardado", systemImage: "doc.text") { showingSavedWork = true }
-                            .frame(minHeight: 44).accessibilityIdentifier("saved-local-work")
+                        Button { showingSavedWork = true } label: {
+                            Label("Trabajo guardado", systemImage: "doc.text")
+                                .frame(minHeight: 44).contentShape(Rectangle())
+                        }.accessibilityIdentifier("saved-local-work")
                     }
 
                     if let stranded = model.needsSignIn {

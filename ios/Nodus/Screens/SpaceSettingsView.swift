@@ -849,12 +849,16 @@ struct RecoveredAuthoringArchiveRow: View {
             Text(archive.createdAt, format: .dateTime.day().month().year())
             Text("El archivo original permanece cifrado y puede exportarse.").font(.caption).foregroundStyle(.secondary)
             if !archive.macIdentityKnown { Text("El trabajo se conserva sin incorporarlo automáticamente a otro espacio.").font(.caption) }
-            Button("Exportar trabajo conservado") {
+            Button {
                 Task {
                     do { lease = try PrivateBridgeFileLease.write(try await PrivateBridgeAuthoringRecovery.shared.export(id: archive.id), filename: "Nodus-local-work.json") }
                     catch { issue = error.localizedDescription }
                 }
-            }.frame(minHeight: 44).accessibilityIdentifier("recovered-work-export")
+            } label: {
+                Text("Exportar trabajo conservado")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }.accessibilityIdentifier("recovered-work-export")
             if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
         }
         .sheet(isPresented: Binding(get: { lease != nil }, set: { if !$0 { lease = nil } })) {
