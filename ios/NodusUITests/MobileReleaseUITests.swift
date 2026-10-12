@@ -115,6 +115,40 @@ final class MobileReleaseUITests: XCTestCase {
         }
     }
     @MainActor
+    func testLiveProsopographyOpensDocumentedIdentityAndAuthoritySources() throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_PERSON_DOSSIER"])
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
+        func value(_ key: String) throws -> String { try XCTUnwrap(fixture[key] as? String) }
+        let app = try openExistingVault(destination: "prosopPersons", vaultId: value("vaultId"))
+        defer { app.terminate() }
+        let catalogue = app.buttons["workspace-catalogue-prosopPersons"]
+        if catalogue.waitForExistence(timeout: 10), catalogue.isHittable { catalogue.tap() }
+        let row = app.buttons["prosop-person-open-" + (try value("personId"))]
+        XCTAssertTrue(row.waitForExistence(timeout: 45))
+        for _ in 0..<10 { if row.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(row.isHittable); row.tap()
+        let sources = app.buttons["prosop-person-sources"]
+        XCTAssertTrue(sources.waitForExistence(timeout: 15))
+        for _ in 0..<12 { if sources.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(sources.isHittable); XCTAssertGreaterThanOrEqual(sources.frame.height, 44); sources.tap()
+        let reader = app.descendants(matching: .any)["private-corpus-source-prosop-person"].firstMatch
+        XCTAssertTrue(reader.waitForExistence(timeout: 45))
+        let identity = app.staticTexts["provisional"]
+        for _ in 0..<10 { if identity.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(identity.exists && identity.isHittable, "The profile must render its actual identity state instead of an empty card.")
+        capture(app, "prosopography-documented-identity")
+        let picker = app.descendants(matching: .any)["private-source-group-picker"].firstMatch
+        for _ in 0..<10 { if picker.isHittable { break }; app.swipeDown() }
+        XCTAssertTrue(picker.isHittable); picker.tap()
+        let authorityGroup = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Identificadores de autoridad")).firstMatch
+        XCTAssertTrue(authorityGroup.waitForExistence(timeout: 10)); authorityGroup.tap()
+        let identifier = app.staticTexts[try value("authorityId")]
+        for _ in 0..<10 { if identifier.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(identifier.exists && identifier.isHittable, "The complete saved authority identifier must remain readable.")
+        XCTAssertTrue(app.staticTexts[try value("authorityScheme")].exists)
+        capture(app, "prosopography-complete-authority-identifier")
+    }
+    @MainActor
     func testLivePhoneChatStreamsCopiesAndReopensFromHistory() throws {
         let app = try openExistingPrincipal(destination: "settings")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }

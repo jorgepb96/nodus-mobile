@@ -75,6 +75,7 @@ struct PrivateCorpusSourceView: View {
                                 Label(copy.source.groups.first { $0.key == selectedGroup }?.title ?? "Contenido del dossier", systemImage: "line.3.horizontal.decrease")
                                     .frame(minHeight: 44)
                             }
+                            .accessibilityIdentifier("private-source-group-picker")
                             if selectedGroup == "transcripts" || (reference.kind == .testimonyTranscript && selectedGroup == "segments") {
                                 recordingReader
                             } else {
@@ -162,6 +163,19 @@ struct PrivateCorpusSourceView: View {
     private func relatedRecord(_ row: Row) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let title = row.text("title") ?? row.text("interview_title") ?? row.text("display_name") ?? row.text("literal_name") { Text(title).font(.headline) }
+            if reference.kind == .person, selectedGroup == "profile" {
+                ForEach([("identity_status", "Identity status"), ("review_status", "Review status"),
+                    ("privacy_status", "Privacy"), ("preferred_name_basis", "Preferred name basis")], id: \.0) { key, title in
+                    if let value = row.text(key), !value.isEmpty {
+                        LabeledContent(LocalizedStringKey(title), value: value)
+                    }
+                }
+            }
+            if reference.kind == .person, selectedGroup == "authorities" {
+                if let scheme = row.text("scheme"), let identifier = row.text("external_id") {
+                    LabeledContent(scheme, value: identifier).textSelection(.enabled)
+                }
+            }
             fields(row, keys: ["summary", "quoted_text", "locator_display", "citation", "description", "context", "role_or_title",
                 "literal_value", "value_text", "value_date_display", "unit", "rationale", "scope_note", "representativeness_note",
                 "known_bias_note", "preferred_name_basis", "identity_status", "review_status", "privacy_status", "reliability_status", "status",

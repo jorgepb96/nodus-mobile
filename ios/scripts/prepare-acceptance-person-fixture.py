@@ -23,6 +23,7 @@ fixture = {
     "biographySnippet": "Esta biografía describe una persona ficticia preparada para comprobar",
     "notes": "Esta nota ficticia comprueba que las notas privadas de la persona también se pueden consultar desde el móvil.",
     "birthDate": "1700", "deathDate": "1750", "nationalId": "NODUS-QA-010",
+    "authorityScheme": "Nodus QA (ficticio)", "authorityId": "NODUS-QA-AUTHORITY-010",
     "providerCalls": 0, "extractionOrIndexingStarted": False,
 }
 now = datetime.now(timezone.utc).isoformat()
@@ -37,9 +38,18 @@ with sqlite3.connect(Path(vault["path"]).resolve()) as connection:
     else:
         assert row == values, "An existing fixture must not overwrite later edits"
     assert connection.execute("SELECT count(*) FROM prosop_person_profiles WHERE person_id=?", (fixture["personId"],)).fetchone()[0] == 1
+    authority = connection.execute("SELECT scheme,external_id FROM prosop_authority_ids WHERE authority_id=?", ("authority-acceptance-mobile-010",)).fetchone()
+    if authority is None:
+        connection.execute("INSERT INTO prosop_authority_ids(authority_id,entity_kind,entity_id,scheme,external_id,created_at) VALUES(?,?,?,?,?,?)",
+            ("authority-acceptance-mobile-010", "person", fixture["personId"], fixture["authorityScheme"], fixture["authorityId"], now))
+    else:
+        assert authority == (fixture["authorityScheme"], fixture["authorityId"])
 output = lab / "person-dossier-acceptance-input.json"
 if output.exists():
-    assert json.loads(output.read_text()) == fixture
+    existing = json.loads(output.read_text())
+    assert all(fixture.get(key) == value for key, value in existing.items()), "Only new fixture fields may be added"
+    if existing != fixture:
+        output.write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n")
 else:
     output.write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n")
     output.chmod(0o600)
