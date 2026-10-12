@@ -921,6 +921,9 @@ private struct WorldEntityDossier: View {
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button("Done") { connectedTarget = nil }
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                                .buttonStyle(.plain)
                                 .accessibilityIdentifier("world-connected-close-\(target.rowID)")
                         }
                     }

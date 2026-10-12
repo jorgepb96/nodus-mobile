@@ -211,15 +211,15 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(place.isHittable); XCTAssertTrue(place.label.contains(try value("placeTitle"))); place.tap()
         try revealBody("placeBody")
         let closePlace = app.buttons["world-connected-close-" + (try value("place_id"))]
-        XCTAssertTrue(closePlace.isHittable); closePlace.tap()
+        XCTAssertTrue(closePlace.isHittable); XCTAssertGreaterThanOrEqual(closePlace.frame.height, 44); closePlace.tap()
         let character = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "world-connected-record-scene_characters-", try value("characterTitle"))).firstMatch
         XCTAssertTrue(character.waitForExistence(timeout: 15))
         for _ in 0..<18 { if character.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(character.isHittable); character.tap()
         try revealBody("characterBody")
         let closeCharacter = app.buttons["world-connected-close-" + (try value("person_id"))]
-        XCTAssertTrue(closeCharacter.isHittable); closeCharacter.tap()
-        XCTAssertTrue(app.buttons["workspace-tab-scenes-" + (try value("scene_id"))].exists)
+        XCTAssertTrue(closeCharacter.isHittable); XCTAssertGreaterThanOrEqual(closeCharacter.frame.height, 44); closeCharacter.tap()
+        XCTAssertTrue(app.buttons["workspace-tab-scenes-scenes-" + (try value("scene_id"))].exists)
         capture(app, "live-world-returns-to-original-scene")
     }
     @MainActor private func readSavedTestimony(kind: String, route: String) throws {
