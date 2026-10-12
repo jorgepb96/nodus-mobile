@@ -20,7 +20,12 @@ struct CollectionDossierBody: View {
             if displayPrimary {
                 DossierValueView(session: session, value: .object(dossier.primary.columns), field: "", linkedCollection: nil, onOpenRelated: onOpenRelated)
             }
-            ForEach(dossier.sections.keys.sorted(), id: \.self) { key in
+            if session.vaultType == .genealogy {
+                GenealogyDossierContextView(session: session, dossier: dossier, onOpenRelated: onOpenRelated)
+            }
+            let contextual = session.vaultType == .genealogy
+                ? Set(GenealogyDossierContext.sections(dossier).map(\.id)).union(["evidenceAccess"]) : []
+            ForEach(dossier.sections.keys.filter { !contextual.contains($0) }.sorted(), id: \.self) { key in
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text(Self.label(key)).font(.headline)

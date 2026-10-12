@@ -395,7 +395,11 @@ struct RowDetailView: View {
             }
             fields(of: detail.person)
             group("Names", detail.names, table: "person_names")
-            group("Relationships", detail.relationships, table: "relationships")
+            if session.vaultType == .genealogy, let resourceDossier {
+                GenealogyDossierContextView(session: session, dossier: resourceDossier, onOpenRelated: onOpenRelated)
+            } else {
+                group("Relationships", detail.relationships, table: "relationships")
+            }
             group("Events", detail.events, table: "events", linksTo: Collections["events"])
             group("Places", detail.places, table: "places", linksTo: Collections["places"])
         }
@@ -882,7 +886,9 @@ struct RowDetailView: View {
                 let detail = try dossier.decode(PersonDetail.self)
                 row = detail.person
                 enriched = .person(detail)
-                supplement = try dossier.supplement(excluding: ["names", "places", "relationships", "events", "portrait"])
+                supplement = try dossier.supplement(excluding: session.vaultType == .genealogy
+                    ? ["names", "places", "relationships", "events", "portrait", "placeLinks", "evidenceAccess"]
+                    : ["names", "places", "relationships", "events", "portrait"])
             case "authors":
                 let detail = try dossier.decode(AuthorDetail.self)
                 row = detail.author
