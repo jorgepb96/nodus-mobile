@@ -67,8 +67,13 @@ final class MobileReleaseUITests: XCTestCase {
         app.buttons["Cambiar de espacio"].tap()
         let principal = app.buttons["space-" + vaultId]
         XCTAssertTrue(principal.waitForExistence(timeout: 20), "The previously linked workspace must be available.")
-        for _ in 0..<8 { if principal.isHittable { break }; app.swipeDown() }
-        XCTAssertTrue(principal.isHittable); principal.tap()
+        for _ in 0..<16 {
+            if principal.isHittable { break }
+            if principal.frame.isEmpty || principal.frame.maxY > app.windows.firstMatch.frame.maxY - 30 {
+                app.swipeUp()
+            } else { app.swipeDown() }
+        }
+        XCTAssertTrue(principal.isHittable, app.debugDescription); principal.tap()
         XCTAssertTrue(navigation.waitForExistence(timeout: 45))
         if app.windows.firstMatch.frame.width < 600 { navigation.tap() }
         let route = app.buttons["nodus-nav-" + destination]
