@@ -18,6 +18,15 @@ public actor PrivateBridgeAuthoringRecovery {
     public struct Snapshot: Sendable {
         public let records: [Record]
         public let fingerprints: [String: String]
+        let requiredAuthoringFilenames: Set<String>
+        init(records: [Record], fingerprints: [String: String], requiredAuthoringFilenames: Set<String>? = nil) {
+            self.records = records; self.fingerprints = fingerprints
+            self.requiredAuthoringFilenames = requiredAuthoringFilenames ?? Set(records.map(\.filename))
+        }
+        public func selectingVaults(_ vaults: Set<String>) -> Snapshot {
+            Snapshot(records: records.filter { $0.vaultId.map(vaults.contains) ?? false }, fingerprints: fingerprints,
+                requiredAuthoringFilenames: requiredAuthoringFilenames)
+        }
     }
     public struct Receipt: Sendable {
         let pairingId: String
@@ -25,6 +34,8 @@ public actor PrivateBridgeAuthoringRecovery {
         let digest: String
         let recoveryKeyName: String
         let fingerprints: [String: String]
+        let archivedFilenames: Set<String>
+        let completeAuthoringInventory: Bool
         func validates(pairingId: String, folder: URL) throws -> Bool {
             guard self.pairingId == pairingId, FileManager.default.fileExists(atPath: archiveURL.path),
                   Self.hash(try Data(contentsOf: archiveURL)) == digest else { return false }
@@ -54,6 +65,7 @@ public actor PrivateBridgeAuthoringRecovery {
         let records: [Record]
         var adoptedBy: [String: Set<String>] = [:]
         var revoked = false
+        var forceReview: Bool? = nil
     }
     public enum RecoveryError: Error, LocalizedError {
         case unclassifiedWork, recoveryRequired, revokedWrites, invalidArchive, activeGeneration
@@ -94,7 +106,7 @@ public actor PrivateBridgeAuthoringRecovery {
     }
     private func write(_ archive: Archive) throws -> Data {
         guard let bytes = try AES.GCM.seal(JSONEncoder.nodus.encode(archive), using: key(archive.id)).combined else { throw RecoveryError.invalidArchive }
-        try bytes.write(to: archiveURL(archive.id), options: [.atomic, .completeFileProtection])
+        try PrivateBridgeProtectedFile.write(bytes, to: archiveURL(archive.id))
         BackupPolicy.apply(.excluded, to: archiveURL(archive.id)); return bytes
     }
     private func archives() throws -> [Archive] {
@@ -104,7 +116,7 @@ public actor PrivateBridgeAuthoringRecovery {
             return try read(id)
         }.sorted { $0.createdAt > $1.createdAt }
     }
-    public func preserve(snapshot: Snapshot, pairing: DesktopBridgePairing, macDeviceId: String?) throws -> Receipt {
+    public func preserve(snapshot: Snapshot, pairing: DesktopBridgePairing, macDeviceId: String?, forceReview: Bool = false) throws -> Receipt {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         BackupPolicy.apply(.excluded, to: directory)
         let id = UUID(); var bytes = [UInt8](repeating: 0, count: 32)
@@ -112,10 +124,10 @@ public actor PrivateBridgeAuthoringRecovery {
         try keychain.set(Data(bytes).base64EncodedString(), for: keyName(id))
         do {
             let archive = Archive(id: id, sourcePairingId: pairing.id, macDeviceId: macDeviceId, fingerprint: pairing.certificateFingerprint,
-                                  vaultIds: pairing.vaultIds, createdAt: Date(), records: snapshot.records)
+                                  vaultIds: pairing.vaultIds, createdAt: Date(), records: snapshot.records, forceReview: forceReview ? true : nil)
             let encrypted = try write(archive)
             _ = try read(id) // Readback proves the complete archive and its key before destructive revocation.
-            return Receipt(pairingId: pairing.id, archiveURL: archiveURL(id), digest: Self.hash(encrypted), recoveryKeyName: keyName(id), fingerprints: snapshot.fingerprints)
+            return Receipt(pairingId: pairing.id, archiveURL: archiveURL(id), digest: Self.hash(encrypted), recoveryKeyName: keyName(id), fingerprints: snapshot.fingerprints, archivedFilenames: Set(snapshot.records.map(\.filename)), completeAuthoringInventory: snapshot.requiredAuthoringFilenames.isSubset(of: Set(snapshot.records.map(\.filename))))
         } catch { try? keychain.remove(keyName(id)); try? FileManager.default.removeItem(at: archiveURL(id)); throw error }
     }
     public func completeRevocation(_ receipt: Receipt) throws {
@@ -139,7 +151,7 @@ public actor PrivateBridgeAuthoringRecovery {
                 !previous.contains(record.filename) && (record.vaultId.map { pairing.vaultIds.contains($0) } ?? archive.vaultIds.isSubset(of: pairing.vaultIds))
             }
             guard !selected.isEmpty else { continue }
-            try await cache.adoptAuthoringRecovery(selected, requiresReview: archive.sourcePairingId != pairing.id)
+            try await cache.adoptAuthoringRecovery(selected, requiresReview: archive.sourcePairingId != pairing.id || archive.forceReview == true)
             archive.adoptedBy[pairing.id] = previous.union(selected.map(\.filename))
             _ = try write(archive); count += selected.count
         }

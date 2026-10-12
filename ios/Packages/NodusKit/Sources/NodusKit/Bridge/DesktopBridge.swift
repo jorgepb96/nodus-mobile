@@ -18,6 +18,10 @@ public struct DesktopBridgePairing: Sendable, Hashable, Codable, Identifiable {
     public let id: String
     public let origin: String
     /// Addresses authenticated by the original QR/code. Optional for existing links.
+    public let wholeWorkspace: Bool?
+    public let macDeviceId: String?
+    /// Former authorized scopes retained only to locate and archive authored work.
+    public let retainedAuthoringVaultIds: Set<String>?
     public let alternateOrigins: [String]?
     /// SHA-256 of the exact leaf certificate accepted during explicit pairing.
     public let certificateFingerprint: String
@@ -38,7 +42,10 @@ public struct DesktopBridgePairing: Sendable, Hashable, Codable, Identifiable {
         domains: Set<DesktopBridgeDomain>,
         pairedAt: Date,
         expiresAt: Date?,
-        alternateOrigins: [String] = []
+        alternateOrigins: [String] = [],
+        wholeWorkspace: Bool? = nil,
+        macDeviceId: String? = nil,
+        retainedAuthoringVaultIds: Set<String>? = nil
     ) throws {
         try Self.validateOrigin(origin)
         for alternative in alternateOrigins { try Self.validateOrigin(alternative) }
@@ -47,6 +54,9 @@ public struct DesktopBridgePairing: Sendable, Hashable, Codable, Identifiable {
             throw DesktopBridgeError.invalidFingerprint
         }
         self.id = id
+        self.wholeWorkspace = wholeWorkspace
+        self.macDeviceId = macDeviceId
+        self.retainedAuthoringVaultIds = retainedAuthoringVaultIds
         let normalizedOrigin = origin.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.origin = normalizedOrigin
         var seen: Set<String> = [normalizedOrigin]
@@ -102,6 +112,7 @@ public enum DesktopBridgeError: Error, Sendable, Equatable {
     case certificateMismatch
     case malformedResponse
     case locked
+    case credentialRevoked
 }
 
 extension DesktopBridgeError: LocalizedError {
@@ -113,6 +124,7 @@ extension DesktopBridgeError: LocalizedError {
         case .expired: "The Desktop Bridge pairing has expired."
         case .certificateMismatch: "The Mac presented a different certificate. Pair it again before sending private data."
         case .malformedResponse: "The Desktop Bridge returned a response this app cannot read."
+        case .credentialRevoked: "El Mac ha cerrado este enlace. Tu trabajo local se conservará antes de eliminar las copias consultadas."
         case .locked: "Private Bridge data is unavailable while this device is locked."
         }
     }
@@ -133,12 +145,15 @@ public actor DesktopBridgeClient {
 
     /// Stored authorization is authoritative, but cannot replace the explicitly linked Mac.
     func refreshPairing() throws {
+        guard !store.isAuthorizationRevoked(pairingId: trustAnchor.id) else { throw DesktopBridgeError.credentialRevoked }
         if let current = store.pairings().first(where: { $0.id == trustAnchor.id }) {
             requiresStoredCredential = true
             guard current.deviceId == trustAnchor.deviceId,
                   // Persisted ISO dates retain milliseconds, unlike a freshly created Date.
                   abs(current.pairedAt.timeIntervalSince(trustAnchor.pairedAt)) < 0.001,
-                  current.certificateFingerprint == trustAnchor.certificateFingerprint else {
+                  current.certificateFingerprint == trustAnchor.certificateFingerprint,
+                  current.wholeWorkspace != true || trustAnchor.wholeWorkspace == true,
+                  trustAnchor.macDeviceId == nil || current.macDeviceId == trustAnchor.macDeviceId else {
                 throw DesktopBridgeError.permissionDenied
             }
             let approvedOrigins = [current.origin] + (current.alternateOrigins ?? [])
@@ -240,7 +255,8 @@ public actor DesktopBridgeClient {
             if let renewal {
                 guard envelope.token == renewal.nextToken, envelope.pairing.id == renewal.pairing.id,
                       envelope.pairing.deviceId == renewal.pairing.deviceId,
-                      Set(envelope.pairing.vaultIds) == renewal.pairing.vaultIds,
+                      envelope.pairing.wholeWorkspace == renewal.pairing.wholeWorkspace,
+                      renewal.pairing.wholeWorkspace == true || Set(envelope.pairing.vaultIds) == renewal.pairing.vaultIds,
                       Set(envelope.pairing.domains) == renewal.pairing.domains else { throw DesktopBridgeError.malformedResponse }
             }
             if let configuration = envelope.relay {
@@ -257,7 +273,7 @@ public actor DesktopBridgeClient {
                     domains: Set(envelope.pairing.domains),
                     pairedAt: envelope.pairing.createdAt,
                     expiresAt: envelope.pairing.expiresAt,
-                    alternateOrigins: [provisional.origin] + alternateOrigins
+                    alternateOrigins: [provisional.origin] + alternateOrigins, wholeWorkspace: envelope.pairing.wholeWorkspace, macDeviceId: renewal?.pairing.macDeviceId, retainedAuthoringVaultIds: renewal?.pairing.retainedAuthoringVaultIds
                 ),
                 envelope.token
             )
@@ -334,7 +350,7 @@ public actor DesktopBridgeClient {
         if let stored = store.credential(for: pairing) { token = stored }
         else if requiresStoredCredential { throw DesktopBridgeError.locked }
         current.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let sentToken = token
+        var sentToken = token
         let alternatives = [pairing.origin] + (pairing.alternateOrigins ?? [])
         var result = try await Self.perform(current, session: session, relay: relay, alternateOrigins: alternatives)
         if (result.1 as? HTTPURLResponse)?.statusCode == 401 {
@@ -348,9 +364,16 @@ public actor DesktopBridgeClient {
             }
             if let fresh = store.credential(for: pairing), fresh != sentToken,
                store.pairings().contains(where: { $0.id == pairing.id }) {
-                token = fresh; current.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
+                token = fresh; sentToken = fresh; current.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
                 result = try await Self.perform(current, session: session, relay: relay, alternateOrigins: alternatives)
             }
+        }
+        if (result.1 as? HTTPURLResponse)?.statusCode == 401,
+           (try? JSONDecoder.nodus.decode(JSONValue.self, from: result.0).objectValue?["error"]) == .string("invalid_token"),
+           requiresStoredCredential, store.markAuthorizationRevoked(pairingId: pairing.id, rejectedToken: sentToken) {
+            try? store.offlineCache(for: pairing).beginClosingForRevocation()
+            NotificationCenter.default.post(name: DesktopBridgePairingStore.authorizationRevokedNotification, object: pairing.id)
+            throw DesktopBridgeError.credentialRevoked
         }
         if let effective = result.1.url.flatMap(Self.origin(of:)) { directOrigin = effective }
         return result
@@ -832,6 +855,8 @@ public struct DesktopLiveCapabilities: Decodable, Sendable {
     public let deviceName: String
     public let vaults: [Vault]
     public let operations: [String]
+    public let wholeWorkspace: Bool?
+    public let domains: [DesktopBridgeDomain]?
 }
 
 struct PairingRequest: Encodable {
@@ -850,6 +875,7 @@ struct PairingEnvelope: Decodable {
         let domains: [DesktopBridgeDomain]
         let createdAt: Date
         let expiresAt: Date?
+        let wholeWorkspace: Bool?
     }
     let token: String
     let relay: DesktopRelayConfiguration?
@@ -861,32 +887,72 @@ struct PairingEnvelope: Decodable {
 /// the Mac is currently unreachable and has not yet recorded its own revocation.
 public struct DesktopBridgePairingStore: @unchecked Sendable {
     func offlineCache(for pairing: DesktopBridgePairing) throws -> PrivateBridgeCache {
-        try PrivateBridgeCache(pairingId: pairing.id, keychain: keychain)
+        try PrivateBridgeCache(pairingId: pairing.id, directory: cacheDirectory, keychain: keychain)
     }
 
     private static let renewalLock = NSLock()
     private static let pendingLock = NSLock()
     private let defaults: UserDefaults
     private let keychain: KeychainStore
+    private let cacheDirectory: URL
     private let metadataKey = "desktop-bridge-pairings-v1"
     private let pendingKey = "desktop-bridge-pending-offer-ids-v1"
     private let pendingIndexKey = "desktop-bridge-pending-index-v1"
 
-    public init(defaults: UserDefaults = .standard, keychain: KeychainStore = KeychainStore()) {
+    public init(defaults: UserDefaults = .standard, keychain: KeychainStore = KeychainStore(), cacheDirectory: URL = PrivateBridgeCache.defaultDirectory) {
         self.defaults = defaults
         self.keychain = keychain
+        self.cacheDirectory = cacheDirectory
     }
 
-    public func pairings() -> [DesktopBridgePairing] {
+    public static let authorizationRevokedNotification = Notification.Name("NodusDesktopBridgeAuthorizationRevoked")
+    private var revokedAuthorizationKey: String { metadataKey + ".revokedAuthorizations" }
+    public func isAuthorizationRevoked(pairingId: String) -> Bool { (defaults.stringArray(forKey: revokedAuthorizationKey) ?? []).contains(pairingId) }
+    @discardableResult
+    public func markAuthorizationRevoked(pairingId: String, rejectedToken: String? = nil) -> Bool {
+        Self.renewalLock.withLock {
+            if let rejectedToken, keychain.value(for: KeychainStore.desktopBridgeKey(pairingId: pairingId)) != rejectedToken { return false }
+            defaults.set(Array(Set((defaults.stringArray(forKey: revokedAuthorizationKey) ?? []) + [pairingId])), forKey: revokedAuthorizationKey)
+            return true
+        }
+    }
+    public func pairings(includeRevoked: Bool = false) -> [DesktopBridgePairing] {
         guard let data = defaults.data(forKey: metadataKey) else { return [] }
-        return (try? JSONDecoder.nodus.decode([DesktopBridgePairing].self, from: data)) ?? []
+        let all = (try? JSONDecoder.nodus.decode([DesktopBridgePairing].self, from: data)) ?? []
+        return includeRevoked ? all : all.filter { !isAuthorizationRevoked(pairingId: $0.id) }
     }
 
     public func save(_ pairing: DesktopBridgePairing, token: String) throws {
-        var values = pairings().filter { $0.id != pairing.id }
-        values.append(pairing)
-        try keychain.set(token, for: KeychainStore.desktopBridgeKey(pairingId: pairing.id))
-        defaults.set(try JSONEncoder.nodus.encode(values), forKey: metadataKey)
+        try Self.renewalLock.withLock {
+            guard !isAuthorizationRevoked(pairingId: pairing.id) else { throw DesktopBridgeError.credentialRevoked }
+            var values = pairings(includeRevoked: true).filter { $0.id != pairing.id }
+            values.append(pairing)
+            try keychain.set(token, for: KeychainStore.desktopBridgeKey(pairingId: pairing.id))
+            defaults.set(try JSONEncoder.nodus.encode(values), forKey: metadataKey)
+        }
+    }
+    /// A capabilities request can overlap token renewal. Replace only metadata,
+    /// deriving scope from the freshest grant without writing the captured token.
+    public func updateWorkspaceMetadata(_ capabilities: DesktopLiveCapabilities, expectedPairing: DesktopBridgePairing, trustedMacDeviceId: String) throws -> DesktopBridgePairing {
+        try Self.renewalLock.withLock {
+            guard !isAuthorizationRevoked(pairingId: expectedPairing.id),
+                  let current = pairings().first(where: { $0.id == expectedPairing.id }),
+                  current.deviceId == expectedPairing.deviceId,
+                  current.certificateFingerprint == expectedPairing.certificateFingerprint,
+                  abs(current.pairedAt.timeIntervalSince(expectedPairing.pairedAt)) < 0.001 else { throw DesktopBridgeError.permissionDenied }
+            let refreshed = try current.refreshedWorkspace(capabilities, trustedMacDeviceId: trustedMacDeviceId)
+            let values = pairings(includeRevoked: true).map { $0.id == current.id ? refreshed : $0 }
+            defaults.set(try JSONEncoder.nodus.encode(values), forKey: metadataKey)
+            return refreshed
+        }
+    }
+    public func completeAuthoringRetirement(pairingId: String, retiredVaultIds: Set<String>) throws -> DesktopBridgePairing {
+        try Self.renewalLock.withLock {
+            guard !isAuthorizationRevoked(pairingId: pairingId), let current = pairings().first(where: { $0.id == pairingId }) else { throw DesktopBridgeError.credentialRevoked }
+            let updated = try current.authoringArchiveScope(current.vaultIds, retained: (current.retainedAuthoringVaultIds ?? []).subtracting(retiredVaultIds))
+            defaults.set(try JSONEncoder.nodus.encode(pairings(includeRevoked: true).map { $0.id == pairingId ? updated : $0 }), forKey: metadataKey)
+            return updated
+        }
     }
 
     public func credential(for pairing: DesktopBridgePairing) -> String? {
@@ -943,6 +1009,7 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
                       pending.offer.certificateFingerprint == offer.certificateFingerprint,
                       pending.offer.macDeviceId == offer.macDeviceId,
                       pending.offer.renewalPairingId == offer.renewalPairingId,
+                      pending.offer.wholeWorkspace == offer.wholeWorkspace,
                       Set(pending.offer.origins) == Set(offer.origins),
                       Set(pending.offer.vaultIds) == Set(offer.vaultIds),
                       Set(pending.offer.domains) == Set(offer.domains) else { throw DesktopBridgeError.permissionDenied }
@@ -1033,8 +1100,10 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
         if FileManager.default.fileExists(atPath: folder.path) {
             let protected = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
                 .contains { $0.pathExtension == "bridgecache" && !$0.lastPathComponent.hasPrefix("read-") }
-            if protected, (try authoringRecovery?.validates(pairingId: pairing.id, folder: folder) != true) || authoringRecovery.flatMap({ keychain.value(for: $0.recoveryKeyName) }) == nil {
-                throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired
+            if protected {
+                guard let authoringRecovery, authoringRecovery.completeAuthoringInventory,
+                      try authoringRecovery.validates(pairingId: pairing.id, folder: folder),
+                      keychain.value(for: authoringRecovery.recoveryKeyName) != nil else { throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired }
             }
         }
         try completePendingPairing(grantId: pairing.id)
@@ -1046,9 +1115,10 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
         try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: pairing.id))
         if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) }
         defaults.set(
-            try JSONEncoder.nodus.encode(pairings().filter { $0.id != pairing.id }),
+            try JSONEncoder.nodus.encode(pairings(includeRevoked: true).filter { $0.id != pairing.id }),
             forKey: metadataKey
         )
+        defaults.set((defaults.stringArray(forKey: revokedAuthorizationKey) ?? []).filter { $0 != pairing.id }, forKey: revokedAuthorizationKey)
     }
 }
 
@@ -1114,6 +1184,20 @@ public actor PrivateBridgeCache {
     private let folder: URL
     private let key: SymmetricKey
     private let readLimitBytes: Int
+    private var initialScopeEpochs: [String: String] = [:]
+    private struct VaultScope: Codable { let epoch: String; let closed: Bool }
+    private func scopeKey(_ vault: String) -> String { PrivateBridgeAuthoringRecovery.hash(Data(vault.utf8)) }
+    private func scopeURL(_ vault: String) -> URL { folder.appendingPathComponent("scope-" + scopeKey(vault) + ".metadata") }
+    private func requireVaultScope(_ vault: String) throws {
+        let url = scopeURL(vault)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        let state = try JSONDecoder.nodus.decode(VaultScope.self, from: Data(contentsOf: url))
+        guard !state.closed, (initialScopeEpochs[scopeKey(vault)] ?? "initial") == state.epoch else { throw DesktopBridgeError.permissionDenied }
+    }
+    private func readScopeURL(_ file: URL) -> URL { file.appendingPathExtension("scope") }
+    private func recordReadScope(_ file: URL, vault: String) throws {
+        try PrivateBridgeProtectedFile.write(Data(scopeKey(vault).utf8), to: readScopeURL(file))
+    }
 
     public init(pairingId: String, directory: URL, keychain: KeychainStore = KeychainStore(), readLimitBytes: Int = PrivateBridgeCache.defaultReadLimitBytes) throws {
         folder = directory.appendingPathComponent("bridge-\(pairingId)", isDirectory: true)
@@ -1135,6 +1219,15 @@ public actor PrivateBridgeCache {
             try keychain.set(data.base64EncodedString(), for: keyName)
             return SymmetricKey(data: data)
         }
+        initialScopeEpochs = try Self.diskLock.withLock {
+            var epochs: [String: String] = [:]
+            for url in try FileManager.default.contentsOfDirectory(at: cacheFolder, includingPropertiesForKeys: nil)
+                where url.lastPathComponent.hasPrefix("scope-") && url.pathExtension == "metadata" {
+                let state = try JSONDecoder.nodus.decode(VaultScope.self, from: Data(contentsOf: url))
+                epochs[String(url.deletingPathExtension().lastPathComponent.dropFirst(6))] = state.epoch
+            }
+            return epochs
+        }
     }
 
     public init(pairingId: String, keychain: KeychainStore = KeychainStore()) throws {
@@ -1148,7 +1241,8 @@ public actor PrivateBridgeCache {
         let sealed = try AES.GCM.seal(data, using: key)
         guard let combined = sealed.combined else { throw DesktopBridgeError.malformedResponse }
         return try Self.diskLock.withLock {
-            try requireWritable()
+            if Self.isDurable(domain) { try requireWritable() } else { try requireReadingAllowed() }
+            try requireVaultScope(vaultId)
             try cleanReadPacks()
             let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
             let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
@@ -1156,8 +1250,9 @@ public actor PrivateBridgeCache {
                 try removeIfPresent(url); try removeIfPresent(legacy)
                 return false
             }
-            try combined.write(to: url, options: [.atomic, .completeFileProtection])
+            try PrivateBridgeProtectedFile.write(combined, to: url)
             BackupPolicy.apply(.excluded, to: url)
+            if !Self.isDurable(domain) { try recordReadScope(url, vault: vaultId) }
             try removeIfPresent(legacy)
             try trimReusableCopies(keeping: url)
             return true
@@ -1171,6 +1266,7 @@ public actor PrivateBridgeCache {
         guard !entity.isEmpty,entity.utf8.count <= 256 else { throw DesktopBridgeError.malformedResponse }
         try Self.diskLock.withLock {
             try requireWritable()
+            try requireVaultScope(vaultId)
             let indexURL = fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:indexId)
             var entries: [String] = []
             if FileManager.default.fileExists(atPath:indexURL.path) {
@@ -1180,13 +1276,14 @@ public actor PrivateBridgeCache {
             guard entries.count <= 10_000 else { throw DesktopBridgeError.malformedResponse }
             for (url,bytes) in [(indexURL,try JSONEncoder.nodus.encode(entries)),(fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:recordId),data)] {
                 guard let sealed = try AES.GCM.seal(bytes,using:key).combined else { throw DesktopBridgeError.malformedResponse }
-                try sealed.write(to:url,options:[.atomic,.completeFileProtection]);BackupPolicy.apply(.excluded,to:url)
+                try PrivateBridgeProtectedFile.write(sealed, to: url);BackupPolicy.apply(.excluded,to:url)
             }
         }
     }
     public func data(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Data? {
         try Self.diskLock.withLock {
-            try requireWritable()
+            if Self.isDurable(domain) { try requireWritable() } else { try requireReadingAllowed() }
+            try requireVaultScope(vaultId)
             try cleanReadPacks()
             let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
             let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
@@ -1199,10 +1296,16 @@ public actor PrivateBridgeCache {
                 }
                 return nil
             }
+            if !Self.isDurable(domain), !FileManager.default.fileExists(atPath: readScopeURL(source).path),
+               FileManager.default.fileExists(atPath: scopeURL(vaultId).path) {
+                // Unclassified historical reads cannot survive a retired authorization epoch.
+                try removeIfPresent(source); return nil
+            }
             let value = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: source)), using: key)
             // Migrate only after decrypting and knowing the domain. Unclassified
             // legacy files may hold drafts and must never be blindly evicted.
             if source == legacy { try FileManager.default.moveItem(at: legacy, to: url) }
+            if !Self.isDurable(domain) { try recordReadScope(url, vault: vaultId) }
             try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
             try trimReusableCopies(keeping: url)
             return value
@@ -1216,6 +1319,7 @@ public actor PrivateBridgeCache {
         }
     }
 
+    private nonisolated var closingMarker: URL { folder.deletingLastPathComponent().appendingPathComponent(folder.lastPathComponent + ".closing") }
     private nonisolated var revocationMarker: URL { folder.deletingLastPathComponent().appendingPathComponent(folder.lastPathComponent + ".revoked") }
     private nonisolated func requireWritable() throws {
         if FileManager.default.fileExists(atPath: revocationMarker.path) { throw PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites }
@@ -1223,6 +1327,7 @@ public actor PrivateBridgeCache {
     public nonisolated func beginAuthoringActivity() throws {
         try Self.diskLock.withLock {
             try requireWritable()
+            guard !FileManager.default.fileExists(atPath: closingMarker.path) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites }
             Self.authoringActivities[folder.path, default: 0] += 1
         }
     }
@@ -1233,12 +1338,69 @@ public actor PrivateBridgeCache {
             else { Self.authoringActivities[folder.path] = count - 1 }
         }
     }
+    public nonisolated func beginClosingForRevocation() throws {
+        try Self.diskLock.withLock {
+            try PrivateBridgeProtectedFile.write(Data(), to: closingMarker)
+            BackupPolicy.apply(.excluded, to: closingMarker)
+        }
+    }
+    public nonisolated static func waitForAuthoringToFinish(pairingId: String, directory: URL = PrivateBridgeCache.defaultDirectory) async throws {
+        let path = directory.appendingPathComponent("bridge-" + pairingId).path
+        while diskLock.withLock({ authoringActivities[path, default: 0] > 0 }) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+    }
+    public func waitForAuthoringToFinish() async throws {
+        while Self.diskLock.withLock({ Self.authoringActivities[folder.path, default: 0] > 0 }) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+    }
+    private nonisolated func requireReadingAllowed() throws {
+        try requireWritable()
+        guard !FileManager.default.fileExists(atPath: closingMarker.path) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites }
+    }
     public func freezeForRevocation(_ frozen: Bool) throws {
         try Self.diskLock.withLock {
             if frozen {
                 guard Self.authoringActivities[folder.path, default: 0] == 0 else { throw PrivateBridgeAuthoringRecovery.RecoveryError.activeGeneration }
-                try Data().write(to: revocationMarker, options: [.atomic, .completeFileProtection]); BackupPolicy.apply(.excluded, to: revocationMarker) }
-            else { try removeIfPresent(revocationMarker) }
+                try PrivateBridgeProtectedFile.write(Data(), to: revocationMarker); BackupPolicy.apply(.excluded, to: revocationMarker) }
+            else { try removeIfPresent(revocationMarker); try removeIfPresent(closingMarker) }
+        }
+    }
+    /// Reading copies are revocable independently of the encrypted authored backup.
+    public func purgeReadingCopies(vaultIds: Set<String>? = nil) throws {
+        try Self.diskLock.withLock {
+            for vault in vaultIds ?? [] {
+                let url = scopeURL(vault)
+                let old = try? JSONDecoder.nodus.decode(VaultScope.self, from: Data(contentsOf: url))
+                if old?.closed != true {
+                    try PrivateBridgeProtectedFile.write(try JSONEncoder.nodus.encode(VaultScope(epoch: UUID().uuidString, closed: true)), to: url)
+                }
+            }
+            let scopeKeys = vaultIds.map { Set($0.map(scopeKey)) }
+            for file in try cacheFiles() where file.url.lastPathComponent.hasPrefix("read-") {
+                let recorded = try? String(contentsOf: readScopeURL(file.url), encoding: .utf8)
+                if scopeKeys == nil || recorded.map({ scopeKeys!.contains($0) }) == true {
+                    try removeIfPresent(file.url); try removeIfPresent(readScopeURL(file.url))
+                }
+            }
+            for pack in try readPackManifests() where vaultIds == nil || vaultIds!.contains(pack.vaultId) { try removeIfPresent(readPackPointer(pack.id)) }
+            try cleanReadPacks()
+        }
+    }
+    /// Remove only exact archived authored records for scopes no longer authorized.
+    public func retireArchivedVaultRecords(_ records: [PrivateBridgeAuthoringRecovery.Record], receipt: PrivateBridgeAuthoringRecovery.Receipt) throws {
+        try Self.diskLock.withLock {
+            let pairingId = String(folder.lastPathComponent.dropFirst("bridge-".count))
+            guard Set(records.map(\.filename)).isSubset(of: receipt.archivedFilenames), try receipt.validates(pairingId: pairingId, folder: folder) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired }
+            for vault in Set(records.compactMap(\.vaultId)) {
+                try PrivateBridgeProtectedFile.write(try JSONEncoder.nodus.encode(VaultScope(epoch: UUID().uuidString, closed: true)), to: scopeURL(vault))
+            }
+            for record in records where record.vaultId != nil {
+                guard PrivateBridgeAuthoringRecovery.validFilename(record.filename) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                try removeIfPresent(folder.appendingPathComponent(record.filename))
+                try removeIfPresent(folder.appendingPathComponent(String(record.filename.dropFirst(5))))
+            }
         }
     }
     public func authoringRecoverySnapshot(vaultIds: Set<String>) throws -> PrivateBridgeAuthoringRecovery.Snapshot {
@@ -1369,8 +1531,30 @@ public actor PrivateBridgeCache {
                     staged.append((target, encrypted))
                 }
             }
-            for (target, data) in staged { try data.write(to: target, options: [.atomic, .completeFileProtection]); BackupPolicy.apply(.excluded, to: target) }
+            for (target, data) in staged { try PrivateBridgeProtectedFile.write(data, to: target); BackupPolicy.apply(.excluded, to: target) }
+            for vault in Set(records.compactMap(\.vaultId)) {
+                let url = scopeURL(vault)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    let state = try JSONDecoder.nodus.decode(VaultScope.self, from: Data(contentsOf: url))
+                    try PrivateBridgeProtectedFile.write(try JSONEncoder.nodus.encode(VaultScope(epoch: state.epoch, closed: false)), to: url)
+                }
+            }
             try removeIfPresent(revocationMarker)
+            try removeIfPresent(closingMarker)
+        }
+    }
+
+    /// Called only with the freshly authenticated grant's current vault identifiers.
+    public func reopenAuthorizedVaultScopes(_ vaultIds: Set<String>) throws {
+        try Self.diskLock.withLock {
+            try requireWritable()
+            for vault in vaultIds {
+                let url = scopeURL(vault)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    let old = try JSONDecoder.nodus.decode(VaultScope.self, from: Data(contentsOf: url))
+                    try PrivateBridgeProtectedFile.write(try JSONEncoder.nodus.encode(VaultScope(epoch: old.epoch, closed: false)), to: url)
+                }
+            }
         }
     }
 
@@ -1431,7 +1615,7 @@ public actor PrivateBridgeCache {
         var total = files.reduce(0) { $0 + $1.size }
         let available = max(0, readLimitBytes - (try readPackBytes()))
         for file in files where total > available {
-            try removeIfPresent(file.url); total -= file.size
+            try removeIfPresent(file.url); try removeIfPresent(readScopeURL(file.url)); total -= file.size
         }
     }
     private func removeIfPresent(_ url: URL) throws {
@@ -1498,7 +1682,8 @@ public actor PrivateBridgeCache {
                   SHA256.hash(data: content.data).map({ String(format: "%02x", $0) }).joined() == file.sha256.lowercased() else { throw ReadPackError.invalidSelection }
         }
         return try Self.diskLock.withLock {
-            try requireWritable()
+            try requireReadingAllowed()
+            try requireVaultScope(vaultId)
             try cleanReadPacks()
             let existing = try readPackManifests()
             let otherBytes = existing.filter { $0.id != id }.reduce(0) { $0 + $1.bytes }
@@ -1515,7 +1700,7 @@ public actor PrivateBridgeCache {
                 bytes += sealed.count
                 guard bytes <= Self.maximumSelectedCopyBytes else { throw ReadPackError.perDownloadLimit }
                 guard bytes + otherBytes <= readLimitBytes else { throw ReadPackError.tooLarge }
-                try sealed.write(to: staged.appendingPathComponent(name), options: [.atomic, .completeFileProtection])
+                try PrivateBridgeProtectedFile.write(sealed, to: staged.appendingPathComponent(name))
             }
             // Include the encrypted pointer in the same per-Mac budget.
             let createdAt = Date()
@@ -1533,7 +1718,7 @@ public actor PrivateBridgeCache {
             guard pack.bytes == bytes + pointer.count else { throw ReadPackError.invalidSelection }
             guard pack.bytes <= Self.maximumSelectedCopyBytes else { throw ReadPackError.perDownloadLimit }
             guard pack.bytes + otherBytes <= readLimitBytes else { throw ReadPackError.tooLarge }
-            try pointer.write(to: readPackPointer(id), options: [.atomic, .completeFileProtection])
+            try PrivateBridgeProtectedFile.write(pointer, to: readPackPointer(id))
             BackupPolicy.apply(.excluded, to: readPackPointer(id))
             committed = true
             for name in names { try removeIfPresent(folder.appendingPathComponent("read-" + name)); try removeIfPresent(folder.appendingPathComponent(name)) }
@@ -1544,7 +1729,8 @@ public actor PrivateBridgeCache {
     }
     public func readPacks(vaultId: String) throws -> [ReadPack] {
         try Self.diskLock.withLock {
-            try requireWritable()
+            try requireReadingAllowed()
+            try requireVaultScope(vaultId)
             try cleanReadPacks()
             return try readPackManifests().filter { $0.vaultId == vaultId }.sorted { $0.createdAt > $1.createdAt }
         }
@@ -1554,7 +1740,8 @@ public actor PrivateBridgeCache {
     /// Consulted copies never enter this list and cannot broaden a selection.
     public func downloadedData(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> [Data] {
         try Self.diskLock.withLock {
-            try requireWritable()
+            try requireReadingAllowed()
+            try requireVaultScope(vaultId)
             try cleanReadPacks()
             let name = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId).lastPathComponent
             return try readPackManifests().filter { $0.vaultId == vaultId && $0.files.contains(name) }
@@ -1566,7 +1753,8 @@ public actor PrivateBridgeCache {
     }
     public func hasDownloadedData(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Bool {
         try Self.diskLock.withLock {
-            try requireWritable()
+            try requireReadingAllowed()
+            try requireVaultScope(vaultId)
             try cleanReadPacks()
             let name = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId).lastPathComponent
             return try readPackManifests().contains { $0.vaultId == vaultId && $0.files.contains(name) }
@@ -1597,6 +1785,7 @@ public actor PrivateBridgeCache {
         let retained = Set(packs.filter { $0.expiresAt > now }.map(\.directory))
         for url in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
             let name = url.lastPathComponent
+            if name.hasSuffix(".bridgecache.scope"), !FileManager.default.fileExists(atPath: url.deletingPathExtension().path) { try removeIfPresent(url) }
             if name.hasPrefix("pack-copy-"), UUID(uuidString: String(name.dropFirst("pack-copy-".count))) != nil, !retained.contains(name) { try removeIfPresent(url) }
         }
     }

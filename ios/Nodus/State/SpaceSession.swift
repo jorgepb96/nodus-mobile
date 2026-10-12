@@ -14,7 +14,7 @@ enum AIExecutionMode: String, CaseIterable, Identifiable { case live, autonomous
 @MainActor
 final class SpaceSession {
     var isSurfaceFullscreen = false
-    let connection: AppModel.Connection
+    private(set) var connection: AppModel.Connection
     let client: NodusClient
     var aiExecutionMode: AIExecutionMode {
         didSet { UserDefaults.standard.set(aiExecutionMode.rawValue, forKey: "ai-execution-mode:\(connection.id)") }
@@ -70,6 +70,13 @@ final class SpaceSession {
     var accent: Color { connection.accent }
     // A live grant is bound to this vault, regardless of the Mac's active vault
     // or an overview retained during a workspace switch.
+    /// Names and grant role can change without replacing editor/session state.
+    func refreshConnectionMetadata(_ updated: AppModel.Connection) {
+        guard updated.id == connection.id, updated.desktopPairingId == connection.desktopPairingId,
+              updated.vaultId == connection.vaultId else { return }
+        connection = updated
+    }
+
     var vaultId: String? { connection.desktopPairingId != nil ? connection.vaultId : overview?.vault?.id ?? connection.vaultId }
     var vaultType: VaultType? {
         if connection.desktopPairingId != nil && overview?.vault?.id != connection.vaultId { return connection.vaultType }

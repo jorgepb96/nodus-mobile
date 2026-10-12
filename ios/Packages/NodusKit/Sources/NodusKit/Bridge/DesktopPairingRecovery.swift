@@ -18,7 +18,10 @@ extension DesktopBridgeClient {
         if offer.renewalPairingId != nil {
             guard let existing, !existing.isExpired,
                   existing.certificateFingerprint == DesktopBridgePairing.normalizedFingerprint(offer.certificateFingerprint).lowercased(),
-                  existing.vaultIds == Set(offer.vaultIds), existing.domains == Set(offer.domains),
+                  existing.wholeWorkspace == offer.wholeWorkspace,
+                  existing.wholeWorkspace == true || existing.vaultIds == Set(offer.vaultIds),
+                  existing.macDeviceId == nil || offer.macDeviceId == nil || existing.macDeviceId == offer.macDeviceId,
+                  existing.domains == Set(offer.domains),
                   store.credential(for: existing) != nil else { throw DesktopBridgeError.permissionDenied }
         }
         let candidate = try store.pendingPairingToken(offerId: offer.id)
@@ -27,7 +30,7 @@ extension DesktopBridgeClient {
         let provisional = try DesktopBridgePairing(id: offer.renewalPairingId ?? offer.id, origin: origin,
             certificateFingerprint: offer.certificateFingerprint, deviceId: deviceId, deviceName: deviceName,
             vaultIds: Set(offer.vaultIds), domains: Set(offer.domains), pairedAt: Date(), expiresAt: nil,
-            alternateOrigins: Array(offer.origins.dropFirst()))
+            alternateOrigins: Array(offer.origins.dropFirst()), wholeWorkspace: offer.wholeWorkspace, macDeviceId: existing?.macDeviceId ?? offer.macDeviceId, retainedAuthoringVaultIds: existing?.retainedAuthoringVaultIds)
 
         // A successful POST is saved before the capabilities request. If that
         // second request fails, even a compatible older Mac can resume locally.
@@ -66,11 +69,14 @@ extension DesktopBridgeClient {
             raw = envelope.pairing; token = envelope.token; relay = envelope.relay; response = result.1
         } else { throw DesktopBridgeError.malformedResponse }
 
+        let retained = (existing?.retainedAuthoringVaultIds ?? []).union((existing?.vaultIds ?? []).subtracting(Set(raw.vaultIds)))
         let pairing = try DesktopBridgePairing(id: raw.id,
             origin: response.url.flatMap(Self.origin(of:)) ?? origin,
             certificateFingerprint: provisional.certificateFingerprint, deviceId: raw.deviceId, deviceName: raw.deviceName,
             vaultIds: Set(raw.vaultIds), domains: Set(raw.domains), pairedAt: raw.createdAt, expiresAt: raw.expiresAt,
-            alternateOrigins: [origin] + Array(offer.origins.dropFirst()))
+            alternateOrigins: [origin] + Array(offer.origins.dropFirst()), wholeWorkspace: raw.wholeWorkspace,
+            macDeviceId: existing?.macDeviceId ?? offer.macDeviceId,
+            retainedAuthoringVaultIds: retained.isEmpty ? existing?.retainedAuthoringVaultIds : retained)
         try validateRecoveredPairing(pairing, provisional: provisional, existing: existing)
         guard !token.isEmpty else { throw DesktopBridgeError.malformedResponse }
         try store.updatePendingPairing(pending, token: token)
@@ -85,7 +91,10 @@ extension DesktopBridgeClient {
         guard pairing.id == provisional.id, !pairing.isExpired,
               pairing.deviceId == (existing?.deviceId ?? provisional.deviceId),
               pairing.certificateFingerprint == provisional.certificateFingerprint,
-              pairing.vaultIds == provisional.vaultIds, pairing.domains == provisional.domains else {
+              pairing.wholeWorkspace == provisional.wholeWorkspace,
+              pairing.macDeviceId == provisional.macDeviceId,
+              provisional.wholeWorkspace == true || pairing.vaultIds == provisional.vaultIds,
+              pairing.domains == provisional.domains else {
             throw DesktopBridgeError.permissionDenied
         }
         if let existing {

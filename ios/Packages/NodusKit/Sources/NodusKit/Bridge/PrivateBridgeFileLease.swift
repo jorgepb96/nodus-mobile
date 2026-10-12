@@ -37,7 +37,7 @@ public final class PrivateBridgeFileLease: @unchecked Sendable {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
             BackupPolicy.apply(.excluded, to: folder)
             let url = folder.appendingPathComponent(filename)
-            do { try data.write(to: url, options: [.atomic, .completeFileProtection]) }
+            do { try PrivateBridgeProtectedFile.write(data, to: url) }
             catch { try? FileManager.default.removeItem(at: folder); throw error }
             BackupPolicy.apply(.excluded, to: url)
             return PrivateBridgeFileLease(url: url, directory: folder)

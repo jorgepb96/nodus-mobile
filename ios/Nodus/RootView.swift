@@ -59,11 +59,21 @@ struct RootView: View {
 #endif
         }
 
+        .allowsHitTesting(!model.isClosingDesktopGrant)
         // Over everything, including any sheet: a settings screen presented before the app went
         // away must not be readable through the lock.
         .overlay {
             if lock.isLocked {
                 LockScreen(lock: lock)
+            } else if model.isClosingDesktopGrant {
+                ZStack {
+                    NodusBackdrop(accent: Color(hex: VaultType.academic.accentHex))
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Conservando tu trabajo local…")
+                        Text("El Mac ha cerrado el enlace. Esperamos a que el trabajo iniciado termine de guardarse.").font(.footnote).multilineTextAlignment(.center)
+                    }.padding(NodusSpace.page)
+                }
             } else if lock.isEnabled, scenePhase == .inactive {
                 // The multitasking snapshot is taken here. Without this it would show the
                 // corpus, which makes the lock decorative.
@@ -144,6 +154,7 @@ struct RootView: View {
                 return
             }
 #endif
+            await model.refreshDesktopWorkspaceCatalogues()
             // Reopen where the user left off, but only if the credential is still there — a
             // revoked token should land on the picker, not on a broken shell.
             if model.session == nil, let recent = model.mostRecent {
@@ -161,7 +172,22 @@ struct RootView: View {
                     .appendingPathComponent("spaces", isDirectory: true))
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: DesktopBridgePairingStore.authorizationRevokedNotification)) { event in
+            if let pairingId = event.object as? String { Task { await model.handleDesktopAuthorizationRevocation(pairingId: pairingId) } }
+        }
+        .task {
+#if DEBUG
+            guard ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] == nil else { return }
+#endif
+            while !Task.isCancelled {
+                if scenePhase == .active { await model.refreshDesktopWorkspaceCatalogues() }
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
+        }
         .onChange(of: scenePhase, initial: true) { _, phase in
+#if DEBUG
+            guard ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] == nil else { return }
+#endif
             // Coming back is when the answer may have changed: the background flush may have
             // finished a send while the app was away, and — the other half of the same
             // question — somebody may have opened their desktop and collected it. It is a
@@ -169,6 +195,7 @@ struct RootView: View {
             // ledger, one request each.
             if phase == .active {
                 Task { await tray.confirmDeliveries() }
+                Task { await model.refreshDesktopWorkspaceCatalogues() }
                 // Coming back is also when another device may have written a report or a chat.
                 // Returns on the first line unless the user switched the iCloud copy on.
                 Task { await cloud.refresh() }
@@ -265,6 +292,9 @@ struct SpacePickerView: View {
                         }.accessibilityIdentifier("saved-local-work")
                     }
 
+                    if let issue = model.desktopRecoveryIssue {
+                        NodusNotice(tone: .blocked, title: "Trabajo local conservado", message: LocalizedStringKey(issue), systemImage: "doc.text")
+                    }
                     if let stranded = model.needsSignIn {
                         signInAgainNotice(stranded)
                     }

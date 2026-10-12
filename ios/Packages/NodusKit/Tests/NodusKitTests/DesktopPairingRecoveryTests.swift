@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Durable code pairing recovery", .serialized)
 struct DesktopPairingRecoveryTests {
-    private func fixture(renewal: Bool = false) throws -> (DesktopPairingOffer, DesktopBridgePairingStore, UserDefaults, URLSession, String) {
+    private func fixture(renewal: Bool = false, wholeWorkspace: Bool? = nil) throws -> (DesktopPairingOffer, DesktopBridgePairingStore, UserDefaults, URLSession, String) {
         let id = UUID().uuidString
         let suite = "nodus.tests.pairing-recovery.\(id)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -12,12 +12,12 @@ struct DesktopPairingRecoveryTests {
         let offer = DesktopPairingOffer(version: 2, id: id, code: "ABCDE-23456", origins: ["https://mac.nodus.test:7443"],
             certificateFingerprint: String(repeating: "a", count: 64), vaultIds: ["vault-a", "vault-b"], domains: [.corpus, .writing],
             expiresAt: Date().addingTimeInterval(600), deviceName: "Mac", macDeviceId: UUID().uuidString,
-            vaults: nil, relay: nil, renewalPairingId: renewal ? UUID().uuidString : nil)
+            vaults: nil, relay: nil, renewalPairingId: renewal ? UUID().uuidString : nil, wholeWorkspace: wholeWorkspace)
         PairingRecoveryProtocol.state.reset(offer: offer)
         if let grant = offer.renewalPairingId {
             let pairing = try DesktopBridgePairing(id: grant, origin: offer.origins[0], certificateFingerprint: offer.certificateFingerprint,
                 deviceId: "phone", deviceName: "Phone", vaultIds: Set(offer.vaultIds), domains: Set(offer.domains),
-                pairedAt: Date(timeIntervalSince1970: 1_700_000_000), expiresAt: nil)
+                pairedAt: Date(timeIntervalSince1970: 1_700_000_000), expiresAt: nil, wholeWorkspace: wholeWorkspace, macDeviceId: offer.macDeviceId)
             try store.save(pairing, token: PairingRecoveryProtocol.state.original)
         }
         let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [PairingRecoveryProtocol.self]
@@ -84,6 +84,26 @@ struct DesktopPairingRecoveryTests {
         let resumed = try await DesktopBridgeClient.pair(offer: offer, deviceId: "phone", deviceName: "Phone", store: store, session: session)
         #expect(resumed.pairing == result.pairing); #expect(resumed.token == result.token)
         #expect(PairingRecoveryProtocol.state.posts == count)
+    }
+
+    @Test("whole workspace survives lost pairing acknowledgement and renewed catalogue changes")
+    func wholeWorkspaceRecovery() async throws {
+        for renewal in [false, true] {
+            let (offer, store, defaults, session, suite) = try fixture(renewal: renewal, wholeWorkspace: true)
+            defer { clean(store, defaults, session, suite, offer) }
+            if let existing = store.pairings().first {
+                let older = try existing.authoringArchiveScope(["older-vault"])
+                try store.save(older, token: PairingRecoveryProtocol.state.original)
+            }
+            PairingRecoveryProtocol.state.failure = .afterCommit
+            await #expect(throws: URLError.self) { _ = try await DesktopBridgeClient.pair(offer: offer, deviceId: "phone", deviceName: "Phone", store: store, session: session) }
+            let recovered = try await DesktopBridgeClient.pair(offer: offer, deviceId: "phone", deviceName: "Phone", store: store, session: session)
+            #expect(recovered.pairing.wholeWorkspace == true)
+            #expect(recovered.pairing.macDeviceId == offer.macDeviceId)
+            #expect(recovered.pairing.vaultIds == Set(offer.vaultIds))
+            #expect(PairingRecoveryProtocol.state.posts == 1)
+            if renewal { #expect(recovered.pairing.retainedAuthoringVaultIds == ["older-vault"]) }
+        }
     }
 
     @Test("a lost code renewal response preserves identity and scopes and does not prepare a second replacement")
@@ -172,9 +192,10 @@ private final class PairingRecoveryState: @unchecked Sendable {
     func respond(_ request: URLRequest) -> (status: Int, data: Data, error: URLError.Code?) {
         lock.withLock {
             guard let offer else { return (500, Data(), nil) }
-            let receipt: [String: Any] = ["id": forgedReceipt ? "other-grant" : (offer.renewalPairingId ?? offer.id),
+            var receipt: [String: Any] = ["id": forgedReceipt ? "other-grant" : (offer.renewalPairingId ?? offer.id),
                 "deviceId": "phone", "deviceName": "Phone", "vaultIds": offer.vaultIds,
                 "domains": offer.domains.map(\.rawValue), "createdAt": "2023-11-14T22:13:20Z"]
+            if let whole = offer.wholeWorkspace { receipt["wholeWorkspace"] = whole }
             if request.url?.path == "/bridge/v2/pairing" {
                 guard let token, request.value(forHTTPHeaderField: "Authorization") == "Bearer \(token)" else { return (401, Data(), nil) }
                 if legacyMode { return (404, Data(), nil) }

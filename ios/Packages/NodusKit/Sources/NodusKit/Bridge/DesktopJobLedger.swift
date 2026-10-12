@@ -260,7 +260,7 @@ public actor DesktopJobLedgers {
         ledgers[key] = task
         do { return try await task.value } catch { ledgers[key] = nil; throw error }
     }
-    public func forget(pairingId: String) {
-        for key in ledgers.keys.filter({ $0.hasPrefix("\(pairingId)|") }) { ledgers[key] = nil }
+    public func forget(pairingId: String, vaultIds: Set<String>? = nil) {
+        for key in ledgers.keys.filter({ $0.hasPrefix("\(pairingId)|") && (vaultIds == nil || vaultIds!.contains(String($0.dropFirst(pairingId.count + 1)))) }) { ledgers[key] = nil }
     }
 }
