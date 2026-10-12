@@ -66,6 +66,8 @@ final class CompanionWorkshopGeneration {
         else { throw DesktopBridgeError.permissionDenied }
         let (vault, pairing, token) = try privateBridgeConnection(session, domain: .writing)
         let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        try cache.beginAuthoringActivity()
+        defer { cache.endAuthoringActivity() }
         let entity = SHA256.hash(data: try JSONEncoder.nodus.encode(request)).map { String(format: "%02x", $0) }.joined()
         let key = try CompanionGenerationPublication.recordId(kind: "workshop", entity: entity)
         let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)

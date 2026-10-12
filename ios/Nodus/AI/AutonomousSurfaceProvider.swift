@@ -291,11 +291,16 @@ final class AutonomousSurfaceProvider {
         let model = try JSONDecoder.nodus.decode(ModelRef.self, from: JSONEncoder.nodus.encode(modelJSON))
         guard settings.hasKey(for: model.provider) else { throw ProviderError.missingKey(model.provider) }
         let cache = try PrivateBridgeCache(pairingId: scope.cacheId)
+        // Hold through the paid-response write, so unlink cannot retire the
+        // encryption key between the provider returning and durable recovery.
+        try cache.beginAuthoringActivity()
+        defer { cache.endAuthoringActivity() }
         let hash = SHA256.hash(data: try JSONEncoder.nodus.encode(input)).map { String(format: "%02x", $0) }.joined()
         let record = "autonomous:\(generation):completion:\(hash)"
         if let saved = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: record) {
             return try JSONDecoder.nodus.decode(JSONValue.self, from: saved)
         }
+        try await cache.requireGenerationExecutionAllowed(vaultId: vault, generationId: generation)
         let temperature: Double?
         switch request["temperature"] { case .double(let value): temperature = value; case .int(let value): temperature = Double(value); case .null: temperature = nil; default: temperature = 0 }
         let options = request["researchParameters"]?.objectValue ?? [:]
@@ -308,7 +313,8 @@ final class AutonomousSurfaceProvider {
         let result = try await provider.complete(ChatRequest(model: model, messages: [.init(role: .system, content: system), .init(role: .user, content: user)], temperature: temperature, maxTokens: maxTokens + allowance, jsonMode: format == "json", researchParameters: parameters))
         try Task.checkCancellation()
         let value = JSONValue.string(result)
-        try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vault, domain: .researchGeneration, recordId: record)
+        try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(value), vaultId: vault, recordId: record,
+            indexId: "autonomous:completion-index:v1", entity: record)
         return value
     }
 }
