@@ -58,6 +58,26 @@ struct DesktopBridgeQueryTests {
         #expect(CorpusQueryProtocol.state.calls().count == calls)
     }
 
+    @Test("workspace annotation receipts use the note endpoint without transmitting the document")
+    func workspaceAnnotationWire() async throws {
+        let (bridge, session) = try fixture(domains: [.corpus, .writing]); defer { session.invalidateAndCancel() }
+        let noteId = UUID().uuidString, annotationId = UUID().uuidString
+        let command: JSONValue = .object(["action": .string("annotationCreate"), "annotationId": .string(annotationId),
+            "patch": .object(["from": .int(0), "to": .int(0), "selectedText": .string(""), "comment": .string("Comentario móvil")])])
+        let request = CompanionDocumentOutbox.Request(id: UUID().uuidString, noteId: noteId,
+            input: .object(["title": .string("Nota"), "contentMarkdown": .string(""), "expectedRevision": .int(7)]), command: command, generation: 1)
+        let response = try await bridge.saveWorkspaceEdit(vaultId: "Mac/vault", request: request)
+        #expect(response.objectValue?["note"]?.objectValue?["id"] == .string(noteId))
+        let call = try #require(CorpusQueryProtocol.state.calls().last)
+        #expect(call.request.url?.absoluteString == "https://mac.nodus.test:7443/bridge/v2/vaults/Mac%2Fvault/workspace-edits")
+        let wire = try JSONDecoder.nodus.decode(JSONValue.self, from: call.body).objectValue!
+        #expect(wire["noteId"] == .string(noteId) && wire["documentId"] == nil)
+        #expect(wire["command"] == command && wire["input"] == request.input && wire["creation"] == nil)
+        let (weakened, weakSession) = try fixture(domains: [.writing]); defer { weakSession.invalidateAndCancel() }
+        await #expect(throws: DesktopBridgeError.self) { try await weakened.saveWorkspaceEdit(vaultId: "Mac/vault", request: request) }
+        #expect(CorpusQueryProtocol.state.calls().isEmpty)
+    }
+
     private func fixture(domains: Set<DesktopBridgeDomain> = [.corpus], expiresAt: Date? = nil) throws -> (DesktopBridgeClient, URLSession) {
         let pair = try DesktopBridgePairing(id: UUID().uuidString, origin: "https://mac.nodus.test:7443",
             certificateFingerprint: String(repeating: "a", count: 64), deviceId: "phone", deviceName: "phone",
@@ -361,6 +381,14 @@ private final class CorpusQueryProtocol: URLProtocol, @unchecked Sendable {
            let body = try? JSONDecoder.nodus.decode(JSONValue.self, from: bytes).objectValue,
            let id = body["id"], let document = body["documentId"] {
             let response: JSONValue = .object(["id": id, "document": .object(["id": document]), "editorData": .object(["revision": .int(1), "documentTitle": .string("Apunte"), "contentMarkdown": .string("Texto")])])
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: try! JSONEncoder.nodus.encode(response))
+            client?.urlProtocolDidFinishLoading(self); return
+        }
+        if request.url?.path.hasSuffix("/workspace-edits") == true,
+           let body = try? JSONDecoder.nodus.decode(JSONValue.self, from: bytes).objectValue,
+           let id = body["id"], let note = body["noteId"] {
+            let response: JSONValue = .object(["id": id, "note": .object(["id": note]), "editorData": .object(["revision": .int(7)])])
             client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: try! JSONEncoder.nodus.encode(response))
             client?.urlProtocolDidFinishLoading(self); return

@@ -445,7 +445,7 @@ public actor DesktopBridgeClient {
         if kind == .studyDocument, !pairing.domains.contains(.corpus) { throw DesktopBridgeError.permissionDenied }
         if let creation = request.creation { body["creation"] = creation }
         if let command = request.command {
-            guard kind == .studyDocument else { throw DesktopBridgeError.permissionDenied }
+            guard pairing.domains.contains(.corpus), kind == .studyDocument || ["annotationCreate", "annotationUpdate", "annotationDelete"].contains(command.objectValue?["action"]?.stringValue ?? "") else { throw DesktopBridgeError.permissionDenied }
             body["command"] = command
         }
         guard try JSONEncoder.nodus.encode(JSONValue.object(body)).count <= CompanionDocumentOutbox.maximumRequestBytes else {

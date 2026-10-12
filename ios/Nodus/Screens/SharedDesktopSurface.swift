@@ -391,17 +391,19 @@ struct StudyEvidenceDocument: View {
     }
 }
 
-@MainActor private enum StudyDocumentSurfaceBridge {
+@MainActor private enum CompanionDocumentSurfaceBridge {
     static let methods: Set<String> = ["getStudyDocEditorData", "updateStudyDoc", "restoreStudyDocVersion", "resolveMobileStudyConflict", "duplicateMobileStudyDocument", "trashMobileStudyDocument", "createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation"]
+    static let workspaceMethods: Set<String> = ["getWorkspaceNoteEditorData", "restoreWorkspaceNoteVersion", "createWorkspaceAnnotation", "updateWorkspaceAnnotation", "deleteWorkspaceAnnotation"]
     static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
-                        pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, onOffline: (Bool) -> Void) async throws -> JSONValue {
+                        pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, kind: CompanionDocumentOutbox.Kind = .studyDocument, onOffline: (Bool) -> Void) async throws -> JSONValue {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
               let id = args.first?.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.permissionDenied }
-        let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: .studyDocument)
+        let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: kind)
         let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        let readMethod = kind == .studyDocument ? "getStudyDocEditorData" : "getWorkspaceNoteEditorData"
         func load() async throws -> JSONValue {
             if let local = await queue.editorData(noteId: id) { return local }
-            let key = try CompanionDocumentOutbox.operationKey("getStudyDocEditorData", [.string(id)])
+            let key = try CompanionDocumentOutbox.operationKey(readMethod, [.string(id)])
             let owned = await queue.confirmedEditorData(noteId: id)
             if downloadedOnly {
                 let selected = try await cache.downloadedData(vaultId: vaultId, domain: .corpus, recordId: key).first
@@ -410,7 +412,7 @@ struct StudyEvidenceDocument: View {
                 if let owned, (owned.objectValue?["revision"]?.intValue ?? 0) >= (selectedEditor?.objectValue?["revision"]?.intValue ?? -1) { value = owned }
                 else if let selectedEditor { value = selectedEditor }
                 else {
-                    throw APIError(status: 409, code: "study_editor_not_downloaded", message: "Esta descarga no incluye el editor del documento. Actualízala con Nodus conectado antes de editar sin conexión.")
+                    throw APIError(status: 409, code: "study_editor_not_downloaded", message: "Esta descarga no incluye el editor completo. Actualízala con Nodus conectado antes de editar sin conexión.")
                 }
                 try await queue.seed(noteId: id, editorData: value)
                 onOffline(true)
@@ -419,7 +421,7 @@ struct StudyEvidenceDocument: View {
             let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key)
             var value: JSONValue
             do {
-                value = try await client.operation(vaultId: vaultId, method: "getStudyDocEditorData", args: [.string(id)], timeout: cached == nil && owned == nil ? nil : 4)
+                value = try await client.operation(vaultId: vaultId, method: readMethod, args: [.string(id)], timeout: cached == nil && owned == nil ? nil : 4)
                 try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
                 onOffline(false)
             } catch {
@@ -434,23 +436,26 @@ struct StudyEvidenceDocument: View {
             try await queue.seed(noteId: id, editorData: value)
             return value
         }
-        if ["createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation"].contains(method) {
+        if ["createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation", "createWorkspaceAnnotation", "updateWorkspaceAnnotation", "deleteWorkspaceAnnotation"].contains(method) {
             guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
             let documentId: String
-            if method == "createStudyAnnotation", args.count == 2 {
+            let creates = method == "createStudyAnnotation" || method == "createWorkspaceAnnotation"
+            let updates = method == "updateStudyAnnotation" || method == "updateWorkspaceAnnotation"
+            let deletes = method == "deleteStudyAnnotation" || method == "deleteWorkspaceAnnotation"
+            if creates, args.count == 2 {
                 _ = try await load(); documentId = id
-            } else if (method == "updateStudyAnnotation" && args.count == 2) || (method == "deleteStudyAnnotation" && args.count == 1),
+            } else if (updates && args.count == 2) || (deletes && args.count == 1),
                       let owner = await queue.studyAnnotationDocumentId(annotationId: id) {
                 documentId = owner
             } else {
                 throw APIError(status: 409, code: "study_annotation_source_missing", message: "Abre el documento de esta anotación antes de modificarla.")
             }
             let result = try await queue.enqueueStudyAnnotation(documentId: documentId, method: method,
-                annotationId: method == "createStudyAnnotation" ? nil : id, patch: args.count == 2 ? args[1] : nil)
+                annotationId: creates ? nil : id, patch: args.count == 2 ? args[1] : nil)
             Task { await session.synchronizeCompanionChanges() }
             return result
         }
-        if method == "getStudyDocEditorData", args.count == 1 { return try await load() }
+        if method == readMethod, args.count == 1 { return try await load() }
         if ["duplicateMobileStudyDocument", "trashMobileStudyDocument"].contains(method), args.count == 1 {
             guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
             _ = try await load()
@@ -465,6 +470,9 @@ struct StudyEvidenceDocument: View {
         } else if method == "updateStudyDoc" {
             if await !queue.hasBaseline(noteId: id) { _ = try await load() }
             result = try await queue.save(noteId: id, input: args[1])
+        } else if method == "restoreWorkspaceNoteVersion", let versionId = args[1].stringValue {
+            _ = try await load()
+            result = try await queue.restoreWorkspaceVersion(noteId: id, versionId: versionId)
         } else if method == "restoreStudyDocVersion", let versionId = args[1].stringValue {
             let current = try await load()
             guard let version = current.objectValue?["versions"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(versionId) })?.objectValue,
@@ -1005,8 +1013,10 @@ private struct DesktopWebView: UIViewRepresentable {
                             let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: .studyDocument)
                             value = try await queue.createStudyDocument(input: args[0])
                             Task { await session.synchronizeCompanionChanges() }
-                        } else if StudyDocumentSurfaceBridge.methods.contains(method) {
-                            value = try await StudyDocumentSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, onOffline: onOfflineCopy)
+                        } else if CompanionDocumentSurfaceBridge.methods.contains(method) {
+                            value = try await CompanionDocumentSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, onOffline: onOfflineCopy)
+                        } else if CompanionDocumentSurfaceBridge.workspaceMethods.contains(method) {
+                            value = try await CompanionDocumentSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, kind: .workspaceNote, onOffline: onOfflineCopy)
                         } else if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
                             let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
