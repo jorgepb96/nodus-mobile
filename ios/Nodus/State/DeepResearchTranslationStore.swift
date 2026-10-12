@@ -130,6 +130,17 @@ final class DeepResearchTranslationStore {
         return value
     }
 
+    /// A result generated and saved by the Mac is already acknowledged. Keep it
+    /// offline without scheduling a second write through the mobile outbox.
+    func acceptServer(_ value: ContentTranslation) {
+        guard value.reportId == reportId else { return }
+        pendingLanguages.remove(value.language); deletedLanguages.remove(value.language)
+        translations.removeAll { $0.language == value.language }
+        translations.append(value)
+        translations.sort { $0.language < $1.language }
+        persist()
+    }
+
     func delete(language: String) {
         pendingLanguages.insert(language); deletedLanguages.insert(language)
         translations.removeAll { $0.language == language }

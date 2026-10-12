@@ -395,6 +395,7 @@ struct DeepResearchWorkspaceSheet: View {
 struct DeepResearchTranslationSheet: View {
     let reportId: String
     let sourceMarkdown: String
+    let sourceTitle: String
     let session: SpaceSession
     var remoteRows: [Row]? = nil
     var syncEnabled = true
@@ -409,12 +410,14 @@ struct DeepResearchTranslationSheet: View {
     init(
         reportId: String,
         sourceMarkdown: String,
+        sourceTitle: String = "Deep Research",
         session: SpaceSession,
         remoteRows: [Row]? = nil,
         syncEnabled: Bool = true
     ) {
         self.reportId = reportId
         self.sourceMarkdown = sourceMarkdown
+        self.sourceTitle = sourceTitle
         self.session = session
         self.remoteRows = remoteRows
         self.syncEnabled = syncEnabled
@@ -461,12 +464,20 @@ struct DeepResearchTranslationSheet: View {
                             .frame(maxWidth: .infinity, minHeight: 240)
                     }
 
+                    Text(session.aiExecutionMode == .live
+                         ? "Translate with your Mac’s research model. Your Mac must be connected."
+                         : "Translate with the provider and translation model configured on this device.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if session.aiExecutionMode == .live && !syncEnabled {
+                        Text("Save this report to Nodus before translating with your Mac.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Button { translate() } label: {
                         if translating { ProgressView().controlSize(.small).frame(maxWidth: .infinity).accessibilityIdentifier("report-translation-progress") }
                         else { Label(selected == nil ? "Translate report" : "Regenerate translation", systemImage: "character.book.closed").frame(maxWidth: .infinity) }
                     }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                    .disabled(translating || ai.model(for: .translation) == nil)
+                    .disabled(translating || (session.aiExecutionMode == .autonomous ? ai.model(for: .translation) == nil : !syncEnabled || session.connection.desktopPairingId == nil))
                     .accessibilityIdentifier("report-translation-generate")
                 }
                 .padding(NodusSpace.page)
@@ -484,8 +495,12 @@ struct DeepResearchTranslationSheet: View {
     }
 
     private func translate() {
-        guard !translating, session.aiExecutionMode == .autonomous,
-              let model = ai.model(for: .translation),
+        guard !translating else { return }
+        if session.aiExecutionMode == .live {
+            translateOnMac()
+            return
+        }
+        guard let model = ai.model(for: .translation),
               let languageName = TranslationLanguage.supported.first(where: { $0.id == language })?.name
         else { return }
         translating = true
@@ -505,6 +520,50 @@ struct DeepResearchTranslationSheet: View {
                 failure = error.localizedDescription
             }
             translating = false
+        }
+    }
+
+    private func translateOnMac() {
+        guard syncEnabled else { return }
+        translating = true; failure = nil
+        let requestedLanguage = language
+        Task {
+            defer { translating = false }
+            do {
+                let (vault, pairing, token) = try privateBridgeConnection(session, domain: .writing)
+                let client = DesktopBridgeClient(pairing: pairing, token: token)
+                // Read only model references; the Mac keeps its credentials and
+                // executes the request through the same durable live-job lane.
+                let settings = try await client.operation(vaultId: vault, method: "getSettings", args: [])
+                guard let model = settings.objectValue?["deepResearchModel"], model.objectValue != nil else {
+                    throw APIError(status: 409, code: "mac_research_model_missing", message: "Selecciona un modelo de investigación en Nodus para Mac.")
+                }
+                let request: JSONValue = .object(["entityKind": .string("deep_research"), "entityId": .string(reportId),
+                    "language": .string(requestedLanguage), "sourceTitle": .string(sourceTitle),
+                    "sourceMarkdown": .string(sourceMarkdown), "model": model])
+                let id = UUID().uuidString.lowercased()
+                let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
+                _ = try await ledger.prepare(id: id, method: "generateContentTranslation", args: [request])
+                let result: JSONValue
+                do {
+                    let job = try await client.submitJob(vaultId: vault, method: "generateContentTranslation", args: [request], idempotencyKey: id)
+                    try await ledger.update(id: id, job: job)
+                    result = try await client.awaitJob(vaultId: vault, job: job, onState: { try await ledger.update(id: id, job: $0) }, onEvents: { _ in })
+                } catch {
+                    try? await ledger.disconnected(id: id, issue: error.localizedDescription)
+                    throw error
+                }
+                guard let translationId = result.objectValue?["id"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                let full = try await client.operation(vaultId: vault, method: "getContentTranslation", args: [.string(translationId)])
+                guard let value = full.objectValue, value["entityKind"] == .string("deep_research"),
+                      value["entityId"] == .string(reportId), value["language"] == .string(requestedLanguage),
+                      let markdown = value["markdown"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                let modelRef = try? JSONDecoder.nodus.decode(ModelRef.self, from: JSONEncoder.nodus.encode(model))
+                store.acceptServer(ContentTranslation(id: translationId, reportId: reportId, language: requestedLanguage,
+                    markdown: markdown, model: modelRef,
+                    createdAt: value["createdAt"]?.stringValue.flatMap { ISO8601DateFormatter.nodusFractional.date(from: $0) } ?? Date(),
+                    updatedAt: value["updatedAt"]?.stringValue.flatMap { ISO8601DateFormatter.nodusFractional.date(from: $0) }))
+            } catch { failure = error.localizedDescription }
         }
     }
 

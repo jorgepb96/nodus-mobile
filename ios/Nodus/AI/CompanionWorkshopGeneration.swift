@@ -45,10 +45,22 @@ func workshopDownloadRecord(client: DesktopBridgeClient, vault: String, path: St
 /// before the view reports success. A resumed request reuses paid work.
 @MainActor
 final class CompanionWorkshopGeneration {
+    private static var active: [String: Task<DesktopJobLedger.Request, Error>] = [:]
     private let provider: AutonomousSurfaceProvider
     init(settings: AISettings) { provider = AutonomousSurfaceProvider(settings: settings) }
 
-    func run(session: SpaceSession, request: JSONValue, onStatus: (String) -> Void) async throws -> DesktopJobLedger.Request {
+    func run(session: SpaceSession, request: JSONValue, onStatus: @escaping (String) -> Void) async throws -> DesktopJobLedger.Request {
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+        let identity = SHA256.hash(data: try JSONEncoder.nodus.encode(request)).map { String(format: "%02x", $0) }.joined()
+        let key = "\(pairing.id):\(vault):\(identity)"
+        if let task = Self.active[key] { return try await task.value }
+        let task = Task { try await self.execute(session: session, request: request, onStatus: onStatus) }
+        Self.active[key] = task
+        defer { Self.active[key] = nil }
+        return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
+    }
+
+    private func execute(session: SpaceSession, request: JSONValue, onStatus: (String) -> Void) async throws -> DesktopJobLedger.Request {
         guard session.aiExecutionMode == .autonomous,
               let selection = request.objectValue?["selection"], let model = request.objectValue?["model"]
         else { throw DesktopBridgeError.permissionDenied }
@@ -60,6 +72,11 @@ final class CompanionWorkshopGeneration {
         let prior = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key)
         var checkpoint = try prior.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0).objectValue } ?? nil
         if checkpoint == nil {
+            checkpoint = await ledger.generationCheckpoint(recordId: key)?.objectValue
+        }
+        let receipt = await ledger.all().first { $0.id == checkpoint?["id"]?.stringValue }
+        if !CompanionGenerationRecovery.resumeAcademic(checkpoint: checkpoint.map(JSONValue.object), work: request, receiptState: receipt?.state) {
+            if let checkpoint { try await ledger.archiveWorkshopCheckpoint(recordId: key, checkpoint: .object(checkpoint)) }
             checkpoint = ["id": .string(UUID().uuidString.lowercased()), "entityKey": .string(entity),
                 "request": request, "state": .string("accepted")]
         }

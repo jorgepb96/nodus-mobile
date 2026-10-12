@@ -89,6 +89,22 @@ public actor DesktopJobLedger {
             checkpointRecordId: recordId, checkpoint: .object(value))
         try await persist()
     }
+    /// Keep an unsuccessful workshop response before retrying with fresh sources.
+    /// It is consultable locally and cannot execute a provider on the Mac.
+    public func archiveWorkshopCheckpoint(recordId: String, checkpoint: JSONValue) async throws {
+        guard var value = checkpoint.objectValue, let id = value["id"]?.stringValue,
+              UUID(uuidString: id) != nil, value["request"]?.objectValue?["selection"]?.objectValue != nil,
+              let raw = value["raw"]?.stringValue, !raw.isEmpty,
+              try JSONEncoder.nodus.encode(checkpoint).count <= 20_000_000 else { return }
+        if requests[id] != nil { return }
+        value["kind"] = .string("workshop")
+        value["state"] = .string("failed")
+        value["error"] = value["error"] ?? .string("Respuesta anterior conservada. La nueva generación usa otra solicitud.")
+        requests[id] = Request(id: id, method: "localWorkshopGeneration", args: [], createdAt: Date(),
+            jobId: nil, state: "failed", issue: value["error"]?.stringValue,
+            checkpointRecordId: recordId, checkpoint: .object(value))
+        try await persist()
+    }
     public func generationCheckpoint(recordId: String, generationId: String? = nil) -> JSONValue? {
         guard let request = all().first(where: { $0.checkpointRecordId == recordId && (generationId == nil || $0.id == generationId) }) else { return nil }
         return reconciledCheckpoint(request)

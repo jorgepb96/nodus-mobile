@@ -34,6 +34,35 @@ struct CompanionRecoveryTests {
         try await reopened.archiveAcademicCheckpoint(recordId: "record", checkpoint: checkpoint)
         #expect(await reopened.all().count == 1)
     }
+    @Test("workshop retry archives a paid response durably without a sendable job")
+    func workshopRetryArchive() async throws {
+        let directory = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let pairing = UUID().uuidString
+        let keychain = KeychainStore(service: "nodus.workshop-recovery.\(pairing)")
+        defer {
+            try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: pairing))
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let cache = try PrivateBridgeCache(pairingId: pairing, directory: directory, keychain: keychain)
+        let ledger = try DesktopJobLedger(cache: cache, vaultId: "vault", data: nil)
+        let request: JSONValue = .object(["selection": .object(["ideas": .array([.string("idea")])]), "model": .string("phone-model")])
+        let checkpoint: JSONValue = .object(["id": .string(identity), "request": request,
+            "state": .string("failed"), "raw": .string("paid workshop response"), "error": .string("invalid_json")])
+        #expect(!CompanionGenerationRecovery.resumeAcademic(checkpoint: checkpoint, work: request, receiptState: nil))
+        for state in ["available", "failed", "interrupted", "cancelled"] {
+            #expect(!CompanionGenerationRecovery.resumeAcademic(checkpoint: checkpoint, work: request, receiptState: state))
+        }
+        try await ledger.archiveWorkshopCheckpoint(recordId: "workshop-record", checkpoint: checkpoint)
+        let data = try await cache.data(vaultId: "vault", domain: .researchGeneration, recordId: "job-ledger-v1")
+        let reopened = try DesktopJobLedger(cache: cache, vaultId: "vault", data: data)
+        let retained = try #require(await reopened.all().first)
+        #expect(retained.method == "localWorkshopGeneration")
+        #expect(retained.checkpoint?.objectValue?["raw"] == .string("paid workshop response"))
+        #expect(retained.issue == "invalid_json")
+        #expect(!DesktopBridgeClient.jobMethods.contains(retained.method))
+        try await reopened.archiveWorkshopCheckpoint(recordId: "workshop-record", checkpoint: checkpoint)
+        #expect(await reopened.all().count == 1)
+    }
     private func map(statement: String = "statement", child: String = "outside-ai") -> JSONValue {
         .object(["generatedAt": .string("old"), "root": .object(["id": .string("random"), "ideaId": .string("seed"), "statement": .string(statement), "children": .array([
             .object(["id": .string("another-random"), "ideaId": .string(child), "children": .array([])])

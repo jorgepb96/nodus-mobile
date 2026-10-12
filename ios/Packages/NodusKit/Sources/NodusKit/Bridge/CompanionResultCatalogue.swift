@@ -21,6 +21,8 @@ public enum CompanionResultCatalogue {
             return surface == "workspace" && !(checkpoint["preview"]?.objectValue?["text"]?.stringValue ?? "").isEmpty
         case "saveMobileDatabaseResearchReport":
             return surface == "databaseResearch" && !(checkpoint["detail"]?.objectValue?["report"]?.objectValue?["markdown"]?.stringValue ?? "").isEmpty
+        case "localWorkshopGeneration":
+            return surface == "writingWorkshop" && !(checkpoint["raw"]?.stringValue ?? "").isEmpty
         case "saveWritingWorkshopFromMobile":
             return surface == "writingWorkshop" && !(checkpoint["preview"]?.objectValue?["draftMarkdown"]?.stringValue ?? "").isEmpty
         case "saveImmersionGeneratedSession":
@@ -59,6 +61,6 @@ public enum CompanionResultCatalogue {
         if let title = checkpoint["request"]?.objectValue?["sourceTitle"]?.stringValue, !title.isEmpty { return title }
         if let title = checkpoint["plan"]?.objectValue?["title"]?.stringValue, !title.isEmpty { return title }
         return ["saveDictionaryGeneratedVersion": "Definición del diccionario", "saveContentTranslationFromMobile": "Traducción",
-                "saveStudyImprovementFromMobile": "Asistencia de escritura", "saveImmersionGeneratedSession": "Inmersión", "saveWritingWorkshopFromMobile": "Taller de escritura"][request.method] ?? "Resultado guardado"
+                "saveStudyImprovementFromMobile": "Asistencia de escritura", "saveImmersionGeneratedSession": "Inmersión", "saveWritingWorkshopFromMobile": "Taller de escritura", "localWorkshopGeneration": "Respuesta anterior del taller"][request.method] ?? "Resultado guardado"
     }
 }

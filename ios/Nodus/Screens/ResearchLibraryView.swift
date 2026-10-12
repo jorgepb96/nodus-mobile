@@ -1166,6 +1166,7 @@ struct LocalReportReader: View {
                 DeepResearchTranslationSheet(
                     reportId: currentSaved.vaultRowId ?? saved.id,
                     sourceMarkdown: liveMarkdown,
+                    sourceTitle: currentSaved.title,
                     session: session,
                     remoteRows: liveDetail?.translations,
                     syncEnabled: currentSaved.vaultRowId != nil
@@ -1351,6 +1352,7 @@ struct PublishedReportReader: View {
                 DeepResearchTranslationSheet(
                     reportId: id,
                     sourceMarkdown: document,
+                    sourceTitle: currentRow.string("title") ?? "Deep Research",
                     session: session,
                     remoteRows: detail?.translations
                 )

@@ -79,6 +79,25 @@ struct DeepResearchTranslationStoreTests {
         #expect(reopened.translation(language: "en")?.markdown == "Old translation")
     }
 
+    @Test("a canonical Mac translation is retained offline and does not block later server updates")
+    func canonicalMacTranslation() throws {
+        let root = URL.temporaryDirectory.appendingPathComponent("translations-mac-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DeepResearchTranslationStore(spaceId: "space", reportId: "report", root: root)
+        store.save(reportId: "report", language: "es", markdown: "Old pending mobile result", model: ModelRef(provider: .deepseek, model: "phone"))
+        let canonical = ContentTranslation(id: "mac-translation", reportId: "report", language: "es", markdown: "Saved on Mac",
+            model: ModelRef(provider: .openai, model: "mac"), createdAt: Date())
+        store.acceptServer(canonical)
+        let reopened = DeepResearchTranslationStore(spaceId: "space", reportId: "report", root: root)
+        #expect(reopened.translation(language: "es")?.id == canonical.id)
+        #expect(reopened.translation(language: "es")?.markdown == canonical.markdown)
+        var updated = canonical.row; updated["markdown"] = .string("Edited on Mac")
+        reopened.replaceFromServer(rows: [Row(updated)])
+        #expect(reopened.translation(language: "es")?.markdown == "Edited on Mac")
+        reopened.acceptServer(ContentTranslation(id: "foreign", reportId: "other-report", language: "es", markdown: "Wrong report", model: nil, createdAt: Date()))
+        #expect(reopened.translation(language: "es")?.id == canonical.id)
+    }
+
     @Test("a pending offline deletion cannot be resurrected by stale publication rows")
     func pendingDeletion() throws {
         let root = URL.temporaryDirectory.appendingPathComponent("translations-delete-\(UUID().uuidString)")

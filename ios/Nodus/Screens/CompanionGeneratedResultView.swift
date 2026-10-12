@@ -13,7 +13,7 @@ struct CompanionGeneratedResultView: View {
     private var value: [String: JSONValue] { (current.checkpoint ?? checkpoint).objectValue ?? [:] }
     private var markdown: String? {
         switch current.method {
-        case "localAcademicGeneration": return value["raw"]?.stringValue
+        case "localAcademicGeneration", "localWorkshopGeneration": return value["raw"]?.stringValue
         case "saveMobileAcademicResult", "runMobileSpaceAction":
             guard let preview = (current.method == "runMobileSpaceAction" ? current.result : value["preview"])?.objectValue else { return nil }
             if let thesis = preview["thesis"]?.stringValue {
