@@ -122,7 +122,16 @@ public actor ImageService {
     /// models that draw answer `:generateContent` and return the picture as an `inlineData` part
     /// beside whatever text they felt like writing. Which one to call is decided by the model
     /// id, the same way `ModelCatalogue.imageModels` decides which list a model came from.
-    private func gemini(prompt: String, model: String, key: String) async throws -> GeneratedImage {
+    /// Reference generation never silently changes to a text-only provider.
+    public func generate(prompt: String, reference: GeneratedImage, with model: ModelRef) async throws -> GeneratedImage {
+        guard model.provider == .gemini, !model.model.lowercased().contains("imagen"), !reference.data.isEmpty, reference.data.count <= 40 * 1024 * 1024 else {
+            throw ProviderError.malformedResponse("Selecciona un modelo Gemini de imagen que admita referencias para ampliar o cambiar el estilo de este mapa.")
+        }
+        guard let key = keyProvider(.gemini) else { throw ProviderError.missingKey(.gemini) }
+        return try await gemini(prompt: prompt, model: model.model, key: key, reference: reference)
+    }
+
+    private func gemini(prompt: String, model: String, key: String, reference: GeneratedImage? = nil) async throws -> GeneratedImage {
         let isImagen = model.lowercased().contains("imagen")
         let base = "https://generativelanguage.googleapis.com/v1beta/models/\(model)"
         var request = URLRequest(
@@ -143,7 +152,7 @@ public actor ImageService {
             : .object([
                 "contents": .array([.object([
                     "role": .string("user"),
-                    "parts": .array([.object(["text": .string(prompt)])]),
+                    "parts": .array([.object(["text": .string(prompt)])] + (reference.map { image in [.object(["inlineData": .object(["mimeType": .string(image.mimeType), "data": .string(image.data.base64EncodedString())])])] } ?? [])),
                 ])]),
                 "generationConfig": .object(["responseModalities": .array([.string("IMAGE")])]),
             ])

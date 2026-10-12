@@ -6,6 +6,7 @@ import SwiftUI
 /// A map selection never opens a Desktop inspector beside an iPhone canvas.
 struct WorldMapView: View {
     let session: SpaceSession
+    var initialMapId: String? = nil
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -111,7 +112,7 @@ struct WorldMapView: View {
         case .original(let image): ReaderImageViewer(content: image.content, image: image.preview, title: image.title, accent: session.accent)
         case .timeline: NavigationStack { ScrollView { timeline.padding(.vertical) }.navigationTitle("Tiempo y personajes").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { self.panel = nil } } } }
         case .explorer(let kind): browser(kind)
-        case .generation: if let source { WorldMapGenerationSheet(session: session, source: source) { attempt += 1; rendererAttempt += 1 } }
+        case .generation: if let source { WorldMapGenerationSheet(session: session, mapId: source.map.string("mapId") ?? "", title: source.map.text("name") ?? "Mapa", initialStyle: source.map.string("style") ?? "parchment") { attempt += 1; rendererAttempt += 1 } }
         }
     }
     private var mapPicker: some View {
@@ -252,7 +253,7 @@ struct WorldMapView: View {
             let tables = try await worldTables(session, ["world_maps"])
             try Task.checkCancellation()
             maps = tables["world_maps"] ?? []
-            if selectedId.isEmpty, let id = maps.first?.string("map_id") { selectedId = id }
+            if selectedId.isEmpty, let id = initialMapId ?? maps.first?.string("map_id") { selectedId = id }
         } catch where error.isCancellation {}
         catch { issue = error.localizedDescription }
     }

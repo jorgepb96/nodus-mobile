@@ -3,6 +3,9 @@ import SwiftUI
 
 struct LiveJobsView: View {
     let session: SpaceSession
+    @State private var deviceMapsIssue: String?
+    private struct DeviceMapJob: Identifiable { let id: String; let value: JSONValue }
+    @State private var deviceMaps: [DeviceMapJob] = []
     @State private var pending: [DesktopJobLedger.Request] = []
     @State private var jobs: [DesktopBridgeJob] = []
     @State private var issue: String?
@@ -10,7 +13,22 @@ struct LiveJobsView: View {
     var body: some View {
         List {
             if let issue { Section { Text(issue).foregroundStyle(.red) } }
+            if let deviceMapsIssue { Section("Trabajos del dispositivo") { Text(deviceMapsIssue).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) } }
             if loading { ProgressView() }
+            ForEach(deviceMaps) { item in
+                let summary = item.value
+                if let scope = summary.objectValue?["scope"]?.stringValue {
+                    NavigationLink {
+                        WorldMapDeviceResultView(session: session, scope: scope)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(summary.objectValue?["title"]?.stringValue ?? "Imagen del mapa").font(.headline).fixedSize(horizontal: false, vertical: true)
+                            Text(deviceMapState(summary.objectValue?["state"]?.stringValue ?? "")).font(.subheadline)
+                            if let error = summary.objectValue?["error"]?.stringValue { Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+                        }
+                    }.frame(minHeight: 44)
+                }
+            }
             ForEach(pending) { request in
                 let job = jobs.first { $0.id == request.jobId }
                 VStack(alignment: .leading, spacing: 8) {
@@ -21,7 +39,9 @@ struct LiveJobsView: View {
                         ? "Guardado en este dispositivo · pendiente de sincronizar"
                         : status(job?.state.rawValue ?? request.state)).font(.subheadline)
                     Text(request.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
-                    if let checkpoint = request.checkpoint {
+                    if request.method == "saveMobileWorldMapImage", request.args.first?.objectValue?["bytes"]?.stringValue != nil {
+                        NavigationLink("Abrir imagen guardada") { WorldMapDeviceResultView(session: session, scope: "", savedRequest: request) }.frame(minHeight: 44)
+                    } else if let checkpoint = request.checkpoint {
                         NavigationLink("Abrir resultado guardado") {
                             CompanionGeneratedResultView(session: session, request: request, checkpoint: checkpoint)
                         }.frame(minHeight: 44).accessibilityIdentifier("companion-generated-result-\(request.id)")
@@ -43,12 +63,34 @@ struct LiveJobsView: View {
                     if job?.state == .interrupted { Text("Review the result in the vault before starting this generation again.").font(.caption) }
                 }.padding(.vertical, 5)
             }
-            if pending.isEmpty, !loading, issue == nil { ContentUnavailableView("No pending requests", systemImage: "tray") }
+            if pending.isEmpty, deviceMaps.isEmpty, !loading, issue == nil { ContentUnavailableView("No pending requests", systemImage: "tray") }
         }
         .navigationTitle("Trabajos y resultados")
         .accessibilityIdentifier("live-job-ledger")
         .task(id: session.companionPublicationRevision) { await refresh() }
         .refreshable { await refresh() }
+        .task {
+            while !Task.isCancelled {
+                await loadDeviceMaps()
+                do { try await Task.sleep(for: .seconds(1)) } catch { break }
+            }
+        }
+    }
+    private func loadDeviceMaps() async {
+        guard session.connection.desktopPairingId != nil else { return }
+        do {
+            let journal = try await CompanionWorldMapGeneration.journal(session: session)
+            for summary in await journal.summaries() {
+                guard let object = summary.objectValue, ["accepted","running"].contains(object["state"]?.stringValue ?? ""),
+                      object["recoveryReviewRequired"] != .bool(true), let scope = object["scope"]?.stringValue,
+                      let mapId = object["request"]?.objectValue?["mapId"]?.stringValue,
+                      !CompanionWorldMapGeneration.isActive(session: session, mapId: mapId), let checkpoint = try await journal.load(scope: scope) else { continue }
+                try await journal.put(checkpoint.changing(state: .interrupted, error: "La aplicación se cerró durante la generación. No se repetirá el proveedor automáticamente."))
+            }
+            let summaries = await journal.summaries()
+            deviceMapsIssue = nil
+            deviceMaps = summaries.filter { summary in !pending.contains { $0.id == summary.objectValue?["id"]?.stringValue } }.compactMap { value in value.objectValue?["scope"]?.stringValue.map { DeviceMapJob(id: $0, value: value) } }
+        } catch { deviceMapsIssue = error.localizedDescription }
     }
     private func connection() throws -> (DesktopBridgePairing, DesktopBridgeClient, String) {
         let store = DesktopBridgePairingStore()
@@ -88,7 +130,7 @@ struct LiveJobsView: View {
         if method == "runMobileSpaceAction", let kind = args.first?.objectValue?["kind"]?.stringValue {
             return ["idea.delete": "Eliminar idea", "idea.saveToNotes": "Guardar idea en notas", "deepResearch.saveToNotes": "Guardar investigación en notas", "hypothesis.saveToNotes": "Guardar hipótesis", "projects.create": "Crear proyecto", "projects.update": "Guardar proyecto", "projects.section.update": "Guardar sección", "projects.chapter.import": "Importar capítulo", "pages.restoreRevision": "Restaurar versión", "databases.importCSV": "Importar CSV", "worldbuilding.entityDelete": "Eliminar entidad", "worldbuilding.continuity": "Revisar continuidad", "author.synthesis.generate": "Síntesis de autor", "authors.matrix.generate": "Matriz de autores", "argumentMap.generate": "Mapa de argumentos", "writing.generate": "Asistencia de escritura", "worldbuilding.proseReview": "Revisión de prosa"][kind] ?? "Cambios de contenido"
         }
-        return ["generateMobileWorldMap":"Imagen y geografía del mapa", "saveMobileDatabaseResearchReport":"Informe de datos del móvil", "saveDictionaryGeneratedVersion": "Definición del diccionario", "saveImmersionGeneratedSession": "Inmersión del móvil", "saveContentTranslationFromMobile": "Traducción del móvil", "saveStudyImprovementFromMobile": "Asistencia de escritura del móvil", "startDictionaryGeneration": "Diccionario", "enqueueDeepResearchJob": "Deep Research", "enqueueDatabaseDeepResearch": "Deep Research de datos", "worldChatStream": "Chat del mundo", "dbChatStream": "Chat de bases de datos", "streamStudyAssistant": "Chat de estudio", "exportDatabaseDeepResearchReport": "Exportar informe de datos", "exportWritingWorkshopDraft": "Exportar informe", "exportDeepResearchArchive": "Descargar informes", "exportImmersionSessionPdf": "Exportar inmersión", "generateImmersionSession": "Inmersión", "generateWritingWorkshopDraft": "Informe", "generateContentTranslation": "Traducción", "generateReportImage": "Imagen del informe", "researchChat": "Chat", "researchChatStream": "Chat", "improveStudyText": "Asistencia de escritura", "buildArgumentMap": "Mapa de argumentos", "scanDictionaryNewEvidence": "Evidencias del diccionario", "generateConversationTitle": "Título de conversación"][method] ?? method
+        return ["saveMobileWorldMapImage":"Mapa generado en el dispositivo", "generateMobileWorldMap":"Imagen y geografía del mapa", "saveMobileDatabaseResearchReport":"Informe de datos del móvil", "saveDictionaryGeneratedVersion": "Definición del diccionario", "saveImmersionGeneratedSession": "Inmersión del móvil", "saveContentTranslationFromMobile": "Traducción del móvil", "saveStudyImprovementFromMobile": "Asistencia de escritura del móvil", "startDictionaryGeneration": "Diccionario", "enqueueDeepResearchJob": "Deep Research", "enqueueDatabaseDeepResearch": "Deep Research de datos", "worldChatStream": "Chat del mundo", "dbChatStream": "Chat de bases de datos", "streamStudyAssistant": "Chat de estudio", "exportDatabaseDeepResearchReport": "Exportar informe de datos", "exportWritingWorkshopDraft": "Exportar informe", "exportDeepResearchArchive": "Descargar informes", "exportImmersionSessionPdf": "Exportar inmersión", "generateImmersionSession": "Inmersión", "generateWritingWorkshopDraft": "Informe", "generateContentTranslation": "Traducción", "generateReportImage": "Imagen del informe", "researchChat": "Chat", "researchChatStream": "Chat", "improveStudyText": "Asistencia de escritura", "buildArgumentMap": "Mapa de argumentos", "scanDictionaryNewEvidence": "Evidencias del diccionario", "generateConversationTitle": "Título de conversación"][method] ?? method
     }
     private func status(_ state: String) -> String {
         ["pending": "Pendiente de enviar al Mac", "accepted": "Aceptado por el Mac", "running": "Ejecutándose en el Mac", "saved": "Resultado guardado", "available": "Resultado disponible", "failed": "No se pudo completar", "interrupted": "Interrumpido al reiniciar el Mac", "cancelled": "Cancelado"][state] ?? state
