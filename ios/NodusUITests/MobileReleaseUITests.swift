@@ -207,6 +207,13 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertTrue(paragraph.isHittable)
             XCTAssertTrue(app.descendants(matching: .any)["private-source-group-picker"].firstMatch.exists)
             capture(app, "live-testimony-\(kind)-saved-body-reopen-\(reopen)")
+            let close = app.buttons["private-source-close"]
+            XCTAssertTrue(close.isHittable); XCTAssertGreaterThanOrEqual(close.frame.height, 44); close.tap()
+            let closed = NSPredicate(format: "exists == false")
+            let reader = app.descendants(matching: .any)["private-corpus-source-testimony-" + kind].firstMatch
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: closed, object: reader)], timeout: 10), .completed)
+            XCTAssertTrue(row.isHittable, "Closing the native reader must return to the same catalogue.")
+            capture(app, "live-testimony-\(kind)-returns-to-catalogue-\(reopen)")
             app.terminate()
         }
     }

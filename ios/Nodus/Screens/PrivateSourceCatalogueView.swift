@@ -83,7 +83,7 @@ struct PrivateSourceCatalogueView: View {
             catch { issue = error.localizedDescription }
         }
         .nodusSheet(item: $selected) { target in
-            PrivateCorpusSourceView(session: session, reference: target.reference, downloadedOnly: downloadedOnly).presentationDetents([.large])
+            PrivateCorpusSourceSheet(session: session, reference: target.reference, downloadedOnly: downloadedOnly)
         }
         .accessibilityIdentifier("private-source-catalogue-\(kind.rawValue)")
     }

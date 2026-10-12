@@ -350,7 +350,7 @@ private struct ProsopographyWorkspace: View {
             set: { if !$0 { personSource = nil } }
         )) {
             if let reference = personSource {
-                PrivateCorpusSourceView(session: session, reference: reference).presentationDetents([.large])
+                PrivateCorpusSourceSheet(session: session, reference: reference)
             }
         }
         .accessibilityIdentifier("prosopography-\(mode.rawValue)-workspace")

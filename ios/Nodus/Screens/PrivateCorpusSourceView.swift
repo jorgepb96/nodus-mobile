@@ -2,6 +2,28 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
+/// Presenting a private source uses a native navigation bar; nested references
+/// keep the same stack and its Back control instead of opening another sidebar.
+struct PrivateCorpusSourceSheet: View {
+    let session: SpaceSession
+    let reference: PrivateCorpusReference
+    var downloadedOnly = false
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            PrivateCorpusSourceView(session: session, reference: reference, downloadedOnly: downloadedOnly)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cerrar") { dismiss() }
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("private-source-close")
+                    }
+                }
+        }.presentationDetents([.large])
+    }
+}
+
 /// Addressed private sources use native reading controls on both size classes.
 /// Selecting a citation never opens a right-hand Desktop inspector on iPhone.
 struct PrivateCorpusSourceView: View {
