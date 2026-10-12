@@ -697,7 +697,7 @@ private struct CompanionCopySettings: View {
                                 Task {
                                     defer { openingFile = false }
                                     do {
-                                        let copy = try await loadPrivateBridgeFile(session, kind: file.kind, id: file.id)
+                                        let copy = try await loadPrivateBridgeFile(session, kind: file.kind, id: file.id, downloadedOnly: true, selectedFile: file)
                                         previewCopy = copy; preview = copy.url
                                     }
                                     catch { issue = error.localizedDescription }
