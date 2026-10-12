@@ -128,7 +128,10 @@ import UIKit
         let id = UUID().uuidString.lowercased()
         let accepted = try CompanionWorldMapGenerationCheckpoint(.object(["version":.int(1),"id":.string(id),"request":request,"revision":.string(source.revision),"model":modelValue,"state":.string("accepted"),"createdAt":.string(ISO8601DateFormatter().string(from: Date())),"title":source.value.objectValue?["name"] ?? .string("Mapa")]))
         let service = ImageService(keyProvider: ai.keyProvider)
+        let activityCache = try PrivateBridgeCache(pairingId: pairing.id)
         let task = Task { @MainActor in
+            try activityCache.beginAuthoringActivity()
+            defer { activityCache.endAuthoringActivity() }
             var checkpoint = accepted
             do {
                 checkpoint = try await journal.perform(accepted: accepted) { @MainActor in
