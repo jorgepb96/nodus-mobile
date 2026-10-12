@@ -380,6 +380,9 @@ final class SpaceSession {
                 await chats.synchronize { kind,request in try await bridge.saveChatEdit(vaultId:vaultId,kind:kind,request:request) }
             } catch { /* The store retains its actual write issue and pending drafts. */ }
             if parentsReady { try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) } }
+            if parentsReady, let (_, studyDocuments) = try? await ConnectionClient.companionDocuments(for: connection, kind: .studyDocument) {
+                try? await studyDocuments.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request, kind: .studyDocument) }
+            }
             if parentsReady, let pairingId = connection.desktopPairingId,
                let pages = try? await CompanionPageDocumentStores.shared.store(pairingId: pairingId, vaultId: vaultId) {
                 let before = await pages.revision

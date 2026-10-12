@@ -147,7 +147,9 @@ enum BackgroundJobs {
 
     static func hasAuthorisedMutations() async -> Bool {
         for connection in AppModel.syncableConnections() {
-            if let (_, documents) = try? await ConnectionClient.companionDocuments(for: connection), await documents.pendingCount() > 0 { return true }
+            for kind in CompanionDocumentOutbox.Kind.allCases {
+                if let (_, documents) = try? await ConnectionClient.companionDocuments(for: connection, kind: kind), await documents.pendingCount() > 0 { return true }
+            }
         }
         for connection in connectionsWithQueues {
             guard let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
@@ -165,10 +167,12 @@ enum BackgroundJobs {
         var everythingLanded = true
         for connection in AppModel.syncableConnections() where connection.role.canSendChanges {
             if Task.isCancelled { return false }
-            if let vaultId = connection.vaultId,
-               let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
-                do { try await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) } }
-                catch { everythingLanded = false }
+            for kind in CompanionDocumentOutbox.Kind.allCases {
+                if let vaultId = connection.vaultId,
+                   let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection, kind: kind) {
+                    do { try await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request, kind: kind) } }
+                    catch { everythingLanded = false }
+                }
             }
             guard MutationOutbox.exists(spaceId: connection.storageId, directory: spacesDirectory) else { continue }
             guard let outbox = try? MutationOutbox(spaceId: connection.storageId, directory: spacesDirectory) else { continue }

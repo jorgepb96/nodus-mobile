@@ -5,7 +5,9 @@ import SwiftUI
 import WebKit
 import QuickLook
 
-enum DesktopSurface: String { case graph, dictionary, workspace, page, databasePresentation, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
+typealias MobileEditorFlush = @MainActor () async -> Bool
+
+enum DesktopSurface: String { case graph, dictionary, workspace, studyDocument, page, databasePresentation, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
 
 private struct MobileWritingResultTarget: Identifiable {
     let request: DesktopJobLedger.Request
@@ -58,6 +60,9 @@ struct SharedDesktopSurface: View {
     let surface: DesktopSurface
     var initialDatabaseReportId: String? = nil
     var initialPageId: String? = nil
+    var initialStudyDocumentId: String? = nil
+    var onEditorFlushReady: ((@escaping MobileEditorFlush) -> Void)? = nil
+    var onStudyDocumentTrashed: ((String) -> Void)? = nil
     var initialArgumentMap: JSONValue? = nil
     var initialArgumentSeed: String? = nil
     var initialDatabasePresentation: JSONValue? = nil
@@ -66,6 +71,7 @@ struct SharedDesktopSurface: View {
     @Environment(AISettings.self) private var ai
     @Environment(\.colorScheme) private var theme
     @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.dismiss) private var surfaceDismiss
     @State private var destination: SurfaceDestination?
     @State private var citation: CorpusReference?
     @State private var sourceDocument: SourceDocumentTarget?
@@ -87,7 +93,7 @@ struct SharedDesktopSurface: View {
     @State private var showImmersionProgress = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, pageDownloadedOnly:pageDownloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, pageDownloadedOnly:pageDownloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -95,6 +101,8 @@ struct SharedDesktopSurface: View {
                 Task { await controller.load(fetchMacProgress: false) }
             } catch { issue = error.localizedDescription }
         }) { kind, id, location, quote in
+            if kind == "closeStudyDocument", surface == .studyDocument { surfaceDismiss(); return }
+            if kind == "trashedStudyDocument", surface == .studyDocument { surfaceDismiss(); onStudyDocumentTrashed?(id); return }
             if kind == "databaseRow", let onOpenDatabaseRow { onOpenDatabaseRow(id); return }
             if kind == "pageAsset" {
                 guard id.count == 64, id.allSatisfy(\.isHexDigit), !openingEmbeddedResource else { return }
@@ -261,6 +269,9 @@ struct StudyEvidenceDocument: View {
     var quote: String? = nil
     @State private var row: Row?
     @State private var error: String?
+    @State private var editing = false
+    @State private var editorFlush: MobileEditorFlush?
+    @Environment(\.dismiss) private var readerDismiss
     @Environment(AppPreferences.self) private var preferences
     var body: some View {
         ScrollViewReader { proxy in
@@ -285,16 +296,118 @@ struct StudyEvidenceDocument: View {
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
         .navigationTitle(row?.text("title") ?? "")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { ReadingSizeButtons(accent: session.accent) } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack {
+                        ReadingSizeButtons(accent: session.accent)
+                        if session.connection.desktopPairingId != nil && session.connection.role.canSendChanges {
+                            Button("Editar") { editing = true }.frame(minHeight: 44).buttonStyle(.plain).accessibilityIdentifier("study-document-edit")
+                        }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $editing) {
+            NavigationStack {
+                SharedDesktopSurface(session: session, surface: .studyDocument, initialStudyDocumentId: id, onEditorFlushReady: { editorFlush = $0 }, onStudyDocumentTrashed: { removed in
+                    editing = false
+                    if removed == id { readerDismiss() }
+                })
+                    .navigationTitle(row?.text("title") ?? "")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Listo") {
+                                Task {
+                                    guard let editorFlush, await editorFlush() else { return }
+                                    editing = false
+                                }
+                            }.frame(minHeight: 44).buttonStyle(.plain).accessibilityIdentifier("study-editor-close")
+                        }
+                    }
+            }.interactiveDismissDisabled(true)
+        }
+        .onChange(of: editing) { _, active in if !active { Task { await loadReader() } } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("study-evidence-reader")
-        .task(id: id) {
-            row = nil; error = nil
+        .task(id: id) { await loadReader() }
+    }
+    private func loadReader() async {
+        error = nil
+        do {
+            if session.connection.desktopPairingId != nil,
+               let (vault, pairing, _) = try? privateBridgeConnection(session, domain: .corpus) {
+                let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault, kind: .studyDocument)
+                let pending = await queue.editorData(noteId: id)
+                let confirmed = await queue.confirmedEditorData(noteId: id)
+                if let editor = pending ?? confirmed {
+                    var fields = row?.columns ?? ["id": .string(id)]
+                    fields["title"] = editor.objectValue?["documentTitle"]
+                    fields["content_markdown"] = editor.objectValue?["contentMarkdown"]
+                    row = Row(fields); return
+                }
+            }
+            guard let collection = Collections.byPath["study-docs"] else { throw DesktopBridgeError.malformedResponse }
+            row = try await session.client.item(collection, id: id, in: session.connection.spaceId)
+        } catch { self.error = error.localizedDescription }
+    }
+}
+
+@MainActor private enum StudyDocumentSurfaceBridge {
+    static let methods: Set<String> = ["getStudyDocEditorData", "updateStudyDoc", "restoreStudyDocVersion", "resolveMobileStudyConflict", "duplicateMobileStudyDocument", "trashMobileStudyDocument"]
+    static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
+                        pairing: DesktopBridgePairing, vaultId: String, onOffline: (Bool) -> Void) async throws -> JSONValue {
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
+              let id = args.first?.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.permissionDenied }
+        let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: .studyDocument)
+        let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        func load() async throws -> JSONValue {
+            if let local = await queue.editorData(noteId: id) { return local }
+            let key = try CompanionDocumentOutbox.operationKey("getStudyDocEditorData", [.string(id)])
+            let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key)
+            let owned = await queue.confirmedEditorData(noteId: id)
+            var value: JSONValue
             do {
-                guard let collection = Collections.byPath["study-docs"] else { throw DesktopBridgeError.malformedResponse }
-                row = try await session.client.item(collection, id: id, in: session.connection.spaceId)
-            } catch { self.error = error.localizedDescription }
+                value = try await client.operation(vaultId: vaultId, method: "getStudyDocEditorData", args: [.string(id)], timeout: cached == nil && owned == nil ? nil : 4)
+                try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
+                onOffline(false)
+            } catch {
+                guard isPrivateBridgeOffline(error) else { throw error }
+                let cachedValue = cached.flatMap { try? JSONDecoder.nodus.decode(JSONValue.self, from: $0) }
+                if let owned, (owned.objectValue?["revision"]?.intValue ?? 0) >= (cachedValue?.objectValue?["revision"]?.intValue ?? -1) { value = owned }
+                else if let cachedValue { value = cachedValue }
+                else if cached != nil { throw DesktopBridgeError.malformedResponse }
+                else { throw error }
+                onOffline(true)
+            }
+            try await queue.seed(noteId: id, editorData: value)
+            return value
         }
+        if method == "getStudyDocEditorData", args.count == 1 { return try await load() }
+        if ["duplicateMobileStudyDocument", "trashMobileStudyDocument"].contains(method), args.count == 1 {
+            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+            try await queue.synchronize { request in try await client.saveWorkspaceEdit(vaultId: vaultId, request: request, kind: .studyDocument) }
+            guard await queue.pendingCount() == 0, await queue.editorData(noteId: id) == nil else {
+                throw APIError(status: 409, code: "study_changes_pending", message: "Resuelve o sincroniza los cambios del documento antes de duplicarlo o enviarlo a la papelera.")
+            }
+            return try await client.operation(vaultId: vaultId, method: method, args: args)
+        }
+        guard pairing.domains.contains(.writing), session.connection.role.canSendChanges, args.count == 2 else { throw DesktopBridgeError.permissionDenied }
+        let result: JSONValue
+        if method == "resolveMobileStudyConflict", let keep = args[1].boolValue {
+            result = try await queue.resolve(noteId: id, keepMobile: keep)
+        } else if method == "updateStudyDoc" {
+            if await !queue.hasBaseline(noteId: id) { _ = try await load() }
+            result = try await queue.save(noteId: id, input: args[1])
+        } else if method == "restoreStudyDocVersion", let versionId = args[1].stringValue {
+            let current = try await load()
+            guard let version = current.objectValue?["versions"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(versionId) })?.objectValue,
+                  let title = version["title"], let content = version["contentMarkdown"], let revision = current.objectValue?["revision"] else { throw DesktopBridgeError.malformedResponse }
+            var input: [String: JSONValue] = ["title": title, "contentMarkdown": content, "expectedRevision": revision, "reason": .string("restore")]
+            for key in ["style", "nativeDocument", "schemaVersion", "academicMetadata"] { if let value = version[key] { input[key] = value } }
+            result = try await queue.save(noteId: id, input: .object(input))
+        } else { throw DesktopBridgeError.malformedResponse }
+        Task { await session.synchronizeCompanionChanges() }
+        return result
     }
 }
 
@@ -329,6 +442,8 @@ private struct DesktopWebView: UIViewRepresentable {
     let databaseReadingRevision:Int
     let initialDatabaseReportId: String?
     let initialPageId: String?
+    let initialStudyDocumentId: String?
+    let onEditorFlushReady: ((@escaping MobileEditorFlush) -> Void)?
     let initialArgumentMap: JSONValue?
     let initialArgumentSeed: String?
     let initialDatabasePresentation: JSONValue?
@@ -351,8 +466,8 @@ private struct DesktopWebView: UIViewRepresentable {
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
         config.userContentController.add(context.coordinator, name: "nodus")
-        var data: [String: Any] = ["surface": surface.rawValue, "pageDownloadedOnly":pageDownloadedOnly, "initialPageId":initialPageId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
-            "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
+        var data: [String: Any] = ["surface": surface.rawValue, "pageDownloadedOnly":pageDownloadedOnly, "initialPageId":initialPageId ?? "", "initialStudyDocumentId":initialStudyDocumentId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+            "documentDraftScope": session.connection.storageId, "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
         if let initialArgumentMap, let bytes = try? JSONEncoder.nodus.encode(initialArgumentMap), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialArgumentMap"] = value }
         if let initialArgumentSeed { data["initialArgumentSeed"] = initialArgumentSeed }
@@ -386,6 +501,13 @@ private struct DesktopWebView: UIViewRepresentable {
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         context.coordinator.webView = view
+        onEditorFlushReady? { [weak view] in
+            guard let view else { return false }
+            do {
+                let result = try await view.callAsyncJavaScript("const listeners=[...(window.nodusMobileSubscriptions?.get('onBeforeEditorLeave')??[])]; return (await Promise.all(listeners.map(listener=>listener()))).every(result=>result!==false);", arguments: [:], in: nil, contentWorld: .page)
+                return result as? Bool == true
+            } catch { return false }
+        }
         context.coordinator.setRouteActive(routeActive)
         if let resource = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "SharedDesktop") {
             let script = resource.deletingLastPathComponent().appendingPathComponent("surface.iife.js")
@@ -810,6 +932,8 @@ private struct DesktopWebView: UIViewRepresentable {
                             value = try await databaseReading.perform(method,args:args,client:client,pairing:pairing,vaultId:vaultId,onOffline:onOfflineCopy)
                         } else if ImmersionSurfaceProgressBridge.writeMethods.contains(method) {
                             value = try await immersionProgress.write(method: method, args: args, pairing: pairing, vaultId: vaultId)
+                        } else if StudyDocumentSurfaceBridge.methods.contains(method) {
+                            value = try await StudyDocumentSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, onOffline: onOfflineCopy)
                         } else if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
                             let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)

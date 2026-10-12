@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "desktopCommit": "dfa0e60270ada54ae2bf86a3ff4fd3bb4a3e66b4",
-  "sourceDigest": "5b7ec9bb4e7b12565f7cd568f37f0750ed372126cbb5504f44e2785c6423abd7",
+  "desktopCommit": "4ffa23b4051fcc8418f2ce9709845e3d075301d4",
+  "sourceDigest": "57ccaa0179adc3d7aaff22bf4118c4faa148a1af586a27cbd3b80f26850340b6",
   "files": {
     "chat-read.css": "6b81a44ca1103c6a3033973474103d21c1066feea9c2f4745a11dee6943560e8",
     "chat-read.html": "f11bc0e21820903b7539c97d81a490ef1871ad6ddfadbd50c8032297b59b5118",
@@ -13,12 +13,12 @@
     "map-read.css": "95d8c5473048f5f1c348c74b5a56c345493f5618b3a323de5a7c976e4e4dbf26",
     "map-read.html": "d775be14af882fe629320de04aa3df9d8f063c258c78e2a09a31436bff7f8cc9",
     "map-read.iife.js": "7c7bd64e3c1e7502bad677422f0bac5df59d12b369c416aa9b010fce8a7e1531",
-    "operations.json": "fd19788e4e084cf74a32b62eaf2d7b0d23e4ad9a388d8c36927d08d8e58d123f",
+    "operations.json": "5782de9af4b843de5ed5fdad816b524edf755045cf47bd9fbc0163da45f5fa98",
     "prose-read.css": "57d020197ae433bfc1dca9ba5a73293285a12e3d132aa733af204bb1204a039a",
     "prose-read.html": "54ec56e83b05cde7ace8b3ccce99f9cbb2917b9a8253eff4f6bc12cb38804327",
     "prose-read.iife.js": "e3e63d7a4784ff1d90123f43292dcf165a5d51bbdc4468750784206e22f384df",
     "report-renderer.js": "b96aec3cfb12c0a61014938e670fa89651bb63e585dd03f5b06e04a02e698a84",
-    "surface.css": "16ee3370a7c40a6b7a9d9989ca278c718f384abb4ae1c5caba3e16ffc2188c30",
-    "surface.iife.js": "d1b5dfc95b618adb9cc3ff22dc4f26326cea746703f80a42c368841e0254c433"
+    "surface.css": "0e2c47904c1629e92487ac9b224a772125cca78218faeaa36e75b4cd6a71faf6",
+    "surface.iife.js": "3dc67483d3efcb77b53691bcac03ad5bc8bd3f1a4eff5dd50b652357e467cac8"
   }
 }

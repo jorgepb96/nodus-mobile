@@ -14,8 +14,8 @@ struct CompanionDocumentOutboxTests {
             keychain = KeychainStore(service: "nodus.tests.companion.\(pairing)")
             cache = try PrivateBridgeCache(pairingId: pairing, directory: directory, keychain: keychain, readLimitBytes: readLimitBytes)
         }
-        func open() async throws -> CompanionDocumentOutbox {
-            try await CompanionDocumentOutbox(cache: cache, vaultId: "vault-a", data: cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        func open(kind: CompanionDocumentOutbox.Kind = .workspaceNote) async throws -> CompanionDocumentOutbox {
+            try await CompanionDocumentOutbox(cache: cache, vaultId: "vault-a", data: cache.data(vaultId: "vault-a", domain: .writing, recordId: kind.storageKey), kind: kind)
         }
         func cleanup() {
             try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: pairing)); try? FileManager.default.removeItem(at: directory)
@@ -42,6 +42,49 @@ struct CompanionDocumentOutboxTests {
     }
     private static let creationInput: JSONValue = .object(["title": .string("New offline document"), "content": .string(""),
         "kind": .string("markdown"), "folderId": .string("folder-a"), "tags": .array([.string("offline")])])
+    @Test("study drafts have a separate durable identity and preserve the same request after a lost acknowledgement")
+    func studyDraftIsolationAndReplay() async throws {
+        let fixture = try Fixture(readLimitBytes: 2 * 1024 * 1024); defer { fixture.cleanup() }
+        let notes = try await fixture.open(), study = try await fixture.open(kind: .studyDocument)
+        for queue in [notes, study] { try await queue.seed(noteId: "same-id", editorData: Self.editor()) }
+        _ = try await notes.save(noteId: "same-id", input: Self.input(7, text: "Workspace draft"))
+        let result = try await study.save(noteId: "same-id", input: Self.input(7, text: "Study draft"))
+        #expect(result.objectValue?["contentMarkdown"] == .string("Study draft"))
+        let requests = Requests()
+        do { try await study.synchronize { request in await requests.append(request); throw URLError(.networkConnectionLost) }; Issue.record("Expected a transport loss") }
+        catch is URLError {}
+        let reopened = try await fixture.open(kind: .studyDocument)
+        #expect(await reopened.editorData(noteId: "same-id")?.objectValue?["nativeDocument"] == Self.input(7, text: "Study draft").objectValue?["nativeDocument"])
+        try await reopened.synchronize { request in await requests.append(request); return Self.receipt(request, revision: 8) }
+        let sent = await requests.all()
+        #expect(sent.count == 2 && sent[0] == sent[1])
+        #expect(await reopened.pendingCount() == 0)
+        let preservedNotes = try await fixture.open()
+        #expect(await preservedNotes.editorData(noteId: "same-id")?.objectValue?["contentMarkdown"] == .string("Workspace draft"))
+        let confirmed = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .corpus, recordId: CompanionDocumentOutbox.operationKey("getStudyDocEditorData", [.string("same-id")])))
+        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: confirmed).objectValue?["contentMarkdown"] == .string("Study draft"))
+        let noteBytes = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.Kind.workspaceNote.storageKey))
+        #expect(throws: DesktopBridgeError.self) { try CompanionDocumentOutbox(cache: fixture.cache, vaultId: "vault-a", data: noteBytes, kind: .studyDocument) }
+    }
+
+    @Test("study conflict choices preserve their draft and never resolve a same-id workspace note")
+    func studyConflictIsolation() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let notes = try await fixture.open(), study = try await fixture.open(kind: .studyDocument)
+        for queue in [notes, study] { try await queue.seed(noteId: "same-id", editorData: Self.editor()) }
+        _ = try await notes.save(noteId: "same-id", input: Self.input(7, text: "Workspace draft"))
+        _ = try await study.save(noteId: "same-id", input: Self.input(7, text: "Study draft"))
+        let remote = Self.editor(9, text: "Mac study draft")
+        do { try await study.synchronize { _ in throw APIError(status: 409, code: "revision_conflict", details: ["remote": remote]) }; Issue.record("Expected a conflict") }
+        catch is APIError {}
+        let reopened = try await fixture.open(kind: .studyDocument)
+        #expect(await reopened.editorData(noteId: "same-id")?.objectValue?["mobileConflictRemote"] == remote)
+        #expect(try await reopened.resolve(noteId: "same-id", keepMobile: false) == remote)
+        #expect(await reopened.editorData(noteId: "same-id") == nil)
+        #expect(await notes.editorData(noteId: "same-id")?.objectValue?["contentMarkdown"] == .string("Workspace draft"))
+        await #expect(throws: DesktopBridgeError.self) { try await reopened.create(input: Self.creationInput) }
+        await #expect(throws: DesktopBridgeError.self) { try await reopened.createManualIdea(input: .object(["title": .string("Wrong domain")])) }
+    }
     @Test("embedded images above the former transport limit survive restart and structured acknowledgement")
     func embeddedImageRoundtrip() async throws {
         let fixture = try Fixture(readLimitBytes: 1); defer { fixture.cleanup() }

@@ -398,19 +398,27 @@ public actor DesktopBridgeClient {
         return try JSONDecoder.nodus.decode(JSONValue.self,from:response.data)
     }
 
-    public func saveWorkspaceEdit(vaultId: String, request: CompanionDocumentOutbox.Request) async throws -> JSONValue {
+    public func saveWorkspaceEdit(vaultId: String, request: CompanionDocumentOutbox.Request, kind: CompanionDocumentOutbox.Kind = .workspaceNote) async throws -> JSONValue {
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
         var body: [String: JSONValue] = [
-            "id": .string(request.id), "noteId": .string(request.noteId), "input": request.input
+            "id": .string(request.id), (kind == .workspaceNote ? "noteId" : "documentId"): .string(request.noteId), "input": request.input
         ]
+        if kind == .studyDocument, request.creation != nil { throw DesktopBridgeError.permissionDenied }
+        if kind == .studyDocument, !pairing.domains.contains(.corpus) { throw DesktopBridgeError.permissionDenied }
         if let creation = request.creation { body["creation"] = creation }
         guard try JSONEncoder.nodus.encode(JSONValue.object(body)).count <= CompanionDocumentOutbox.maximumRequestBytes else {
             throw APIError(status: 413, code: "workspace_edit_too_large", message: "La nota y sus archivos superan el tamaño permitido para sincronizar.")
         }
-        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/workspace-edits", method: "POST", body: .object(body))
-        return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/\(kind == .workspaceNote ? "workspace-edits" : "study-edits")", method: "POST", body: .object(body))
+        let value = try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
+        if kind == .workspaceNote { return value }
+        guard var object = value.objectValue, let document = object["document"], document.objectValue?["id"] == .string(request.noteId) else { throw DesktopBridgeError.malformedResponse }
+        // The durable editor queue has one acknowledgement shape. Keep the wire
+        // identity typed while adapting its canonical record for that queue.
+        object["note"] = document
+        return .object(object)
     }
 
     public func savePageDocument(vaultId: String, request: CompanionPageDocuments.Request) async throws -> JSONValue {

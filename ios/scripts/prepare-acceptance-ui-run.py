@@ -227,7 +227,8 @@ if args.study_documents:
             paragraph = next((line for line in record[4].splitlines() if len(line)>40 and not line.startswith("#")), "")
             if not paragraph:
                 raise SystemExit("A saved study document paragraph is required")
-            cases[kind] = dict(vaultId=vault["id"], courseId=record[0], courseTitle=record[1], documentId=record[2], documentTitle=record[3], body=paragraph)
+            last_paragraph = next(line for line in reversed(record[4].splitlines()) if len(line)>40 and not line.startswith("#"))
+            cases[kind] = dict(vaultId=vault["id"], courseId=record[0], courseTitle=record[1], documentId=record[2], documentTitle=record[3], body=paragraph, lastBody=last_paragraph)
     values["NODUS_ACCEPTANCE_STUDY_DOCUMENTS"] = json.dumps(cases, ensure_ascii=False)
 
 configuration = plistlib.loads(args.base.read_bytes())

@@ -18,13 +18,14 @@ enum ConnectionClient {
         URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
     }
 
-    static func companionDocuments(for connection: AppModel.Connection) async throws -> (DesktopBridgeClient, CompanionDocumentOutbox)? {
+    static func companionDocuments(for connection: AppModel.Connection, kind: CompanionDocumentOutbox.Kind = .workspaceNote) async throws -> (DesktopBridgeClient, CompanionDocumentOutbox)? {
         guard connection.role.canSendChanges, let id = connection.desktopPairingId, let vaultId = connection.vaultId else { return nil }
         let store = DesktopBridgePairingStore()
         guard let pairing = store.pairings().first(where: { $0.id == id }), !pairing.isExpired,
               pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing),
+              kind != .studyDocument || pairing.domains.contains(.corpus),
               let token = store.credential(for: pairing) else { return nil }
-        let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: id, vaultId: vaultId)
+        let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: id, vaultId: vaultId, kind: kind)
         return (DesktopBridgeClient(pairing: pairing, token: token), documents)
     }
     static func companionChat(for connection: AppModel.Connection) throws -> DesktopBridgeClient {

@@ -4,6 +4,11 @@ import CryptoKit
 /// Complete BlockNote saves stay on this device until the owning Mac confirms
 /// a canonical commit. A frozen in-flight request survives lost acknowledgements.
 public actor CompanionDocumentOutbox {
+    public enum Kind: String, Codable, Sendable, CaseIterable {
+        case workspaceNote, studyDocument
+        var storageKey: String { self == .workspaceNote ? CompanionDocumentOutbox.storageKey : "companion-study-documents-v1" }
+        var editorMethod: String { self == .workspaceNote ? "getWorkspaceNoteEditorData" : "getStudyDocEditorData" }
+    }
     /// Mirrors shared/mobileWorkspace.ts; the shared editor keeps its own
     /// smaller native-document and individual attachment limits.
     public static let maximumRequestBytes = 32 * 1024 * 1024
@@ -36,9 +41,11 @@ public actor CompanionDocumentOutbox {
         var records: [String: Record]
         var authored: [String: Authored]
         var folders: [String: JSONValue]?
+        var kind: Kind? = nil
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
+    private let kind: Kind
     private var records: [String: Record]
     private var authored: [String: Authored] = [:]
     private var knownFolders: [String: JSONValue] = [:]
@@ -50,10 +57,10 @@ public actor CompanionDocumentOutbox {
     private var diskTaskId: UUID?
     static let storageKey = "companion-documents-v1"
 
-    init(cache: PrivateBridgeCache, vaultId: String, data: Data?) throws {
-        self.cache = cache; self.vaultId = vaultId
+    init(cache: PrivateBridgeCache, vaultId: String, data: Data?, kind: Kind = .workspaceNote) throws {
+        self.cache = cache; self.vaultId = vaultId; self.kind = kind
         if let data, let state = try? JSONDecoder.nodus.decode(StoredState.self, from: data), state.version == 2 {
-            guard state.vaultId == vaultId else { throw DesktopBridgeError.malformedResponse }
+            guard state.vaultId == vaultId, (state.kind ?? .workspaceNote) == kind else { throw DesktopBridgeError.malformedResponse }
             records = state.records; authored = state.authored; knownFolders = state.folders ?? [:]
             for (id, source) in authored {
                 guard source.editorData.objectValue?["revision"]?.intValue.map({ $0 >= 0 }) == true,
@@ -64,7 +71,10 @@ public actor CompanionDocumentOutbox {
             for (id, folder) in knownFolders {
                 guard !id.isEmpty, folder.objectValue?["id"] == .string(id), Self.validParent(folder.objectValue?["parentId"]) else { throw DesktopBridgeError.malformedResponse }
             }
-        } else { records = try data.map { try JSONDecoder.nodus.decode([String: Record].self, from: $0) } ?? [:] }
+        } else {
+            guard kind == .workspaceNote || data == nil else { throw DesktopBridgeError.malformedResponse }
+            records = try data.map { try JSONDecoder.nodus.decode([String: Record].self, from: $0) } ?? [:]
+        }
     }
     public static func operationKey(_ method: String, _ args: [JSONValue]) throws -> String {
         "operation:\(method):" + SHA256.hash(data: try JSONEncoder.nodus.encode(args)).map { String(format: "%02x", $0) }.joined()
@@ -84,6 +94,7 @@ public actor CompanionDocumentOutbox {
         }
     }
     public func confirmedEditorData(noteId: String) -> JSONValue? { authored[noteId]?.editorData }
+    public func hasBaseline(noteId: String) -> Bool { records[noteId] != nil || baselines[noteId] != nil }
     private static func validParent(_ parent: JSONValue?) -> Bool {
         parent == nil || parent == .null || parent?.stringValue.map({ !$0.isEmpty }) == true
     }
@@ -164,7 +175,8 @@ public actor CompanionDocumentOutbox {
     /// A new authored document has a stable identity before any Mac request.
     /// The same frozen creation and its latest structured edit commit together.
     public func create(input: JSONValue) async throws -> JSONValue {
-        try await createDocument(input: input, ideaId: nil)
+        guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
+        return try await createDocument(input: input, ideaId: nil)
     }
     public func createManualIdea(input: JSONValue) async throws -> JSONValue {
         guard var fields = input.objectValue, fields.keys.allSatisfy({ ["title", "folderId"].contains($0) }) else { throw DesktopBridgeError.malformedResponse }
@@ -231,6 +243,7 @@ public actor CompanionDocumentOutbox {
             "themes": .array([]), "edgeDetails": .array([])])
     }
     private func createDocument(input: JSONValue, ideaId: String?) async throws -> JSONValue {
+        guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
         let kind = ideaId == nil ? "markdown" : "idea"
         guard let fields = input.objectValue,
               fields.keys.allSatisfy({ ["title", "content", "kind", "folderId", "tags", "source"].contains($0) }),
@@ -299,6 +312,7 @@ public actor CompanionDocumentOutbox {
         var note = records[noteId]?.createdNote?.objectValue ?? [:]
         note.merge(["id": .string(noteId), "title": editor["documentTitle"]!, "content": editor["contentMarkdown"]!,
                     "editorRevision": editor["revision"]!, "mobileSyncState": editor["mobileSyncState"]!], uniquingKeysWith: { _, new in new })
+        if kind == .studyDocument { note["contentMarkdown"] = editor["contentMarkdown"]; note["favorite"] = .bool(false) }
         return .object(note)
     }
     public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count }
@@ -359,7 +373,7 @@ public actor CompanionDocumentOutbox {
                 // Make a confirmed document consultable before retiring its
                 // durable queue. Failure here leaves the same replayable receipt.
                 try await cache.store(JSONEncoder.nodus.encode(committed), vaultId: vaultId, domain: .corpus,
-                                      recordId: Self.operationKey("getWorkspaceNoteEditorData", [.string(noteId)]))
+                                      recordId: Self.operationKey(kind.editorMethod, [.string(noteId)]))
                 // Disk writes await another actor. An autosave can arrive during
                 // that wait, so read its latest generation after storing the ack.
                 guard var latest = records[noteId], latest.sending?.id == request.id else { throw DesktopBridgeError.malformedResponse }
@@ -384,7 +398,7 @@ public actor CompanionDocumentOutbox {
               remote.objectValue?["contentMarkdown"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
         authored[noteId] = Authored(editorData: remote, note: authored[noteId]?.note ?? record.createdNote ?? knownNotes[noteId])
         try await cache.store(JSONEncoder.nodus.encode(remote), vaultId: vaultId, domain: .corpus,
-                              recordId: Self.operationKey("getWorkspaceNoteEditorData", [.string(noteId)]))
+                              recordId: Self.operationKey(kind.editorMethod, [.string(noteId)]))
         baselines[noteId] = remote
         acknowledgedLocalRevisions[noteId] = nil
         if keepMobile {
@@ -396,11 +410,11 @@ public actor CompanionDocumentOutbox {
         return result
     }
     private func persist() async throws {
-        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders()))
-        let previous = diskTask, id = UUID(), cache = self.cache, vault = vaultId
+        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind))
+        let previous = diskTask, id = UUID(), cache = self.cache, vault = vaultId, storage = kind.storageKey
         let task = Task {
             if let previous { _ = try? await previous.value }
-            _ = try await cache.store(bytes, vaultId: vault, domain: .writing, recordId: Self.storageKey)
+            _ = try await cache.store(bytes, vaultId: vault, domain: .writing, recordId: storage)
         }
         diskTask = task; diskTaskId = id
         do { try await task.value }
@@ -418,13 +432,13 @@ public actor CompanionDocumentOutbox {
 public actor CompanionDocumentOutboxes {
     public static let shared = CompanionDocumentOutboxes()
     private var stores: [String: Task<CompanionDocumentOutbox, any Error>] = [:]
-    public func outbox(pairingId: String, vaultId: String) async throws -> CompanionDocumentOutbox {
-        let key = "\(pairingId)|\(vaultId)"
+    public func outbox(pairingId: String, vaultId: String, kind: CompanionDocumentOutbox.Kind = .workspaceNote) async throws -> CompanionDocumentOutbox {
+        let key = "\(pairingId)|\(vaultId)" + (kind == .workspaceNote ? "" : "|\(kind.rawValue)")
         if let task = stores[key] { return try await task.value }
         let task = Task {
             let cache = try PrivateBridgeCache(pairingId: pairingId)
             return try await CompanionDocumentOutbox(cache: cache, vaultId: vaultId,
-                data: cache.data(vaultId: vaultId, domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+                data: cache.data(vaultId: vaultId, domain: .writing, recordId: kind.storageKey), kind: kind)
         }
         stores[key] = task
         do { return try await task.value } catch { stores[key] = nil; throw error }

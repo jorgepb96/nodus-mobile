@@ -238,6 +238,47 @@ final class MobileReleaseUITests: XCTestCase {
         try readSavedCourseDocument(kind: "docencia")
     }
     @MainActor
+    func testLiveStudyEditorFlushesStructuredDraftOnCloseAndReopens() throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_STUDY_DOCUMENTS"])
+        let cases = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: [String: String]])
+        let fixture = try XCTUnwrap(cases["estudio"])
+        func value(_ key: String) throws -> String { try XCTUnwrap(fixture[key]) }
+        let marker = "StudyMobile-" + UUID().uuidString.prefix(8)
+        for reopen in 0..<2 {
+            let app = try openExistingVault(destination: "studyCourses", vaultId: value("vaultId"))
+            defer { app.terminate() }
+            let course = app.buttons["study-course-open-" + (try value("courseId"))].firstMatch
+            XCTAssertTrue(course.waitForExistence(timeout: 45)); course.tap()
+            let document = app.buttons["study-course-document-" + (try value("documentId"))]
+            XCTAssertTrue(document.waitForExistence(timeout: 20))
+            for _ in 0..<10 { if document.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(document.isHittable); document.tap()
+            let edit = app.buttons["study-document-edit"]
+            XCTAssertTrue(edit.waitForExistence(timeout: 20)); edit.tap()
+            let web = app.descendants(matching: .any)["shared-desktop-studyDocument"].firstMatch.webViews.firstMatch
+            let editor = web.textViews["Editor del documento"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 45), app.debugDescription)
+            if reopen == 0 {
+                editor.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+                editor.typeText(" \(marker).")
+                XCTAssertTrue((editor.value as? String)?.contains(marker) == true)
+            } else {
+                XCTAssertTrue((editor.value as? String)?.contains(marker) == true, "The structured mobile edit must survive process restart.")
+            }
+            let close = app.buttons["study-editor-close"]
+            XCTAssertTrue(close.isHittable); XCTAssertGreaterThanOrEqual(close.frame.height, 44)
+            // Close before waiting for autosave: the native exit must flush the
+            // editor into the durable queue rather than discarding its debounce.
+            close.tap(); XCTAssertTrue(web.waitForNonExistence(timeout: 30), app.debugDescription)
+            let marked = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", marker, marker)).firstMatch
+            XCTAssertTrue(marked.waitForExistence(timeout: 20), "The reader must immediately show its saved local edit.")
+            let original = try value("lastBody")
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", original, original)).firstMatch.exists)
+            capture(app, "live-study-editor-flushed-\(marker)-reopen-\(reopen)")
+            app.terminate()
+        }
+    }
+    @MainActor
     func testLiveArchiveReadsSavedDescriptionTextAndExcerpt() throws {
         let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_ARCHIVE_DOSSIER"])
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: String])

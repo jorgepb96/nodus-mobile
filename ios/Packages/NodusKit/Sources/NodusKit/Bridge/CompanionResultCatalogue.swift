@@ -30,7 +30,7 @@ public enum CompanionResultCatalogue {
             switch original["entityKind"]?.stringValue {
             case "deep_research": return surface == "deepResearch"
             case "immersion": return surface == "immersion"
-            case "study_document", "study_subject", "study_question", "study_transcript", "study_assistant": return surface == "workspace"
+            case "study_document", "study_subject", "study_question", "study_transcript", "study_assistant": return surface == "workspace" || surface == "studyDocument"
             default: return false
             }
         default: return false
