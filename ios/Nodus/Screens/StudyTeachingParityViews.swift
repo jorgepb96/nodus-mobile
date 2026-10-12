@@ -795,7 +795,8 @@ struct DesktopBridgePairingSheet: View {
                     self.error = String(localized: "This code has expired. Generate a new code in Mobile connection on your Mac.")
                 case .certificateMismatch:
                     self.error = String(localized: "Your Mac's connection identity has changed. Generate a new code in Nodus to link it again.")
-                case .permissionDenied:
+                case .permissionDenied, .credentialRevoked:
+                    resumingPending = false
                     self.error = String(localized: "This connection is no longer available. Generate a new code on your Mac.")
                 case .invalidOrigin, .invalidFingerprint:
                     self.error = String(localized: "This pairing link is invalid. Generate a new code or QR in Nodus on your Mac.")
