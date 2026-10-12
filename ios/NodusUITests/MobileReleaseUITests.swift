@@ -256,6 +256,7 @@ final class MobileReleaseUITests: XCTestCase {
             let edit = app.buttons["study-document-edit"]
             XCTAssertTrue(edit.waitForExistence(timeout: 20))
             XCTAssertTrue(edit.isHittable); XCTAssertGreaterThanOrEqual(edit.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(edit.frame.height, 44)
             capture(app, "live-study-reader-edit-control-before-writing")
             edit.tap()
             let web = app.descendants(matching: .any)["shared-desktop-studyDocument"].firstMatch.webViews.firstMatch
@@ -270,11 +271,14 @@ final class MobileReleaseUITests: XCTestCase {
             }
             let close = app.buttons["study-editor-close"]
             XCTAssertTrue(close.isHittable); XCTAssertGreaterThanOrEqual(close.frame.height, 44)
+            XCTAssertGreaterThanOrEqual(close.frame.width, 44)
             // Close before waiting for autosave: the native exit must flush the
             // editor into the durable queue rather than discarding its debounce.
             close.tap(); XCTAssertTrue(web.waitForNonExistence(timeout: 30), app.debugDescription)
-            let marked = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", marker, marker)).firstMatch
-            XCTAssertTrue(marked.waitForExistence(timeout: 20), "The reader must immediately show its saved local edit.")
+            // Native headings apply the reader's uppercase typography. The
+            // rendered text must match the edit regardless of that casing.
+            let marked = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", marker, marker)).firstMatch
+            XCTAssertTrue(marked.waitForExistence(timeout: 20), "The reader must immediately show its saved local edit.\n" + app.debugDescription)
             let original = try value("lastBody")
             XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", original, original)).firstMatch.exists)
             capture(app, "live-study-editor-flushed-\(marker)-reopen-\(reopen)")

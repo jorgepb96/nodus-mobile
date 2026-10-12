@@ -297,13 +297,15 @@ struct StudyEvidenceDocument: View {
         .navigationTitle(row?.text("title") ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                ReadingSizeButtons(accent: session.accent)
-                if session.connection.desktopPairingId != nil && session.connection.role.canSendChanges {
-                    Button { editing = true } label: { Label("Edit", systemImage: "pencil") }
-                        .labelStyle(.iconOnly).frame(width: 44, height: 44).fixedSize()
-                        .buttonStyle(.plain).accessibilityIdentifier("study-document-edit")
+            ToolbarItem(placement: .topBarTrailing) { ReadingSizeButtons(accent: session.accent) }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if session.connection.desktopPairingId != nil && session.connection.role.canSendChanges {
+                Button { editing = true } label: {
+                    Image(systemName: "pencil").font(.system(size: 15, weight: .semibold)).nodusFloatingCircle(accent: session.accent)
                 }
+                .buttonStyle(.plain).accessibilityLabel("Edit").accessibilityIdentifier("study-document-edit")
+                .padding(.trailing, 22).padding(.bottom, 22)
             }
         }
         .fullScreenCover(isPresented: $editing) {
@@ -316,12 +318,15 @@ struct StudyEvidenceDocument: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") {
+                            Button {
                                 Task {
                                     guard let editorFlush, await editorFlush() else { return }
                                     editing = false
                                 }
-                            }.frame(minHeight: 44).buttonStyle(.plain).accessibilityIdentifier("study-editor-close")
+                            } label: {
+                                Text("Done").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain).accessibilityIdentifier("study-editor-close")
                         }
                     }
             }.interactiveDismissDisabled(true)
