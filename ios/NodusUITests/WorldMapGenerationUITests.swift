@@ -19,6 +19,7 @@ final class WorldMapGenerationUITests: XCTestCase {
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
         for launch in 0..<2 {
             app.launch()
+            try prepareWorkspace(app, autonomous: true)
             try openJobs(app)
             let result = app.buttons["world-saved-result-" + id]
             XCTAssertTrue(result.waitForExistence(timeout: 30), "A real provider-free publication ledger must already contain the paid result.")
@@ -51,7 +52,9 @@ final class WorldMapGenerationUITests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launch()
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        try prepareWorkspace(app, autonomous: false)
         try navigate(app, route: "map")
+        try selectExpectedMap(app)
         XCTAssertTrue(app.buttons["world-map-options"].waitForExistence(timeout: 35))
         app.buttons["world-map-options"].tap()
         let generation = app.buttons["Generar o ampliar mapa"]
@@ -85,7 +88,9 @@ final class WorldMapGenerationUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launch(); defer { app.terminate() }
+        try prepareWorkspace(app, autonomous: false)
         try navigate(app, route: "map")
+        try selectExpectedMap(app)
         let options = app.buttons["world-map-options"]
         XCTAssertTrue(options.waitForExistence(timeout: 35)); options.tap()
         app.buttons["Generar o ampliar mapa"].tap()
@@ -101,22 +106,65 @@ final class WorldMapGenerationUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["world-map-shared-canvas"].waitForExistence(timeout: 30))
     }
 
-    private enum SetupError: Error { case submissionNotEnabled }
+    private enum SetupError: Error { case submissionNotEnabled, missingFixture }
     @MainActor private func openJobs(_ app: XCUIApplication) throws {
         try navigate(app, route: "settings")
-        let jobs = app.buttons["Trabajos y resultados"]
+        let jobs = app.buttons["companion-jobs-results"]
         XCTAssertTrue(jobs.waitForExistence(timeout: 20)); reveal(jobs, app: app); jobs.tap()
         XCTAssertTrue(app.descendants(matching: .any)["live-job-ledger"].waitForExistence(timeout: 20))
     }
-    @MainActor private func navigate(_ app: XCUIApplication, route: String) throws {
+    @MainActor private func prepareWorkspace(_ app: XCUIApplication, autonomous: Bool) throws {
+        let vaultId = try required("NODUS_ACCEPTANCE_WORLD_VAULT")
         let navigation = app.buttons["nodus-navigation-toggle"]
-        XCTAssertTrue(navigation.waitForExistence(timeout: 45), "Final runner must first select the existing paired worldbuilding lab and required execution mode.")
-        if app.windows.firstMatch.frame.width < 600 { navigation.tap() }
+        XCTAssertTrue(navigation.waitForExistence(timeout: 45), "A real previously paired laboratory must reopen.")
+        let changeSpace = app.buttons["Cambiar de espacio"]
+        XCTAssertTrue(changeSpace.waitForExistence(timeout: 15)); changeSpace.tap()
+        let space = app.buttons["space-" + vaultId]
+        XCTAssertTrue(space.waitForExistence(timeout: 20), "The exact supplied world vault must be linked.")
+        reveal(space, app: app); space.tap()
+        XCTAssertTrue(navigation.waitForExistence(timeout: 45))
+        try navigate(app, route: "settings")
+        let execution = app.buttons["ai-execution-mode"]
+        XCTAssertTrue(execution.waitForExistence(timeout: 20)); reveal(execution, app: app); execution.tap()
+        let option = app.buttons[autonomous ? "Autónomo · este dispositivo" : "Live · modelos del Mac"]
+        XCTAssertTrue(option.waitForExistence(timeout: 10)); XCTAssertTrue(option.isEnabled); option.tap()
+        let selected = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", autonomous ? "Autónomo" : "Live", autonomous ? "Autónomo" : "Live")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: selected, object: execution)], timeout: 15), .completed, "Execution mode must change through the actual settings control.")
+    }
+    @MainActor private func selectExpectedMap(_ app: XCUIApplication) throws {
+        let mapId = try required("NODUS_ACCEPTANCE_WORLD_MAP_ID")
+        let title = try required("NODUS_ACCEPTANCE_WORLD_MAP_TITLE")
+        let chooser = app.buttons["world-map-chooser"]
+        XCTAssertTrue(chooser.waitForExistence(timeout: 35)); reveal(chooser, app: app); chooser.tap()
+        let map = app.buttons[title]
+        XCTAssertTrue(map.waitForExistence(timeout: 15), "The exact map title from the real ID/title metadata probe must be present.")
+        XCTAssertEqual(app.buttons.matching(identifier: title).count, 1, "Fixture map titles must uniquely identify the requested map ID.")
+        reveal(map, app: app); map.tap()
+        let canvas = app.descendants(matching: .any)["world-map-shared-canvas"].firstMatch
+        XCTAssertTrue(canvas.waitForExistence(timeout: 35))
+        XCTAssertEqual(canvas.label, "Mapa: " + title)
+        let selection = XCTAttachment(string: "Selected fixture map ID: " + mapId + "\nVerified native canvas title: " + title)
+        selection.name = "world-map-selected-fixture"; selection.lifetime = .keepAlways; add(selection)
+    }
+    private func required(_ key: String) throws -> String {
+        let value = try XCTUnwrap(ProcessInfo.processInfo.environment[key], "Missing required isolated fixture configuration: " + key)
+        XCTAssertFalse(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SetupError.missingFixture }
+        return value
+    }
+    @MainActor private func navigate(_ app: XCUIApplication, route: String) throws {
         let target = app.buttons["nodus-nav-" + route]
+        let navigation = app.buttons["nodus-navigation-toggle"]
+        XCTAssertTrue(navigation.waitForExistence(timeout: 45))
+        if !target.isHittable { navigation.tap() }
         XCTAssertTrue(target.waitForExistence(timeout: 15)); reveal(target, app: app); target.tap()
     }
     @MainActor private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        for _ in 0..<10 { if element.isHittable { break }; app.swipeUp() }
+        for _ in 0..<16 {
+            if element.isHittable { break }
+            if element.frame.isEmpty || element.frame.maxY > app.windows.firstMatch.frame.maxY - 30 { app.swipeUp() }
+            else { app.swipeDown() }
+        }
         XCTAssertTrue(element.isHittable)
     }
     @MainActor private func capture(_ app: XCUIApplication, _ name: String) {
