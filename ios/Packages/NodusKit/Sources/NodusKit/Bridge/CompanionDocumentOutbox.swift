@@ -54,6 +54,22 @@ public actor CompanionDocumentOutbox {
         var cancelled: Bool? = nil
         let createdAt: Date
     }
+    private struct AnnotationCommand: Codable {
+        var id: String
+        let documentId: String
+        var command: JSONValue
+        var dependencyId: String?
+        var projected: JSONValue?
+        var sourceRevision: Int
+        var sourceGeneration: Int?
+        var sourceEditor: JSONValue?
+        var sourceKey: String?
+        var sending: Request?
+        var state: State
+        var remote: JSONValue?
+        var issue: String?
+        let createdAt: Date
+    }
     private struct Authored: Codable {
         var editorData: JSONValue
         var note: JSONValue?
@@ -66,6 +82,8 @@ public actor CompanionDocumentOutbox {
         var folders: [String: JSONValue]?
         var kind: Kind? = nil
         var studyCommands: [String: StudyCommand]? = nil
+        var annotationCommands: [String: AnnotationCommand]? = nil
+        var annotationSources: [String: JSONValue]? = nil
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
@@ -77,6 +95,8 @@ public actor CompanionDocumentOutbox {
     private var baselines: [String: JSONValue] = [:]
     private var acknowledgedLocalRevisions: [String: Int] = [:]
     private var studyCommands: [String: StudyCommand] = [:]
+    private var annotationCommands: [String: AnnotationCommand] = [:]
+    private var annotationSources: [String: JSONValue] = [:]
     private var synchronizing = false
     private var diskTask: Task<Void, any Error>?
     private var diskTaskId: UUID?
@@ -86,7 +106,20 @@ public actor CompanionDocumentOutbox {
         self.cache = cache; self.vaultId = vaultId; self.kind = kind
         if let data, let state = try? JSONDecoder.nodus.decode(StoredState.self, from: data), state.version == 2 {
             guard state.vaultId == vaultId, (state.kind ?? .workspaceNote) == kind else { throw DesktopBridgeError.malformedResponse }
-            records = state.records; authored = state.authored; studyCommands = state.studyCommands ?? [:]; knownFolders = state.folders ?? [:]
+            records = state.records; authored = state.authored; annotationCommands = state.annotationCommands ?? [:]; annotationSources = state.annotationSources ?? [:]; studyCommands = state.studyCommands ?? [:]; knownFolders = state.folders ?? [:]
+            for (key, command) in annotationCommands {
+                let editor = command.sourceKey.flatMap { state.annotationSources?[$0] } ?? command.sourceEditor
+                guard kind == .studyDocument, key == command.id, UUID(uuidString: key) != nil,
+                      !command.documentId.isEmpty, command.documentId.utf8.count <= 128, command.sourceRevision >= 0,
+                      command.sourceGeneration.map({ $0 > 0 }) ?? true,
+                      editor?.objectValue?["annotations"]?.arrayValue != nil,
+                      editor?.objectValue?["revision"].flatMap(CompanionStudyAnnotation.exactInteger) != nil,
+                      let fields = command.command.objectValue, let action = fields["action"]?.stringValue,
+                      let target = fields["annotationId"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                _ = try CompanionStudyAnnotation.command(action: action, id: target, expected: fields["expectedAnnotation"] == .null ? nil : fields["expectedAnnotation"], patch: fields["patch"])
+                if let dependency = command.dependencyId { guard dependency != key, annotationCommands[dependency]?.documentId == command.documentId else { throw DesktopBridgeError.malformedResponse } }
+                if let sending = command.sending { guard sending.id == key, sending.noteId == command.documentId, sending.command == command.command else { throw DesktopBridgeError.malformedResponse } }
+            }
             for (key, command) in studyCommands {
                 guard kind == .studyDocument, key == command.id, UUID(uuidString: key) != nil,
                       !command.sourceId.isEmpty, command.sourceId.utf8.count <= 128,
@@ -137,7 +170,7 @@ public actor CompanionDocumentOutbox {
         }
     }
     public func confirmedEditorData(noteId: String) -> JSONValue? { authored[noteId]?.editorData }
-    public func hasBaseline(noteId: String) -> Bool { records[noteId] != nil || baselines[noteId] != nil || studyCommands.values.contains { $0.sourceId == noteId || $0.targetId == noteId } }
+    public func hasBaseline(noteId: String) -> Bool { records[noteId] != nil || baselines[noteId] != nil || annotationCommands.values.contains { $0.documentId == noteId } || studyCommands.values.contains { $0.sourceId == noteId || $0.targetId == noteId } }
     private static func validParent(_ parent: JSONValue?) -> Bool {
         parent == nil || parent == .null || parent?.stringValue.map({ !$0.isEmpty }) == true
     }
@@ -184,6 +217,25 @@ public actor CompanionDocumentOutbox {
         return overlayTree(.object(["notes": .array(notes), "folders": .array(folders.keys.sorted().compactMap { folders[$0] }), "mobileSourceScope": .string("authoredDocuments")]), includeConfirmedEdits: true, includeTrashed: includeTrashed)
     }
     public func editorData(noteId: String) -> JSONValue? {
+        let base = documentEditorData(noteId: noteId)
+        let pending = annotationCommands.values.filter { $0.documentId == noteId }.sorted { $0.createdAt < $1.createdAt }
+        guard !pending.isEmpty else { return base }
+        guard var editor = (base ?? authored[noteId]?.editorData ?? baselines[noteId] ?? pending.first.flatMap { annotationSource($0) })?.objectValue else { return nil }
+        var rows = editor["annotations"]?.arrayValue ?? []
+        for item in pending {
+            let id = item.command.objectValue?["annotationId"]
+            rows.removeAll { $0.objectValue?["id"] == id }
+            if let projected = item.projected { rows.append(projected) }
+        }
+        editor["annotations"] = .array(rows)
+        if pending.allSatisfy({ $0.state == .pending }), let state = editor["mobileSyncState"]?.stringValue, state != "pending" { return .object(editor) }
+        let issue = pending.first { $0.state != .pending } ?? pending.first!
+        editor["mobileSyncState"] = .string(issue.state.rawValue)
+        editor["mobileSyncIssue"] = issue.issue.map(JSONValue.string) ?? .null
+        if let remote = issue.remote { editor["mobileConflictRemote"] = remote }
+        return .object(editor)
+    }
+    private func documentEditorData(noteId: String) -> JSONValue? {
         guard let record = records[noteId] else {
             guard let command = studyCommands.values.first(where: { $0.targetId == noteId || ($0.sourceId == noteId && $0.cancelled != true) }) else { return nil }
             var editor = (command.targetId == noteId ? command.targetEditor : command.sourceEditor)?.objectValue ?? [:]
@@ -324,6 +376,8 @@ public actor CompanionDocumentOutbox {
     /// An old selected download without organization metadata cannot silently
     /// invent a kind, placement or source revision.
     public func enqueueStudyCommand(noteId: String, action: String) async throws -> JSONValue {
+        guard !annotationCommands.values.contains(where: { $0.documentId == noteId }) else { throw APIError(status: 409, code: "study_annotation_pending", message: "Confirma los comentarios pendientes antes de duplicar o enviar este documento a la papelera.") }
+
         guard kind == .studyDocument, ["duplicate", "trash"].contains(action) else { throw DesktopBridgeError.permissionDenied }
         if let existing = studyCommands.values.first(where: { $0.sourceId == noteId && $0.cancelled != true }) {
             guard existing.action == action else { throw APIError(status: 409, code: "study_command_pending", message: "Hay otra solicitud pendiente para este documento.") }
@@ -654,13 +708,94 @@ public actor CompanionDocumentOutbox {
         if kind == .studyDocument { note["contentMarkdown"] = editor["contentMarkdown"]; note["favorite"] = .bool(false) }
         return .object(note)
     }
-    public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count + studyCommands.values.filter { $0.state == .pending && $0.cancelled != true }.count }
+    /// Keeps a stable create identity and receipt before the editor reports success.
+    public func enqueueStudyAnnotation(documentId: String, method: String, annotationId: String? = nil, patch: JSONValue? = nil) async throws -> JSONValue {
+        guard kind == .studyDocument, let baseline = records[documentId]?.baseline ?? baselines[documentId] ?? authored[documentId]?.editorData ?? annotationCommands.values.first(where: { $0.documentId == documentId }).flatMap({ annotationSource($0) }),
+              let revision = baseline.objectValue?["revision"].flatMap(CompanionStudyAnnotation.exactInteger),
+              baseline.objectValue?["annotations"]?.arrayValue != nil else { throw APIError(status: 409, code: "study_annotation_source_missing", message: "Descarga el documento completo antes de editar sus comentarios sin conexión.") }
+        guard !studyCommands.values.contains(where: { $0.sourceId == documentId || $0.targetId == documentId }) else { throw APIError(status: 409, code: "study_command_pending", message: "Espera a confirmar la operación pendiente de este documento.") }
+        let actions = ["createStudyAnnotation": "annotationCreate", "updateStudyAnnotation": "annotationUpdate", "deleteStudyAnnotation": "annotationDelete"]
+        guard let action = actions[method] else { throw DesktopBridgeError.malformedResponse }
+        let target = annotationId ?? UUID().uuidString.lowercased()
+        let predecessor = annotationCommands.values.filter { $0.command.objectValue?["annotationId"] == .string(target) }.sorted { $0.createdAt < $1.createdAt }.last
+        let expected = predecessor?.projected ?? baseline.objectValue?["annotations"]?.arrayValue?.first { $0.objectValue?["id"] == .string(target) }
+        let command = try CompanionStudyAnnotation.command(action: action, id: target, expected: expected, patch: patch)
+        let createdAt = Date(), id = UUID().uuidString.lowercased()
+        let projected = CompanionStudyAnnotation.projected(command: command, documentId: documentId, timestamp: createdAt.ISO8601Format())
+        var sourceFields = baseline.objectValue!
+        if let record = records[documentId] {
+            for (key, value) in record.draft.objectValue ?? [:] where !["expectedRevision", "reason"].contains(key) { sourceFields[key == "title" ? "documentTitle" : key] = value }
+            sourceFields["mobileSourceGeneration"] = .int(Int64(record.generation))
+        }
+        let sourceSnapshot = JSONValue.object(sourceFields)
+        guard try JSONEncoder.nodus.encode(command).count <= Self.maximumRequestBytes,
+              try JSONEncoder.nodus.encode(sourceSnapshot).count <= 50 * 1024 * 1024 else { throw DesktopBridgeError.malformedResponse }
+        let sourceKey: String
+        if let existing = annotationSources.first(where: { $0.value == sourceSnapshot }) { sourceKey = existing.key }
+        else {
+            sourceKey = SHA256.hash(data: try JSONEncoder.nodus.encode(sourceSnapshot)).map { String(format: "%02x", $0) }.joined()
+            annotationSources[sourceKey] = sourceSnapshot
+        }
+        let item = AnnotationCommand(id: id, documentId: documentId, command: command, dependencyId: predecessor?.id, projected: projected,
+            sourceRevision: Int(revision), sourceGeneration: records[documentId]?.generation, sourceEditor: nil, sourceKey: sourceKey, state: .pending, createdAt: createdAt)
+        annotationCommands[id] = item
+        do { try await persist() } catch { annotationCommands[id] = nil; throw error }
+        return projected ?? .null
+    }
+    private func annotationSource(_ item: AnnotationCommand) -> JSONValue? { item.sourceKey.flatMap { annotationSources[$0] } ?? item.sourceEditor }
+    public func studyAnnotationDocumentId(annotationId: String) -> String? {
+        let ids = Set(baselines.keys).union(authored.keys).union(records.keys).union(annotationCommands.values.map(\.documentId))
+        return ids.first { id in (editorData(noteId: id) ?? baselines[id] ?? authored[id]?.editorData)?.objectValue?["annotations"]?.arrayValue?.contains { $0.objectValue?["id"] == .string(annotationId) } == true }
+    }
+    private func synchronizeAnnotations(send: @Sendable (Request) async throws -> JSONValue) async throws {
+        for key in annotationCommands.values.sorted(by: { $0.createdAt < $1.createdAt }).map(\.id) {
+            guard var item = annotationCommands[key], item.state == .pending else { continue }
+            if item.sourceGeneration != nil || item.dependencyId != nil { continue }
+            if item.sending == nil {
+                // Annotation packets never save content; only the revision is a
+                // source precondition. Full native/body/assets stay in the shared local snapshot.
+                var input: [String: JSONValue] = ["title": annotationSource(item)?.objectValue?["documentTitle"] ?? .string(""), "contentMarkdown": .string(""), "expectedRevision": .int(Int64(item.sourceRevision))]
+                input["reason"] = .string("annotation")
+                item.sending = Request(id: item.id, noteId: item.documentId, input: .object(input), command: item.command, generation: 0)
+                guard try JSONEncoder.nodus.encode(item.sending).count <= Self.maximumRequestBytes else { throw APIError(status: 413, code: "study_edit_too_large", message: "Este documento supera el límite de sincronización móvil.") }
+                annotationCommands[key] = item; try await persist()
+            }
+            let request = item.sending!
+            let response: JSONValue
+            do { response = try await send(request) }
+            catch {
+                guard var latest = annotationCommands[key] else { throw error }
+                if let api = error as? APIError, ["revision_conflict", "annotation_conflict"].contains(api.code), let remote = api.details["remote"] { latest.state = .conflict; latest.remote = remote }
+                else if !Self.isTransportLoss(error) { latest.state = .blocked }
+                latest.issue = error.localizedDescription; annotationCommands[key] = latest; try await persist(); throw error
+            }
+            guard response.objectValue?["id"] == .string(request.id), let editor = response.objectValue?["editorData"],
+                  editor.objectValue?["revision"] == .int(Int64(item.sourceRevision)), let rows = editor.objectValue?["annotations"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
+            let target = item.command.objectValue?["annotationId"]
+            guard item.command.objectValue?["action"] == .string("annotationDelete") ? !rows.contains(where: { $0.objectValue?["id"] == target }) : rows.contains(where: { $0.objectValue?["id"] == target }) else { throw DesktopBridgeError.malformedResponse }
+            try await cache.store(JSONEncoder.nodus.encode(editor), vaultId: vaultId, domain: .corpus, recordId: Self.operationKey(kind.editorMethod, [.string(item.documentId)]))
+            baselines[item.documentId] = editor
+            authored[item.documentId] = Authored(editorData: editor, note: response.objectValue?["note"] ?? authored[item.documentId]?.note)
+            if var record = records[item.documentId] { record.baseline = editor; records[item.documentId] = record }
+            for dependentKey in annotationCommands.keys {
+                guard var dependent = annotationCommands[dependentKey], dependent.dependencyId == item.id,
+                      dependent.sending == nil, var fields = dependent.command.objectValue else { continue }
+                fields["expectedAnnotation"] = rows.first { $0.objectValue?["id"] == target } ?? .null
+                dependent.command = .object(fields); dependent.dependencyId = nil
+                annotationCommands[dependentKey] = dependent
+            }
+            annotationCommands[key] = nil
+            do { try await persist() } catch { annotationCommands[key] = item; throw error }
+        }
+    }
+    public func pendingCount() -> Int { records.values.filter { $0.state == .pending }.count + studyCommands.values.filter { $0.state == .pending && $0.cancelled != true }.count + annotationCommands.values.filter { $0.state == .pending }.count }
     public func synchronize(send: @Sendable (Request) async throws -> JSONValue) async throws {
         guard !synchronizing else { return }
         synchronizing = true; defer { synchronizing = false }
         try await synchronizeEdits(send: send)
         try await synchronizeStudyCommands(send: send)
         try await synchronizeEdits(send: send)
+        try await synchronizeAnnotations(send: send)
     }
     private func synchronizeEdits(send: @Sendable (Request) async throws -> JSONValue) async throws {
         for noteId in records.keys.sorted() {
@@ -684,6 +819,10 @@ public actor CompanionDocumentOutbox {
                     }
                     latest.issue = error.localizedDescription; records[noteId] = latest
                     if latest.state != .pending {
+                        for key in annotationCommands.keys {
+                            guard var command = annotationCommands[key], command.documentId == noteId, command.sourceGeneration != nil else { continue }
+                            command.state = latest.state; command.remote = latest.remote; command.issue = latest.issue; annotationCommands[key] = command
+                        }
                         for key in studyCommands.keys {
                             guard var command = studyCommands[key], command.dependencyRequestId == request.id else { continue }
                             command.state = latest.state; command.remote = latest.remote; command.issue = latest.issue; studyCommands[key] = command
@@ -744,6 +883,11 @@ public actor CompanionDocumentOutbox {
                     }
                     command.dependencyRequestId = nil; studyCommands[key] = command
                 }
+                for key in annotationCommands.keys {
+                    guard var command = annotationCommands[key], command.documentId == noteId, command.sending == nil,
+                          command.sourceGeneration == request.generation else { continue }
+                    command.sourceRevision = Int(revision); command.sourceGeneration = nil; annotationCommands[key] = command
+                }
                 baselines[noteId] = committed
                 acknowledgedLocalRevisions[noteId] = -request.generation
                 if latest.generation == request.generation { records[noteId] = nil }
@@ -759,6 +903,33 @@ public actor CompanionDocumentOutbox {
     /// Conflict resolution is an explicit choice and receives a fresh request
     /// identity. Neither side silently overwrites the other's changes.
     public func resolve(noteId: String, keepMobile: Bool) async throws -> JSONValue {
+        if let item = annotationCommands.values.first(where: { $0.documentId == noteId && $0.state == .conflict }), let remote = item.remote {
+            if keepMobile {
+                guard remote.objectValue?["revision"] == .int(Int64(item.sourceRevision)), item.command.objectValue?["action"] != .string("annotationCreate"),
+                      var fields = item.command.objectValue else { throw APIError(status: 409, code: "study_annotation_anchor_conflict", message: "Abre la versión del Mac y vuelve a seleccionar el fragmento antes de aplicar este comentario. El cambio local se conserva.") }
+                let target = fields["annotationId"]
+                guard let annotation = remote.objectValue?["annotations"]?.arrayValue?.first(where: { $0.objectValue?["id"] == target }) else { throw APIError(status: 409, code: "study_annotation_unavailable", message: "Este comentario ya no está disponible en la versión del Mac. El cambio local se conserva.") }
+                fields["expectedAnnotation"] = annotation
+                var replacement = item; replacement.id = UUID().uuidString.lowercased(); replacement.command = .object(fields)
+                replacement.projected = CompanionStudyAnnotation.projected(command: replacement.command, documentId: noteId, timestamp: Date().ISO8601Format())
+                replacement.sending = nil; replacement.state = .pending; replacement.issue = nil; replacement.remote = nil
+                let previous = annotationCommands
+                annotationCommands[item.id] = nil; annotationCommands[replacement.id] = replacement
+                for key in annotationCommands.keys where annotationCommands[key]?.dependencyId == item.id { annotationCommands[key]?.dependencyId = replacement.id }
+                do { try await persist() } catch { annotationCommands = previous; throw error }
+                return editorData(noteId: noteId) ?? remote
+            }
+            try await cache.store(JSONEncoder.nodus.encode(remote), vaultId: vaultId, domain: .corpus, recordId: Self.operationKey(kind.editorMethod, [.string(noteId)]))
+            baselines[noteId] = remote
+            if var owned = authored[noteId] { owned.editorData = remote; authored[noteId] = owned }
+            let previous = annotationCommands, previousRecord = records[noteId]
+            if records[noteId]?.state == .conflict { records[noteId] = nil }
+            annotationCommands = annotationCommands.filter { $0.value.documentId != noteId }
+            do { try await persist() } catch { annotationCommands = previous; records[noteId] = previousRecord; throw error }
+            try await seed(noteId: noteId, editorData: remote)
+            return editorData(noteId: noteId) ?? remote
+        }
+
         if let key = studyCommands.keys.first(where: { studyCommands[$0]?.sourceId == noteId || studyCommands[$0]?.targetId == noteId }),
            var command = studyCommands[key], command.state == .conflict, let remote = command.remote,
            let revision = remote.objectValue?["revision"]?.intValue, revision >= 0,
@@ -800,7 +971,15 @@ public actor CompanionDocumentOutbox {
         return result
     }
     private func persist() async throws {
-        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind, studyCommands: studyCommands))
+        var storedCommands = annotationCommands, sources: [String: JSONValue] = [:]
+        for key in storedCommands.keys {
+            guard var item = storedCommands[key], let editor = annotationSource(item) else { throw DesktopBridgeError.malformedResponse }
+            let sourceKey: String
+            if let existing = item.sourceKey ?? sources.first(where: { $0.value == editor })?.key { sourceKey = existing }
+            else { sourceKey = SHA256.hash(data: try JSONEncoder.nodus.encode(editor)).map { String(format: "%02x", $0) }.joined() }
+            sources[sourceKey] = editor; item.sourceKey = sourceKey; item.sourceEditor = nil; storedCommands[key] = item
+        }
+        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind, studyCommands: studyCommands, annotationCommands: storedCommands, annotationSources: sources))
         let previous = diskTask, id = UUID(), cache = self.cache, vault = vaultId, storage = kind.storageKey
         let task = Task {
             if let previous { _ = try? await previous.value }
@@ -810,6 +989,10 @@ public actor CompanionDocumentOutbox {
         do { try await task.value }
         catch { if diskTaskId == id { diskTask = nil; diskTaskId = nil }; throw error }
         if diskTaskId == id { diskTask = nil; diskTaskId = nil }
+        // Keep only snapshots still referenced by the current queue; an enqueue
+        // may have arrived while the encrypted write awaited another actor.
+        let referenced = Set(annotationCommands.values.compactMap(\.sourceKey))
+        annotationSources = annotationSources.filter { referenced.contains($0.key) }
     }
     private static func isTransportLoss(_ error: any Error) -> Bool {
         if error is CancellationError { return true }

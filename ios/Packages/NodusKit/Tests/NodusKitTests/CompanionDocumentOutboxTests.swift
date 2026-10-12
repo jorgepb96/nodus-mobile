@@ -75,6 +75,141 @@ struct CompanionDocumentOutboxTests {
         return .object(response)
     }
 
+    @Test("one hundred same-source comments share one durable full source snapshot")
+    func annotationSnapshotDeduplication() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        let prose = String(repeating: "Exact source body. ", count: 30_000)
+        var baseline = Self.studyEditor(text: prose).objectValue!
+        baseline["nativeDocument"] = .array([.object(["id": .string("original-block"), "type": .string("paragraph"), "content": .string(prose), "originalAsset": .string("data:image/png;base64,EXACT-ASSET")])])
+        let source = JSONValue.object(baseline)
+        try await queue.seed(noteId: "study-a", editorData: source)
+        for index in 0..<100 {
+            _ = try await queue.enqueueStudyAnnotation(documentId: "study-a", method: "createStudyAnnotation", patch: .object(["from": .int(0), "to": .int(5), "selectedText": .string("Exact"), "comment": .string("Comment \(index)")]))
+        }
+        let data = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.Kind.studyDocument.storageKey))
+        let stored = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
+        #expect(stored.objectValue?["annotationSources"]?.objectValue?.count == 1)
+        #expect(stored.objectValue?["annotationCommands"]?.objectValue?.count == 100)
+        #expect(stored.objectValue?["annotationCommands"]?.objectValue?.values.allSatisfy { $0.objectValue?["sourceEditor"] == nil } == true)
+        #expect(data.count < (try JSONEncoder.nodus.encode(source).count) + 150_000)
+        let reopened = try await fixture.open(kind: .studyDocument)
+        let restored = try #require(await reopened.editorData(noteId: "study-a"))
+        #expect(restored.objectValue?["annotations"]?.arrayValue?.count == 100)
+        #expect(restored.objectValue?["contentMarkdown"] == .string(prose))
+        #expect(restored.objectValue?["nativeDocument"] == source.objectValue?["nativeDocument"])
+        #expect(restored.objectValue?["academicMetadata"] == source.objectValue?["academicMetadata"])
+    }
+    @Test("fractional, unsafe and malformed anchors are rejected before persistence")
+    func annotationExactOffsets() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        let valid: [String: JSONValue] = ["from": .int(0), "to": .int(8), "selectedText": .string("Original"), "comment": .string("Exact")]
+        for offset in [JSONValue.double(1.5), .double(.infinity), .int(Int64.max), .int(-1)] {
+            var patch = valid; patch["from"] = offset
+            await #expect(throws: DesktopBridgeError.self) { try await queue.enqueueStudyAnnotation(documentId: "study-a", method: "createStudyAnnotation", patch: .object(patch)) }
+            patch = valid; patch["anchor"] = .object(["blockId": .string("table-1"), "from": offset, "to": .int(8)])
+            await #expect(throws: DesktopBridgeError.self) { try await queue.enqueueStudyAnnotation(documentId: "study-a", method: "createStudyAnnotation", patch: .object(patch)) }
+        }
+        #expect(await queue.pendingCount() == 0)
+    }
+    @Test("offline annotations preserve multiple comments and exact native/academic source across replay")
+    func annotationReplay() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        let baseline = Self.studyEditor()
+        try await queue.seed(noteId: "study-a", editorData: baseline)
+        let patch = JSONValue.object(["from": .int(0), "to": .int(8), "selectedText": .string("Original"), "comment": .string("First"), "locked": .bool(true), "anchor": .object(["blockId": .string("table-1"), "from": .int(0), "to": .int(8)])])
+        let first = try await queue.enqueueStudyAnnotation(documentId: "study-a", method: "createStudyAnnotation", patch: patch)
+        let id = try #require(first.objectValue?["id"]?.stringValue)
+        _ = try await queue.enqueueStudyAnnotation(documentId: "study-a", method: "updateStudyAnnotation", annotationId: id, patch: .object(["comment": .string("Edited locked comment"), "pinned": .bool(true), "resolved": .bool(true)]))
+        _ = try await queue.enqueueStudyAnnotation(documentId: "study-a", method: "createStudyAnnotation", patch: patch)
+        await #expect(throws: APIError.self) { try await queue.enqueueStudyCommand(noteId: "study-a", action: "trash") }
+        let local = try #require(await queue.editorData(noteId: "study-a"))
+        #expect(local.objectValue?["annotations"]?.arrayValue?.count == 2)
+        #expect(local.objectValue?["nativeDocument"] == baseline.objectValue?["nativeDocument"])
+        #expect(local.objectValue?["academicMetadata"] == baseline.objectValue?["academicMetadata"])
+        let sent = Requests()
+        await #expect(throws: URLError.self) { try await queue.synchronize { request in await sent.append(request); throw URLError(.networkConnectionLost) } }
+        let frozen = try #require(await sent.all().first)
+        let reopened = try await fixture.open(kind: .studyDocument)
+        #expect(await reopened.hasBaseline(noteId: "study-a"))
+        #expect(await reopened.studyAnnotationDocumentId(annotationId: id) == "study-a")
+        _ = try await reopened.enqueueStudyAnnotation(documentId: "study-a", method: "createStudyAnnotation", patch: patch)
+        let server = AnnotationServer(baseline: baseline)
+        try await reopened.synchronize { request in await sent.append(request); return await server.apply(request) }
+        let requests = await sent.all()
+        #expect(requests[1] == frozen)
+        #expect(requests.count == 5)
+        #expect(requests[2].command?.objectValue?["expectedAnnotation"]?.objectValue?["updatedAt"] == .string("canonical-time"))
+        #expect(await reopened.pendingCount() == 0)
+        let confirmed = try #require(await reopened.confirmedEditorData(noteId: "study-a"))
+        #expect(confirmed.objectValue?["annotations"]?.arrayValue?.count == 3)
+        #expect(confirmed.objectValue?["revision"] == .int(7))
+        #expect(confirmed.objectValue?["nativeDocument"] == baseline.objectValue?["nativeDocument"])
+        _ = try await reopened.enqueueStudyAnnotation(documentId: "study-a", method: "deleteStudyAnnotation", annotationId: id)
+        try await reopened.synchronize { await server.apply($0) }
+        #expect(await reopened.confirmedEditorData(noteId: "study-a")?.objectValue?["annotations"]?.arrayValue?.count == 2)
+    }
+    private actor AnnotationServer {
+        var baseline: JSONValue
+        init(baseline: JSONValue) { self.baseline = baseline }
+        func apply(_ request: CompanionDocumentOutbox.Request) -> JSONValue {
+            var editor = baseline.objectValue!
+            let command = request.command!, id = command.objectValue!["annotationId"]!
+            var rows = editor["annotations"]!.arrayValue!; rows.removeAll { $0.objectValue?["id"] == id }
+            if let row = CompanionStudyAnnotation.projected(command: command, documentId: request.noteId, timestamp: "canonical-time") { rows.append(row) }
+            editor["annotations"] = .array(rows); baseline = .object(editor)
+            return .object(["id": .string(request.id), "editorData": baseline])
+        }
+    }
+    @Test("explicitly keeping a comment after target conflict issues a fresh receipt without rebasing source anchors")
+    func annotationTargetResolution() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        let target = UUID().uuidString.lowercased()
+        let original = JSONValue.object(["id": .string(target), "documentId": .string("study-a"), "comment": .string("Original comment"), "locked": .bool(true), "pinned": .bool(false), "from": .int(0), "to": .int(8), "selectedText": .string("Original")])
+        var baseline = Self.studyEditor().objectValue!; baseline["annotations"] = .array([original])
+        try await queue.seed(noteId: "study-a", editorData: .object(baseline))
+        _ = try await queue.enqueueStudyAnnotation(documentId: "study-a", method: "updateStudyAnnotation", annotationId: target, patch: .object(["comment": .string("Local comment")]))
+        var mac = original.objectValue!; mac["comment"] = .string("Mac comment"); mac["pinned"] = .bool(true)
+        var remote = baseline; remote["annotations"] = .array([.object(mac)])
+        let remoteValue = JSONValue.object(remote), sent = Requests()
+        await #expect(throws: APIError.self) { try await queue.synchronize { request in await sent.append(request); throw APIError(status: 409, code: "annotation_conflict", message: "Mac changed comment", details: ["remote": remoteValue]) } }
+        _ = try await queue.resolve(noteId: "study-a", keepMobile: true)
+        let server = AnnotationServer(baseline: remoteValue)
+        try await queue.synchronize { request in await sent.append(request); return await server.apply(request) }
+        let packets = await sent.all()
+        #expect(packets.count == 2); #expect(packets[0].id != packets[1].id)
+        #expect(packets[1].command?.objectValue?["expectedAnnotation"] == .object(mac))
+        let annotation = await queue.confirmedEditorData(noteId: "study-a")?.objectValue?["annotations"]?.arrayValue?.first
+        #expect(annotation?.objectValue?["comment"] == .string("Local comment"))
+        #expect(annotation?.objectValue?["pinned"] == .bool(true)); #expect(annotation?.objectValue?["locked"] == .bool(true))
+    }
+    @Test("annotation anchors advance only with the exact source-save generation and Mac changes remain explicit conflicts")
+    func annotationSourceDependency() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        try await queue.seed(noteId: "study-a", editorData: Self.studyEditor())
+        _ = try await queue.save(noteId: "study-a", input: Self.input(7, text: "Captured source"))
+        _ = try await queue.enqueueStudyAnnotation(documentId: "study-a", method: "createStudyAnnotation", patch: .object(["from": .int(0), "to": .int(8), "selectedText": .string("Captured"), "comment": .string("Check")]))
+        let sent = Requests()
+        await #expect(throws: APIError.self) {
+            try await queue.synchronize { request in
+                await sent.append(request)
+                if request.command == nil { return Self.studyReceipt(request, revision: 8) }
+                #expect(request.input.objectValue?["expectedRevision"] == .int(8))
+                throw APIError(status: 409, code: "revision_conflict", message: "Mac changed source", details: ["remote": Self.studyEditor(revision: 9, text: "Mac source")])
+            }
+        }
+        #expect(await sent.all().count == 2)
+        #expect(await queue.editorData(noteId: "study-a")?.objectValue?["mobileSyncState"] == .string("conflict"))
+        await #expect(throws: APIError.self) { try await queue.resolve(noteId: "study-a", keepMobile: true) }
+        let chosen = try await queue.resolve(noteId: "study-a", keepMobile: false)
+        #expect(chosen.objectValue?["contentMarkdown"] == .string("Mac source"))
+        #expect(await queue.pendingCount() == 0)
+    }
     @Test("offline duplication keeps structured metadata and placements and replays one identity after a lost acknowledgement")
     func studyDuplicateReplay() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
