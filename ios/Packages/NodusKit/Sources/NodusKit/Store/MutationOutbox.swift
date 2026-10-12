@@ -197,6 +197,16 @@ public actor MutationOutbox {
         }
     }
 
+    /// A replacement grant needs a new explicit send decision. Payloads and receipts survive.
+    @discardableResult
+    public func suspendAuthorisedForRelink() throws -> Int {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE outbox SET authorised = 0 WHERE authorised = 1 AND state IN (?, ?)",
+                arguments: [State.pending.rawValue, State.accepted.rawValue])
+            return db.changesCount
+        }
+    }
+
     /// Record that the user pressed send. Returns how many changes that covered.
     ///
     /// Called at the start of a foreground flush, before the first request, so a flush cut off

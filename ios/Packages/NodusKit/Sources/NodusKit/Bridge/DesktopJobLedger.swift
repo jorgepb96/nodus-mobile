@@ -53,6 +53,7 @@ public actor DesktopJobLedger {
         return request
     }
     public func preparePublication(_ publication: CompanionGenerationPublication) async throws {
+        if publication.checkpoint.objectValue?["recoveryReviewRequired"] == .bool(true) { return }
         var request: Request
         if let stored = requests[publication.id] {
             guard stored.method == publication.method, try sameArguments(stored,publication.args),
@@ -73,6 +74,34 @@ public actor DesktopJobLedger {
         try await persist()
         durablyPrepared.insert(request.id)
     }
+    /// Explicit approval under a new grant can publish a retained result, never rerun a provider.
+    public func approveRecoveredPublication(_ publication: CompanionGenerationPublication) async throws -> Request {
+        guard let original = requests[publication.id], original.state == "recoveryReview",
+              original.checkpoint == publication.checkpoint,
+              original.checkpointRecordId == publication.recordId else { throw DesktopBridgeError.permissionDenied }
+        return try await approveRecovered(original, method: publication.method, args: publication.args)
+    }
+    public func approveRecoveredSavedResult(id: String) async throws -> Request {
+        guard let original = requests[id], original.state == "recoveryReview", original.checkpoint != nil else { throw DesktopBridgeError.permissionDenied }
+        return try await approveRecovered(original, method: original.method, args: original.args)
+    }
+    private func approveRecovered(_ original: Request, method: String, args: [JSONValue]) async throws -> Request {
+        guard PrivateBridgeAuthoringRecovery.savedResultMethods.contains(method), !args.isEmpty else { throw DesktopBridgeError.permissionDenied }
+        var checkpoint = original.checkpoint
+        if var fields = checkpoint?.objectValue { fields["recoveryReviewRequired"] = nil; checkpoint = .object(fields) }
+        var approved = Request(id: original.id, method: method, args: args, createdAt: original.createdAt,
+                               jobId: nil, state: "pending", issue: nil, result: original.result,
+                               checkpointRecordId: original.checkpointRecordId, checkpoint: checkpoint)
+        approved.argsFingerprint = try fingerprint(args)
+        let prior = requests[original.id]
+        requests[original.id] = approved
+        do {
+            if let checkpoint, let record = original.checkpointRecordId { _ = try await cache.store(JSONEncoder.nodus.encode(checkpoint), vaultId: vaultId, domain: .researchGeneration, recordId: record) }
+            try await persist(); durablyPrepared.insert(original.id); return approved
+        }
+        catch { requests[original.id] = prior; throw error }
+    }
+
     /// Preserve even an unparseable paid response before an explicit retry
     /// replaces the active checkpoint. This record is never a sendable Mac job.
     public func archiveAcademicCheckpoint(recordId: String, checkpoint: JSONValue) async throws {

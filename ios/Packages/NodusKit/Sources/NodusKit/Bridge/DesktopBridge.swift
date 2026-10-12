@@ -1027,7 +1027,15 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
         return configuration
     }
 
-    public func revokeLocally(_ pairing: DesktopBridgePairing) throws {
+    public func revokeLocally(_ pairing: DesktopBridgePairing, authoringRecovery: PrivateBridgeAuthoringRecovery.Receipt? = nil, cacheDirectory: URL = PrivateBridgeCache.defaultDirectory) throws {
+        let folder = cacheDirectory.appendingPathComponent("bridge-\(pairing.id)", isDirectory: true)
+        if FileManager.default.fileExists(atPath: folder.path) {
+            let protected = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+                .contains { $0.pathExtension == "bridgecache" && !$0.lastPathComponent.hasPrefix("read-") }
+            if protected, (try authoringRecovery?.validates(pairingId: pairing.id, folder: folder) != true) || authoringRecovery.flatMap({ keychain.value(for: $0.recoveryKeyName) }) == nil {
+                throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired
+            }
+        }
         try completePendingPairing(grantId: pairing.id)
         Self.renewalLock.lock()
         defer { Self.renewalLock.unlock() }
@@ -1035,8 +1043,7 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
         try keychain.remove(KeychainStore.desktopBridgeRenewalKey(pairingId: pairing.id))
         try keychain.remove(KeychainStore.desktopBridgeRelayKey(pairingId: pairing.id))
         try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: pairing.id))
-        try? FileManager.default.removeItem(at: PrivateBridgeCache.defaultDirectory
-            .appendingPathComponent("bridge-\(pairing.id)", isDirectory: true))
+        if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) }
         defaults.set(
             try JSONEncoder.nodus.encode(pairings().filter { $0.id != pairing.id }),
             forKey: metadataKey
@@ -1102,6 +1109,7 @@ public actor PrivateBridgeCache {
     // Several surfaces construct cache actors for the same pairing. Serialize disk
     // accounting and key creation across them, including reads that update the LRU.
     private static let diskLock = NSLock()
+    nonisolated(unsafe) private static var authoringActivities: [String: Int] = [:]
     private let folder: URL
     private let key: SymmetricKey
     private let readLimitBytes: Int
@@ -1139,6 +1147,7 @@ public actor PrivateBridgeCache {
         let sealed = try AES.GCM.seal(data, using: key)
         guard let combined = sealed.combined else { throw DesktopBridgeError.malformedResponse }
         return try Self.diskLock.withLock {
+            try requireWritable()
             try cleanReadPacks()
             let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
             let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
@@ -1160,6 +1169,7 @@ public actor PrivateBridgeCache {
     public func storeIndexedGeneration(_ data: Data,vaultId: String,recordId: String,indexId: String,entity: String) throws {
         guard !entity.isEmpty,entity.utf8.count <= 256 else { throw DesktopBridgeError.malformedResponse }
         try Self.diskLock.withLock {
+            try requireWritable()
             let indexURL = fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:indexId)
             var entries: [String] = []
             if FileManager.default.fileExists(atPath:indexURL.path) {
@@ -1175,6 +1185,7 @@ public actor PrivateBridgeCache {
     }
     public func data(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Data? {
         try Self.diskLock.withLock {
+            try requireWritable()
             try cleanReadPacks()
             let url = fileURL(vaultId: vaultId, domain: domain, recordId: recordId)
             let legacy = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId)
@@ -1201,6 +1212,152 @@ public actor PrivateBridgeCache {
         try Self.diskLock.withLock {
             try removeIfPresent(fileURL(vaultId: vaultId, domain: domain, recordId: recordId))
             try removeIfPresent(legacyURL(vaultId: vaultId, domain: domain, recordId: recordId))
+        }
+    }
+
+    private nonisolated var revocationMarker: URL { folder.deletingLastPathComponent().appendingPathComponent(folder.lastPathComponent + ".revoked") }
+    private nonisolated func requireWritable() throws {
+        if FileManager.default.fileExists(atPath: revocationMarker.path) { throw PrivateBridgeAuthoringRecovery.RecoveryError.revokedWrites }
+    }
+    public nonisolated func beginAuthoringActivity() throws {
+        try Self.diskLock.withLock {
+            try requireWritable()
+            Self.authoringActivities[folder.path, default: 0] += 1
+        }
+    }
+    public nonisolated func endAuthoringActivity() {
+        Self.diskLock.withLock {
+            let count = Self.authoringActivities[folder.path, default: 0]
+            if count <= 1 { Self.authoringActivities[folder.path] = nil }
+            else { Self.authoringActivities[folder.path] = count - 1 }
+        }
+    }
+    public func freezeForRevocation(_ frozen: Bool) throws {
+        try Self.diskLock.withLock {
+            if frozen {
+                guard Self.authoringActivities[folder.path, default: 0] == 0 else { throw PrivateBridgeAuthoringRecovery.RecoveryError.activeGeneration }
+                try Data().write(to: revocationMarker, options: [.atomic, .completeFileProtection]); BackupPolicy.apply(.excluded, to: revocationMarker) }
+            else { try removeIfPresent(revocationMarker) }
+        }
+    }
+    public func authoringRecoverySnapshot(vaultIds: Set<String>) throws -> PrivateBridgeAuthoringRecovery.Snapshot {
+        try Self.diskLock.withLock {
+            let writingIds = ["companion-documents-v1", "companion-study-documents-v1", "companion-page-documents-v1", "companion-immersion-progress-v1", "companion-database-reading-v1"]
+            let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "companion:world-map-generation-index:v1"]
+            var known: [String: (vault: String, writing: Bool, ledger: Bool, recordId: String, kind: String?)] = [:]
+            for vault in vaultIds {
+                for id in writingIds { known[legacyURL(vaultId: vault, domain: .writing, recordId: id).lastPathComponent] = (vault, true, false, id, nil) }
+                for id in researchIds { known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: id).lastPathComponent] = (vault, false, id == "job-ledger-v1", id, nil) }
+            }
+            for vault in vaultIds {
+                let url = fileURL(vaultId: vault, domain: .researchGeneration, recordId: "autonomous:completion-index:v1")
+                if FileManager.default.fileExists(atPath: url.path) {
+                    let bytes = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key)
+                    for record in try JSONDecoder.nodus.decode([String].self, from: bytes) {
+                        guard record.hasPrefix("autonomous:"), record.contains(":completion:") else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                        known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent] = (vault, false, false, record, nil)
+                    }
+                }
+            }
+            var records: [PrivateBridgeAuthoringRecovery.Record] = [], fingerprints: [String: String] = [:]
+            for file in try cacheFiles() where !file.url.lastPathComponent.hasPrefix("read-") {
+                let original = file.url.lastPathComponent
+                let base = original.hasPrefix("work-") ? String(original.dropFirst(5)) : original
+                let encrypted = try Data(contentsOf: file.url)
+                fingerprints[original] = PrivateBridgeAuthoringRecovery.hash(encrypted)
+                let data = try AES.GCM.open(AES.GCM.SealedBox(combined: encrypted), using: key)
+                let value = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
+                var scope = known[base]
+                if scope == nil, let object = value.objectValue, let request = object["request"]?.objectValue,
+                   let id = object["id"]?.stringValue, UUID(uuidString: id) != nil {
+                    for vault in vaultIds {
+                        if let revision = object["revision"]?.stringValue, let model = object["model"], request["mapId"]?.stringValue != nil {
+                            let hash = PrivateBridgeAuthoringRecovery.hash(try JSONEncoder.nodus.encode(JSONValue.array([.object(request), .string(revision), model])))
+                            let record = "companion:world-map-generation:v1:" + hash
+                            if legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent == base { scope = (vault, false, false, record, "worldMap") }
+                        }
+                        for kind in ["dictionary", "immersion", "translation", "writing", "argument", "workshop", "database", "academic"] {
+                            let entity = kind == "dictionary" ? request["entryId"]?.stringValue : object["entityKey"]?.stringValue
+                            if let entity, let record = try? CompanionGenerationPublication.recordId(kind: kind, entity: entity),
+                               legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent == base {
+                                scope = (vault, false, false, record, kind)
+                            }
+                        }
+                    }
+                }
+                // Standalone source preparation is a consulted copy, not authored work.
+                if scope == nil, let object = value.objectValue, object["source"] != nil, object["id"] == nil, object["request"] == nil { continue }
+                // Completed autonomous provider calls are stored as literal strings; preserve
+                // their exact hashed key, requiring the full original vault scope for adoption.
+                if scope == nil, original.hasPrefix("work-"), value.stringValue != nil {
+                    records.append(.init(filename: "work-" + base, vaultId: nil, data: data, ledger: false, writing: false, recordId: nil, generationKind: nil)); continue
+                }
+                guard let scope else { throw PrivateBridgeAuthoringRecovery.RecoveryError.unclassifiedWork }
+                if let capturedVault = value.objectValue?["vaultId"]?.stringValue, capturedVault != scope.vault { throw PrivateBridgeAuthoringRecovery.RecoveryError.unclassifiedWork }
+                records.append(.init(filename: "work-" + base, vaultId: scope.vault, data: data, ledger: scope.ledger, writing: scope.writing, recordId: scope.recordId, generationKind: scope.kind))
+            }
+            return .init(records: records, fingerprints: fingerprints)
+        }
+    }
+    public func adoptAuthoringRecovery(_ records: [PrivateBridgeAuthoringRecovery.Record], requiresReview: Bool) throws {
+        try Self.diskLock.withLock {
+            var payloads: [String: Data] = [:]
+            for record in records {
+                guard PrivateBridgeAuthoringRecovery.validFilename(record.filename) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                payloads[record.filename] = requiresReview ? try PrivateBridgeAuthoringRecovery.reviewed(record) : record.data
+            }
+            // A crash can save a paid result before its publication ledger. Reconstruct only
+            // a provider-free save/review entry, never the paid generation itself.
+            for record in records {
+                guard let vault = record.vaultId, let recovered = try PrivateBridgeAuthoringRecovery.recoveredRequest(record, requiresReview: requiresReview) else { continue }
+                let name = fileURL(vaultId: vault, domain: .researchGeneration, recordId: "job-ledger-v1").lastPathComponent
+                var ledger: [String: DesktopJobLedger.Request] = [:]
+                if let data = payloads[name] { ledger = try JSONDecoder.nodus.decode([String: DesktopJobLedger.Request].self, from: data) }
+                else if FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
+                    ledger = try JSONDecoder.nodus.decode([String: DesktopJobLedger.Request].self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: folder.appendingPathComponent(name))), using: key))
+                }
+                if ledger[recovered.id] == nil { ledger[recovered.id] = recovered }
+                payloads[name] = try JSONEncoder.nodus.encode(ledger)
+            }
+            if requiresReview {
+                for vault in Set(records.compactMap(\.vaultId)) {
+                    var ids = Set<String>()
+                    for record in records where record.vaultId == vault {
+                        let value = try JSONDecoder.nodus.decode(JSONValue.self, from: record.data)
+                        if let id = value.objectValue?["id"]?.stringValue { ids.insert(id) }
+                        if record.ledger { for row in value.objectValue?.values ?? Dictionary<String, JSONValue>().values {
+                            if let id = row.objectValue?["checkpoint"]?.objectValue?["id"]?.stringValue { ids.insert(id) }
+                        } }
+                    }
+                    let name = fileURL(vaultId: vault, domain: .researchGeneration, recordId: "authoring-recovery-generations-v1").lastPathComponent
+                    if let bytes = try? Data(contentsOf: folder.appendingPathComponent(name)), let opened = try? AES.GCM.open(AES.GCM.SealedBox(combined: bytes), using: key) {
+                        ids.formUnion(try JSONDecoder.nodus.decode([String].self, from: opened))
+                    }
+                    payloads[name] = try JSONEncoder.nodus.encode(ids.sorted())
+                }
+            }
+            // Check every destination before writing: existing newer work is never overwritten.
+            var staged: [(URL, Data)] = []
+            for (name, data) in payloads {
+                let target = folder.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: target.path) {
+                    let current = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: target)), using: key)
+                    guard current == data else { throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired }
+                } else {
+                    guard let encrypted = try AES.GCM.seal(data, using: key).combined else { throw DesktopBridgeError.malformedResponse }
+                    staged.append((target, encrypted))
+                }
+            }
+            for (target, data) in staged { try data.write(to: target, options: [.atomic, .completeFileProtection]); BackupPolicy.apply(.excluded, to: target) }
+            try removeIfPresent(revocationMarker)
+        }
+    }
+
+    /// A recovered intent may consult an already durable paid response, but cannot pay again.
+    public func requireGenerationExecutionAllowed(vaultId: String, generationId: String) throws {
+        if let bytes = try data(vaultId: vaultId, domain: .researchGeneration, recordId: "authoring-recovery-generations-v1"),
+           try JSONDecoder.nodus.decode([String].self, from: bytes).contains(generationId) {
+            throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired
         }
     }
 
@@ -1320,6 +1477,7 @@ public actor PrivateBridgeCache {
                   SHA256.hash(data: content.data).map({ String(format: "%02x", $0) }).joined() == file.sha256.lowercased() else { throw ReadPackError.invalidSelection }
         }
         return try Self.diskLock.withLock {
+            try requireWritable()
             try cleanReadPacks()
             let existing = try readPackManifests()
             let otherBytes = existing.filter { $0.id != id }.reduce(0) { $0 + $1.bytes }
@@ -1365,6 +1523,7 @@ public actor PrivateBridgeCache {
     }
     public func readPacks(vaultId: String) throws -> [ReadPack] {
         try Self.diskLock.withLock {
+            try requireWritable()
             try cleanReadPacks()
             return try readPackManifests().filter { $0.vaultId == vaultId }.sorted { $0.createdAt > $1.createdAt }
         }
@@ -1374,6 +1533,7 @@ public actor PrivateBridgeCache {
     /// Consulted copies never enter this list and cannot broaden a selection.
     public func downloadedData(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> [Data] {
         try Self.diskLock.withLock {
+            try requireWritable()
             try cleanReadPacks()
             let name = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId).lastPathComponent
             return try readPackManifests().filter { $0.vaultId == vaultId && $0.files.contains(name) }
@@ -1385,6 +1545,7 @@ public actor PrivateBridgeCache {
     }
     public func hasDownloadedData(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Bool {
         try Self.diskLock.withLock {
+            try requireWritable()
             try cleanReadPacks()
             let name = legacyURL(vaultId: vaultId, domain: domain, recordId: recordId).lastPathComponent
             return try readPackManifests().contains { $0.vaultId == vaultId && $0.files.contains(name) }
