@@ -320,7 +320,7 @@ swift test --package-path ios/Packages/NodusKit
 swift test --package-path ios/Packages/NodusAI
 swift test --package-path ios/Packages/NodusUI
 xcodebuild -project ios/Nodus.xcodeproj -scheme Nodus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test CODE_SIGNING_ALLOWED=NO
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
 Debug simulator launches may set `NODUS_START_ROUTE` to open a route directly. Visual QA may also
@@ -338,3 +338,7 @@ Las creaciones de base, propiedad y fila conservan sus identidades móviles y pa
 ### Vistas guardadas y fuentes enlazadas
 
 El workspace nativo consulta el filtro y la ordenación reales de Desktop, con todos los cursores y fuentes enlazadas. Las filas ajenas conservan su base de datos original al abrirse. Las descargas incluyen las consultas completas y dossiers de las fuentes necesarias; un cambio de revisión cancela la copia, y las dependencias repetidas se combinan sin duplicar registros. La consulta paginada sin red evita repetir un timeout por cada página. Contratos preparados: `DatabaseContainerPresentationTests`, `CompanionDatabaseViewSourceTests` y filtros/ordenación en el contrato real de Pages. Ejecución y aceptación pendientes de la campaña local.
+
+### Campaña local y prueba física del usuario
+
+Por indicación expresa del usuario el 12 de octubre de 2026, la validación previa a TestFlight se ejecuta en Desktop, simulador de iPhone y simulador de iPad. El usuario probará el iPhone físico cuando reciba la beta. La matriz conserva `visual.physicalIphone` y el entorno físico como `pendingUserValidation`, con cero pruebas ejecutadas y responsable `user`; no se presentan como aprobados ni como pruebas omitidas satisfactorias. El resto de las operaciones mantiene el requisito de ejecución y evidencia actual. Los simuladores conservan su firma ad hoc para que las pruebas usen Keychain real.

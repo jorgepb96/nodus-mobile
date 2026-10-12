@@ -3,6 +3,24 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 
+// Explicit user instruction on 2026-10-12: the owner tests the physical iPhone
+// after TestFlight delivery. This is a pending handoff, never a passing test.
+export const requiredAcceptanceEnvironments = Object.freeze(['desktop', 'iphoneSimulator', 'ipadSimulator']);
+export const userPhysicalValidation = Object.freeze({operation: 'visual.physicalIphone', environment: 'physicalIphone',
+  owner: 'user', delivery: 'TestFlight', result: 'pendingUserValidation', requestedOn: '2026-10-12'});
+export function userValidationHandoffIssues(campaign) {
+  const issues = [];
+  const operation = campaign.operations?.find(item => item.id === userPhysicalValidation.operation);
+  const environment = campaign.environments?.[userPhysicalValidation.environment];
+  for (const [name, row] of [['operation', operation], ['environment', environment]]) {
+    if (!row || row.owner !== 'user' || row.delivery !== 'TestFlight' || row.result !== 'pendingUserValidation' ||
+        row.executed !== 0 || row.skipped !== 0 || (row.evidence?.length ?? 0) !== 0 || row.artifact) {
+      issues.push(`Physical iPhone ${name} must remain explicitly pending user validation after TestFlight.`);
+    }
+  }
+  return issues;
+}
+
 export function acceptanceSourceRevision(root) {
   const hash=createHash('sha256');
   const files=execFileSync('git',['ls-files','--cached','--others','--exclude-standard','-z'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean).sort();

@@ -4,7 +4,22 @@
     "desktop": "0a173fd9c698a7cb2d5989aa64b59cddd329bcf9",
     "mobile": "ad6e3069bcea67b48de76de561fc27c3db417563"
   },
-  "validationPolicy": "Availability and source files are inventory only. Release requires executed operation evidence with no omissions.",
+  "validationPolicy": "Availability and source files are inventory only. Release requires executed operation evidence with no omissions; physical iPhone validation remains pending with the user after TestFlight, by explicit instruction.",
+  "acceptanceRequirements": {
+    "environments": [
+      "desktop",
+      "iphoneSimulator",
+      "ipadSimulator"
+    ],
+    "userValidation": {
+      "operation": "visual.physicalIphone",
+      "environment": "physicalIphone",
+      "owner": "user",
+      "delivery": "TestFlight",
+      "result": "pendingUserValidation",
+      "requestedOn": "2026-10-12"
+    }
+  },
   "operations": [
     {
       "id": "consultation.researchChat",
@@ -1072,8 +1087,11 @@
     },
     {
       "id": "visual.physicalIphone",
-      "category": "consultation",
-      "result": "pending",
+      "category": "userValidation",
+      "owner": "user",
+      "delivery": "TestFlight",
+      "reason": "Por indicación expresa del usuario, el iPhone físico lo validará él después de recibir la beta en TestFlight.",
+      "result": "pendingUserValidation",
       "evidence": []
     },
     {

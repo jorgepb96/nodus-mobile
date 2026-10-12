@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
+import {requiredAcceptanceEnvironments, userPhysicalValidation} from './acceptance-evidence.mjs';
 
 export const PARITY_MANIFEST_VERSION = 2;
 
@@ -190,9 +191,11 @@ function operationMatrix(routes) {
     ...routes.map(route => ({ id: `consultation.${route.id}`, route: route.id,
       category: COMING_SOON.has(route.id) ? 'comingSoon' : 'consultation', result: 'pending', evidence: [] })),
     ...consultations.map(id => ({ id,
-      category: ['transport.serverRelay', 'transport.cloudRelay'].includes(id) ? 'comingSoon' : 'consultation',
+      category: id === userPhysicalValidation.operation ? 'userValidation' : ['transport.serverRelay', 'transport.cloudRelay'].includes(id) ? 'comingSoon' : 'consultation',
       ...(['transport.serverRelay', 'transport.cloudRelay'].includes(id) ? { reason: 'Esta beta sólo habilita la conexión directa al Mac por red local o VPN. Las rutas avanzadas permanecen ocultas en el móvil.' } : {}),
-      result: 'pending', evidence: [] })),
+      ...(id === userPhysicalValidation.operation ? {owner: userPhysicalValidation.owner, delivery: userPhysicalValidation.delivery,
+        reason: 'Por indicación expresa del usuario, el iPhone físico lo validará él después de recibir la beta en TestFlight.'} : {}),
+      result: id === userPhysicalValidation.operation ? userPhysicalValidation.result : 'pending', evidence: [] })),
     ...['deepResearch', 'immersion', 'dictionary', 'chat', 'translation', 'synthesis', 'argumentMap', 'writingAssistant']
       .flatMap(id => ['live', 'autonomous'].map(mode => ({ id: `generation.${id}.${mode}`, category: 'generation', result: 'pending', evidence: [] }))),
     ...['extractDocuments', 'indexDocuments', 'deriveIdeas'].map(id => ({ id, category: 'desktopExclusive', result: 'notApplicable', evidence: [] })),
@@ -437,7 +440,8 @@ export function buildParityManifest() {
   return {
     version: PARITY_MANIFEST_VERSION,
     referenceCommits: { desktop: '0a173fd9c698a7cb2d5989aa64b59cddd329bcf9', mobile: 'ad6e3069bcea67b48de76de561fc27c3db417563' },
-    validationPolicy: 'Availability and source files are inventory only. Release requires executed operation evidence with no omissions.',
+    validationPolicy: 'Availability and source files are inventory only. Release requires executed operation evidence with no omissions; physical iPhone validation remains pending with the user after TestFlight, by explicit instruction.',
+    acceptanceRequirements: {environments: requiredAcceptanceEnvironments, userValidation: userPhysicalValidation},
     operations: operationMatrix(routes),
     sourceOfTruth: {
       repository: 'nodus',

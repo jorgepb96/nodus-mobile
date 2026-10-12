@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
-import {acceptanceRevisionIssues, nativeAcceptanceRunIssues} from './acceptance-evidence.mjs';
+import {acceptanceRevisionIssues, nativeAcceptanceRunIssues, requiredAcceptanceEnvironments, userPhysicalValidation, userValidationHandoffIssues} from './acceptance-evidence.mjs';
 
 const manifest = JSON.parse(fs.readFileSync(path.join(mobileRoot, 'ios/Parity/parity-manifest.json'), 'utf8'));
 const input = process.argv[2];
@@ -18,7 +18,8 @@ for (const [repo, commit] of Object.entries(manifest.referenceCommits)) {
   if (campaign.referenceCommits?.[repo] !== commit) issues.push(`Missing reference commit: ${repo}`);
 }
 issues.push(...acceptanceRevisionIssues(campaign.revisionDigests,{desktop:nodusRepo(),mobile:mobileRoot}));
-for (const operation of manifest.operations.filter(operation => operation.category !== 'desktopExclusive')) {
+issues.push(...userValidationHandoffIssues(campaign));
+for (const operation of manifest.operations.filter(operation => operation.category !== 'desktopExclusive' && operation.id !== userPhysicalValidation.operation)) {
   const result = campaign.operations?.find(item => item.id === operation.id);
   if (!result || result.result !== 'passed' || result.executed < 1 || result.skipped !== 0) {
     issues.push(`Not verified: ${operation.id}`); continue;
@@ -31,7 +32,7 @@ for (const operation of manifest.operations.filter(operation => operation.catego
     if (digest !== evidence.sha256) issues.push(`Evidence changed: ${evidence.path}`);
   }
 }
-for (const required of ['desktop', 'iphoneSimulator', 'ipadSimulator', 'physicalIphone']) {
+for (const required of requiredAcceptanceEnvironments) {
   const run = campaign.environments?.[required];
   if (!run?.executed || run.failed !== 0 || run.skipped !== 0 || !run.artifact) issues.push(`Unverified environment: ${required}`);
   if (run?.artifact) {

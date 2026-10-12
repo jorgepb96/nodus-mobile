@@ -4,7 +4,19 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues, nativeAcceptanceArtifacts, verifyNativeAcceptanceBuild, nativeAcceptanceRunIssues} from './acceptance-evidence.mjs';
+import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues, nativeAcceptanceArtifacts, verifyNativeAcceptanceBuild, nativeAcceptanceRunIssues, requiredAcceptanceEnvironments, userPhysicalValidation, userValidationHandoffIssues} from './acceptance-evidence.mjs';
+
+test('physical-device handoff is explicitly pending with the user and cannot be relabelled as a pass or omitted', () => {
+  assert.deepEqual(requiredAcceptanceEnvironments, ['desktop', 'iphoneSimulator', 'ipadSimulator']);
+  const pending = {owner: 'user', delivery: 'TestFlight', result: 'pendingUserValidation', executed: 0, skipped: 0, evidence: []};
+  const campaign = {operations: [{id: userPhysicalValidation.operation, ...pending}], environments: {physicalIphone: {...pending}}};
+  assert.deepEqual(userValidationHandoffIssues(campaign), []);
+  assert.equal(userValidationHandoffIssues({}).length, 2);
+  for (const patch of [{result: 'passed', executed: 1}, {skipped: 1}, {owner: 'agent'}, {artifact: 'old-phone.xcresult'}, {evidence: [{path: 'fake'}]}]) {
+    assert(userValidationHandoffIssues({...campaign, environments: {physicalIphone: {...pending, ...patch}}}).length > 0);
+    assert(userValidationHandoffIssues({...campaign, operations: [{id: userPhysicalValidation.operation, ...pending, ...patch}]}).length > 0);
+  }
+});
 
 function laboratory(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-evidence-index-'));
