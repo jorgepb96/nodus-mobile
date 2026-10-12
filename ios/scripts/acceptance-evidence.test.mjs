@@ -4,7 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues, nativeAcceptanceArtifacts, verifyNativeAcceptanceBuild, nativeAcceptanceRunIssues, requiredAcceptanceEnvironments, userPhysicalValidation, userValidationHandoffIssues} from './acceptance-evidence.mjs';
+import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues, nativeAcceptanceArtifacts, verifyNativeAcceptanceBuild, nativeAcceptanceRunIssues, requiredAcceptanceEnvironments, userPhysicalValidation, userValidationHandoffIssues, nativeAcceptanceDeviceIssues} from './acceptance-evidence.mjs';
 
 test('physical-device handoff is explicitly pending with the user and cannot be relabelled as a pass or omitted', () => {
   assert.deepEqual(requiredAcceptanceEnvironments, ['desktop', 'iphoneSimulator', 'ipadSimulator']);
@@ -12,10 +12,20 @@ test('physical-device handoff is explicitly pending with the user and cannot be 
   const campaign = {operations: [{id: userPhysicalValidation.operation, ...pending}], environments: {physicalIphone: {...pending}}};
   assert.deepEqual(userValidationHandoffIssues(campaign), []);
   assert.equal(userValidationHandoffIssues({}).length, 2);
-  for (const patch of [{result: 'passed', executed: 1}, {skipped: 1}, {owner: 'agent'}, {artifact: 'old-phone.xcresult'}, {evidence: [{path: 'fake'}]}]) {
+  for (const patch of [{result: 'passed', executed: 1}, {skipped: 1}, {failed: 1}, {owner: 'agent'}, {artifact: 'old-phone.xcresult'}, {evidence: [{path: 'fake'}]}]) {
     assert(userValidationHandoffIssues({...campaign, environments: {physicalIphone: {...pending, ...patch}}}).length > 0);
     assert(userValidationHandoffIssues({...campaign, operations: [{id: userPhysicalValidation.operation, ...pending, ...patch}]}).length > 0);
   }
+});
+test('simulator evidence must identify its actual platform and iPhone/iPad family', () => {
+  const phone = {devicesAndConfigurations: [{device: {platform: 'iOS Simulator', modelName: 'iPhone 16 Pro Max'}}]};
+  const pad = {devicesAndConfigurations: [{device: {platform: 'iOS Simulator', modelName: 'iPad Pro 13-inch (M5)'}}]};
+  assert.deepEqual(nativeAcceptanceDeviceIssues('iphoneSimulator', phone), []);
+  assert.deepEqual(nativeAcceptanceDeviceIssues('ipadSimulator', pad), []);
+  assert(nativeAcceptanceDeviceIssues('iphoneSimulator', pad).length > 0);
+  assert(nativeAcceptanceDeviceIssues('ipadSimulator', phone).length > 0);
+  assert(nativeAcceptanceDeviceIssues('iphoneSimulator', {devicesAndConfigurations: [{device: {platform: 'iOS', modelName: 'iPhone 16 Pro Max'}}]}).length > 0);
+  assert(nativeAcceptanceDeviceIssues('iphoneSimulator', {}).length > 0);
 });
 
 function laboratory(t) {

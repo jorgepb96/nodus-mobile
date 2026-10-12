@@ -14,11 +14,19 @@ export function userValidationHandoffIssues(campaign) {
   const environment = campaign.environments?.[userPhysicalValidation.environment];
   for (const [name, row] of [['operation', operation], ['environment', environment]]) {
     if (!row || row.owner !== 'user' || row.delivery !== 'TestFlight' || row.result !== 'pendingUserValidation' ||
-        row.executed !== 0 || row.skipped !== 0 || (row.evidence?.length ?? 0) !== 0 || row.artifact) {
+        row.executed !== 0 || row.skipped !== 0 || (row.failed ?? 0) !== 0 || (row.evidence?.length ?? 0) !== 0 || row.artifact) {
       issues.push(`Physical iPhone ${name} must remain explicitly pending user validation after TestFlight.`);
     }
   }
   return issues;
+}
+export function nativeAcceptanceDeviceIssues(environment, result) {
+  const expected = {iphoneSimulator: /^iPhone/i, ipadSimulator: /^iPad/i}[environment];
+  const devices = result.devicesAndConfigurations?.map(item => item.device) ?? [];
+  if (!expected || !devices.length || devices.some(device => device?.platform !== 'iOS Simulator' || !expected.test(device.modelName ?? ''))) {
+    return [`Native evidence does not come from the required ${environment} device.`];
+  }
+  return [];
 }
 
 export function acceptanceSourceRevision(root) {
