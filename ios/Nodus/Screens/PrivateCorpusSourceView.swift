@@ -17,6 +17,8 @@ struct PrivateCorpusSourceSheet: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cerrar") { dismiss() }
                             .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
                             .accessibilityIdentifier("private-source-close")
                     }
                 }
