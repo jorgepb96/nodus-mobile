@@ -149,6 +149,16 @@ if args.person_dossier:
     person = json.loads((args.lab / "person-dossier-acceptance-input.json").read_text())
     if person.get("personId") != "person-acceptance-mobile-010" or person.get("providerCalls") != 0:
         raise SystemExit("An explicitly isolated fictional person fixture is required")
+    registry = json.loads((args.lab / "vaults.json").read_text())
+    vault = next(vault for vault in registry["vaults"] if vault["id"] == person["vaultId"])
+    database = Path(vault["path"]).resolve()
+    if not database.is_relative_to(args.lab.resolve()):
+        raise SystemExit("Person source expectations must come from the copied vault")
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        source = connection.execute("SELECT source_id,title,citation FROM prosop_sources WHERE length(citation)>0 ORDER BY source_id LIMIT 1").fetchone()
+        if source is None:
+            raise SystemExit("An actual saved source with a readable citation is required")
+        person.update(sourceId=source[0], sourceTitle=source[1], sourceCitation=source[2])
     values["NODUS_ACCEPTANCE_PERSON_DOSSIER"] = json.dumps(person, ensure_ascii=False)
 
 configuration = plistlib.loads(args.base.read_bytes())

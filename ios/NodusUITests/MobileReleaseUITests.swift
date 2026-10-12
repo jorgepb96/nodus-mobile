@@ -149,6 +149,32 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "prosopography-complete-authority-identifier")
     }
     @MainActor
+    func testLiveProsopographySourceCatalogueOpensSavedCitationAndReopens() throws {
+        let input = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_PERSON_DOSSIER"])
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
+        func value(_ key: String) throws -> String { try XCTUnwrap(fixture[key] as? String) }
+        let sourceId = try value("sourceId"), title = try value("sourceTitle"), citation = try value("sourceCitation")
+        for reopen in 0..<2 {
+            let app = try openExistingVault(destination: "prosopSources", vaultId: value("vaultId"))
+            defer { app.terminate() }
+            let catalogue = app.descendants(matching: .any)["private-source-catalogue-prosop-source"].firstMatch
+            XCTAssertTrue(catalogue.waitForExistence(timeout: 45))
+            let row = app.buttons["private-source-prosop-source-" + sourceId]
+            XCTAssertTrue(row.waitForExistence(timeout: 45), app.debugDescription)
+            for _ in 0..<10 { if row.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(row.isHittable); row.tap()
+            XCTAssertTrue(app.descendants(matching: .any)["private-corpus-source-prosop-source"].firstMatch.waitForExistence(timeout: 45))
+            XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 15))
+            let text = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR value == %@", citation, citation)).firstMatch
+            XCTAssertTrue(text.waitForExistence(timeout: 15), "The saved source citation must render instead of only a catalogue title.")
+            for _ in 0..<10 { if text.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(text.isHittable)
+            XCTAssertTrue(app.descendants(matching: .any)["private-source-group-picker"].firstMatch.exists)
+            capture(app, "prosopography-source-saved-citation-reopen-\(reopen)")
+            app.terminate()
+        }
+    }
+    @MainActor
     func testLivePhoneChatStreamsCopiesAndReopensFromHistory() throws {
         let app = try openExistingPrincipal(destination: "settings")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
