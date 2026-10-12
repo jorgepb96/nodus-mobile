@@ -52,7 +52,7 @@ public actor ResponseCache {
     public func store(_ entry: Entry, for key: String) {
         remember(key, entry)
         guard let encoded = try? JSONEncoder().encode(entry) else { return }
-        try? encoded.write(to: file(for: key), options: [.atomic, .completeFileProtectionUnlessOpen])
+        try? PrivateBridgeProtectedFile.write(encoded, to: file(for: key), protection: .completeFileProtectionUnlessOpen)
     }
 
     /// Refreshes the timestamp after a 304 so an untouched-but-still-valid entry does not look

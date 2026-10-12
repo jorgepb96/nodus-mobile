@@ -34,6 +34,6 @@ public actor GenerationActionIntentStore {
         do { try persist() } catch { keys[scope] = key; throw error }
     }
     private func persist() throws {
-        try JSONEncoder.nodus.encode(keys).write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+        try PrivateBridgeProtectedFile.write(JSONEncoder.nodus.encode(keys), to: file, protection: .completeFileProtectionUnlessOpen)
     }
 }

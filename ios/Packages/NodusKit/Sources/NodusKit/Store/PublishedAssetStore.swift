@@ -25,7 +25,7 @@ public actor PublishedAssetStore {
         let file = try location(hash: hash, origin: origin, spaceId: spaceId)
         guard Self.sha(data) == hash else { throw Self.integrityError }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+        try PrivateBridgeProtectedFile.write(data, to: file, protection: .completeFileProtectionUnlessOpen)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
 
