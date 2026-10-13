@@ -1421,7 +1421,7 @@ public actor PrivateBridgeCache {
     public func authoringRecoverySnapshot(vaultIds: Set<String>) throws -> PrivateBridgeAuthoringRecovery.Snapshot {
         try Self.diskLock.withLock {
             let writingIds = ["companion-documents-v1", "companion-study-documents-v1", "companion-page-documents-v1", "companion-immersion-progress-v1", "companion-database-reading-v1"]
-            let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "companion:world-map-generation-index:v1"]
+            let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "autonomous:deepResearch:index:v1", "companion:world-map-generation-index:v1"]
             var known: [String: (vault: String, writing: Bool, ledger: Bool, recordId: String, kind: String?)] = [:]
             for vault in vaultIds {
                 for id in writingIds { known[legacyURL(vaultId: vault, domain: .writing, recordId: id).lastPathComponent] = (vault, true, false, id, nil) }
@@ -1454,7 +1454,7 @@ public actor PrivateBridgeCache {
                             let record = "companion:world-map-generation:v1:" + hash
                             if legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent == base { scope = (vault, false, false, record, "worldMap") }
                         }
-                        for kind in ["dictionary", "immersion", "translation", "writing", "argument", "workshop", "database", "academic"] {
+                        for kind in ["dictionary", "immersion", "translation", "writing", "argument", "workshop", "database", "academic", "deepResearch"] {
                             let entity = kind == "dictionary" ? request["entryId"]?.stringValue : object["entityKey"]?.stringValue
                             if let entity, let record = try? CompanionGenerationPublication.recordId(kind: kind, entity: entity),
                                legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent == base {

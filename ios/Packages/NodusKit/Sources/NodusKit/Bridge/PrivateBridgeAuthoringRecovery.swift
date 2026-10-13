@@ -175,7 +175,7 @@ public actor PrivateBridgeAuthoringRecovery {
     public nonisolated static func publicationForReview(_ request: DesktopJobLedger.Request) throws -> CompanionGenerationPublication? {
         guard request.state == "recoveryReview", let checkpoint = request.checkpoint,
               let fields = checkpoint.objectValue, let original = fields["request"]?.objectValue else { return nil }
-        let kinds = ["saveMobileAcademicResult": "academic", "localAcademicGeneration": "academic", "saveDictionaryGeneratedVersion": "dictionary", "saveStudyImprovementFromMobile": "writing", "saveMobileDatabaseResearchReport": "database", "saveWritingWorkshopFromMobile": "workshop", "localWorkshopGeneration": "workshop", "saveImmersionGeneratedSession": "immersion", "saveContentTranslationFromMobile": "translation"]
+        let kinds = ["saveMobileAcademicResult": "academic", "localAcademicGeneration": "academic", "saveDictionaryGeneratedVersion": "dictionary", "saveStudyImprovementFromMobile": "writing", "saveMobileDatabaseResearchReport": "database", "saveMobileDeepResearchReport": "deepResearch", "saveWritingWorkshopFromMobile": "workshop", "localWorkshopGeneration": "workshop", "saveImmersionGeneratedSession": "immersion", "saveContentTranslationFromMobile": "translation"]
         guard let kind = kinds[request.method] ?? fields["recoveryGenerationKind"]?.stringValue, let entity = kind == "dictionary" ? original["entryId"]?.stringValue : fields["entityKey"]?.stringValue else { return nil }
         return try CompanionGenerationPublication(kind: kind, entity: entity, checkpoint: checkpoint)
     }
