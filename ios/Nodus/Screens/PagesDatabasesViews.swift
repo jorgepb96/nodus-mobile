@@ -8,7 +8,7 @@ private let pagesDatabaseTables = [
     "page_revisions", "page_comments", "page_comment_reactions", "page_comment_mentions",
     "workspace_actors", "workspace_groups", "workspace_group_members", "acl_entries",
     "db_databases", "db_data_sources", "db_columns", "db_rows", "db_cells", "db_views",
-    "db_view_sources", "db_view_revisions", "db_select_options", "db_relations",
+    "db_view_sources", "db_view_revisions", "db_select_options", "db_relations", "db_computed_cells",
     "db_attachments", "db_row_templates", "db_template_runs", "db_row_hierarchy",
     "db_row_dependencies", "db_task_configs", "db_sprints", "db_sprint_rows",
     "automation_rules", "automation_runs", "automation_notifications", "database_forms",
@@ -584,6 +584,7 @@ struct DatabaseDetailWorkspace: View {
     @State private var sortColumnId: String?
     @State private var sortDirection: PagesDatabasesParity.SortDirection = .ascending
     @State private var creatingColumn = false
+    @State private var editingColumn: PagesDatabasesParity.Column?
     @State private var importingCSV = false
     @State private var importMessage: String?
     @State private var phoneTable = false
@@ -650,6 +651,7 @@ struct DatabaseDetailWorkspace: View {
         .nodusSheet(item:$foreignRow){target in NavigationStack{DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:downloadedOnly).nodusModalClose(accent:session.accent)}}
         .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
         .nodusSheet(isPresented: $creatingColumn) { NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox) }
+        .nodusSheet(item: $editingColumn) { column in NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox, existingColumn: column) }
         .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             guard case .success(let url) = result else { return }
             Task { await requestDesktopImport(url) }
@@ -662,6 +664,7 @@ struct DatabaseDetailWorkspace: View {
             HStack(spacing: 7) {
                 Menu {
                     Button { creatingColumn = true } label: { Label("New property", systemImage: "rectangle.split.1x2") }
+                    Menu("Configurar propiedades") { ForEach(columns) { column in Button(column.name) { editingColumn = column } } }
                     Button { importingCSV = true } label: { Label("Import CSV", systemImage: "tablecells.badge.ellipsis") }.disabled(session.isDemo)
                     ShareLink(item: csv) { Label("Export CSV", systemImage: "square.and.arrow.up") }
                 } label: { Label("Manage", systemImage: "ellipsis.circle") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
@@ -754,7 +757,7 @@ struct DatabaseDetailWorkspace: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Label(column.name, systemImage: propertyIcon(column.type)).font(.caption).foregroundStyle(.secondary)
                                     if column.isReadOnly {
-                                        DatabaseComputedValue(value: PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id])
+                                        DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id])
                                             .font(.subheadline).lineLimit(3).multilineTextAlignment(.leading)
                                     } else {
                                         Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor")
@@ -800,7 +803,7 @@ struct DatabaseDetailWorkspace: View {
 
     private func databaseTableCell(_ column: PagesDatabasesParity.Column, row: PagesDatabasesParity.DataRow) -> some View {
         Group {
-            if column.isReadOnly { DatabaseComputedValue(value: PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]) }
+            if column.isReadOnly { DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]) }
             else { Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)) }
         }
             .font(.caption).lineLimit(2)
@@ -1096,12 +1099,12 @@ private struct DatabaseRowInspector: View {
         ForEach(columns) { column in
             VStack(alignment: .leading, spacing: 5) {
                 Label(column.name, systemImage: propertyIcon(column.type)).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                if column.isReadOnly { DatabaseComputedValue(value: PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7)) }
-                else if ["select", "status"].contains(column.type) {
-                    Picker(column.name, selection: Binding(get: { drafts[column.id] ?? "" }, set: { drafts[column.id] = $0 })) { Text("No value").tag(""); ForEach(column.options) { Text($0.label).tag($0.id) } }.pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
-                } else if column.type == "checkbox" { Toggle("Checked", isOn: Binding(get: { ["1", "true"].contains((drafts[column.id] ?? "").lowercased()) }, set: { drafts[column.id] = $0 ? "1" : "0" })) }
-                else { TextField(column.name, text: Binding(get: { drafts[column.id] ?? "" }, set: { drafts[column.id] = $0 }), axis: .vertical).textFieldStyle(.roundedBorder).keyboardType(column.type == "number" ? .decimalPad : column.type == "email" ? .emailAddress : column.type == "url" ? .URL : .default) }
-            }
+                if column.isReadOnly { DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7)) }
+                else if ["files","attachment","ai_image","relation","button"].contains(column.type) {
+                    Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor").font(.callout).textSelection(.enabled)
+                    if column.type == "button" { Text("La ejecución del botón estará disponible próximamente en este dispositivo.").font(.caption).foregroundStyle(.secondary) }
+                } else { DatabasePropertyCellEditor(column: column, value: Binding(get: { drafts[column.id] ?? "" }, set: { drafts[column.id] = $0 })) }
+            }.accessibilityIdentifier("database-property-value-\(column.id)")
         }
     }
 
@@ -1171,25 +1174,80 @@ private struct NewDatabaseColumnSheet: View {
     let databaseId: String
     @Binding var tables: [String: [Row]]
     let outbox: OutboxController?
-    @State private var name = ""
-    @State private var type = "text"
-
+    let existingColumn: PagesDatabasesParity.Column?
+    @State private var name: String
+    @State private var type: String
+    @State private var config: [String: JSONValue]
+    @State private var options: [Row]
+    @State private var removedOptions: [Row] = []
+    @State private var saving = false
+    init(session: SpaceSession, databaseId: String, tables: Binding<[String: [Row]]>, outbox: OutboxController?, existingColumn: PagesDatabasesParity.Column? = nil) {
+        self.session = session; self.databaseId = databaseId; self._tables = tables; self.outbox = outbox; self.existingColumn = existingColumn
+        _name = State(initialValue: existingColumn?.name ?? ""); _type = State(initialValue: existingColumn?.type ?? "rich_text")
+        _config = State(initialValue: existingColumn?.config ?? [:])
+        _options = State(initialValue: (tables.wrappedValue["db_select_options"] ?? []).filter { $0.string("column_id") == existingColumn?.id }.sorted { ($0.columns["position"]?.intValue ?? 0) < ($1.columns["position"]?.intValue ?? 0) })
+    }
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Property name", text: $name)
-                Picker("Type", selection: $type) { ForEach(["text", "number", "date", "status", "multi_select", "checkbox", "person", "url", "email", "files", "relation", "rollup", "formula"], id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ").capitalized).tag($0) } }
-                Text(["formula", "rollup"].contains(type) ? "Computed properties are configured safely on Desktop and their materialized values remain queryable here." : "The property is written through the same typed mutation ledger as Desktop.").font(.caption).foregroundStyle(.secondary)
+                Section("Propiedad") {
+                    TextField("Nombre", text: $name).accessibilityIdentifier("database-property-name")
+                    Picker("Tipo", selection: $type) { ForEach(CompanionDatabaseProperty.allCases) { property in Text(property.label).tag(property.rawValue) } }.accessibilityIdentifier("database-property-type")
+                }
+                Section("Configuración") {
+                    DatabasePropertyConfigurationFields(type: type, databaseId: databaseId, columnId: existingColumn?.id, tables: tables, config: $config)
+                    Toggle("Ajustar al contenido", isOn: Binding(get: { config["fitContent"]?.boolValue ?? false }, set: { config["fitContent"] = .bool($0) }))
+                    TextField("Ancho", value: Binding(get: { Int(config["width"]?.intValue ?? 160) }, set: { config["width"] = .int(Int64(max(60, $0))) }), format: .number).keyboardType(.numberPad)
+                }
+                if ["select","status","multi_select"].contains(type) { optionFields }
+                if ["ai","ai_image"].contains(type) { DatabasePropertyModelFields(session: session, image: type == "ai_image", config: $config) }
+                if CompanionDatabaseProperty(rawValue: type)?.computed == true { Text("Los valores los calcula Nodus al sincronizar. Aquí puedes configurar la propiedad y consultar su resultado.").font(.caption).foregroundStyle(.secondary) }
                 PagesDatabaseSyncNotice(outbox:outbox)
-            }.navigationTitle("New property").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Create") { Task { await create() } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || outbox == nil) } }
+            }.navigationTitle(existingColumn == nil ? "Nueva propiedad" : "Configurar propiedad").toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button { Task { await save() } } label: { if saving { ProgressView() } else { Text(existingColumn == nil ? "Crear" : "Guardar") } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || outbox == nil || saving).accessibilityIdentifier("database-property-save") }
+            }
         }.nodusModalClose(accent: session.accent)
     }
-
-    private func create() async {
-        guard let outbox else { return }; let id = "dcol_\(UUID().uuidString)", now = ISO8601DateFormatter.nodusFractional.string(from: Date()), position = (tables["db_columns"] ?? []).filter { $0.string("database_id") == databaseId }.count
-        let row: [String: JSONValue] = ["id": .string(id), "database_id": .string(databaseId), "name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)), "type": .string(type), "position": .int(Int64(position)), "config_json": .string("{}"), "revision": .int(1), "created_by": .string("mobile"), "updated_by": .string("mobile"), "created_at": .string(now), "updated_at": .string(now)]
-        guard await outbox.syncMutation(kind:.upsert,table:.databaseColumns,key:[id],row:row,title:"Crear \(name)") else {return}
-        tables["db_columns",default:[]].append(Row(row));dismiss()
+    private var optionFields: some View {
+        Section("Opciones") {
+            ForEach(options.indices, id: \.self) { index in
+                TextField("Etiqueta", text: optionText(index, "label"))
+                TextField("Color", text: optionText(index, "color"))
+                if type == "status" { Picker("Grupo", selection: optionText(index, "group_key")) { Text("Pendiente").tag("pending"); Text("En curso").tag("in_progress"); Text("Completado").tag("complete") } }
+                Button("Eliminar opción", role: .destructive) { removedOptions.append(options.remove(at: index)) }
+            }
+            Button("Añadir opción") { options.append(Row(["id": .string("dopt_" + UUID().uuidString), "label": .string("Nueva opción"), "color": .string("#6366f1"), "group_key": type == "status" ? .string("pending") : .null])) }
+        }
+    }
+    private func optionText(_ index: Int, _ key: String) -> Binding<String> { Binding(get: { options[index].string(key) ?? (key == "group_key" ? "pending" : "") }, set: { text in var fields = options[index].columns; fields[key] = text.isEmpty ? .null : .string(text); options[index] = Row(fields) }) }
+    private func save() async {
+        guard let outbox else { return }; saving = true; defer { saving = false }
+        let id = existingColumn?.id ?? "dcol_" + UUID().uuidString
+        let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
+        let existing = tables["db_columns"]?.first { $0.string("id") == id }
+        var fields = existing?.columns ?? ["id": .string(id), "database_id": .string(databaseId), "position": .int(Int64((tables["db_columns"] ?? []).filter { $0.string("database_id") == databaseId }.count)), "created_by": .string("mobile"), "created_at": .string(now)]
+        guard let encoded = try? CompanionDatabaseProperty.configuration(config, patch: [:]) else { return }
+        fields["name"] = .string(name.trimmingCharacters(in: .whitespacesAndNewlines)); fields["type"] = .string(type); fields["config_json"] = .string(encoded)
+        let revision = existing?.columns["revision"]?.intValue ?? 0
+        fields["revision"] = .int(existing == nil ? (config.isEmpty ? 1 : 2) : revision + 1); fields["updated_by"] = .string("mobile"); fields["updated_at"] = .string(now)
+        if existing != nil { fields["_mobileExpectedRevision"] = .int(revision); fields["_mobileExpectedConfigJSON"] = .string(existing?.string("config_json") ?? "{}") }
+        guard await outbox.syncMutation(kind: .upsert, table: .databaseColumns, key: [id], row: fields, title: "Guardar propiedad \(name)") else { return }
+        tables["db_columns"]?.removeAll { $0.string("id") == id }; tables["db_columns", default: []].append(Row(fields))
+        if ["select","status","multi_select"].contains(type) {
+            for (index, option) in options.enumerated() {
+                guard let optionId = option.string("id") else { continue }
+                let baseline = tables["db_select_options"]?.first { $0.string("id") == optionId }
+                let oldRevision = baseline?.columns["revision"]?.intValue ?? 0
+                var value = option.columns; value["database_id"] = .string(databaseId); value["column_id"] = .string(id); value["position"] = .int(Int64(index)); value["revision"] = .int(oldRevision + 1); value["_mobileExpectedRevision"] = .int(oldRevision); value["created_at"] = baseline?.columns["created_at"] ?? .string(now); value["updated_at"] = .string(now)
+                if await outbox.syncMutation(kind: .upsert, table: .databaseSelectOptions, key: [optionId], row: value, title: "Guardar opción") { tables["db_select_options"]?.removeAll { $0.string("id") == optionId }; tables["db_select_options", default: []].append(Row(value)) }
+            }
+            for option in removedOptions {
+                guard let optionId = option.string("id"), let baseline = tables["db_select_options"]?.first(where: { $0.string("id") == optionId }) else { continue }
+                var value = baseline.columns; value["_mobileExpectedRevision"] = baseline.columns["revision"] ?? .int(0)
+                if await outbox.syncMutation(kind: .delete, table: .databaseSelectOptions, key: [optionId], row: value, title: "Eliminar opción") { tables["db_select_options"]?.removeAll { $0.string("id") == optionId } }
+            }
+        }
+        dismiss()
     }
 }
 
@@ -1317,7 +1375,11 @@ private func debugDatabasesFixture() -> [String: [Row]] {
 
 private func layoutIcon(_ layout: String) -> String { ["table": "tablecells", "gallery": "square.grid.2x2", "board": "rectangle.3.group", "kanban": "rectangle.3.group", "calendar": "calendar", "timeline": "timeline.selection", "chart": "chart.bar", "map": "map", "feed": "list.bullet.rectangle" ][layout] ?? "tablecells" }
 private func propertyIcon(_ type: String) -> String { ["title": "textformat", "rich_text": "text.alignleft", "text": "text.alignleft", "number": "number", "date": "calendar", "time": "clock", "select": "tag", "status": "circle.dashed", "multi_select": "tag.fill", "checkbox": "checkmark.square", "person": "person", "url": "link", "email": "envelope", "phone": "phone", "location": "mappin", "files": "paperclip", "attachment": "paperclip", "relation": "link", "rollup": "square.stack.3d.up", "formula": "function", "ai": "sparkles", "ai_image": "photo.badge.plus" ][type] ?? "textformat" }
-private func databaseCellType(_ type: String) -> String { type == "number" ? "number" : type == "date" ? "date" : ["select", "status", "relation"].contains(type) ? "reference" : type == "multi_select" ? "json" : "text" }
+private func databaseComputedDisplay(column: PagesDatabasesParity.Column, row: PagesDatabasesParity.DataRow, allRows: [PagesDatabasesParity.DataRow], columns: [PagesDatabasesParity.Column]) -> String {
+    let value = PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)
+    return value.isEmpty ? (["formula","rollup","comparison"].contains(column.type) ? "Sin resultado guardado en Nodus" : "Dato no disponible") : value
+}
+private func databaseCellType(_ type: String) -> String { CompanionDatabaseProperty(rawValue: type)?.cellStorage ?? "text" }
 private func jsonObjectString(_ object: [String: JSONValue]) -> String { (try? JSONEncoder().encode(JSONValue.object(object))).flatMap { String(data: $0, encoding: .utf8) } ?? "{}" }
 private func csvCell(_ value: String) -> String { "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\"" }
 

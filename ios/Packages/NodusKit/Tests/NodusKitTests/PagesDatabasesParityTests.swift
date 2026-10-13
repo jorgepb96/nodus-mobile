@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NodusKit
 
@@ -64,7 +65,7 @@ struct PagesDatabasesParityTests {
         #expect(PagesDatabasesParity.backlinks(pageId: "p1", in: tables).first?.sourcePageId == "p2")
     }
 
-    @Test("typed cells, stable query and Desktop formula recipes agree")
+    @Test("typed cells, stable query and materialized Desktop formula results agree")
     func databaseProjectionAndFormula() {
         let formula = #"{"formula":{"kind":"arithmetic","op":"multiply","operands":[{"kind":"column","columnId":"amount"},{"kind":"number","value":2}]}}"#
         let tables: [String: [Row]] = [
@@ -75,6 +76,7 @@ struct PagesDatabasesParityTests {
                 row(["id": "status", "database_id": "db", "name": "Status", "type": "status", "position": 2]),
                 row(["id": "double", "database_id": "db", "name": "Double", "type": "formula", "position": 3, "config_json": formula]),
             ],
+            "db_computed_cells": [row(["database_id": "db", "row_id": "r1", "column_id": "double", "value_number": 25])],
             "db_select_options": [row(["id": "done", "column_id": "status", "label": "Complete", "position": 0])],
             "db_rows": [
                 row(["id": "r1", "database_id": "db", "position": 0]),
@@ -95,6 +97,26 @@ struct PagesDatabasesParityTests {
         #expect(PagesDatabasesParity.displayValue(column: columns[2], row: rows[0], allRows: rows, columns: columns) == "Complete")
         #expect(PagesDatabasesParity.displayValue(column: columns[3], row: rows[0], allRows: rows, columns: columns) == "25")
         #expect(PagesDatabasesParity.filteredRows(rows, columns: columns, query: "", sortColumnId: "title").map(\.id) == ["r2", "r1"])
+    }
+
+    @Test("canonical computed cells and real row metadata are consulted without evaluating absent formulas")
+    func canonicalPropertyProjection() throws {
+        let tables: [String: [Row]] = [
+            "db_rows": [row(["id":"r", "database_id":"db", "position":0, "unique_sequence":42, "created_at":"2026-10-13T08:00:00Z", "updated_at":"2026-10-13T09:00:00Z", "created_by":"real-owner", "updated_by":"real-editor"])],
+            "db_columns": [row(["id":"f", "database_id":"db", "type":"formula", "config_json":#"{"formula":{"kind":"arithmetic","op":"add","operands":[{"kind":"number","value":999}]}}"#]), row(["id":"missing", "database_id":"db", "type":"formula", "config_json":#"{"formula":{"kind":"arithmetic","op":"add","operands":[{"kind":"number","value":999}]}}"#]), row(["id":"roll", "database_id":"db", "type":"rollup"]), row(["id":"created", "database_id":"db", "type":"created_time"]), row(["id":"edited", "database_id":"db", "type":"last_edited_time"]), row(["id":"owner", "database_id":"db", "type":"created_by"]), row(["id":"editor", "database_id":"db", "type":"last_edited_by"]), row(["id":"sequence", "database_id":"db", "type":"unique_id", "config_json":#"{"uniqueIdPrefix":"TASK-","uniqueIdPadding":4}"#])],
+            "db_cells": [row(["row_id":"r", "column_id":"f", "value_text":"old stale 999"])],
+            "db_computed_cells": [row(["database_id":"db", "row_id":"r", "column_id":"f", "value_number":22, "color":"#123456"]), row(["database_id":"db", "row_id":"r", "column_id":"roll", "value_number":12])]
+        ]
+        let item = try #require(PagesDatabasesParity.rows(databaseId:"db", in:tables).first), columns = PagesDatabasesParity.columns(databaseId:"db", in:tables)
+        #expect(item.cells["f"] == "22" && item.cells["roll"] == "12")
+        #expect(item.formulaColors["f"] == "#123456")
+        #expect(item.cells["created"] == "2026-10-13T08:00:00Z" && item.cells["edited"] == "2026-10-13T09:00:00Z")
+        #expect(CompanionDatabaseProperty.strings(item.cells["owner"] ?? "").isEmpty)
+        let people = try JSONDecoder.nodus.decode([JSONValue].self, from: Data((item.cells["owner"] ?? "").utf8))
+        #expect(people.first?.objectValue?["id"] == .string("real-owner"))
+        #expect(item.cells["sequence"] == "TASK-0042")
+        let missing = try #require(columns.first { $0.id == "missing" })
+        #expect(PagesDatabasesParity.displayValue(column: missing, row:item, allRows:[item], columns:columns).isEmpty)
     }
 
     private func row(_ values: [String: Any]) -> Row {
