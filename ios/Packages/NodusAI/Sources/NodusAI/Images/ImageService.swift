@@ -44,7 +44,8 @@ public actor ImageService {
         self.keyProvider = keyProvider
     }
 
-    public func generate(prompt: String, with model: ModelRef) async throws -> GeneratedImage {
+    public func generate(prompt: String, with model: ModelRef, aspectRatio: String = "16:9") async throws -> GeneratedImage {
+        try validateAspectRatio(aspectRatio)
         guard model.provider.supportsImageGeneration else {
             throw ProviderError.malformedResponse("\(model.provider.rawValue) cannot generate images")
         }
@@ -58,8 +59,9 @@ public actor ImageService {
                     "model": .string(model.model),
                     "prompt": .string(prompt),
                     "n": .int(1),
-                    "size": .string("1536x1024"),
+                    "size": .string(aspectRatio == "1:1" ? "1024x1024" : ["9:16", "3:4", "2:3"].contains(aspectRatio) ? "1024x1536" : "1536x1024"),
                     "quality": .string("high"),
+                    "output_format": .string("png"),
                 ],
                 provider: .openai,
                 key: key
@@ -74,12 +76,13 @@ public actor ImageService {
                     "model": .string(model.model),
                     "prompt": .string(prompt),
                     "n": .int(1),
+                    "aspect_ratio": .string(aspectRatio),
                 ],
                 provider: .openrouter,
                 key: key
             )
         case .gemini:
-            return try await gemini(prompt: prompt, model: model.model, key: key)
+            return try await gemini(prompt: prompt, model: model.model, key: key, aspectRatio: aspectRatio)
         default:
             throw ProviderError.malformedResponse("\(model.provider.rawValue) cannot generate images")
         }
@@ -118,24 +121,32 @@ public actor ImageService {
 
     /// Two Google endpoints, because Google has two kinds of image model.
     ///
-    /// Imagen answers `:predict` and returns `predictions[].bytesBase64Encoded`; the Gemini
-    /// models that draw answer `:generateContent` and return the picture as an `inlineData` part
-    /// beside whatever text they felt like writing. Which one to call is decided by the model
+    /// Imagen answers `:predict` and returns `predictions[].bytesBase64Encoded`; Gemini
+    /// uses the same Interactions request and image response as Desktop. Which one to call is decided by the model
     /// id, the same way `ModelCatalogue.imageModels` decides which list a model came from.
     /// Reference generation never silently changes to a text-only provider.
-    public func generate(prompt: String, reference: GeneratedImage, with model: ModelRef) async throws -> GeneratedImage {
+    public func generate(prompt: String, reference: GeneratedImage, with model: ModelRef, aspectRatio: String = "16:9") async throws -> GeneratedImage {
+        try validateAspectRatio(aspectRatio)
         guard model.provider == .gemini, !model.model.lowercased().contains("imagen"), !reference.data.isEmpty, reference.data.count <= 40 * 1024 * 1024 else {
             throw ProviderError.malformedResponse("Selecciona un modelo Gemini de imagen que admita referencias para ampliar o cambiar el estilo de este mapa.")
         }
         guard let key = keyProvider(.gemini) else { throw ProviderError.missingKey(.gemini) }
-        return try await gemini(prompt: prompt, model: model.model, key: key, reference: reference)
+        return try await gemini(prompt: prompt, model: model.model, key: key, reference: reference, aspectRatio: aspectRatio)
     }
 
-    private func gemini(prompt: String, model: String, key: String, reference: GeneratedImage? = nil) async throws -> GeneratedImage {
+    private func validateAspectRatio(_ value: String) throws {
+        guard ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"].contains(value) else {
+            throw ProviderError.malformedResponse("La proporción de imagen seleccionada no es compatible.")
+        }
+    }
+
+    private func gemini(prompt: String, model: String, key: String, reference: GeneratedImage? = nil, aspectRatio: String) async throws -> GeneratedImage {
         let isImagen = model.lowercased().contains("imagen")
-        let base = "https://generativelanguage.googleapis.com/v1beta/models/\(model)"
+        let endpoint = isImagen
+            ? "https://generativelanguage.googleapis.com/v1beta/models/\(model):predict"
+            : "https://generativelanguage.googleapis.com/v1beta/interactions"
         var request = URLRequest(
-            url: URL(string: "\(base):\(isImagen ? "predict" : "generateContent")")!,
+            url: URL(string: endpoint)!,
             timeoutInterval: Self.timeout
         )
         request.httpMethod = "POST"
@@ -147,14 +158,17 @@ public actor ImageService {
         let body: JSONBody = isImagen
             ? .object([
                 "instances": .array([.object(["prompt": .string(prompt)])]),
-                "parameters": .object(["sampleCount": .int(1), "aspectRatio": .string("16:9")]),
+                "parameters": .object(["sampleCount": .int(1), "aspectRatio": .string(aspectRatio)]),
             ])
             : .object([
-                "contents": .array([.object([
-                    "role": .string("user"),
-                    "parts": .array([.object(["text": .string(prompt)])] + (reference.map { image in [.object(["inlineData": .object(["mimeType": .string(image.mimeType), "data": .string(image.data.base64EncodedString())])])] } ?? [])),
-                ])]),
-                "generationConfig": .object(["responseModalities": .array([.string("IMAGE")])]),
+                "model": .string(model),
+                "store": .bool(false),
+                "input": reference.map { image in .array([
+                    .object(["type": .string("text"), "text": .string(prompt)]),
+                    .object(["type": .string("image"), "mime_type": .string(image.mimeType), "data": .string(image.data.base64EncodedString())]),
+                ]) } ?? .string(prompt),
+                "response_format": .object(["type": .string("image"), "mime_type": .string("image/jpeg"),
+                    "aspect_ratio": .string(aspectRatio), "image_size": .string("1K")]),
             ])
         request.httpBody = try JSONEncoder().encode(body)
 
@@ -171,21 +185,12 @@ public actor ImageService {
             )
         }
 
-        guard
-            let candidates = object["candidates"] as? [[String: Any]],
-            let content = candidates.first?["content"] as? [String: Any],
-            let parts = content["parts"] as? [[String: Any]]
-        else { throw ProviderError.malformedResponse("Google returned no image data") }
-
-        for part in parts {
-            guard
-                let inline = part["inlineData"] as? [String: Any] ?? part["inline_data"] as? [String: Any],
-                let encoded = inline["data"] as? String,
-                let data = Data(base64Encoded: encoded, options: [.ignoreUnknownCharacters])
-            else { continue }
-            return GeneratedImage(data: data, mimeType: inline["mimeType"] as? String ?? "image/png")
+        guard let output = object["output_image"] as? [String: Any],
+              let encoded = output["data"] as? String,
+              let data = Data(base64Encoded: encoded), !data.isEmpty else {
+            throw ProviderError.malformedResponse("Google returned no image data")
         }
-        throw ProviderError.malformedResponse("Google returned no image data")
+        return GeneratedImage(data: data, mimeType: output["mime_type"] as? String ?? "image/jpeg")
     }
 
     // MARK: - Transport

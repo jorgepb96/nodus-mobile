@@ -6,13 +6,16 @@ import Testing
 @Suite("Device map reference image requests", .serialized) struct ImageReferenceTests {
     @Test("Gemini receives exact downloaded bytes and direction without a Mac provider") func reference() async throws {
         ImageReferenceProtocol.receive = { request in
-            #expect(request.url?.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-image:generateContent")
+            #expect(request.url?.absoluteString == "https://generativelanguage.googleapis.com/v1beta/interactions")
             #expect(request.value(forHTTPHeaderField: "x-goog-api-key") == "device-key")
             let body = try JSONDecoder.nodus.decode(JSONValue.self, from: try bodyData(request))
-            let parts = try #require(body.objectValue?["contents"]?.arrayValue?.first?.objectValue?["parts"]?.arrayValue)
+            #expect(body.objectValue?["model"] == .string("gemini-flash-image"))
+            #expect(body.objectValue?["store"] == .bool(false))
+            #expect(body.objectValue?["response_format"]?.objectValue?["aspect_ratio"] == .string("16:9"))
+            let parts = try #require(body.objectValue?["input"]?.arrayValue)
             #expect(parts.first?.objectValue?["text"] == .string("Continue west"))
-            #expect(parts.last?.objectValue?["inlineData"]?.objectValue?["data"] == .string(Data("selected-reference".utf8).base64EncodedString()))
-            #expect(parts.last?.objectValue?["inlineData"]?.objectValue?["mimeType"] == .string("image/png"))
+            #expect(parts.last?.objectValue?["data"] == .string(Data("selected-reference".utf8).base64EncodedString()))
+            #expect(parts.last?.objectValue?["mime_type"] == .string("image/png"))
         }
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ImageReferenceProtocol.self]
         let image = try await ImageService(session: URLSession(configuration: config), keyProvider: { _ in "device-key" }).generate(prompt: "Continue west", reference: .init(data: Data("selected-reference".utf8), mimeType: "image/png"), with: .init(provider: .gemini, model: "gemini-flash-image"))
@@ -35,7 +38,7 @@ private final class ImageReferenceProtocol: URLProtocol, @unchecked Sendable {
             try Self.receive?(request)
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type":"application/json"])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            let body: JSONValue = .object(["candidates":.array([.object(["content":.object(["parts":.array([.object(["inlineData":.object(["mimeType":.string("image/png"),"data":.string(Data("generated".utf8).base64EncodedString())])])])])])])])
+            let body: JSONValue = .object(["output_image": .object(["mime_type": .string("image/png"), "data": .string(Data("generated".utf8).base64EncodedString())])])
             client?.urlProtocol(self, didLoad: try JSONEncoder.nodus.encode(body)); client?.urlProtocolDidFinishLoading(self)
         } catch { client?.urlProtocol(self, didFailWithError: error) }
     }
