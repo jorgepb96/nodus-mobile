@@ -129,6 +129,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.drakonis96.nodus.ios.diagnostics
         GENERATE_INFOPLIST_FILE: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 
   NodusUITests:
     type: bundle.ui-testing
