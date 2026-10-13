@@ -24,6 +24,53 @@ struct PrivateBridgeAuthoringRecoveryTests {
         func cache(_ id: String) throws -> PrivateBridgeCache { try PrivateBridgeCache(pairingId: id, directory: root, keychain: keychain) }
         func clean() { defaults.removePersistentDomain(forName: "authoring-recovery-\(id)"); try? FileManager.default.removeItem(at: root) }
     }
+    @Test("exact legacy surface preferences no longer block unlink; unknown editorial versions stay export-only")
+    func legacySurfaceStorage() async throws {
+        for authored in [false, true] {
+            let f = try Fixture(); defer { f.clean() }
+            let old = try f.pairing("old", vaults: ["vault", "empty"]), cache = try f.cache("old")
+            try f.store.save(old, token: "original-token")
+            let editorial = "{\"title\":\"Untouched authored title\",\"contentMarkdown\":\"Full authored manuscript\",\"nativeDocument\":{\"blocks\":[{\"type\":\"paragraph\"}]},\"revision\":7,\"academicMetadata\":{\"kind\":\"article\"},\"style\":{\"fontSize\":14},\"savedAt\":\"2026-10-12T00:00:00Z\"}"
+            var entries: [String: JSONValue] = ["nodus.argumentMap.autoFocus": .string("false"), "nodus.graph.detailFontSize": .string("14"), "nodus.graph.detailWidth": .string("360")]
+            if authored {
+                entries["nodus.editorialDraft.article.doc-original"] = .string(editorial)
+                entries["unknown.future.authored"] = .string("Original opaque authored version")
+                entries["nodus.graph.detailWidth"] = .string("Unrecognized custom value")
+            }
+            let bytes = try JSONEncoder.nodus.encode(JSONValue.object(entries))
+            try await cache.store(bytes, vaultId: "vault", domain: .writing, recordId: "surface-storage:v1")
+            try await cache.store(JSONEncoder.nodus.encode(JSONValue.object([:])), vaultId: "empty", domain: .writing, recordId: "surface-storage:v1")
+            try await cache.freezeForRevocation(true)
+            let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: old.vaultIds)
+            #expect(snapshot.fingerprints.count == 2)
+            #expect(snapshot.records.count == (authored ? 1 : 0))
+            let receipt = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "actual-Mac")
+            try await cache.freezeForRevocation(false)
+            #expect(try await cache.data(vaultId: "vault", domain: .writing, recordId: "surface-storage:v1") == bytes)
+            try await cache.freezeForRevocation(true)
+            try f.store.revokeLocally(old, authoringRecovery: receipt, cacheDirectory: f.root)
+            try await f.recovery.completeRevocation(receipt)
+            let fresh = try f.pairing("new", vaults: old.vaultIds), destination = try f.cache("new")
+            #expect(try await f.recovery.adopt(pairing: fresh, macDeviceId: "actual-Mac", cache: destination) == 0)
+            #expect(try await destination.data(vaultId: "vault", domain: .writing, recordId: "surface-storage:v1") == nil)
+            #expect(try await f.recovery.allSummaries().count == (authored ? 1 : 0))
+            let archiveId = try #require(UUID(uuidString: receipt.archiveURL.deletingPathExtension().lastPathComponent))
+            let export = try JSONDecoder.nodus.decode(JSONValue.self, from: await f.recovery.export(id: archiveId))
+            let rows = try #require(export.objectValue?["records"]?.arrayValue)
+            if authored {
+                let retained = try #require(rows.first?.objectValue?["data"]?.stringValue.flatMap { Data(base64Encoded: $0) })
+                let object = try #require(JSONDecoder.nodus.decode(JSONValue.self, from: retained).objectValue)
+                #expect(object["nodus.editorialDraft.article.doc-original"] == .string(editorial))
+                #expect(object["unknown.future.authored"] == .string("Original opaque authored version"))
+                #expect(object["nodus.graph.detailWidth"] == .string("Unrecognized custom value"))
+                #expect(object["nodus.argumentMap.autoFocus"] == nil)
+                #expect(try Data(contentsOf: receipt.archiveURL).range(of: Data("Full authored manuscript".utf8)) == nil)
+            } else { #expect(rows.isEmpty) }
+            try? f.keychain.remove(receipt.recoveryKeyName)
+            try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: "new"))
+        }
+    }
+
     @Test("unlink needs a verified encrypted backup; relink suspends complete authoring and excludes consultation")
     func encryptedRoundTrip() async throws {
         let f = try Fixture(); defer { f.clean() }

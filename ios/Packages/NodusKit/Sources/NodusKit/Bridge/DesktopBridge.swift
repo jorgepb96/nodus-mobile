@@ -1463,6 +1463,28 @@ public actor PrivateBridgeCache {
                         }
                     }
                 }
+                // The native WK localStorage shim predates typed outboxes. Classify only
+                // its exact vault/domain/key; unknown keys may contain complete editorial
+                // drafts and remain exportable, without being seeded into a new grant.
+                if scope == nil, let vault = vaultIds.first(where: {
+                    legacyURL(vaultId: $0, domain: .writing, recordId: "surface-storage:v1").lastPathComponent == base
+                }) {
+                    guard let entries = value.objectValue else { throw PrivateBridgeAuthoringRecovery.RecoveryError.unclassifiedWork }
+                    let retained = entries.filter { key, value in
+                        guard let text = value.stringValue else { return true }
+                        if key == "nodus.argumentMap.autoFocus" { return text != "true" && text != "false" }
+                        if key == "nodus.graph.detailFontSize" || key == "nodus.graph.detailWidth" {
+                            return Double(text).map { !$0.isFinite } ?? true
+                        }
+                        return true
+                    }
+                    if !retained.isEmpty {
+                        records.append(.init(filename: "work-" + base, vaultId: vault,
+                            data: try JSONEncoder.nodus.encode(JSONValue.object(retained)), ledger: false, writing: true,
+                            recordId: "surface-storage:v1", generationKind: "legacySurfaceStorage"))
+                    }
+                    continue
+                }
                 // Standalone source preparation is a consulted copy, not authored work.
                 if scope == nil, let object = value.objectValue, object["source"] != nil, object["id"] == nil, object["request"] == nil { continue }
                 // Completed autonomous provider calls are stored as literal strings; preserve
@@ -1483,6 +1505,7 @@ public actor PrivateBridgeCache {
         }
     }
     public func adoptAuthoringRecovery(_ records: [PrivateBridgeAuthoringRecovery.Record], requiresReview: Bool) throws {
+        let records = records.filter { $0.generationKind != "legacySurfaceStorage" }
         try Self.diskLock.withLock {
             var payloads: [String: Data] = [:]
             var mergedRecoveryIndices = Set<String>()
