@@ -18,7 +18,7 @@ This checkpoint records implemented work and remaining integration. It is not re
 - Actual canonical Desktop mutation fixture passed: `/private/tmp/nodus-db-properties-tests.log`. Includes 29 types, typed options, original-value CAS, stable duplicate receipts, granted versus ungranted cross-vault targets, relation-set CAS and protected attachment deletion.
 - Production upload module fixture passed: `/private/tmp/nodus-db-file-tests.log`. Actual canonical 13 MiB + 17 byte readback, chunk resume, stable lost-ACK identity, grant namespace, SHA, source revision conflict; no provider or extraction.
 - Native source parse passed. Current native build, interaction, rotation and UI E2E remain unverified for these changes. Physical tests remain with the user after TestFlight.
-- The separate real HTTPS upload fixture is recorded by its test source and final runner output; do not treat an uncompleted run as passing.
+- Real HTTPS upload fixture passed, exit 0: `/private/tmp/nodus-db-file-http.log`; Desktop fixture commit `95f86983`. It checks actual 13 MiB + 17 byte canonical readback, hash rejection, staged transfer restart/resume, duplicate ACKs, and corpus-only/invalid/revoked grant denial. First attempts exposed fixture setup/status assumptions; the corrected fixture uses the actual 200 revoke response. No provider or extraction ran.
 
 ## Not yet operational
 
