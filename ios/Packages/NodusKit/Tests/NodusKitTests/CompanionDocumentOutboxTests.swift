@@ -106,21 +106,68 @@ struct CompanionDocumentOutboxTests {
         try await queue.rememberTree(live, authoritative: true)
         #expect(await queue.overlayTree(live, includeConfirmedEdits: true).objectValue?["folders"]?.arrayValue?.first?.objectValue?["name"] == .string("Later Mac name"))
     }
-    @Test("offline organization consultation keeps one real complete metadata snapshot and excludes bodies")
+    @Test("large consulted tree stays transient while a folder command retains only its subtree")
     func organizationDownloadedSnapshot() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
         let queue = try await fixture.open()
-        let tree: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([.object(["id": .string("downloaded-folder"), "parentId": .null, "name": .string("Downloaded")])]), "notes": .array([.object(["id": .string("downloaded-note"), "title": .string("Source"), "folderId": .string("downloaded-folder"), "tags": .array([]), "trashedAt": .null, "content": .string("PRIVATE BODY MUST NOT ENTER METADATA SNAPSHOT"), "nativeDocument": .array([.string("PRIVATE NATIVE")])])])])
+        let notes: [JSONValue] = (0..<10_000).map { index in .object(["id": .string("read-\(index)"), "title": .string("Read title \(index)"), "folderId": index == 0 ? .string("selected") : .null, "tags": .array([]), "trashedAt": .null, "content": .string("PRIVATE BODY")]) }
+        let tree: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([.object(["id": .string("selected"), "parentId": .null, "name": .string("Selected")])]), "notes": .array(notes)])
         try await queue.rememberTree(tree, authoritative: false)
+        #expect(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey) == nil)
+        let fresh = try await fixture.open()
+        #expect(await fresh.workspaceOrganizationTree() == nil)
+        _ = try await queue.enqueueWorkspaceOrganization(type: "folderTrash", id: "selected", arguments: .object([:]), tree: tree)
         let reopened = try await fixture.open()
-        #expect(await reopened.workspaceOrganizationTree(includeConsulted: false) == nil)
-        let snapshot = try #require(await reopened.workspaceOrganizationTree())
-        #expect(snapshot.objectValue?["mobileOrganizationComplete"] == .bool(true))
-        #expect(snapshot.objectValue?["notes"]?.arrayValue?.first?.objectValue?["content"] == nil)
+        let issue = try #require(await reopened.workspaceOrganizationIssues().arrayValue?.first)
+        let subtree = try #require(issue.objectValue?["operation"]?.objectValue?["expectedSubtree"])
+        #expect(subtree.objectValue?["notes"]?.arrayValue?.count == 1)
+        #expect(subtree.objectValue?["notes"]?.arrayValue?.first?.objectValue?["id"] == .string("read-0"))
         let bytes = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        #expect(!String(decoding: bytes, as: UTF8.self).contains("Read title 9999"))
         #expect(!String(decoding: bytes, as: UTF8.self).contains("PRIVATE BODY"))
-        _ = try await reopened.enqueueWorkspaceOrganization(type: "folderTrash", id: "downloaded-folder", arguments: .object([:]), tree: snapshot)
-        #expect(await reopened.pendingCount() == 1)
+    }
+    @Test("legacy consulted-only forest is removed from durable cache on migration")
+    func organizationReadOnlyMigration() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let legacy: JSONValue = .object(["version": .int(2), "vaultId": .string("vault-a"), "records": .object([:]), "authored": .object([:]), "workspaceOrganizationSnapshot": .object(["mobileOrganizationComplete": .bool(true), "folders": .array([]), "notes": .array([.object(["id": .string("consulted"), "title": .string("Read only")])])])])
+        let bytes = try JSONEncoder.nodus.encode(legacy)
+        try await fixture.cache.store(bytes, vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey)
+        let queue = try await fixture.open()
+        try await queue.migrateConsultedOrganizationSnapshot()
+        #expect(await queue.workspaceOrganizationTree() == nil)
+        #expect(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey) == nil)
+    }
+    @Test("consulted forest migration does not erase durable move identity or CAS on conflict")
+    func organizationReadMigrationMoveConflict() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open()
+        let tree: JSONValue = .object(["mobileOrganizationComplete": .bool(true), "folders": .array([.object(["id": .string("from"), "parentId": .null, "name": .string("From")]), .object(["id": .string("to"), "parentId": .null, "name": .string("To")])]), "notes": .array([.object(["id": .string("note"), "folderId": .string("from"), "tags": .array([]), "trashedAt": .null])])])
+        try await queue.rememberTree(tree)
+        _ = try await queue.enqueueWorkspaceOrganization(type: "move", id: "note", arguments: .object(["folderId": .string("to")]), tree: tree)
+        let before = try #require(await queue.workspaceOrganizationIssues().arrayValue?.first)
+        let bytes = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        var legacy = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes).objectValue!
+        legacy["workspaceOrganizationSnapshot"] = tree
+        let restored = try CompanionDocumentOutbox(cache: fixture.cache, vaultId: "vault-a", data: JSONEncoder.nodus.encode(JSONValue.object(legacy)))
+        try await restored.migrateConsultedOrganizationSnapshot()
+        let restoredTree = try #require(await restored.workspaceOrganizationTree())
+        #expect(restoredTree.objectValue?["mobileOrganizationComplete"] == .bool(false))
+        #expect(restoredTree.objectValue?["notes"]?.arrayValue?.isEmpty == true)
+        do {
+            try await restored.synchronize { request in
+                #expect(request.id == before.objectValue?["id"]?.stringValue)
+                #expect(request.command?.objectValue?["operation"]?.objectValue?["expectedFolderId"] == .string("from"))
+                throw APIError(status: 409, code: "organization_conflict", message: "Placement changed")
+            }
+            Issue.record("Expected actual conflict")
+        } catch {}
+        let reopened = try await fixture.open()
+        let after = try #require(await reopened.workspaceOrganizationIssues().arrayValue?.first)
+        #expect(after.objectValue?["id"] == before.objectValue?["id"])
+        #expect(after.objectValue?["operation"] == before.objectValue?["operation"])
+        #expect(after.objectValue?["state"] == .string("conflict"))
+        let persisted = try #require(try await fixture.cache.data(vaultId: "vault-a", domain: .writing, recordId: CompanionDocumentOutbox.storageKey))
+        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: persisted).objectValue?["workspaceOrganizationSnapshot"] == nil)
     }
     @Test("closing rejects every new manual mutation before queue or metadata state changes")
     func closingRejectsManualState() async throws {

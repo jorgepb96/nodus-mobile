@@ -97,7 +97,6 @@ public actor CompanionDocumentOutbox {
         var annotationCommands: [String: AnnotationCommand]? = nil
         var annotationSources: [String: JSONValue]? = nil
         var workspaceOrganizationCommands: [String: WorkspaceOrganizationCommand]? = nil
-        var workspaceOrganizationSnapshot: JSONValue? = nil
     }
     private let cache: PrivateBridgeCache
     private let vaultId: String
@@ -107,6 +106,7 @@ public actor CompanionDocumentOutbox {
     private var records: [String: Record]
     private var authored: [String: Authored] = [:]
     private var workspaceOrganizationSnapshot: JSONValue?
+    private var legacyConsultedSnapshot = false
     private var workspaceOrganizationCommands: [String: WorkspaceOrganizationCommand] = [:]
     private var knownFolders: [String: JSONValue] = [:]
     private var knownNotes: [String: JSONValue] = [:]
@@ -139,7 +139,9 @@ public actor CompanionDocumentOutbox {
                 if let sending = command.sending { guard sending.id == key, sending.noteId == command.documentId, sending.command == command.command else { throw DesktopBridgeError.malformedResponse } }
             }
             workspaceOrganizationCommands = state.workspaceOrganizationCommands ?? [:]
-            workspaceOrganizationSnapshot = state.workspaceOrganizationSnapshot
+            legacyConsultedSnapshot = (try? JSONDecoder.nodus.decode(JSONValue.self, from: data).objectValue?["workspaceOrganizationSnapshot"]) != nil
+            // Legacy consulted snapshots are intentionally ignored on decode.
+            // Durable organization commands retain their own exact CAS preconditions.
             for (key, command) in workspaceOrganizationCommands {
                 guard kind == .workspaceNote, key == command.id, UUID(uuidString: key) != nil, ["move", "tags", "restore", "folderCreate", "folderRename", "folderTrash"].contains(command.operation.objectValue?["type"]?.stringValue ?? ""), command.operation.objectValue?["id"]?.stringValue != nil else { throw DesktopBridgeError.malformedResponse }
                 if let sending = command.sending { guard sending.id == key, sending.command == .object(["action": .string("workspaceOrganization"), "operation": command.operation]), sending.input == .object([:]) else { throw DesktopBridgeError.malformedResponse } }
@@ -225,14 +227,14 @@ public actor CompanionDocumentOutbox {
         var changed = false
         if tree.objectValue?["mobileOrganizationComplete"] == .bool(true) {
             let snapshot = Self.organizationMetadata(tree)
-            if authoritative || workspaceOrganizationSnapshot == nil { workspaceOrganizationSnapshot = snapshot; changed = true }
+            if authoritative || workspaceOrganizationSnapshot == nil { workspaceOrganizationSnapshot = snapshot }
         }
         if authoritative, tree.objectValue?["mobileOrganizationComplete"] == .bool(true) {
             for key in workspaceOrganizationCommands.keys where workspaceOrganizationCommands[key]?.confirmedTree != nil { workspaceOrganizationCommands[key] = nil; changed = true }
         }
         for folder in folders {
             let id = folder.objectValue!["id"]!.stringValue!
-            if (authoritative || knownFolders[id] == nil), knownFolders[id] != folder { knownFolders[id] = folder; changed = true }
+            if (authoritative || knownFolders[id] == nil), knownFolders[id] != folder { knownFolders[id] = folder }
         }
         for note in notes {
             let id = note.objectValue!["id"]!.stringValue!
@@ -1317,6 +1319,14 @@ public actor CompanionDocumentOutbox {
         await waitForOperations()
     }
 
+    /// Remove the legacy read-only forest without discarding any authored state or CAS.
+    func migrateConsultedOrganizationSnapshot() async throws {
+        guard legacyConsultedSnapshot else { return }
+        if records.isEmpty && authored.isEmpty && studyCommands.isEmpty && annotationCommands.isEmpty && workspaceOrganizationCommands.isEmpty {
+            try await cache.remove(vaultId: vaultId, domain: .writing, recordId: kind.storageKey)
+        } else { try await persist() }
+        legacyConsultedSnapshot = false
+    }
     private func persist() async throws {
         var storedCommands = annotationCommands, sources: [String: JSONValue] = [:]
         for key in storedCommands.keys {
@@ -1326,7 +1336,7 @@ public actor CompanionDocumentOutbox {
             else { sourceKey = SHA256.hash(data: try JSONEncoder.nodus.encode(editor)).map { String(format: "%02x", $0) }.joined() }
             sources[sourceKey] = editor; item.sourceKey = sourceKey; item.sourceEditor = nil; storedCommands[key] = item
         }
-        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind, studyCommands: studyCommands, annotationCommands: storedCommands, annotationSources: sources, workspaceOrganizationCommands: workspaceOrganizationCommands, workspaceOrganizationSnapshot: workspaceOrganizationSnapshot))
+        let bytes = try JSONEncoder.nodus.encode(StoredState(version: 2, vaultId: vaultId, records: records, authored: authored, folders: authoredFolders(), kind: kind, studyCommands: studyCommands, annotationCommands: storedCommands, annotationSources: sources, workspaceOrganizationCommands: workspaceOrganizationCommands))
         let previous = diskTask, id = UUID(), cache = self.cache, vault = vaultId, storage = kind.storageKey
         let task = Task {
             if let previous { _ = try? await previous.value }
@@ -1364,8 +1374,10 @@ public actor CompanionDocumentOutboxes {
         let directory = self.directory, keychain = self.keychain
         let task = Task {
             let cache = try PrivateBridgeCache(pairingId: pairingId, directory: directory, keychain: keychain)
-            return try await CompanionDocumentOutbox(cache: cache, vaultId: vaultId,
+            let queue = try await CompanionDocumentOutbox(cache: cache, vaultId: vaultId,
                 data: cache.data(vaultId: vaultId, domain: .writing, recordId: kind.storageKey), kind: kind)
+            try await queue.migrateConsultedOrganizationSnapshot()
+            return queue
         }
         stores[key] = Store(vaultId: vaultId, task: task)
         do { return try await task.value } catch { stores[key] = nil; throw error }
