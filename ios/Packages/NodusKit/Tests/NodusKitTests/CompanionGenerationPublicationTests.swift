@@ -22,6 +22,38 @@ struct CompanionGenerationPublicationTests {
         return .object(value)
     }
 
+    @Test("Deep Research preserves complete captured report and prior answers across purge and reopen")
+    func deepResearchArchive() async throws {
+        let pairing = UUID().uuidString, directory = URL.temporaryDirectory.appendingPathComponent("nodus-deep-publication-\(pairing)")
+        let keychain = KeychainStore(service: "nodus.tests.deep-publication.\(pairing)")
+        defer { try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: pairing)); try? FileManager.default.removeItem(at: directory) }
+        let cache = try PrivateBridgeCache(pairingId: pairing, directory: directory, keychain: keychain)
+        let ledger = try DesktopJobLedger(cache: cache, vaultId: "vault-a", data: nil)
+        let identity = UUID().uuidString
+        let captured: JSONValue = .object(["id": .string(identity), "entityKey": .string("entity-a"), "state": .string("saved"),
+            "request": .object(["objective": .string("Evidence report"), "model": .object(["provider": .string("openai"), "model": .string("phone-selected")])]),
+            "context": .object(["vaultId": .string("vault-a"), "revision": .string(revision)]),
+            "calls": .object(["host:answer": .object(["input": .string("exact prompt"), "output": .string("paid actual captured response")])]),
+            "report": .object(["draft": .object(["brief": .object(["kind": .string("deep_research"), "objective": .string("Evidence report")]), "title": .string("Actual title"), "draftMarkdown": .string("Complete report [citation](nodus://work/actual)")]), "meta": .object([:])])])
+        let publication = try #require(try CompanionGenerationPublication(kind: "deepResearch", entity: "entity-a", checkpoint: captured))
+        #expect(publication.method == "saveMobileDeepResearchReport")
+        #expect(DesktopBridgeClient.providerFreeJobMethods.contains(publication.method))
+        #expect(publication.args.first?.objectValue?["report"] == captured.objectValue?["report"])
+        try await ledger.archiveDeepResearchCheckpoint(recordId: publication.recordId, checkpoint: captured)
+        try await cache.removeReusableCopies()
+        let bytes = try await cache.data(vaultId: "vault-a", domain: .researchGeneration, recordId: "job-ledger-v1")
+        let reopened = try DesktopJobLedger(cache: cache, vaultId: "vault-a", data: bytes)
+        let saved = try #require(await reopened.all().first)
+        #expect(saved.method == "localDeepResearchGeneration"); #expect(saved.args.isEmpty)
+        #expect(saved.checkpoint == captured)
+        #expect(CompanionResultCatalogue.contains(saved, in: "deepResearch"))
+        #expect(CompanionResultCatalogue.title(saved) == "Actual title")
+        var foreign = try #require(captured.objectValue)
+        foreign["id"] = .string(UUID().uuidString); foreign["context"] = .object(["vaultId": .string("foreign"), "revision": .string(revision)])
+        try await reopened.archiveDeepResearchCheckpoint(recordId: publication.recordId, checkpoint: .object(foreign))
+        #expect(await reopened.all().count == 1)
+    }
+
     @Test("every portable lane binds the exact phone result and revision to its original identity")
     func typedSaves() throws {
         for (kind, method, field) in [("dictionary", "saveDictionaryGeneratedVersion", "definition"),

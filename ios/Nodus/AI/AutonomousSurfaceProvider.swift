@@ -11,6 +11,8 @@ final class AutonomousSurfaceProvider {
     private let catalogue: ModelCatalogue
     private var completions: [UUID: (generation: String, task: Task<JSONValue, Error>)] = [:]
     private var cancelled: Set<String> = []
+    private var acceptedDeepResearchCompletions: Set<UUID> = []
+    private var authoringActivities: [String: PrivateBridgeCache] = [:]
     static let modelTasks: [String: AISettings.Task] = [
         "chatModel": .chat, "deepResearchModel": .deepResearch, "dictionaryModel": .dictionary,
         "immersionModel": .immersion, "writingModel": .writing, "synthesisModel": .synthesis,
@@ -48,6 +50,53 @@ final class AutonomousSurfaceProvider {
             if let model, !settings.hasKey(for: model.provider) { throw ProviderError.missingKey(model.provider) }
             settings.setModel(model, for: task)
         }
+    }
+    func beginAuthoring(_ generation: String, session: SpaceSession) throws {
+        guard UUID(uuidString: generation) != nil, session.aiExecutionMode == .autonomous,
+              authoringActivities[generation] == nil else { throw DesktopBridgeError.permissionDenied }
+        if session.connection.desktopPairingId != nil { _ = try privateBridgeConnection(session, domain: .writing) }
+        let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
+        try cache.beginAuthoringActivity()
+        authoringActivities[generation] = cache
+    }
+    func endAuthoring(_ generation: String) {
+        authoringActivities.removeValue(forKey: generation)?.endAuthoringActivity()
+    }
+    func finishAbandonedAuthoringActivities() {
+        for cache in authoringActivities.values { cache.endAuthoringActivity() }
+        authoringActivities.removeAll()
+    }
+    func deepResearchCheckpoints(session: SpaceSession, summaries: Bool = false, includeArchived: Bool = false) async throws -> JSONValue {
+        let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
+        let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: "autonomous:deepResearch:index:v1")
+        let entities = try bytes.map { try JSONDecoder.nodus.decode([String].self, from: $0) } ?? []
+        let ledger = session.connection.desktopPairingId != nil ? try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: scope.recordVaultId) : nil
+        var values: [JSONValue] = []
+        for entity in entities {
+            let key = try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)
+            if let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: key) {
+                let stored = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+                let reconciled = await ledger?.generationCheckpoint(recordId: key, generationId: stored.objectValue?["id"]?.stringValue)
+                values.append(reconciled ?? stored)
+            }
+        }
+        if includeArchived, let ledger {
+            for request in await ledger.all() where ["localDeepResearchGeneration", "saveMobileDeepResearchReport"].contains(request.method) {
+                guard let value = request.checkpoint, !values.contains(where: { $0.objectValue?["id"] == .string(request.id) }) else { continue }
+                values.append(value)
+            }
+        }
+        if summaries {
+            values = values.map { value in
+                guard var fields = value.objectValue else { return value }
+                fields["calls"] = .object([:]); fields["history"] = nil; fields["inflight"] = nil; fields["uncertainAttempts"] = nil
+                if let draft = fields["report"]?.objectValue?["draft"]?.objectValue {
+                    fields["report"] = .object(["draft": .object(["title": draft["title"] ?? .null, "generatedAt": draft["generatedAt"] ?? .null])])
+                }
+                return .object(fields)
+            }
+        }
+        return .array(values)
     }
     func models(_ providerName: String, includeStatus: Bool) async throws -> JSONValue {
         guard let kind = AIProvider(rawValue: providerName), settings.hasKey(for: kind) else { throw DesktopBridgeError.permissionDenied }
@@ -160,7 +209,7 @@ final class AutonomousSurfaceProvider {
     }
     func generationCheckpoint(_ args: [JSONValue], session: SpaceSession) async throws -> JSONValue {
         guard args.count >= 3, let action = args[0].stringValue,
-            let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument", "database", "academic"].contains(kind),
+            let kind = args[1].stringValue, ["immersion", "translation", "writing", "argument", "database", "academic", "deepResearch"].contains(kind),
             let entity = args[2].stringValue, entity.utf8.count <= 256, !entity.isEmpty else { throw DesktopBridgeError.permissionDenied }
         let scope = try session.surfaceStorageScope()
         let vault = scope.recordVaultId
@@ -179,17 +228,19 @@ final class AutonomousSurfaceProvider {
                   previous["id"] == .string(id), previous["request"] == object["request"] else { throw DesktopBridgeError.permissionDenied }
         }
         let bytes = try JSONEncoder.nodus.encode(args[3])
-        guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
-        if kind == "academic", session.connection.desktopPairingId != nil,
+        guard bytes.count <= (kind == "deepResearch" ? 50 * 1024 * 1024 : 20_000_000) else { throw DesktopBridgeError.malformedResponse }
+        if ["academic", "deepResearch"].contains(kind), session.connection.desktopPairingId != nil,
            let old = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: key) {
             let previous = try JSONDecoder.nodus.decode(JSONValue.self, from: old)
             if previous.objectValue?["id"] != .string(id) {
                 let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: vault)
-                try await ledger.archiveAcademicCheckpoint(recordId: key, checkpoint: previous)
+                if kind == "deepResearch" { try await ledger.archiveDeepResearchCheckpoint(recordId: key, checkpoint: previous) }
+                else { try await ledger.archiveAcademicCheckpoint(recordId: key, checkpoint: previous) }
             }
         }
         try await queuePublication(kind: kind, entity: entity, checkpoint: args[3], scope: scope, session: session)
         if kind == "academic" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:academic:index:v1",entity:entity) }
+        else if kind == "deepResearch" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:deepResearch:index:v1",entity:entity) }
         else if kind == "database" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:database:index:v1",entity:entity) }
         else { try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key) }
         return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
@@ -269,17 +320,32 @@ final class AutonomousSurfaceProvider {
         guard let generation = input.objectValue?["generationId"]?.stringValue, UUID(uuidString: generation) != nil,
             !cancelled.contains(generation) else { throw CancellationError() }
         let key = UUID()
-        let task = Task { try await self.performCompletion(input, session: session) }
+        let task = Task { try await self.performCompletion(input, session: session, completionId: key) }
         completions[key] = (generation, task)
         defer { completions[key] = nil }
-        return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
+        return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: {
+            Task { @MainActor in
+                self.cancelled.insert(generation)
+                if !self.acceptedDeepResearchCompletions.contains(key) { task.cancel() }
+            }
+        })
+    }
+    func savedCompletion(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
+        guard let generation = input.objectValue?["generationId"]?.stringValue, UUID(uuidString: generation) != nil,
+              try JSONEncoder.nodus.encode(input).count <= 1_200_000 else { throw DesktopBridgeError.malformedResponse }
+        let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
+        let hash = SHA256.hash(data: try JSONEncoder.nodus.encode(input)).map { String(format: "%02x", $0) }.joined()
+        guard let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: "autonomous:\(generation):completion:\(hash)") else { return .null }
+        return try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
     }
     func cancel(_ generation: String) throws {
         guard UUID(uuidString: generation) != nil else { throw DesktopBridgeError.malformedResponse }
         cancelled.insert(generation)
-        for completion in completions.values where completion.generation == generation { completion.task.cancel() }
+        for (id, completion) in completions where completion.generation == generation {
+            if !acceptedDeepResearchCompletions.contains(id) { completion.task.cancel() }
+        }
     }
-    private func performCompletion(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
+    private func performCompletion(_ input: JSONValue, session: SpaceSession, completionId: UUID) async throws -> JSONValue {
         guard session.aiExecutionMode == .autonomous, let request = input.objectValue,
             let generation = request["generationId"]?.stringValue, UUID(uuidString: generation) != nil,
             let modelJSON = request["model"], let system = request["system"]?.stringValue,
@@ -292,8 +358,9 @@ final class AutonomousSurfaceProvider {
         let cache = try PrivateBridgeCache(pairingId: scope.cacheId)
         // Hold through the paid-response write, so unlink cannot retire the
         // encryption key between the provider returning and durable recovery.
-        try cache.beginAuthoringActivity()
-        defer { cache.endAuthoringActivity() }
+        let hasOuterActivity = authoringActivities[generation] != nil
+        if !hasOuterActivity { try cache.beginAuthoringActivity() }
+        defer { if !hasOuterActivity { cache.endAuthoringActivity() } }
         let hash = SHA256.hash(data: try JSONEncoder.nodus.encode(input)).map { String(format: "%02x", $0) }.joined()
         let record = "autonomous:\(generation):completion:\(hash)"
         if let saved = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: record) {
@@ -310,11 +377,16 @@ final class AutonomousSurfaceProvider {
         guard (0...131_072).contains(allowance) else { throw DesktopBridgeError.permissionDenied }
         let format = request["format"]?.stringValue ?? "json"
         guard ["json", "text"].contains(format) else { throw DesktopBridgeError.malformedResponse }
-        let result = try await provider.complete(ChatRequest(model: model, messages: [.init(role: .system, content: system), .init(role: .user, content: user)], temperature: temperature, maxTokens: maxTokens + allowance, jsonMode: format == "json", researchParameters: parameters))
         try Task.checkCancellation()
+        guard !cancelled.contains(generation) else { throw CancellationError() }
+        if request["completionKey"]?.stringValue != nil { acceptedDeepResearchCompletions.insert(completionId) }
+        defer { acceptedDeepResearchCompletions.remove(completionId) }
+        let result = try await provider.complete(ChatRequest(model: model, messages: [.init(role: .system, content: system), .init(role: .user, content: user)], temperature: temperature, maxTokens: maxTokens + allowance, jsonMode: format == "json", researchParameters: parameters))
         let value = JSONValue.string(result)
         try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(value), vaultId: vault, recordId: record,
             indexId: "autonomous:completion-index:v1", entity: record)
+        try Task.checkCancellation()
+        guard !cancelled.contains(generation) else { throw CancellationError() }
         return value
     }
 }

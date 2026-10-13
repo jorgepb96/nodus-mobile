@@ -270,13 +270,16 @@ enum CorpusReferenceTone: Equatable {
 /// library reaches; everything else is fetched as a row and rendered by the generic detail view.
 /// A kind this build does not know about says so rather than showing an empty page.
 struct CorpusReferenceView: View {
+    @Environment(\.authoredResearchReaderID) private var authoredReportID
     @Environment(\.downloadedReaderOnly) private var downloadedOnly
     let session: SpaceSession
     let reference: CorpusReference
 
     var body: some View {
         Group {
-            if downloadedOnly, reference.destination != .privateSource, reference.destination != .unsupported {
+            if let authoredReportID {
+                CompanionDeepResearchCitationView(session: session, reportId: authoredReportID, reference: reference)
+            } else if downloadedOnly, reference.destination != .privateSource, reference.destination != .unsupported {
                 if let path = reference.collection?.path ?? ["idea": "ideas", "work": "works", "note": "notes", "passage": "passages", "contradiction": "debates"][reference.kind] {
                     DownloadedReaderReferenceView(session: session, path: path, id: reference.recordId, specialised: reference.specialised)
                 } else { ContentUnavailableView("Source not downloaded", systemImage: "arrow.down.circle") }

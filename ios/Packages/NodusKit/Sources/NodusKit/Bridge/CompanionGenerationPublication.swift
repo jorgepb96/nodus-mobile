@@ -12,7 +12,7 @@ public struct CompanionGenerationPublication: Sendable {
     public let checkpoint: JSONValue
 
     public static func recordId(kind: String, entity: String) throws -> String {
-        guard ["dictionary", "immersion", "translation", "writing", "argument", "workshop", "database", "academic"].contains(kind),
+        guard ["dictionary", "immersion", "translation", "writing", "argument", "workshop", "database", "academic", "deepResearch"].contains(kind),
               !entity.isEmpty, entity.utf8.count <= 256 else { throw DesktopBridgeError.malformedResponse }
         let hash = SHA256.hash(data: Data(entity.utf8)).map { String(format: "%02x", $0) }.joined()
         return "autonomous:\(kind):\(hash)"
@@ -45,6 +45,16 @@ public struct CompanionGenerationPublication: Sendable {
         }
         let operation: String
         switch kind {
+        case "deepResearch":
+            guard let report = value["report"]?.objectValue,
+                  let draft = report["draft"]?.objectValue,
+                  draft["brief"]?.objectValue?["kind"] == .string("deep_research"),
+                  draft["brief"]?.objectValue?["objective"] == request["objective"],
+                  draft["draftMarkdown"]?.stringValue?.isEmpty == false,
+                  report["meta"]?.objectValue != nil,
+                  context["vaultId"]?.stringValue?.isEmpty == false else { throw DesktopBridgeError.malformedResponse }
+            operation = "saveMobileDeepResearchReport"
+            input = ["request": .object(request), "source": .object(context), "report": .object(report), "requestId": .string(identity)]
         case "academic":
             guard let raw = value["raw"]?.stringValue, !raw.isEmpty, let source = context["source"],
                   let sourceRequest = request["source"], let model = request["model"], let generatedAt = value["generatedAt"]?.stringValue,

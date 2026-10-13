@@ -3,7 +3,12 @@ import NodusUI
 import SwiftUI
 
 private struct DownloadedReaderOnlyKey: EnvironmentKey { nonisolated static let defaultValue = false }
+private struct AuthoredResearchReaderIDKey: EnvironmentKey { nonisolated static let defaultValue: String? = nil }
 extension EnvironmentValues {
+    var authoredResearchReaderID: String? {
+        get { self[AuthoredResearchReaderIDKey.self] }
+        set { self[AuthoredResearchReaderIDKey.self] = newValue }
+    }
     var downloadedReaderOnly: Bool {
         get { self[DownloadedReaderOnlyKey.self] }
         set { self[DownloadedReaderOnlyKey.self] = newValue }

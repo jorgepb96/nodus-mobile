@@ -21,6 +21,8 @@ public enum CompanionResultCatalogue {
             return surface == "workspace" && !(checkpoint["preview"]?.objectValue?["text"]?.stringValue ?? "").isEmpty
         case "saveMobileDatabaseResearchReport":
             return surface == "databaseResearch" && !(checkpoint["detail"]?.objectValue?["report"]?.objectValue?["markdown"]?.stringValue ?? "").isEmpty
+        case "localDeepResearchGeneration", "saveMobileDeepResearchReport":
+            return surface == "deepResearch" && checkpoint["report"]?.objectValue?["draft"]?.objectValue != nil
         case "localWorkshopGeneration":
             return surface == "writingWorkshop" && !(checkpoint["raw"]?.stringValue ?? "").isEmpty
         case "saveWritingWorkshopFromMobile":
@@ -53,6 +55,7 @@ public enum CompanionResultCatalogue {
             default: return "Resultado de investigación"
             }
         }
+        if ["localDeepResearchGeneration", "saveMobileDeepResearchReport"].contains(request.method), let title = checkpoint["report"]?.objectValue?["draft"]?.objectValue?["title"]?.stringValue, !title.isEmpty { return title }
         if request.method == "saveMobileDatabaseResearchReport",let title = checkpoint["detail"]?.objectValue?["report"]?.objectValue?["title"]?.stringValue,!title.isEmpty { return title }
         if request.method == "saveWritingWorkshopFromMobile",
            let title = checkpoint["preview"]?.objectValue?["title"]?.stringValue, !title.isEmpty { return title }

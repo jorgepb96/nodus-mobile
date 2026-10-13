@@ -134,6 +134,19 @@ public actor DesktopJobLedger {
             checkpointRecordId: recordId, checkpoint: .object(value))
         try await persist()
     }
+    /// Preserve captured reports, citations and paid answers before another run
+    /// replaces the active entity. This local record cannot start a Mac provider.
+    public func archiveDeepResearchCheckpoint(recordId: String, checkpoint: JSONValue) async throws {
+        guard let value = checkpoint.objectValue, let id = value["id"]?.stringValue,
+              UUID(uuidString: id) != nil, value["context"]?.objectValue?["vaultId"] == .string(vaultId),
+              value["report"]?.objectValue != nil || !(value["calls"]?.objectValue ?? [:]).isEmpty || value["inflight"]?.objectValue != nil,
+              try JSONEncoder.nodus.encode(checkpoint).count <= 50 * 1024 * 1024 else { return }
+        if requests[id] != nil { return }
+        requests[id] = Request(id: id, method: "localDeepResearchGeneration", args: [], createdAt: Date(),
+            jobId: nil, state: "saved", issue: value["error"]?.stringValue,
+            checkpointRecordId: recordId, checkpoint: checkpoint)
+        try await persist()
+    }
     public func generationCheckpoint(recordId: String, generationId: String? = nil) -> JSONValue? {
         guard let request = all().first(where: { $0.checkpointRecordId == recordId && (generationId == nil || $0.id == generationId) }) else { return nil }
         return reconciledCheckpoint(request)

@@ -1257,7 +1257,10 @@ struct PublishedReportReader: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if detail?.fromDevice == true {
+                if currentRow.string("id")?.hasPrefix("mobile-dr-") == true {
+                    Label("Informe escrito en este dispositivo · la publicación en el Mac se revisa en la cola", systemImage: "pencil.and.outline")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else if detail?.fromDevice == true {
                     Label("Sin conexión · informe descargado en este dispositivo", systemImage: "wifi.slash")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -1301,6 +1304,7 @@ struct PublishedReportReader: View {
                             // and `nodus://` citations in it. Rendered as plain text, both
                             // arrived as punctuation.
                             CorpusProse(section.body, accent: session.accent, session: session)
+                                .environment(\.authoredResearchReaderID, currentRow.string("id").flatMap { $0.hasPrefix("mobile-dr-") ? $0 : nil })
                                 .nodusSearchOrder(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1440,6 +1444,9 @@ struct PublishedReportReader: View {
         loading = true; error = nil
         defer { loading = false }
         do {
+            if let own = try await CompanionDeepResearchResult.detail(session: session, id: id) {
+                detail = own; error = nil; return
+            }
             let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
             detail = loaded
             error = nil

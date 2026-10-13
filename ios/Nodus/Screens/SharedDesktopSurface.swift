@@ -780,6 +780,11 @@ private struct DesktopWebView: UIViewRepresentable {
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
         view.configuration.userContentController.removeScriptMessageHandler(forName: "nodus")
         coordinator.tasks.forEach { $0.cancel() }
+        let authoringTasks = coordinator.tasks
+        Task { @MainActor in
+            for task in authoringTasks { await task.value }
+            coordinator.autonomous.finishAbandonedAuthoringActivities()
+        }
         coordinator.images.cancelAll()
         coordinator.finishJavaScriptPanel()
         coordinator.session.isSurfaceFullscreen = false
@@ -1098,6 +1103,14 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try await autonomous.databaseOfflineSource(args,session:session)
                     } else if method == "getDatabaseResearchOfflineCatalogue",args.isEmpty {
                         value = try await autonomous.databaseOfflineCatalogue(session:session)
+                    } else if method == "beginAutonomousAuthoring", let generation = args.first?.stringValue {
+                        try autonomous.beginAuthoring(generation, session: session); value = .null
+                    } else if method == "endAutonomousAuthoring", let generation = args.first?.stringValue {
+                        autonomous.endAuthoring(generation); value = .null
+                    } else if method == "mobileDeepResearchCheckpoints", args.isEmpty || args == [.string("summaries")] || args == [.string("reports")] {
+                        value = try await autonomous.deepResearchCheckpoints(session: session, summaries: args.first == .string("summaries"), includeArchived: args.first == .string("reports"))
+                    } else if method == "mobileSavedStructuredCompletion" {
+                        value = try await autonomous.savedCompletion(args.first ?? .null, session: session)
                     } else if method == "mobileStructuredCompletion" {
                         value = try await autonomous.complete(args.first ?? .null, session: session)
                     } else if method == "cancelAutonomousGeneration", let generation = args.first?.stringValue {

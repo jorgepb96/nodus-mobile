@@ -54,6 +54,9 @@ enum ReportDocument {
     }
 
     static func html(session: SpaceSession, reportId: String) async throws -> String {
+        if let own = try await CompanionDeepResearchResult.draft(session: session, id: reportId) {
+            return try renderHTML(draft: own)
+        }
         if !session.isDemo {
             do { return try await session.client.deepResearchDocument(reportId, in: session.connection.spaceId) }
             catch {

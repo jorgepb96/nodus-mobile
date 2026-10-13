@@ -4,7 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {mobileRoot,nodusRepo} from './nodus-repo.mjs';
-import {acceptanceResultPaths,acceptanceReceiptPath,acceptanceSourceRevision as sourceRevision} from './acceptance-evidence.mjs';
+import {acceptanceResultPaths,acceptanceReceiptPath,acceptanceSourceRevision as sourceRevision,userPhysicalValidation} from './acceptance-evidence.mjs';
 
 // Historical attempts remain evidence of their actual result. Inventory and
 // successful individual scenarios never automatically approve an operation.
@@ -42,12 +42,9 @@ for(const name of fs.readdirSync('/tmp').filter(name=>/^nodus-010-.*\.log$/.test
 }
 const physicalAttempts=attempts.filter(attempt=>attempt.devices?.some(device=>device.platform==='iOS' && device.deviceId==='00008140-000C052C229B001C'));
 const passingPhysical=physicalAttempts.filter(attempt=>attempt.approval==='scenarioOnly');
-const physicalStatus=passingPhysical.length
-  ? {id:'physicalAutomation',result:'pending',evidence:passingPhysical.map(attempt=>attempt.artifact),reason:'XCTest has executed successfully on the paired physical iPhone. The complete functional and visual campaign on this device remains pending; historical device-lock and tunnel failures are retained.'}
-  : {id:'physicalAutomation',result:'pending',evidence:physicalAttempts.map(attempt=>attempt.artifact),reason:'No passing app scenario on the physical iPhone is recorded. Its automation and full acceptance must be executed before release.'};
-const physicalText=passingPhysical.length
-  ? `El iPhone físico ha ejecutado ${passingPhysical.length} campañas XCTest con resultado satisfactorio. Su cobertura completa y la revisión visual siguen pendientes; los intentos históricos fallidos se conservan.`
-  : 'Todavía no hay una campaña de la app con resultado satisfactorio en el iPhone físico. La automatización y la aceptación completa siguen pendientes.';
+const physicalHandoff={...userPhysicalValidation,executed:0,skipped:0,failed:0,evidence:[]};
+const physicalHistory={attempts:physicalAttempts.map(attempt=>attempt.artifact),passingScenarios:passingPhysical.length};
+const physicalText='Por indicación del usuario, él realizará las pruebas en el iPhone físico después de recibir la beta en TestFlight. Esta validación queda pendiente a su cargo; las ejecuciones históricas se conservan por separado y no se atribuyen a la versión actual.';
 const coveragePath=path.join(folder,'acceptance-scenario-coverage.json');
 const coverage=fs.existsSync(coveragePath)?JSON.parse(fs.readFileSync(coveragePath,'utf8')):{version:1,scenarios:[]};
 const operationIds=new Set(manifest.operations.map(operation=>operation.id));
@@ -77,6 +74,7 @@ const scenarios=coverage.scenarios.map(scenario=>{
 const operations=manifest.operations.map(operation=>{
   const partialScenarios=scenarios.filter(scenario=>scenario.operationIds.includes(operation.id));
   const artifacts=[...new Set(partialScenarios.flatMap(scenario=>scenario.attempts))];
+  if(operation.id===userPhysicalValidation.operation)return {id:operation.id,category:operation.category,...physicalHandoff};
   return {id:operation.id,category:operation.category,result:'pending',
     executed:artifacts.reduce((sum,artifact)=>sum+attempts.find(item=>item.artifact===artifact).executed,0),skipped:0,
     evidence:[...new Set(partialScenarios.flatMap(scenario=>[...scenario.attempts,...scenario.evidence.map(item=>item.path)]))],
@@ -88,11 +86,11 @@ const report={version:1,updatedAt:new Date().toISOString(),releaseReady:false,
   observedSourceRevisions:{desktop:sourceRevision(nodusRepo()),mobile:sourceRevision(mobileRoot)},
   sourceRevisionPolicy:'Current inventory digests are not retroactively attributed to historical test runs.',
   operations,scenarios,
-  attempts,logEvidence,appleRecord,
-  blockers:[physicalStatus,
+  attempts,logEvidence,appleRecord,userValidation:{physicalIphone:physicalHandoff},physicalHistory,
+  blockers:[
     {id:'appStoreConnect',result:'pending',evidence:appleRecord?'app-store-connect-record.json':undefined,reason:appleRecord?.appRecord==='created'?'The Nodus app record was created using the integrated browser. Upload, processing and internal TestFlight availability remain pending full acceptance.':'App record, authenticated Apple session, upload and internal availability remain unverified.'},
-    {id:'fullAcceptance',result:'pending',reason:'Every operation and required device must be executed before release. Individual passing scenarios do not establish complete parity.'}]};
+    {id:'fullAcceptance',result:'pending',reason:'Every included operation and required Desktop/iPhone/iPad simulator environment must be executed before release. Physical iPhone validation is assigned to the user after TestFlight. Individual passing scenarios do not establish complete parity.'}]};
 fs.writeFileSync(path.join(folder,'acceptance-progress.json'),JSON.stringify(report,null,2)+'\n');
 const passed=attempts.filter(item=>item.approval==='scenarioOnly').length;
-fs.writeFileSync(path.join(folder,'acceptance-progress.md'),`# Nodus Mobile 0.1.0 · validación en curso\n\nEstado: **no apta todavía para TestFlight**.\n\nReferencias: Desktop \`${manifest.referenceCommits.desktop}\`; móvil \`${manifest.referenceCommits.mobile}\`.\n\n${passed} ejecuciones XCTest con resultado satisfactorio; ${attempts.length-passed} intentos fallidos o no legibles. Cada ejecución conserva su resultado real en los resúmenes y archivos .xcresult. Las operaciones completas siguen pendientes hasta terminar su cobertura.\n\n| Operación | Categoría | Resultado | Casos documentados |\n|---|---|---|---|\n${report.operations.map(item=>`| ${item.id} | ${item.category} | Pendiente | ${item.executed} |`).join('\n')}\n\n${scenarios.map(scenario=>`- **${scenario.id}**: ${scenario.scope} Evidencia: ${(scenario.reviews??[scenario.review]).map((review,index)=>`[revisión ${index+1}](${review})`).join(', ')}. Pendiente: ${Array.isArray(scenario.remaining)?scenario.remaining.join('; '):scenario.remaining}`).join('\n')}\n\n${physicalText} ${appleRecord?.appRecord==='created'?'La ficha de Nodus está creada en App Store Connect desde el navegador integrado; todavía no hay compilación disponible en TestFlight.':'La ficha y la entrega en TestFlight siguen pendientes.'}\n`);
+fs.writeFileSync(path.join(folder,'acceptance-progress.md'),`# Nodus Mobile 0.1.0 · validación en curso\n\nEstado: **no apta todavía para TestFlight**.\n\nReferencias: Desktop \`${manifest.referenceCommits.desktop}\`; móvil \`${manifest.referenceCommits.mobile}\`.\n\n${passed} ejecuciones XCTest con resultado satisfactorio; ${attempts.length-passed} intentos fallidos o no legibles. Cada ejecución conserva su resultado real en los resúmenes y archivos .xcresult. Las operaciones completas siguen pendientes hasta terminar su cobertura.\n\n| Operación | Categoría | Resultado | Casos documentados |\n|---|---|---|---|\n${report.operations.map(item=>`| ${item.id} | ${item.category} | ${item.result==='pendingUserValidation'?'Pendiente del usuario en TestFlight':'Pendiente'} | ${item.executed} |`).join('\n')}\n\n${scenarios.map(scenario=>`- **${scenario.id}**: ${scenario.scope} Evidencia: ${(scenario.reviews??[scenario.review]).map((review,index)=>`[revisión ${index+1}](${review})`).join(', ')}. Pendiente: ${Array.isArray(scenario.remaining)?scenario.remaining.join('; '):scenario.remaining}`).join('\n')}\n\n${physicalText} ${appleRecord?.appRecord==='created'?'La ficha de Nodus está creada en App Store Connect desde el navegador integrado; todavía no hay compilación disponible en TestFlight.':'La ficha y la entrega en TestFlight siguen pendientes.'}\n`);
 console.log(JSON.stringify({operations:report.operations.length,xctestAttempts:attempts.length,passingScenarios:passed,logs:logEvidence.length,releaseReady:false}));

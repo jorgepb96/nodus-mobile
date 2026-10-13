@@ -30,6 +30,9 @@ struct CompanionGeneratedResultView: View {
             }
             if let draft = preview["draft"]?.objectValue?["draftMarkdown"]?.stringValue { return draft }
             return nil
+        case "localDeepResearchGeneration", "saveMobileDeepResearchReport":
+            return value["report"]?.objectValue?["draft"]?.objectValue?["draftMarkdown"]?.stringValue
+                ?? value["calls"]?.objectValue?.sorted(by: { $0.key < $1.key }).filter { $0.key.hasPrefix("host:") }.compactMap { $0.value.objectValue?["output"]?.stringValue }.joined(separator: "\n\n---\n\n")
         case "saveDictionaryGeneratedVersion": return value["definition"]?.objectValue?["contentMarkdown"]?.stringValue
         case "saveContentTranslationFromMobile": return value["markdown"]?.stringValue
         case "saveStudyImprovementFromMobile": return value["preview"]?.objectValue?["text"]?.stringValue ?? current.result?.objectValue?["text"]?.stringValue
