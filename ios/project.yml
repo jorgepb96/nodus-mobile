@@ -116,6 +116,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.drakonis96.nodus.ios.tests
         GENERATE_INFOPLIST_FILE: YES
 
+  NodusDiagnosticsTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NodusDiagnosticsTests
+    dependencies:
+      - target: Nodus
+      - package: NodusKit
+        product: NodusKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.drakonis96.nodus.ios.diagnostics
+        GENERATE_INFOPLIST_FILE: YES
+
   NodusUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -147,3 +161,15 @@ schemes:
         - NodusUITests
     archive:
       config: Release
+
+  # Opt-in read-only diagnostics need an actual linked lab installation. They
+  # are separate from ordinary unit tests and are never embedded in the app.
+  NodusDiagnostics:
+    build:
+      targets:
+        Nodus: all
+        NodusDiagnosticsTests: all
+    test:
+      config: Debug
+      targets:
+        - NodusDiagnosticsTests
