@@ -1107,7 +1107,7 @@ private struct DatabaseRowInspector: View {
                 if column.isReadOnly { DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7)) }
                 else if ["files","attachment","ai_image","relation","button"].contains(column.type) {
                     Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor").font(.callout).textSelection(.enabled)
-                    if column.type == "button" { Text("La ejecución del botón estará disponible próximamente en este dispositivo.").font(.caption).foregroundStyle(.secondary) }
+                    if ["button", "ai_image"].contains(column.type) { DatabasePropertyActionControls(session: session, rowId: row.id, column: column).id(row.id + ":" + column.id) }
                 } else { DatabasePropertyCellEditor(column: column, value: Binding(get: { drafts[column.id] ?? "" }, set: { value in
                     if !editedColumns.contains(column.id) {
                         let stored = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
@@ -1115,7 +1115,9 @@ private struct DatabaseRowInspector: View {
                         editedColumns.insert(column.id)
                     }
                     drafts[column.id] = value
-                })) }
+                }))
+                    if column.type == "ai" { DatabasePropertyActionControls(session: session, rowId: row.id, column: column).id(row.id + ":" + column.id) }
+                }
             }.accessibilityIdentifier("database-property-value-\(column.id)")
         }
     }

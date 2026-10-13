@@ -363,3 +363,57 @@ private struct DatabaseDatePropertyEditor: View {
         }
     }
 }
+
+struct DatabasePropertyActionControls: View {
+    @Environment(AISettings.self) private var ai
+    let session: SpaceSession
+    let rowId: String
+    let column: PagesDatabasesParity.Column
+    @State private var busy = false
+    @State private var message: String?
+    @State private var failure: String?
+    @State private var jobsOpen = false
+    private var kind: String { column.type == "button" ? "button" : column.type == "ai_image" ? "image" : "text" }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                Task { await run() }
+            } label: {
+                HStack(spacing: 8) {
+                    if busy { ProgressView() } else { Image(systemName: kind == "button" ? "hand.tap" : "sparkles") }
+                    Text(kind == "button" ? column.config["buttonLabel"]?.stringValue ?? "Ejecutar botón" : session.aiExecutionMode == .live ? "Generar en Nodus" : "Generar en este dispositivo")
+                        .fixedSize(horizontal: false, vertical: true)
+                }.frame(minHeight: 44)
+            }.buttonStyle(.bordered).disabled(busy || !session.connection.role.canSendChanges)
+                .accessibilityIdentifier("database-property-action-\(column.id)")
+            Menu {
+                Button("Guardar durante 7 días") { Task { await download(days: 7) } }
+                Button("Guardar durante 30 días") { Task { await download(days: 30) } }
+            } label: { Label("Descargar contexto de esta acción", systemImage: "arrow.down.circle").font(.caption).fixedSize(horizontal: false, vertical: true) }
+                .disabled(busy).accessibilityIdentifier("database-action-download-\(column.id)")
+            if let message { Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            if let failure { Text(failure).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            if message != nil { Button("Trabajos y resultados") { jobsOpen = true }.font(.caption).frame(minHeight: 44) }
+        }.nodusSheet(isPresented: $jobsOpen) {
+            NavigationStack { LiveJobsView(session: session).nodusModalClose(accent: session.accent) }
+        }
+    }
+    private func run() async {
+        guard !busy else { return }; busy = true; failure = nil; defer { busy = false }
+        do {
+            let result: DesktopJobLedger.Request
+            if kind == "button" { result = try await DatabasePropertyActions.runButton(session: session, rowId: rowId, columnId: column.id) }
+            else if kind == "image" { result = try await DatabasePropertyActions.generateImage(session: session, rowId: rowId, columnId: column.id, ai: ai) }
+            else { result = try await DatabasePropertyActions.generateText(session: session, rowId: rowId, columnId: column.id, ai: ai) }
+            message = result.state == "available" ? "Resultado guardado en Nodus." : "Trabajo guardado. Consulta su estado en Trabajos y resultados."
+            await session.synchronizeCompanionChanges()
+        } catch { failure = error.localizedDescription }
+    }
+    private func download(days: Int) async {
+        guard !busy else { return }; busy = true; failure = nil; defer { busy = false }
+        do {
+            try await DatabasePropertyActions.download(session: session, rowId: rowId, columnId: column.id, kind: kind, days: days)
+            message = "Contexto de esta acción guardado durante \(days) días."
+        } catch { failure = error.localizedDescription }
+    }
+}
