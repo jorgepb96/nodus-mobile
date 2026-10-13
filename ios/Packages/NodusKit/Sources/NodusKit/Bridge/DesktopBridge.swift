@@ -1233,6 +1233,7 @@ public actor PrivateBridgeCache {
             return SymmetricKey(data: data)
         }
         initialScopeEpochs = try Self.diskLock.withLock {
+            try Self.recoverIndexedTransactions(in: cacheFolder)
             var epochs: [String: String] = [:]
             for url in try FileManager.default.contentsOfDirectory(at: cacheFolder, includingPropertiesForKeys: nil)
                 where url.lastPathComponent.hasPrefix("scope-") && url.pathExtension == "metadata" {
@@ -1254,6 +1255,7 @@ public actor PrivateBridgeCache {
         let sealed = try AES.GCM.seal(data, using: key)
         guard let combined = sealed.combined else { throw DesktopBridgeError.malformedResponse }
         return try Self.diskLock.withLock {
+            try Self.recoverIndexedTransactions(in: folder)
             if Self.isDurable(domain) { try requireWritable() } else { try requireReadingAllowed() }
             try requireVaultScope(vaultId)
             try cleanReadPacks()
@@ -1272,14 +1274,40 @@ public actor PrivateBridgeCache {
         }
     }
 
-    /// One process-wide disk transaction prevents independently opened cache
-    /// actors from losing entries in the autonomous result catalogue. The index
-    /// is written first, so a crash never leaves completed work undiscoverable.
-    public func storeIndexedGeneration(_ data: Data,vaultId: String,recordId: String,indexId: String,entity: String) throws {
+    public struct IndexedGenerationSummary: Sendable {
+        public let recordId: String
+        public let data: Data
+        public init(recordId: String, data: Data) { self.recordId = recordId; self.data = data }
+    }
+    private struct IndexedTransaction: Codable { let files: [String: String] }
+    private static func recoverIndexedTransactions(in folder: URL) throws {
+        for directory in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            where directory.lastPathComponent.hasPrefix("indexed-") && directory.pathExtension == "transaction" {
+            guard UUID(uuidString: String(directory.deletingPathExtension().lastPathComponent.dropFirst(8))) != nil else { throw DesktopBridgeError.malformedResponse }
+            let marker = directory.appendingPathComponent("commit.json")
+            guard FileManager.default.fileExists(atPath: marker.path) else { try FileManager.default.removeItem(at: directory); continue }
+            let transaction = try JSONDecoder.nodus.decode(IndexedTransaction.self, from: Data(contentsOf: marker))
+            guard transaction.files.count >= 2, transaction.files.count <= 3,
+                transaction.files.keys.allSatisfy({ PrivateBridgeAuthoringRecovery.validFilename($0) && $0.hasPrefix("work-") }) else { throw DesktopBridgeError.malformedResponse }
+            // All staged ciphertext is verified before any destination is changed.
+            for (name, hash) in transaction.files {
+                guard PrivateBridgeAuthoringRecovery.hash(try Data(contentsOf: directory.appendingPathComponent(name))) == hash else { throw DesktopBridgeError.malformedResponse }
+            }
+            for name in transaction.files.keys.sorted() {
+                try PrivateBridgeProtectedFile.write(Data(contentsOf: directory.appendingPathComponent(name)), to: folder.appendingPathComponent(name))
+                BackupPolicy.apply(.excluded, to: folder.appendingPathComponent(name))
+            }
+            try FileManager.default.removeItem(at: directory)
+        }
+    }
+    /// The commit marker makes checkpoint, index and optional summary recover as
+    /// one durable generation, even if the process stops between file replacements.
+    public func storeIndexedGeneration(_ data: Data,vaultId: String,recordId: String,indexId: String,entity: String,
+        summary: IndexedGenerationSummary? = nil) throws {
         guard !entity.isEmpty,entity.utf8.count <= 256 else { throw DesktopBridgeError.malformedResponse }
         try Self.diskLock.withLock {
-            try requireWritable()
-            try requireVaultScope(vaultId)
+            try Self.recoverIndexedTransactions(in: folder)
+            try requireWritable(); try requireVaultScope(vaultId)
             let indexURL = fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:indexId)
             var entries: [String] = []
             if FileManager.default.fileExists(atPath:indexURL.path) {
@@ -1287,14 +1315,33 @@ public actor PrivateBridgeCache {
             }
             entries = Array(Set(entries + [entity])).sorted()
             guard entries.count <= 10_000 else { throw DesktopBridgeError.malformedResponse }
-            for (url,bytes) in [(indexURL,try JSONEncoder.nodus.encode(entries)),(fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:recordId),data)] {
-                guard let sealed = try AES.GCM.seal(bytes,using:key).combined else { throw DesktopBridgeError.malformedResponse }
-                try PrivateBridgeProtectedFile.write(sealed, to: url);BackupPolicy.apply(.excluded,to:url)
+            var values = [(indexURL,try JSONEncoder.nodus.encode(entries)),(fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:recordId),data)]
+            if let summary {
+                guard summary.recordId == "autonomous:deepResearch:summary:" + entity,
+                      indexId == "autonomous:deepResearch:index:v1",
+                      recordId == (try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)),
+                      summary.data.count <= 256 * 1024 else { throw DesktopBridgeError.malformedResponse }
+                values.append((fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:summary.recordId),summary.data))
             }
+            guard Set(values.map { $0.0.lastPathComponent }).count == values.count else { throw DesktopBridgeError.malformedResponse }
+            let directory = folder.appendingPathComponent("indexed-" + UUID().uuidString + ".transaction", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            BackupPolicy.apply(.excluded, to: directory)
+            var hashes: [String: String] = [:]
+            do {
+                for (url, bytes) in values {
+                    guard let sealed = try AES.GCM.seal(bytes,using:key).combined else { throw DesktopBridgeError.malformedResponse }
+                    try PrivateBridgeProtectedFile.write(sealed, to: directory.appendingPathComponent(url.lastPathComponent))
+                    hashes[url.lastPathComponent] = PrivateBridgeAuthoringRecovery.hash(sealed)
+                }
+                try PrivateBridgeProtectedFile.write(JSONEncoder.nodus.encode(IndexedTransaction(files: hashes)), to: directory.appendingPathComponent("commit.json"))
+            } catch { try? FileManager.default.removeItem(at: directory); throw error }
+            try Self.recoverIndexedTransactions(in: folder)
         }
     }
     public func data(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws -> Data? {
         try Self.diskLock.withLock {
+            try Self.recoverIndexedTransactions(in: folder)
             if Self.isDurable(domain) { try requireWritable() } else { try requireReadingAllowed() }
             try requireVaultScope(vaultId)
             try cleanReadPacks()
@@ -1327,6 +1374,7 @@ public actor PrivateBridgeCache {
 
     public func remove(vaultId: String, domain: DesktopBridgeDomain, recordId: String) throws {
         try Self.diskLock.withLock {
+            try Self.recoverIndexedTransactions(in: folder)
             if Self.isDurable(domain) { try requireWritable() } else { try requireReadingAllowed() }
             try requireVaultScope(vaultId)
             try removeIfPresent(fileURL(vaultId: vaultId, domain: domain, recordId: recordId))
@@ -1420,6 +1468,7 @@ public actor PrivateBridgeCache {
     }
     public func authoringRecoverySnapshot(vaultIds: Set<String>) throws -> PrivateBridgeAuthoringRecovery.Snapshot {
         try Self.diskLock.withLock {
+            try Self.recoverIndexedTransactions(in: folder)
             let writingIds = ["companion-documents-v1", "companion-study-documents-v1", "companion-page-documents-v1", "companion-immersion-progress-v1", "companion-database-reading-v1"]
             let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "autonomous:deepResearch:index:v1", "companion:world-map-generation-index:v1"]
             var known: [String: (vault: String, writing: Bool, ledger: Bool, recordId: String, kind: String?)] = [:]
@@ -1434,6 +1483,18 @@ public actor PrivateBridgeCache {
                     for record in try JSONDecoder.nodus.decode([String].self, from: bytes) {
                         guard record.hasPrefix("autonomous:"), record.contains(":completion:") else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
                         known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent] = (vault, false, false, record, nil)
+                    }
+                }
+            }
+            for vault in vaultIds {
+                let index = fileURL(vaultId: vault, domain: .researchGeneration, recordId: "autonomous:deepResearch:index:v1")
+                if FileManager.default.fileExists(atPath: index.path) {
+                    let bytes = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: index)), using: key)
+                    for entity in try JSONDecoder.nodus.decode([String].self, from: bytes) {
+                        let checkpoint = try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)
+                        guard FileManager.default.fileExists(atPath: fileURL(vaultId: vault, domain: .researchGeneration, recordId: checkpoint).path) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                        let summary = "autonomous:deepResearch:summary:" + entity
+                        known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: summary).lastPathComponent] = (vault, false, false, summary, "deepResearchSummary")
                     }
                 }
             }

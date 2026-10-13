@@ -1073,6 +1073,7 @@ private struct DatabaseRowInspector: View {
     @State private var drafts: [String: String] = [:]
     @State private var tab = "Properties"
     @State private var saving = false
+    @State private var saveError: String?
     @State private var rowPageOpen = false
 
     private var columns: [PagesDatabasesParity.Column] { PagesDatabasesParity.columns(databaseId: database.id, in: tables) }
@@ -1084,6 +1085,7 @@ private struct DatabaseRowInspector: View {
         VStack(spacing: 0) {
             HStack(alignment: .top) { VStack(alignment: .leading, spacing: 4) { Text(rowTitle).font(.headline).fixedSize(horizontal: false, vertical: true); Text(database.name).font(.caption).foregroundStyle(.secondary) }; Spacer(minLength: 8); Button { Task { await save() } } label: { if saving { ProgressView() } else { Label("Guardar", systemImage: "checkmark") } }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving).accessibilityIdentifier("database-row-save") }.padding(12)
             Picker("Detalle de la fila", selection: $tab) { Text("Propiedades").tag("Properties"); Text("Enlaces").tag("Relations"); Text("Página").tag("Page") }.pickerStyle(.segmented).padding(.horizontal, 10).padding(.bottom, 10)
+            if let saveError { Text(saveError).font(.caption).foregroundStyle(.red).padding(.horizontal, 12) }
             PagesDatabaseSyncNotice(outbox:outbox)
             Divider()
             ScrollView { VStack(alignment: .leading, spacing: 16) { if tab == "Relations" { relationsPanel } else if tab == "Page" { pagePanel } else { propertiesPanel } }.padding(NodusSpace.page) }.scrollDismissesKeyboard(.interactively)
@@ -1153,7 +1155,12 @@ private struct DatabaseRowInspector: View {
     private var rowTitle: String { columns.first(where: { $0.type == "title" }).flatMap { drafts[$0.id]?.nonEmpty ?? PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns).nonEmpty } ?? "Untitled row" }
     private func seed() { drafts = row.cells }
     private func save() async {
-        guard let outbox else { return }; saving = true; defer { saving = false }
+        guard let outbox else { return }
+        let authoring: PrivateBridgeCache?
+        do { authoring = try databaseBeginAuthoring(session); saveError = nil }
+        catch { saveError = error.localizedDescription; return }
+        defer { authoring?.endAuthoringActivity() }
+        saving = true; defer { saving = false }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         for column in columns where !column.isReadOnly && drafts[column.id] != row.cells[column.id] {
             let value = drafts[column.id] ?? "", existing = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
@@ -1181,6 +1188,7 @@ private struct NewDatabaseColumnSheet: View {
     @State private var options: [Row]
     @State private var removedOptions: [Row] = []
     @State private var saving = false
+    @State private var saveError: String?
     init(session: SpaceSession, databaseId: String, tables: Binding<[String: [Row]]>, outbox: OutboxController?, existingColumn: PagesDatabasesParity.Column? = nil) {
         self.session = session; self.databaseId = databaseId; self._tables = tables; self.outbox = outbox; self.existingColumn = existingColumn
         _name = State(initialValue: existingColumn?.name ?? ""); _type = State(initialValue: existingColumn?.type ?? "rich_text")
@@ -1202,6 +1210,7 @@ private struct NewDatabaseColumnSheet: View {
                 if ["select","status","multi_select"].contains(type) { optionFields }
                 if ["ai","ai_image"].contains(type) { DatabasePropertyModelFields(session: session, image: type == "ai_image", config: $config) }
                 if CompanionDatabaseProperty(rawValue: type)?.computed == true { Text("Los valores los calcula Nodus al sincronizar. Aquí puedes configurar la propiedad y consultar su resultado.").font(.caption).foregroundStyle(.secondary) }
+                if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
                 PagesDatabaseSyncNotice(outbox:outbox)
             }.navigationTitle(existingColumn == nil ? "Nueva propiedad" : "Configurar propiedad").toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button { Task { await save() } } label: { if saving { ProgressView() } else { Text(existingColumn == nil ? "Crear" : "Guardar") } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || outbox == nil || saving).accessibilityIdentifier("database-property-save") }
@@ -1221,7 +1230,12 @@ private struct NewDatabaseColumnSheet: View {
     }
     private func optionText(_ index: Int, _ key: String) -> Binding<String> { Binding(get: { options[index].string(key) ?? (key == "group_key" ? "pending" : "") }, set: { text in var fields = options[index].columns; fields[key] = text.isEmpty ? .null : .string(text); options[index] = Row(fields) }) }
     private func save() async {
-        guard let outbox else { return }; saving = true; defer { saving = false }
+        guard let outbox else { return }
+        let authoring: PrivateBridgeCache?
+        do { authoring = try databaseBeginAuthoring(session); saveError = nil }
+        catch { saveError = error.localizedDescription; return }
+        defer { authoring?.endAuthoringActivity() }
+        saving = true; defer { saving = false }
         let id = existingColumn?.id ?? "dcol_" + UUID().uuidString
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let existing = tables["db_columns"]?.first { $0.string("id") == id }
@@ -1445,3 +1459,14 @@ private struct PagesDatabaseSyncNotice:View {
 }
 
 private struct DatabaseForeignRow:Identifiable {let id:String}
+
+/// Hold the existing grant's authoring lease until every queued payload is durable.
+/// A closing link denies new edits but lets an edit already underway finish safely.
+@MainActor
+private func databaseBeginAuthoring(_ session: SpaceSession) throws -> PrivateBridgeCache? {
+    guard session.connection.desktopPairingId != nil else { return nil }
+    let (_, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+    let cache = try PrivateBridgeCache(pairingId: pairing.id)
+    try cache.beginAuthoringActivity()
+    return cache
+}
