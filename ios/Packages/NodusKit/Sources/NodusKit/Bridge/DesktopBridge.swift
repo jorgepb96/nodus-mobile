@@ -969,6 +969,19 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
         }
     }
 
+    /// A stored credential proves the POST succeeded, not that the previous grant's
+    /// work was retired and recovered. Foreground discovery must not finish this step.
+    public func hasPendingWorkspaceRegistration(grantId: String) throws -> Bool {
+        try Self.pendingLock.withLock {
+            var pendingRegistration = false
+            for id in try pendingPairingIDs() {
+                guard let pending = pendingPairing(id: id) else { throw DesktopBridgeError.locked }
+                if (pending.offer.renewalPairingId ?? pending.offer.id) == grantId { pendingRegistration = true }
+            }
+            return pendingRegistration
+        }
+    }
+
     func pendingPairingToken(offerId: String) -> String? {
         Self.pendingLock.withLock { pendingPairing(id: offerId)?.token }
     }

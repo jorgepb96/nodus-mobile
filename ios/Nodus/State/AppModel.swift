@@ -55,6 +55,7 @@ final class AppModel {
     private(set) var isOpeningLocalCorpus = false
     var isConnecting = false
     private var closingDesktopGrants = Set<String>()
+    private var connectingDesktopGrants = Set<String>()
     private var refreshingDesktopCatalogues = false
     var isClosingDesktopGrant: Bool { !closingDesktopGrants.isEmpty }
     private(set) var desktopRecoveryIssue: String?
@@ -296,6 +297,8 @@ final class AppModel {
             throw URLError(.networkConnectionLost)
         }
 #endif
+        guard connectingDesktopGrants.insert(proposedPairing.id).inserted else { throw DesktopBridgeError.permissionDenied }
+        defer { connectingDesktopGrants.remove(proposedPairing.id) }
         var pairing = proposedPairing
         let capabilities = try await DesktopBridgeClient(pairing: pairing, token: token).liveCapabilities()
         guard capabilities.protocolVersion == 2 else { throw DesktopBridgeError.malformedResponse }
@@ -336,13 +339,15 @@ final class AppModel {
             let restored = try await PrivateBridgeAuthoringRecovery.shared.adopt(pairing: pairing, macDeviceId: capabilities.deviceId, cache: cache)
             if restored > 0 { recoveryNotice = "Tu trabajo local se ha recuperado. Revisa los cambios y resultados antes de enviarlos al Mac." }
         } catch {
-            recoveryNotice = "Algunos borradores requieren recuperación manual. Los originales siguen conservados y pueden exportarse desde los ajustes de este espacio."
+            // Keep the resumable pairing and originals until recovery completes.
+            throw error
         }
         try DesktopBridgePairingStore().save(pairing, token: token)
-        try registerDesktopVaults(pairing: pairing, token: token, capabilities: capabilities, recoveryNotice: recoveryNotice)
+        try registerDesktopVaults(pairing: pairing, token: token, capabilities: capabilities, recoveryNotice: recoveryNotice, finishingPairing: true)
     }
 
-    private func registerDesktopVaults(pairing: DesktopBridgePairing, token: String, capabilities: DesktopLiveCapabilities, recoveryNotice: String? = nil) throws {
+    private func registerDesktopVaults(pairing: DesktopBridgePairing, token: String, capabilities: DesktopLiveCapabilities, recoveryNotice: String? = nil, finishingPairing: Bool = false) throws {
+        if !finishingPairing, try DesktopBridgePairingStore().hasPendingWorkspaceRegistration(grantId: pairing.id) { throw DesktopBridgeError.permissionDenied }
         for vault in capabilities.vaults {
             let spaceId = "live:\(capabilities.deviceId):\(vault.id)"
             let previous = connections.first { $0.desktopPairingId != nil && $0.spaceId == spaceId }
@@ -356,7 +361,7 @@ final class AppModel {
             if session?.connection.id == connection.id { session?.refreshConnectionMetadata(connection) }
         }
         persist()
-        try DesktopBridgePairingStore().completePendingPairing(grantId: pairing.id)
+        if finishingPairing { try DesktopBridgePairingStore().completePendingPairing(grantId: pairing.id) }
 
     }
 
@@ -673,7 +678,7 @@ final class AppModel {
     }
 
     func refreshDesktopWorkspaceCatalogues() async {
-        guard !refreshingDesktopCatalogues else { return }
+        guard !refreshingDesktopCatalogues, connectingDesktopGrants.isEmpty else { return }
         refreshingDesktopCatalogues = true
         defer { refreshingDesktopCatalogues = false }
         let store = DesktopBridgePairingStore()
@@ -683,7 +688,9 @@ final class AppModel {
         for pairing in store.pairings() where pairing.wholeWorkspace == true {
             guard let token = store.credential(for: pairing) else { continue }
             do {
+                guard try !store.hasPendingWorkspaceRegistration(grantId: pairing.id) else { continue }
                 let capabilities = try await DesktopBridgeClient(pairing: pairing, token: token).liveCapabilities()
+                guard connectingDesktopGrants.isEmpty, try !store.hasPendingWorkspaceRegistration(grantId: pairing.id) else { continue }
                 let linked = connections.filter { $0.desktopPairingId == pairing.id }
                 let identities = Set(linked.compactMap(\.macDeviceId))
                 guard identities.count <= 1 else { throw DesktopBridgeError.permissionDenied }
@@ -731,6 +738,7 @@ final class AppModel {
                 try await currentCache.reopenAuthorizedVaultScopes(refreshed.vaultIds)
                 _ = try await PrivateBridgeAuthoringRecovery.shared.adopt(pairing: refreshed, macDeviceId: trustedMac, cache: currentCache)
                 guard let currentToken = store.credential(for: refreshed) else { throw DesktopBridgeError.locked }
+                guard connectingDesktopGrants.isEmpty else { continue }
                 try registerDesktopVaults(pairing: refreshed, token: currentToken, capabilities: capabilities)
                 if let session, session.connection.desktopPairingId == pairing.id,
                    !refreshed.vaultIds.contains(session.vaultId ?? "") { self.session = nil }

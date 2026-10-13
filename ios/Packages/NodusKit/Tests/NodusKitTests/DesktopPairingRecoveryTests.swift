@@ -58,6 +58,44 @@ struct DesktopPairingRecoveryTests {
         #expect(store.pendingOffers().isEmpty); #expect(store.pendingPairingToken(offerId: offer.id) == nil)
     }
 
+    @Test("saved new grants and renewals stay pending until canonical workspace registration")
+    func registrationPending() async throws {
+        for renewal in [false, true] {
+            let (offer, store, defaults, session, suite) = try fixture(renewal: renewal, wholeWorkspace: true)
+            defer { clean(store, defaults, session, suite, offer) }
+            let grant = offer.renewalPairingId ?? offer.id
+            #expect(try !store.hasPendingWorkspaceRegistration(grantId: grant))
+            let linked = try await DesktopBridgeClient.pair(offer: offer, deviceId: "phone", deviceName: "Phone", store: store, session: session)
+            #expect(store.credential(for: linked.pairing) == linked.token)
+            defaults.removeObject(forKey: "desktop-bridge-pending-offer-ids-v1")
+            let reopened = DesktopBridgePairingStore(defaults: defaults, keychain: KeychainStore(service: suite))
+            #expect(try reopened.hasPendingWorkspaceRegistration(grantId: grant))
+            #expect(try !reopened.hasPendingWorkspaceRegistration(grantId: "unrelated"))
+            let posts = PairingRecoveryProtocol.state.posts
+            _ = try await DesktopBridgeClient.pair(offer: offer, deviceId: "phone", deviceName: "Phone", store: reopened, session: session)
+            #expect(PairingRecoveryProtocol.state.posts == posts)
+            #expect(try reopened.hasPendingWorkspaceRegistration(grantId: grant))
+            try reopened.completePendingPairing(grantId: grant)
+            #expect(try !reopened.hasPendingWorkspaceRegistration(grantId: grant))
+            #expect(reopened.credential(for: linked.pairing) == linked.token)
+        }
+    }
+    @Test("an unreadable indexed pending offer cannot silently authorize catalogue registration")
+    func unreadableRegistration() throws {
+        let (offer, store, defaults, session, suite) = try fixture(wholeWorkspace: true)
+        defer { clean(store, defaults, session, suite, offer) }
+        let keychain = KeychainStore(service: suite)
+        _ = try store.preparePendingPairing(offer: offer, deviceId: "phone", deviceName: "Phone", token: "candidate")
+        let key = KeychainStore.desktopBridgePendingKey(offerId: offer.id)
+        let original = try #require(keychain.value(for: key))
+        defer { try? keychain.set(original, for: key) }
+        try keychain.set("unreadable legacy metadata", for: key)
+        #expect(store.pendingOffers().isEmpty)
+        #expect(throws: DesktopBridgeError.locked) { try store.hasPendingWorkspaceRegistration(grantId: offer.id) }
+        #expect(throws: DesktopBridgeError.locked) { try store.hasPendingWorkspaceRegistration(grantId: "unknown-renewal-id") }
+        #expect(keychain.value(for: key) == "unreadable legacy metadata")
+    }
+
     @Test("an interrupted request before commit retries with the same candidate and saves exactly one grant")
     func beforeCommit() async throws {
         let (offer, store, defaults, session, suite) = try fixture()
