@@ -74,21 +74,29 @@ struct CompanionDeepResearchCitationView: View {
         .task(id: "\(reportId)|\(reference.recordId)") {
             do {
                 guard let value = try await CompanionDeepResearchResult.checkpoint(session: session, id: reportId) else { throw DesktopBridgeError.malformedResponse }
-                let groups = ["idea": "ideas", "work": "works", "passage": "passages", "gap": "gaps", "contradiction": "contradictions", "debate": "contradictions"]
-                let kind = reference.kind, identity = reference.recordId
-                func find(_ node: JSONValue) -> JSONValue? {
-                    if let object = node.objectValue {
-                        if let group = groups[kind], let rows = object[group]?.arrayValue,
-                           let match = rows.first(where: { $0.objectValue?["id"] == .string(identity) || $0.objectValue?["nodus_id"] == .string(identity) }) { return match }
-                        for (key, child) in object where key != "request" && key != "report" && key != "input" {
-                            if let found = find(child) { return found }
-                        }
-                    } else if let array = node.arrayValue {
-                        for child in array { if let found = find(child) { return found } }
-                    }
-                    return nil
+                let target = "\(reference.kind):\(reference.recordId)"
+                guard let locator = value.objectValue?["citationIndex"]?.objectValue?[target]?.objectValue,
+                      let callKey = locator["callKey"]?.stringValue, callKey.hasPrefix("source:"),
+                      let path = locator["path"]?.arrayValue, (2...3).contains(path.count),
+                      var result = value.objectValue?["calls"]?.objectValue?[callKey]?.objectValue?["output"] else {
+                    throw APIError(status: 404, code: "captured_source_missing", message: "Esta cita no tiene un extracto conservado en el informe. No se buscará otra fuente ni se abrirá una conexión para sustituirla.")
                 }
-                guard let result = find(value) else { throw APIError(status: 404, code: "captured_source_missing", message: "Esta cita no tiene un extracto conservado en el informe. No se buscará otra fuente ni se abrirá una conexión para sustituirla.") }
+                for component in path {
+                    switch component {
+                    case .string(let field):
+                        guard ["snapshot", "ideas", "works", "passages", "gaps", "contradictions", "sources"].contains(field), let next = result.objectValue?[field] else { throw DesktopBridgeError.malformedResponse }
+                        result = next
+                    case .int(let position):
+                        guard let rows = result.arrayValue, rows.indices.contains(position) else { throw DesktopBridgeError.malformedResponse }
+                        result = rows[position]
+                    default: throw DesktopBridgeError.malformedResponse
+                    }
+                }
+                if let citation = locator["citation"]?.stringValue {
+                    guard let url = URL(string: citation), let capturedReference = CorpusReference(url), capturedReference.kind == reference.kind, capturedReference.recordId == reference.recordId else { throw DesktopBridgeError.malformedResponse }
+                } else {
+                    guard result.objectValue?["id"] == .string(reference.recordId) else { throw DesktopBridgeError.malformedResponse }
+                }
                 captured = result
             } catch { failure = error.localizedDescription }
         }

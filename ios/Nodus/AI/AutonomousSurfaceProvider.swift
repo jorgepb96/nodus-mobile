@@ -66,6 +66,20 @@ final class AutonomousSurfaceProvider {
         for cache in authoringActivities.values { cache.endAuthoringActivity() }
         authoringActivities.removeAll()
     }
+    private func deepResearchSummary(_ value: JSONValue) -> JSONValue {
+        guard let object = value.objectValue else { return .null }
+        let keys = ["id", "entityKey", "state", "createdAt", "context", "request", "progress", "error", "result", "publicationPending", "hiddenFromQueue", "recoveryReviewRequired"]
+        var summary = object.filter { keys.contains($0.key) }
+        if let request = object["request"]?.objectValue {
+            summary["request"] = .object(request.filter { ["objective", "model", "approach", "deepResearchVersion", "sectionLimit", "sectionLength"].contains($0.key) })
+        }
+        // A receipt needs only its identity here; full bodies remain in the checkpoint.
+        if let result = object["result"]?.objectValue { summary["result"] = .object(result.filter { ["id"].contains($0.key) }) }
+        if let draft = object["report"]?.objectValue?["draft"]?.objectValue {
+            summary["report"] = .object(["draft": .object(["title": draft["title"] ?? .null, "generatedAt": draft["generatedAt"] ?? .null])])
+        }
+        return .object(summary)
+    }
     func deepResearchCheckpoints(session: SpaceSession, summaries: Bool = false, includeArchived: Bool = false) async throws -> JSONValue {
         let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
         let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: "autonomous:deepResearch:index:v1")
@@ -74,26 +88,19 @@ final class AutonomousSurfaceProvider {
         var values: [JSONValue] = []
         for entity in entities {
             let key = try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)
-            if let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: key) {
+            let summaryKey = "autonomous:deepResearch:summary:\(entity)"
+            var record = key
+            if summaries, try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: summaryKey) != nil { record = summaryKey }
+            if let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: record) {
                 let stored = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
                 let reconciled = await ledger?.generationCheckpoint(recordId: key, generationId: stored.objectValue?["id"]?.stringValue)
-                values.append(reconciled ?? stored)
+                values.append(summaries ? deepResearchSummary(reconciled ?? stored) : reconciled ?? stored)
             }
         }
         if includeArchived, let ledger {
             for request in await ledger.all() where ["localDeepResearchGeneration", "saveMobileDeepResearchReport"].contains(request.method) {
                 guard let value = request.checkpoint, !values.contains(where: { $0.objectValue?["id"] == .string(request.id) }) else { continue }
                 values.append(value)
-            }
-        }
-        if summaries {
-            values = values.map { value in
-                guard var fields = value.objectValue else { return value }
-                fields["calls"] = .object([:]); fields["history"] = nil; fields["inflight"] = nil; fields["uncertainAttempts"] = nil
-                if let draft = fields["report"]?.objectValue?["draft"]?.objectValue {
-                    fields["report"] = .object(["draft": .object(["title": draft["title"] ?? .null, "generatedAt": draft["generatedAt"] ?? .null])])
-                }
-                return .object(fields)
             }
         }
         return .array(values)
@@ -240,7 +247,10 @@ final class AutonomousSurfaceProvider {
         }
         try await queuePublication(kind: kind, entity: entity, checkpoint: args[3], scope: scope, session: session)
         if kind == "academic" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:academic:index:v1",entity:entity) }
-        else if kind == "deepResearch" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:deepResearch:index:v1",entity:entity) }
+        else if kind == "deepResearch" {
+            let summary = PrivateBridgeCache.IndexedGenerationSummary(recordId: "autonomous:deepResearch:summary:\(entity)", data: try JSONEncoder.nodus.encode(deepResearchSummary(args[3])))
+            try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:deepResearch:index:v1",entity:entity,summary:summary)
+        }
         else if kind == "database" { try await cache.storeIndexedGeneration(bytes,vaultId:vault,recordId:key,indexId:"autonomous:database:index:v1",entity:entity) }
         else { try await cache.store(bytes, vaultId: vault, domain: .researchGeneration, recordId: key) }
         return try await loadCheckpoint(cache: cache, key: key, scope: scope, session: session)
