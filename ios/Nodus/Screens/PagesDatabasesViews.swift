@@ -1071,6 +1071,9 @@ private struct DatabaseRowInspector: View {
     @Binding var tables: [String: [Row]]
     let outbox: OutboxController?
     @State private var drafts: [String: String] = [:]
+    private struct CellBaseline { let revision: Int64; let value: String }
+    @State private var editedColumns: Set<String> = []
+    @State private var cellBaselines: [String: CellBaseline] = [:]
     @State private var tab = "Properties"
     @State private var saving = false
     @State private var saveError: String?
@@ -1089,7 +1092,7 @@ private struct DatabaseRowInspector: View {
             PagesDatabaseSyncNotice(outbox:outbox)
             Divider()
             ScrollView { VStack(alignment: .leading, spacing: 16) { if tab == "Relations" { relationsPanel } else if tab == "Page" { pagePanel } else { propertiesPanel } }.padding(NodusSpace.page) }.scrollDismissesKeyboard(.interactively)
-        }.background(Color(uiColor: .secondarySystemBackground).opacity(0.42)).onAppear { seed() }.onChange(of: row.id) { _, _ in seed() }.accessibilityIdentifier("database-row-inspector")
+        }.background(Color(uiColor: .secondarySystemBackground).opacity(0.42)).onAppear { seed() }.onChange(of: row.id) { _, _ in seed() }.onChange(of: row.revision) { _, _ in refreshUntouchedCells() }.accessibilityIdentifier("database-row-inspector")
         .nodusSheet(isPresented: $rowPageOpen) {
             if let page = linkedPage {
                 NavigationStack { PageDocumentWorkspace(session: session, page: page, tables: $tables, outbox: outbox).navigationTitle(page.title).navigationBarTitleDisplayMode(.inline).nodusModalClose(accent: session.accent) }
@@ -1105,7 +1108,14 @@ private struct DatabaseRowInspector: View {
                 else if ["files","attachment","ai_image","relation","button"].contains(column.type) {
                     Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor").font(.callout).textSelection(.enabled)
                     if column.type == "button" { Text("La ejecución del botón estará disponible próximamente en este dispositivo.").font(.caption).foregroundStyle(.secondary) }
-                } else { DatabasePropertyCellEditor(column: column, value: Binding(get: { drafts[column.id] ?? "" }, set: { drafts[column.id] = $0 })) }
+                } else { DatabasePropertyCellEditor(column: column, value: Binding(get: { drafts[column.id] ?? "" }, set: { value in
+                    if !editedColumns.contains(column.id) {
+                        let stored = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
+                        cellBaselines[column.id] = CellBaseline(revision: stored?.columns["revision"]?.intValue ?? 0, value: row.cells[column.id] ?? "")
+                        editedColumns.insert(column.id)
+                    }
+                    drafts[column.id] = value
+                })) }
             }.accessibilityIdentifier("database-property-value-\(column.id)")
         }
     }
@@ -1153,7 +1163,8 @@ private struct DatabaseRowInspector: View {
     }
 
     private var rowTitle: String { columns.first(where: { $0.type == "title" }).flatMap { drafts[$0.id]?.nonEmpty ?? PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns).nonEmpty } ?? "Untitled row" }
-    private func seed() { drafts = row.cells }
+    private func seed() { drafts = row.cells; editedColumns = []; cellBaselines = [:] }
+    private func refreshUntouchedCells() { for column in columns where !editedColumns.contains(column.id) { drafts[column.id] = row.cells[column.id] ?? "" } }
     private func save() async {
         guard let outbox else { return }
         let authoring: PrivateBridgeCache?
@@ -1162,15 +1173,16 @@ private struct DatabaseRowInspector: View {
         defer { authoring?.endAuthoringActivity() }
         saving = true; defer { saving = false }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
-        for column in columns where !column.isReadOnly && drafts[column.id] != row.cells[column.id] {
+        for column in columns where editedColumns.contains(column.id) && !column.isReadOnly && (drafts[column.id] ?? "") != (cellBaselines[column.id]?.value ?? row.cells[column.id] ?? "") {
             let value = drafts[column.id] ?? "", existing = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
             var cell = existing?.columns ?? ["database_id": .string(database.id), "row_id": .string(row.id), "column_id": .string(column.id), "created_by": .string("mobile"), "created_at": .string(now), "revision": .int(1)]
             cell["value_type"] = .string(databaseCellType(column.type)); cell["value_text"] = .string(value); cell["value_reference"] = ["select", "status"].contains(column.type) ? .string(value) : .null; cell["value_number"] = column.type == "number" ? Double(value).map(JSONValue.double) ?? .null : .null; cell["updated_by"] = .string("mobile"); cell["updated_at"] = .string(now)
             let paired=session.connection.desktopPairingId != nil
-            if paired {let expected=existing?.columns["revision"]?.intValue ?? 0;cell["_mobileExpectedRevision"] = .int(Int64(expected));cell["_mobileExpectedValue"] = .string(row.cells[column.id] ?? "");cell["_mobileBaseRowRevision"] = .int(Int64(row.revision));cell["revision"] = .int(Int64(expected+1))}
+            if paired {let expected=cellBaselines[column.id]?.revision ?? existing?.columns["revision"]?.intValue ?? 0;cell["_mobileExpectedRevision"] = .int(Int64(expected));cell["_mobileExpectedValue"] = .string(cellBaselines[column.id]?.value ?? row.cells[column.id] ?? "");cell["_mobileBaseRowRevision"] = .int(Int64(row.revision));cell["revision"] = .int(Int64(expected+1))}
             guard await outbox.syncMutation(kind:paired ? .upsert:value.isEmpty ? .delete:.upsert,table:.databaseCells,key:[row.id,column.id],row:paired || !value.isEmpty ? cell:nil,title:"Actualizar \(column.name)") else {continue}
             tables["db_cells"]?.removeAll{$0.string("row_id") == row.id && $0.string("column_id") == column.id}
             if !value.isEmpty {tables["db_cells",default:[]].append(Row(cell))}
+            editedColumns.remove(column.id); cellBaselines[column.id] = nil
         }
     }
 }
