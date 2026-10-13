@@ -98,7 +98,10 @@ struct CompanionDownloadsView: View {
             }
             .navigationTitle("Descargar para llevar")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Buscar notas e ideas")
+            // Keep search above the list: iOS 26's automatic bottom search
+            // overlaps the download action inset and can never acquire focus.
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Buscar notas e ideas")
+            .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 12) {
                     if saved {
