@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import Testing
 import NodusKit
@@ -177,5 +178,117 @@ struct ReportDocumentTests {
         let result = try pages(of: data)
         #expect(result.count == 1)
         #expect(abs(result.first.width - 595.28) < 1)
+    }
+
+    @Test("PDF printing loads real encrypted figure chunks before drawing their pixels")
+    func printsEncryptedFigure() async throws {
+        let fixture = try await figureFixture()
+        defer { fixture.clean() }
+        #expect(fixture.receipt.byteCount > Int64(CompanionDocumentFigureAssets.chunkBytes),
+            "The fixture must exercise more than one encrypted image chunk.")
+        let bytes = try await ReportDocument.pdf(from: fixture.html, session: fixture.session, figureContext: fixture.context)
+        let pdf = try #require(PDFDocument(data: bytes)), page = try #require(pdf.page(at: 0))
+        #expect(pdf.pageCount == 1)
+        #expect(page.string?.contains("Verified offline figure") == true)
+        let image = page.thumbnail(of: CGSize(width: 595, height: 842), for: .mediaBox)
+        let raster = try #require(image.cgImage)
+        var pixels = [UInt8](repeating: 0, count: raster.width * raster.height * 4)
+        try pixels.withUnsafeMutableBytes { buffer in
+            let bitmap = try #require(CGContext(data: buffer.baseAddress, width: raster.width, height: raster.height,
+                bitsPerComponent: 8, bytesPerRow: raster.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            bitmap.draw(raster, in: CGRect(x: 0, y: 0, width: raster.width, height: raster.height))
+        }
+        var green = 0
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            if pixels[index] < 40, pixels[index + 1] > 210, pixels[index + 2] < 50 { green += 1 }
+        }
+        #expect(green > 10_000, "A valid PDF envelope must contain the actual saved image, not a blank image box.")
+        Attachment.record([UInt8](bytes), named: "actual-encrypted-figure-print.pdf")
+    }
+
+    @Test("a missing encrypted image chunk rejects PDF export instead of returning a partial document")
+    func missingFigureRejectsPrint() async throws {
+        let fixture = try await figureFixture()
+        defer { fixture.clean() }
+        try await fixture.cache.remove(vaultId: fixture.vault, domain: .researchGeneration,
+            recordId: CompanionDocumentFigureAssets.chunkId(fixture.receipt.id, 0))
+        let start = Date()
+        do {
+            _ = try await ReportDocument.pdf(from: fixture.html, session: fixture.session, figureContext: fixture.context)
+            Issue.record("Export must not succeed with an unavailable figure.")
+        } catch { #expect(!(error is CancellationError)) }
+        #expect(Date().timeIntervalSince(start) < 10, "A failed image must terminate without waiting for the print deadline.")
+    }
+
+    private struct FigureFixture {
+        let session: SpaceSession
+        let cache: PrivateBridgeCache
+        let cacheID: String
+        let vault: String
+        let receipt: CompanionDocumentFigureAssets.Receipt
+        let context: JSONValue
+        let temporary: URL
+        var html: String {
+            "<!doctype html><html><HEAD lang='en'><title>Verified offline figure</title></HEAD><body><h1>Verified offline figure</h1><img width='360' height='240' src='nodus-image://chat/\(receipt.owner)/\(receipt.id.uuidString.lowercased())'></body></html>"
+        }
+        func clean() {
+            try? FileManager.default.removeItem(at: PrivateBridgeCache.defaultDirectory.appendingPathComponent("bridge-" + cacheID))
+            try? KeychainStore().remove(KeychainStore.desktopBridgeCacheKey(pairingId: cacheID))
+            try? FileManager.default.removeItem(at: temporary)
+            UserDefaults.standard.removeObject(forKey: "ai-execution-mode:\(session.connection.id)")
+        }
+    }
+
+    private func figureFixture() async throws -> FigureFixture {
+        let temporary = URL.temporaryDirectory.appendingPathComponent("pdf-figure-" + UUID().uuidString)
+        let connection = AppModel.Connection(origin: "https://pdf-figure.invalid", spaceId: UUID().uuidString,
+            spaceName: "Isolated PDF fixture", serverName: "Fixture", role: .writer)
+        let client = NodusClient(address: ServerAddress(trusted: connection.origin), token: "isolated-fixture",
+            cache: ResponseCache(directory: temporary))
+        let session = SpaceSession(connection: connection, client: client, mirrorDirectory: temporary)
+        let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
+        var prepared = false
+        defer {
+            if !prepared {
+                try? FileManager.default.removeItem(at: PrivateBridgeCache.defaultDirectory.appendingPathComponent("bridge-" + scope.cacheId))
+                try? KeychainStore().remove(KeychainStore.desktopBridgeCacheKey(pairingId: scope.cacheId))
+                try? FileManager.default.removeItem(at: temporary)
+            }
+        }
+        let target = UUID().uuidString.lowercased(), generation = UUID(), figure = UUID(), revision = UUID().uuidString.lowercased(), asset = UUID()
+        let figureKey = figure.uuidString.lowercased(), entity = "deep-research:" + target
+        let identity = try JSONEncoder.nodus.encode(["document-figure", scope.recordVaultId, "deep-research:\(target):\(revision):\(figureKey)"])
+        let owner = SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
+        let manifest: JSONValue = .object(["vaultId": .string(scope.recordVaultId), "target": .object(["kind": .string("deep-research"), "id": .string(target)]),
+            "revision": .string(revision), "figures": .array([.object(["id": .string(figureKey), "owner": .string(owner), "ownerRevision": .string(revision),
+                "state": .string("ready"), "poster": .string("nodus-image://chat/\(owner)/\(asset.uuidString.lowercased())")])])])
+        let parent: JSONValue = .object(["version": .int(1), "kind": .string("documentVisuals"), "id": .string(generation.uuidString.lowercased()),
+            "entityKey": .string(entity), "target": .object(["kind": .string("deep-research"), "id": .string(target)]), "manifest": manifest,
+            "source": .object(["vaultId": .string(scope.recordVaultId), "draft": .object(["draftMarkdown": .string("Verified offline figure")]),
+                "origin": .string("authored-mobile"), "contentHash": .string(String(repeating: "a", count: 64))])])
+        let record = try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)
+        try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(parent), vaultId: scope.recordVaultId,
+            recordId: record, indexId: "autonomous:documentVisuals:index:v1", entity: entity)
+        let width = 900, height = 600
+        var pixels = [UInt8](repeating: 255, count: width * height * 4), random: UInt32 = 0x12345678
+        for index in 0..<(width * height) {
+            let position = index * 4
+            if index < width * height / 2 { pixels[position] = 10; pixels[position + 1] = 240; pixels[position + 2] = 20 }
+            else {
+                random ^= random << 13; random ^= random >> 17; random ^= random << 5
+                pixels[position] = UInt8(truncatingIfNeeded: random); pixels[position + 1] = UInt8(truncatingIfNeeded: random >> 8); pixels[position + 2] = UInt8(truncatingIfNeeded: random >> 16)
+            }
+        }
+        let provider = try #require(CGDataProvider(data: Data(pixels) as CFData))
+        let raster = try #require(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider,
+            decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let png = try #require(UIImage(cgImage: raster).pngData())
+        let receipt = try await CompanionDocumentFigureAssets(cache: cache, vaultId: scope.recordVaultId).store(data: png, mimeType: "image/png",
+            parentRecordId: record, generationId: generation, figureId: figure, owner: owner, assetId: asset)
+        let context: JSONValue = .object(["manifest": manifest, "receipts": .array([try receipt.jsonValue()])])
+        prepared = true
+        return FigureFixture(session: session, cache: cache, cacheID: scope.cacheId, vault: scope.recordVaultId, receipt: receipt, context: context, temporary: temporary)
     }
 }
