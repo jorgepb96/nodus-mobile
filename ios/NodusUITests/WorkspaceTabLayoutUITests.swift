@@ -41,9 +41,9 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(route: "ideas", style: "light")
         defer { app.terminate() }
-        let initial = try activeTab(app, section: "ideas")
+        let initialID = try activeTab(app, section: "ideas").identifier
         let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workspace-tab-ideas-"))
-        let destination = try XCTUnwrap(tabs.allElementsBoundByIndex.first { $0.identifier != initial.identifier })
+        let destination = try XCTUnwrap(tabs.allElementsBoundByIndex.first { $0.identifier != initialID })
         let destinationID = destination.identifier
         let picker = app.buttons["workspace-tab-chooser-ideas"]
         XCTAssertTrue(picker.waitForExistence(timeout: 10) && picker.isHittable)
@@ -61,7 +61,7 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
         app.buttons[closeID].tap()
         XCTAssertFalse(app.buttons[destinationID].exists)
         XCTAssertFalse(picker.exists, "One remaining document does not need an overflow picker.")
-        XCTAssertEqual(try activeTab(app, section: "ideas").identifier, initial.identifier)
+        XCTAssertEqual(try activeTab(app, section: "ideas").identifier, initialID)
     }
 
     @MainActor
