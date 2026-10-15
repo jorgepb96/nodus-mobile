@@ -38,7 +38,7 @@ enum ReportDocument {
 
     /// The canonical Desktop renderer is bundled as a pure JavaScript function.
     /// JavaScriptCore has no network or provider bridge; the arguments are data.
-    static func renderHTML(draft: JSONValue, image: JSONValue = .object(["dataUrl": .null, "credit": .null])) throws -> String {
+    static func renderHTML(draft: JSONValue, image: JSONValue = .object(["dataUrl": .null, "credit": .null]), visuals: JSONValue = .null) throws -> String {
         guard let file = Bundle.main.url(forResource: "report-renderer", withExtension: "js", subdirectory: "SharedDesktop"),
               let context = JSContext() else { throw Failure.couldNotRender }
         context.evaluateScript(try String(contentsOf: file, encoding: .utf8))
@@ -46,7 +46,7 @@ enum ReportDocument {
               let renderer = context.objectForKeyedSubscript("NodusReport"),
               let describe = renderer.objectForKeyedSubscript("deepResearchReportInput"),
               let print = renderer.objectForKeyedSubscript("renderProfessionalReportHtml") else { throw Failure.couldNotRender }
-        let args = try [draft, image].map { try JSONSerialization.jsonObject(with: JSONEncoder.nodus.encode($0), options: [.fragmentsAllowed]) }
+        let args = try [draft, image, visuals].map { try JSONSerialization.jsonObject(with: JSONEncoder.nodus.encode($0), options: [.fragmentsAllowed]) }
         guard let input = describe.call(withArguments: args), context.exception == nil,
               let result = print.call(withArguments: [input]), context.exception == nil,
               let html = result.toString(), html.lowercased().contains("<!doctype html>") else { throw Failure.couldNotRender }
@@ -56,7 +56,8 @@ enum ReportDocument {
     static func html(session: SpaceSession, reportId: String) async throws -> String {
         if let own = try await CompanionDeepResearchResult.draft(session: session, id: reportId) {
             let cover = try await CompanionDeepResearchResult.cover(session: session, id: reportId, dataURL: true)
-            return try renderHTML(draft: own, image: .object(["dataUrl": cover, "credit": .null]))
+            let figures = try await CompanionResearchFigures.context(session: session, reportID: reportId)
+            return try renderHTML(draft: own, image: .object(["dataUrl": cover, "credit": .null]), visuals: figures?.objectValue?["manifest"] ?? .null)
         }
         if !session.isDemo {
             do { return try await session.client.deepResearchDocument(reportId, in: session.connection.spaceId) }
@@ -132,31 +133,48 @@ enum ReportDocument {
     """
 
     /// Load the document into an off-screen web view and print it.
-    static func pdf(from html: String) async throws -> Data {
+    static func pdf(from html: String, session: SpaceSession? = nil, figureContext: JSONValue? = nil) async throws -> Data {
         try Task.checkCancellation()
         let paper = CGRect(
             origin: .zero,
             size: CGSize(width: paperSize.width / layoutScale, height: paperSize.height / layoutScale)
         )
         let configuration = WKWebViewConfiguration();configuration.websiteDataStore = .nonPersistent()
+        let figureScheme: CompanionResearchFigureScheme?
+        if let session, let figureContext {
+            figureScheme = CompanionResearchFigureScheme(session: session, context: figureContext)
+            configuration.setURLSchemeHandler(figureScheme, forURLScheme: "nodus-image")
+        } else { figureScheme = nil }
         let webView = WKWebView(frame: paper,configuration:configuration)
         // In the window, not floating free: WebKit will not lay out a detached web view for
         // print, and a print job asked of one comes back empty — which is the other half of
         // "sometimes it does not even generate".
         attach(webView)
-        defer { webView.stopLoading();webView.navigationDelegate = nil;webView.removeFromSuperview() }
+        defer { figureScheme?.cancelAll();webView.stopLoading();webView.navigationDelegate = nil;webView.removeFromSuperview() }
 
         let loader = Loader()
         webView.navigationDelegate = loader
         // A base URL of nil is right: the document is self-contained — its cover image is a
         // `data:` URL and its styles are inline — so there is nothing to resolve against, and
         // a real base would let a stray reference reach the network mid-print.
-        webView.loadHTMLString(withPrinterRules(html), baseURL: nil)
+        let policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data: nodus-image:; style-src 'unsafe-inline'; font-src data:;\">"
+        let printable = withContentPolicy(withPrinterRules(html), policy: policy)
+        webView.loadHTMLString(printable, baseURL: nil)
         try await loader.finished()
 
         // WebKit reports the page as laid out only after a turn of the run loop past
         // `didFinish`; printing immediately gives a blank first page.
         try await Task.sleep(for: .milliseconds(200))
+        _ = try await webView.callAsyncJavaScript("""
+        return await Promise.race([
+          Promise.all(Array.from(document.images, image => image.complete
+            ? (image.naturalWidth > 0 ? Promise.resolve() : Promise.reject(new Error('A report image is unavailable.')))
+            : new Promise((resolve, reject) => { image.addEventListener('load', resolve, {once:true}); image.addEventListener('error', () => reject(new Error('A report image is unavailable.')), {once:true}); }))).then(() => document.fonts.ready).then(() => true),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Report images did not finish loading.')), 30000))
+        ])
+        """, arguments: [:], in: nil, contentWorld: .page)
+        if let failure = figureScheme?.failure { throw failure }
+        try Task.checkCancellation()
         try await paginateLongTables(in: webView, paper: paper)
         _ = try await webView.evaluateJavaScript("""
         (() => {
@@ -333,6 +351,21 @@ enum ReportDocument {
         let numberStyle: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 7.5), .foregroundColor: gray]
         let numberSize = number.size(withAttributes: numberStyle)
         number.draw(at: CGPoint(x: center - numberSize.width / 2, y: paperSize.height - 29), withAttributes: numberStyle)
+    }
+
+    /// Insert before any resource elements, including documents with attributed heads.
+    private static func withContentPolicy(_ html: String, policy: String) -> String {
+        if let head = html.range(of: "<head\\b[^>]*>", options: [.regularExpression, .caseInsensitive]) {
+            var result = html
+            result.insert(contentsOf: policy, at: head.upperBound)
+            return result
+        }
+        if let root = html.range(of: "<html\\b[^>]*>", options: [.regularExpression, .caseInsensitive]) {
+            var result = html
+            result.insert(contentsOf: "<head>" + policy + "</head>", at: root.upperBound)
+            return result
+        }
+        return "<head>" + policy + "</head>" + html
     }
 
     /// The printer rules go last in `<head>`, so they win against the document's own.
@@ -523,7 +556,8 @@ struct ReportPDFButton: View {
                 let html: String
                 if let local { html = try ReportDocument.html(saved: local.saved, store: local.store) }
                 else { html = try await ReportDocument.html(session: session, reportId: reportId) }
-                let bytes = try await ReportDocument.pdf(from: html)
+                let figures = local == nil ? try await CompanionResearchFigures.context(session: session, reportID: reportId) : nil
+                let bytes = try await ReportDocument.pdf(from: html, session: session, figureContext: figures)
                 file = try ReportDocument.file(named: title, bytes: bytes)
             } catch {
                 self.error = error.localizedDescription

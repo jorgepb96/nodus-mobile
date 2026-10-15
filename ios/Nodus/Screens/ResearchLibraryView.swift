@@ -1250,6 +1250,8 @@ struct PublishedReportReader: View {
     @State private var translationOpen = false
     @State private var loading = false
     @State private var metadataExpanded = false
+    @State private var authoredFigureContext: JSONValue?
+    @State private var figureIssue: String?
     private var phoneHeader: Bool { UIDevice.current.userInterfaceIdiom == .phone }
     private var currentRow: Row { detail?.report ?? row }
     private var localCoverID: String? {
@@ -1310,6 +1312,10 @@ struct PublishedReportReader: View {
                     Button("Reintentar") { Task { await load() } }.frame(minHeight: 44).disabled(loading).accessibilityIdentifier("report-native-load-retry")
                 }
 
+                if let figureIssue {
+                    NodusNotice(tone: .blocked, title: "No se pudieron abrir las figuras", message: LocalizedStringKey(figureIssue))
+                    Button("Reintentar figuras") { Task { if let id = currentRow.string("id") { authoredFigureContext = await loadFigureContext(id) } } }.frame(minHeight: 44)
+                }
                 if let sections = prose {
                     ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
                         VStack(alignment: .leading, spacing: 14) {
@@ -1319,7 +1325,7 @@ struct PublishedReportReader: View {
                             // The desktop writes one Markdown document with its own headings
                             // and `nodus://` citations in it. Rendered as plain text, both
                             // arrived as punctuation.
-                            CorpusProse(section.body, accent: session.accent, session: session)
+                            CorpusProse(section.body, accent: session.accent, session: session, figureContext: authoredFigureContext)
                                 .environment(\.authoredResearchReaderID, currentRow.string("id").flatMap { $0.hasPrefix("mobile-dr-") ? $0 : nil })
                                 .nodusSearchOrder(1)
                         }
@@ -1330,9 +1336,6 @@ struct PublishedReportReader: View {
                     }
                 } else if detail == nil, error == nil {
                     ProgressView().tint(session.accent).frame(maxWidth: .infinity)
-                }
-                if detail != nil, let reportID = currentRow.string("id") {
-                    CompanionResearchFigures(session: session, reportID: reportID)
                 }
             }
             .padding(NodusSpace.page)
@@ -1458,21 +1461,28 @@ struct PublishedReportReader: View {
             .joined(separator: "\n\n")
     }
 
+    private func loadFigureContext(_ id: String) async -> JSONValue? {
+        do { let value = try await CompanionResearchFigures.context(session: session, reportID: id); figureIssue = nil; return value }
+        catch is CancellationError { return nil }
+        catch { figureIssue = error.localizedDescription; return nil }
+    }
     private func load() async {
         guard let id = row.string("id") else { return }
         loading = true; error = nil
         defer { loading = false }
         do {
             if let own = try await CompanionDeepResearchResult.detail(session: session, id: id) {
-                detail = own; error = nil; return
+                authoredFigureContext = await loadFigureContext(id); detail = own; error = nil; return
             }
             do {
                 let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
+                authoredFigureContext = await loadFigureContext(id)
                 detail = loaded
                 error = nil
             } catch {
                 guard isPrivateBridgeOffline(error),
                       let own = try await CompanionDeepResearchResult.detail(session: session, id: id, publishedReceipt: true) else { throw error }
+                authoredFigureContext = await loadFigureContext(id)
                 detail = own
                 self.error = nil
             }

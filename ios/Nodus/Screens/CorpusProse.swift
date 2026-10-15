@@ -528,17 +528,19 @@ struct CorpusProse: View {
         labels: [String: String] = [:],
         renderRichText: Bool = true,
         onReference: ((Int) -> Void)? = nil,
-        onCitation: ((URL) -> Bool)? = nil
+        onCitation: ((URL) -> Bool)? = nil,
+        figureContext: JSONValue? = nil
     ) {
         self.accent = accent
         self.session = session
         self.onReference = onReference
         self.onCitation = onCitation
+        self.figureContext = figureContext
         // The text and the labels are not kept: everything that reads them is done here. What
         // survives is `blocks`, which is what they were for.
         let prepared = Self.prepare(text, labels: labels)
         blocks = prepared
-        richSource = renderRichText && RichCorpusProse.isRequired(text)
+        richSource = renderRichText && (RichCorpusProse.isRequired(text) || figureContext != nil)
             ? Self.linkifyRichText(text, labels: labels)
             : nil
     }
@@ -560,6 +562,7 @@ struct CorpusProse: View {
     /// handed to it is now the same instance each pass, so the identity check that decides whether
     /// to reparse the Markdown short-circuits instead of walking two copies of a paragraph.
     private let blocks: [Block]
+    private let figureContext: JSONValue?
     private let richSource: String?
 
     /// Uses the same block identities as the rendered reader, so an evidence
@@ -636,7 +639,7 @@ struct CorpusProse: View {
                     return false
                 }
                 presenting.reference = reference; return true
-            }).background { ProseSheets(session: session, presenting: presenting, removeBookmark: { [bookmarks] in bookmarks?.clear() }) }
+            }, figureContext: figureContext).background { ProseSheets(session: session, presenting: presenting, removeBookmark: { [bookmarks] in bookmarks?.clear() }) }
         } else { nativeProse }
     }
 

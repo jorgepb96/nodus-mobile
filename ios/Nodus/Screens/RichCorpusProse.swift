@@ -11,6 +11,7 @@ struct RichCorpusProse: View {
     let accent: Color
     let session: SpaceSession?
     let onOpen: (URL) -> Bool
+    var figureContext: JSONValue? = nil
     @Environment(\.downloadedReaderOnly) private var downloadedOnly
     @Environment(\.nodusReadingStyle) private var reading
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -54,7 +55,7 @@ struct RichCorpusProse: View {
                 RichProseWebView(source: source, session: session, fontSize: reading.size(.callout, dynamicTypeSize: dynamicTypeSize), accent: accent,
                     dark: colorScheme == .dark, justify: sizeClass == .regular && !dynamicTypeSize.isAccessibilitySize,
                     annotations: annotations, bookmarks: bookmarks, chat: chat, search: search, path: path,
-                    height: $height, issue: $issue, onOpen: onOpen, onImage: { image = $0 }, onFormula: { formula = $0 })
+                    height: $height, issue: $issue, onOpen: onOpen, onImage: { image = $0 }, onFormula: { formula = $0 }, figureContext: figureContext)
                     .id(downloadedOnly)
                     .frame(height: height).id(attempt)
                     .id(PageSearchAnchor(path: path))
@@ -140,6 +141,7 @@ private struct RichProseWebView: UIViewRepresentable {
     let onOpen: (URL) -> Bool
     let onImage: (RichCorpusProse.OpenImage) -> Void
     var onFormula: ((RichCorpusProse.OpenFormula) -> Void)? = nil
+    var figureContext: JSONValue? = nil
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> RichProseWKView {
         let config = WKWebViewConfiguration()
@@ -221,7 +223,7 @@ private struct RichProseWebView: UIViewRepresentable {
             return .object(["source": .string(parent.source), "language": .string(Prompts.interfaceLanguage), "dark": .bool(parent.dark), "accent": .string(String(format: "#%02x%02x%02x", Int(red * 255), Int(green * 255), Int(blue * 255))),
                 "fontSize": .double(Double(parent.fontSize)), "justify": .bool(parent.justify), "annotations": .array(items), "highlighter": parent.annotations?.fixedColor.map { .string($0.rawValue) } ?? .null,
                 "search": .array(highlights?.ranges.map(range) ?? []), "activeSearch": highlights?.active.map(range) ?? .null, "searchAim": .int(Int64(highlights?.aim ?? 0)),
-                "bookmarkAim": .int(Int64(parent.annotations?.bookmarkAim ?? parent.bookmarks?.aim ?? 0)), "legacyBookmark": migration])
+                "bookmarkAim": .int(Int64(parent.annotations?.bookmarkAim ?? parent.bookmarks?.aim ?? 0)), "legacyBookmark": migration, "figureContext": parent.figureContext ?? .null])
         }
         func update(initial: Bool = false) {
             guard let webView, !stopped else { return }
@@ -281,6 +283,17 @@ private struct RichProseWebView: UIViewRepresentable {
                       width.isFinite, width > 0, width <= 20_000 else { return }
                 clearSelection()
                 parent.onFormula?(.init(latex: latex, width: CGFloat(width)))
+            case "figureSvg":
+                if let svg = payload.objectValue?["svg"]?.stringValue, let figure = payload.objectValue?["figureId"]?.stringValue,
+                   CompanionResearchFigures.svg(svg, figureID: figure, context: parent.figureContext) {
+                    parent.onImage(.init(content: .init(data: Data(svg.utf8), mime: "image/svg+xml"), preview: nil, title: "Figura SVG"))
+                }
+            case "figureAnchors":
+                if let expected = payload.objectValue?["expected"]?.intValue, let matched = payload.objectValue?["matched"]?.intValue {
+                    let message = "Algunas figuras no coinciden con los bloques de este texto. Sus imágenes siguen guardadas; no se les asignará otra ubicación."
+                    if matched < expected { parent.issue = message }
+                    else if parent.issue == message { parent.issue = nil }
+                }
             case "image", "openImage": image(payload, requestId: fields["id"]?.stringValue, opening: method == "openImage")
             case "cancelImage":
                 if let id = payload.stringValue, id.count <= 32 { tasks[id]?.cancel() }
@@ -357,7 +370,7 @@ private struct RichProseWebView: UIViewRepresentable {
         }
         private func image(_ value: JSONValue, requestId: String?, opening: Bool) {
             let source = opening ? value.objectValue?["source"]?.stringValue : value.stringValue
-            guard let source, source.utf8.count <= 56 * 1024 * 1024, (parent.source.contains(source) || ReaderImageSource.references(in: parent.source).contains(where: { $0.source == source })), tasks.count < 256 else {
+            guard let source, source.utf8.count <= 56 * 1024 * 1024, (parent.source.contains(source) || ReaderImageSource.references(in: parent.source).contains(where: { $0.source == source }) || CompanionResearchFigures.allows(source, context: parent.figureContext)), tasks.count < 256 else {
                 if let requestId { reply(requestId, value: .null, error: "La imagen no pertenece a este documento.") }; return
             }
             let taskId = requestId ?? UUID().uuidString, title = value.objectValue?["title"]?.stringValue ?? String(localized: "Image")
@@ -369,7 +382,9 @@ private struct RichProseWebView: UIViewRepresentable {
                     await previous?.value; try Task.checkCancellation()
                     let content: ReaderImageSource.Content
                     if let cached = self.images[source] { content = cached }
-                    else { content = try await ReaderImageSource.load(source, session: self.parent.session, downloadedOnly: self.parent.downloadedOnly) }
+                    else if let context = self.parent.figureContext, let session = self.parent.session, CompanionResearchFigures.allows(source, context: context) {
+                        content = try await CompanionResearchFigures.load(source, context: context, session: session)
+                    } else { content = try await ReaderImageSource.load(source, session: self.parent.session, downloadedOnly: self.parent.downloadedOnly) }
                     let preview = content.mime == "image/svg+xml" ? nil : try ReaderRasterImage.preview(content.data)
                     try Task.checkCancellation(); guard !self.stopped else { return }
                     if self.images.values.reduce(0, { $0 + $1.data.count }) + content.data.count <= 64 * 1024 * 1024 { self.images[source] = content }

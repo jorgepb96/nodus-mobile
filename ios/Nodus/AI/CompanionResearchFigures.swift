@@ -1,84 +1,51 @@
 import Foundation
 import NodusKit
-import NodusUI
-import SwiftUI
-import UIKit
 
-/// Consults the exact authored figure receipts. No Mac request or provider is
-/// involved, including when a figure is opened after publication or recovery.
-struct CompanionResearchFigures: View {
-    let session: SpaceSession
-    let reportID: String
-    @State private var figures: [JSONValue] = []
-    @State private var receipts: [CompanionDocumentFigureAssets.Receipt] = []
-    @State private var issue: String?
-    var body: some View {
-        LazyVStack(alignment: .leading, spacing: 20) {
-            if let issue { NodusNotice(tone: .blocked, title: "Could not open image", message: LocalizedStringKey(issue)) }
-            ForEach(Array(figures.enumerated()), id: \.offset) { index, figure in
-                if let object = figure.objectValue {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let poster = object["poster"]?.stringValue,
-                           let receipt = receipts.first(where: { poster == "nodus-image://chat/\($0.owner)/\($0.id.uuidString.lowercased())" }) {
-                            CompanionResearchFigureImage(session: session, receipt: receipt, caption: object["caption"]?.stringValue ?? "")
-                        } else if object["state"] != .string("ready") {
-                            NodusNotice(tone: .blocked, title: "Figura pendiente", message: LocalizedStringKey(object["error"]?.stringValue ?? "La figura no tiene una imagen confirmada. Su estado permanece guardado en la investigación."))
-                        } else { NodusNotice(tone: .blocked, title: "Could not open image", message: "Falta el recibo de esta figura. El informe no lo sustituirá por otra imagen.") }
-                        Text("Figura \(index + 1). \(object["caption"]?.stringValue ?? "")").font(.caption).fixedSize(horizontal: false, vertical: true)
-                        let sources = object["sources"]?.arrayValue?.compactMap(\.stringValue) ?? []
-                        if !sources.isEmpty {
-                            CorpusProse(sources.enumerated().map { "[\($0.offset + 1)](\($0.element))" }.joined(separator: " · "), accent: session.accent, session: session)
-                                .environment(\.authoredResearchReaderID, reportID)
-                        }
-                    }
-                }
+/// The rich reader receives only the exact manifest and small receipts. Its
+/// Markdown source and UTF-16 annotation offsets remain unchanged.
+@MainActor enum CompanionResearchFigures {
+    static func context(session: SpaceSession, reportID: String) async throws -> JSONValue? {
+        guard let checkpoint = try await CompanionDeepResearchResult.checkpoint(session: session, id: reportID, publishedReceipt: !reportID.hasPrefix("mobile-dr-")),
+              let object = checkpoint.objectValue,
+              let manifest = object["report"]?.objectValue?["mobileVisuals"]?.objectValue?["manifest"],
+              let entity = object["entityKey"]?.stringValue, let original = object["id"]?.stringValue,
+              let generation = UUID(uuidString: original) else { return nil }
+        let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
+        let receipts = try await CompanionDocumentFigureAssets(cache: cache, vaultId: scope.recordVaultId).receipts(parentRecordId: CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity), generationId: generation)
+        return .object(["manifest": manifest, "receipts": .array(try receipts.map { try $0.jsonValue() }), "entityKey": .string(entity), "generationId": .string(original)])
+    }
+    static func allows(_ source: String, context: JSONValue?) -> Bool {
+        guard let url = URL(string: source), ["nodus-image", "nodus-capability"].contains(url.scheme), url.host == "chat", url.user == nil, url.password == nil, url.port == nil, url.query == nil, url.fragment == nil,
+              let object = context?.objectValue else { return false }
+        let parts = url.path.split(separator: "/").map(String.init)
+        guard parts.count == 2, UUID(uuidString: parts[1]) != nil,
+              let figures = object["manifest"]?.objectValue?["figures"]?.arrayValue else { return false }
+        func includes(_ nodes: [JSONValue]) -> Bool {
+            nodes.contains { node in
+                node.objectValue?["attachmentId"]?.stringValue?.lowercased() == parts[1].lowercased()
+                || includes(node.objectValue?["children"]?.arrayValue ?? [])
             }
         }
-        .task(id: reportID) {
-            figures = []; receipts = []; issue = nil
-            do {
-                guard let checkpoint = try await CompanionDeepResearchResult.checkpoint(session: session, id: reportID, publishedReceipt: !reportID.hasPrefix("mobile-dr-")),
-                      let object = checkpoint.objectValue,
-                      let values = object["report"]?.objectValue?["mobileVisuals"]?.objectValue?["manifest"]?.objectValue?["figures"]?.arrayValue,
-                      let entity = object["entityKey"]?.stringValue, let generation = UUID(uuidString: object["id"]?.stringValue ?? "") else { return }
-                let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
-                let loaded = try await CompanionDocumentFigureAssets(cache: cache, vaultId: scope.recordVaultId).receipts(parentRecordId: CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity), generationId: generation)
-                try Task.checkCancellation(); figures = values; receipts = loaded
-            } catch is CancellationError { }
-            catch { issue = error.localizedDescription }
+        return figures.contains { value in
+            guard let figure = value.objectValue, figure["owner"] == .string(parts[0]) else { return false }
+            return figure["poster"] == .string(source) || includes(figure["view"]?.objectValue?["nodes"]?.arrayValue ?? [])
         }
     }
-}
-private struct CompanionResearchFigureImage: View {
-    let session: SpaceSession
-    let receipt: CompanionDocumentFigureAssets.Receipt
-    let caption: String
-    @State private var content: ReaderImageSource.Content?
-    @State private var preview: UIImage?
-    @State private var issue: String?
-    @State private var attempt = 0
-    @State private var showing = false
-    var body: some View {
-        Group {
-            if let preview {
-                Button { showing = true } label: { Image(uiImage: preview).resizable().scaledToFit() }.buttonStyle(.plain).accessibilityLabel(caption)
-            } else if let issue {
-                VStack { NodusNotice(tone: .blocked, title: "Could not open image", message: LocalizedStringKey(issue)); Button("Retry") { attempt += 1 }.frame(minHeight: 44) }
-            } else { ProgressView().frame(maxWidth: .infinity, minHeight: 80) }
+    static func svg(_ svg: String, figureID: String, context: JSONValue?) -> Bool {
+        guard svg.utf8.count <= 1_048_576,
+              let figure = context?.objectValue?["manifest"]?.objectValue?["figures"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(figureID) }) else { return false }
+        func contains(_ nodes: [JSONValue]) -> Bool {
+            nodes.contains { $0.objectValue?["kind"] == .string("svg") && $0.objectValue?["svg"] == .string(svg) || contains($0.objectValue?["children"]?.arrayValue ?? []) }
         }
-        .task(id: "\(receipt.id)|\(attempt)") {
-            do {
-                let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
-                guard receipt.vaultId == scope.recordVaultId else { throw DesktopBridgeError.permissionDenied }
-                let data = try await CompanionDocumentFigureAssets(cache: cache, vaultId: scope.recordVaultId).data(receipt)
-                let image = try ReaderRasterImage.preview(data)
-                try Task.checkCancellation(); content = .init(data: data, mime: receipt.mimeType); preview = image; issue = nil
-            } catch is CancellationError { }
-            catch { issue = error.localizedDescription }
-        }
-        .onDisappear { if !showing { content = nil; preview = nil } }
-        .nodusSheet(isPresented: $showing) {
-            if let content { ReaderImageViewer(content: content, image: preview, title: caption, accent: session.accent) }
-        }
+        return contains(figure.objectValue?["view"]?.objectValue?["nodes"]?.arrayValue ?? [])
+    }
+    static func load(_ source: String, context: JSONValue, session: SpaceSession) async throws -> ReaderImageSource.Content {
+        guard allows(source, context: context), let url = URL(string: source), let id = url.path.split(separator: "/").last,
+              let raw = context.objectValue?["receipts"]?.arrayValue?.first(where: { $0.objectValue?["id"]?.stringValue?.lowercased() == id.lowercased() }) else { throw DesktopBridgeError.permissionDenied }
+        let receipt = try CompanionDocumentFigureAssets.Receipt(value: raw)
+        let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
+        guard receipt.vaultId == scope.recordVaultId, receipt.byteCount <= 8 * 1_048_576, url.path.split(separator: "/").first.map(String.init) == receipt.owner else { throw DesktopBridgeError.permissionDenied }
+        let data = try await CompanionDocumentFigureAssets(cache: cache, vaultId: scope.recordVaultId).data(receipt)
+        return .init(data: data, mime: receipt.mimeType)
     }
 }

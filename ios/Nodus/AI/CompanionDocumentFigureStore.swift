@@ -8,9 +8,11 @@ import NodusKit
     private static func context(_ session: SpaceSession, _ input: JSONValue) throws -> (PrivateBridgeCache, String, String, UUID) {
         guard let object = input.objectValue, let entity = object["entityKey"]?.stringValue,
               let original = object["generationId"]?.stringValue, let generation = UUID(uuidString: original) else { throw DesktopBridgeError.malformedResponse }
+        let parentKind = object["parentKind"]?.stringValue ?? "deepResearch"
+        guard ["deepResearch", "documentVisuals"].contains(parentKind) else { throw DesktopBridgeError.malformedResponse }
         let scope = try session.surfaceStorageScope()
         return (try PrivateBridgeCache(pairingId: scope.cacheId), scope.recordVaultId,
-                try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity), generation)
+                try CompanionGenerationPublication.recordId(kind: parentKind, entity: entity), generation)
     }
     static func store(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
         let (cache, vault, parent, generation) = try context(session, input)
@@ -61,13 +63,13 @@ import NodusKit
                   object["generationId"] == .string(receipt.targetId), object["figureId"] == .string(receipt.figureKey),
                   object["mimeType"] == .string(receipt.mimeType), object["byteCount"]?.intValue == receipt.byteCount,
                   object["sha256"] == .string(receipt.sha256) else { throw DesktopBridgeError.permissionDenied }
-            try await cache.requireGenerationExecutionAllowed(vaultId: vault, generationId: receipt.targetId)
+            try await cache.requireGenerationExecutionAllowed(vaultId: vault, generationId: generation.uuidString.lowercased())
             var manifest = object
             manifest["version"] = .int(1); manifest["vaultId"] = .string(vault)
             manifest["metadata"] = object["metadata"] ?? .object([:])
             let request: JSONValue = .object(["manifest": .object(manifest)])
             func send(_ action: String, _ body: JSONValue) async throws -> JSONValue {
-                try await cache.requireGenerationExecutionAllowed(vaultId: vault, generationId: receipt.targetId)
+                try await cache.requireGenerationExecutionAllowed(vaultId: vault, generationId: generation.uuidString.lowercased())
                 let (currentVault, pairing, token) = try privateBridgeConnection(session, domain: .writing)
                 guard currentVault == vault, pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
                 return try await DesktopBridgeClient(pairing: pairing, token: token).researchFigureUpload(vaultId: vault, uploadId: id, action: action, body: body)
