@@ -31,6 +31,7 @@ parser.add_argument("--research-marker")
 parser.add_argument("--research-body-snippet")
 parser.add_argument("--research-title")
 parser.add_argument("--research-markdown-sha256")
+parser.add_argument("--research-model-label")
 parser.add_argument("--scriptor-marker")
 parser.add_argument("--offline-scriptor-marker")
 parser.add_argument("--created-document-marker")
@@ -64,6 +65,10 @@ if args.research_markdown_sha256:
     if not args.research_marker or not re.fullmatch(r"[a-f0-9]{64}", args.research_markdown_sha256):
         raise SystemExit("A saved research Markdown digest is required")
     values["NODUS_ACCEPTANCE_RESEARCH_MARKDOWN_SHA256"] = args.research_markdown_sha256
+if args.research_model_label:
+    if not args.research_marker or not args.research_model_label.strip() or len(args.research_model_label) > 256:
+        raise SystemExit("The saved report's actual model label and request marker are required")
+    values["NODUS_ACCEPTANCE_RESEARCH_MODEL_LABEL"] = args.research_model_label
 if args.scriptor_marker:
     if not re.fullmatch(r"DesktopQA-[A-Za-z0-9-]{8,80}", args.scriptor_marker):
         raise SystemExit("A Desktop editor request marker is required")

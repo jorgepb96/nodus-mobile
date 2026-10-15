@@ -3228,6 +3228,7 @@ final class MobileReleaseUITests: XCTestCase {
         let expectedBody = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_RESEARCH_BODY_SNIPPET"])
         let expectedTitle = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_RESEARCH_TITLE"])
         let expectedMarkdownHash = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_RESEARCH_MARKDOWN_SHA256"])
+        let expectedModel = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_RESEARCH_MODEL_LABEL"], "Read the model label from the saved report, independently of the Mac's current model selection.")
         let app = try pairLive(route: "deepResearch")
         try verifyGeneratedResearchReport(app, marker: marker, timeout: 60, expectedBody: expectedBody)
         let web = app.webViews.firstMatch
@@ -3248,7 +3249,7 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertFalse(dialog.exists)
         let metadata = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Datos del informe")).firstMatch
         XCTAssertTrue(metadata.isHittable); metadata.tap()
-        XCTAssertTrue(web.staticTexts["DeepSeek · deepseek-flash"].exists)
+        XCTAssertTrue(web.staticTexts[expectedModel].exists)
         capture(app, "live-reader-metadata-expanded")
         metadata.tap()
         let options = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Opciones del informe")).firstMatch
