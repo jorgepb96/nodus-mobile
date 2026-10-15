@@ -35,6 +35,7 @@ struct MirrorTableView: View {
     @State private var loadedQuery = ""
     @State private var loadedSort: MirrorStore.SortOrder = .published
     @State private var lastPage: Page<Row>?
+    @State private var committedGeneration = UUID()
 
     private var presenter: RowPresenter { RowPresenter.forTable(table) }
 
@@ -87,7 +88,7 @@ struct MirrorTableView: View {
                     if rows.count < total, filter == nil, error == nil {
                         HStack { Spacer(); ProgressView().tint(session.accent); Spacer() }
                             .padding()
-                            .task(id: rows.count) { await loadMore() }
+                            .task(id: "\(committedGeneration):\(rows.count)") { await loadMore() }
                     }
                     if loading, rows.isEmpty { ProgressView().tint(session.accent).padding() }
                     if rows.isEmpty, error == nil, !loading {
@@ -207,6 +208,9 @@ struct MirrorTableView: View {
             loadedQuery = requestedQuery
             loadedSort = requestedSort
             error = nil
+            // Two searches may both return 80 initial rows. Their visible continuation
+            // still belongs to a new committed catalogue, even when its count is equal.
+            committedGeneration = UUID()
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
@@ -231,8 +235,8 @@ struct MirrorTableView: View {
             )
             guard requestID == token, query == requestedQuery, sort == requestedSort else { return }
             try CataloguePageIntegrity.validate(page)
-            guard page.offset == offset, page.total == previous.total else { throw PageTraversalError.invalidProgress }
             guard page.revision == previous.revision else { throw PageTraversalError.changingRevision }
+            guard page.offset == offset, page.total == previous.total else { throw PageTraversalError.invalidProgress }
             rows.append(contentsOf: page.items)
             lastPage = page
         } catch PageTraversalError.changingRevision {
