@@ -1553,11 +1553,51 @@ public actor PrivateBridgeCache {
         try Self.diskLock.withLock {
             try Self.recoverIndexedTransactions(in: folder)
             let writingIds = ["companion-documents-v1", "companion-study-documents-v1", "companion-page-documents-v1", "companion-immersion-progress-v1", "companion-database-reading-v1", "companion-mutation-outbox-v1"]
-            let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "autonomous:deepResearch:index:v1", "companion:world-map-generation-index:v1"]
+            let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "autonomous:deepResearch:index:v1", "companion:world-map-generation-index:v1", "companion:database-action-index:v1"]
             var known: [String: (vault: String, writing: Bool, ledger: Bool, recordId: String, kind: String?)] = [:]
             for vault in vaultIds {
                 for id in writingIds { known[legacyURL(vaultId: vault, domain: .writing, recordId: id).lastPathComponent] = (vault, true, false, id, id == "companion-mutation-outbox-v1" ? "mutationOutbox" : nil) }
                 for id in researchIds { known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: id).lastPathComponent] = (vault, false, id == "job-ledger-v1", id, nil) }
+            }
+            var fileChunks: [String: (id: UUID, index: Int, hash: String, size: Int)] = [:]
+            for vault in vaultIds {
+                let fileIndex = "companion:database-file-index:v1"
+                let url = fileURL(vaultId: vault, domain: .writing, recordId: fileIndex)
+                guard FileManager.default.fileExists(atPath: url.path) else { continue }
+                let decoded = try JSONDecoder.nodus.decode(JSONValue.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key))
+                guard let fields = decoded.objectValue, fields["version"] == .int(1), fields["vaultId"] == .string(vault), let ids = fields["ids"]?.arrayValue else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                let parsed = ids.compactMap { $0.stringValue.flatMap(UUID.init(uuidString:)) }
+                guard parsed.count == ids.count, Set(parsed).count == parsed.count else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                known[legacyURL(vaultId: vault, domain: .writing, recordId: fileIndex).lastPathComponent] = (vault, true, false, fileIndex, "databaseFileIndex")
+                for id in parsed {
+                    let record = CompanionDatabaseAttachments.recordId(id)
+                    let manifestURL = fileURL(vaultId: vault, domain: .writing, recordId: record)
+                    let manifest = try JSONDecoder.nodus.decode(CompanionDatabaseAttachments.Transfer.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: manifestURL)), using: key))
+                    guard manifest.version == 1, manifest.id == id, manifest.vaultId == vault, manifest.byteCount >= 0,
+                          !manifest.rowId.isEmpty, !manifest.columnId.isEmpty,
+                          manifest.chunkHashes.count <= Int(manifest.byteCount / Int64(CompanionDatabaseAttachments.chunkBytes) + (manifest.byteCount % Int64(CompanionDatabaseAttachments.chunkBytes) == 0 ? 0 : 1)) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                    known[legacyURL(vaultId: vault, domain: .writing, recordId: record).lastPathComponent] = (vault, true, false, record, "databaseFile")
+                    for (index, hash) in manifest.chunkHashes.enumerated() {
+                        guard hash.utf8.count == 64, hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                        let chunk = CompanionDatabaseAttachments.chunkId(id, index)
+                        let name = legacyURL(vaultId: vault, domain: .writing, recordId: chunk).lastPathComponent
+                        known[name] = (vault, true, false, chunk, "databaseFileChunk")
+                        fileChunks[name] = (id, index, hash, Int(min(Int64(CompanionDatabaseAttachments.chunkBytes), manifest.byteCount - Int64(index) * Int64(CompanionDatabaseAttachments.chunkBytes))))
+                    }
+                }
+            }
+            for vault in vaultIds {
+                let indexId = "companion:database-action-index:v1"
+                let url = fileURL(vaultId: vault, domain: .researchGeneration, recordId: indexId)
+                guard FileManager.default.fileExists(atPath: url.path) else { continue }
+                let decoded = try JSONDecoder.nodus.decode(JSONValue.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key))
+                guard let entries = decoded.objectValue else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                for record in entries.keys {
+                    let checkpointURL = fileURL(vaultId: vault, domain: .researchGeneration, recordId: record)
+                    let checkpoint = try CompanionDatabaseActionCheckpoint(JSONDecoder.nodus.decode(JSONValue.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: checkpointURL)), using: key)))
+                    guard checkpoint.value.objectValue?["vaultId"] == .string(vault), record == checkpoint.scope || record == checkpoint.scope + ":" + checkpoint.id else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                    known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent] = (vault, false, false, record, "databaseAction")
+                }
             }
             for vault in vaultIds {
                 let url = fileURL(vaultId: vault, domain: .researchGeneration, recordId: "autonomous:completion-index:v1")
@@ -1589,6 +1629,12 @@ public actor PrivateBridgeCache {
                 fingerprints[original] = PrivateBridgeAuthoringRecovery.hash(encrypted)
                 let data = try AES.GCM.open(AES.GCM.SealedBox(combined: encrypted), using: key)
                 let value = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
+                if let expected = fileChunks[base] {
+                    guard let chunk = value.objectValue, chunk["version"] == .int(1), chunk["id"]?.stringValue.flatMap(UUID.init(uuidString:)) == expected.id,
+                          chunk["index"] == .int(Int64(expected.index)), let text = chunk["bytes"]?.stringValue,
+                          let bytes = Data(base64Encoded: text), bytes.base64EncodedString() == text,
+                          bytes.count == expected.size, PrivateBridgeAuthoringRecovery.hash(bytes) == expected.hash else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                }
                 var scope = known[base]
                 if scope == nil, let object = value.objectValue, let request = object["request"]?.objectValue,
                    let id = object["id"]?.stringValue, UUID(uuidString: id) != nil {
@@ -1643,14 +1689,42 @@ public actor PrivateBridgeCache {
                     fields["workspaceOrganizationSnapshot"] = nil
                     authoredData = try JSONEncoder.nodus.encode(JSONValue.object(fields))
                 }
-                records.append(.init(filename: "work-" + base, vaultId: scope.vault, data: authoredData, ledger: scope.ledger, writing: scope.writing, recordId: scope.recordId, generationKind: scope.kind))
+                if scope.kind == "databaseFileChunk" {
+                    let url = file.url, expectedCiphertext = fingerprints[original]!, cacheKey = key
+                    let source = PrivateBridgeAuthoringRecovery.RecordSource {
+                        let encrypted = try Data(contentsOf: url)
+                        guard PrivateBridgeAuthoringRecovery.hash(encrypted) == expectedCiphertext else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                        return try AES.GCM.open(AES.GCM.SealedBox(combined: encrypted), using: cacheKey)
+                    }
+                    records.append(.init(filename: "work-" + base, vaultId: scope.vault, data: Data(), ledger: false, writing: true, recordId: scope.recordId, generationKind: scope.kind, source: source))
+                } else {
+                    records.append(.init(filename: "work-" + base, vaultId: scope.vault, data: authoredData, ledger: scope.ledger, writing: scope.writing, recordId: scope.recordId, generationKind: scope.kind))
+                }
             }
+            guard Set(fileChunks.keys).isSubset(of: Set(records.map { String($0.filename.dropFirst(5)) })) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
             return .init(records: records, fingerprints: fingerprints)
         }
     }
     public func adoptAuthoringRecovery(_ records: [PrivateBridgeAuthoringRecovery.Record], requiresReview: Bool) throws {
-        let records = records.filter { $0.generationKind != "legacySurfaceStorage" }
+        let eligible = records.filter { $0.generationKind != "legacySurfaceStorage" && $0.generationKind != "mutationOutbox" }
         try Self.diskLock.withLock {
+            try Self.recoverIndexedTransactions(in: folder)
+            try requireWritable()
+            // The index and review-marked manifest become visible only after every
+            // chunk is durable. Interrupted adoption retries from its original archive.
+            for record in eligible where record.generationKind == "databaseFileChunk" {
+                guard PrivateBridgeAuthoringRecovery.validFilename(record.filename), let vault = record.vaultId else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                try requireVaultScope(vault)
+                let data = try record.materializedData(), target = folder.appendingPathComponent(record.filename)
+                if FileManager.default.fileExists(atPath: target.path) {
+                    let original = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: target)), using: key)
+                    guard original == data else { throw PrivateBridgeAuthoringRecovery.RecoveryError.recoveryRequired }
+                } else {
+                    guard let sealed = try AES.GCM.seal(data, using: key).combined else { throw DesktopBridgeError.malformedResponse }
+                    try PrivateBridgeProtectedFile.write(sealed, to: target); BackupPolicy.apply(.excluded, to: target)
+                }
+            }
+            let records = try eligible.filter { $0.generationKind != "databaseFileChunk" }.map { $0.replacing(data: try $0.materializedData()) }
             var payloads: [String: Data] = [:]
             var mergedRecoveryIndices = Set<String>()
             for record in records {

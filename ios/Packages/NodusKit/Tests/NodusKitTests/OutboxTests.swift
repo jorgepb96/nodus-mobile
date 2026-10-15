@@ -43,7 +43,8 @@ struct MutationOutboxAuthorisationTests {
         #expect(byID[delivered.id]?.objectValue?["delivered_at"]?.stringValue != nil)
         for mutation in [unsent, accepted, delivered] {
             let payload = try #require(byID[mutation.id]?.objectValue?["payload"]?.stringValue)
-            #expect(try JSONDecoder.nodus.decode(Mutation.self, from: Data(payload.utf8)) == mutation)
+            let decoded = try JSONDecoder.nodus.decode(Mutation.self, from: Data(payload.utf8))
+            #expect(try JSONEncoder.nodus.encode(decoded) == JSONEncoder.nodus.encode(mutation))
         }
         let reopened = try MutationOutbox(spaceId: "space-under-test", directory: directory)
         let unchanged = try await reopened.authoringRecoveryData(vaultId: "owning-vault")

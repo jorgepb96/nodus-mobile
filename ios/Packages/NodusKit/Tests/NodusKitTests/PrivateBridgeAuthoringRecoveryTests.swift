@@ -1,4 +1,6 @@
 import Foundation
+import CryptoKit
+import ZIPFoundation
 import Testing
 @testable import NodusKit
 
@@ -24,6 +26,89 @@ struct PrivateBridgeAuthoringRecoveryTests {
         func cache(_ id: String) throws -> PrivateBridgeCache { try PrivateBridgeCache(pairingId: id, directory: root, keychain: keychain) }
         func clean() { defaults.removePersistentDomain(forName: "authoring-recovery-\(id)"); try? FileManager.default.removeItem(at: root) }
     }
+    @Test("chunked authored files revoke into a lazy v2 archive, export original bytes and relink only for review")
+    func chunkedRecoveryV2() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let old = try f.pairing("chunk-old"), cache = try f.cache(old.id), file = UUID()
+        let content = Data(repeating: 73, count: CompanionDatabaseAttachments.chunkBytes + 17)
+        let payloads = [content.prefix(CompanionDatabaseAttachments.chunkBytes), content.suffix(17)].map { Data($0) }
+        var transfer = CompanionDatabaseAttachments.Transfer(id: file, vaultId: "vault", rowId: "row", columnId: "column", filename: "authored.bin", mimeType: "application/octet-stream", byteCount: Int64(content.count), expectedRowRevision: 7, expectedColumnRevision: 8)
+        transfer.chunkHashes = payloads.map(PrivateBridgeAuthoringRecovery.hash); transfer.sha256 = PrivateBridgeAuthoringRecovery.hash(content); transfer.state = "ready"
+        try await cache.storeAuthoredBatch(vaultId: "vault", records: [
+            .init(domain: .writing, recordId: CompanionDatabaseAttachments.indexKey, data: JSONEncoder.nodus.encode(CompanionDatabaseAttachments.Index(vaultId: "vault", ids: [file]))),
+            .init(domain: .writing, recordId: CompanionDatabaseAttachments.recordId(file), data: JSONEncoder.nodus.encode(transfer))])
+        for (index, bytes) in payloads.enumerated() {
+            try await cache.store(JSONEncoder.nodus.encode(CompanionDatabaseAttachments.Chunk(id: file, index: index, bytes: bytes.base64EncodedString())), vaultId: "vault", domain: .writing, recordId: CompanionDatabaseAttachments.chunkId(file, index))
+        }
+        try await cache.freezeForRevocation(true)
+        let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"])
+        let chunks = snapshot.records.filter { $0.generationKind == "databaseFileChunk" }
+        #expect(chunks.count == 2)
+        #expect(chunks.allSatisfy { $0.data.isEmpty && $0.source != nil })
+        let receipt = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "actual-mac")
+        // The encrypted header has metadata only, independent of total file bytes.
+        #expect(try Data(contentsOf: receipt.archiveURL).count < 16_384)
+        #expect(try receipt.validates(pairingId: old.id, folder: f.root.appendingPathComponent("bridge-" + old.id)))
+        // Validate external data while this receipt is still current, before the
+        // final revoked marker deliberately changes its encrypted header digest.
+        let archivedChunk = receipt.archiveURL.deletingPathExtension().appendingPathExtension("records").appendingPathComponent(chunks[0].filename)
+        let encryptedChunk = try Data(contentsOf: archivedChunk)
+        try FileManager.default.removeItem(at: archivedChunk)
+        #expect(throws: (any Error).self) { _ = try receipt.validates(pairingId: old.id, folder: f.root.appendingPathComponent("bridge-" + old.id)) }
+        try PrivateBridgeProtectedFile.write(encryptedChunk, to: archivedChunk)
+        #expect(try receipt.validates(pairingId: old.id, folder: f.root.appendingPathComponent("bridge-" + old.id)))
+        try await f.recovery.completeRevocation(receipt)
+        let summaries = try await f.recovery.allSummaries(), archive = try #require(summaries.first)
+        let lease = try await f.recovery.exportFile(id: archive.id)
+        #expect(lease.url.pathExtension == "zip")
+        let zip = try ZIPFoundation.Archive(url: lease.url, accessMode: .read, pathEncoding: nil)
+        let entry = try #require(zip.first { $0.path.hasSuffix("authored.bin") })
+        var exported = Data()
+        _ = try zip.extract(entry) { exported.append($0) }
+        #expect(exported == content)
+        #expect(zip["Nodus-local-work.json"] != nil)
+        let fresh = try f.pairing("chunk-new"), destination = try f.cache(fresh.id)
+        let adopted = try await f.recovery.adopt(pairing: fresh, macDeviceId: "actual-mac", cache: destination)
+        #expect(adopted == 4)
+        let files = CompanionDatabaseAttachments(cache: destination, vaultId: "vault")
+        let recovered = try await files.transfer(file)
+        #expect(recovered?.recoveryReviewRequired == true)
+        await #expect(throws: APIError.self) {
+            _ = try await files.upload(file, commit: true) { _, _, _ in Issue.record("Recovered files must not send without explicit approval"); return .null }
+        }
+        for (index, bytes) in payloads.enumerated() {
+            let stored = try await destination.data(vaultId: "vault", domain: .writing, recordId: CompanionDatabaseAttachments.chunkId(file, index))
+            let value = try JSONDecoder.nodus.decode(CompanionDatabaseAttachments.Chunk.self, from: #require(stored))
+            #expect(value.bytes == bytes.base64EncodedString())
+        }
+        try? f.keychain.remove(receipt.recoveryKeyName)
+        for id in [old.id, fresh.id] { try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }
+    }
+
+    @Test("version-1 encrypted work archives remain readable and export their exact structured bytes")
+    func legacyArchiveCompatibility() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let id = UUID(), name = "private-bridge-authoring-recovery-" + id.uuidString
+        let keyBytes = Data(repeating: 29, count: 32), key = SymmetricKey(data: keyBytes)
+        try f.keychain.set(keyBytes.base64EncodedString(), for: name)
+        defer { try? f.keychain.remove(name) }
+        let original = Data("original structured legacy manuscript".utf8)
+        let record: JSONValue = .object(["filename": .string("work-" + String(repeating: "a", count: 64) + ".bridgecache"), "vaultId": .string("vault"),
+            "data": .string(original.base64EncodedString()), "ledger": .bool(false), "writing": .bool(true), "recordId": .string("companion-documents-v1")])
+        let document: JSONValue = .object(["version": .int(1), "id": .string(id.uuidString), "sourcePairingId": .string("legacy-grant"),
+            "macDeviceId": .string("actual-mac"), "fingerprint": .string(String(repeating: "a", count: 64)), "vaultIds": .array([.string("vault")]),
+            "createdAt": .string(Date().ISO8601Format()), "records": .array([record]), "adoptedBy": .object([:]), "revoked": .bool(true)])
+        let folder = f.root.appendingPathComponent("archives")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let cipher = try #require(try AES.GCM.seal(JSONEncoder.nodus.encode(document), using: key).combined)
+        try PrivateBridgeProtectedFile.write(cipher, to: folder.appendingPathComponent(id.uuidString + ".authoring"))
+        let result = try await f.recovery.export(id: id)
+        let exported = try JSONDecoder.nodus.decode(JSONValue.self, from: result)
+        #expect(exported.objectValue?["records"]?.arrayValue?.first?.objectValue?["data"] == .string(original.base64EncodedString()))
+        let after = try Data(contentsOf: folder.appendingPathComponent(id.uuidString + ".authoring"))
+        #expect(after == cipher)
+    }
+
     @Test("general native outbox work remains globally exportable after revoke without importing old grant receipts")
     func generalMutationWorkExportOnly() async throws {
         let f = try Fixture(); defer { f.clean() }
