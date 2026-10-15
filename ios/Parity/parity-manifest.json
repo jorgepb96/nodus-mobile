@@ -4,7 +4,7 @@
     "desktop": "0a173fd9c698a7cb2d5989aa64b59cddd329bcf9",
     "mobile": "ad6e3069bcea67b48de76de561fc27c3db417563"
   },
-  "validationPolicy": "Availability and source files are inventory only. Release requires executed operation evidence with no omissions; physical iPhone validation remains pending with the user after TestFlight, by explicit instruction.",
+  "validationPolicy": "Availability and source files are inventory only. Release requires executed evidence for every in-scope operation. Device AI operations explicitly deferred by the user remain retained and unavailable, never passed or skipped; physical iPhone validation remains pending with the user after TestFlight.",
   "acceptanceRequirements": {
     "environments": [
       "desktop",
