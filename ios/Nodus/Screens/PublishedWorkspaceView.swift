@@ -245,8 +245,12 @@ private struct PublishedWorkspaceItemView: View {
     @State private var saving = false
     @State private var draftTitle = ""
     @State private var draftContent = ""
+    @State private var loadedStorageID: String?
+    @State private var loadRequestID = UUID()
 
-    private var canEdit: Bool { session.connection.role.canSendChanges && item != nil }
+    private var canEdit: Bool {
+        session.connection.role.canSendChanges && item != nil && loadedStorageID == session.connection.storageId
+    }
     private var hasChanges: Bool {
         guard let item else { return false }
         return draftTitle != (item.text("title") ?? "") || draftContent != (item.text("content") ?? "")
@@ -309,27 +313,37 @@ private struct PublishedWorkspaceItemView: View {
             }
         }
         .alert("Queued on this device", isPresented: $queued) { Button("OK", role: .cancel) {} }
-        .task { await load() }
+        .task(id: [session.connection.storageId, summary.string("id") ?? ""]) { await load() }
     }
 
     private func load() async {
         guard let id = summary.string("id") else { return }
+        let storageID = session.connection.storageId, client = session.client, spaceID = session.connection.spaceId
+        let token = UUID(); loadRequestID = token
+        if loadedStorageID != storageID { item = nil }
         do {
-            let loaded = try await session.client.note(id, in: session.connection.spaceId)
+            let loaded = try await client.note(id, in: spaceID)
+            guard loadRequestID == token, session.connection.storageId == storageID, !Task.isCancelled else { return }
             item = loaded
+            loadedStorageID = storageID
             draftTitle = loaded.text("title") ?? ""
             draftContent = loaded.text("content") ?? ""
             error = nil
         }
-        catch { self.error = error.localizedDescription }
+        catch {
+            guard loadRequestID == token, session.connection.storageId == storageID, !Task.isCancelled else { return }
+            self.error = error.localizedDescription
+        }
     }
 
     private func save() async {
-        guard let item, let note = EditableNote(item), hasChanges else { return }
+        guard canEdit, let item, let note = EditableNote(item), hasChanges else { return }
         saving = true; defer { saving = false }
         let titleToSave = draftTitle, contentToSave = draftContent
+        let storageID = session.connection.storageId
         do {
             guard let outbox = await OutboxController.open(session: session) else { throw DesktopBridgeError.permissionDenied }
+            guard session.connection.storageId == storageID else { throw DesktopBridgeError.permissionDenied }
             try await outbox.queueNote(
                 id: note.id,
                 title: titleToSave,
@@ -337,6 +351,7 @@ private struct PublishedWorkspaceItemView: View {
                 folderId: note.folderId,
                 createdAt: note.createdAt
             )
+            guard session.connection.storageId == storageID else { return }
             queued = true
             // Keep the queued draft as the new local baseline. The published server copy changes
             // only when the owner's desktop accepts the mutation, but the editor must not keep
@@ -344,6 +359,7 @@ private struct PublishedWorkspaceItemView: View {
             self.item = rowReplacing(item, title: titleToSave, content: contentToSave)
             error = nil
         } catch {
+            guard session.connection.storageId == storageID else { return }
             self.error = error.localizedDescription
         }
     }
