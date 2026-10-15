@@ -78,8 +78,8 @@ final class DesktopWorkspaceUITests: XCTestCase {
     }
 
     /// Root configures this exact model through actual Mac settings after linking,
-    /// then restores only stale origin metadata in the isolated simulator container.
-    /// This test neither creates a grant nor supplies model/settings response data.
+    /// stops the Mac and restarts it with either its saved port or an occupied-port
+    /// fallback. This test supplies no new grant, address or response data.
     @MainActor
     func testReconnectedMacReadsCurrentModelsWithoutNewCode() throws {
         let expected = try required("NODUS_ACCEPTANCE_EXPECTED_MAC_MODEL")

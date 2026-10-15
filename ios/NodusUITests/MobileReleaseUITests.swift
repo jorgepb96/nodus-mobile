@@ -2810,6 +2810,7 @@ final class MobileReleaseUITests: XCTestCase {
     @MainActor
     func testPrimaryConnectionUsesCodeAndKeepsAdvancedConnectionsHidden() throws {
         let app = XCUIApplication()
+        defer { app.terminate() }
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         if let style = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_INTERFACE_STYLE"] { app.launchArguments += ["-nodus.prefs.interfaceStyle", style] }
         if let size = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_DYNAMIC_TYPE"] { app.launchEnvironment["NODUS_ACCEPTANCE_DYNAMIC_TYPE"] = size }
