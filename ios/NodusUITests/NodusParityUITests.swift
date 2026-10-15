@@ -694,10 +694,21 @@ final class NodusParityUITests: XCTestCase {
         let table = databases.scrollViews["database-table"].firstMatch
         XCTAssertTrue(table.waitForExistence(timeout: 5))
         let formula = databases.staticTexts["Weighted"].firstMatch
+        XCTAssertTrue(formula.waitForExistence(timeout: 5))
+        func formulaIsInsideViewport() -> Bool {
+            let frame = formula.frame
+            let viewport = table.frame.intersection(databases.windows.firstMatch.frame)
+            return frame.width > 0 && frame.height > 0 && frame.minX.isFinite && frame.minY.isFinite && viewport.contains(frame)
+        }
         for _ in 0..<12 {
-            if formula.isHittable { break }
+            // Asking iOS 26 for an activation point of clipped static text can
+            // raise an XCTest failure instead of returning false. Scroll using
+            // real geometry first; retain the hittability assertion once shown.
+            if formulaIsInsideViewport() { break }
             table.swipeLeft()
         }
+        attachScreenshot(named: "database-full-table-formula-after-pan")
+        XCTAssertTrue(formulaIsInsideViewport(), "The actual formula header must be fully inside the table viewport after panning")
         XCTAssertTrue(formula.isHittable, "Formula columns must remain consultable in the full table")
         XCTAssertGreaterThanOrEqual(formula.frame.minX, 0)
         XCTAssertLessThanOrEqual(formula.frame.maxX, databases.windows.firstMatch.frame.maxX)
