@@ -210,7 +210,7 @@ public actor PrivateBridgeAuthoringRecovery {
         for var archive in try archives() where archive.revoked && archive.macDeviceId == macDeviceId && archive.fingerprint == pairing.certificateFingerprint {
             let previous = archive.adoptedBy[pairing.id] ?? []
             let selected = archive.records.filter { record in
-                record.generationKind != "legacySurfaceStorage" && record.generationKind != "mutationOutbox" && !previous.contains(record.filename) && (record.vaultId.map { pairing.vaultIds.contains($0) } ?? archive.vaultIds.isSubset(of: pairing.vaultIds))
+                record.generationKind != "legacySurfaceStorage" && record.generationKind != "mutationOutbox" && record.generationKind != "discardedDatabaseFileChunk" && !previous.contains(record.filename) && (record.vaultId.map { pairing.vaultIds.contains($0) } ?? archive.vaultIds.isSubset(of: pairing.vaultIds))
             }
             guard !selected.isEmpty else { continue }
             let archiveKey = try key(archive.id)

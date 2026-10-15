@@ -26,6 +26,64 @@ struct PrivateBridgeAuthoringRecoveryTests {
         func cache(_ id: String) throws -> PrivateBridgeCache { try PrivateBridgeCache(pairingId: id, directory: root, keychain: keychain) }
         func clean() { defaults.removePersistentDomain(forName: "authoring-recovery-\(id)"); try? FileManager.default.removeItem(at: root) }
     }
+    @Test("a confirmed file discard survives interrupted cleanup without orphaning chunks or retaining their bytes")
+    func discardedFileCleanup() async throws {
+        for discarded in [false, true] {
+            let f = try Fixture(); defer { f.clean() }
+            let old = try f.pairing("discard-old"), cache = try f.cache(old.id), file = UUID()
+            let bytes = Data(repeating: 79, count: CompanionDatabaseAttachments.chunkBytes)
+            var transfer = CompanionDatabaseAttachments.Transfer(id: file, vaultId: "vault", rowId: "row", columnId: "column", filename: "discard.bin", mimeType: "application/octet-stream", byteCount: Int64(bytes.count + 17), expectedRowRevision: 1, expectedColumnRevision: 1)
+            transfer.state = discarded ? "discarded" : "ready"
+            transfer.chunkHashes = [PrivateBridgeAuthoringRecovery.hash(bytes), PrivateBridgeAuthoringRecovery.hash(Data(repeating: 80, count: 17))]
+            try await cache.storeAuthoredBatch(vaultId: "vault", records: [
+                .init(domain: .writing, recordId: CompanionDatabaseAttachments.indexKey, data: JSONEncoder.nodus.encode(CompanionDatabaseAttachments.Index(vaultId: "vault", ids: [file]))),
+                .init(domain: .writing, recordId: CompanionDatabaseAttachments.recordId(file), data: JSONEncoder.nodus.encode(transfer))])
+            // Model a process interrupted after deleting the final chunk only.
+            try await cache.store(JSONEncoder.nodus.encode(CompanionDatabaseAttachments.Chunk(id: file, index: 0, bytes: bytes.base64EncodedString())), vaultId: "vault", domain: .writing, recordId: CompanionDatabaseAttachments.chunkId(file, 0))
+            if !discarded {
+                await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { _ = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"]) }
+                continue
+            }
+            try await cache.freezeForRevocation(true)
+            let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"])
+            let tombstone = try #require(snapshot.records.first { $0.generationKind == "discardedDatabaseFileChunk" })
+            #expect(tombstone.data.count < 256)
+            #expect(tombstone.source == nil)
+            #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: tombstone.data).objectValue?["discarded"] == .bool(true))
+            let receipt = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "actual-mac")
+            try await cache.retireArchivedVaultRecords(snapshot.records, receipt: receipt)
+            let files = try FileManager.default.contentsOfDirectory(at: f.root.appendingPathComponent("bridge-" + old.id), includingPropertiesForKeys: nil)
+            #expect(!files.contains { $0.pathExtension == "bridgecache" })
+            try await f.recovery.completeRevocation(receipt)
+            let fresh = try f.pairing("discard-new"), destination = try f.cache(fresh.id)
+            _ = try await f.recovery.adopt(pairing: fresh, macDeviceId: "actual-mac", cache: destination)
+            let missing = try await destination.data(vaultId: "vault", domain: .writing, recordId: CompanionDatabaseAttachments.chunkId(file, 0))
+            #expect(missing == nil)
+            let metadata = try await destination.data(vaultId: "vault", domain: .writing, recordId: CompanionDatabaseAttachments.recordId(file))
+            let restored = try JSONDecoder.nodus.decode(CompanionDatabaseAttachments.Transfer.self, from: #require(metadata))
+            #expect(restored.state == "discarded")
+            try? f.keychain.remove(receipt.recoveryKeyName)
+            for id in [old.id, fresh.id] { try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }
+        }
+    }
+
+    @Test("present chunks still require their exact identity and hash after a confirmed discard")
+    func discardedChunksStillValidate() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let cache = try f.cache("discard-invalid"), file = UUID(), bytes = Data("original".utf8)
+        var transfer = CompanionDatabaseAttachments.Transfer(id: file, vaultId: "vault", rowId: "row", columnId: "column", filename: "original.txt", mimeType: "text/plain", byteCount: Int64(bytes.count), expectedRowRevision: 1, expectedColumnRevision: 1)
+        transfer.state = "discarded"; transfer.chunkHashes = [PrivateBridgeAuthoringRecovery.hash(bytes)]
+        try await cache.storeAuthoredBatch(vaultId: "vault", records: [
+            .init(domain: .writing, recordId: CompanionDatabaseAttachments.indexKey, data: JSONEncoder.nodus.encode(CompanionDatabaseAttachments.Index(vaultId: "vault", ids: [file]))),
+            .init(domain: .writing, recordId: CompanionDatabaseAttachments.recordId(file), data: JSONEncoder.nodus.encode(transfer))])
+        for corrupt in [CompanionDatabaseAttachments.Chunk(id: UUID(), index: 0, bytes: bytes.base64EncodedString()),
+                        CompanionDatabaseAttachments.Chunk(id: file, index: 0, bytes: Data("tampered".utf8).base64EncodedString())] {
+            try await cache.store(JSONEncoder.nodus.encode(corrupt), vaultId: "vault", domain: .writing, recordId: CompanionDatabaseAttachments.chunkId(file, 0))
+            await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { _ = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"]) }
+        }
+        try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: "discard-invalid"))
+    }
+
     @Test("chunked authored files revoke into a lazy v2 archive, export original bytes and relink only for review")
     func chunkedRecoveryV2() async throws {
         let f = try Fixture(); defer { f.clean() }

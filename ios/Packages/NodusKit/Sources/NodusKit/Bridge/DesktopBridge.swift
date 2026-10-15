@@ -1560,6 +1560,7 @@ public actor PrivateBridgeCache {
                 for id in researchIds { known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: id).lastPathComponent] = (vault, false, id == "job-ledger-v1", id, nil) }
             }
             var fileChunks: [String: (id: UUID, index: Int, hash: String, size: Int)] = [:]
+            var requiredFileChunks = Set<String>()
             for vault in vaultIds {
                 let fileIndex = "companion:database-file-index:v1"
                 let url = fileURL(vaultId: vault, domain: .writing, recordId: fileIndex)
@@ -1576,12 +1577,14 @@ public actor PrivateBridgeCache {
                     guard manifest.version == 1, manifest.id == id, manifest.vaultId == vault, manifest.byteCount >= 0,
                           !manifest.rowId.isEmpty, !manifest.columnId.isEmpty,
                           manifest.chunkHashes.count <= Int(manifest.byteCount / Int64(CompanionDatabaseAttachments.chunkBytes) + (manifest.byteCount % Int64(CompanionDatabaseAttachments.chunkBytes) == 0 ? 0 : 1)) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
-                    known[legacyURL(vaultId: vault, domain: .writing, recordId: record).lastPathComponent] = (vault, true, false, record, "databaseFile")
+                    let discarded = manifest.state == "discarded"
+                    known[legacyURL(vaultId: vault, domain: .writing, recordId: record).lastPathComponent] = (vault, true, false, record, discarded ? "discardedDatabaseFile" : "databaseFile")
                     for (index, hash) in manifest.chunkHashes.enumerated() {
                         guard hash.utf8.count == 64, hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
                         let chunk = CompanionDatabaseAttachments.chunkId(id, index)
                         let name = legacyURL(vaultId: vault, domain: .writing, recordId: chunk).lastPathComponent
-                        known[name] = (vault, true, false, chunk, "databaseFileChunk")
+                        known[name] = (vault, true, false, chunk, discarded ? "discardedDatabaseFileChunk" : "databaseFileChunk")
+                        if !discarded { requiredFileChunks.insert(name) }
                         fileChunks[name] = (id, index, hash, Int(min(Int64(CompanionDatabaseAttachments.chunkBytes), manifest.byteCount - Int64(index) * Int64(CompanionDatabaseAttachments.chunkBytes))))
                     }
                 }
@@ -1689,7 +1692,15 @@ public actor PrivateBridgeCache {
                     fields["workspaceOrganizationSnapshot"] = nil
                     authoredData = try JSONEncoder.nodus.encode(JSONValue.object(fields))
                 }
-                if scope.kind == "databaseFileChunk" {
+                if scope.kind == "discardedDatabaseFileChunk", let expected = fileChunks[base] {
+                    // A durable user-confirmed discard authorizes deletion of only
+                    // this exact chunk. Keep its identity, not its discarded bytes,
+                    // so scoped retirement can also finish interrupted cleanup.
+                    let tombstone: JSONValue = .object(["version": .int(1), "discarded": .bool(true), "id": .string(expected.id.uuidString.lowercased()),
+                        "index": .int(Int64(expected.index)), "sha256": .string(expected.hash)])
+                    records.append(.init(filename: "work-" + base, vaultId: scope.vault, data: try JSONEncoder.nodus.encode(tombstone), ledger: false, writing: true,
+                        recordId: scope.recordId, generationKind: scope.kind))
+                } else if scope.kind == "databaseFileChunk" {
                     let url = file.url, expectedCiphertext = fingerprints[original]!, cacheKey = key
                     let source = PrivateBridgeAuthoringRecovery.RecordSource {
                         let encrypted = try Data(contentsOf: url)
@@ -1701,12 +1712,12 @@ public actor PrivateBridgeCache {
                     records.append(.init(filename: "work-" + base, vaultId: scope.vault, data: authoredData, ledger: scope.ledger, writing: scope.writing, recordId: scope.recordId, generationKind: scope.kind))
                 }
             }
-            guard Set(fileChunks.keys).isSubset(of: Set(records.map { String($0.filename.dropFirst(5)) })) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+            guard requiredFileChunks.isSubset(of: Set(records.map { String($0.filename.dropFirst(5)) })) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
             return .init(records: records, fingerprints: fingerprints)
         }
     }
     public func adoptAuthoringRecovery(_ records: [PrivateBridgeAuthoringRecovery.Record], requiresReview: Bool) throws {
-        let eligible = records.filter { $0.generationKind != "legacySurfaceStorage" && $0.generationKind != "mutationOutbox" }
+        let eligible = records.filter { $0.generationKind != "legacySurfaceStorage" && $0.generationKind != "mutationOutbox" && $0.generationKind != "discardedDatabaseFileChunk" }
         try Self.diskLock.withLock {
             try Self.recoverIndexedTransactions(in: folder)
             try requireWritable()
