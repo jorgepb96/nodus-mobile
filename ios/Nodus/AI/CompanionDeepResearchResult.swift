@@ -7,34 +7,46 @@ import SwiftUI
 /// Mac, turn consulted data into a mirror, or borrow another grant's sources.
 @MainActor
 enum CompanionDeepResearchResult {
-    static func checkpoint(session: SpaceSession, id: String) async throws -> JSONValue? {
-        guard id.hasPrefix("mobile-dr-"), UUID(uuidString: String(id.dropFirst(10))) != nil else { return nil }
-        let identity = String(id.dropFirst(10)), scope = try session.surfaceStorageScope()
+    static func checkpoint(session: SpaceSession, id: String, publishedReceipt: Bool = false) async throws -> JSONValue? {
+        let localID = id.hasPrefix("mobile-dr-")
+        guard localID || publishedReceipt else { return nil }
+        let identity = localID ? String(id.dropFirst(10)) : id
+        guard UUID(uuidString: identity) != nil else { return nil }
+        let scope = try session.surfaceStorageScope()
+        func matches(_ value: JSONValue) -> Bool {
+            if localID { return value.objectValue?["id"] == .string(identity) }
+            return value.objectValue?["state"] == .string("available")
+                && value.objectValue?["result"]?.objectValue?["id"] == .string(identity)
+        }
         let cache = try PrivateBridgeCache(pairingId: scope.cacheId)
         let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: "autonomous:deepResearch:index:v1")
         let entities = try bytes.map { try JSONDecoder.nodus.decode([String].self, from: $0) } ?? []
+        let ledger = session.connection.desktopPairingId != nil ? try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: scope.recordVaultId) : nil
         for entity in entities {
             let key = try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)
             guard let data = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: key) else { continue }
-            let value = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
-            if value.objectValue?["id"] == .string(identity) {
+            let stored = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
+            let value = await ledger?.generationCheckpoint(recordId: key, generationId: stored.objectValue?["id"]?.stringValue) ?? stored
+            if matches(value) {
                 guard value.objectValue?["context"]?.objectValue?["vaultId"] == .string(scope.recordVaultId),
                       value.objectValue?["report"]?.objectValue?["draft"]?.objectValue != nil else { throw DesktopBridgeError.malformedResponse }
                 return value
             }
         }
-        if session.connection.desktopPairingId != nil {
-            let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: scope.recordVaultId)
-            if let archived = await ledger.all().first(where: { $0.id == identity && ["localDeepResearchGeneration", "saveMobileDeepResearchReport"].contains($0.method) })?.checkpoint,
+        if let ledger {
+            if let archived = await ledger.all().first(where: { matches($0.checkpoint ?? .null) && ["localDeepResearchGeneration", "saveMobileDeepResearchReport"].contains($0.method) })?.checkpoint,
                archived.objectValue?["context"]?.objectValue?["vaultId"] == .string(scope.recordVaultId),
                archived.objectValue?["report"]?.objectValue?["draft"]?.objectValue != nil { return archived }
         }
+        if publishedReceipt && !localID { return nil }
         throw APIError(status: 404, code: "mobile_report_missing", message: "El informe escrito en este dispositivo no está disponible. Su identidad no se sustituirá por otro informe.")
     }
-    static func detail(session: SpaceSession, id: String) async throws -> DeepResearchReportDetail? {
-        guard let checkpoint = try await checkpoint(session: session, id: id), let fields = checkpoint.objectValue,
+    static func detail(session: SpaceSession, id: String, publishedReceipt: Bool = false) async throws -> DeepResearchReportDetail? {
+        guard let checkpoint = try await checkpoint(session: session, id: id, publishedReceipt: publishedReceipt), let fields = checkpoint.objectValue,
               let report = fields["report"]?.objectValue, let draft = report["draft"]?.objectValue else { return nil }
-        let row: JSONValue = .object(["id": .string(id), "title": draft["title"] ?? .string("Informe"),
+        guard let generationID = fields["id"]?.stringValue, UUID(uuidString: generationID) != nil else { throw DesktopBridgeError.malformedResponse }
+        let readerID = publishedReceipt ? "mobile-dr-\(generationID)" : id
+        let row: JSONValue = .object(["id": .string(readerID), "title": draft["title"] ?? .string("Informe"),
             "objective": fields["request"]?.objectValue?["objective"] ?? .null, "draft": .object(draft),
             "meta": report["meta"] ?? .null, "model": fields["request"]?.objectValue?["model"] ?? .null,
             "created_at": fields["createdAt"] ?? .null, "updated_at": fields["createdAt"] ?? .null])

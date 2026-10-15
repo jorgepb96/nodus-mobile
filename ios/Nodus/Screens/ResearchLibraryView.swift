@@ -1447,9 +1447,16 @@ struct PublishedReportReader: View {
             if let own = try await CompanionDeepResearchResult.detail(session: session, id: id) {
                 detail = own; error = nil; return
             }
-            let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
-            detail = loaded
-            error = nil
+            do {
+                let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
+                detail = loaded
+                error = nil
+            } catch {
+                guard isPrivateBridgeOffline(error),
+                      let own = try await CompanionDeepResearchResult.detail(session: session, id: id, publishedReceipt: true) else { throw error }
+                detail = own
+                self.error = nil
+            }
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
