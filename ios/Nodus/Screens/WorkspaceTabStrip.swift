@@ -138,7 +138,10 @@ struct WorkspaceTabStrip: View {
         .clipped()
         .background(tabBackground(active: isActive))
         .overlay(alignment: .bottom) { selectionLine(active: isActive) }
-        .overlay(alignment: .trailing) { Divider().frame(height: 18) }
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(Color.secondary.opacity(0.22)).frame(width: 1, height: 18)
+                .allowsHitTesting(false).accessibilityHidden(true)
+        }
         .contentShape(Rectangle())
         .hoverEffect(.highlight)
         .contextMenu {

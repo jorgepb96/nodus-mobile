@@ -30,6 +30,7 @@ function sourceDigest() {
   // These provider-free cores are imported by the renderer and therefore belong
   // to the exact source revision represented by this bundle.
   files.push('electron/ai/deepResearchCore.ts', 'electron/ai/immersionCore.ts');
+  files.push('electron/ai/completeGuide/core.ts', 'electron/ai/completeGuide/prompts.ts');
   files.push('package.json', 'package-lock.json', 'vite.mobile-web.config.ts', 'tailwind.config.js', 'postcss.config.js');
   const digest = createHash('sha256');
   digest.update('mobile-build-script\0');digest.update(fs.readFileSync(fileURLToPath(import.meta.url)));digest.update('\0');
