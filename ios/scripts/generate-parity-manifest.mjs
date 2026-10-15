@@ -206,6 +206,7 @@ function operationMatrix(routes) {
       ['sync.studyIdeas.copyExpiryDeletionAndBudget', 'sync'],
       ['sync.studyIdeas.offlineCreationAndReconnection', 'sync'],
       ['visual.workspaceTabs.phoneSelectionAndClose', 'consultation'],
+      ['writing.scriptor.capturedContentCreationAndReplay', 'writing'],
       ['consultation.researchFigures.inlinePlacementAndAnnotationOffsets', 'consultation'],
       ['consultation.researchFigures.encryptedNativePDF', 'consultation'],
       ['writing.researchFigures.existingDesktopReport', 'writing'],

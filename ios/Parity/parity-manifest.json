@@ -1263,6 +1263,12 @@
       "evidence": []
     },
     {
+      "id": "writing.scriptor.capturedContentCreationAndReplay",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "consultation.researchFigures.inlinePlacementAndAnnotationOffsets",
       "category": "consultation",
       "result": "pending",
