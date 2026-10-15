@@ -110,16 +110,27 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
                 XCTAssertTrue(window.insetBy(dx: -1, dy: -1).contains(table.frame))
                 let chooserBefore = chooser.frame
                 let status = app.staticTexts["Status"]
+                let titleHeading = app.staticTexts["Title"].firstMatch
+                XCTAssertTrue(titleHeading.exists)
+                let titleBefore = titleHeading.frame
+                let needsPan = row.frame.width > table.frame.width + 1
+                table.swipeLeft()
                 for _ in 0..<4 {
                     if status.exists && status.isHittable { break }
                     table.swipeLeft()
                 }
                 XCTAssertTrue(status.exists && status.isHittable, "The trailing columns must remain reachable.")
+                if needsPan {
+                    XCTAssertLessThan(titleHeading.frame.minX, titleBefore.minX - 1,
+                        "An overflowing table must actually move horizontally inside its viewport.")
+                }
+                table.swipeRight()
                 for _ in 0..<4 {
                     if app.staticTexts["On Liberty"].firstMatch.isHittable { break }
                     table.swipeRight()
                 }
                 XCTAssertTrue(app.staticTexts["On Liberty"].firstMatch.isHittable)
+                XCTAssertEqual(titleHeading.frame.minX, titleBefore.minX, accuracy: 1)
                 XCTAssertEqual(chooser.frame.minX, chooserBefore.minX, accuracy: 1,
                     "Panning the table must not move the page header.")
             }
