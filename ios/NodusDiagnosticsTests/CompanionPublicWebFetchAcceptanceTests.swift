@@ -21,16 +21,16 @@ final class CompanionPublicWebFetchAcceptanceTests: XCTestCase {
 
     func testRealHTTPSHTMLReturnsBoundedReadableContent() async throws {
         let limit = 64 * 1_024
-        let result = try await CompanionPublicWebFetch.fetch("https://example.org/", limit: limit)
+        let result = try await CompanionPublicWebFetch.fetch("https://www.iana.org/help/example-domains", limit: limit)
         XCTAssertEqual(result.status, 200)
         XCTAssertEqual(result.url.scheme, "https")
-        XCTAssertEqual(result.url.host, "example.org")
+        XCTAssertEqual(result.url.host, "www.iana.org")
         XCTAssertTrue(result.headers["content-type"]?.lowercased().contains("text/html") == true)
         XCTAssertGreaterThan(result.data.count, 100)
         XCTAssertLessThanOrEqual(result.data.count, limit)
         let html = try XCTUnwrap(String(data: result.data, encoding: .utf8))
-        XCTAssertTrue(html.contains("Example Domain"))
-        XCTAssertTrue(html.contains("iana.org"), "The reserved example domain must provide its real IANA explanation.")
+        XCTAssertTrue(html.contains("Example Domains"))
+        XCTAssertTrue(html.contains("documentation"), "IANA must return its real explanation of reserved example domains.")
         record(result, name: "public-web-example-html")
     }
 
