@@ -77,6 +77,41 @@ final class DesktopWorkspaceUITests: XCTestCase {
         }
     }
 
+    /// Root configures this exact model through actual Mac settings after linking,
+    /// then restores only stale origin metadata in the isolated simulator container.
+    /// This test neither creates a grant nor supplies model/settings response data.
+    @MainActor
+    func testReconnectedMacReadsCurrentModelsWithoutNewCode() throws {
+        let expected = try required("NODUS_ACCEPTANCE_EXPECTED_MAC_MODEL")
+        let env = ProcessInfo.processInfo.environment
+        for forbidden in ["NODUS_UI_TEST_DEMO", "NODUS_ACCEPTANCE_PAIRING_LINK", "NODUS_ACCEPTANCE_LINK", "NODUS_ACCEPTANCE_PAIRING_CODE", "NODUS_ACCEPTANCE_SNAPSHOT_FILENAME", "NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] {
+            XCTAssertNil(env[forbidden], "Reconnection must use the actual previously linked grant.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        app.launchEnvironment["NODUS_START_ROUTE"] = "settings"
+        let deadline = Date().addingTimeInterval(60)
+        app.launch(); defer { capture(app, "reconnected-mac-current-model-no-new-code"); app.terminate() }
+        let settings = app.descendants(matching: .any)["settings-workspace"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 30), app.debugDescription)
+        let model = app.staticTexts[expected].firstMatch
+        var scrolls = 0
+        while Date() < deadline {
+            if model.exists && model.isHittable { break }
+            XCTAssertFalse(app.textFields["pairing-code"].exists, "No new code may be needed during recovery.")
+            if scrolls % 16 < 8 { app.swipeUp() } else { app.swipeDown() }
+            scrolls += 1
+            if model.waitForExistence(timeout: 0.5) && model.isHittable { break }
+        }
+        XCTAssertTrue(model.exists && model.isHittable, "The current model configured on the actual Mac must reach the still-open native settings.\n" + app.debugDescription)
+        XCTAssertFalse(app.staticTexts["mac-live-settings-error"].exists, "A canceled obsolete diagnostic must not overwrite successful recovery.")
+        let mode = app.buttons["ai-execution-mode"].firstMatch
+        XCTAssertTrue(mode.exists, app.debugDescription)
+        let selectedMode = mode.label + " " + (mode.value as? String ?? "")
+        XCTAssertTrue(selectedMode.contains("Live"), "Disconnection must not change execution mode: " + selectedMode)
+        XCTAssertFalse(app.textFields["pairing-code"].exists)
+    }
+
     private func required(_ key: String) throws -> String {
         let value = try XCTUnwrap(ProcessInfo.processInfo.environment[key], "Actual isolated Desktop acceptance input is required: \(key)")
         XCTAssertFalse(value.isEmpty); return value

@@ -82,7 +82,7 @@ struct SpaceSettingsView: View {
                                 labelled(macModelLabel(key), choice?["model"]?.stringValue ?? "—")
                             }
                         }
-                        if let liveSettingsError { Text(liveSettingsError).foregroundStyle(Color.nodusDanger) }
+                        if let liveSettingsError { Text(liveSettingsError).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("mac-live-settings-error") }
                     }
                 } header: { Text("Execution mode") } footer: {
                     Text(session.aiExecutionMode == .live
@@ -304,7 +304,7 @@ struct SpaceSettingsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .nodusPageBackdrop(accent: session.accent)
             .tint(session.accent)
-            .task { await diagnose() }
+            .task(id: session.connection.origin) { await diagnose() }
             .confirmationDialog("Delete downloaded copies?", isPresented: $showingLibraryDeletion, titleVisibility: .visible) {
                 Button(libraryDeletion == .space ? "Delete in this space" : "Delete in every space", role: .destructive) {
                     confirmLibraryDeletion()
@@ -513,31 +513,42 @@ struct SpaceSettingsView: View {
     /// needs the ceilings and the version, not a verdict. What it does share is the wording —
     /// when the two calls fail, the sentence comes from the same classifier.
     private func diagnose() async {
+        let origin = session.connection.origin
         if let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == session.connection.desktopPairingId }),
            let token = DesktopBridgePairingStore().credential(for: pairing), let vault = session.vaultId {
             do {
-                liveSettings = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getSettings", args: [])
+                let settings = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getSettings", args: [])
+                guard !Task.isCancelled, session.connection.origin == origin else { return }
+                liveSettings = settings
                 liveSettingsError = nil
-            } catch { liveSettingsError = error.localizedDescription }
+            } catch {
+                guard !Task.isCancelled, !error.isCancellation, session.connection.origin == origin else { return }
+                liveSettingsError = error.localizedDescription
+            }
             return
         }
         do {
             async let health = session.client.health()
             async let capabilities = session.client.capabilities()
-            self.health = try await health
-            self.capabilities = try await capabilities
+            let values = try await (health, capabilities)
+            guard !Task.isCancelled, session.connection.origin == origin else { return }
+            self.health = values.0
+            self.capabilities = values.1
             diagnosticFailure = nil
         } catch {
+            guard !Task.isCancelled, !error.isCancellation, session.connection.origin == origin else { return }
             let network = await NetworkReachability.current()
+            guard !Task.isCancelled, session.connection.origin == origin else { return }
             diagnosticFailure = ConnectionFailure.classify(
                 error: error,
-                origin: session.connection.origin,
+                origin: origin,
                 network: network,
                 knock: .unauthenticated,
                 appVersion: NodusVersion.current
             )
         }
     }
+
 }
 
 /// Desktop-compatible navigation customisation. Hidden destinations remain available through
