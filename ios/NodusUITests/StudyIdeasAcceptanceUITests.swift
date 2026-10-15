@@ -10,7 +10,7 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         let value = try XCTUnwrap(ProcessInfo.processInfo.environment[key], "Required copied-lab configuration: " + key)
         guard !value.isEmpty else { throw SetupError.missingConfiguration }; return value
     }
-    @MainActor func testConnectedAutonomousCopyCreatesStructuredNoteAndReopens() throws { try runCopy(phase: "connected") }
+    @MainActor func testConnectedChosenCopyCreatesStructuredNoteAndReopens() throws { try runCopy(phase: "connected") }
     @MainActor func testPrepareChosenSubjectForOwningMacOfflinePhase() throws { try runCopy(phase: "prepare") }
     @MainActor func testActuallyOfflineChosenSubjectCreatesStructuredNoteAndReopens() async throws {
         try await verifyOwningMacUnavailable()
@@ -55,7 +55,7 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
             before=Set(try XCTUnwrap(baseline["noteIdentifiers"] as? [String]))
         }
         if phase != "offline" {
-        try mode(app, autonomous:false)
+        try requireLiveMode(app)
         try navigate(app,"studyIdeas")
         let selector = app.webViews.descendants(matching:.any).matching(NSPredicate(format:"label == %@", "Asignatura")).firstMatch
         XCTAssertTrue(selector.waitForExistence(timeout:30)); selector.tap()
@@ -66,7 +66,9 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         } else { let option = app.staticTexts[subject]; XCTAssertTrue(option.waitForExistence(timeout:5)); option.tap() }
         let download = app.buttons["Descargar 7 días"]; XCTAssertTrue(download.waitForExistence(timeout:15)); download.tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@", "Disponible en este dispositivo durante 7")).firstMatch.waitForExistence(timeout:60))
-        try mode(app, autonomous:true)
+        // Downloaded reading and manual writing remain available without a
+        // phone-side AI mode. The beta keeps all model execution on the Mac.
+        try requireLiveMode(app)
         if phase == "prepare" {
             let baseline:[String:Any]=["vaultId":vault,"courseId":course,"ideaLabel":idea,"noteIdentifiers":before.sorted()]
             let data=try JSONSerialization.data(withJSONObject:baseline,options:[.sortedKeys]);let attachment=XCTAttachment(data:data,uniformTypeIdentifier:"public.json");attachment.name="study-ideas-offline-baseline.json";attachment.lifetime = .keepAlways;add(attachment);return
@@ -100,10 +102,12 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         XCTAssertTrue(local.firstMatch.waitForExistence(timeout:30),"Authored notes must be reachable without a consulted global snapshot or retained subject copy.")
         return Set(local.allElementsBoundByIndex.map(\.identifier))
     }
-    @MainActor private func mode(_ app:XCUIApplication,autonomous:Bool) throws {
-        try navigate(app,"settings");let control=app.buttons["ai-execution-mode"];XCTAssertTrue(control.waitForExistence(timeout:20));reveal(control,app);control.tap()
-        let option=app.buttons[autonomous ? "Autónomo · este dispositivo":"Live · modelos del Mac"];XCTAssertTrue(option.waitForExistence(timeout:10));option.tap()
-        XCTAssertEqual(XCTWaiter.wait(for:[XCTNSPredicateExpectation(predicate:NSPredicate(format:"label CONTAINS %@ OR value CONTAINS %@",autonomous ? "Autónomo":"Live",autonomous ? "Autónomo":"Live"),object:control)],timeout:15),.completed)
+    @MainActor private func requireLiveMode(_ app:XCUIApplication) throws {
+        try navigate(app,"settings")
+        let control=app.descendants(matching:.any)["ai-execution-mode"].firstMatch
+        XCTAssertTrue(control.waitForExistence(timeout:20));reveal(control,app)
+        XCTAssertEqual(XCTWaiter.wait(for:[XCTNSPredicateExpectation(predicate:NSPredicate(format:"label CONTAINS %@ OR value CONTAINS %@","Live","Live"),object:control)],timeout:15),.completed)
+        XCTAssertFalse(app.buttons["Autónomo · este dispositivo"].exists)
     }
     @MainActor private func navigate(_ app:XCUIApplication,_ route:String) throws {
         let toggle=app.buttons["nodus-navigation-toggle"];XCTAssertTrue(toggle.waitForExistence(timeout:45));let target=app.buttons["nodus-nav-"+route]
