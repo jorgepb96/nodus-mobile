@@ -10,7 +10,9 @@ both portrait and landscape.
 The 0.1.0 release is still under validation. `Parity/parity-manifest.json` is the current
 operation matrix; implementation and historical passing scenarios do not establish full
 parity. The executed results, source receipts, screenshots and remaining work are recorded
-under `artifacts/acceptance-0.1.0`. No TestFlight build is approved yet.
+under `artifacts/acceptance-0.1.0`. Internal TestFlight 0.1.0 (1003) is delivered as a working
+preview, not complete parity acceptance. The [current implementation checkpoint](../docs/mobile-0.1.0/IMPLEMENTATION-2026-10-15.md)
+distinguishes the delivered binary from new source changes and pending native verification.
 
 The primary connection is Desktop Settings → Mobile connection: a code or QR links the
 entire current workspace through direct HTTPS on LAN or VPN. Server and Cloud are advanced
