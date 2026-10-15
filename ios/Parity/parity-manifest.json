@@ -1227,6 +1227,78 @@
       "evidence": []
     },
     {
+      "id": "consultation.studyIdeas.subjectSelectionAndPagination",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "writing.studyIdeas.ideaAndRelationToStructuredNote",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.studyIdeas.chosenSubjectCopy",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.studyIdeas.copyExpiryDeletionAndBudget",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.studyIdeas.offlineCreationAndReconnection",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "visual.workspaceTabs.phoneSelectionAndClose",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.researchFigures.inlinePlacementAndAnnotationOffsets",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "consultation.researchFigures.encryptedNativePDF",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "writing.researchFigures.existingDesktopReport",
+      "category": "writing",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.researchFigures.independentSessionAndPublicationReceipt",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.researchFigures.sourceConflictAndLostAcknowledgement",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "sync.researchFigures.legacyPosterRetryAndRecovery",
+      "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "writing.study.createDocument",
       "category": "writing",
       "result": "pending",
@@ -14067,6 +14139,19 @@
       ]
     },
     {
+      "id": "LibraryApi.importAcademicLearningSample",
+      "interface": "LibraryApi",
+      "method": "importAcademicLearningSample",
+      "source": "shared/api/library.ts",
+      "delivery": "accountSync",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/AccountLibraryCatalogTests.swift",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/AccountLibraryOutboxTests.swift",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift#radar"
+      ]
+    },
+    {
       "id": "LibraryApi.importDroppedFilesIntoVault",
       "interface": "LibraryApi",
       "method": "importDroppedFilesIntoVault",
@@ -14860,6 +14945,18 @@
       ]
     },
     {
+      "id": "NodusApi.academicLearningWorkspaceReady",
+      "interface": "NodusApi",
+      "method": "academicLearningWorkspaceReady",
+      "source": "shared/types.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "NodusApi.addSkillSource",
       "interface": "NodusApi",
       "method": "addSkillSource",
@@ -15088,6 +15185,18 @@
       ]
     },
     {
+      "id": "NodusApi.closeAcademicLearningWorkspace",
+      "interface": "NodusApi",
+      "method": "closeAcademicLearningWorkspace",
+      "source": "shared/types.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "NodusApi.configurePluginSecret",
       "interface": "NodusApi",
       "method": "configurePluginSecret",
@@ -15295,6 +15404,18 @@
       "id": "NodusApi.fetchCapabilityTile",
       "interface": "NodusApi",
       "method": "fetchCapabilityTile",
+      "source": "shared/types.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "NodusApi.getAcademicLearningWorkspace",
+      "interface": "NodusApi",
+      "method": "getAcademicLearningWorkspace",
       "source": "shared/types.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "catalogued",
@@ -16060,6 +16181,18 @@
       ]
     },
     {
+      "id": "NodusApi.openAcademicLearningWorkspace",
+      "interface": "NodusApi",
+      "method": "openAcademicLearningWorkspace",
+      "source": "shared/types.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "NodusApi.openMigrationRecoverySnapshot",
       "interface": "NodusApi",
       "method": "openMigrationRecoverySnapshot",
@@ -16627,6 +16760,18 @@
       "id": "NodusApi.undoDocumentVisuals",
       "interface": "NodusApi",
       "method": "undoDocumentVisuals",
+      "source": "shared/types.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "NodusApi.updateAcademicLearning",
+      "interface": "NodusApi",
+      "method": "updateAcademicLearning",
       "source": "shared/types.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "catalogued",
@@ -17273,6 +17418,20 @@
       ]
     },
     {
+      "id": "PlatformApi.cancelEditorImage",
+      "interface": "PlatformApi",
+      "method": "cancelEditorImage",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "PlatformApi.cancelGitHubCopilotSubscriptionLogin",
       "interface": "PlatformApi",
       "method": "cancelGitHubCopilotSubscriptionLogin",
@@ -17654,6 +17813,20 @@
       "id": "PlatformApi.generateContentTranslation",
       "interface": "PlatformApi",
       "method": "generateContentTranslation",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "PlatformApi.generateEditorImage",
+      "interface": "PlatformApi",
+      "method": "generateEditorImage",
       "source": "shared/api/platform.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
@@ -18099,9 +18272,37 @@
       ]
     },
     {
+      "id": "PlatformApi.installChatGptSubscriptionRuntime",
+      "interface": "PlatformApi",
+      "method": "installChatGptSubscriptionRuntime",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "PlatformApi.installCopilotAddin",
       "interface": "PlatformApi",
       "method": "installCopilotAddin",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "PlatformApi.installGitHubCopilotSubscriptionRuntime",
+      "interface": "PlatformApi",
+      "method": "installGitHubCopilotSubscriptionRuntime",
       "source": "shared/api/platform.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
@@ -23328,6 +23529,20 @@
       ]
     },
     {
+      "id": "ToolkitApi.cancelOpenBackup",
+      "interface": "ToolkitApi",
+      "method": "cancelOpenBackup",
+      "source": "shared/api/toolkit.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "ToolkitApi.cancelToolkitJob",
       "interface": "ToolkitApi",
       "method": "cancelToolkitJob",
@@ -23359,6 +23574,20 @@
       "id": "ToolkitApi.createOcrDocs",
       "interface": "ToolkitApi",
       "method": "createOcrDocs",
+      "source": "shared/api/toolkit.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "ToolkitApi.deleteBackupPreset",
+      "interface": "ToolkitApi",
+      "method": "deleteBackupPreset",
       "source": "shared/api/toolkit.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
@@ -23513,6 +23742,34 @@
       "id": "ToolkitApi.generateToolkitApp",
       "interface": "ToolkitApi",
       "method": "generateToolkitApp",
+      "source": "shared/api/toolkit.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "ToolkitApi.getBackupCatalog",
+      "interface": "ToolkitApi",
+      "method": "getBackupCatalog",
+      "source": "shared/api/toolkit.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "ToolkitApi.getBackupCatalogRecords",
+      "interface": "ToolkitApi",
+      "method": "getBackupCatalogRecords",
       "source": "shared/api/toolkit.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
@@ -23916,6 +24173,20 @@
       ]
     },
     {
+      "id": "ToolkitApi.previewOpenBackup",
+      "interface": "ToolkitApi",
+      "method": "previewOpenBackup",
+      "source": "shared/api/toolkit.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "ToolkitApi.readProtectSource",
       "interface": "ToolkitApi",
       "method": "readProtectSource",
@@ -24000,6 +24271,20 @@
       ]
     },
     {
+      "id": "ToolkitApi.runOpenBackup",
+      "interface": "ToolkitApi",
+      "method": "runOpenBackup",
+      "source": "shared/api/toolkit.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "ToolkitApi.runToolkitJob",
       "interface": "ToolkitApi",
       "method": "runToolkitJob",
@@ -24017,6 +24302,20 @@
       "id": "ToolkitApi.runTranslateJob",
       "interface": "ToolkitApi",
       "method": "runTranslateJob",
+      "source": "shared/api/toolkit.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "ToolkitApi.saveBackupPreset",
+      "interface": "ToolkitApi",
+      "method": "saveBackupPreset",
       "source": "shared/api/toolkit.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
