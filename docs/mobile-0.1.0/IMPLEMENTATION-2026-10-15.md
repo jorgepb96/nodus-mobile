@@ -96,3 +96,9 @@ El build 11 integra las fuentes coherentes anteriores, las ramas nativas del lec
 - `3cc24f4` prepara cuatro pruebas HTTPS reales en el esquema separado `NodusDiagnostics`. Exigen configuración explícita y fallan si falta; no usan omisiones como aprobación. No se han compilado ni ejecutado todavía.
 
 Los commits coherentes hasta móvil `60659cb` y Desktop `8eab9ca8` ya se subieron a los PR. Los dos controles automáticos de metadatos de ese push (38772837855 y 38772838104) habían terminado al consultar; no se lanzó CI completa y no se modificaron workflows. Las correcciones posteriores se subirán en el siguiente checkpoint conjunto.
+
+## Revisión de catálogos restantes
+
+`62aff58` corrige el catálogo especial de debates, informes, inmersiones y notas, que pedía sólo 60 registros y luego buscaba únicamente en esa primera página. El helper nuevo completa las páginas antes de filtrar, valida revisión y protege cambios de ruta frente a respuestas/errores tardíos. Notas y carpetas pertenecen a una misma revisión. Pasan nueve pruebas Kit en dos suites con fixtures de más de 60 registros, cambios de revisión y supersession controlada; la comprobación UI nativa sigue pendiente.
+
+`4ccf503` y los callers de `62aff58` propagan el fallo real al guardar/borrar notas del flujo publicado antiguo. El editor no se cierra ni muestra «En cola» si no existe confirmación durable; conserva su texto y permite reintentar. La línea base sólo adopta los valores efectivamente enviados, aunque se siga editando mientras se guarda. Parse correcto; la compilación integrada y la prueba de fallo visible están pendientes. El companion vinculado sigue usando su editor estructurado.
