@@ -243,6 +243,7 @@ private struct PublishedWorkspaceItemView: View {
     @State private var error: String?
     @State private var queued = false
     @State private var saving = false
+    @State private var saveError: String?
     @State private var draftTitle = ""
     @State private var draftContent = ""
     @State private var loadedStorageID: String?
@@ -261,9 +262,6 @@ private struct PublishedWorkspaceItemView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 if let item {
-                    if let error {
-                        NodusNotice(tone: .blocked, title: "Could not save", message: LocalizedStringKey(error))
-                    }
                     VStack(alignment: .leading, spacing: 8) {
                         if canEdit {
                             TextField("Untitled", text: $draftTitle, axis: .vertical)
@@ -313,7 +311,12 @@ private struct PublishedWorkspaceItemView: View {
                 }
             }
         }
-        .alert("Queued on this device", isPresented: $queued) { Button("OK", role: .cancel) {} }
+        .alert(saveError == nil ? Text("Queued on this device") : Text("Could not save"),
+            isPresented: Binding(get: { queued || saveError != nil }, set: {
+                if !$0 { queued = false; saveError = nil }
+            })) { Button("OK", role: .cancel) {} } message: {
+                if let saveError { Text(saveError) }
+            }
         .task(id: [session.connection.storageId, summary.string("id") ?? ""]) { await load() }
     }
 
@@ -321,7 +324,9 @@ private struct PublishedWorkspaceItemView: View {
         guard let id = summary.string("id") else { return }
         let storageID = session.connection.storageId, client = session.client, spaceID = session.connection.spaceId
         let token = UUID(); loadRequestID = token
-        if loadedStorageID != storageID || item?.string("id") != id { item = nil }
+        if loadedStorageID != storageID || item?.string("id") != id {
+            item = nil; queued = false; saveError = nil
+        }
         do {
             let loaded = try await client.note(id, in: spaceID)
             guard loadRequestID == token, session.connection.storageId == storageID, !Task.isCancelled else { return }
@@ -359,10 +364,10 @@ private struct PublishedWorkspaceItemView: View {
             // only when the owner's desktop accepts the mutation, but the editor must not keep
             // presenting a change it has already safely written to this device as unsaved.
             self.item = rowReplacing(item, title: titleToSave, content: contentToSave)
-            error = nil
+            saveError = nil
         } catch {
             guard session.connection.storageId == storageID, loadRequestID == token else { return }
-            self.error = error.localizedDescription
+            self.saveError = error.localizedDescription
         }
     }
 

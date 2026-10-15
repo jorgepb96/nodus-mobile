@@ -23,9 +23,6 @@ struct NoteEditor: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: NodusSpace.block) {
-                    if let saveError {
-                        NodusNotice(tone: .blocked, title: "Could not save", message: LocalizedStringKey(saveError))
-                    }
                     VStack(alignment: .leading, spacing: 7) {
                         Label("Title", systemImage: "textformat")
                             .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -55,6 +52,9 @@ struct NoteEditor: View {
             .tint(accent)
             .nodusDismissesKeyboard()
             .interactiveDismissDisabled(saving)
+            .alert("Could not save", isPresented: Binding(
+                get: { saveError != nil }, set: { if !$0 { saveError = nil } }
+            )) { Button("OK", role: .cancel) {} } message: { Text(saveError ?? "") }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
