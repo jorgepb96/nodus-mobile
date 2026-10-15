@@ -54,9 +54,7 @@ final class CompanionLiveFigureReadAcceptanceTests: XCTestCase {
         let detail = try await client.corpus(vaultId: vault, path: "deep-research/\(fixture.reportID)")
         let native = try JSONDecoder.nodus.decode(JSONValue.self, from: detail.data)
         let draft = try XCTUnwrap(native.objectValue?["report"]?.objectValue?["draft"])
-        let priorMode = session.aiExecutionMode
-        session.aiExecutionMode = .autonomous
-        defer { session.aiExecutionMode = priorMode }
+        XCTAssertEqual(session.aiExecutionMode, .live, "This beta keeps model execution on the owning Mac.")
         let receivedContext = try await CompanionResearchFigures.context(session: session, reportID: fixture.reportID, expectedDraft: draft)
         let context = try XCTUnwrap(receivedContext)
         XCTAssertEqual(context.objectValue?["origin"], .string("live-mac"))
