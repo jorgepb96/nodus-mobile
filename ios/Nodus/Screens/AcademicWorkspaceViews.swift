@@ -525,11 +525,18 @@ struct AuthorsWorkspaceView: View {
 
 
     private var authorTableHeader: some View {
-        HStack(spacing: 12) {
-            Color.clear.frame(width: 34); Text("AUTHOR").frame(maxWidth: .infinity, alignment: .leading)
-            Text("WORKS").frame(width: 58, alignment: .trailing); Text("IDEAS").frame(width: 58, alignment: .trailing)
-            Text("LINKS").frame(width: 58, alignment: .trailing); Color.clear.frame(width: 34)
-        }.font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 8)
+        HStack(spacing: 10) {
+            Color.clear.frame(width: 44)
+            HStack(spacing: 12) {
+                Text("AUTHOR").frame(maxWidth: .infinity, alignment: .leading)
+                Text("WORKS").frame(width: 58, alignment: .trailing)
+                Text("IDEAS").frame(width: 58, alignment: .trailing)
+                Text("LINKS").frame(width: 58, alignment: .trailing)
+            }
+            Color.clear.frame(width: 44)
+        }
+        .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+        .padding(.horizontal, 10).padding(.vertical, 8)
     }
 
     private func reload() async {

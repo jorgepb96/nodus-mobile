@@ -219,7 +219,7 @@ struct RowDetailView: View {
             if collection?.path == "ideas", let type = row.text("type") {
                 NodusChip(key: type, tint: SemanticTone.ideaType(type, fallback: session.accent))
             } else if let detail = presenter.detail(row) {
-                NodusChip(detail, tint: session.accent.nodusReadable)
+                NodusChip(key: detail, tint: session.accent.nodusReadable)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
