@@ -45,14 +45,14 @@ struct LiveJobsView: View {
                         NavigationLink("Abrir resultado guardado") {
                             CompanionGeneratedResultView(session: session, request: request, checkpoint: checkpoint)
                         }.frame(minHeight: 44).accessibilityIdentifier("companion-generated-result-\(request.id)")
-                    } else if ["runMobileSpaceAction", "buildArgumentMap"].contains(request.method), let result = request.result, result != .null {
+                    } else if ["runMobileSpaceAction", "buildArgumentMap", "generateMobileDatabaseText", "generateMobileDatabaseImage", "runMobileDatabaseButton", "recoverMobileDatabaseAction"].contains(request.method), let result = request.result, result != .null {
                         NavigationLink("Consultar resultado") {
                             CompanionGeneratedResultView(session: session, request: request, checkpoint: .object(["preview": result]))
                         }.frame(minHeight: 44).accessibilityIdentifier("companion-action-result-\(request.id)")
                     }
                     if let error = job?.error ?? request.issue { Text(error).font(.caption).foregroundStyle(.red) }
-                    if ["pending", "accepted", "running", "saved"].contains(job?.state.rawValue ?? request.state)
-                        || (job?.state == .interrupted && ["enqueueDeepResearchJob", "enqueueDatabaseDeepResearch"].contains(request.method)) {
+                    if request.method != "localDatabaseAction" && (["pending", "accepted", "running", "saved"].contains(job?.state.rawValue ?? request.state)
+                        || (job?.state == .interrupted && ["enqueueDeepResearchJob", "enqueueDatabaseDeepResearch"].contains(request.method))) {
                         HStack {
                             Button("Recuperar solicitud") { Task { await recover(request) } }
                                 .disabled(loading || request.cancellationRequested == true || (session.aiExecutionMode != .live && !DesktopBridgeClient.isProviderFreeJob(method: request.method, args: request.args)))
@@ -126,6 +126,8 @@ struct LiveJobsView: View {
         catch { await refresh(); issue = error.localizedDescription }
     }
     private func title(_ method: String, args: [JSONValue]) -> String {
+        if method == "localDatabaseAction" { return "Resultado de propiedad del dispositivo" }
+        if ["generateMobileDatabaseText", "generateMobileDatabaseImage", "saveMobileDatabaseGeneratedCell", "runMobileDatabaseButton", "saveMobileDatabaseButtonResult", "recoverMobileDatabaseAction"].contains(method) { return ["generateMobileDatabaseText":"Texto de propiedad", "generateMobileDatabaseImage":"Imagen de propiedad", "saveMobileDatabaseGeneratedCell":"Resultado de propiedad del dispositivo", "runMobileDatabaseButton":"Acciones del botón", "saveMobileDatabaseButtonResult":"Acciones conservadas del dispositivo", "recoverMobileDatabaseAction":"Recuperar resultado de propiedad"][method]! }
         if ["localAcademicGeneration", "localWorkshopGeneration", "localDeepResearchGeneration"].contains(method) { return "Respuesta anterior del móvil" }
         if method == "runMobileSpaceAction", let kind = args.first?.objectValue?["kind"]?.stringValue {
             return ["idea.delete": "Eliminar idea", "idea.saveToNotes": "Guardar idea en notas", "deepResearch.saveToNotes": "Guardar investigación en notas", "hypothesis.saveToNotes": "Guardar hipótesis", "projects.create": "Crear proyecto", "projects.update": "Guardar proyecto", "projects.section.update": "Guardar sección", "projects.chapter.import": "Importar capítulo", "pages.restoreRevision": "Restaurar versión", "databases.importCSV": "Importar CSV", "worldbuilding.entityDelete": "Eliminar entidad", "worldbuilding.continuity": "Revisar continuidad", "author.synthesis.generate": "Síntesis de autor", "authors.matrix.generate": "Matriz de autores", "argumentMap.generate": "Mapa de argumentos", "writing.generate": "Asistencia de escritura", "worldbuilding.proseReview": "Revisión de prosa"][kind] ?? "Cambios de contenido"

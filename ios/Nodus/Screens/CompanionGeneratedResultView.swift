@@ -51,7 +51,9 @@ struct CompanionGeneratedResultView: View {
     }
     var body: some View {
         Group {
-            if let map = argumentMap {
+            if ["localDatabaseAction", "saveMobileDatabaseGeneratedCell", "saveMobileDatabaseButtonResult", "generateMobileDatabaseText", "generateMobileDatabaseImage", "runMobileDatabaseButton", "recoverMobileDatabaseAction"].contains(current.method) {
+                DatabaseActionResultView(session: session, request: current, checkpoint: current.checkpoint ?? checkpoint)
+            } else if let map = argumentMap {
                 SharedDesktopSurface(session: session, surface: .argument, initialArgumentMap: map)
             } else if current.method == "saveMobileDatabaseResearchReport",let id = current.result?.objectValue?["id"]?.stringValue ?? value["detail"]?.objectValue?["report"]?.objectValue?["id"]?.stringValue {
                 SharedDesktopSurface(session:session,surface:.databaseResearch,initialDatabaseReportId:id)

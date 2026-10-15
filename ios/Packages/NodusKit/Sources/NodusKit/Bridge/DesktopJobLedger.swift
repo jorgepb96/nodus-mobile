@@ -55,7 +55,11 @@ public actor DesktopJobLedger {
     public func preparePublication(_ publication: CompanionGenerationPublication) async throws {
         if publication.checkpoint.objectValue?["recoveryReviewRequired"] == .bool(true) { return }
         var request: Request
-        if let stored = requests[publication.id] {
+        if let stored = requests[publication.id], stored.method == "localDatabaseAction" {
+            guard stored.checkpointRecordId == publication.recordId, stored.checkpoint == publication.checkpoint,
+                  stored.state != "recoveryReview" else { throw DesktopBridgeError.permissionDenied }
+        }
+        if let stored = requests[publication.id], stored.method != "localDatabaseAction" {
             guard stored.method == publication.method, try sameArguments(stored,publication.args),
                   stored.checkpointRecordId == nil || stored.checkpointRecordId == publication.recordId
             else { throw DesktopBridgeError.malformedResponse }
@@ -145,6 +149,16 @@ public actor DesktopJobLedger {
         requests[id] = Request(id: id, method: "localDeepResearchGeneration", args: [], createdAt: Date(),
             jobId: nil, state: "saved", issue: value["error"]?.stringValue,
             checkpointRecordId: recordId, checkpoint: checkpoint)
+        try await persist()
+    }
+    /// Local observation of a paid DB action is never sendable as a provider job.
+    public func archiveDatabaseActionCheckpoint(recordId: String, checkpoint: JSONValue) async throws {
+        let value = try CompanionDatabaseActionCheckpoint(checkpoint)
+        guard value.value.objectValue?["vaultId"] == .string(vaultId),
+              recordId == value.scope || recordId == value.scope + ":" + value.id else { throw DesktopBridgeError.permissionDenied }
+        if requests[value.id] != nil { return }
+        requests[value.id] = Request(id: value.id, method: "localDatabaseAction", args: [], createdAt: Date(), jobId: nil,
+            state: "saved", issue: value.value.objectValue?["error"]?.stringValue, checkpointRecordId: recordId, checkpoint: checkpoint)
         try await persist()
     }
     public func generationCheckpoint(recordId: String, generationId: String? = nil) -> JSONValue? {

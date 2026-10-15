@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 public struct CompanionDatabaseActionCheckpoint: Sendable, Identifiable {
-    public enum State: String, Sendable { case accepted, running, saved, failed, cancelled, interrupted }
+    public enum State: String, Sendable { case accepted, running, saved, available, failed, cancelled, interrupted }
     public let value: JSONValue
     public let id: String
     public let scope: String
@@ -70,10 +70,11 @@ public actor CompanionDatabaseActionJournal {
     }
     public func put(_ checkpoint:CompanionDatabaseActionCheckpoint) async throws {
         guard checkpoint.value.objectValue?["vaultId"] == .string(vault) else {throw DesktopBridgeError.permissionDenied}
-        try await cache.store(JSONEncoder.nodus.encode(checkpoint.value),vaultId:vault,domain:.researchGeneration,recordId:checkpoint.scope)
         var summary=checkpoint.value.objectValue!;summary["bytes"]=nil;summary["text"]=nil;summary["buttonResult"]=nil;summary["source"]=nil;summary["references"]=nil;summary["scope"] = .string(checkpoint.scope)
         index[checkpoint.scope] = .object(summary)
-        try await cache.store(JSONEncoder.nodus.encode(JSONValue.object(index)),vaultId:vault,domain:.researchGeneration,recordId:Self.indexKey)
+        try await cache.storeAuthoredBatch(vaultId:vault,records:[
+            .init(domain:.researchGeneration,recordId:checkpoint.scope,data:try JSONEncoder.nodus.encode(checkpoint.value)),
+            .init(domain:.researchGeneration,recordId:Self.indexKey,data:try JSONEncoder.nodus.encode(JSONValue.object(index)))])
     }
     public func perform(accepted:CompanionDatabaseActionCheckpoint,regenerateCompleted:Bool = false,generate:@escaping @Sendable () async throws -> JSONValue) async throws -> CompanionDatabaseActionCheckpoint {
         if let task=active[accepted.scope] {return try await task.value}
@@ -145,4 +146,27 @@ public extension CompanionDatabaseActionCheckpoint {
         }
         return result
     }
+    /// Created rows and in-app notices are authored deltas from confirmed steps.
+    /// Canonical sequence numbers, computed values and Mac timestamps are absent
+    /// until publication; they are never guessed from a downloaded page.
+    func projectedAuthoredRows() throws -> [String:[Row]] {
+        guard value.objectValue?["recoveryReviewRequired"] != .bool(true),
+              let result = value.objectValue?["buttonResult"]?.objectValue,
+              let count = result["completedSteps"]?.intValue, let clickedAt = result["clickedAt"]?.stringValue,
+              let raw = value.objectValue?["source"]?.objectValue?["plan"],
+              let operations = try Self.instantiate(raw, requestId: id, clickedAt: clickedAt).objectValue?["operations"]?.arrayValue,
+              count >= 0, count <= operations.count else { return [:] }
+        var rows: [String:[Row]] = [:]
+        for operation in operations.prefix(count) {
+            guard let fields = operation.objectValue else { throw DesktopBridgeError.malformedResponse }
+            if fields["type"] == .string("create_page"), let row = fields["rowId"]?.stringValue, let database = fields["databaseId"]?.stringValue {
+                rows["db_rows", default: []].append(Row(["id":.string(row),"database_id":.string(database),"mobileSyncState":.string("pending"),"mobileCreatedAt":.string(clickedAt)]))
+            } else if fields["type"] == .string("notify") {
+                guard let id = fields["id"], let database = fields["databaseId"], let row = fields["rowId"] else { throw DesktopBridgeError.malformedResponse }
+                rows["automation_notifications", default: []].append(Row(["id":id,"database_id":database,"row_id":row,"rule_id":fields["ruleId"] ?? .null,"run_id":fields["runId"] ?? .null,"title":fields["title"] ?? .string(""),"body":fields["body"] ?? .string(""),"is_read":.int(0),"created_at":.string(clickedAt),"mobileSyncState":.string("pending")]))
+            }
+        }
+        return rows
+    }
+
 }

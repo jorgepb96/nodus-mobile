@@ -59,15 +59,44 @@ import NodusKit
         }
         return try await ledger.prepare(id:UUID().uuidString.lowercased(),method:method,args:[request])
     }
-    static func preparePublication(session:SpaceSession,checkpoint:CompanionDatabaseActionCheckpoint)async throws->DesktopJobLedger.Request {
-        guard checkpoint.value.objectValue?["recoveryReviewRequired"] != .bool(true),let input=checkpoint.publicationInput else {throw APIError(status:409,code:"database_action_recovery_review",message:"Revisa este resultado conservado antes de publicarlo.")}
+    static func preparePublication(session:SpaceSession,checkpoint:CompanionDatabaseActionCheckpoint,approveRecovered:Bool = false)async throws->DesktopJobLedger.Request {
+        guard (checkpoint.value.objectValue?["recoveryReviewRequired"] != .bool(true) || approveRecovered),let input=checkpoint.publicationInput else {throw APIError(status:409,code:"database_action_recovery_review",message:"Revisa este resultado conservado antes de publicarlo.")}
         let (vault,pairing,_)=try privateBridgeConnection(session,domain:.writing),ledger=try await DesktopJobLedgers.shared.ledger(pairingId:pairing.id,vaultId:vault)
-        guard await ledger.all().first(where:{$0.id==checkpoint.id})?.state != "recoveryReview" else {throw DesktopBridgeError.permissionDenied}
-        if let bytes=input.objectValue?["bytes"]?.stringValue,bytes.utf8.count>3_600_000 {
-            throw APIError(status:409,code:"database_image_chunk_publication_pending",message:"La imagen se conserva en este dispositivo. Su publicación necesita la integración de carga por fragmentos.")
+        let retained = await ledger.all().first(where: { $0.id == checkpoint.id })
+        if approveRecovered { guard retained?.state == "recoveryReview", retained?.checkpoint == checkpoint.value else { throw DesktopBridgeError.permissionDenied } }
+        else { guard retained?.state != "recoveryReview" else { throw DesktopBridgeError.permissionDenied } }
+        if !approveRecovered, let existing = await ledger.all().first(where: { $0.id == checkpoint.id && $0.method != "localDatabaseAction" }) {
+            guard existing.checkpointRecordId == checkpoint.scope else { throw DesktopBridgeError.malformedResponse }
+            return existing
         }
-        // The exact retained paid result is never purchased again on retry.
-        return try await ledger.prepare(id:checkpoint.id,method:checkpoint.value.objectValue?["request"]?.objectValue?["kind"] == .string("button") ? "saveMobileDatabaseButtonResult":"saveMobileDatabaseGeneratedCell",args:[input])
+        var staged: JSONValue?
+        if let encoded = input.objectValue?["bytes"]?.stringValue, encoded.utf8.count > 3_600_000 {
+            guard let bytes = Data(base64Encoded: encoded), let source = checkpoint.value.objectValue?["source"]?.objectValue,
+                  let request = input.objectValue?["request"]?.objectValue, let row = request["rowId"]?.stringValue,
+                  let column = request["columnId"]?.stringValue, let rowRevision = source["rowRevision"]?.intValue,
+                  let columnRevision = source["columnRevision"]?.intValue, let mime = input.objectValue?["mime"]?.stringValue,
+                  let uuid = UUID(uuidString: checkpoint.id) else { throw DesktopBridgeError.malformedResponse }
+            let store = try await CompanionDatabaseAttachmentStores.shared.store(pairingId: pairing.id, vaultId: vault)
+            let (_, _, token) = try privateBridgeConnection(session, domain: .writing)
+            if approveRecovered, let file = try await store.transfer(uuid), file.recoveryReviewRequired == true { try await store.approveRecovered(uuid) }
+            do {
+                staged = try await store.uploadForPublication(data: bytes, filename: "generated." + (mime == "image/png" ? "png" : mime == "image/webp" ? "webp" : "jpg"), mimeType: mime, rowId: row, columnId: column, expectedRowRevision: Int64(rowRevision), expectedColumnRevision: Int64(columnRevision), uploadId: uuid, bridge: DesktopBridgeClient(pairing: pairing, token: token))
+            } catch {
+                // Offline publication never discards or regenerates paid bytes.
+                try await ledger.archiveDatabaseActionCheckpoint(recordId: checkpoint.scope, checkpoint: checkpoint.value)
+                throw error
+            }
+        }
+        guard let publication = try CompanionGenerationPublication(databaseAction: checkpoint, stagedImage: staged) else { throw DesktopBridgeError.malformedResponse }
+        if approveRecovered {
+            _ = try await ledger.approveRecoveredPublication(publication)
+            if let updated = await ledger.all().first(where: { $0.id == checkpoint.id })?.checkpoint {
+                try await journal(session: session).put(CompanionDatabaseActionCheckpoint(updated))
+            }
+        } else { try await ledger.preparePublication(publication) }
+        guard let request = await ledger.all().first(where: { $0.id == checkpoint.id }) else { throw DesktopBridgeError.malformedResponse }
+        session.didSaveCompanionResult()
+        return request
     }
     private static func generate(session:SpaceSession,rowId:String,columnId:String,kind:String,ai:AISettings)async throws->DesktopJobLedger.Request {
         let input=request(rowId:rowId,columnId:columnId,kind:kind),source=try await source(session:session,input:input)
@@ -109,7 +138,12 @@ import NodusKit
             let current=try privateBridgeConnection(session,domain:.writing);guard current.0==vault,current.1.id==pairing.id else {throw DesktopBridgeError.permissionDenied}
             return try await preparePublication(session:session,checkpoint:result)
         }
-        active[activeKey]=task;defer{active[activeKey]=nil};return try await task.value
+        active[activeKey]=task;defer{active[activeKey]=nil}
+        do { return try await task.value }
+        catch {
+            if let retained = try await journal.load(scope: scope) { try await ledger.archiveDatabaseActionCheckpoint(recordId: scope, checkpoint: retained.value); session.didSaveCompanionResult() }
+            throw error
+        }
     }
     static func runButton(session:SpaceSession,rowId:String,columnId:String)async throws->DesktopJobLedger.Request {
         let input=request(rowId:rowId,columnId:columnId,kind:"button"),source=try await source(session:session,input:input)
@@ -130,7 +164,12 @@ import NodusKit
             }
             return try await preparePublication(session:session,checkpoint:checkpoint)
         }
-        active[key]=task;defer{active[key]=nil};return try await task.value
+        active[key]=task;defer{active[key]=nil}
+        do { return try await task.value }
+        catch {
+            if let retained = try await journal.load(scope: scope) { try await ledger.archiveDatabaseActionCheckpoint(recordId: scope, checkpoint: retained.value); session.didSaveCompanionResult() }
+            throw error
+        }
     }
     private static func executeButton(plan:JSONValue,accepted:CompanionDatabaseActionCheckpoint,journal:CompanionDatabaseActionJournal)async throws->JSONValue {
         let clickedAt=accepted.value.objectValue!["createdAt"]!.stringValue!,instantiated=try CompanionDatabaseActionCheckpoint.instantiate(plan,requestId:accepted.id,clickedAt:clickedAt)
@@ -177,13 +216,20 @@ import NodusKit
         return .object(["buttonResult":progress(finished:true)])
     }
     static func overlayTables(_ original:[String: [Row]],session:SpaceSession)async throws->[String: [Row]] {
+        guard let (vault, pair, _) = try? privateBridgeConnection(session, domain: .writing) else { return original }
+        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pair.id, vaultId: vault)
+        let states = Dictionary(uniqueKeysWithValues: await ledger.all().map { ($0.id, $0.state) })
         let journal=try await journal(session:session);var tables=original
         for summary in await journal.summaries().reversed() {
-            guard let scope=summary.objectValue?["scope"]?.stringValue,let checkpoint=try await journal.load(scope:scope),checkpoint.value.objectValue?["recoveryReviewRequired"] != .bool(true) else {continue}
+            guard let scope=summary.objectValue?["scope"]?.stringValue,let checkpoint=try await journal.load(scope:scope),checkpoint.value.objectValue?["recoveryReviewRequired"] != .bool(true), states[checkpoint.id] != "available" else {continue}
+            for (table, rows) in try checkpoint.projectedAuthoredRows() {
+                for row in rows where !(tables[table] ?? []).contains(where: { $0.string("id") == row.string("id") }) { tables[table, default: []].append(row) }
+            }
             let cells=try checkpoint.projectedCells()
             for (row,columns) in cells {for (column,value) in columns {
                 tables["db_cells"]?.removeAll{$0.string("row_id")==row && $0.string("column_id")==column}
-                tables["db_cells",default:[]].append(Row(["row_id":.string(row),"column_id":.string(column),"value_text":value,"mobileSyncState":.string("pending")]))
+                let database = tables["db_rows"]?.first(where: { $0.string("id") == row })?.columns["database_id"] ?? .null
+                tables["db_cells",default:[]].append(Row(["database_id":database,"row_id":.string(row),"column_id":.string(column),"value_text":value,"mobileSyncState":.string("pending")]))
             }}
         }
         return tables

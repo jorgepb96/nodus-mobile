@@ -466,7 +466,7 @@ struct DatabasesWorkspaceView: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: "\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(session.companionResultRevision)") { await load() }
     }
 
     private var workspace: some View {
@@ -641,7 +641,7 @@ struct DatabaseDetailWorkspace: View {
             Divider()
             HStack(spacing: 0) {
                 content
-                if !compactPresentation, let selectedRow { Divider(); DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).frame(width: 330) }
+                if !compactPresentation, let selectedRow { Divider(); DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly).frame(width: 330) }
             }
         }
         .onAppear { if activeViewId == nil { activeViewId = views.first?.id; adHocLayout = views.first?.layout ?? "table" } }
@@ -649,7 +649,7 @@ struct DatabaseDetailWorkspace: View {
         .onChange(of: tables) { _, _ in presentationRevision += 1 }
         .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(presentationRevision)|\(viewAttempt)") {await loadSavedView()}
         .nodusSheet(item:$foreignRow){target in NavigationStack{DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:downloadedOnly).nodusModalClose(accent:session.accent)}}
-        .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
+        .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
         .nodusSheet(isPresented: $creatingColumn) { NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox) }
         .nodusSheet(item: $editingColumn) { column in NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox, existingColumn: column) }
         .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
@@ -784,7 +784,7 @@ struct DatabaseDetailWorkspace: View {
                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 .frame(width: columnWidth(column), height: 38).padding(.horizontal, 9)
                 .background(Color(uiColor: .secondarySystemBackground))
-                .overlay(alignment: .trailing) { Divider() }
+                .overlay(alignment: .trailing) { Rectangle().fill(Color.secondary.opacity(0.22)).frame(width: 1).allowsHitTesting(false).accessibilityHidden(true) }
             }
         }
     }
@@ -810,7 +810,7 @@ struct DatabaseDetailWorkspace: View {
             .frame(width: columnWidth(column), alignment: .leading)
             .frame(minHeight: 42)
             .padding(.horizontal, 9)
-            .overlay(alignment: .trailing) { Divider() }
+            .overlay(alignment: .trailing) { Rectangle().fill(Color.secondary.opacity(0.22)).frame(width: 1).allowsHitTesting(false).accessibilityHidden(true) }
     }
 
     private var gallery: some View {
@@ -1070,6 +1070,7 @@ private struct DatabaseRowInspector: View {
     let row: PagesDatabasesParity.DataRow
     @Binding var tables: [String: [Row]]
     let outbox: OutboxController?
+    var downloadedOnly = false
     @State private var drafts: [String: String] = [:]
     private struct CellBaseline { let revision: Int; let value: String }
     @State private var editedColumns: Set<String> = []
@@ -1118,7 +1119,12 @@ private struct DatabaseRowInspector: View {
                 error: row.formulaErrors[column.id], color: row.formulaColors[column.id])
                 .font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 .padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
-        } else if ["files", "attachment", "ai_image", "relation", "button"].contains(column.type) {
+        } else if column.type == "relation" {
+            DatabaseRelationEditor(session: session, rowId: row.id, column: column, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly)
+        } else if ["files", "attachment", "ai_image"].contains(column.type) {
+            DatabaseAttachmentControls(session: session, rowId: row.id, column: column, tables: $tables, outbox: outbox)
+            if column.type == "ai_image" { actionControls(column) }
+        } else if column.type == "button" {
             Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor")
                 .font(.callout).textSelection(.enabled)
             if ["button", "ai_image"].contains(column.type) { actionControls(column) }
@@ -1406,6 +1412,7 @@ func databaseParityTables(_ session: SpaceSession, _ names: [String]) async thro
             }
         }
     }
+    if session.connection.desktopPairingId != nil { result = try await DatabasePropertyActions.overlayTables(result, session: session) }
     return result
 }
 

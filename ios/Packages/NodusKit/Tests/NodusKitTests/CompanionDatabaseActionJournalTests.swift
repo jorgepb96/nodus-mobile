@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Testing
 @testable import NodusKit
 
@@ -39,4 +40,26 @@ import Testing
         let next=try await journal.perform(accepted:accepted(),regenerateCompleted:true){await calls.next()}
         #expect(first.id != next.id);#expect(await calls.value()==2)
     }
+    @Test func stagedPublicationKeepsPaidBytesAndSameIdentityInLedger() async throws {
+        let fixture = try Fixture(); defer { fixture.clear() }
+        let bytes = Data(repeating: 0x4e, count: 4 * 1024 * 1024 + 17), original = try accepted()
+        var fields = original.value.objectValue!, request = fields["request"]!.objectValue!
+        request["kind"] = .string("image"); fields["request"] = .object(request); fields["state"] = .string("saved")
+        fields["bytes"] = .string(bytes.base64EncodedString()); fields["mime"] = .string("image/png")
+        let checkpoint = try CompanionDatabaseActionCheckpoint(.object(fields))
+        let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let staged: JSONValue = .object(["blobUploadId":.string(checkpoint.id),"sha256":.string(hash),"mimeType":.string("image/png")])
+        let prepared = try CompanionGenerationPublication(databaseAction: checkpoint, stagedImage: staged)
+        let publication = try #require(prepared)
+        #expect(publication.id == checkpoint.id); #expect(publication.args[0].objectValue?["bytes"] == nil)
+        #expect(publication.checkpoint.objectValue?["bytes"] == fields["bytes"])
+        let ledger = try DesktopJobLedger(cache: fixture.cache, vaultId: "vault", data: nil)
+        try await ledger.archiveDatabaseActionCheckpoint(recordId: checkpoint.scope, checkpoint: checkpoint.value)
+        try await ledger.preparePublication(publication)
+        let pending = try #require(await ledger.all().first)
+        #expect(pending.id == checkpoint.id); #expect(pending.method == "saveMobileDatabaseGeneratedCell"); #expect(pending.state == "pending")
+        #expect(pending.checkpoint?.objectValue?["bytes"] == fields["bytes"])
+        #expect(throws: DesktopBridgeError.self) { try CompanionGenerationPublication(databaseAction: checkpoint, stagedImage: .object(["blobUploadId":.string(checkpoint.id),"sha256":.string(String(repeating:"0",count:64)),"mimeType":.string("image/png")])) }
+    }
+
 }

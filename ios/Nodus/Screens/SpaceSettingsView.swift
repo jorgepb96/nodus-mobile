@@ -795,7 +795,7 @@ private struct RecoveredAuthoringSettings: View {
                         Button { selected = request } label: { Label(CompanionResultCatalogue.title(request), systemImage: "doc.text") }
                             .frame(minHeight: 44).accessibilityIdentifier("recovered-work-review")
                     }
-                    ForEach(archives) { archive in RecoveredAuthoringArchiveRow(archive: archive) }
+                    ForEach(archives) { archive in RecoveredAuthoringArchiveRow(archive: archive, onChanged: { await refresh() }) }
                     if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
                 } header: { Text("Trabajo local conservado") } footer: {
                     Text("Los cambios de un enlace anterior necesitan revisión. Publicar un resultado ya creado no vuelve a ejecutar el modelo.")
@@ -809,6 +809,9 @@ private struct RecoveredAuthoringSettings: View {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(CompanionResultCatalogue.title(request)).font(.title2.bold())
                         Text("Revisa el resultado antes de guardarlo en el Mac. Los cambios del origen se comprobarán al enviarlo.").font(.footnote).foregroundStyle(.secondary)
+                        if ["saveMobileDatabaseGeneratedCell", "saveMobileDatabaseButtonResult", "localDatabaseAction"].contains(request.method), let checkpoint = request.checkpoint {
+                            NavigationLink("Consultar resultado y recibos") { DatabaseActionResultView(session: session, request: request, checkpoint: checkpoint) }.frame(minHeight: 44)
+                        }
                         if let text = resultText(request) { CorpusProse(text, accent: session.accent, session: session) }
                         if let encoded = request.checkpoint?.objectValue?["bytes"]?.stringValue, let data = Data(base64Encoded: encoded), let image = UIImage(data: data) {
                             Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
@@ -843,7 +846,9 @@ private struct RecoveredAuthoringSettings: View {
             let bridge = try ConnectionClient.companionChat(for: session.connection)
             let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault)
             let approved: DesktopJobLedger.Request
-            if let publication = try PrivateBridgeAuthoringRecovery.publicationForReview(original) { approved = try await ledger.approveRecoveredPublication(publication) }
+            if ["saveMobileDatabaseGeneratedCell", "saveMobileDatabaseButtonResult", "localDatabaseAction"].contains(original.method), let checkpoint = original.checkpoint {
+                approved = try await DatabasePropertyActions.preparePublication(session: session, checkpoint: CompanionDatabaseActionCheckpoint(checkpoint), approveRecovered: true)
+            } else if let publication = try PrivateBridgeAuthoringRecovery.publicationForReview(original) { approved = try await ledger.approveRecoveredPublication(publication) }
             else { approved = try await ledger.approveRecoveredSavedResult(id: original.id) }
             do {
                 let job = try await bridge.submitJob(vaultId: vault, method: approved.method, args: approved.args, idempotencyKey: approved.id)
@@ -858,34 +863,70 @@ private struct RecoveredAuthoringSettings: View {
     }
     private func resultText(_ request: DesktopJobLedger.Request) -> String? {
         let row = request.checkpoint?.objectValue ?? [:], preview = row["preview"]?.objectValue ?? [:]
-        let candidates = [preview["draftMarkdown"], preview["text"], row["markdown"], row["definition"]?.objectValue?["contentMarkdown"], row["detail"]?.objectValue?["report"]?.objectValue?["markdown"], row["raw"]]
+        let candidates = [preview["draftMarkdown"], preview["text"], row["text"], row["markdown"], row["definition"]?.objectValue?["contentMarkdown"], row["detail"]?.objectValue?["report"]?.objectValue?["markdown"], row["raw"]]
         return candidates.compactMap { $0?.stringValue }.first { !$0.isEmpty }
     }
 }
 struct RecoveredAuthoringArchiveRow: View {
     let archive: PrivateBridgeAuthoringRecovery.ArchiveInfo
+    var onChanged: () async -> Void = {}
+    @State private var confirmingDeletion = false
+    @State private var archiveUse: UUID?
     @State private var lease: PrivateBridgeFileLease?
     @State private var issue: String?
+    @State private var exporting = false
+    @State private var exportProgress: Progress?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(archive.createdAt, format: .dateTime.day().month().year())
+            Text(ByteCountFormatter.string(fromByteCount: archive.byteCount, countStyle: .file)).font(.caption).foregroundStyle(.secondary)
             Text("El archivo original permanece cifrado y puede exportarse.").font(.caption).foregroundStyle(.secondary)
             if !archive.macIdentityKnown { Text("El trabajo se conserva sin incorporarlo automáticamente a otro espacio.").font(.caption) }
             Button {
                 Task {
-                    do { lease = try PrivateBridgeFileLease.write(try await PrivateBridgeAuthoringRecovery.shared.export(id: archive.id), filename: "Nodus-local-work.json") }
-                    catch { issue = error.localizedDescription }
+                    exporting = true; issue = nil
+                    let progress = Progress(totalUnitCount: 0); exportProgress = progress
+                    defer { exporting = false; exportProgress = nil }
+                    do {
+                        archiveUse = try await PrivateBridgeAuthoringRecovery.shared.beginArchiveUse(id: archive.id)
+                        lease = try await PrivateBridgeAuthoringRecovery.shared.exportFile(id: archive.id, progress: progress)
+                        if progress.isCancelled { await releaseArchiveUse(); lease = nil }
+                    }
+                    catch is CancellationError { await releaseArchiveUse(); issue = "Exportación cancelada. El trabajo original se conserva." }
+                    catch { await releaseArchiveUse(); issue = error.localizedDescription }
                 }
             } label: {
                 Text("Exportar trabajo conservado")
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .contentShape(Rectangle())
-            }.accessibilityIdentifier("recovered-work-export")
+            }.disabled(exporting || archive.isBusy || archiveUse != nil).accessibilityIdentifier("recovered-work-export")
+            Button("Eliminar archivo conservado", role: .destructive) { confirmingDeletion = true }
+                .frame(minHeight: 44).disabled(exporting || archive.isBusy || archiveUse != nil)
+                .accessibilityIdentifier("recovered-work-delete")
+            if exporting {
+                HStack { ProgressView("Preparando exportación…"); Button("Cancelar") { exportProgress?.cancel() } }
+            }
             if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
         }
-        .sheet(isPresented: Binding(get: { lease != nil }, set: { if !$0 { lease = nil } })) {
+        .confirmationDialog("Eliminar archivo del \(archive.createdAt.formatted(date: .abbreviated, time: .omitted))", isPresented: $confirmingDeletion, titleVisibility: .visible) {
+            Button("Eliminar archivo conservado", role: .destructive) {
+                Task {
+                    do { try await PrivateBridgeAuthoringRecovery.shared.delete(id: archive.id); await onChanged() }
+                    catch { issue = error.localizedDescription }
+                }
+            }
+            Button("Cancelar", role: .cancel) { }
+        } message: { Text("Se eliminará únicamente este archivo cifrado del dispositivo. Esta acción no se puede deshacer.") }
+        .onDisappear { exportProgress?.cancel(); lease = nil; if !exporting { Task { await releaseArchiveUse() } } }
+        .sheet(isPresented: Binding(get: { lease != nil }, set: { if !$0 { lease = nil; Task { await releaseArchiveUse() } } })) {
             if let lease { RecoveredAuthoringShare(lease: lease) }
         }
+    }
+    private func releaseArchiveUse() async {
+        guard let token = archiveUse else { return }
+        archiveUse = nil
+        await PrivateBridgeAuthoringRecovery.shared.endArchiveUse(token)
+        await onChanged()
     }
 }
 
