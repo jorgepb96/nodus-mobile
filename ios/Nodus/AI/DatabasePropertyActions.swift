@@ -176,7 +176,7 @@ import NodusKit
         }
         return .object(["buttonResult":progress(finished:true)])
     }
-    static func overlayTables(_ original:PagesDatabasesParity.Tables,session:SpaceSession)async throws->PagesDatabasesParity.Tables {
+    static func overlayTables(_ original:[String: [Row]],session:SpaceSession)async throws->[String: [Row]] {
         let journal=try await journal(session:session);var tables=original
         for summary in await journal.summaries().reversed() {
             guard let scope=summary.objectValue?["scope"]?.stringValue,let checkpoint=try await journal.load(scope:scope),checkpoint.value.objectValue?["recoveryReviewRequired"] != .bool(true) else {continue}
