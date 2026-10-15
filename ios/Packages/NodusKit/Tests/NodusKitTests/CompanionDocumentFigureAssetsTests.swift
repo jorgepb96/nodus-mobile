@@ -168,6 +168,58 @@ struct CompanionDocumentFigureAssetsTests {
         await #expect(throws: (any Error).self) { _ = try await restored.storeDerivedCapturedPoster(data: png, view: view, parentRecordId: record, generationId: session, figureId: figure, owner: owner, assetId: UUID()) }
         for key in [old.id, fresh.id] { try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: key)) }; try? f.keychain.remove(saved.recoveryKeyName)
     }
+    @Test("a visual session references exact original authored assets without copying bytes or changing receipt ownership")
+    func originalAssetBinding() async throws {
+        let f = try PrivateBridgeAuthoringRecoveryTests.Fixture(); defer { f.clean() }
+        let old = try f.pairing("original-reference-old"), cache = try f.cache(old.id), target = UUID(), session = UUID(), figure = UUID(), revision = UUID(), asset = UUID()
+        let owner = try owner(generation: target, revision: revision, figure: figure), bytes = Data(repeating: 51, count: CompanionDocumentFigureAssets.chunkBytes + 13)
+        let view: JSONValue = .object(["schemaVersion": .int(1), "summary": .string("Actual original figure"), "nodes": .array([.object(["kind": .string("image"), "attachmentId": .string(asset.uuidString.lowercased()), "alt": .string("Original image"), "name": .string("Original.png"), "mimeType": .string("image/png"), "bytes": .int(Int64(bytes.count))])])])
+        var original = parent(generation: target, figure: figure, revision: revision, owner: owner).objectValue!
+        var report = original["report"]!.objectValue!, mobile = report["mobileVisuals"]!.objectValue!, manifest = mobile["manifest"]!.objectValue!, originalFigure = manifest["figures"]!.arrayValue![0].objectValue!
+        originalFigure["view"] = view; originalFigure["poster"] = .string("nodus-image://chat/\(owner)/\(asset.uuidString.lowercased())"); manifest["figures"] = .array([.object(originalFigure)])
+        mobile["manifest"] = .object(manifest); report["mobileVisuals"] = .object(mobile); original["report"] = .object(report)
+        let originalRecord = try await saveParent(.object(original), cache: cache), store = CompanionDocumentFigureAssets(cache: cache, vaultId: "vault")
+        let receipt = try await store.store(data: bytes, mimeType: "image/png", parentRecordId: originalRecord, generationId: target, figureId: figure, owner: owner, assetId: asset)
+        let capture: JSONValue = .object(["version": .int(1), "vaultId": .string("vault"), "target": manifest["target"]!, "contentHash": .string(String(repeating: "a", count: 64)), "manifest": .object(manifest), "assets": .array([.object(["id": .string(asset.uuidString.lowercased()), "figureId": .string(receipt.figureKey), "owner": .string(owner), "mimeType": .string(receipt.mimeType), "byteCount": .int(receipt.byteCount), "sha256": .string(receipt.sha256)])])])
+        let serialized = try JSONEncoder.nodus.encode(capture), entity = "deep-research:" + target.uuidString.lowercased(), record = try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)
+        var fields = visualParent(session: session, target: target, figure: figure, revision: revision, owner: owner).objectValue!, source = visualParent(session: session, target: target, figure: figure, revision: revision, owner: owner).objectValue!["source"]!.objectValue!
+        source["origin"] = .string("authored-mobile"); source["originalReceipts"] = .array([try receipt.jsonValue()]); source["capture"] = capture; source["captureCanonical"] = .string(String(decoding: serialized, as: UTF8.self)); source["captureHash"] = .string(CompanionDocumentFigureAssets.hash(serialized))
+        fields["source"] = .object(source); fields["manifest"] = .object(manifest)
+        try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(JSONValue.object(fields)), vaultId: "vault", recordId: record, indexId: "autonomous:documentVisuals:index:v1", entity: entity)
+        #expect(try await store.referencedReceipts(parentRecordId: record, generationId: session) == [receipt])
+        #expect(try await store.dataReferenced(receipt, parentRecordId: record, generationId: session) == bytes)
+        #expect(try await store.readReferenced(receipt, parentRecordId: record, generationId: session, offset: 7, count: 13) == bytes.subdata(in: 7..<20))
+        let indexData = try #require(await cache.data(vaultId: "vault", domain: .researchGeneration, recordId: CompanionDocumentFigureAssets.indexKey))
+        #expect(try JSONDecoder.nodus.decode([String].self, from: indexData) == [asset.uuidString.lowercased()])
+        await #expect(throws: (any Error).self) { _ = try await store.store(data: bytes, mimeType: "image/png", parentRecordId: record, generationId: session, figureId: figure, owner: owner, assetId: asset) }
+        #expect(try await store.data(receipt) == bytes)
+        await #expect(throws: (any Error).self) { _ = try await store.dataReferenced(receipt, parentRecordId: record, generationId: target) }
+        var wrongReceipt = try receipt.jsonValue().objectValue!; wrongReceipt["owner"] = .string(String(repeating: "f", count: 64))
+        let forged = try CompanionDocumentFigureAssets.Receipt(value: .object(wrongReceipt))
+        await #expect(throws: (any Error).self) { _ = try await store.dataReferenced(forged, parentRecordId: record, generationId: session) }
+        var wrong = fields; wrong["target"] = .object(["kind": .string("deep-research"), "id": .string(UUID().uuidString.lowercased())])
+        #expect(throws: (any Error).self) { try CompanionDocumentFigureAssets.validateReferenced(receipt, parent: .object(wrong), parentRecordId: record, generationId: session) }
+        wrong = fields; var wrongSource = source; wrongSource["captureHash"] = .string(String(repeating: "e", count: 64)); wrong["source"] = .object(wrongSource)
+        #expect(throws: (any Error).self) { try CompanionDocumentFigureAssets.validateReferenced(receipt, parent: .object(wrong), parentRecordId: record, generationId: session) }
+        var noURI = manifest, noURIfigure = originalFigure; noURIfigure["poster"] = nil; noURIfigure["view"] = .object(["schemaVersion": .int(1), "nodes": .array([])])
+        noURI["figures"] = .array([.object(noURIfigure)])
+        var noURIcapture = capture.objectValue!; noURIcapture["manifest"] = .object(noURI)
+        let noURIbytes = try JSONEncoder.nodus.encode(JSONValue.object(noURIcapture))
+        wrongSource = source; wrongSource["capture"] = .object(noURIcapture); wrongSource["captureCanonical"] = .string(String(decoding: noURIbytes, as: UTF8.self)); wrongSource["captureHash"] = .string(CompanionDocumentFigureAssets.hash(noURIbytes)); wrong = fields; wrong["source"] = .object(wrongSource)
+        #expect(throws: (any Error).self) { try CompanionDocumentFigureAssets.validateReferenced(receipt, parent: .object(wrong), parentRecordId: record, generationId: session) }
+        try await cache.freezeForRevocation(true)
+        let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"])
+        #expect(snapshot.records.filter { $0.generationKind == "documentFigureAssetChunk" }.count == 2)
+        let saved = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "real-mac"); try await f.recovery.completeRevocation(saved)
+        let fresh = try f.pairing("original-reference-new"), destination = try f.cache(fresh.id)
+        _ = try await f.recovery.adopt(pairing: fresh, macDeviceId: "real-mac", cache: destination)
+        let restored = CompanionDocumentFigureAssets(cache: destination, vaultId: "vault")
+        #expect(try await restored.dataReferenced(receipt, parentRecordId: record, generationId: session) == bytes)
+        #expect(try await restored.referencedReceipts(parentRecordId: record, generationId: session) == [receipt])
+        await #expect(throws: (any Error).self) { try await destination.requireGenerationExecutionAllowed(vaultId: "vault", generationId: session.uuidString.lowercased()) }
+        _ = try await destination.authoringRecoverySnapshot(vaultIds: ["vault"])
+        for id in [old.id, fresh.id] { try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }; try? f.keychain.remove(saved.recoveryKeyName)
+    }
     @Test("a receipt-only paid image becomes encrypted chunks and a thin durable replay pointer")
     func paidImageReceipt() async throws {
         let f = try PrivateBridgeAuthoringRecoveryTests.Fixture(); defer { f.clean() }

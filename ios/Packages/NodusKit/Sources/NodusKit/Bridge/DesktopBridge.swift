@@ -1749,6 +1749,18 @@ public actor PrivateBridgeCache {
                         let url = fileURL(vaultId: vault, domain: .researchGeneration, recordId: record)
                         let parent = try JSONDecoder.nodus.decode(JSONValue.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key))
                         _ = try CompanionDocumentFigureAssets.Parent(parent, vaultId: vault, recordId: record)
+                        if let originalReceipts = parent.objectValue?["source"]?.objectValue?["originalReceipts"] {
+                            guard let references = originalReceipts.arrayValue, let generation = parent.objectValue?["id"]?.stringValue.flatMap(UUID.init(uuidString:)) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                            for reference in references {
+                                let receipt = try CompanionDocumentFigureAssets.Receipt(value: reference)
+                                guard receipt.vaultId == vault else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                                try CompanionDocumentFigureAssets.validateReferenced(receipt, parent: parent, parentRecordId: record, generationId: generation)
+                                let url = fileURL(vaultId: vault, domain: .researchGeneration, recordId: CompanionDocumentFigureAssets.recordId(receipt.id))
+                                let asset = try JSONDecoder.nodus.decode(CompanionDocumentFigureAssets.Manifest.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key))
+                                try CompanionDocumentFigureAssets.validate(asset)
+                                guard asset.receipt == receipt, asset.state == "ready" else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                            }
+                        }
                         known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent] = (vault, false, false, record, "documentVisuals")
                         let summary = "autonomous:documentVisuals:summary:" + entity
                         let summaryURL = fileURL(vaultId: vault, domain: .researchGeneration, recordId: summary)
