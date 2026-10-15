@@ -13,6 +13,7 @@ nonisolated final class PageSearchLifetimeTests: XCTestCase {
         for index in 0..<50 {
             SearchLifetimeScope.$marker.withValue(index) {
                 weak var released: PageSearch?
+                weak var releasedInvite: PageChatInvite?
                 autoreleasepool {
                     let search = PageSearch()
                     released = search
@@ -21,8 +22,13 @@ nonisolated final class PageSearchLifetimeTests: XCTestCase {
                     search.query = "evidence"
                     XCTAssertEqual(search.matches.count, 1)
                     search.reveal([0])
+                    let invite = PageChatInvite()
+                    releasedInvite = invite
+                    invite.reportId = "lifetime-fixture"
+                    invite.isOpen = true
                 }
                 XCTAssertNil(released, "A cancelled fade must not retain a removed page.")
+                XCTAssertNil(releasedInvite, "The removed page must release its chat invitation.")
             }
         }
     }

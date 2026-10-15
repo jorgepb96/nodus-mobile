@@ -36,6 +36,10 @@ struct PageChatSubject: Identifiable, Equatable {
 @MainActor
 @Observable
 final class PageChatInvite {
+    // This page-local @State has the same synchronous SwiftUI lifetime as
+    // PageSearch. Avoid the inferred isolated-deinit runtime path (#88036).
+    nonisolated deinit {}
+
     /// The report whose conversation this page's chat belongs to.
     var reportId: String?
     /// Whether the modal is up. The page's own chat button sets it too, so there is one answer
