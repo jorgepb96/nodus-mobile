@@ -10,7 +10,7 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
     func testNativeWorkspaceTabsKeepTitlesAndCloseControlsInsideTheirRow() throws {
         defer { XCUIDevice.shared.orientation = .portrait }
         for style in ["light", "dark"] {
-            for route in ["ideas", "authors", "argument"] {
+            for route in ["ideas", "authors", "argument", "library"] {
                 let app = launch(route: route, style: style)
                 defer { app.terminate() }
                 try verifyBothOrientations(app, route: route, capturePrefix: "tabs-\(route)-\(style)")
