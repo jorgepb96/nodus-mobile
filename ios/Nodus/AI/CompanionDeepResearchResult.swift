@@ -105,7 +105,7 @@ struct CompanionDeepResearchCitationView: View {
                 for component in path {
                     switch component {
                     case .string(let field):
-                        guard ["entries", "frozen", "snapshot", "ideas", "works", "passages", "gaps", "contradictions", "sources"].contains(field), let next = result.objectValue?[field] else { throw DesktopBridgeError.malformedResponse }
+                        guard ["entries", "frozen", "snapshot", "ideas", "works", "passages", "legacyPassages", "receipt", "gaps", "contradictions", "sources"].contains(field), let next = result.objectValue?[field] else { throw DesktopBridgeError.malformedResponse }
                         result = next
                     case .int(let position):
                         guard let index = Int(exactly: position), let rows = result.arrayValue, rows.indices.contains(index) else { throw DesktopBridgeError.malformedResponse }
@@ -117,6 +117,20 @@ struct CompanionDeepResearchCitationView: View {
                     guard let url = URL(string: citation), let capturedReference = CorpusReference(url), capturedReference.kind == reference.kind, capturedReference.recordId == reference.recordId else { throw DesktopBridgeError.malformedResponse }
                 } else {
                     guard result.objectValue?["id"] == .string(reference.recordId) else { throw DesktopBridgeError.malformedResponse }
+                }
+                if callKey == "source:academic", reference.kind == "work", let workId = result.objectValue?["nodus_id"]?.stringValue,
+                   let source = value.objectValue?["calls"]?.objectValue?[callKey]?.objectValue?["output"]?.objectValue {
+                    let selected = source["legacyPassages"]?.arrayValue?.compactMap { $0.objectValue?["receipt"] }.filter { $0.objectValue?["nodus_id"] == .string(workId) } ?? []
+                    guard !selected.isEmpty else { throw DesktopBridgeError.malformedResponse }
+                    result = .object(["title": result.objectValue?["work"]?.objectValue?["title"] ?? .null, "passages": .array(selected)])
+                }
+                if callKey == "source:academic", reference.kind == "work", let workId = result.objectValue?["workId"]?.stringValue,
+                   let source = value.objectValue?["calls"]?.objectValue?[callKey]?.objectValue?["output"]?.objectValue,
+                   let passages = source["passages"]?.arrayValue {
+                    let selected = passages.filter { $0.objectValue?["workId"] == .string(workId) }
+                    guard !selected.isEmpty else { throw DesktopBridgeError.malformedResponse }
+                    let document = source["scope"]?.objectValue?["documents"]?.arrayValue?.first { $0.objectValue?["workId"] == .string(workId) }
+                    result = .object(["title": document?.objectValue?["title"] ?? .null, "passages": .array(selected)])
                 }
                 if callKey == "source:study", let sourceID = result.objectValue?["sourceId"], let kind = result.objectValue?["kind"],
                    let entries = value.objectValue?["calls"]?.objectValue?[callKey]?.objectValue?["output"]?.objectValue?["entries"]?.arrayValue {

@@ -26,6 +26,62 @@ enum CompanionCompleteGuideSource {
               try JSONEncoder.nodus.encode(value).count <= 16_000_000 else { throw DesktopBridgeError.malformedResponse }
         return value
     }
+    private static let academicCatalogRecord = "companion:academic-research:catalog:v1"
+    private static func academicRecord(notebook: JSONValue, settings: JSONValue) throws -> String {
+        let selection = JSONValue.object(["notebookId": notebook, "retrieval": settings])
+        return "companion:academic-research:source:v1:" + SHA256.hash(data: try JSONEncoder.nodus.encode(selection)).map { String(format: "%02x", $0) }.joined()
+    }
+    static func academicCatalog(session: SpaceSession) async throws -> JSONValue {
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus), cache = try PrivateBridgeCache(pairingId: pairing.id)
+        var catalog: [String: JSONValue] = [:]
+        for bytes in try await cache.downloadedData(vaultId: vault, domain: .corpus, recordId: academicCatalogRecord) {
+            let entry = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+            guard let id = entry.objectValue?["recordId"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+            catalog[id] = entry
+        }
+        return .array(catalog.keys.sorted().compactMap { catalog[$0] })
+    }
+    static func academicSource(session: SpaceSession, request: JSONValue) async throws -> JSONValue {
+        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+        if request.objectValue?["mobileSourceScope"] == .string("device_downloads") {
+            let notebook = request.objectValue?["notebookId"] ?? .null, wanted = request.objectValue?["retrieval"]
+            let catalogValue = try await academicCatalog(session: session)
+            let catalog = catalogValue.arrayValue ?? []
+            let matching = catalog.filter { $0.objectValue?["notebookId"] == notebook && (wanted == nil || $0.objectValue?["settings"] == wanted) }
+            guard matching.count == 1, let recordId = matching.first?.objectValue?["recordId"]?.stringValue else { throw APIError(status: 404, message: "Elige una copia académica descargada para este cuaderno y sus límites de recuperación.") }
+            let cache = try PrivateBridgeCache(pairingId: pairing.id), copies = try await cache.downloadedData(vaultId: vault, domain: .corpus, recordId: recordId)
+            var selected: JSONValue?, identity: String?
+            for data in copies {
+                guard var value = try JSONDecoder.nodus.decode(JSONValue.self, from: data).objectValue,
+                      var context = value["context"]?.objectValue, context["vaultId"] == .string(vault),
+                      let sourceHash = value["sourceHash"]?.stringValue, let revision = context["revision"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                let current = sourceHash + ":" + revision
+                if let identity, identity != current { throw APIError(status: 409, message: "Hay revisiones distintas de estas fuentes académicas. Actualiza la descarga antes de generar.") }
+                identity = current; context["sourceScope"] = .string("device_downloads"); value["context"] = .object(context); selected = .object(value)
+            }
+            guard let selected else { throw APIError(status: 404, message: "La copia de estas fuentes académicas ya no está descargada.") }
+            return selected
+        }
+        let response = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDeepResearchSource", args: [.object([
+            "request": request, "generationId": .string(UUID().uuidString.lowercased()), "stage": .string("academicSnapshot"), "input": .array([]), "history": .array([]), "replies": .object([:])
+        ])])
+        guard let value = response.objectValue?["value"], value.objectValue?["kind"] == .string("academic"),
+              value.objectValue?["context"]?.objectValue?["vaultId"] == .string(vault),
+              try JSONEncoder.nodus.encode(value).count <= 16_000_000 else { throw DesktopBridgeError.malformedResponse }
+        return value
+    }
+    static func downloadAcademic(session: SpaceSession, request: JSONValue, days: Int) async throws {
+        guard [7, 30].contains(days), var linked = request.objectValue else { throw DesktopBridgeError.malformedResponse }
+        linked["mobileSourceScope"] = .string("linked_corpus")
+        let value = try await academicSource(session: session, request: .object(linked))
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus), cache = try PrivateBridgeCache(pairingId: pairing.id)
+        guard let settings = value.objectValue?["settings"], let notebook = value.objectValue?["scope"]?.objectValue?["notebookId"] else { throw DesktopBridgeError.malformedResponse }
+        let recordId = try academicRecord(notebook: notebook, settings: settings), id = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: [recordId, academicCatalogRecord])
+        let title = value.objectValue?["title"]?.stringValue ?? "Fuentes académicas seleccionadas"
+        let metadata = JSONValue.object(["recordId": .string(recordId), "notebookId": notebook, "settings": settings, "title": .string(title)])
+        try await cache.saveReadPack(id: id, vaultId: vault, title: title, expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: [.init(domain: .corpus, recordId: recordId, data: try JSONEncoder.nodus.encode(value)), .init(domain: .corpus, recordId: academicCatalogRecord, data: try JSONEncoder.nodus.encode(metadata))])
+        session.didChangeCompanionDownloads()
+    }
     private static func genealogyRecord(_ request: JSONValue) throws -> String {
         let args = request.objectValue ?? [:]
         let selection = JSONValue.object(["objective": args["objective"] ?? .null, "focusPersonId": args["focusPersonId"] ?? .null])
