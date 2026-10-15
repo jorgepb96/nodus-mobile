@@ -1071,7 +1071,7 @@ private struct DatabaseRowInspector: View {
     @Binding var tables: [String: [Row]]
     let outbox: OutboxController?
     @State private var drafts: [String: String] = [:]
-    private struct CellBaseline { let revision: Int64; let value: String }
+    private struct CellBaseline { let revision: Int; let value: String }
     @State private var editedColumns: Set<String> = []
     @State private var cellBaselines: [String: CellBaseline] = [:]
     @State private var tab = "Properties"
@@ -1101,25 +1101,46 @@ private struct DatabaseRowInspector: View {
     }
 
     private var propertiesPanel: some View {
-        ForEach(columns) { column in
-            VStack(alignment: .leading, spacing: 5) {
-                Label(column.name, systemImage: propertyIcon(column.type)).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                if column.isReadOnly { DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7)) }
-                else if ["files","attachment","ai_image","relation","button"].contains(column.type) {
-                    Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor").font(.callout).textSelection(.enabled)
-                    if ["button", "ai_image"].contains(column.type) { DatabasePropertyActionControls(session: session, rowId: row.id, column: column).id(row.id + ":" + column.id) }
-                } else { DatabasePropertyCellEditor(column: column, value: Binding(get: { drafts[column.id] ?? "" }, set: { value in
-                    if !editedColumns.contains(column.id) {
-                        let stored = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
-                        cellBaselines[column.id] = CellBaseline(revision: stored?.columns["revision"]?.intValue ?? 0, value: row.cells[column.id] ?? "")
-                        editedColumns.insert(column.id)
-                    }
-                    drafts[column.id] = value
-                }))
-                    if column.type == "ai" { DatabasePropertyActionControls(session: session, rowId: row.id, column: column).id(row.id + ":" + column.id) }
-                }
-            }.accessibilityIdentifier("database-property-value-\(column.id)")
+        ForEach(columns) { column in propertyRow(column) }
+    }
+
+    private func propertyRow(_ column: PagesDatabasesParity.Column) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Label(column.name, systemImage: propertyIcon(column.type))
+                .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            propertyValue(column)
+        }.accessibilityIdentifier("database-property-value-\(column.id)")
+    }
+
+    @ViewBuilder private func propertyValue(_ column: PagesDatabasesParity.Column) -> some View {
+        if column.isReadOnly {
+            DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns),
+                error: row.formulaErrors[column.id], color: row.formulaColors[column.id])
+                .font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+        } else if ["files", "attachment", "ai_image", "relation", "button"].contains(column.type) {
+            Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor")
+                .font(.callout).textSelection(.enabled)
+            if ["button", "ai_image"].contains(column.type) { actionControls(column) }
+        } else {
+            DatabasePropertyCellEditor(column: column, value: cellDraft(column))
+            if column.type == "ai" { actionControls(column) }
         }
+    }
+
+    private func actionControls(_ column: PagesDatabasesParity.Column) -> some View {
+        DatabasePropertyActionControls(session: session, rowId: row.id, column: column).id(row.id + ":" + column.id)
+    }
+
+    private func cellDraft(_ column: PagesDatabasesParity.Column) -> Binding<String> {
+        Binding(get: { drafts[column.id] ?? "" }, set: { value in
+            if !editedColumns.contains(column.id) {
+                let stored = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
+                cellBaselines[column.id] = CellBaseline(revision: stored?.columns["revision"]?.intValue ?? 0, value: row.cells[column.id] ?? "")
+                editedColumns.insert(column.id)
+            }
+            drafts[column.id] = value
+        })
     }
 
     private var relationsPanel: some View {
@@ -1257,8 +1278,8 @@ private struct NewDatabaseColumnSheet: View {
         guard let encoded = try? CompanionDatabaseProperty.configuration(config, patch: [:]) else { return }
         fields["name"] = .string(name.trimmingCharacters(in: .whitespacesAndNewlines)); fields["type"] = .string(type); fields["config_json"] = .string(encoded)
         let revision = existing?.columns["revision"]?.intValue ?? 0
-        fields["revision"] = .int(existing == nil ? (config.isEmpty ? 1 : 2) : revision + 1); fields["updated_by"] = .string("mobile"); fields["updated_at"] = .string(now)
-        if existing != nil { fields["_mobileExpectedRevision"] = .int(revision); fields["_mobileExpectedConfigJSON"] = .string(existing?.string("config_json") ?? "{}") }
+        fields["revision"] = .int(Int64(existing == nil ? (config.isEmpty ? 1 : 2) : revision + 1)); fields["updated_by"] = .string("mobile"); fields["updated_at"] = .string(now)
+        if existing != nil { fields["_mobileExpectedRevision"] = .int(Int64(revision)); fields["_mobileExpectedConfigJSON"] = .string(existing?.string("config_json") ?? "{}") }
         guard await outbox.syncMutation(kind: .upsert, table: .databaseColumns, key: [id], row: fields, title: "Guardar propiedad \(name)") else { return }
         tables["db_columns"]?.removeAll { $0.string("id") == id }; tables["db_columns", default: []].append(Row(fields))
         if ["select","status","multi_select"].contains(type) {
@@ -1266,7 +1287,7 @@ private struct NewDatabaseColumnSheet: View {
                 guard let optionId = option.string("id") else { continue }
                 let baseline = tables["db_select_options"]?.first { $0.string("id") == optionId }
                 let oldRevision = baseline?.columns["revision"]?.intValue ?? 0
-                var value = option.columns; value["database_id"] = .string(databaseId); value["column_id"] = .string(id); value["position"] = .int(Int64(index)); value["revision"] = .int(oldRevision + 1); value["_mobileExpectedRevision"] = .int(oldRevision); value["created_at"] = baseline?.columns["created_at"] ?? .string(now); value["updated_at"] = .string(now)
+                var value = option.columns; value["database_id"] = .string(databaseId); value["column_id"] = .string(id); value["position"] = .int(Int64(index)); value["revision"] = .int(Int64(oldRevision + 1)); value["_mobileExpectedRevision"] = .int(Int64(oldRevision)); value["created_at"] = baseline?.columns["created_at"] ?? .string(now); value["updated_at"] = .string(now)
                 if await outbox.syncMutation(kind: .upsert, table: .databaseSelectOptions, key: [optionId], row: value, title: "Guardar opción") { tables["db_select_options"]?.removeAll { $0.string("id") == optionId }; tables["db_select_options", default: []].append(Row(value)) }
             }
             for option in removedOptions {

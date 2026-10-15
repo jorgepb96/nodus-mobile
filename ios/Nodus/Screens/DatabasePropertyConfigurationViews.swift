@@ -13,7 +13,7 @@ struct DatabasePropertyConfigurationFields: View {
         Binding(get: { config[key]?.stringValue ?? fallback }, set: { config[key] = .string($0) })
     }
     private func flag(_ key: String) -> Binding<Bool> { Binding(get: { config[key]?.boolValue ?? false }, set: { config[key] = .bool($0) }) }
-    private func integer(_ key: String, _ fallback: Int) -> Binding<Int> { Binding(get: { Int(config[key]?.intValue ?? Int64(fallback)) }, set: { config[key] = .int(Int64($0)) }) }
+    private func integer(_ key: String, _ fallback: Int) -> Binding<Int> { Binding(get: { config[key]?.intValue ?? fallback }, set: { config[key] = .int(Int64($0)) }) }
     private func decimal(_ key: String, _ fallback: Double) -> Binding<Double> { Binding(get: { config[key]?.doubleValue ?? fallback }, set: { config[key] = .double($0) }) }
     private func choices(_ title: String, key: String, values: [String], fallback: String) -> some View {
         Picker(title, selection: text(key, fallback)) { ForEach(values, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ").capitalized).tag($0) } }
