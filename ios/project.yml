@@ -70,7 +70,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1002"
+        CURRENT_PROJECT_VERSION: "1003"
         INFOPLIST_FILE: Nodus/Info.plist
         # iCloud: the key-value store for the preferences in `SyncedDefaults`, and CloudKit for
         # the optional copy of chats and reports in `CloudBackup`. The file itself says what is
@@ -98,7 +98,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.drakonis96.nodus.ios.activities
         PRODUCT_NAME: NodusActivities
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1002"
+        CURRENT_PROJECT_VERSION: "1003"
         INFOPLIST_FILE: NodusActivities/Info.plist
         SKIP_INSTALL: YES
 
