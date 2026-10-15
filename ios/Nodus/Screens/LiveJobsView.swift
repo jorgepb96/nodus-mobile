@@ -23,7 +23,7 @@ struct LiveJobsView: View {
                     ForEach(visualSessions) { item in
                         if let target = item.value.objectValue?["target"]?.objectValue?["id"]?.stringValue {
                             NavigationLink {
-                                SharedDesktopSurface(session: session, surface: .deepResearch, initialResearchVisualReportId: target)
+                                SharedDesktopSurface(session: session, surface: .deepResearch, initialResearchVisualLocalOnly:true, initialResearchVisualReportId: target)
                             } label: {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(item.value.objectValue?["source"]?.objectValue?["title"]?.stringValue ?? "Informe conservado").font(.headline)

@@ -1368,7 +1368,7 @@ struct PublishedReportReader: View {
             rows: detail?.annotations ?? []
         ))
         .toolbar {
-            if session.aiExecutionMode == .autonomous {
+            if session.connection.desktopPairingId != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { visualEditorOpen = true } label: { Image(systemName: "photo.badge.plus") }
                         .accessibilityLabel("Recursos visuales del informe")

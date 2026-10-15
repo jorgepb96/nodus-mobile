@@ -58,6 +58,7 @@ extension SpaceSession {
 struct SharedDesktopSurface: View {
     let session: SpaceSession
     let surface: DesktopSurface
+    var initialResearchVisualLocalOnly = false
     var initialResearchVisualReportId: String? = nil
     var initialDatabaseReportId: String? = nil
     var initialPageId: String? = nil
@@ -97,7 +98,7 @@ struct SharedDesktopSurface: View {
     @State private var showStudyIdeaAssistant = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialResearchVisualReportId:initialResearchVisualReportId, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialResearchVisualLocalOnly:initialResearchVisualLocalOnly, initialResearchVisualReportId:initialResearchVisualReportId, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -681,6 +682,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let publicationRevision: Int
     let corpusRevision: String?
     let databaseReadingRevision:Int
+    let initialResearchVisualLocalOnly: Bool
     let initialResearchVisualReportId: String?
     let initialDatabaseReportId: String?
     let initialPageId: String?
@@ -708,9 +710,12 @@ private struct DesktopWebView: UIViewRepresentable {
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
         config.userContentController.add(context.coordinator, name: "nodus")
-        var data: [String: Any] = ["initialResearchVisualReportId":initialResearchVisualReportId ?? "", "surface": surface.rawValue, "vaultId":session.connection.vaultId, "pageDownloadedOnly":downloadedOnly, "initialPageId":initialPageId ?? "", "initialStudyDocumentId":initialStudyDocumentId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+        var data: [String: Any] = ["initialResearchVisualLocalOnly":initialResearchVisualLocalOnly, "initialResearchVisualReportId":initialResearchVisualReportId ?? "", "surface": surface.rawValue, "vaultId":session.connection.vaultId, "pageDownloadedOnly":downloadedOnly, "initialPageId":initialPageId ?? "", "initialStudyDocumentId":initialStudyDocumentId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
             "documentDraftScope": session.connection.storageId, "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
+        let visualPairing = DesktopBridgePairingStore().pairings().first { $0.id == session.connection.desktopPairingId }
+        data["visualCanWrite"] = !downloadedOnly && session.connection.role.canSendChanges && visualPairing.map { !$0.isExpired && $0.vaultIds.contains(session.connection.vaultId) && $0.domains.contains(.corpus) && $0.domains.contains(.writing) } == true
+        data["visualCanGenerate"] = data["visualCanWrite"] as? Bool == true && visualPairing?.domains.contains(.researchGeneration) == true
         if let initialArgumentMap, let bytes = try? JSONEncoder.nodus.encode(initialArgumentMap), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialArgumentMap"] = value }
         if let initialArgumentSeed { data["initialArgumentSeed"] = initialArgumentSeed }
         if let initialDatabasePresentation, let bytes = try? JSONEncoder.nodus.encode(initialDatabasePresentation), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialDatabasePresentation"] = value }
@@ -1055,7 +1060,7 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(vault))
                     } else if method == "surfaceFullscreen", let enabled = input.first as? Bool {
                         session.isSurfaceFullscreen = enabled; value = .null
-                    } else if method == "mobileSettings", (session.connection.desktopPairingId == nil || ((surface == .studyIdeas || surface == .graph) && session.aiExecutionMode == .autonomous)) {
+                    } else if method == "mobileSettings", (session.connection.desktopPairingId == nil || ((surface == .studyIdeas || surface == .graph || surface == .deepResearch) && session.aiExecutionMode == .autonomous)) {
                         value = try autonomous.portableSettings(args.first ?? .null)
                     } else if method == "studyKnowledgeCopy", (surface == .studyIdeas || (surface == .graph && (session.connection.vaultType == .estudio || session.connection.vaultType == .docencia))), let action = args.first?.stringValue {
                         value = try await CompanionStudyKnowledgeSources.perform(session:session,action:action,input:args.count>1 ? args[1]:nil)
@@ -1093,6 +1098,11 @@ private struct DesktopWebView: UIViewRepresentable {
                     } else if method == "navigate", (2...3).contains(input.count), let kind = input[0] as? String, let record = input[1] as? String {
                         let position = input.count == 3 ? input[2] as? [String: Any] : nil
                         onNavigate(kind, record, position?["location"] as? String, position?["quote"] as? String); value = .null
+                    } else if method == "mobileLiveVisualJobs", let target = args.first?.stringValue {
+                        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+                        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId:pairing.id,vaultId:vault)
+                        let jobs = await ledger.all().filter { ["enrichDocumentVisuals","undoDocumentVisuals","removeDocumentFigure"].contains($0.method) && $0.args.first?.objectValue?["target"]?.objectValue?["id"]?.stringValue == target }
+                        value = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(jobs))
                     } else if method == "cancelLiveJob", let requestId = input.first as? String {
                         let jobMethod = args.count == 3 ? args[1].stringValue : nil
                         let jobArgs = args.count == 3 ? args[2].arrayValue : nil
@@ -1188,6 +1198,9 @@ private struct DesktopWebView: UIViewRepresentable {
                         guard let context = try await CompanionDocumentVisualSession.context(reportID: id, generationID: args.count == 3 ? args[2].stringValue : nil, session: session) else { throw DesktopBridgeError.permissionDenied }
                         let content = try await CompanionResearchFigures.load(source, context: context, session: session)
                         value = .object(["base64": .string(content.data.base64EncodedString()), "mimeType": .string(content.mime)])
+                    } else if method == "mobileLiveVisualExport", args.count == 1 {
+                        guard !downloadedOnly else { throw DesktopBridgeError.permissionDenied }
+                        onExport(try await CompanionLiveDocumentVisualExport.export(args[0],session:session));value = .null
                     } else if method == "mobileDocumentVisualOpenSource", args.count == 1, let source = args[0].stringValue, let url = URL(string: source) {
                         if url.scheme == "nodus" { onNavigate("citation", source, nil, nil) }
                         else if url.scheme == "https" { guard await UIApplication.shared.open(url) else { throw DesktopBridgeError.malformedResponse } }
@@ -1336,6 +1349,12 @@ private struct DesktopWebView: UIViewRepresentable {
                                 }
                             }
                         } else if DesktopBridgeClient.jobMethods.contains(method) {
+                            if ["enrichDocumentVisuals","undoDocumentVisuals","removeDocumentFigure"].contains(method) {
+                                guard !downloadedOnly, session.aiExecutionMode == .live, !pairing.isExpired, pairing.domains.contains(.corpus), pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+                                if method == "enrichDocumentVisuals", !pairing.domains.contains(.researchGeneration) { throw DesktopBridgeError.permissionDenied }
+                                let support = try await client.liveCapabilities()
+                                guard support.operations.contains(method) else { throw APIError(status:426,code:"document_visual_live_upgrade_required",message:"Actualiza Nodus en el Mac para editar recursos visuales en modo LIVE. El informe conserva su contenido.") }
+                            }
                             if method == "saveMobileDeepResearchVisuals" {
                                 guard !downloadedOnly else { throw APIError(status: 503, code: "offline", message: "La edición permanece guardada en este dispositivo y espera sincronización.") }
                                 try await CompanionDocumentVisualSession.requirePublishingSupport(session: session)
@@ -1343,7 +1362,7 @@ private struct DesktopWebView: UIViewRepresentable {
                             let first = input.first as? String
                             if method == "buildArgumentMap", first.flatMap({ UUID(uuidString: $0) }) != nil { args.removeFirst() }
                             let streamMethod = ["buildArgumentMap", "generateImmersionSession", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "exportDeepResearchArchive"].contains(method)
-                            let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveMobileAcademicResult", "saveMobileDeepResearchVisuals"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
+                            let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveMobileAcademicResult", "saveMobileDeepResearchVisuals", "enrichDocumentVisuals", "undoDocumentVisuals", "removeDocumentFigure"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
                             let requestId = (persistedId ?? (streamMethod ? first : nil)).flatMap { UUID(uuidString: $0) == nil ? nil : $0 } ?? UUID().uuidString
                             let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vaultId)
                             _ = try await ledger.prepare(id: requestId, method: method, args: args)
