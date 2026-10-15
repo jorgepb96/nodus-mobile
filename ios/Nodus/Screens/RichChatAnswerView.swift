@@ -315,7 +315,7 @@ private struct RichChatWebReader:UIViewRepresentable {
             do { let value=try await reader.input(dark:dark,textScale:textScale);try Task.checkCancellation();let input=try JSONSerialization.jsonObject(with:JSONEncoder.nodus.encode(value));_=try await view.callAsyncJavaScript("window.nodusChatReadRender(input);",arguments:["input":input],in:nil,contentWorld:.page);reader.loading=false;deadline?.cancel() }
             catch { reader.loading=false;reader.issue=error.localizedDescription;deadline?.cancel() }
         }
-        func webView(_ view:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping(WKNavigationActionPolicy)->Void) { decisionHandler(action.request.url==root ? .allow:.cancel) }
+        func webView(_ view:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping @MainActor @Sendable (WKNavigationActionPolicy)->Void) { decisionHandler(action.request.url==root ? .allow:.cancel) }
         func webView(_ view:WKWebView,didFail navigation:WKNavigation!,withError error:any Error) { reader.loading=false;reader.issue=error.localizedDescription;deadline?.cancel() }
         func webView(_ view:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:any Error) { reader.loading=false;reader.issue=error.localizedDescription;deadline?.cancel() }
         func webViewWebContentProcessDidTerminate(_ view:WKWebView) { reader.loading=false;reader.issue="El lector se ha detenido. Vuelve a cargar la respuesta.";deadline?.cancel() }

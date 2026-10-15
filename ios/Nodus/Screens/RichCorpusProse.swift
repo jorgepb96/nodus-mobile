@@ -390,7 +390,7 @@ private struct RichProseWebView: UIViewRepresentable {
             }
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { ready = true; deadline?.cancel(); update(initial: true) }
-        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) { decisionHandler(action.request.url == root ? .allow : .cancel) }
+        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) { decisionHandler(action.request.url == root ? .allow : .cancel) }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) { deadline?.cancel(); parent.issue = error.localizedDescription }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) { deadline?.cancel(); parent.issue = error.localizedDescription }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { parent.issue = "El lector se ha detenido. Reintenta la lectura." }

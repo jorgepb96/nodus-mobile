@@ -77,7 +77,7 @@ struct SharedWorldMapReader: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { deadline?.cancel(); parent.onIssue(error.localizedDescription) }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { deadline?.cancel(); parent.onIssue(error.localizedDescription) }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { parent.onIssue("El visor se ha cerrado para liberar memoria. Puedes reabrirlo.") }
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             decisionHandler(navigationAction.request.url == document && navigationAction.navigationType == .other ? .allow : .cancel)
         }
     }

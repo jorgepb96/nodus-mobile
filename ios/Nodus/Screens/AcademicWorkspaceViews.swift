@@ -21,6 +21,8 @@ struct IdeasWorkspaceView: View {
     @State private var isLoading = false
     @State private var error: String?
     @State private var loadTask: Task<Void, Never>?
+    @State private var requestID = UUID()
+    @State private var loadedQueryID: String?
 
     private var section: String { NodusRoute.ideas.rawValue }
     private var loadID: String { "\(query)|\(type)|\(sort.rawValue)|\(session.publishedRevision ?? "local")" }
@@ -176,21 +178,39 @@ struct IdeasWorkspaceView: View {
         }
     }
 
-    private func loadMore() async { await fetch(offset: page?.items.count ?? 0, replacing: false) }
+    private func loadMore() async {
+        guard !isLoading, loadedQueryID == loadID, page?.hasMore == true else { return }
+        await fetch(offset: page?.items.count ?? 0, replacing: false)
+    }
 
     private func fetch(offset: Int, replacing: Bool) async {
+        let currentQueryID = loadID
+        let currentRequest = UUID()
+        requestID = currentRequest
         isLoading = true
-        defer { isLoading = false }
+        if replacing, loadedQueryID != currentQueryID { page = nil }
+        defer { if requestID == currentRequest { isLoading = false } }
         do {
             let loaded = try await session.client.workspaceIdeas(
                 in: session.connection.spaceId, query: query, type: type, sort: sort, limit: 80, offset: offset
             )
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, loadID == currentQueryID, requestID == currentRequest else { return }
+            guard loaded.offset == offset else { throw PageTraversalError.invalidProgress }
+            try CataloguePageIntegrity.validate(Page(
+                items: loaded.items, total: loaded.total, limit: loaded.limit, offset: loaded.offset,
+                hasMore: loaded.hasMore, revision: loaded.revision ?? "unversioned"
+            ))
             if replacing || page == nil {
                 page = loaded
             } else if let prior = page {
-                page = IdeaWorkspacePage.combining(prior, loaded)
+                do {
+                    page = try IdeaWorkspacePage.combining(prior, loaded)
+                } catch PageTraversalError.changingRevision {
+                    await fetch(offset: 0, replacing: true)
+                    return
+                }
             }
+            loadedQueryID = currentQueryID
             error = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", workspaceTabs.tabs(in: section).isEmpty {
@@ -200,6 +220,7 @@ struct IdeasWorkspaceView: View {
         } catch where error.isCancellation {
             // A newer filter superseded this page.
         } catch {
+            guard loadID == currentQueryID, requestID == currentRequest else { return }
             self.error = error.localizedDescription
         }
     }
@@ -972,9 +993,15 @@ private extension View {
 }
 
 private extension IdeaWorkspacePage {
-    static func combining(_ left: Self, _ right: Self) -> Self {
-        let existing = Set(left.items.map(\.id))
-        let appended = left.items + right.items.filter { !existing.contains($0.id) }
+    static func combining(_ left: Self, _ right: Self) throws -> Self {
+        guard left.revision == right.revision, left.fromDevice == right.fromDevice,
+              left.total == right.total else { throw PageTraversalError.changingRevision }
+        guard right.offset == left.items.count else { throw PageTraversalError.invalidProgress }
+        var existing = Set(left.items.map(\.id))
+        for item in right.items {
+            guard !item.id.isEmpty, existing.insert(item.id).inserted else { throw PageTraversalError.invalidProgress }
+        }
+        let appended = left.items + right.items
         return Self(
             items: appended, total: right.total, offset: 0, limit: appended.count,
             hasMore: right.hasMore, revision: right.revision, fromDevice: right.fromDevice

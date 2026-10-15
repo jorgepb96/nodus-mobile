@@ -76,7 +76,7 @@ import NodusKit
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url?.standardizedFileURL, url.isFileURL,
               url.deletingLastPathComponent() == directory else { decisionHandler(.cancel); return }
         decisionHandler(.allow)
