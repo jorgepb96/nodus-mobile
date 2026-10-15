@@ -4,6 +4,20 @@ import CryptoKit
 
 final class MobileReleaseUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+    private struct AcceptanceMacModel { let id: String; let label: String; let search: String }
+    /// The runner supplies a model actually listed by the isolated Mac's
+    /// authenticated provider. A missing configuration is a failure, not a skip
+    /// or an implicit switch to another provider/device.
+    private func acceptanceMacModel() throws -> AcceptanceMacModel {
+        let encoded = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_MAC_MODEL"],
+            "Read the real Mac provider catalogue and configure the copied lab before running model acceptance.")
+        let value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: String])
+        let id = try XCTUnwrap(value["id"]), label = try XCTUnwrap(value["label"]), search = try XCTUnwrap(value["search"])
+        guard !id.isEmpty, id.count <= 256, label.hasSuffix(" · " + id), !search.isEmpty, search.count <= 256 else {
+            throw NSError(domain: "NodusAcceptance", code: 2, userInfo: [NSLocalizedDescriptionKey: "The actual Mac model input is malformed."])
+        }
+        return AcceptanceMacModel(id: id, label: label, search: search)
+    }
     @MainActor
     func testExistingMacPhoneChatKeepsKeyboardDraftAndSeparateHistory() throws {
         let app = try openExistingPrincipal(destination: "researchChat")
@@ -479,6 +493,7 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor
     func testLivePhoneChatStreamsCopiesAndReopensFromHistory() throws {
+        let macModel = try acceptanceMacModel()
         let app = try openExistingPrincipal(destination: "settings")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
         let mode = app.buttons["ai-execution-mode"]
@@ -492,7 +507,7 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 35))
         if app.buttons["nodus-chat-new"].exists { app.buttons["nodus-chat-new"].tap() }
         app.buttons["nodus-chat-live-options"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "deepseek-flash")).firstMatch.waitForExistence(timeout: 30), "The real Mac configuration must load its configured DeepSeek model.\n" + app.debugDescription)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", macModel.id)).firstMatch.waitForExistence(timeout: 30), "The real Mac configuration must load its configured acceptance model.\n" + app.debugDescription)
         XCTAssertTrue(app.buttons["Elegir modelo"].exists)
         capture(app, "phone-chat-live-mac-configuration")
         app.buttons["nodus-chat-options-close"].tap()
@@ -2991,6 +3006,7 @@ final class MobileReleaseUITests: XCTestCase {
         defer { app.terminate() }
     }
     @MainActor private func liveDeepResearchComposerSelectingMacModel() throws -> XCUIApplication {
+        let macModel = try acceptanceMacModel()
         let app = try openExistingPrincipal(destination: "settings")
         let mode = app.buttons["ai-execution-mode"]
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
@@ -3038,13 +3054,13 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "live-deep-research-mac-model-options")
         let modelSearch = web.searchFields["Buscar modelo…"].firstMatch
         XCTAssertTrue(modelSearch.waitForExistence(timeout: 10), app.debugDescription)
-        modelSearch.tap(); modelSearch.typeText("DeepSeek")
-        let deepseek = options.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "DeepSeek · deepseek-flash")).firstMatch
-        XCTAssertTrue(deepseek.waitForExistence(timeout: 20), app.debugDescription)
-        guard deepseek.exists && deepseek.isHittable else { throw NSError(domain: "NodusAcceptance", code: 2, userInfo: [NSLocalizedDescriptionKey: "The configured Mac model is unavailable for touch selection."]) }
+        modelSearch.tap(); modelSearch.typeText(macModel.search)
+        let requestedModel = options.descendants(matching: .any).matching(NSPredicate(format: "label == %@", macModel.label)).firstMatch
+        XCTAssertTrue(requestedModel.waitForExistence(timeout: 20), app.debugDescription)
+        guard requestedModel.exists && requestedModel.isHittable else { throw NSError(domain: "NodusAcceptance", code: 2, userInfo: [NSLocalizedDescriptionKey: "The configured Mac model is unavailable for touch selection."]) }
         capture(app, "live-deep-research-mac-model-filtered")
-        deepseek.tap()
-        let selected = web.otherElements.matching(NSPredicate(format: "label == %@", "Modelo: DeepSeek · deepseek-flash")).firstMatch
+        requestedModel.tap()
+        let selected = web.otherElements.matching(NSPredicate(format: "label == %@", "Modelo: " + macModel.label)).firstMatch
         XCTAssertTrue(selected.waitForExistence(timeout: 15), app.debugDescription)
         capture(app, "live-deep-research-mac-model-selected")
         XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
