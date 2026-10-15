@@ -11,6 +11,7 @@ import UIKit
 struct WorkspaceTabStrip: View {
     @Environment(WorkspaceTabs.self) private var workspaceTabs
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.nodusResidentRouteActive) private var routeActive
     @ScaledMetric(relativeTo: .caption) private var scaledTouchHeight: CGFloat = 44
 
     let section: String
@@ -69,7 +70,8 @@ struct WorkspaceTabStrip: View {
         .overlay(alignment: .bottom) { Divider() }
         .clipped()
         .accessibilityElement(children: .contain)
-        .background { keyboardCommands }
+        .accessibilityIdentifier("workspace-tab-strip-\(section)")
+        .background { if routeActive { keyboardCommands } }
     }
 
     private var catalogueTab: some View {
