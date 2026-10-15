@@ -67,6 +67,12 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
             }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: oriented, object: nil)], timeout: 15), .completed)
             let active = try activeTab(app, section: route)
+            let chooser = app.buttons["nodus-workspace-switch"]
+            let navigation = app.buttons["nodus-navigation-toggle"]
+            let firstAction = app.buttons["nodus-top-command"].exists ? app.buttons["nodus-top-command"] : app.buttons["nodus-top-sparkles"]
+            XCTAssertTrue(chooser.isHittable && firstAction.isHittable)
+            XCTAssertGreaterThanOrEqual(chooser.frame.minX, navigation.frame.maxX - 1)
+            XCTAssertLessThanOrEqual(chooser.frame.maxX, firstAction.frame.minX + 1, "The workspace name cannot cover the action rail.")
             let closeID = active.identifier.replacingOccurrences(of: "workspace-tab-", with: "workspace-close-")
             let close = app.buttons[closeID], catalogue = app.buttons["workspace-catalogue-\(route)"]
             let strip = app.descendants(matching: .any)["workspace-tab-strip-\(route)"].firstMatch

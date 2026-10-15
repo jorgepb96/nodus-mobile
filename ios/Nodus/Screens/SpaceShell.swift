@@ -602,6 +602,14 @@ private struct DesktopTopBar: View {
     let onTheme: () -> Void
     let onSettings: () -> Void
 
+    private var expandedActions: Bool { !presentation.isPhone && presentation.availableWidth >= 620 }
+    private var chooserWidth: CGFloat {
+        let leading = presentation.isPersistent ? presentation.sidebarWidth + 8 : 48
+        let trailing = CGFloat(expandedActions ? (queueCount > 0 ? 6 : 5) : 2) * 44 + 4
+        let safeWidth = presentation.availableWidth - 2 * (max(leading, trailing) + 8)
+        return max(44, min(presentation.availableWidth < 500 ? 156 : 260, safeWidth))
+    }
+
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
@@ -641,10 +649,12 @@ private struct DesktopTopBar: View {
                 .overlay(Capsule().stroke(session.accent.opacity(0.38), lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .frame(maxWidth: presentation.availableWidth < 500 ? 156 : 260)
+            .frame(maxWidth: chooserWidth)
             .frame(height: 44)
             .contentShape(Rectangle())
             .accessibilityLabel("Switch space")
+            .accessibilityValue(Text(session.connection.spaceName))
+            .accessibilityIdentifier("nodus-workspace-switch")
         }
         .frame(height: NodusChromeMetrics.topBar)
         // The desktop chrome has a fixed 44-point row. Keep its labels readable inside that
@@ -657,7 +667,7 @@ private struct DesktopTopBar: View {
 
     private var actionRail: some View {
         HStack(spacing: 0) {
-            if !presentation.isPhone && presentation.availableWidth >= 620 {
+            if expandedActions {
                 topButton("command", label: "Commands", action: onCommands)
                 topButton("sparkles", label: "Nodi", action: onAssistant)
                 topButton("arrow.clockwise", label: "Refresh", action: onRefresh)
