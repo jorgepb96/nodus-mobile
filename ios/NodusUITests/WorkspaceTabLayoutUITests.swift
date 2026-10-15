@@ -21,7 +21,7 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
                 let catalogue = app.buttons["workspace-catalogue-\(route)"]
                 catalogue.tap()
                 XCTAssertTrue(catalogue.isSelected)
-                XCTAssertGreaterThanOrEqual(catalogue.frame.width, 150, "The selected catalogue shows its title again.")
+                XCTAssertGreaterThanOrEqual(catalogue.frame.width + 0.01, 150, "The selected catalogue shows its title again.")
                 app.terminate()
             }
         }
@@ -119,12 +119,13 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
             XCTAssertTrue(strip.exists && close.exists && catalogue.isHittable, app.debugDescription)
             for target in [active, close, catalogue] {
                 XCTAssertTrue(target.isHittable)
-                XCTAssertGreaterThanOrEqual(target.frame.height, 44)
+                XCTAssertGreaterThanOrEqual(target.frame.height + 0.01, 44)
                 XCTAssertGreaterThanOrEqual(target.frame.minY, strip.frame.minY - 1)
                 XCTAssertLessThanOrEqual(target.frame.maxY, strip.frame.maxY + 1)
                 XCTAssertTrue(app.windows.firstMatch.frame.insetBy(dx: -1, dy: -1).contains(target.frame))
             }
-            XCTAssertGreaterThanOrEqual(close.frame.width, 44)
+            // CGRect arithmetic may report 43.99999999999994 for a 44-point target.
+            XCTAssertGreaterThanOrEqual(close.frame.width + 0.01, 44)
             XCTAssertGreaterThanOrEqual(close.frame.minX, active.frame.maxX - 1, "The title cannot cover its close control.")
             XCTAssertGreaterThanOrEqual(active.frame.minX, catalogue.frame.maxX - 1, "The catalogue cannot cover the active document.")
             let picture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())

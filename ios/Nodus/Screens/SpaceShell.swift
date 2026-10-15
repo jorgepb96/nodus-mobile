@@ -309,7 +309,7 @@ struct SpaceShell: View {
         case .authors:
             AuthorsWorkspaceView(session: session, onOpenIdea: openIdea, onOpenArgument: openArgument)
         case .deepResearch, .studyDeepResearch:
-            if session.connection.desktopPairingId != nil, session.aiExecutionMode == .live {
+            if session.connection.desktopPairingId != nil {
                 SharedDesktopSurface(session: session, surface: .deepResearch)
             } else { DeepResearchRouteView(session: session) }
         case .dbDeepResearch:

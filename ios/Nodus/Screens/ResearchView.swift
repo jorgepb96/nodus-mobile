@@ -59,7 +59,7 @@ struct ResearchView: View {
                 VStack(alignment: .leading, spacing: 9) {
                     NodusSectionLabel("Deep Research")
                     NavigationLink {
-                        if session.connection.desktopPairingId != nil, session.aiExecutionMode == .live {
+                        if session.connection.desktopPairingId != nil {
                             SharedDesktopSurface(session: session, surface: .deepResearch)
                         } else {
                             DeepResearchScreen(session: session, local: local)
