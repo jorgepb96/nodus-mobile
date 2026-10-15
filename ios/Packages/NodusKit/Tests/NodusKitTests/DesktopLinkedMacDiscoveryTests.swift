@@ -85,6 +85,47 @@ struct DesktopLinkedMacDiscoveryTests {
     }
     #endif
 
+    @Test("Transient resolution retries are bounded, independent and never duplicated")
+    func resolutionRetryBackoff() throws {
+        var policy = DesktopLinkedMacResolutionRetries()
+        let first = policy.track("Mac A"), duplicate = policy.track("Mac A"), second = policy.track("Mac B")
+        #expect(first && !duplicate && second)
+        for seconds in [1, 2, 4, 8, 16, 30, 30, 30] {
+            let pending = policy.failed("Mac A"), retry = try #require(pending)
+            #expect(retry.delay == .seconds(seconds))
+            let repeated = policy.failed("Mac A")
+            #expect(repeated == nil, "A repeated failure callback cannot create another timer")
+            let consumed = policy.consume(retry, service: "Mac A"), consumedAgain = policy.consume(retry, service: "Mac A")
+            #expect(consumed && !consumedAgain, "A timer can issue only one resolve")
+        }
+        let pendingB = policy.failed("Mac B"), independent = try #require(pendingB)
+        #expect(independent.delay == .seconds(1))
+        for i in 2..<32 { let tracked = policy.track("Mac \(i)"); #expect(tracked) }
+        let overflow = policy.track("service-over-limit"); #expect(!overflow)
+    }
+    @Test("Success, disappearance and stop invalidate pending retries without resurrecting a browser")
+    func resolutionRetryLifecycle() throws {
+        var policy = DesktopLinkedMacResolutionRetries()
+        let tracked = policy.track("Mac"); #expect(tracked)
+        let pendingSuccess = policy.failed("Mac"), beforeSuccess = try #require(pendingSuccess)
+        policy.resolved("Mac")
+        let lateSuccess = policy.consume(beforeSuccess, service: "Mac"); #expect(!lateSuccess)
+        let pendingRemoval = policy.failed("Mac"), beforeRemoval = try #require(pendingRemoval)
+        #expect(beforeRemoval.delay == .seconds(1))
+        policy.remove("Mac")
+        let lateRemoval = policy.consume(beforeRemoval, service: "Mac"), missing = policy.failed("Mac")
+        #expect(!lateRemoval && missing == nil)
+        let rediscovered = policy.track("Mac"); #expect(rediscovered)
+        let pendingStop = policy.failed("Mac"), beforeStop = try #require(pendingStop)
+        policy.stop()
+        let lateStop = policy.consume(beforeStop, service: "Mac"), stopped = policy.failed("Mac")
+        #expect(!lateStop && stopped == nil)
+        let started = policy.track("Mac"); #expect(started)
+        let pendingRestart = policy.failed("Mac"), restarted = try #require(pendingRestart)
+        #expect(restarted.delay == .seconds(1))
+        let staleTimer = policy.consume(beforeStop, service: "Mac"), freshTimer = policy.consume(restarted, service: "Mac")
+        #expect(!staleTimer && freshTimer, "A canceled old timer cannot consume a new search's retry")
+    }
     struct Fixture {
         let id = UUID().uuidString
         let defaults: UserDefaults

@@ -53,6 +53,8 @@ final class LinkedMacDiscovery: NSObject, @preconcurrency NetServiceBrowserDeleg
     private var callback: ((DesktopLinkedMacAdvertisement) -> Void)?
     private var searching = false
     private var restartAfter = Date.distantPast
+    private var retryPolicy = DesktopLinkedMacResolutionRetries()
+    private var retryTasks: [String: Task<Void, Never>] = [:]
     private func key(_ service: NetService) -> String { service.domain + service.type + service.name }
     func start(receive: @escaping (DesktopLinkedMacAdvertisement) -> Void) {
         callback = receive
@@ -61,22 +63,47 @@ final class LinkedMacDiscovery: NSObject, @preconcurrency NetServiceBrowserDeleg
         browser.searchForServices(ofType: "_nodus-mobile._tcp.", inDomain: "local.")
     }
     func stop() {
+        searching = false; retryPolicy.stop()
+        retryTasks.values.forEach { $0.cancel() }; retryTasks = [:]
         browser.stop(); services.values.forEach { $0.stopMonitoring(); $0.stop() }
-        services = [:]; advertisements = []; callback = nil; searching = false
+        services = [:]; advertisements = []; callback = nil
     }
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
-        guard services.count < 32 else { return }
-        services[key(service)] = service; service.delegate = self; service.resolve(withTimeout: 4)
+        let id = key(service)
+        guard searching, retryPolicy.track(id) else { return }
+        services[id] = service; service.delegate = self; service.resolve(withTimeout: 4)
     }
     func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
-        if let old = services.removeValue(forKey: key(service)) { old.stopMonitoring(); old.stop() }
+        let id = key(service)
+        retryPolicy.remove(id); retryTasks.removeValue(forKey: id)?.cancel()
+        if let old = services.removeValue(forKey: id) { old.stopMonitoring(); old.stop() }
         refreshAdvertisements()
     }
     func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
         stop(); restartAfter = Date().addingTimeInterval(30)
     }
-    func netServiceDidResolveAddress(_ sender: NetService) { sender.startMonitoring(); refreshAdvertisements() }
-    func netService(_ sender: NetService, didUpdateTXTRecord data: Data) { refreshAdvertisements() }
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        let id = key(sender)
+        guard searching, services[id] === sender else { return }
+        retryPolicy.resolved(id); retryTasks.removeValue(forKey: id)?.cancel()
+        sender.startMonitoring(); refreshAdvertisements()
+    }
+    func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+        let id = key(sender)
+        guard searching, services[id] === sender, let retry = retryPolicy.failed(id) else { return }
+        sender.stop()
+        retryTasks[id] = Task { [weak self, weak sender] in
+            do { try await Task.sleep(for: retry.delay) } catch { return }
+            guard let self, let sender, !Task.isCancelled, self.searching,
+                  self.services[id] === sender, self.retryPolicy.consume(retry, service: id) else { return }
+            self.retryTasks[id] = nil
+            sender.resolve(withTimeout: 4)
+        }
+    }
+    func netService(_ sender: NetService, didUpdateTXTRecord data: Data) {
+        guard searching, services[key(sender)] === sender else { return }
+        refreshAdvertisements()
+    }
     private func refreshAdvertisements() {
         advertisements = services.values.compactMap { service in
             guard let bytes = service.txtRecordData() else { return nil }
