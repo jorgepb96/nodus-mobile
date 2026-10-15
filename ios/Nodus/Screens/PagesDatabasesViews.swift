@@ -53,6 +53,7 @@ struct PagesWorkspaceView: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pages-workspace")
         .task(id: session.publishedRevision) { await load() }
         .onChange(of: showTrash) { _, _ in rebuild() }
@@ -483,7 +484,8 @@ struct DatabasesWorkspaceView: View {
             } else if let activeDatabase {
                 DatabaseDetailWorkspace(session: session, database: activeDatabase, tables: $tables, outbox: outbox)
             } else { catalogue }
-        }.accessibilityIdentifier("databases-workspace")
+        }.accessibilityElement(children: .contain)
+        .accessibilityIdentifier("databases-workspace")
     }
 
     private var databaseSidebar: some View {

@@ -220,6 +220,7 @@ struct WorldEntityWorkspaceView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("world-workspace-\(route.rawValue)")
         .task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: Binding(

@@ -81,6 +81,7 @@ private struct StudyCoursesWorkspace: View {
             } else if let active { courseDetail(active) } else { catalogue }
         }
         .nodusPageBackdrop(accent: session.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("study-courses-workspace")
         .task(id: session.publishedRevision) { await load() }
         .onChange(of: documentTarget?.id) { _, id in if id == nil { Task { await load() } } }
@@ -276,7 +277,8 @@ private struct StudyMaterialsWorkspace: View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Materials", catalogueImage: "books.vertical", accent: session.accent)
             if let active { materialReader(active) } else { catalogue }
-        }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }.accessibilityIdentifier("study-materials-workspace")
+        }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }.accessibilityElement(children: .contain)
+        .accessibilityIdentifier("study-materials-workspace")
     }
     private var catalogue: some View { ScrollView { VStack(alignment: .leading, spacing: 12) { DesktopPageHeader(title: "Study materials", subtitle: "Documents, reading state and grounded search", systemImage: "books.vertical", accent: session.accent); NodusSearchField(text: $query, prompt: "Search materials", accent: session.accent); if loading { ProgressView("Loading materials…").frame(maxWidth: .infinity).padding(.vertical, 32) }; if let issue { NodusNotice(tone: .blocked, title: "Could not load materials", message: LocalizedStringKey(issue)) }; ForEach(materials, id: \.columns) { row in Button { open(row) } label: { HStack { Image(systemName: previewIcon(row.text("preview_kind"))).font(.title2).foregroundStyle(session.accent); VStack(alignment: .leading) { Text(row.text("title") ?? "Material").font(.headline); Text("\(row.text("read_state") ?? "pending") · \(row.text("index_status") ?? "pending")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }.buttonStyle(NodusCardButtonStyle()) }; if materials.isEmpty, !loading, issue == nil { ContentUnavailableView("No materials", systemImage: "books.vertical", description: Text("Published study materials will appear here.")) } }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor() } }
     private func materialReader(_ row: Row) -> some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: LocalizedStringKey(row.text("title") ?? "Material"), subtitle: "\(row.text("original_name") ?? "") · \(row.text("read_state") ?? "pending")", systemImage: previewIcon(row.text("preview_kind")), accent: session.accent); NodusNotice(tone: .info, title: "File on demand", message: "Metadata and annotations stay available offline. The primary file downloads through its authenticated object route when requested.", systemImage: "arrow.down.doc"); Text(row.text("description") ?? "No description").font(.body); PrivateFileButton(session: session, kind: .studyMaterial, id: row.string("id") ?? "") }.padding(NodusSpace.page).frame(maxWidth: 900).frame(maxWidth: .infinity).nodusTopAnchor() }.accessibilityIdentifier("study-material-reader") }
@@ -417,6 +419,7 @@ private struct TeachingExamsWorkspace: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .task(id: session.publishedRevision) { await load() }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("teaching-exams-workspace")
     }
 

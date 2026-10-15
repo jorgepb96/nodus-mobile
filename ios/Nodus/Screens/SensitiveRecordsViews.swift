@@ -112,6 +112,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
         .nodusSheet(isPresented: $pairing) {
             DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("primary-sources-archive-workspace")
     }
 
@@ -379,6 +380,7 @@ private struct ProsopographyWorkspace: View {
                 PrivateCorpusSourceSheet(session: session, reference: reference)
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("prosopography-\(mode.rawValue)-workspace")
     }
 
@@ -570,6 +572,7 @@ private struct TestimoniesWorkspace: View {
         }
         .nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("testimonies-\(mode.rawValue)-workspace")
         }
     }
