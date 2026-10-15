@@ -112,7 +112,11 @@ import WebKit
                       x + width <= 1048, y + height <= 2300 else { throw DesktopBridgeError.malformedResponse }
                 let configuration = WKSnapshotConfiguration()
                 configuration.rect = CGRect(x: x, y: y, width: width, height: height)
-                configuration.snapshotWidth = NSNumber(value: width)
+                // WKSnapshotConfiguration uses points, while the persisted PNG uses
+                // device pixels. Keep the poster's pixel budget independent of 2x/3x
+                // screens so a full-height figure cannot triple its dimensions.
+                let displayScale = Double(max(1, webView.traitCollection.displayScale))
+                configuration.snapshotWidth = NSNumber(value: width / displayScale)
                 let image = try await webView.takeSnapshot(configuration: configuration)
                 try Task.checkCancellation()
                 guard let bytes = image.pngData(), bytes.count <= 8 * 1_048_576,

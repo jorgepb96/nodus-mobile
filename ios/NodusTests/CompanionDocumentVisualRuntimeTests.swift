@@ -33,7 +33,9 @@ nonisolated final class CompanionDocumentVisualRuntimeTests: XCTestCase {
         let bytes = try XCTUnwrap(Data(base64Encoded: String(result.dropFirst("data:image/png;base64,".count))))
         let image = try XCTUnwrap(UIImage(data: bytes)), raster = try XCTUnwrap(image.cgImage)
         XCTAssertGreaterThanOrEqual(raster.width, 990)
+        XCTAssertLessThanOrEqual(raster.width, 1048, "Saved posters keep one pixel per layout unit on Retina devices.")
         XCTAssertGreaterThan(raster.height, 200)
+        XCTAssertLessThanOrEqual(raster.height, 2200)
         XCTAssertLessThanOrEqual(bytes.count, 8 * 1_048_576)
 
         // A PNG envelope is insufficient: inspect actual output colors, independent
