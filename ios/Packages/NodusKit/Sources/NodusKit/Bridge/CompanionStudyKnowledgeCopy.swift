@@ -61,6 +61,20 @@ public struct CompanionStudyKnowledgeCopy: Sendable {
         }
         guard try completed() == saved else { throw DesktopBridgeError.malformedResponse }
     }
+    /// Native consultation uses the same selected metadata, with canonical SQL column names.
+    public func workspaceTables() throws -> [String:[Row]] {
+        let workspace=try completed().objectValue?["workspace"]?.objectValue
+        var result:[String:[Row]]=[:]
+        for (source,target) in [("courses","study_courses"),("subjects","study_subjects")] {
+            result[target]=try (workspace?[source]?.arrayValue ?? []).map { value in
+                guard var fields=value.objectValue else { throw DesktopBridgeError.malformedResponse }
+                for (from,to) in [("courseId","course_id"),("shortId","short_id"),("deletedAt","deleted_at")] { if let value=fields.removeValue(forKey:from){fields[to]=value} }
+                if let favorite=fields["favorite"]?.boolValue {fields["favorite"] = .int(favorite ? 1:0)}
+                return Row(fields)
+            }
+        }
+        return result
+    }
     public func completed() throws -> JSONValue {
         guard count == total, value.objectValue?["hasMore"] == .bool(false),
               let nodes = value.objectValue?["graph"]?.objectValue?["nodes"]?.arrayValue,

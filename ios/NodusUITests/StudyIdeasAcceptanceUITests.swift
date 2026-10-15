@@ -13,13 +13,26 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
     @MainActor func testConnectedAutonomousCopyCreatesStructuredNoteAndReopens() throws { try runCopy(phase: "connected") }
     @MainActor func testPrepareChosenSubjectForOwningMacOfflinePhase() throws { try runCopy(phase: "prepare") }
     @MainActor func testActuallyOfflineChosenSubjectCreatesStructuredNoteAndReopens() async throws {
+        try await verifyOwningMacUnavailable()
+        try runCopy(phase:"offline")
+    }
+    @MainActor func testDeletingChosenSubjectCopyRetainsAuthoredNote() async throws {
+        try await verifyOwningMacUnavailable()
+        let enabled=try required("NODUS_ACCEPTANCE_STUDY_IDEAS_MUTATION");XCTAssertEqual(enabled,"1");guard enabled == "1" else { throw SetupError.missingConfiguration }
+        let pack=try required("NODUS_ACCEPTANCE_STUDY_COPY_ID"),note=try required("NODUS_ACCEPTANCE_STUDY_CREATED_NOTE_ID"),statement=try required("NODUS_ACCEPTANCE_STUDY_IDEA_STATEMENT")
+        let app=XCUIApplication();app.launchArguments=["-AppleLanguages","(es)","-AppleLocale","es_ES"];app.launch();defer{app.terminate()}
+        try navigate(app,"settings");let remove=app.buttons["companion-download-remove-"+pack];XCTAssertTrue(remove.waitForExistence(timeout:20));reveal(remove,app);remove.tap();XCTAssertTrue(remove.waitForNonExistence(timeout:20))
+        app.terminate();app.launch();try navigate(app,"studyCourses");let catalogue=app.buttons["workspace-catalogue-studyCourses"];XCTAssertTrue(catalogue.waitForExistence(timeout:20));reveal(catalogue,app);catalogue.tap()
+        let own=app.buttons["study-local-document-"+note];XCTAssertTrue(own.waitForExistence(timeout:30));reveal(own,app);own.tap()
+        XCTAssertTrue(app.webViews.staticTexts.containing(NSPredicate(format:"label CONTAINS %@",statement)).firstMatch.waitForExistence(timeout:30))
+    }
+    private func verifyOwningMacUnavailable() async throws {
         let origin=try required("NODUS_ACCEPTANCE_OFFLINE_ORIGIN")
         let url=try XCTUnwrap(URL(string:origin + "/bridge/v2/capabilities"))
         let probe=URLSession(configuration:.ephemeral);defer{probe.invalidateAndCancel()}
         var request=URLRequest(url:url);request.timeoutInterval=8
         do { _ = try await probe.data(for:request);XCTFail("The copied owning Mac must actually be unavailable.");throw SetupError.missingConfiguration }
         catch let error as URLError { XCTAssertTrue([.cannotConnectToHost,.networkConnectionLost,.notConnectedToInternet,.timedOut].contains(error.code));guard [.cannotConnectToHost,.networkConnectionLost,.notConnectedToInternet,.timedOut].contains(error.code) else { throw error } }
-        try runCopy(phase:"offline")
     }
     @MainActor private func runCopy(phase:String) throws {
         let enabled = try required("NODUS_ACCEPTANCE_STUDY_IDEAS_MUTATION")
@@ -34,15 +47,15 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Cambiar de espacio"].waitForExistence(timeout:45)); app.buttons["Cambiar de espacio"].tap()
         let owning = app.buttons["space-" + vault]; XCTAssertTrue(owning.waitForExistence(timeout:20)); reveal(owning,app); owning.tap()
         var before=Set<String>()
-        if phase == "offline" {
+        do {
             let encoded=try required("NODUS_ACCEPTANCE_STUDY_BASELINE_JSON")
             let baseline=try XCTUnwrap(try JSONSerialization.jsonObject(with:Data(encoded.utf8)) as? [String:Any])
             XCTAssertEqual(baseline["vaultId"] as? String,vault);XCTAssertEqual(baseline["courseId"] as? String,course);XCTAssertEqual(baseline["ideaLabel"] as? String,idea)
             guard baseline["vaultId"] as? String == vault,baseline["courseId"] as? String == course,baseline["ideaLabel"] as? String == idea else { throw SetupError.missingConfiguration }
             before=Set(try XCTUnwrap(baseline["noteIdentifiers"] as? [String]))
-        } else {
+        }
+        if phase != "offline" {
         try mode(app, autonomous:false)
-        before = try notes(app, course:course, title:idea)
         try navigate(app,"studyIdeas")
         let selector = app.webViews.descendants(matching:.any).matching(NSPredicate(format:"label == %@", "Asignatura")).firstMatch
         XCTAssertTrue(selector.waitForExistence(timeout:30)); selector.tap()
@@ -81,9 +94,11 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         }
     }
     @MainActor private func notes(_ app:XCUIApplication,course:String,title:String) throws -> Set<String> {
-        try navigate(app,"studyCourses");let open=app.buttons["study-course-open-"+course];XCTAssertTrue(open.waitForExistence(timeout:30));reveal(open,app);open.tap()
-        XCTAssertTrue(app.descendants(matching:.any)["study-course-detail-"+course].firstMatch.waitForExistence(timeout:20))
-        return Set(app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@ AND label CONTAINS %@","study-course-document-",title)).allElementsBoundByIndex.map(\.identifier))
+        try navigate(app,"studyCourses")
+        let catalogue=app.buttons["workspace-catalogue-studyCourses"];XCTAssertTrue(catalogue.waitForExistence(timeout:20));reveal(catalogue,app);catalogue.tap()
+        let local=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@ AND label CONTAINS %@","study-local-document-",title))
+        XCTAssertTrue(local.firstMatch.waitForExistence(timeout:30),"Authored notes must be reachable without a consulted global snapshot or retained subject copy.")
+        return Set(local.allElementsBoundByIndex.map(\.identifier))
     }
     @MainActor private func mode(_ app:XCUIApplication,autonomous:Bool) throws {
         try navigate(app,"settings");let control=app.buttons["ai-execution-mode"];XCTAssertTrue(control.waitForExistence(timeout:20));reveal(control,app);control.tap()

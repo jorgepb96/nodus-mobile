@@ -2,6 +2,20 @@ import Foundation
 import NodusKit
 
 @MainActor enum CompanionStudyKnowledgeSources {
+    /// Only explicit unexpired selections contribute course/subject consultation metadata.
+    static func selectedWorkspaceTables(session: SpaceSession) async throws -> [String:[Row]] {
+        let (vault,pairing,_) = try privateBridgeConnection(session,domain:.corpus)
+        let cache=try PrivateBridgeCache(pairingId:pairing.id)
+        let copies=try await cache.downloadedData(vaultId:vault,domain:.corpus,recordId:CompanionStudyKnowledgeCopy.recordId)
+        var rows:[String:[String:Row]] = [:]
+        for bytes in copies {
+            let copy=try CompanionStudyKnowledgeCopy(saved:JSONDecoder.nodus.decode(JSONValue.self,from:bytes),vaultId:vault)
+            for (table,values) in try copy.workspaceTables() {
+                for row in values { guard let id=row.string("id") else {throw DesktopBridgeError.malformedResponse};rows[table,default:[:]][id]=row }
+            }
+        }
+        return rows.mapValues { Array($0.values) }
+    }
     static func perform(session: SpaceSession, action: String, input: JSONValue?) async throws -> JSONValue {
         let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus)
         let cache = try PrivateBridgeCache(pairingId:pairing.id)

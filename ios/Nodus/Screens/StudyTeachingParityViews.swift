@@ -48,6 +48,8 @@ private struct StudyCoursesWorkspace: View {
     let session: SpaceSession
     @State private var tables: [String: [Row]] = [:]
     @State private var tablesFromDevice = false
+    @State private var authoredDocuments: [Row] = []
+    @State private var chosenWorkspacePartial = false
     @State private var query = ""
     @State private var error: String?
     @State private var documentTarget: StudyCourseDocumentTarget?
@@ -73,6 +75,7 @@ private struct StudyCoursesWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Courses", catalogueImage: "graduationcap", accent: session.accent)
+            if chosenWorkspacePartial { Text("Consulta parcial: sólo se muestran los cursos y asignaturas de tus copias elegidas y los apuntes creados en este dispositivo.").font(.callout).foregroundStyle(.secondary).padding(.horizontal) }
             if !compactPresentation {
                 HStack(spacing: 0) {
                     courseSidebar.frame(width: 292); Divider()
@@ -134,6 +137,14 @@ private struct StudyCoursesWorkspace: View {
                 DesktopPageHeader(title: "Study", subtitle: "Courses, subjects, topics and progress", systemImage: "graduationcap", accent: session.accent)
                 if compactPresentation { NodusSearchField(text: $query, prompt: "Find a course", accent: session.accent) }
                 if let error { NodusNotice(tone: .blocked, title: "Study could not load", message: LocalizedStringKey(error)) }
+                if !authoredDocuments.isEmpty {
+                    Text("Apuntes de este dispositivo").font(.headline)
+                    ForEach(authoredDocuments.filter { $0.string("id") != nil && $0.text("deleted_at") == nil && $0.text("archived_at") == nil }, id: \.columns) { document in
+                        Button { documentTarget = StudyCourseDocumentTarget(id: document.string("id")!) } label: {
+                            Label(document.text("title") ?? "Apunte",systemImage:"doc.text").frame(maxWidth:.infinity,alignment:.leading).frame(minHeight:44)
+                        }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("study-local-document-" + document.string("id")!)
+                    }
+                }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 10)], spacing: 10) {
                     ForEach(courses) { course in Button { open(course) } label: { courseCard(course) }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("study-course-open-\(course.id)") }
                 }
@@ -219,6 +230,7 @@ private struct StudyCoursesWorkspace: View {
         let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
         let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault, kind: .studyDocument)
+        authoredDocuments = await queue.overlayStudyTables([:])["study_docs"] ?? []
         tables = await queue.overlayStudyTables(tables, authoritative: !tablesFromDevice)
     }
     private func createDocument() async {
@@ -238,6 +250,7 @@ private struct StudyCoursesWorkspace: View {
     }
     private func load() async {
         do {
+            if session.connection.desktopPairingId != nil { try await overlayDocuments() }
             if session.connection.desktopPairingId != nil, session.mirror == nil {
                 let snapshot = try await session.client.snapshot(in: session.connection.spaceId)
                 tables = Dictionary(uniqueKeysWithValues: studyPublicTables.map { ($0, snapshot.tables[$0] ?? []) })
@@ -247,6 +260,7 @@ private struct StudyCoursesWorkspace: View {
                 tablesFromDevice = session.mirror != nil
             }
             try await overlayDocuments()
+            chosenWorkspacePartial=false
             error = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", tabs.tabs(in: section).isEmpty {
@@ -255,7 +269,18 @@ private struct StudyCoursesWorkspace: View {
             }
 #endif
         } catch {
-            self.error = error.localizedDescription
+            let consultationError=error
+            if session.connection.desktopPairingId != nil, isPrivateBridgeOffline(consultationError) {
+                do {
+                    tables = try await CompanionStudyKnowledgeSources.selectedWorkspaceTables(session:session)
+                    tablesFromDevice=true
+                    chosenWorkspacePartial=true
+                    try await overlayDocuments()
+                    // The chosen metadata and authored documents remain usable; the
+                    // failed full-catalogue request stays visible instead of claiming completeness.
+                    self.error=consultationError.localizedDescription
+                } catch { self.error=error.localizedDescription }
+            } else { self.error=consultationError.localizedDescription }
         }
     }
 }

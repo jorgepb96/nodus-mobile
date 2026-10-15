@@ -6,7 +6,7 @@ import Testing
     private func page(_ offset:Int,total:Int=161,revision:String=String(repeating:"a",count:64)) -> JSONValue {
         let subject:JSONValue = .object(["id":.string("subject"),"courseId":.string("course"),"name":.string("History")])
         let ideas=(offset..<min(offset+80,total)).map { i in JSONValue.object(["id":.string("idea-\(i)"),"subjectId":.string("subject"),"evidence":.array([]),"connections":.array([])]) }
-        var value:[String:JSONValue] = ["version":.int(1),"vaultId":.string("vault"),"subjectId":.string("subject"),"revision":.string(revision),"offset":.int(Int64(offset)),"limit":.int(80),"total":.int(Int64(total)),"hasMore":.bool(offset+ideas.count<total),"workspace":.object(["subjects":.array([subject]),"courses":.array([.object(["id":.string("course")])])]),"ideas":.array(ideas),"details":.array(ideas)]
+        var value:[String:JSONValue] = ["version":.int(1),"vaultId":.string("vault"),"subjectId":.string("subject"),"revision":.string(revision),"offset":.int(Int64(offset)),"limit":.int(80),"total":.int(Int64(total)),"hasMore":.bool(offset+ideas.count<total),"workspace":.object(["subjects":.array([subject]),"courses":.array([.object(["id":.string("course"),"name":.string("Real selected course")])])]),"ideas":.array(ideas),"details":.array(ideas)]
         if offset == 0 { value["graph"] = .object(["nodes":.array((0..<total).map{.object(["id":.string("idea-\($0)")])}),"edges":.array([])]) }
         return .object(value)
     }
@@ -21,6 +21,9 @@ import Testing
         #expect(throws:DesktopBridgeError.self){try source.append(page(160))}
         try source.append(page(80));try source.append(page(160))
         let saved = try source.completed()
+        let tables=try source.workspaceTables()
+        #expect(StudyTeachingParity.courses(in:tables).first?.name == "Real selected course")
+        #expect(StudyTeachingParity.subjects(courseId:"course",in:tables).first?.name == "History")
         #expect(saved.objectValue?["details"]?.arrayValue?.count == 161)
         #expect(try CompanionStudyKnowledgeCopy(saved:saved,vaultId:"vault").completed() == saved)
         #expect(throws:DesktopBridgeError.self){try CompanionStudyKnowledgeCopy(first:page(0),vaultId:"other",subjectId:"subject")}
@@ -35,6 +38,9 @@ import Testing
         let source=try CompanionStudyKnowledgeCopy(first:page(0,total:1),vaultId:"vault",subjectId:"subject")
         let bytes=try JSONEncoder.nodus.encode(source.completed())
         let record=PrivateBridgeCache.ReadPackRecord(domain:.corpus,recordId:CompanionStudyKnowledgeCopy.recordId,data:bytes)
+        let queue=try await CompanionDocumentOutbox(cache:cache,vaultId:"vault",data:nil,kind:.studyDocument)
+        let created=try await queue.createStudyDocument(input:.object(["title":.string("Saved selected idea"),"kind":.string("apunte"),"contentMarkdown":.string("Exact selected statement"),"nativeDocument":.array([.object(["id":.string("statement"),"type":.string("paragraph"),"content":.array([.object(["type":.string("text"),"text":.string("Exact selected statement")])])])]),"placement":.object(["courseId":.string("course"),"subjectId":.string("subject")])]))
+        let noteId=try #require(created.objectValue?["id"]?.stringValue)
         let keep=UUID(),remove=UUID()
         try await cache.saveReadPack(id:keep,vaultId:"vault",title:"Selected history",expiresAt:Date().addingTimeInterval(30*86400),records:[record])
         try await cache.saveReadPack(id:remove,vaultId:"vault",title:"Other selection",expiresAt:Date().addingTimeInterval(7*86400),records:[record])
@@ -48,6 +54,9 @@ import Testing
         try await Task.sleep(for:.milliseconds(250))
         let expired=try await cache.downloadedData(vaultId:"vault",domain:.corpus,recordId:CompanionStudyKnowledgeCopy.recordId)
         #expect(expired.isEmpty)
+        let reopened=try await CompanionDocumentOutbox(cache:cache,vaultId:"vault",data:cache.data(vaultId:"vault",domain:.writing,recordId:CompanionDocumentOutbox.Kind.studyDocument.storageKey),kind:.studyDocument)
+        #expect(await reopened.editorData(noteId:noteId)?.objectValue?["contentMarkdown"] == .string("Exact selected statement"))
+        #expect(await reopened.overlayStudyTables([:])["study_docs"]?.first?.string("id") == noteId)
         let bounded=try PrivateBridgeCache(pairingId:pairing,directory:directory,keychain:keychain,readLimitBytes:1)
         await #expect(throws:PrivateBridgeCache.ReadPackError.self){try await bounded.saveReadPack(id:UUID(),vaultId:"vault",title:"Too large",expiresAt:Date().addingTimeInterval(60),records:[record])}
         let noPartial=try await bounded.downloadedData(vaultId:"vault",domain:.corpus,recordId:CompanionStudyKnowledgeCopy.recordId)
