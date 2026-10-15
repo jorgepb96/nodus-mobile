@@ -2279,6 +2279,19 @@ ${conversation}`;
 
   // shared/companionErrors.ts
   var COMPANION_RUNTIME_ERRORS = {
+    "La selecci\xF3n supera el contexto de investigaci\xF3n del m\xF3vil. Descarga un conjunto menor de fuentes de estudio.": {
+      "en": "The selection exceeds the research context available on the phone. Download a smaller set of study sources.",
+      "fr": "La s\xE9lection d\xE9passe le contexte de recherche disponible sur le mobile. T\xE9l\xE9chargez un ensemble plus restreint de sources d\u2019\xE9tude.",
+      "de": "Die Auswahl \xFCberschreitet den auf dem Mobilger\xE4t verf\xFCgbaren Recherchekontext. Lade eine kleinere Auswahl an Lernquellen herunter.",
+      "pt": "A sele\xE7\xE3o excede o contexto de investiga\xE7\xE3o dispon\xEDvel no telem\xF3vel. Transfere um conjunto menor de fontes de estudo.",
+      "pt-BR": "A sele\xE7\xE3o excede o contexto de pesquisa dispon\xEDvel no celular. Baixe um conjunto menor de fontes de estudo.",
+      "it": "La selezione supera il contesto di ricerca disponibile sul dispositivo mobile. Scarica un insieme pi\xF9 piccolo di fonti di studio.",
+      "tr": "Se\xE7im, telefonda kullan\u0131labilen ara\u015Ft\u0131rma ba\u011Flam\u0131n\u0131 a\u015F\u0131yor. Daha az \xE7al\u0131\u015Fma kayna\u011F\u0131 indirin.",
+      "zh-CN": "\u6240\u9009\u5185\u5BB9\u8D85\u51FA\u624B\u673A\u53EF\u7528\u7684\u7814\u7A76\u4E0A\u4E0B\u6587\u3002\u8BF7\u4E0B\u8F7D\u8303\u56F4\u66F4\u5C0F\u7684\u5B66\u4E60\u6765\u6E90\u3002",
+      "zh-TW": "\u6240\u9078\u5167\u5BB9\u8D85\u51FA\u624B\u6A5F\u53EF\u7528\u7684\u7814\u7A76\u4E0A\u4E0B\u6587\u3002\u8ACB\u4E0B\u8F09\u7BC4\u570D\u8F03\u5C0F\u7684\u5B78\u7FD2\u4F86\u6E90\u3002",
+      "ja": "\u9078\u629E\u3057\u305F\u5185\u5BB9\u304C\u30E2\u30D0\u30A4\u30EB\u7AEF\u672B\u3067\u5229\u7528\u3067\u304D\u308B\u8ABF\u67FB\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002\u5B66\u7FD2\u8CC7\u6599\u306E\u6570\u3092\u6E1B\u3089\u3057\u3066\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uC120\uD0DD\uD55C \uB0B4\uC6A9\uC774 \uBAA8\uBC14\uC77C \uAE30\uAE30\uC5D0\uC11C \uC0AC\uC6A9\uD560 \uC218 \uC788\uB294 \uC5F0\uAD6C \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4. \uB354 \uC801\uC740 \uD559\uC2B5 \uC790\uB8CC\uB97C \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694."
+    },
     "La copia no corresponde a esta vista.": {
       "en": "The copy does not match this view.",
       "fr": "La copie ne correspond pas \xE0 cette vue.",
