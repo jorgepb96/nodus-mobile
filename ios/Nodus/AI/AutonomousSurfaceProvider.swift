@@ -342,6 +342,7 @@ final class AutonomousSurfaceProvider {
         return .array(maps.sorted { $0.key < $1.key }.map { .object(["id": .string($0.key), "map": $0.value]) })
     }
     func complete(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
+        try BetaAIFeatures.requireAutonomousGeneration()
         guard let generation = input.objectValue?["generationId"]?.stringValue, UUID(uuidString: generation) != nil,
             !cancelled.contains(generation) else { throw CancellationError() }
         let key = UUID()

@@ -1620,7 +1620,7 @@ struct LegacyResearchReportsView: View {
                             DeepResearchScreen(session: session, local: local)
                         }
                     } else {
-                        Text("Hay un informe anterior inacabado. Elige el modo autónomo para continuarlo con sus respuestas conservadas.")
+                        Text("Hay un informe anterior inacabado. Sus respuestas se conservan; la generación en este dispositivo está aplazada durante esta beta.")
                     }
                 }
             }

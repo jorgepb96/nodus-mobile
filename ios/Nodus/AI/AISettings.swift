@@ -175,7 +175,8 @@ final class AISettings {
     nonisolated var keyProvider: @Sendable (AIProvider) -> String? {
         let store = KeychainStore()
         return { provider in
-            store.value(for: KeychainStore.providerKeyKey(provider: provider.rawValue))
+            guard BetaAIFeatures.autonomousGeneration else { return nil }
+            return store.value(for: KeychainStore.providerKeyKey(provider: provider.rawValue))
         }
     }
 

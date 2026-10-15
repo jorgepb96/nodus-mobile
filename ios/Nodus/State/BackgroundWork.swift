@@ -297,6 +297,8 @@ enum BackgroundJobs {
     /// again. If the phone is locked the provider key cannot be read, and the right answer is to
     /// come back later rather than to fail the run.
     static func resumeDeepResearch() async -> Bool {
+        // Preserve unfinished device runs without resuming or rewriting their states.
+        guard BetaAIFeatures.autonomousGeneration else { return true }
         let unfinished = DeepResearchCheckpointStore.spacesWithUnfinishedRuns()
         guard !unfinished.isEmpty else { return true }
 

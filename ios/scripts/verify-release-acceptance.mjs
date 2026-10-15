@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
 import {acceptanceRevisionIssues, nativeAcceptanceRunIssues, requiredAcceptanceEnvironments, userPhysicalValidation, userValidationHandoffIssues, nativeAcceptanceDeviceIssues} from './acceptance-evidence.mjs';
+import {isDeferredBetaAI, betaAIScope} from './beta-ai-scope.mjs';
 
 const manifest = JSON.parse(fs.readFileSync(path.join(mobileRoot, 'ios/Parity/parity-manifest.json'), 'utf8'));
 const input = process.argv[2];
@@ -14,6 +15,7 @@ if (!input || !fs.existsSync(input)) {
 }
 const campaign = JSON.parse(fs.readFileSync(input, 'utf8'));
 const issues = [];
+if (JSON.stringify(manifest.betaAIScope) !== JSON.stringify(betaAIScope)) issues.push('The beta AI scope does not match the explicit user decision.');
 for (const [repo, commit] of Object.entries(manifest.referenceCommits)) {
   if (campaign.referenceCommits?.[repo] !== commit) issues.push(`Missing reference commit: ${repo}`);
 }
@@ -21,6 +23,14 @@ issues.push(...acceptanceRevisionIssues(campaign.revisionDigests,{desktop:nodusR
 issues.push(...userValidationHandoffIssues(campaign));
 for (const operation of manifest.operations.filter(operation => operation.category !== 'desktopExclusive' && operation.id !== userPhysicalValidation.operation)) {
   const result = campaign.operations?.find(item => item.id === operation.id);
+  const deferred = !operation.id.endsWith('.betaGate') && isDeferredBetaAI(operation.id);
+  if (deferred) {
+    if (operation.result !== 'deferredByUser' || operation.requiredInBeta !== false || operation.implementation !== 'retained' ||
+        !result || result.result !== 'deferredByUser' || result.executed !== 0 || result.skipped !== 0 || (result.evidence?.length ?? 0) !== 0)
+      issues.push(`Deferred AI must remain unavailable, retained and untested in this campaign: ${operation.id}`);
+    continue;
+  }
+  if (operation.requiredInBeta === false || operation.result === 'deferredByUser') issues.push(`No user deferral exists for: ${operation.id}`);
   if (!result || result.result !== 'passed' || result.executed < 1 || result.skipped !== 0) {
     issues.push(`Not verified: ${operation.id}`); continue;
   }

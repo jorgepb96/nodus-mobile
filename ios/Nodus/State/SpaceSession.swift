@@ -2,6 +2,16 @@ import NodusKit
 import Observation
 import SwiftUI
 
+/// Beta scope: retain device journals and credentials, but execute new AI only on the Mac.
+enum BetaAIFeatures {
+    nonisolated static let autonomousGeneration = false
+    nonisolated static let audioGeneration = false
+    nonisolated static let macRequiredMessage = "La IA de esta beta requiere un Mac conectado. Los documentos y cambios sin conexión siguen disponibles."
+    nonisolated static func requireAutonomousGeneration() throws {
+        guard autonomousGeneration else { throw APIError(status: 409, code: "beta_mac_ai_required", message: macRequiredMessage) }
+    }
+}
+
 enum AIExecutionMode: String, CaseIterable, Identifiable { case live, autonomous; var id: String { rawValue } }
 
 /// One open space: its client, what it published, and the menu that follows from that.
@@ -16,8 +26,13 @@ final class SpaceSession {
     var isSurfaceFullscreen = false
     private(set) var connection: AppModel.Connection
     let client: NodusClient
+    private var preferredAIExecutionMode: AIExecutionMode
     var aiExecutionMode: AIExecutionMode {
-        didSet { UserDefaults.standard.set(aiExecutionMode.rawValue, forKey: "ai-execution-mode:\(connection.id)") }
+        get { BetaAIFeatures.autonomousGeneration ? preferredAIExecutionMode : .live }
+        set {
+            preferredAIExecutionMode = newValue
+            UserDefaults.standard.set(newValue.rawValue, forKey: "ai-execution-mode:\(connection.id)")
+        }
     }
 
     private(set) var overview: SpaceOverview?
@@ -102,7 +117,7 @@ final class SpaceSession {
         onFailure: @escaping (ConnectionFailure) -> Void = { _ in }
     ) {
         self.connection = connection
-        self.aiExecutionMode = UserDefaults.standard.string(forKey: "ai-execution-mode:\(connection.id)").flatMap(AIExecutionMode.init(rawValue:))
+        self.preferredAIExecutionMode = UserDefaults.standard.string(forKey: "ai-execution-mode:\(connection.id)").flatMap(AIExecutionMode.init(rawValue:))
             ?? (connection.desktopPairingId == nil ? .autonomous : .live)
         self.client = client
         self.onFailure = onFailure

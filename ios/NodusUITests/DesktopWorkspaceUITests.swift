@@ -105,7 +105,7 @@ final class DesktopWorkspaceUITests: XCTestCase {
         }
         XCTAssertTrue(model.exists && model.isHittable, "The current model configured on the actual Mac must reach the still-open native settings.\n" + app.debugDescription)
         XCTAssertFalse(app.staticTexts["mac-live-settings-error"].exists, "A canceled obsolete diagnostic must not overwrite successful recovery.")
-        let mode = app.buttons["ai-execution-mode"].firstMatch
+        let mode = app.descendants(matching: .any)["ai-execution-mode"].firstMatch
         XCTAssertTrue(mode.exists, app.debugDescription)
         let selectedMode = mode.label + " " + (mode.value as? String ?? "")
         XCTAssertTrue(selectedMode.contains("Live"), "Disconnection must not change execution mode: " + selectedMode)
@@ -160,7 +160,7 @@ final class DesktopWorkspaceUITests: XCTestCase {
         let cancel = app.buttons["Cancelar"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 10)); cancel.tap()
         XCTAssertTrue(settings.exists); XCTAssertTrue(revoke.isEnabled)
-        let mode = app.buttons["ai-execution-mode"].firstMatch
+        let mode = app.descendants(matching: .any)["ai-execution-mode"].firstMatch
         reveal(mode, in: app)
         XCTAssertTrue((mode.label + " " + (mode.value as? String ?? "")).contains("Live"))
         XCTAssertFalse(app.textFields["pairing-code"].exists)
@@ -214,7 +214,7 @@ final class DesktopWorkspaceUITests: XCTestCase {
         }
         XCTAssertTrue(model.exists && model.isHittable, "The actual Mac settings must answer after renewal.\n" + app.debugDescription)
         XCTAssertFalse(app.staticTexts["mac-live-settings-error"].exists)
-        let mode = app.buttons["ai-execution-mode"].firstMatch
+        let mode = app.descendants(matching: .any)["ai-execution-mode"].firstMatch
         reveal(mode, in: app)
         XCTAssertTrue((mode.label + " " + (mode.value as? String ?? "")).contains("Live"))
         XCTAssertFalse(app.textFields["pairing-code"].exists)

@@ -99,6 +99,7 @@ import UIKit
         return try await ledger.prepare(id: checkpoint.id, method: "saveMobileWorldMapImage", args: [input])
     }
     static func generate(session: SpaceSession, request: JSONValue, ai: AISettings) async throws -> DesktopJobLedger.Request {
+        try BetaAIFeatures.requireAutonomousGeneration()
         guard session.aiExecutionMode == .autonomous, let mapId = request.objectValue?["mapId"]?.stringValue else { throw DesktopBridgeError.permissionDenied }
         guard let model = ai.model(for: .image) else { throw APIError(status: 409, code: "mobile_image_model_missing", message: "Selecciona un modelo de imagen en los ajustes de este dispositivo.") }
         let (vault,pairing,_) = try privateBridgeConnection(session, domain: .writing)

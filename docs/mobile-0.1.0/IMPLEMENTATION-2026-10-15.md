@@ -4,6 +4,10 @@ El propietario ha pedido terminar la implementación y corregir la interfaz comp
 
 La beta **0.1.0 (1003)** ya está disponible en TestFlight interno, según [el registro de entrega](TESTFLIGHT-2026-10-15.md). Esa beta no contiene las correcciones de interfaz ni las integraciones nuevas descritas aquí. No se declara cerrada la paridad global.
 
+**Alcance vigente, actualizado por el usuario el 15 de octubre:** esta beta sólo ejecutará IA en el Mac conectado y recibirá sus respuestas en el móvil. La IA autónoma y la generación de audio permanecen implementadas pero deshabilitadas, con proveedores y selectores móviles ocultos. La lectura, reproducción de audios guardados, edición manual y sincronización sin conexión siguen incluidas. Esta decisión sustituye los requisitos anteriores de generación autónoma que aparecen en el registro histórico inferior. Véanse [el alcance Live](BETA-AI-LIVE-SCOPE-2026-10-15.md) y [audio aplazado](feature-audio-deferred.md); las operaciones aplazadas no cuentan como pruebas aprobadas.
+
+La validación real detectó un cierre en la destrucción del buscador de página (`PageSearch`, ruta de destrucción aislada de Swift), reproducido bajo AddressSanitizer. Se incorporó una destrucción explícita segura para el buscador y su invitación de chat, más una regresión de liberación síncrona bajo `TaskLocal`. La compilación focal pasó; la ejecución integrada posterior sigue pendiente. Tras corregir el cierre, cinco diagnósticos de red pasaron y la lectura de figuras encontró una confusión entre las URI de póster y de adjunto. También está corregida, pendiente de repetir su prueba. Se conservan los `.xcresult` fallidos; no se presentan como aceptación.
+
 ## Barras de pestañas
 
 - Las superficies compartidas mezclaban botones táctiles de al menos 44 puntos con barras de 36. Se ha unificado la geometría de la barra, los títulos y los cierres; el grafo conserva su estado propio con la misma altura táctil.

@@ -72,6 +72,7 @@ final class DeepResearchRunner {
         session: SpaceSession,
         ai: AISettings
     ) {
+        guard BetaAIFeatures.autonomousGeneration else { failure = BetaAIFeatures.macRequiredMessage; return }
         guard session.aiExecutionMode == .autonomous else {
             failure = String(localized: "Choose autonomous mode to generate on this device. The app does not switch execution modes automatically.")
             return
@@ -128,6 +129,7 @@ final class DeepResearchRunner {
         session: SpaceSession,
         ai: AISettings
     ) async throws -> DeepResearchQueueResult {
+        try BetaAIFeatures.requireAutonomousGeneration()
         guard session.aiExecutionMode == .autonomous else {
             throw DeepResearchRunFailure(message: String(localized: "Choose autonomous mode to generate on this device. The app does not switch execution modes automatically."))
         }

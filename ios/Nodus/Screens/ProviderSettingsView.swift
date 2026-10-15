@@ -32,7 +32,9 @@ struct ProviderSettingsView: View {
 
     var body: some View {
         Group {
-            if embedded { content } else { NavigationStack { content } }
+            if !BetaAIFeatures.autonomousGeneration {
+                ContentUnavailableView("IA en el Mac", systemImage: "desktopcomputer", description: Text(BetaAIFeatures.macRequiredMessage))
+            } else if embedded { content } else { NavigationStack { content } }
         }
         .nodusSheet(item: $editing) { provider in keySheet(provider) }
         .scrollContentBackground(.hidden)

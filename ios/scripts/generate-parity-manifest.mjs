@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { mobileRoot, nodusRepo } from './nodus-repo.mjs';
 import {requiredAcceptanceEnvironments, userPhysicalValidation} from './acceptance-evidence.mjs';
+import {applyBetaAIScope, betaAIScope} from './beta-ai-scope.mjs';
 
 export const PARITY_MANIFEST_VERSION = 2;
 
@@ -482,7 +483,11 @@ export function buildParityManifest() {
     referenceCommits: { desktop: '0a173fd9c698a7cb2d5989aa64b59cddd329bcf9', mobile: 'ad6e3069bcea67b48de76de561fc27c3db417563' },
     validationPolicy: 'Availability and source files are inventory only. Release requires executed operation evidence with no omissions; physical iPhone validation remains pending with the user after TestFlight, by explicit instruction.',
     acceptanceRequirements: {environments: requiredAcceptanceEnvironments, userValidation: userPhysicalValidation},
-    operations: operationMatrix(routes),
+    betaAIScope,
+    operations: [...operationMatrix(routes),
+      {id: 'generation.autonomous.betaGate', category: 'comingSoon', result: 'pending', evidence: []},
+      {id: 'generation.audio.betaGate', category: 'comingSoon', result: 'pending', evidence: []},
+    ].map(operation => operation.id.endsWith('.betaGate') ? operation : applyBetaAIScope(operation)),
     sourceOfTruth: {
       repository: 'nodus',
       navigation: 'src/navigation.ts',

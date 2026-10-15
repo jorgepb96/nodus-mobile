@@ -20,6 +20,14 @@
       "requestedOn": "2026-10-12"
     }
   },
+  "betaAIScope": {
+    "decidedOn": "2026-10-15",
+    "execution": "desktop-live",
+    "autonomousGeneration": false,
+    "audioGeneration": false,
+    "retainedImplementation": true,
+    "offlineReadingAndManualWriting": true
+  },
   "operations": [
     {
       "id": "consultation.researchChat",
@@ -1004,8 +1012,11 @@
     {
       "id": "generation.proseReview.currentLocalDraft.autonomous",
       "category": "consultation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "consultation.actions.savedResults",
@@ -1028,8 +1039,11 @@
     {
       "id": "sync.generation.modeChangePreservesAuthorizedResult",
       "category": "consultation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "consultation.databases.savedPresentationProperties",
@@ -1121,8 +1135,11 @@
     {
       "id": "generation.deepResearch.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.immersion.live",
@@ -1133,8 +1150,11 @@
     {
       "id": "generation.immersion.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.dictionary.live",
@@ -1145,8 +1165,11 @@
     {
       "id": "generation.dictionary.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.chat.live",
@@ -1157,8 +1180,11 @@
     {
       "id": "generation.chat.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.translation.live",
@@ -1169,8 +1195,11 @@
     {
       "id": "generation.translation.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.synthesis.live",
@@ -1181,8 +1210,11 @@
     {
       "id": "generation.synthesis.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.argumentMap.live",
@@ -1193,8 +1225,11 @@
     {
       "id": "generation.argumentMap.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.writingAssistant.live",
@@ -1205,8 +1240,11 @@
     {
       "id": "generation.writingAssistant.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "extractDocuments",
@@ -1367,8 +1405,11 @@
     {
       "id": "generation.worldMap.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "sync.worldMap.imageCoordinatesAtomicAndSourceConflicts",
@@ -1379,8 +1420,11 @@
     {
       "id": "sync.worldMap.autonomousPaidResponseRecovery",
       "category": "sync",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "consultation.downloads.selectedFileVersionExactBytes",
@@ -1427,8 +1471,11 @@
     {
       "id": "generation.writingWorkshop.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "consultation.writingWorkshop.sourcePagination",
@@ -1475,8 +1522,11 @@
     {
       "id": "generation.specialisedSourceContext.downloaded",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "sync.selectedWorkshopSources",
@@ -1565,8 +1615,11 @@
     {
       "id": "generation.privateSourceContext.downloaded",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "consultation.privateSourceContext.domainRevocation",
@@ -1637,8 +1690,11 @@
     {
       "id": "generation.databaseResearch.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "sync.selectedDatabaseResearch",
@@ -1751,8 +1807,11 @@
     {
       "id": "generation.databaseResearch.offlineRequest",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "consultation.databaseResearch.evidenceSheet",
@@ -1793,8 +1852,11 @@
     {
       "id": "generation.databaseResearch.deviceWorker",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.databaseResearch.sharedPreflight",
@@ -1871,14 +1933,20 @@
     {
       "id": "generation.chat.autonomousHistoryContext",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "sync.chat.autonomousPartialRecovery",
       "category": "sync",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.chat.conversationIsolation",
@@ -1973,14 +2041,20 @@
     {
       "id": "generation.databaseChat.autonomousCompleteProfile",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.databaseChat.chosenOfflineSources",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "sync.databaseChat.actualSourceSelection",
@@ -1997,8 +2071,11 @@
     {
       "id": "generation.studyChat.autonomousSharedContext",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.studyChat.allTasksAndScopes",
@@ -2015,8 +2092,11 @@
     {
       "id": "generation.studyChat.chosenOfflineSources",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "consultation.studyChat.extractiveCitations",
@@ -2051,8 +2131,11 @@
     {
       "id": "generation.worldChat.autonomousSharedFacts",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.worldChat.temporalRulesAndKnowledge",
@@ -2213,8 +2296,11 @@
     {
       "id": "generation.databaseChat.newestChosenCapture",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.chat.nativeLiveMacProvidersAndModels",
@@ -2627,8 +2713,11 @@
     {
       "id": "generation.deepResearch.academicApproaches.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.deepResearch.studyAndTeaching.live",
@@ -2639,8 +2728,11 @@
     {
       "id": "generation.deepResearch.studyAndTeaching.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.deepResearch.genealogy.live",
@@ -2651,8 +2743,11 @@
     {
       "id": "generation.deepResearch.genealogy.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.deepResearch.completeGuide.live",
@@ -2663,14 +2758,20 @@
     {
       "id": "generation.deepResearch.completeGuide.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.deepResearch.chosenDownloadedSources",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.deepResearch.visualOptions.live",
@@ -2681,8 +2782,11 @@
     {
       "id": "generation.deepResearch.visualOptions.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "sync.deepResearch.paidStepRecoveryWithoutAutomaticRepurchase",
@@ -2741,8 +2845,11 @@
     {
       "id": "generation.databases.textCell.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "generation.databases.imageCell.live",
@@ -2753,8 +2860,11 @@
     {
       "id": "generation.databases.imageCell.autonomous",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "writing.databases.buttonActions.live",
@@ -2765,8 +2875,11 @@
     {
       "id": "writing.databases.buttonActions.autonomous",
       "category": "writing",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
     },
     {
       "id": "sync.databases.buttonActionsWithoutRepeatedSideEffects",
@@ -2777,6 +2890,18 @@
     {
       "id": "sync.databases.generatedCellSourceConflictsAndPaidRecovery",
       "category": "sync",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.autonomous.betaGate",
+      "category": "comingSoon",
+      "result": "pending",
+      "evidence": []
+    },
+    {
+      "id": "generation.audio.betaGate",
+      "category": "comingSoon",
       "result": "pending",
       "evidence": []
     }

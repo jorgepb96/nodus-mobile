@@ -915,6 +915,11 @@ private struct DesktopWebView: UIViewRepresentable {
             }
             tasks.append(Task {
                 do {
+                    // A forged WebKit request must not reactivate retained device providers.
+                    if ["beginAutonomousAuthoring", "mobileStructuredCompletion", "mobileEmbedding", "mobileImageConfiguration", "mobileEmbeddingConfiguration", "mobilePublicWebResource", "mobileGuideCommonsResource", "documentSvgEvaluate"].contains(method) {
+                        try BetaAIFeatures.requireAutonomousGeneration()
+                    }
+                    try MobileAudioBeta.requireAllowed(method: method)
                     var args = try JSONDecoder.nodus.decode([JSONValue].self, from: JSONSerialization.data(withJSONObject: input))
                     let pageReads=["getPageDocument","getPageAsset","getSyncedBlockSource","getDatabaseContainer","queryDatabaseContainerRows"]
                     var selectedPageOnly=downloadedOnly

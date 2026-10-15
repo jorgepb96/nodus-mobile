@@ -496,9 +496,10 @@ final class MobileReleaseUITests: XCTestCase {
         let macModel = try acceptanceMacModel()
         let app = try openExistingPrincipal(destination: "settings")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
-        let mode = app.buttons["ai-execution-mode"]
+        let mode = app.staticTexts["ai-execution-mode"].firstMatch
         for _ in 0..<8 { if mode.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(mode.isHittable); mode.tap(); app.buttons["Live · modelos del Mac"].tap()
+        XCTAssertTrue(mode.isHittable); XCTAssertTrue(mode.label.contains("Live · modelos del Mac"))
+        XCTAssertFalse(app.buttons["ai-execution-mode"].exists)
         app.buttons["nodus-navigation-toggle"].tap()
         let chat = app.buttons["nodus-nav-researchChat"]
         for _ in 0..<8 { if chat.isHittable { break }; app.swipeUp() }
@@ -2994,7 +2995,7 @@ final class MobileReleaseUITests: XCTestCase {
             if !settings.isHittable { app.buttons["nodus-navigation-toggle"].tap() }
             for _ in 0..<12 { if settings.isHittable { break }; app.swipeUp() }
             XCTAssertTrue(settings.isHittable); settings.tap()
-            let mode = app.buttons["ai-execution-mode"].firstMatch
+            let mode = app.staticTexts["ai-execution-mode"].firstMatch
             for _ in 0..<12 { if mode.isHittable { break }; app.swipeUp() }
             XCTAssertTrue(mode.isHittable); XCTAssertTrue(mode.label.contains("Live · modelos del Mac"))
             capture(app, "desktop-code-renewal-mode-after-restart")
@@ -3008,11 +3009,11 @@ final class MobileReleaseUITests: XCTestCase {
     @MainActor private func liveDeepResearchComposerSelectingMacModel() throws -> XCUIApplication {
         let macModel = try acceptanceMacModel()
         let app = try openExistingPrincipal(destination: "settings")
-        let mode = app.buttons["ai-execution-mode"]
+        let mode = app.staticTexts["ai-execution-mode"].firstMatch
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(mode.waitForExistence(timeout: 20)); mode.tap()
-        let live = app.buttons["Live · modelos del Mac"]
-        XCTAssertTrue(live.waitForExistence(timeout: 10)); live.tap()
+        XCTAssertTrue(mode.waitForExistence(timeout: 20))
+        XCTAssertTrue(mode.label.contains("Live · modelos del Mac"))
+        XCTAssertFalse(app.buttons["ai-execution-mode"].exists, "This beta must not expose the autonomous selector")
         app.buttons["nodus-navigation-toggle"].tap()
         let research = app.buttons["nodus-nav-deepResearch"]
         for _ in 0..<6 { if research.isHittable { break }; app.swipeUp() }
@@ -3157,11 +3158,11 @@ final class MobileReleaseUITests: XCTestCase {
         let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_RESEARCH_MARKER"])
         let body = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_RESEARCH_BODY_SNIPPET"])
         let app = try pairLive(route: "settings")
-        let mode = app.buttons["ai-execution-mode"].firstMatch
+        let mode = app.staticTexts["ai-execution-mode"].firstMatch
         for _ in 0..<10 { if mode.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(mode.waitForExistence(timeout: 20)); XCTAssertTrue(mode.isHittable); mode.tap()
-        let live = app.buttons["Live · modelos del Mac"].firstMatch
-        XCTAssertTrue(live.waitForExistence(timeout: 10)); live.tap()
+        XCTAssertTrue(mode.waitForExistence(timeout: 20)); XCTAssertTrue(mode.isHittable)
+        XCTAssertTrue(mode.label.contains("Live · modelos del Mac"))
+        XCTAssertFalse(app.buttons["ai-execution-mode"].exists)
         let renewal = app.buttons["renew-mac-connection"].firstMatch
         for _ in 0..<12 { if renewal.isHittable { break }; app.swipeDown() }
         XCTAssertTrue(renewal.isHittable); XCTAssertTrue(renewal.isEnabled)
@@ -3431,13 +3432,11 @@ final class MobileReleaseUITests: XCTestCase {
     func testLivePairingAndSavedReportsFromMac() throws {
         let app = try pairLive(route: "settings")
         defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
-        let mode = app.buttons["ai-execution-mode"]
+        let mode = app.staticTexts["ai-execution-mode"].firstMatch
         for _ in 0..<5 { if mode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(mode.waitForExistence(timeout: 20), app.debugDescription)
-        mode.tap()
-        let live = app.buttons["Live · modelos del Mac"]
-        XCTAssertTrue(live.waitForExistence(timeout: 10), app.debugDescription)
-        live.tap()
+        XCTAssertTrue(mode.label.contains("Live · modelos del Mac"))
+        XCTAssertFalse(app.buttons["ai-execution-mode"].exists)
         capture(app, "live-mac-mode-selected")
         app.buttons["nodus-navigation-toggle"].tap()
         let research = app.buttons["nodus-nav-deepResearch"]

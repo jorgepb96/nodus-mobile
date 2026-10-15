@@ -50,7 +50,7 @@ struct DeepResearchQueueTests {
         #expect(queue.jobs.map(\.savedReportId) == ["job-1", "job-2"])
     }
 
-    @Test("relaunch turns interrupted work back into queued work")
+    @Test("beta relaunch preserves deferred device work without rescheduling")
     func relaunchRecovery() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -66,7 +66,7 @@ struct DeepResearchQueueTests {
 
         #expect(queue.jobs.map(\.status) == [.running, .queued])
         let restored = DeepResearchQueue(root: root)
-        #expect(restored.jobs.map(\.status) == [.queued, .queued])
+        #expect(restored.jobs.map(\.status) == (BetaAIFeatures.autonomousGeneration ? [.queued, .queued] : [.running, .queued]))
         #expect(restored.jobs.map(\.id) == ["running", "waiting"])
         queue.cancel("running")
     }

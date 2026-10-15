@@ -230,6 +230,7 @@ final class DeepResearchQueue {
         guard let data = try? Data(contentsOf: file),
               var decoded = try? JSONDecoder.nodusQueue.decode([DeepResearchQueueJob].self, from: data)
         else { return }
+        guard BetaAIFeatures.autonomousGeneration else { jobs = decoded; return }
         // A process cannot still be executing after relaunch. The request remains queued and
         // the per-section checkpoint ensures already-paid work is not repeated.
         for index in decoded.indices where decoded[index].status == .running {

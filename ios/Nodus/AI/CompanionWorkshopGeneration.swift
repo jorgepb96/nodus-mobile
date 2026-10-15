@@ -61,6 +61,7 @@ final class CompanionWorkshopGeneration {
     }
 
     private func execute(session: SpaceSession, request: JSONValue, onStatus: (String) -> Void) async throws -> DesktopJobLedger.Request {
+        try BetaAIFeatures.requireAutonomousGeneration()
         guard session.aiExecutionMode == .autonomous,
               let selection = request.objectValue?["selection"], let model = request.objectValue?["model"]
         else { throw DesktopBridgeError.permissionDenied }

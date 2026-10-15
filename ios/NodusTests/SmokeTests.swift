@@ -6,6 +6,24 @@ import Testing
 @Suite("Local surface draft isolation")
 @MainActor
 struct MobileSurfaceStorageTests {
+    @Test("beta preserves a device preference but never exposes it as effective execution")
+    func betaLiveExecutionPreservesPreference() throws {
+        let connection = AppModel.Connection(origin: "https://beta-mode.test", spaceId: "beta-\(UUID())", spaceName: "Fixture", serverName: "Mac", role: .owner)
+        let key = "ai-execution-mode:\(connection.id)"
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        UserDefaults.standard.set("autonomous", forKey: key)
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = SpaceSession(connection: connection, client: NodusClient(address: ServerAddress(trusted: connection.origin), token: "fixture", cache: ResponseCache(directory: root)), mirrorDirectory: root)
+        #expect(session.aiExecutionMode == .live)
+        #expect(UserDefaults.standard.string(forKey: key) == "autonomous")
+        session.aiExecutionMode = .autonomous
+        #expect(session.aiExecutionMode == .live)
+        #expect(UserDefaults.standard.string(forKey: key) == "autonomous")
+        #expect(throws: APIError.self) { try BetaAIFeatures.requireAutonomousGeneration() }
+        #expect(!BetaAIFeatures.audioGeneration)
+    }
+
     @Test("a recovered Mac reprobes unavailable embeddings with the same or a changed origin", arguments: [false, true])
     func embeddingRecoversAfterOriginChange(changesOrigin: Bool) async throws {
         let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)

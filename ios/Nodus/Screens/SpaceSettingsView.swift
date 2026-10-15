@@ -64,12 +64,13 @@ struct SpaceSettingsView: View {
                 }
 
                 Section {
-                    Picker("Execution mode", selection: Binding(get: { session.aiExecutionMode }, set: { session.aiExecutionMode = $0 })) {
+                    if BetaAIFeatures.autonomousGeneration { Picker("Execution mode", selection: Binding(get: { session.aiExecutionMode }, set: { session.aiExecutionMode = $0 })) {
                         Text("Live · Mac models").tag(AIExecutionMode.live)
                             .disabled(session.connection.desktopPairingId == nil)
                         Text("Autonomous · this device").tag(AIExecutionMode.autonomous)
                     }
                     .accessibilityIdentifier("ai-execution-mode")
+                    } else { Text("Live · modelos del Mac").accessibilityIdentifier("ai-execution-mode").accessibilityValue("Live · modelos del Mac") }
                     if session.connection.desktopPairingId != nil {
                         NavigationLink("Trabajos y resultados") { LiveJobsView(session: session) }
                             .accessibilityIdentifier("companion-jobs-results")
