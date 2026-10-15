@@ -350,7 +350,8 @@ public actor PrivateBridgeAuthoringRecovery {
 
     static let savedResultMethods: Set<String> = ["saveMobileAcademicResult", "saveDictionaryGeneratedVersion", "saveStudyImprovementFromMobile", "saveMobileDatabaseResearchReport", "saveWritingWorkshopFromMobile", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveMobileWorldMapImage", "saveMobileDeepResearchReport", "saveMobileDatabaseGeneratedCell", "saveMobileDatabaseButtonResult"]
     public nonisolated static func publicationForReview(_ request: DesktopJobLedger.Request) throws -> CompanionGenerationPublication? {
-        guard request.state == "recoveryReview", let checkpoint = request.checkpoint,
+        guard request.method != "saveMobileDeepResearchVisuals", request.method != "localDocumentVisuals",
+              request.state == "recoveryReview", let checkpoint = request.checkpoint,
               let fields = checkpoint.objectValue, let original = fields["request"]?.objectValue else { return nil }
         if request.method == "saveMobileDatabaseGeneratedCell" || request.method == "saveMobileDatabaseButtonResult" || fields["recoveryGenerationKind"] == .string("databaseAction") {
             return try CompanionGenerationPublication(databaseAction: CompanionDatabaseActionCheckpoint(checkpoint))
@@ -380,6 +381,13 @@ public actor PrivateBridgeAuthoringRecovery {
         let created = fields["createdAt"].flatMap { Row(["date": $0]).date("date") } ?? Date()
         var value = JSONValue.object(fields)
         let publication: CompanionGenerationPublication?
+        if kind == "documentVisuals" {
+            guard let vault = record.vaultId else { throw RecoveryError.invalidArchive }
+            _ = try CompanionDocumentFigureAssets.Parent(value, vaultId: vault, recordId: recordId)
+            if requiresReview { fields["recoveryReviewRequired"] = .bool(true) }
+            return DesktopJobLedger.Request(id: id, method: "localDocumentVisuals", args: [], createdAt: created, jobId: nil,
+                state: "recoveryReview", issue: "Trabajo anterior conservado para revisión.", checkpointRecordId: recordId, checkpoint: .object(fields))
+        }
         if kind == "databaseAction" {
             let parsed = try CompanionDatabaseActionCheckpoint(value)
             if requiresReview { fields["recoveryReviewRequired"] = .bool(true) }
@@ -423,7 +431,12 @@ public actor PrivateBridgeAuthoringRecovery {
             return try JSONEncoder.nodus.encode(JSONValue.object(fields))
         }
         func checkpoint(_ value: JSONValue, method: String? = nil) -> JSONValue {
-            guard var fields = value.objectValue, fields["id"]?.stringValue != nil, fields["request"]?.objectValue != nil else { return value }
+            guard var fields = value.objectValue, fields["id"]?.stringValue != nil else { return value }
+            if fields["kind"] == .string("documentVisuals") {
+                fields["recoveryReviewRequired"] = .bool(true)
+                return .object(fields)
+            }
+            guard fields["request"]?.objectValue != nil else { return value }
             fields["recoveryReviewRequired"] = .bool(true)
             let kind = record.generationKind ?? fields["kind"]?.stringValue
             let entity = kind == "dictionary" ? fields["request"]?.objectValue?["entryId"]?.stringValue : fields["entityKey"]?.stringValue

@@ -23,6 +23,103 @@ struct CompanionDocumentFigureAssetsTests {
         try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(value), vaultId: "vault", recordId: record, indexId: "autonomous:deepResearch:index:v1", entity: "figures")
         return record
     }
+    private func visualParent(session: UUID, target: UUID, figure: UUID, revision: UUID, owner: String) -> JSONValue {
+        let manifest: JSONValue = .object(["vaultId": .string("vault"), "target": .object(["kind": .string("deep-research"), "id": .string(target.uuidString.lowercased())]),
+            "revision": .string(revision.uuidString.lowercased()), "figures": .array([.object(["id": .string(figure.uuidString.lowercased()), "state": .string("running"), "owner": .string(owner), "ownerRevision": .string(revision.uuidString.lowercased())])])])
+        return .object(["version": .int(1), "kind": .string("documentVisuals"), "id": .string(session.uuidString.lowercased()),
+            "entityKey": .string("deep-research:" + target.uuidString.lowercased()), "target": .object(["kind": .string("deep-research"), "id": .string(target.uuidString.lowercased())]),
+            "source": .object(["vaultId": .string("vault"), "draft": .object(["id": .string(target.uuidString.lowercased()), "draftMarkdown": .string("Existing report")]),
+                "origin": .string("desktop-capture"), "contentHash": .string(String(repeating: "a", count: 64))]), "manifest": manifest])
+    }
+    @Test("visual-only sessions retain the report target and recover without publishing a new report")
+    func visualOnlySessionRecovery() async throws {
+        let f = try PrivateBridgeAuthoringRecoveryTests.Fixture(); defer { f.clean() }
+        let old = try f.pairing("visual-only-old"), cache = try f.cache(old.id)
+        let session = UUID(), target = UUID(), figure = UUID(), revision = UUID()
+        let owner = try owner(generation: target, revision: revision, figure: figure)
+        let entity = "deep-research:" + target.uuidString.lowercased()
+        let record = try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)
+        let parent = visualParent(session: session, target: target, figure: figure, revision: revision, owner: owner)
+        try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(parent), vaultId: "vault", recordId: record, indexId: "autonomous:documentVisuals:index:v1", entity: entity)
+        let store = CompanionDocumentFigureAssets(cache: cache, vaultId: "vault"), bytes = Data(repeating: 5, count: 19)
+        let receipt = try await store.store(data: bytes, mimeType: "image/png", parentRecordId: record, generationId: session, figureId: figure, owner: owner)
+        #expect(receipt.targetId == target.uuidString.lowercased())
+        #expect(receipt.generationId == session && receipt.generationId != target)
+        await #expect(throws: (any Error).self) { _ = try await store.store(data: bytes, mimeType: "image/png", parentRecordId: record, generationId: target, figureId: figure, owner: owner) }
+        var forged = parent.objectValue!; forged["target"] = .object(["kind": .string("deep-research"), "id": .string(UUID().uuidString.lowercased())])
+        #expect(throws: (any Error).self) { _ = try CompanionDocumentFigureAssets.Parent(.object(forged), vaultId: "vault", recordId: record) }
+        // A paid planning call can precede the first manifest. Keep that typed
+        // session authored, but never permit asset ownership without a figure.
+        var planning = parent.objectValue!; planning["manifest"] = .null
+        _ = try CompanionDocumentFigureAssets.Parent(.object(planning), vaultId: "vault", recordId: record)
+        #expect(throws: (any Error).self) { try CompanionDocumentFigureAssets.validate(receipt, parent: .object(planning)) }
+        try await cache.freezeForRevocation(true)
+        let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"])
+        let authored = try #require(snapshot.records.first { $0.generationKind == "documentVisuals" })
+        let recovered = try PrivateBridgeAuthoringRecovery.recoveredRequest(authored, requiresReview: true)
+        let local = try #require(recovered)
+        #expect(local.method == "localDocumentVisuals" && local.args.isEmpty && local.state == "recoveryReview")
+        #expect(!PrivateBridgeAuthoringRecovery.canReviewResult(local))
+        let saved = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "real-mac")
+        try await f.recovery.completeRevocation(saved)
+        let fresh = try f.pairing("visual-only-new"), destination = try f.cache(fresh.id)
+        _ = try await f.recovery.adopt(pairing: fresh, macDeviceId: "real-mac", cache: destination)
+        let restoredBytes = try #require(await destination.data(vaultId: "vault", domain: .researchGeneration, recordId: record))
+        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: restoredBytes).objectValue?["recoveryReviewRequired"] == .bool(true))
+        #expect(try await CompanionDocumentFigureAssets(cache: destination, vaultId: "vault").data(receipt) == bytes)
+        await #expect(throws: (any Error).self) { try await destination.requireGenerationExecutionAllowed(vaultId: "vault", generationId: session.uuidString.lowercased()) }
+        for key in [old.id, fresh.id] { try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: key)) }
+        try? f.keychain.remove(saved.recoveryKeyName)
+    }
+    @Test("legacy capture imports only the exact source asset without inventing an owner birth")
+    func capturedLegacyAsset() async throws {
+        let f = try PrivateBridgeAuthoringRecoveryTests.Fixture(); defer { f.clean() }
+        let old = try f.pairing("visual-legacy"), cache = try f.cache(old.id)
+        let session = UUID(), target = UUID(), figure = UUID(), revision = UUID(), nativeAsset = UUID(), sourceAsset = UUID().uuidString.lowercased()
+        let owner = String(repeating: "b", count: 64), bytes = Data(repeating: 31, count: CompanionDocumentFigureAssets.chunkBytes + 3)
+        let entity = "deep-research:" + target.uuidString.lowercased(), record = try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)
+        var fields = visualParent(session: session, target: target, figure: figure, revision: revision, owner: owner).objectValue!
+        var manifest = fields["manifest"]!.objectValue!, figureValue = manifest["figures"]!.arrayValue![0].objectValue!
+        figureValue["ownerRevision"] = nil; figureValue["state"] = .string("ready"); manifest["figures"] = .array([.object(figureValue)])
+        let capture: JSONValue = .object(["version": .int(1), "vaultId": .string("vault"), "target": fields["target"]!,
+            "contentHash": .string(String(repeating: "a", count: 64)), "manifest": .object(manifest),
+            "assets": .array([.object(["id": .string(sourceAsset), "figureId": .string(figure.uuidString.lowercased()), "owner": .string(owner),
+                "mimeType": .string("image/png"), "byteCount": .int(Int64(bytes.count)), "sha256": .string(CompanionDocumentFigureAssets.hash(bytes))])])])
+        let canonical = try JSONEncoder.nodus.encode(capture), proof = CompanionDocumentFigureAssets.hash(canonical)
+        var source = fields["source"]!.objectValue!
+        source["capture"] = capture; source["captureCanonical"] = .string(String(decoding: canonical, as: UTF8.self)); source["captureHash"] = .string(proof)
+        fields["source"] = .object(source); fields["manifest"] = .object(manifest)
+        func save(_ value: JSONValue) async throws {
+            try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(value), vaultId: "vault", recordId: record, indexId: "autonomous:documentVisuals:index:v1", entity: entity)
+        }
+        try await save(.object(fields))
+        let store = CompanionDocumentFigureAssets(cache: cache, vaultId: "vault")
+        await #expect(throws: (any Error).self) { _ = try await store.store(data: bytes, mimeType: "image/png", parentRecordId: record, generationId: session, figureId: figure, owner: owner) }
+        await #expect(throws: (any Error).self) { _ = try await store.importCapturedLegacyAsset(data: Data([1]), mimeType: "image/png", parentRecordId: record, generationId: session, figureId: figure, owner: owner, sourceAssetId: sourceAsset) }
+        await #expect(throws: (any Error).self) { _ = try await store.importCapturedLegacyAsset(data: bytes, mimeType: "image/png", parentRecordId: record, generationId: session, figureId: figure, owner: owner, sourceAssetId: "another-asset") }
+        let receipt = try await store.importCapturedLegacyAsset(data: bytes, mimeType: "image/png", parentRecordId: record, generationId: session, figureId: figure, owner: owner, sourceAssetId: sourceAsset, assetId: nativeAsset)
+        #expect(receipt.ownerRevision.isEmpty && receipt.captureHash == proof && receipt.capturedAssetId == sourceAsset)
+        #expect(try await store.data(receipt) == bytes)
+        // Both decoded metadata and original serialization must match the source checksum.
+        var tampered = fields, tamperedSource = source; tamperedSource["captureCanonical"] = .string("{}")
+        tampered["source"] = .object(tamperedSource)
+        #expect(throws: (any Error).self) { try CompanionDocumentFigureAssets.validate(receipt, parent: .object(tampered)) }
+        // Removing a figure later cannot make previously paid/copied authoring bytes
+        // unclassifiable, nor does it let a new asset attach to the removed figure.
+        manifest["figures"] = .array([]); manifest["revision"] = .string(UUID().uuidString.lowercased()); fields["manifest"] = .object(manifest)
+        try await save(.object(fields))
+        #expect(try await store.receipts(parentRecordId: record, generationId: session) == [receipt])
+        await #expect(throws: (any Error).self) { _ = try await store.importCapturedLegacyAsset(data: bytes, mimeType: "image/png", parentRecordId: record, generationId: session, figureId: figure, owner: owner, sourceAssetId: sourceAsset) }
+        try await cache.freezeForRevocation(true)
+        let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"])
+        let saved = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "real-mac")
+        let id = try #require(UUID(uuidString: saved.archiveURL.deletingPathExtension().lastPathComponent))
+        let lease = try await f.recovery.exportFile(id: id), zip = try Archive(url: lease.url, accessMode: .read)
+        let entry = try #require(zip.first { $0.path.hasSuffix(".png") })
+        var exported = Data(); _ = try zip.extract(entry) { exported.append($0) }
+        #expect(exported == bytes)
+        try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: old.id)); try? f.keychain.remove(saved.recoveryKeyName)
+    }
     @Test("a receipt-only paid image becomes encrypted chunks and a thin durable replay pointer")
     func paidImageReceipt() async throws {
         let f = try PrivateBridgeAuthoringRecoveryTests.Fixture(); defer { f.clean() }

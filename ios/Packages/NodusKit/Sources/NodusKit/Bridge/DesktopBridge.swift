@@ -1603,7 +1603,7 @@ public actor PrivateBridgeCache {
         try Self.diskLock.withLock {
             try Self.recoverIndexedTransactions(in: folder)
             let writingIds = ["companion-documents-v1", "companion-study-documents-v1", "companion-page-documents-v1", "companion-immersion-progress-v1", "companion-database-reading-v1", "companion-mutation-outbox-v1"]
-            let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "autonomous:deepResearch:index:v1", "companion:world-map-generation-index:v1", "companion:database-action-index:v1"]
+            let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "autonomous:deepResearch:index:v1", "autonomous:documentVisuals:index:v1", "companion:world-map-generation-index:v1", "companion:database-action-index:v1"]
             var known: [String: (vault: String, writing: Bool, ledger: Bool, recordId: String, kind: String?)] = [:]
             for vault in vaultIds {
                 for id in writingIds { known[legacyURL(vaultId: vault, domain: .writing, recordId: id).lastPathComponent] = (vault, true, false, id, id == "companion-mutation-outbox-v1" ? "mutationOutbox" : nil) }
@@ -1710,6 +1710,21 @@ public actor PrivateBridgeCache {
                         guard FileManager.default.fileExists(atPath: fileURL(vaultId: vault, domain: .researchGeneration, recordId: checkpoint).path) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
                         let summary = "autonomous:deepResearch:summary:" + entity
                         known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: summary).lastPathComponent] = (vault, false, false, summary, "deepResearchSummary")
+                    }
+                }
+            }
+            for vault in vaultIds {
+                let index = fileURL(vaultId: vault, domain: .researchGeneration, recordId: "autonomous:documentVisuals:index:v1")
+                if FileManager.default.fileExists(atPath: index.path) {
+                    let bytes = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: index)), using: key)
+                    let entities = try JSONDecoder.nodus.decode([String].self, from: bytes)
+                    guard Set(entities).count == entities.count else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                    for entity in entities {
+                        let record = try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)
+                        let url = fileURL(vaultId: vault, domain: .researchGeneration, recordId: record)
+                        let parent = try JSONDecoder.nodus.decode(JSONValue.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key))
+                        _ = try CompanionDocumentFigureAssets.Parent(parent, vaultId: vault, recordId: record)
+                        known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent] = (vault, false, false, record, "documentVisuals")
                     }
                 }
             }

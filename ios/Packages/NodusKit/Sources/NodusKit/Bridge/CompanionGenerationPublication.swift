@@ -12,7 +12,7 @@ public struct CompanionGenerationPublication: Sendable {
     public let checkpoint: JSONValue
 
     public static func recordId(kind: String, entity: String) throws -> String {
-        guard ["dictionary", "immersion", "translation", "writing", "argument", "workshop", "database", "academic", "deepResearch"].contains(kind),
+        guard ["dictionary", "immersion", "translation", "writing", "argument", "workshop", "database", "academic", "deepResearch", "documentVisuals"].contains(kind),
               !entity.isEmpty, entity.utf8.count <= 256 else { throw DesktopBridgeError.malformedResponse }
         let hash = SHA256.hash(data: Data(entity.utf8)).map { String(format: "%02x", $0) }.joined()
         return "autonomous:\(kind):\(hash)"

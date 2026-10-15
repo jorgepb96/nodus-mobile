@@ -20,11 +20,13 @@ public actor CompanionDocumentFigureAssets {
         public let mimeType: String
         public let byteCount: Int64
         public let sha256: String
+        public let captureHash: String?
+        public let capturedAssetId: String?
         public func jsonValue() throws -> JSONValue { try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(self)) }
         public init(value: JSONValue) throws { self = try JSONDecoder.nodus.decode(Self.self, from: JSONEncoder.nodus.encode(value)) }
-        init(id: UUID, vaultId: String, parentRecordId: String, generationId: UUID, figureId: UUID, owner: String, ownerRevision: String, targetId: String, figureKey: String, mimeType: String, byteCount: Int64, sha256: String) {
+        init(id: UUID, vaultId: String, parentRecordId: String, generationId: UUID, figureId: UUID, owner: String, ownerRevision: String, targetId: String, figureKey: String, mimeType: String, byteCount: Int64, sha256: String, captureHash: String? = nil, capturedAssetId: String? = nil) {
             self.id = id; self.vaultId = vaultId; self.parentRecordId = parentRecordId; self.generationId = generationId
-            self.figureId = figureId; self.owner = owner; self.ownerRevision = ownerRevision; self.targetId = targetId; self.figureKey = figureKey; self.mimeType = mimeType; self.byteCount = byteCount; self.sha256 = sha256
+            self.figureId = figureId; self.owner = owner; self.ownerRevision = ownerRevision; self.targetId = targetId; self.figureKey = figureKey; self.mimeType = mimeType; self.byteCount = byteCount; self.sha256 = sha256; self.captureHash = captureHash; self.capturedAssetId = capturedAssetId
         }
     }
     struct Manifest: Codable, Sendable {
@@ -42,26 +44,86 @@ public actor CompanionDocumentFigureAssets {
     public static func chunkId(_ id: UUID, _ index: Int) -> String { "companion:document-figure-asset-chunk:v1:\(id.uuidString.lowercased()):\(index)" }
     static func hash(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
     static func validHash(_ value: String) -> Bool { value.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }
+    /// Visual-only sessions own their bytes without pretending to be a prose
+    /// generation or changing the report's original publication receipt.
+    struct Parent {
+        let id: String
+        let targetId: String
+        let manifest: [String: JSONValue]
+        let source: [String: JSONValue]
+        init(_ value: JSONValue, vaultId: String, recordId: String) throws {
+            guard let fields = value.objectValue, let id = fields["id"]?.stringValue, UUID(uuidString: id) != nil,
+                  let entity = fields["entityKey"]?.stringValue else { throw DesktopBridgeError.permissionDenied }
+            self.id = id
+            if fields["kind"] == .string("documentVisuals") {
+                guard fields["version"] == .int(1), let source = fields["source"]?.objectValue,
+                      source["vaultId"] == .string(vaultId), source["draft"]?.objectValue != nil,
+                      let contentHash = source["contentHash"]?.stringValue, validHash(contentHash),
+                      ["desktop-capture", "authored-mobile"].contains(source["origin"]?.stringValue ?? ""),
+                      let target = fields["target"]?.objectValue, target["kind"] == .string("deep-research"),
+                      let targetId = target["id"]?.stringValue, UUID(uuidString: targetId) != nil,
+                      entity == "deep-research:" + targetId,
+                      recordId == (try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)),
+                      fields["manifest"] == .null || fields["manifest"]?.objectValue != nil else { throw DesktopBridgeError.permissionDenied }
+                self.targetId = targetId; self.manifest = fields["manifest"]?.objectValue ?? [:]; self.source = source
+            } else {
+                guard fields["context"]?.objectValue?["vaultId"] == .string(vaultId),
+                      recordId == (try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)),
+                      let manifest = fields["report"]?.objectValue?["mobileVisuals"]?.objectValue?["manifest"]?.objectValue else { throw DesktopBridgeError.permissionDenied }
+                self.targetId = id; self.manifest = manifest; self.source = [:]
+            }
+            if !manifest.isEmpty {
+                guard manifest["vaultId"] == .string(vaultId), manifest["target"]?.objectValue?["kind"] == .string("deep-research"),
+                      manifest["target"]?.objectValue?["id"] == .string(targetId) else { throw DesktopBridgeError.permissionDenied }
+            }
+        }
+    }
     static func validate(_ receipt: Receipt, parent: JSONValue, requireCurrentFigure: Bool = true) throws {
+        let source = try Parent(parent, vaultId: receipt.vaultId, recordId: receipt.parentRecordId)
         guard receipt.version == 1, receipt.byteCount > 0, validHash(receipt.sha256), validHash(receipt.owner),
               ["image/png", "image/jpeg", "image/webp"].contains(receipt.mimeType),
-              UUID(uuidString: receipt.ownerRevision) != nil, UUID(uuidString: receipt.figureKey) == receipt.figureId,
-              let object = parent.objectValue, let originalID = object["id"]?.stringValue,
-              originalID == receipt.targetId, UUID(uuidString: originalID) == receipt.generationId,
-              object["context"]?.objectValue?["vaultId"] == .string(receipt.vaultId),
-              let entity = object["entityKey"]?.stringValue,
-              receipt.parentRecordId == (try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)) else { throw DesktopBridgeError.permissionDenied }
+              UUID(uuidString: receipt.figureKey) == receipt.figureId,
+              receipt.targetId == source.targetId, UUID(uuidString: source.id) == receipt.generationId else { throw DesktopBridgeError.permissionDenied }
+        if receipt.captureHash != nil {
+            try validateCaptured(receipt, parent: source)
+            if requireCurrentFigure {
+                guard let figure = source.manifest["figures"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(receipt.figureKey) })?.objectValue,
+                      figure["owner"] == .string(receipt.owner), figure["ownerRevision"] == nil else { throw DesktopBridgeError.permissionDenied }
+            }
+            return
+        }
+        guard receipt.capturedAssetId == nil, UUID(uuidString: receipt.ownerRevision) != nil else { throw DesktopBridgeError.permissionDenied }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
-        let identity = ["document-figure", receipt.vaultId, "deep-research:\(originalID):\(receipt.ownerRevision):\(receipt.figureKey)"]
+        let identity = ["document-figure", receipt.vaultId, "deep-research:\(source.targetId):\(receipt.ownerRevision):\(receipt.figureKey)"]
         guard hash(try encoder.encode(identity)) == receipt.owner else { throw DesktopBridgeError.permissionDenied }
         if requireCurrentFigure {
-            guard let manifest = object["report"]?.objectValue?["mobileVisuals"]?.objectValue?["manifest"]?.objectValue,
-                  manifest["vaultId"] == .string(receipt.vaultId),
-                  manifest["target"]?.objectValue?["kind"] == .string("deep-research"), manifest["target"]?.objectValue?["id"] == .string(originalID),
-                  let figure = manifest["figures"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(receipt.figureKey) })?.objectValue,
+            guard let figure = source.manifest["figures"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(receipt.figureKey) })?.objectValue,
                   figure["owner"] == .string(receipt.owner), figure["ownerRevision"] == .string(receipt.ownerRevision),
                   ["running", "failed", "ready"].contains(figure["state"]?.stringValue ?? "") else { throw DesktopBridgeError.permissionDenied }
         }
+    }
+    /// Legacy assets are admitted only by the exact, authenticated source capture.
+    /// Its original serialized bytes avoid Swift/JavaScript numeric or escaping
+    /// differences, while decoded equality binds the complete metadata envelope.
+    static func validateCaptured(_ receipt: Receipt, parent: Parent) throws {
+        guard receipt.ownerRevision.isEmpty, let expected = receipt.captureHash, validHash(expected),
+              parent.source["captureHash"] == .string(expected), let assetId = receipt.capturedAssetId,
+              let canonical = parent.source["captureCanonical"]?.stringValue, let bytes = canonical.data(using: .utf8),
+              hash(bytes) == expected, let capture = parent.source["capture"],
+              try JSONDecoder.nodus.decode(JSONValue.self, from: bytes) == capture,
+              let fields = capture.objectValue, fields["version"] == .int(1), fields["vaultId"] == .string(receipt.vaultId),
+              fields["target"]?.objectValue?["kind"] == .string("deep-research"), fields["target"]?.objectValue?["id"] == .string(receipt.targetId),
+              fields["contentHash"] == parent.source["contentHash"], let manifest = fields["manifest"]?.objectValue,
+              manifest["vaultId"] == .string(receipt.vaultId), manifest["target"] == fields["target"],
+              let figures = manifest["figures"]?.arrayValue,
+              let figure = figures.first(where: { $0.objectValue?["id"] == .string(receipt.figureKey) })?.objectValue,
+              figure["owner"] == .string(receipt.owner), figure["ownerRevision"] == nil,
+              let assets = fields["assets"]?.arrayValue,
+              let descriptor = assets.first(where: { $0.objectValue?["id"] == .string(assetId) })?.objectValue,
+              assets.filter({ $0.objectValue?["id"] == .string(assetId) }).count == 1,
+              descriptor["figureId"] == .string(receipt.figureKey), descriptor["owner"] == .string(receipt.owner),
+              descriptor["mimeType"] == .string(receipt.mimeType), descriptor["byteCount"] == .int(receipt.byteCount),
+              descriptor["sha256"] == .string(receipt.sha256) else { throw DesktopBridgeError.permissionDenied }
     }
     static func validate(_ manifest: Manifest) throws {
         let receipt = manifest.receipt
@@ -129,13 +191,29 @@ public actor CompanionDocumentFigureAssets {
     public func store(data: Data, mimeType: String, parentRecordId: String, generationId: UUID, figureId: UUID,
         owner: String, assetId: UUID = UUID(), sourceCompletionRecordId: String? = nil) async throws -> Receipt {
         let source = try await parent(parentRecordId)
-        guard let originalID = source.objectValue?["id"]?.stringValue,
-              let figure = source.objectValue?["report"]?.objectValue?["mobileVisuals"]?.objectValue?["manifest"]?.objectValue?["figures"]?.arrayValue?.first(where: { UUID(uuidString: $0.objectValue?["id"]?.stringValue ?? "") == figureId })?.objectValue,
+        let scope = try Parent(source, vaultId: vaultId, recordId: parentRecordId)
+        guard let figure = scope.manifest["figures"]?.arrayValue?.first(where: { UUID(uuidString: $0.objectValue?["id"]?.stringValue ?? "") == figureId })?.objectValue,
               let figureKey = figure["id"]?.stringValue, let ownerRevision = figure["ownerRevision"]?.stringValue else { throw DesktopBridgeError.permissionDenied }
         let receipt = Receipt(id: assetId, vaultId: vaultId, parentRecordId: parentRecordId, generationId: generationId, figureId: figureId,
-            owner: owner, ownerRevision: ownerRevision, targetId: originalID, figureKey: figureKey, mimeType: mimeType, byteCount: Int64(data.count), sha256: Self.hash(data))
+            owner: owner, ownerRevision: ownerRevision, targetId: scope.targetId, figureKey: figureKey, mimeType: mimeType, byteCount: Int64(data.count), sha256: Self.hash(data))
         try Self.validate(receipt, parent: source)
-        let ticket = try await cache.beginDocumentFigureAssetImport(vaultId: vaultId, owner: owner, byteCount: Int64(data.count))
+        return try await persist(receipt, source: source, data: data, sourceCompletionRecordId: sourceCompletionRecordId)
+    }
+    /// Copies one real legacy image captured by the authenticated Mac source. This
+    /// cannot mint a new owner, infer a birth revision, or accept arbitrary bytes.
+    public func importCapturedLegacyAsset(data: Data, mimeType: String, parentRecordId: String, generationId: UUID,
+        figureId: UUID, owner: String, sourceAssetId: String, assetId: UUID = UUID()) async throws -> Receipt {
+        let source = try await parent(parentRecordId), scope = try Parent(source, vaultId: vaultId, recordId: parentRecordId)
+        guard let captureHash = scope.source["captureHash"]?.stringValue,
+              let figureKey = scope.manifest["figures"]?.arrayValue?.first(where: { UUID(uuidString: $0.objectValue?["id"]?.stringValue ?? "") == figureId })?.objectValue?["id"]?.stringValue else { throw DesktopBridgeError.permissionDenied }
+        let receipt = Receipt(id: assetId, vaultId: vaultId, parentRecordId: parentRecordId, generationId: generationId, figureId: figureId,
+            owner: owner, ownerRevision: "", targetId: scope.targetId, figureKey: figureKey, mimeType: mimeType, byteCount: Int64(data.count), sha256: Self.hash(data), captureHash: captureHash, capturedAssetId: sourceAssetId)
+        try Self.validate(receipt, parent: source)
+        return try await persist(receipt, source: source, data: data, sourceCompletionRecordId: nil)
+    }
+    private func persist(_ receipt: Receipt, source: JSONValue, data: Data, sourceCompletionRecordId: String?) async throws -> Receipt {
+        let assetId = receipt.id, parentRecordId = receipt.parentRecordId
+        let ticket = try await cache.beginDocumentFigureAssetImport(vaultId: vaultId, owner: receipt.owner, byteCount: Int64(data.count))
         defer { cache.endDocumentFigureAssetImport(ticket) }
         var item = try await manifest(assetId) ?? Manifest(receipt: receipt)
         guard item.receipt == receipt, item.recoveryReviewRequired != true else { throw DesktopBridgeError.permissionDenied }
