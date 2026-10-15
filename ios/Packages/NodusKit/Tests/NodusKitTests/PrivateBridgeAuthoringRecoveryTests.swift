@@ -24,6 +24,38 @@ struct PrivateBridgeAuthoringRecoveryTests {
         func cache(_ id: String) throws -> PrivateBridgeCache { try PrivateBridgeCache(pairingId: id, directory: root, keychain: keychain) }
         func clean() { defaults.removePersistentDomain(forName: "authoring-recovery-\(id)"); try? FileManager.default.removeItem(at: root) }
     }
+    @Test("general native outbox work remains globally exportable after revoke without importing old grant receipts")
+    func generalMutationWorkExportOnly() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let old = try f.pairing("mutation-old"), cache = try f.cache(old.id)
+        let original = JSONValue.object(["version": .int(1), "vaultId": .string("vault"), "spaceId": .string("stable-owning-space"),
+            "items": .array([.object(["id": .string("original-request"), "state": .string("accepted"), "cursor": .int(17),
+                "authorised": .bool(true), "payload": .string("exact original payload and authored comment")])])])
+        let bytes = try JSONEncoder.nodus.encode(original)
+        try await cache.store(bytes, vaultId: "vault", domain: .writing, recordId: "companion-mutation-outbox-v1")
+        try await cache.store(Data("private consulted copy".utf8), vaultId: "vault", domain: .corpus, recordId: "consulted")
+        try await cache.freezeForRevocation(true)
+        let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"])
+        #expect(snapshot.records.count == 1)
+        #expect(snapshot.records.first?.data == bytes)
+        #expect(snapshot.records.first?.generationKind == "mutationOutbox")
+        let receipt = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "actual-mac")
+        try await f.recovery.completeRevocation(receipt)
+        let archives = try await f.recovery.allSummaries()
+        let archive = try #require(archives.first)
+        let exported = try await f.recovery.export(id: archive.id)
+        let exportJSON = try JSONDecoder.nodus.decode(JSONValue.self, from: exported)
+        let record = try #require(exportJSON.objectValue?["records"]?.arrayValue?.first?.objectValue)
+        #expect(record["data"] == .string(bytes.base64EncodedString()))
+        let fresh = try f.pairing("mutation-new"), destination = try f.cache(fresh.id)
+        let count = try await f.recovery.adopt(pairing: fresh, macDeviceId: "actual-mac", cache: destination)
+        #expect(count == 0)
+        let imported = try await destination.data(vaultId: "vault", domain: .writing, recordId: "companion-mutation-outbox-v1")
+        #expect(imported == nil)
+        try? f.keychain.remove(receipt.recoveryKeyName)
+        for id in [old.id, fresh.id] { try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }
+    }
+
     @Test("exact legacy surface preferences no longer block unlink; unknown editorial versions stay export-only")
     func legacySurfaceStorage() async throws {
         for authored in [false, true] {

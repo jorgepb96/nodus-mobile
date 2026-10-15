@@ -646,6 +646,19 @@ final class AppModel {
         // session continue under their existing storage identity.
     }
 
+    /// General reader/table edits live outside the structured editor queues.
+    /// Include their exact SQLite payloads and receipts in the encrypted work export.
+    private func preserveMutationOutboxes(pairingId: String, vaultIds: Set<String>, cache: PrivateBridgeCache) async throws {
+        for connection in connections where connection.desktopPairingId == pairingId {
+            guard let vault = connection.vaultId, vaultIds.contains(vault),
+                  MutationOutbox.exists(spaceId: connection.storageId, directory: ConnectionClient.spacesDirectory) else { continue }
+            let queue = try await MutationOutbox.open(spaceId: connection.storageId, directory: ConnectionClient.spacesDirectory)
+            if let data = try await queue.authoringRecoveryData(vaultId: vault) {
+                try await cache.store(data, vaultId: vault, domain: .writing, recordId: "companion-mutation-outbox-v1")
+            }
+        }
+    }
+
     /// Revocation applies to the whole device grant, including every linked vault.
     func revokeDesktop(_ connection: Connection, knownRemoteRevocation: Bool = false) async throws {
         let store = DesktopBridgePairingStore()
@@ -677,8 +690,9 @@ final class AppModel {
             try cache.beginClosingForRevocation()
             try await cache.waitForAuthoringToFinish()
             try await CompanionDocumentOutboxes.shared.prepareForRevocation(pairingId: pairing.id)
-            try await cache.freezeForRevocation(true)
             let authoringScope = pairing.vaultIds.union(pairing.retainedAuthoringVaultIds ?? [])
+            try await preserveMutationOutboxes(pairingId: pairing.id, vaultIds: authoringScope, cache: cache)
+            try await cache.freezeForRevocation(true)
             let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: authoringScope)
             if !snapshot.fingerprints.isEmpty {
                 let archivePairing = try pairing.authoringArchiveScope(authoringScope)
@@ -785,10 +799,11 @@ final class AppModel {
                 if !removed.isEmpty {
                     let cache = try PrivateBridgeCache(pairingId: pairing.id)
                     try cache.beginClosingForRevocation()
-                    try await cache.waitForAuthoringToFinish()
-                    try await CompanionDocumentOutboxes.shared.prepareForRevocation(pairingId: pairing.id, vaultIds: removed)
-                    try await cache.freezeForRevocation(true)
                     do {
+                        try await cache.waitForAuthoringToFinish()
+                        try await CompanionDocumentOutboxes.shared.prepareForRevocation(pairingId: pairing.id, vaultIds: removed)
+                        try await preserveMutationOutboxes(pairingId: pairing.id, vaultIds: removed, cache: cache)
+                        try await cache.freezeForRevocation(true)
                         let authoringScope = refreshed.vaultIds.union(removed)
                         let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: authoringScope)
                         let retired = snapshot.records.filter { $0.vaultId.map(removed.contains) ?? false }

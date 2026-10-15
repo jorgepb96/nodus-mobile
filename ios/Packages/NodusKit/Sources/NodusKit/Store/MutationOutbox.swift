@@ -197,6 +197,31 @@ public actor MutationOutbox {
         }
     }
 
+    /// Complete authored rows for encrypted recovery/export, including frozen payloads,
+    /// receipt cursors and local send decisions. Never imports or authorises a new grant.
+    public func authoringRecoveryData(vaultId: String) throws -> Data? {
+        guard !vaultId.isEmpty else { throw DesktopBridgeError.permissionDenied }
+        return try dbQueue.read { db in
+            let rows = try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox ORDER BY created_at, rowid")
+            guard !rows.isEmpty else { return nil }
+            let items: [JSONValue] = try rows.map { row in
+                let id: String = row["id"], table: String = row["tbl"], payload: String = row["payload"], state: String = row["state"]
+                guard let bytes = payload.data(using: .utf8), let decoded = try? JSONDecoder.nodus.decode(Mutation.self, from: bytes),
+                      decoded.id == id, decoded.table == table, State(rawValue: state) != nil else { throw DesktopBridgeError.malformedResponse }
+                var fields: [String: JSONValue] = ["id": .string(id), "table": .string(table), "payload": .string(payload), "state": .string(state)]
+                for column in ["title", "detail", "created_at", "sent_at", "delivered_at", "entity_kind"] {
+                    let value: String? = row[column]; fields[column] = value.map(JSONValue.string) ?? .null
+                }
+                let authorised: Int = row["authorised"], cursor: Int? = row["cursor"]
+                fields["authorised"] = .bool(authorised == 1)
+                fields["cursor"] = cursor.map { .int(Int64($0)) } ?? .null
+                return .object(fields)
+            }
+            return try JSONEncoder.nodus.encode(JSONValue.object(["version": .int(1), "vaultId": .string(vaultId),
+                "spaceId": .string(spaceId), "items": .array(items)]))
+        }
+    }
+
     /// A replacement grant needs a new explicit send decision. Payloads and receipts survive.
     @discardableResult
     public func suspendAuthorisedForRelink() throws -> Int {

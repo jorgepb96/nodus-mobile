@@ -16,6 +16,44 @@ struct MutationOutboxAuthorisationTests {
         return (try MutationOutbox(spaceId: "space-under-test", directory: folder), folder)
     }
 
+    @Test("general authored rows export frozen payloads, receipts and send decisions without modifying the queue")
+    func authoringRecoveryIncludesReceipts() async throws {
+        let (queue, directory) = try makeOutbox()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unsent = note("unsent"), accepted = note("accepted"), delivered = note("delivered")
+        for mutation in [unsent, accepted, delivered] { try await queue.enqueue(mutation, title: mutation.id) }
+        try await queue.authorise(ids: [accepted.id, delivered.id])
+        try await queue.markAccepted([accepted.id], cursor: 17)
+        try await queue.markAccepted([delivered.id], cursor: 12)
+        _ = try await queue.markDelivered(upTo: 12)
+        let captured = try await queue.authoringRecoveryData(vaultId: "owning-vault")
+        let data = try #require(captured)
+        let snapshot = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
+        #expect(snapshot.objectValue?["vaultId"] == .string("owning-vault"))
+        let entries = try #require(snapshot.objectValue?["items"]?.arrayValue)
+        #expect(entries.count == 3)
+        let byID = Dictionary(uniqueKeysWithValues: entries.compactMap { value -> (String, JSONValue)? in
+            guard let id = value.objectValue?["id"]?.stringValue else { return nil }; return (id, value)
+        })
+        #expect(byID[unsent.id]?.objectValue?["authorised"] == .bool(false))
+        #expect(byID[accepted.id]?.objectValue?["state"] == .string("accepted"))
+        #expect(byID[accepted.id]?.objectValue?["cursor"] == .int(17))
+        #expect(byID[accepted.id]?.objectValue?["authorised"] == .bool(true))
+        #expect(byID[delivered.id]?.objectValue?["state"] == .string("delivered"))
+        #expect(byID[delivered.id]?.objectValue?["delivered_at"]?.stringValue != nil)
+        for mutation in [unsent, accepted, delivered] {
+            let payload = try #require(byID[mutation.id]?.objectValue?["payload"]?.stringValue)
+            #expect(try JSONDecoder.nodus.decode(Mutation.self, from: Data(payload.utf8)) == mutation)
+        }
+        let reopened = try MutationOutbox(spaceId: "space-under-test", directory: directory)
+        let unchanged = try await reopened.authoringRecoveryData(vaultId: "owning-vault")
+        #expect(unchanged == data)
+        _ = try await reopened.suspendAuthorisedForRelink()
+        let preserved = try await reopened.items()
+        #expect(preserved.count == 3)
+        #expect(preserved.first(where: { $0.id == accepted.id })?.state == .accepted)
+    }
+
     private func note(_ id: String, title: String = "Una nota") -> Mutation {
         Mutation(
             id: id,

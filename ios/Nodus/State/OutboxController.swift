@@ -35,6 +35,8 @@ final class OutboxController {
     private let clientId: String
     private let limits: MutationLimits
     private let schemaVersion: Int
+    private let pairingId: String?
+    private let vaultId: String?
 
     /// Opens the queue for a space, or answers nil when this access cannot send anything.
     ///
@@ -58,6 +60,8 @@ final class OutboxController {
 
     private init(session: SpaceSession, outbox: MutationOutbox, limits: MutationLimits) {
         self.outbox = outbox
+        pairingId = session.connection.desktopPairingId
+        vaultId = session.connection.vaultId
         self.limits = limits
         client = session.client
         spaceId = session.connection.spaceId
@@ -65,6 +69,15 @@ final class OutboxController {
         // launch would make one device look like many.
         clientId = OutboxController.installationId
         schemaVersion = session.overview?.schemaVersion ?? 0
+    }
+
+    private func beginAuthoringActivity() throws -> PrivateBridgeCache? {
+        guard let pairingId else { return nil }
+        guard let vaultId, let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == pairingId }),
+              !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+        let cache = try PrivateBridgeCache(pairingId: pairingId)
+        try cache.beginAuthoringActivity()
+        return cache
     }
 
     /// Why this change cannot be sent to this space, if it cannot.
@@ -102,6 +115,11 @@ final class OutboxController {
         folderId: String?,
         createdAt: String? = nil
     ) async {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return }
+        defer { activity?.endAuthoringActivity() }
+
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         var row: [String: JSONValue] = [
             "id": .string(id),
@@ -130,6 +148,11 @@ final class OutboxController {
     /// is a tombstone, not an erasure: the owner's desktop applies it when it next drains the
     /// ledger, and until then the note is still in the vault everybody else reads.
     func queueNoteDeletion(id: String, title: String) async {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return }
+        defer { activity?.endAuthoringActivity() }
+
         let mutation = Mutation(
             clientId: clientId,
             kind: .delete,
@@ -153,6 +176,11 @@ final class OutboxController {
         row: [String: JSONValue]? = nil,
         title: String
     ) async -> String? {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return nil }
+        defer { activity?.endAuthoringActivity() }
+
         let mutation = Mutation(
             clientId: clientId,
             kind: kind,
@@ -213,6 +241,11 @@ final class OutboxController {
         companionCreation: Bool = false,
         title: String
     ) async -> Bool {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return false }
+        defer { activity?.endAuthoringActivity() }
+
         var canonicalRow = row
         canonicalRow?["mobileSyncState"] = nil
         let mutation = Mutation(
@@ -295,6 +328,11 @@ final class OutboxController {
         language: String,
         rowId: String = UUID().uuidString
     ) async -> (outboxId: String, rowId: String)? {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return nil }
+        defer { activity?.endAuthoringActivity() }
+
         let row = ReportDraft.row(
             id: rowId,
             report: report,
@@ -355,6 +393,11 @@ final class OutboxController {
     }
 
     func flush() async {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return }
+        defer { activity?.endAuthoringActivity() }
+
         guard !isFlushing else { return }
         isFlushing = true
         lastError = nil
@@ -379,6 +422,11 @@ final class OutboxController {
     }
 
     func discard(_ id: String) async {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return }
+        defer { activity?.endAuthoringActivity() }
+
         try? await outbox.remove(id)
         await refresh()
     }

@@ -5,6 +5,42 @@ import Testing
 
 @Suite("Atomic authored generation summaries")
 struct IndexedGenerationTransactionTests {
+    @Test("authored batches survive interrupted file replacement and reject reading copies without changing work")
+    func authoredFileBatch() async throws {
+        let grant = UUID().uuidString, root = URL.temporaryDirectory.appendingPathComponent("authored-batch-" + grant)
+        let keychain = KeychainStore(service: "authored-batch-" + grant)
+        defer { try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: grant)); try? FileManager.default.removeItem(at: root) }
+        let cache = try PrivateBridgeCache(pairingId: grant, directory: root, keychain: keychain)
+        let manifest = Data("original manifest".utf8), chunk = Data("original authored chunk".utf8)
+        try await cache.storeAuthoredBatch(vaultId: "vault", records: [
+            .init(domain: .writing, recordId: "manifest", data: manifest), .init(domain: .writing, recordId: "chunk", data: chunk)])
+        let folder = root.appendingPathComponent("bridge-" + grant)
+        let encoded = try #require(keychain.value(for: KeychainStore.desktopBridgeCacheKey(pairingId: grant)))
+        let key = SymmetricKey(data: try #require(Data(base64Encoded: encoded)))
+        func filename(_ id: String) -> String { "work-" + PrivateBridgeAuthoringRecovery.hash(Data("vault\u{1f}\(DesktopBridgeDomain.writing.rawValue)\u{1f}\(id)".utf8)) + ".bridgecache" }
+        let nextManifest = Data("new exact manifest".utf8), nextChunk = Data("new exact authored chunk".utf8)
+        let staged = folder.appendingPathComponent("indexed-" + UUID().uuidString + ".transaction")
+        try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: false)
+        var hashes: [String: String] = [:]
+        for (id, bytes) in [("manifest", nextManifest), ("chunk", nextChunk)] {
+            let encrypted = try #require(try AES.GCM.seal(bytes, using: key).combined), name = filename(id)
+            try PrivateBridgeProtectedFile.write(encrypted, to: staged.appendingPathComponent(name))
+            hashes[name] = PrivateBridgeAuthoringRecovery.hash(encrypted)
+        }
+        try PrivateBridgeProtectedFile.write(JSONEncoder.nodus.encode(JSONValue.object(["files": .object(hashes.mapValues(JSONValue.string))])), to: staged.appendingPathComponent("commit.json"))
+        try PrivateBridgeProtectedFile.write(Data(contentsOf: staged.appendingPathComponent(filename("chunk"))), to: folder.appendingPathComponent(filename("chunk")))
+        let reopened = try PrivateBridgeCache(pairingId: grant, directory: root, keychain: keychain)
+        #expect(try await reopened.data(vaultId: "vault", domain: .writing, recordId: "manifest") == nextManifest)
+        #expect(try await reopened.data(vaultId: "vault", domain: .writing, recordId: "chunk") == nextChunk)
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+        await #expect(throws: DesktopBridgeError.self) {
+            try await reopened.storeAuthoredBatch(vaultId: "vault", records: [
+                .init(domain: .writing, recordId: "manifest", data: manifest), .init(domain: .corpus, recordId: "private reading", data: chunk)])
+        }
+        #expect(try await reopened.data(vaultId: "vault", domain: .writing, recordId: "manifest") == nextManifest)
+        #expect(try await reopened.data(vaultId: "vault", domain: .corpus, recordId: "private reading") == nil)
+    }
+
     @Test("A committed interrupted replacement recovers the exact checkpoint, index and summary")
     func interruptedCommit() async throws {
         let grant = UUID().uuidString, root = URL.temporaryDirectory.appendingPathComponent("indexed-summary-" + grant)

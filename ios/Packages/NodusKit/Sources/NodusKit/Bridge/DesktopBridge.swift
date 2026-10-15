@@ -518,6 +518,18 @@ public actor DesktopBridgeClient {
         return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
     }
 
+    /// User-authored files use the existing pinned grant and bounded chunk transport.
+    public func databaseFileUpload(vaultId: String, uploadId: UUID, action: String, body: JSONValue) async throws -> JSONValue {
+        try refreshPairing()
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+        guard ["begin", "chunk", "status", "commit", "cancel"].contains(action),
+              try JSONEncoder.nodus.encode(body).count <= 4 * 1024 * 1024 else { throw DesktopBridgeError.malformedResponse }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/database-files/\(uploadId.uuidString.lowercased())/\(action)", method: "POST", body: body)
+        return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
+    }
+
     public func operation(vaultId: String, method: String, args: [JSONValue], timeout: TimeInterval? = nil) async throws -> JSONValue {
         try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }
@@ -1319,6 +1331,32 @@ public actor PrivateBridgeCache {
         }
     }
 
+    /// Atomically persist a small set of authored records. The existing encrypted
+    /// commit journal replays the whole set before any reader or archive observes it.
+    /// Read copies are deliberately excluded from this durable transaction lane.
+    public func storeAuthoredBatch(vaultId: String, records: [ReadPackRecord]) throws {
+        guard (2...3).contains(records.count), records.allSatisfy({ Self.isDurable($0.domain) && !$0.recordId.isEmpty }) else { throw DesktopBridgeError.malformedResponse }
+        try Self.diskLock.withLock {
+            try Self.recoverIndexedTransactions(in: folder)
+            try requireWritable(); try requireVaultScope(vaultId)
+            let values = records.map { (fileURL(vaultId: vaultId, domain: $0.domain, recordId: $0.recordId), $0.data) }
+            guard Set(values.map { $0.0.lastPathComponent }).count == values.count else { throw DesktopBridgeError.malformedResponse }
+            let directory = folder.appendingPathComponent("indexed-" + UUID().uuidString + ".transaction", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            BackupPolicy.apply(.excluded, to: directory)
+            var hashes: [String: String] = [:]
+            do {
+                for (url, bytes) in values {
+                    guard let sealed = try AES.GCM.seal(bytes, using: key).combined else { throw DesktopBridgeError.malformedResponse }
+                    try PrivateBridgeProtectedFile.write(sealed, to: directory.appendingPathComponent(url.lastPathComponent))
+                    hashes[url.lastPathComponent] = PrivateBridgeAuthoringRecovery.hash(sealed)
+                }
+                try PrivateBridgeProtectedFile.write(JSONEncoder.nodus.encode(IndexedTransaction(files: hashes)), to: directory.appendingPathComponent("commit.json"))
+            } catch { try? FileManager.default.removeItem(at: directory); throw error }
+            try Self.recoverIndexedTransactions(in: folder)
+        }
+    }
+
     public struct IndexedGenerationSummary: Sendable {
         public let recordId: String
         public let data: Data
@@ -1514,11 +1552,11 @@ public actor PrivateBridgeCache {
     public func authoringRecoverySnapshot(vaultIds: Set<String>) throws -> PrivateBridgeAuthoringRecovery.Snapshot {
         try Self.diskLock.withLock {
             try Self.recoverIndexedTransactions(in: folder)
-            let writingIds = ["companion-documents-v1", "companion-study-documents-v1", "companion-page-documents-v1", "companion-immersion-progress-v1", "companion-database-reading-v1"]
+            let writingIds = ["companion-documents-v1", "companion-study-documents-v1", "companion-page-documents-v1", "companion-immersion-progress-v1", "companion-database-reading-v1", "companion-mutation-outbox-v1"]
             let researchIds = ["job-ledger-v1", "authoring-recovery-generations-v1", "autonomous:completion-index:v1", "autonomous:academic:index:v1", "autonomous:database:index:v1", "autonomous:deepResearch:index:v1", "companion:world-map-generation-index:v1"]
             var known: [String: (vault: String, writing: Bool, ledger: Bool, recordId: String, kind: String?)] = [:]
             for vault in vaultIds {
-                for id in writingIds { known[legacyURL(vaultId: vault, domain: .writing, recordId: id).lastPathComponent] = (vault, true, false, id, nil) }
+                for id in writingIds { known[legacyURL(vaultId: vault, domain: .writing, recordId: id).lastPathComponent] = (vault, true, false, id, id == "companion-mutation-outbox-v1" ? "mutationOutbox" : nil) }
                 for id in researchIds { known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: id).lastPathComponent] = (vault, false, id == "job-ledger-v1", id, nil) }
             }
             for vault in vaultIds {
