@@ -111,8 +111,11 @@ final class DesktopWorkspaceUITests: XCTestCase {
         XCTAssertTrue(selectedMode.contains("Live"), "Disconnection must not change execution mode: " + selectedMode)
         let published = app.descendants(matching: .any)["mac-embedding-published"].firstMatch
         let noVectors = app.descendants(matching: .any)["mac-embedding-no-vectors"].firstMatch
+        // A cold Mac startup may consume the model-recovery budget. Give the
+        // separate semantic response and scrolling their own bounded wait.
+        let embeddingDeadline = Date().addingTimeInterval(60)
         var embeddingScrolls = 0
-        while Date() < deadline && !(published.exists || noVectors.exists) {
+        while Date() < embeddingDeadline && !(published.exists || noVectors.exists) {
             if embeddingScrolls % 16 < 8 { app.swipeUp() } else { app.swipeDown() }
             embeddingScrolls += 1
             _ = published.waitForExistence(timeout: 0.5)
