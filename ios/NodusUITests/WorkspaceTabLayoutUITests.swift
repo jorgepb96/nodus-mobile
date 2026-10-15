@@ -78,6 +78,11 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
         let catalogue = app.buttons["workspace-catalogue-library"]
         XCTAssertTrue(catalogue.waitForExistence(timeout: 25))
         catalogue.tap()
+        // The catalogue is lazy and sorted by updated time. Locate the fixture
+        // through the actual search instead of requiring an unrendered row to exist.
+        let search = app.textFields["nodus-search-field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap(); search.typeText("On Liberty\n")
         let row = app.buttons["workspace-open-library-demo-library-demo-w-mill-liberty"]
         XCTAssertTrue(row.waitForExistence(timeout: 20), app.debugDescription)
 
