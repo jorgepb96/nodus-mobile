@@ -121,15 +121,6 @@ struct CompanionPageDocumentsTests {
         let probe=PageProbe(document:document(10,title:"Título móvil"));try await reopened.synchronize{request in try await probe.send(request,lose:false)}
         #expect(await probe.requests.first?.input.objectValue?["expectedRevision"] == .int(9))
     }
-}
-private actor PageProbe {
-    let document:JSONValue
-    var requests:[CompanionPageDocuments.Request]=[]
-    init(document:JSONValue){self.document=document}
-    func send(_ request:CompanionPageDocuments.Request,lose:Bool)throws->JSONValue {
-        requests.append(request);if lose{throw URLError(.networkConnectionLost)}
-        return .object(["id":.string(request.id),"document":document,"assets":.array([]),"dependencies":.array([])])
-    }
     @Test("Action-created pages retain structured edits offline and wait for their exact creation receipt")
     func actionPageDependency() async throws {
         let (cache,directory,keychain,id)=try setup(); defer {try? FileManager.default.removeItem(at:directory);try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId:id))}
@@ -140,12 +131,14 @@ private actor PageProbe {
         let checkpoint = try CompanionDatabaseActionCheckpoint(.object(["version":.int(1),"vaultId":.string("vault"),"id":.string(actionId),
             "request":.object(["rowId":.string("source-row"),"columnId":.string("button"),"kind":.string("button"),"revision":.string(String(repeating:"a",count:64))]),"model":.null,
             "createdAt":.string("2026-10-15T10:00:00Z"),"state":.string("failed"),
-            "source":.object(["plan":.object(["operations":.array([.object(["type":.string("create_page"),"rowId":.string(rowId),"databaseId":.string("destination"),"blocks":.array(originalBlocks)])])])]),
+            "source":.object(["plan":.object(["operations":.array([.object(["type":.string("create_page"),"rowId":.string(rowId),"databaseId":.string("destination"),"blocks":.array(originalBlocks)]),.object(["type":.string("webhook"),"url":.string("https://never-called.invalid")])])])]),
             "buttonResult":.object(["clickedAt":.string("2026-10-15T10:00:00Z"),"completedSteps":.int(1),"pendingWebhook":.int(1),"webhooks":.object([:])])]))
         let store = try await open(cache)
         #expect(try await store.prepareDatabaseActionPage(checkpoint:checkpoint,rowId:rowId) == pageId)
         let first = try #require(await store.document(pageId:pageId))
-        #expect(first.objectValue?["blocks"]?.arrayValue?.map { $0.objectValue?["content"] } == originalBlocks.map { $0.objectValue?["content"] })
+        let firstContents = first.objectValue?["blocks"]?.arrayValue?.map { $0.objectValue?["content"] }
+        let originalContents = originalBlocks.map { $0.objectValue?["content"] }
+        #expect(firstContents == originalContents)
         let native: JSONValue = .array([.object(["id":.string("table"),"type":.string("table"),"content":.object(["type":.string("tableContent"),"rows":.array([.object(["cells":.array([.array([.object(["type":.string("text"),"text":.string("Edited cell"),"styles":.object(["bold":.bool(true)])])])])])])])])])
         var editedBlocks = originalBlocks
         var table = editedBlocks[0].objectValue!, content = table["content"]!.objectValue!
@@ -172,6 +165,16 @@ private actor PageProbe {
         let final = try await open(cache)
         #expect(await final.authoredSource(pageId:pageId)?.objectValue?["document"]?.objectValue?["nativeDocument"] == native)
         #expect(await final.hasDraft(pageId:pageId) == false)
+    }
+
+}
+private actor PageProbe {
+    let document:JSONValue
+    var requests:[CompanionPageDocuments.Request]=[]
+    init(document:JSONValue){self.document=document}
+    func send(_ request:CompanionPageDocuments.Request,lose:Bool)throws->JSONValue {
+        requests.append(request);if lose{throw URLError(.networkConnectionLost)}
+        return .object(["id":.string(request.id),"document":document,"assets":.array([]),"dependencies":.array([])])
     }
 
 }
