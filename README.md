@@ -2,6 +2,12 @@
 
 iPhone and iPad companion for [Nodus](https://github.com/jorgepb96/nodus), one directory per platform.
 
+The delivered internal beta is **0.1.0 (1003)**. The current branch contains later changes
+that are still being integrated and locally verified; they are not in that TestFlight build.
+See the [delivery record](docs/mobile-0.1.0/TESTFLIGHT-2026-10-15.md) and the
+[current implementation and validation record](docs/mobile-0.1.0/IMPLEMENTATION-2026-10-15.md).
+The sections below also retain earlier implementation notes and their original pending checks.
+
 ```
 ios/          iOS and iPadOS app (SwiftUI), its Swift packages and its tools
 ```
