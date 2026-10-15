@@ -458,7 +458,7 @@ public actor CompanionDocumentOutbox {
     }
     private func createStudyDocumentInActivity(input: JSONValue) async throws -> JSONValue {
         guard kind == .studyDocument, let fields = input.objectValue,
-              fields.keys.allSatisfy({ ["title", "kind", "placement", "description", "color", "icon", "emoji", "imageData", "year"].contains($0) }),
+              fields.keys.allSatisfy({ ["title", "kind", "placement", "description", "color", "icon", "emoji", "imageData", "year", "contentMarkdown", "nativeDocument"].contains($0) }),
               let title = fields["title"]?.stringValue, title.utf16.count <= 4096,
               let documentKind = fields["kind"]?.stringValue,
               ["apunte", "manual", "libro", "articulo", "presentacion", "grabacion", "transcripcion", "banco", "test", "examen"].contains(documentKind)
@@ -477,11 +477,17 @@ public actor CompanionDocumentOutbox {
             }
         }
         guard fields["year"] == nil || fields["year"] == .null || Self.isSafeInteger(fields["year"]) else { throw DesktopBridgeError.malformedResponse }
+        let markdown = fields["contentMarkdown"]?.stringValue ?? ""
+        guard fields["contentMarkdown"] == nil || fields["contentMarkdown"]?.stringValue != nil,
+              fields["nativeDocument"] == nil || fields["nativeDocument"]?.arrayValue != nil,
+              markdown.isEmpty || fields["nativeDocument"]?.arrayValue?.isEmpty == false else { throw DesktopBridgeError.malformedResponse }
+        let native = fields["nativeDocument"] ?? .array([])
+        guard try JSONEncoder.nodus.encode(native).count <= 4_000_000 else { throw DesktopBridgeError.malformedResponse }
         let id = UUID().uuidString, titleValue = JSONValue.string(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Documento sin título" : title)
         let timestamp = JSONValue.string(ISO8601DateFormatter().string(from: Date()))
-        var creation = fields; creation["title"] = nil
+        var creation = fields; creation["title"] = nil; creation["contentMarkdown"] = nil; creation["nativeDocument"] = nil
         var note = fields
-        note.merge(["id": .string(id), "title": titleValue, "contentMarkdown": .string(""), "createdAt": timestamp, "updatedAt": timestamp,
+        note.merge(["id": .string(id), "title": titleValue, "contentMarkdown": .string(markdown), "createdAt": timestamp, "updatedAt": timestamp,
                     "deletedAt": .null, "archivedAt": .null, "position": .int(0)], uniquingKeysWith: { _, new in new })
         note["mobileStudyPlacement"] = fields["placement"] ?? .null
         let baseline: JSONValue = .object(["revision": .int(0), "documentTitle": titleValue, "contentMarkdown": .string(""),
@@ -490,7 +496,7 @@ public actor CompanionDocumentOutbox {
             "style": .object(["fontFamily": .string("serif"), "fontSize": .int(18), "lineHeight": .double(1.75), "pageWidth": .int(820), "marginX": .int(56),
                               "paragraphSpacing": .double(0.8), "firstLineIndent": .int(0), "alignment": .string("justify"), "theme": .string("paper")]),
             "spellcheckLanguage": .string("es-ES"), "customDictionary": .array([])])
-        let draft: JSONValue = .object(["expectedRevision": .int(0), "title": titleValue, "contentMarkdown": .string(""), "nativeDocument": .array([]), "schemaVersion": .int(2)])
+        let draft: JSONValue = .object(["expectedRevision": .int(0), "title": titleValue, "contentMarkdown": .string(markdown), "nativeDocument": native, "schemaVersion": .int(2)])
         guard try JSONEncoder.nodus.encode(input).count <= Self.maximumRequestBytes - 65_536 else { throw DesktopBridgeError.malformedResponse }
         records[id] = Record(baseline: baseline, draft: draft, generation: 1, sending: nil, state: .pending, creation: .object(creation), createdNote: .object(note))
         do { try await persist() } catch { records[id] = nil; throw error }

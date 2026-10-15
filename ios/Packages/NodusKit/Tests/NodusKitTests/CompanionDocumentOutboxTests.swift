@@ -863,6 +863,42 @@ struct CompanionDocumentOutboxTests {
 
     private static let creationInput: JSONValue = .object(["title": .string("New offline document"), "content": .string(""),
         "kind": .string("markdown"), "folderId": .string("folder-a"), "tags": .array([.string("offline")])])
+    @Test("seeded study notes retain original Markdown and native links through lost ACK, reopen and deliberate copies")
+    func seededStudyKnowledgeCreation() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(kind: .studyDocument)
+        let markdown = "# Idea\n\nA statement\n\n> Exact quoted source — p. 7\n\n[Source](nodus://study/doc/source-1)"
+        let native: JSONValue = .array([.object(["id":.string("quote-block"),"type":.string("quote"),"props":.object([:]),"content":.array([.object(["type":.string("text"),"text":.string("Exact quoted source — p. 7"),"styles":.object([:])])])]),.object(["id":.string("link-block"),"type":.string("paragraph"),"props":.object([:]),"content":.array([.object(["type":.string("link"),"href":.string("nodus://study/doc/source-1"),"content":.array([.object(["type":.string("text"),"text":.string("Source"),"styles":.object([:])])])])])])])
+        let input: JSONValue = .object(["title":.string("Idea"),"kind":.string("apunte"),"contentMarkdown":.string(markdown),"nativeDocument":native,"placement":.object(["courseId":.string("course-a"),"subjectId":.string("subject-a")])])
+        let note = try await queue.createStudyDocument(input: input)
+        let id = try #require(note.objectValue?["id"]?.stringValue)
+        #expect(note.objectValue?["contentMarkdown"] == .string(markdown))
+        #expect(await queue.editorData(noteId:id)?.objectValue?["nativeDocument"] == native)
+        let calls = Requests()
+        do { try await queue.synchronize { request in await calls.append(request); throw URLError(.networkConnectionLost) }; Issue.record("Expected unknown acknowledgement") } catch is URLError {}
+        let reopened = try await fixture.open(kind:.studyDocument)
+        #expect(await reopened.overlayStudyTables([:])["study_docs"]?.count == 1)
+        try await reopened.synchronize { request in
+            await calls.append(request)
+            var editor = Self.editor(1,text:markdown).objectValue!; editor["nativeDocument"] = native
+            return .object(["id":.string(request.id),"editorData":.object(editor),"note":.object(["id":.string(id),"title":.string("Idea"),"kind":.string("apunte")])])
+        }
+        let sent = await calls.all()
+        #expect(sent.count == 2 && sent[0] == sent[1])
+        #expect(sent[0].input.objectValue?["contentMarkdown"] == .string(markdown))
+        #expect(sent[0].input.objectValue?["nativeDocument"] == native)
+        #expect(sent[0].creation?.objectValue?["contentMarkdown"] == nil)
+        #expect(sent[0].creation?.objectValue?["nativeDocument"] == nil)
+        #expect(sent[0].creation?.objectValue?["placement"] == input.objectValue?["placement"])
+        #expect(await reopened.pendingCount() == 0)
+        let confirmed = try await fixture.open(kind:.studyDocument)
+        #expect(await confirmed.confirmedEditorData(noteId:id)?.objectValue?["nativeDocument"] == native)
+        let deliberateSecondCopy = try await confirmed.createStudyDocument(input:input)
+        #expect(deliberateSecondCopy.objectValue?["id"] != .string(id))
+        #expect(await confirmed.overlayStudyTables([:])["study_docs"]?.count == 2)
+        await #expect(throws:DesktopBridgeError.self) { try await confirmed.createStudyDocument(input:.object(["title":.string("No empty copy"),"kind":.string("apunte"),"contentMarkdown":.string("Must remain visible")])) }
+    }
+
     @Test("new study documents retain identity, placement and edits across restart, retry and acknowledgement")
     func studyCreationReplay() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
