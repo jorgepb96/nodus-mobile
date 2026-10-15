@@ -27,6 +27,13 @@ final class AISettings {
         var argumentMap: ModelRef?
     }
 
+    private(set) var webSearchEndpoint: String?
+    private let webSearchEndpointKey = "nodus.ai.web-search-endpoint.v1"
+    func setWebSearchEndpoint(_ raw: String) throws {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.isEmpty || (value.utf8.count <= 2048 && URL(string: value).map(CompanionPublicWebFetch.allowed) == true) else { throw DesktopBridgeError.malformedResponse }
+        store.set(value, forKey: webSearchEndpointKey); webSearchEndpoint = value.isEmpty ? nil : value
+    }
     private(set) var embeddingConfiguration: EmbeddingIdentity?
     private let embeddingConfigurationKey = "nodus.ai.embedding-configuration.v1"
     func setEmbeddingConfiguration(_ value: EmbeddingIdentity?) throws {
@@ -68,6 +75,7 @@ final class AISettings {
            let decoded = try? JSONDecoder().decode([ModelRef].self, from: data) {
             pinnedModels = decoded
         }
+        webSearchEndpoint = store.string(forKey: webSearchEndpointKey).flatMap { $0.isEmpty ? nil : $0 }
         embeddingConfiguration = store.data(forKey: embeddingConfigurationKey).flatMap { try? JSONDecoder.nodus.decode(EmbeddingIdentity.self, from: $0) }
         refreshConfigured()
 #if DEBUG && targetEnvironment(simulator)
@@ -86,7 +94,7 @@ final class AISettings {
             } catch { /* Missing configuration remains a failing acceptance condition. */ }
         }
 #endif
-        store.onExternalChange(of: [defaultsKey, pinnedKey, embeddingConfigurationKey]) { [weak self] in self?.adoptRemote() }
+        store.onExternalChange(of: [defaultsKey, pinnedKey, embeddingConfigurationKey, webSearchEndpointKey]) { [weak self] in self?.adoptRemote() }
     }
 
     /// Take what another device chose.
@@ -95,6 +103,7 @@ final class AISettings {
     /// those persist, and persisting a value that came from iCloud would stamp it as this
     /// device's own newer choice and send it straight back — see `SyncedDefaults`.
     private func adoptRemote() {
+        webSearchEndpoint = store.string(forKey: webSearchEndpointKey).flatMap { $0.isEmpty ? nil : $0 }
         embeddingConfiguration = store.data(forKey: embeddingConfigurationKey).flatMap { try? JSONDecoder.nodus.decode(EmbeddingIdentity.self, from: $0) }
         if let data = store.data(forKey: defaultsKey),
            let decoded = try? JSONDecoder().decode(Models.self, from: data) {

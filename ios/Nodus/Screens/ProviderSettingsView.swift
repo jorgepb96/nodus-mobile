@@ -12,6 +12,8 @@ struct ProviderSettingsView: View {
     @Environment(AISettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
 
+    @State private var webSearchEndpoint = ""
+    @State private var webSearchSaved = false
     @State private var embeddingProvider: AIProvider = .openai
     @State private var embeddingModel = ""
     @State private var embeddingDimensions = "1536"
@@ -81,6 +83,16 @@ struct ProviderSettingsView: View {
                     }
                 }
 
+                Section("Web search on this device") {
+                    TextField("SearXNG HTTPS search endpoint", text: $webSearchEndpoint)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    Button("Save web search endpoint") {
+                        do { try settings.setWebSearchEndpoint(webSearchEndpoint); webSearchSaved = true; error = nil }
+                        catch { self.error = error.localizedDescription }
+                    }
+                    if webSearchSaved { Text("Web search configuration saved").foregroundStyle(.secondary) }
+                    Text("Optional. Complete guides with web text use this public SearXNG endpoint directly from this device. No Mac service or provider fallback is used.").font(.caption).foregroundStyle(.secondary)
+                }
                 Section("Embeddings for local analysis") {
                     Picker("Provider", selection: $embeddingProvider) {
                         ForEach(AIProvider.embeddingCapable, id: \.self) { provider in Text(provider.label).tag(provider) }
@@ -105,6 +117,7 @@ struct ProviderSettingsView: View {
                 }
             }
         .onAppear {
+            webSearchEndpoint = settings.webSearchEndpoint ?? ""
             if let value = settings.embeddingConfiguration, let provider = AIProvider(rawValue: value.provider) {
                 embeddingProvider = provider; embeddingModel = value.model; embeddingDimensions = String(value.dim)
             }

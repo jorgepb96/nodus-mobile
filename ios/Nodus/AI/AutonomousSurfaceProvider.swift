@@ -2,6 +2,8 @@ import CryptoKit
 import Foundation
 import NodusAI
 import NodusKit
+import UIKit
+import ImageIO
 
 /// The shared renderer receives model names and results. Provider keys stay in iOS Keychain.
 @MainActor
@@ -9,6 +11,7 @@ final class AutonomousSurfaceProvider {
     private let settings: AISettings
     private let provider: ProviderClient
     private let catalogue: ModelCatalogue
+    private let images: ImageService
     private let embeddings: EmbeddingService
     private var completions: [UUID: (generation: String, task: Task<JSONValue, Error>)] = [:]
     private var cancelled: Set<String> = []
@@ -25,6 +28,7 @@ final class AutonomousSurfaceProvider {
     init(settings: AISettings) {
         self.settings = settings
         provider = ProviderClient(keyProvider: settings.keyProvider)
+        images = ImageService(keyProvider: settings.keyProvider)
         embeddings = EmbeddingService(keyProvider: settings.keyProvider)
         catalogue = ModelCatalogue(keyProvider: settings.keyProvider)
     }
@@ -107,6 +111,11 @@ final class AutonomousSurfaceProvider {
         }
         return .array(values)
     }
+    func imageConfiguration() throws -> JSONValue {
+        guard let model = settings.model(for: .image) else { return .null }
+        return try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(model))
+    }
+    func webSearchConfiguration() -> JSONValue { settings.webSearchEndpoint.map(JSONValue.string) ?? .null }
     func embeddingConfiguration() throws -> JSONValue {
         guard let configuration = settings.embeddingConfiguration else { return .null }
         return try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(configuration))
@@ -392,13 +401,18 @@ final class AutonomousSurfaceProvider {
         let allowance = request["thinkingAllowance"]?.intValue ?? 0
         guard (0...131_072).contains(allowance) else { throw DesktopBridgeError.permissionDenied }
         let format = request["format"]?.stringValue ?? "json"
-        guard ["json", "text", "embedding"].contains(format) else { throw DesktopBridgeError.malformedResponse }
+        guard ["json", "text", "embedding", "image"].contains(format) else { throw DesktopBridgeError.malformedResponse }
         try Task.checkCancellation()
         guard !cancelled.contains(generation) else { throw CancellationError() }
         if request["completionKey"]?.stringValue != nil { acceptedDeepResearchCompletions.insert(completionId) }
         defer { acceptedDeepResearchCompletions.remove(completionId) }
         let result: String
-        if format == "embedding" {
+        if format == "image" {
+            guard system.isEmpty, model.provider.supportsImageGeneration else { throw DesktopBridgeError.permissionDenied }
+            let image = try await images.generate(prompt: user, with: model, aspectRatio: "16:9")
+            guard let source = CGImageSourceCreateWithData(image.data as CFData, nil), let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1600, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary), let jpeg = UIImage(cgImage: decoded).jpegData(compressionQuality: 0.88), jpeg.count <= 5 * 1_048_576 else { throw DesktopBridgeError.malformedResponse }
+            result = String(decoding: try JSONEncoder.nodus.encode(JSONValue.object(["bytes": .string(jpeg.base64EncodedString()), "mime": .string("image/jpeg")])), as: UTF8.self)
+        } else if format == "embedding" {
             guard system.isEmpty, model.provider.supportsEmbeddings,
                   case .some(.int(let rawDimensions)) = request["embeddingDimensions"],
                   let dimensions = Int(exactly: rawDimensions), (1...65_536).contains(dimensions) else { throw DesktopBridgeError.permissionDenied }

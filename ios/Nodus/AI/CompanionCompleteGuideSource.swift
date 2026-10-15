@@ -131,3 +131,20 @@ private final class CommonsRedirectPolicy: NSObject, URLSessionTaskDelegate, @un
         return request
     }
 }
+
+extension CompanionCompleteGuideSource {
+    static func publicWebResource(session: SpaceSession, url: String, kind: String) async throws -> JSONValue {
+        _ = try privateBridgeConnection(session, domain: .corpus)
+        guard ["json", "page"].contains(kind) else { throw DesktopBridgeError.permissionDenied }
+        let response = try await CompanionPublicWebFetch.fetch(url, limit: kind == "json" ? 1_048_576 : 12 * 1_048_576)
+        guard (200...299).contains(response.status) else { throw APIError(status: response.status, message: "No se pudo consultar esta fuente web.") }
+        let mime = response.headers["content-type"]?.split(separator: ";").first?.lowercased() ?? ""
+        if kind == "json" {
+            guard mime == "application/json" else { throw DesktopBridgeError.malformedResponse }
+            return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
+        }
+        guard ["text/html", "application/xhtml+xml", "text/plain"].contains(mime), response.data.count <= 3 * 1_048_576,
+              let text = String(data: response.data, encoding: .utf8) else { throw APIError(status: 415, message: "Esta página no ofrece texto HTML o UTF-8 legible en el móvil.") }
+        return .object(["url": .string(url), "finalUrl": .string(response.url.absoluteString), "kind": .string(mime == "text/plain" ? "text" : "html"), "body": .string(text), "contentType": .string(mime)])
+    }
+}

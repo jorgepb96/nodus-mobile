@@ -1117,6 +1117,14 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try await CompanionCompleteGuideSource.catalog(session: session)
                     } else if method == "mobileGuideCommonsResource", args.count == 2, let url = args[0].stringValue, let kind = args[1].stringValue {
                         value = try await CompanionCompleteGuideSource.commonsResource(session: session, url: url, kind: kind)
+                    } else if ["getDecorativeImage", "getDecorativeImageDataUrl"].contains(method), args.count >= 2, args[0] == .string("deep_research"), let id = args[1].stringValue, id.hasPrefix("mobile-dr-") {
+                        value = try await CompanionDeepResearchResult.cover(session: session, id: id, dataURL: method == "getDecorativeImageDataUrl")
+                    } else if method == "mobileImageConfiguration", args.isEmpty {
+                        value = try autonomous.imageConfiguration()
+                    } else if method == "mobileWebSearchConfiguration", args.isEmpty {
+                        value = autonomous.webSearchConfiguration()
+                    } else if method == "mobilePublicWebResource", args.count == 2, let url = args[0].stringValue, let kind = args[1].stringValue {
+                        value = try await CompanionCompleteGuideSource.publicWebResource(session: session, url: url, kind: kind)
                     } else if method == "mobileEmbeddingConfiguration", args.isEmpty {
                         value = try autonomous.embeddingConfiguration()
                     } else if method == "mobileSavedStructuredCompletion" {

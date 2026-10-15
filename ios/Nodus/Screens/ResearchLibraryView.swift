@@ -285,7 +285,10 @@ struct ResearchLibraryView: View {
         HStack(spacing: 13) {
             // The list endpoint carries the illustration's asset ref beside each report, which
             // is the only place a client can learn its hash.
-            if let hash = row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
+            if let id = row.string("id"), id.hasPrefix("mobile-dr-"), row.embeddedJSON("image")?.objectValue?["status"] == .string("ready") {
+                CompanionReportCoverImage(session: session, id: id)
+                    .frame(width: Self.thumbnail, height: Self.thumbnail).clipShape(NodusRadius.controlShape)
+            } else if let hash = row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
                 AssetImage(session: session, hash: hash)
                     .frame(width: Self.thumbnail, height: Self.thumbnail)
                     .clipShape(NodusRadius.controlShape)
@@ -1249,6 +1252,11 @@ struct PublishedReportReader: View {
     @State private var metadataExpanded = false
     private var phoneHeader: Bool { UIDevice.current.userInterfaceIdiom == .phone }
     private var currentRow: Row { detail?.report ?? row }
+    private var localCoverID: String? {
+        guard let id = currentRow.string("id"), id.hasPrefix("mobile-dr-"),
+              (detail?.image?.text("status") ?? row.embeddedJSON("image")?.objectValue?["status"]?.stringValue) == "ready" else { return nil }
+        return id
+    }
     private var imageHash: String? {
         if let detail { return detail.image?.text("hash") }
         return row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue
@@ -1264,9 +1272,14 @@ struct PublishedReportReader: View {
                     Label("Sin conexión · informe descargado en este dispositivo", systemImage: "wifi.slash")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                if !phoneHeader, let hash = imageHash {
-                    ReportHeroLayout { AssetImage(session: session, hash: hash) }
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                if !phoneHeader {
+                    if let id = localCoverID {
+                        ReportHeroLayout { CompanionReportCoverImage(session: session, id: id) }
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    } else if let hash = imageHash {
+                        ReportHeroLayout { AssetImage(session: session, hash: hash) }
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -1274,7 +1287,10 @@ struct PublishedReportReader: View {
                         .font(.title3.weight(.semibold))
                     if phoneHeader {
                         DisclosureGroup("Detalles y opciones", isExpanded: $metadataExpanded) {
-                            if let hash = imageHash {
+                            if let id = localCoverID {
+                                ReportHeroLayout { CompanionReportCoverImage(session: session, id: id) }
+                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            } else if let hash = imageHash {
                                 ReportHeroLayout { AssetImage(session: session, hash: hash) }
                                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                             }
@@ -1520,5 +1536,29 @@ struct ReportSectionTitle: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 2)
+    }
+}
+
+/// Authored image bytes remain with their checkpoint even after consulted packs
+/// are purged. This path never substitutes a live asset or a different report.
+private struct CompanionReportCoverImage: View {
+    let session: SpaceSession
+    let id: String
+    @State private var image: UIImage?
+    @State private var failure: String?
+    var body: some View {
+        Group {
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else if let failure { ContentUnavailableView("No se ha podido cargar la portada", systemImage: "photo.badge.exclamationmark", description: Text(failure)) }
+            else { ProgressView() }
+        }
+        .task(id: id) {
+            do {
+                guard let dataURL = try await CompanionDeepResearchResult.cover(session: session, id: id, dataURL: true).stringValue,
+                      let payload = dataURL.split(separator: ",", maxSplits: 1).last, let bytes = Data(base64Encoded: String(payload)),
+                      let decoded = UIImage(data: bytes) else { throw DesktopBridgeError.malformedResponse }
+                image = decoded
+            } catch { failure = error.localizedDescription }
+        }
     }
 }
