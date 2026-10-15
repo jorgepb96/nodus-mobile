@@ -644,15 +644,15 @@ struct DatabaseDetailWorkspace: View {
             Divider()
             HStack(spacing: 0) {
                 content
-                if !compactPresentation, let selectedRow { Divider(); DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly).frame(width: 330) }
+                if !compactPresentation, let selectedRow { Divider(); DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly || usingDownloadedView).frame(width: 330) }
             }
         }
         .onAppear { if activeViewId == nil { activeViewId = views.first?.id; adHocLayout = views.first?.layout ?? "table" } }
         .onChange(of: database.id) { _, _ in activeViewId = views.first?.id; selectedRowId = nil }
         .onChange(of: tables) { _, _ in presentationRevision += 1 }
         .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(presentationRevision)|\(viewAttempt)") {await loadSavedView()}
-        .nodusSheet(item:$foreignRow){target in NavigationStack{DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:downloadedOnly).nodusModalClose(accent:session.accent)}}
-        .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
+        .nodusSheet(item:$foreignRow){target in NavigationStack{DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:downloadedOnly || usingDownloadedView).nodusModalClose(accent:session.accent)}}
+        .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly || usingDownloadedView).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
         .nodusSheet(isPresented: $creatingColumn) { NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox) }
         .nodusSheet(item: $editingColumn) { column in NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox, existingColumn: column) }
         .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
