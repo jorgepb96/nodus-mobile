@@ -165,17 +165,13 @@ enum ReportDocument {
         // WebKit reports the page as laid out only after a turn of the run loop past
         // `didFinish`; printing immediately gives a blank first page.
         try await Task.sleep(for: .milliseconds(200))
-        _ = try await webView.callAsyncJavaScript("""
-        return await Promise.race([
-          Promise.all(Array.from(document.images, image => image.complete
-            ? (image.naturalWidth > 0 ? Promise.resolve() : Promise.reject(new Error('A report image is unavailable.')))
-            : new Promise((resolve, reject) => { image.addEventListener('load', resolve, {once:true}); image.addEventListener('error', () => reject(new Error('A report image is unavailable.')), {once:true}); }))).then(() => document.fonts.ready).then(() => true),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Report images did not finish loading.')), 30000))
-        ])
-        """, arguments: [:], in: nil, contentWorld: .page)
+        try await waitForPrintResources(in: webView)
         if let failure = figureScheme?.failure { throw failure }
         try Task.checkCancellation()
-        try await paginateLongTables(in: webView, paper: paper)
+        try await paginateLongTables(in: webView, paper: paper, figureScheme: figureScheme)
+        // Pagination replaces table nodes. Their images must finish loading too.
+        try await waitForPrintResources(in: webView)
+        if let failure = figureScheme?.failure { throw failure }
         _ = try await webView.evaluateJavaScript("""
         (() => {
           for (const heading of document.querySelectorAll('.prose h1,.prose h2,.prose h3,.prose h4,.section-body > h3')) {
@@ -225,11 +221,24 @@ enum ReportDocument {
         return data as Data
     }
 
+    private static func waitForPrintResources(in webView: WKWebView) async throws {
+        try Task.checkCancellation()
+        _ = try await webView.callAsyncJavaScript("""
+        return await Promise.race([
+          Promise.all(Array.from(document.images, image => image.complete
+            ? (image.naturalWidth > 0 ? Promise.resolve() : Promise.reject(new Error('A report image is unavailable.')))
+            : new Promise((resolve, reject) => { image.addEventListener('load', resolve, {once:true}); image.addEventListener('error', () => reject(new Error('A report image is unavailable.')), {once:true}); }))).then(() => document.fonts.ready).then(() => true),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Report images did not finish loading.')), 30000))
+        ])
+        """, arguments: [:], in: nil, contentWorld: .page)
+        try Task.checkCancellation()
+    }
+
     /// WebKit's UIKit formatter does not reliably repeat `thead` or keep `tr`
     /// together. Measure each continuation with that same formatter, then give
     /// it an explicit page break and its own copy of the column headings. No
     /// font estimates, row-count limits or content truncation determine a page.
-    private static func paginateLongTables(in webView: WKWebView, paper: CGRect) async throws {
+    private static func paginateLongTables(in webView: WKWebView, paper: CGRect, figureScheme: CompanionResearchFigureScheme?) async throws {
         let counts = try await webView.evaluateJavaScript("""
         (() => {
           window.nodusPrintTables = Array.from(document.querySelectorAll('table')).filter(table => table.tBodies.length && table.tHead);
@@ -267,6 +276,7 @@ enum ReportDocument {
         guard counts.contains(where: { $0 > 1 }) else { return }
         let head = try await webView.evaluateJavaScript("document.head.innerHTML") as? String ?? ""
         let configuration = WKWebViewConfiguration();configuration.websiteDataStore = .nonPersistent()
+        if let figureScheme { configuration.setURLSchemeHandler(figureScheme, forURLScheme: "nodus-image") }
         let probe = WKWebView(frame: paper,configuration:configuration)
         attach(probe)
         defer { probe.stopLoading();probe.navigationDelegate = nil;probe.removeFromSuperview() }
@@ -278,6 +288,8 @@ enum ReportDocument {
             probe.loadHTMLString("<!doctype html><html><head>" + head + probeRules + "</head><body>" + body + "</body></html>", baseURL: nil)
             try await loader.finished()
             try await Task.sleep(for: .milliseconds(100))
+            try await waitForPrintResources(in: probe)
+            if let failure = figureScheme?.failure { throw failure }
             let renderer = FixedPageRenderer(paper: paper, printable: paper.insetBy(dx: marginPoints / layoutScale, dy: marginPoints / layoutScale))
             let formatter = probe.viewPrintFormatter(); formatter.perPageContentInsets = .zero
             renderer.addPrintFormatter(formatter, startingAtPageAt: 0)

@@ -190,6 +190,38 @@ struct ReportDocumentTests {
         let pdf = try #require(PDFDocument(data: bytes)), page = try #require(pdf.page(at: 0))
         #expect(pdf.pageCount == 1)
         #expect(page.string?.contains("Verified offline figure") == true)
+        #expect(try greenPixels(on: page) > 10_000, "A valid PDF envelope must contain the actual saved image, not a blank image box.")
+        Attachment.record([UInt8](bytes), named: "actual-encrypted-figure-print.pdf")
+    }
+
+    @Test("table pagination measures encrypted images and reloads their actual pixels on every continuation")
+    func printsEncryptedFiguresInContinuedTables() async throws {
+        let fixture = try await figureFixture()
+        defer { fixture.clean() }
+        let uri = "nodus-image://chat/\(fixture.receipt.owner)/\(fixture.receipt.id.uuidString.lowercased())"
+        let rows = (1...5).map { index in
+            "<tr><td>BEGINFIGURE\(index)<img width='360' height='240' src='\(uri)'>ENDFIGURE\(index)</td></tr>"
+        }.joined()
+        let html = "<!doctype html><html><head><title>Figure table</title><style>body{margin:0}img{display:block}td{padding:8px}</style></head><body><table><thead><tr><th>Encrypted figures</th></tr></thead><tbody>" + rows + "</tbody></table></body></html>"
+        let bytes = try await ReportDocument.pdf(from: html, session: fixture.session, figureContext: fixture.context)
+        let pdf = try #require(PDFDocument(data: bytes))
+        #expect(pdf.pageCount > 1, "The fixture must exercise table continuation.")
+        var pagesWithFigures = Set<Int>()
+        for index in 1...5 {
+            let first = try #require(pdf.findString("BEGINFIGURE\(index)", withOptions: []).first?.pages.first)
+            let last = try #require(pdf.findString("ENDFIGURE\(index)", withOptions: []).first?.pages.first)
+            #expect(pdf.index(for: first) == pdf.index(for: last), "Measuring a row must include its loaded image height.")
+            pagesWithFigures.insert(pdf.index(for: first))
+        }
+        for index in pagesWithFigures {
+            let page = try #require(pdf.page(at: index))
+            #expect(page.string?.contains("Encrypted figures") == true)
+            #expect(try greenPixels(on: page) > 10_000, "The replacement table must print its image pixels on every page.")
+        }
+        Attachment.record([UInt8](bytes), named: "actual-encrypted-figure-table-print.pdf")
+    }
+
+    private func greenPixels(on page: PDFPage) throws -> Int {
         let image = page.thumbnail(of: CGSize(width: 595, height: 842), for: .mediaBox)
         let raster = try #require(image.cgImage)
         var pixels = [UInt8](repeating: 0, count: raster.width * raster.height * 4)
@@ -203,8 +235,7 @@ struct ReportDocumentTests {
         for index in stride(from: 0, to: pixels.count, by: 4) {
             if pixels[index] < 40, pixels[index + 1] > 210, pixels[index + 2] < 50 { green += 1 }
         }
-        #expect(green > 10_000, "A valid PDF envelope must contain the actual saved image, not a blank image box.")
-        Attachment.record([UInt8](bytes), named: "actual-encrypted-figure-print.pdf")
+        return green
     }
 
     @Test("a missing encrypted image chunk rejects PDF export instead of returning a partial document")
