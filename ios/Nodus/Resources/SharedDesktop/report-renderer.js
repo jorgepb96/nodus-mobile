@@ -405,7 +405,7 @@ When the learner demonstrates understanding, summarize the key idea in a few sen
   }
 
   // shared/documentFigureExport.ts
-  var readyDocumentFigures = (manifest) => manifest?.figures.filter((figure) => figure.state === "ready" && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(figure.poster ?? "")).sort((a, b) => manifest.blocks.findIndex((block) => block.id === a.blockId) - manifest.blocks.findIndex((block) => block.id === b.blockId)) ?? [];
+  var readyDocumentFigures = (manifest) => manifest?.figures.filter((figure) => figure.state === "ready" && (/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(figure.poster ?? "") || typeof figure.owner === "string" && /^[a-f0-9]{64}$/.test(figure.owner) && new RegExp(`^nodus-image://chat/${figure.owner}/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$`).test(figure.poster ?? ""))).sort((a, b) => manifest.blocks.findIndex((block) => block.id === a.blockId) - manifest.blocks.findIndex((block) => block.id === b.blockId)) ?? [];
   function figureHtml(figure, number) {
     return `<figure class="report-figure"><img src="${figure.poster}" alt="${escapeHtml(figure.caption)}"/><figcaption><b>${number}.</b> ${escapeHtml(figure.caption)}${figure.sources.map((source, index) => /^nodus:\/\/[a-z-]+\//.test(source) ? ` <a href="${escapeHtml(source)}">[${index + 1}]</a>` : "").join("")}</figcaption></figure>`;
   }

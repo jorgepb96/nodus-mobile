@@ -821,24 +821,24 @@ var NodusCompanionChat = (() => {
       if (!snapshot || !snapshot.databaseId || seen.has(snapshot.databaseId) || !Array.isArray(source.columns) || !Array.isArray(source.views) || source.viewId !== null || source.viewRevision !== null || snapshot.truncated || snapshot.rowCount !== snapshot.totalRowCount || snapshot.rowCount !== snapshot.rows?.length || snapshot.rowCount > 5e5 || snapshot.hash !== rehashDatabaseResearchSnapshot(snapshot)) throw new Error("incomplete_database_source_pack");
       if (source.database?.id !== snapshot.databaseId || source.database.rowCount !== snapshot.rowCount) throw new Error("invalid_database_source_metadata");
       seen.add(snapshot.databaseId);
-      const rows2 = /* @__PURE__ */ new Set(), columns = /* @__PURE__ */ new Set();
+      const rows3 = /* @__PURE__ */ new Set(), columns = /* @__PURE__ */ new Set();
       for (const column of source.columns) {
         if (!column.id || column.databaseId !== snapshot.databaseId || columns.has(column.id)) throw new Error("invalid_database_source_columns");
         columns.add(column.id);
       }
       for (const row of snapshot.rows) {
-        if (!row.id || row.databaseId !== snapshot.databaseId || rows2.has(row.id) || !row.cells || Object.keys(row.cells).some((id) => !columns.has(id))) throw new Error("invalid_database_source_rows");
-        rows2.add(row.id);
+        if (!row.id || row.databaseId !== snapshot.databaseId || rows3.has(row.id) || !row.cells || Object.keys(row.cells).some((id) => !columns.has(id))) throw new Error("invalid_database_source_rows");
+        rows3.add(row.id);
       }
-      if (source.chat && (source.chat.databaseId !== snapshot.databaseId || source.chat.name !== source.database.name || source.chat.profile?.rowCount !== snapshot.rowCount || !Array.isArray(source.chat.sample) || source.chat.sample.length !== Math.min(10, snapshot.rowCount) || source.chat.sample.some((row) => !rows2.has(row.id)))) throw new Error("invalid_database_chat_source");
+      if (source.chat && (source.chat.databaseId !== snapshot.databaseId || source.chat.name !== source.database.name || source.chat.profile?.rowCount !== snapshot.rowCount || !Array.isArray(source.chat.sample) || source.chat.sample.length !== Math.min(10, snapshot.rowCount) || source.chat.sample.some((row) => !rows3.has(row.id)))) throw new Error("invalid_database_chat_source");
       const views = /* @__PURE__ */ new Set();
       for (const view of source.views) {
         const selected = source.viewRows?.[view.id];
-        if (view.databaseId !== snapshot.databaseId || views.has(view.id) || !Array.isArray(selected) || new Set(selected).size !== selected.length || selected.some((id) => !rows2.has(id))) throw new Error("invalid_database_source_view");
+        if (view.databaseId !== snapshot.databaseId || views.has(view.id) || !Array.isArray(selected) || new Set(selected).size !== selected.length || selected.some((id) => !rows3.has(id))) throw new Error("invalid_database_source_view");
         views.add(view.id);
       }
       if (!source.viewRows || Object.keys(source.viewRows).some((id) => !views.has(id))) throw new Error("invalid_database_source_view");
-      for (const edge of snapshot.relationEdges) if (!rows2.has(edge.source) || !columns.has(edge.columnId) || typeof edge.targetExists !== "boolean") throw new Error("invalid_database_source_relation");
+      for (const edge of snapshot.relationEdges) if (!rows3.has(edge.source) || !columns.has(edge.columnId) || typeof edge.targetExists !== "boolean") throw new Error("invalid_database_source_relation");
     }
     if (new TextEncoder().encode(JSON.stringify(pack2)).length > 16e6) throw new Error("database_source_pack_too_large");
   }
@@ -1101,7 +1101,7 @@ ${question}`);
   var SAMPLE_COLS = 8;
   var SAMPLE_VALUE_CHARS = 120;
   var clip = (v) => v.length > SAMPLE_VALUE_CHARS ? `${v.slice(0, SAMPLE_VALUE_CHARS).trimEnd()}\u2026` : v;
-  function sampleText(columns, rows2, language = "es") {
+  function sampleText(columns, rows3, language = "es") {
     const booleanCopy = {
       es: ["s\xED", "no"],
       en: ["yes", "no"],
@@ -1121,7 +1121,7 @@ ${question}`);
     };
     const [yes, no] = booleanCopy[language] ?? booleanCopy.es;
     const cols = columns.filter((c) => c.type !== "ai").slice(0, SAMPLE_COLS);
-    return rows2.slice(0, SAMPLE_ROWS).map((row, i) => {
+    return rows3.slice(0, SAMPLE_ROWS).map((row, i) => {
       const parts = cols.map((col) => {
         const raw = row.cells[col.id] ?? null;
         let v = "";
@@ -2277,6 +2277,734 @@ ${conversation}`;
     };
   }
 
+  // shared/companionErrors.ts
+  var COMPANION_RUNTIME_ERRORS = {
+    "La copia no corresponde a esta vista.": {
+      "en": "The copy does not match this view.",
+      "fr": "La copie ne correspond pas \xE0 cette vue.",
+      "de": "Die Kopie geh\xF6rt nicht zu dieser Ansicht.",
+      "pt": "A c\xF3pia n\xE3o corresponde a esta vista.",
+      "pt-BR": "A c\xF3pia n\xE3o corresponde a esta visualiza\xE7\xE3o.",
+      "it": "La copia non corrisponde a questa vista.",
+      "tr": "Kopya bu g\xF6r\xFCn\xFCme ait de\u011Fil.",
+      "zh-CN": "\u6B64\u526F\u672C\u4E0E\u5F53\u524D\u89C6\u56FE\u4E0D\u5BF9\u5E94\u3002",
+      "zh-TW": "\u6B64\u526F\u672C\u8207\u76EE\u524D\u7684\u6AA2\u8996\u4E0D\u5C0D\u61C9\u3002",
+      "ja": "\u3053\u306E\u30B3\u30D4\u30FC\u306F\u73FE\u5728\u306E\u30D3\u30E5\u30FC\u3068\u4E00\u81F4\u3057\u307E\u305B\u3093\u3002",
+      "ko": "\uC774 \uC0AC\uBCF8\uC740 \uD604\uC7AC \uBCF4\uAE30\uC640 \uC77C\uCE58\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "Esta vista no tiene una fuente primaria.": {
+      "en": "This view has no primary source.",
+      "fr": "Cette vue n\u2019a pas de source principale.",
+      "de": "Diese Ansicht hat keine prim\xE4re Quelle.",
+      "pt": "Esta vista n\xE3o tem uma fonte prim\xE1ria.",
+      "pt-BR": "Esta visualiza\xE7\xE3o n\xE3o tem uma fonte prim\xE1ria.",
+      "it": "Questa vista non ha una fonte primaria.",
+      "tr": "Bu g\xF6r\xFCn\xFCm\xFCn birincil kayna\u011F\u0131 yok.",
+      "zh-CN": "\u6B64\u89C6\u56FE\u6CA1\u6709\u539F\u59CB\u8D44\u6599\u3002",
+      "zh-TW": "\u6B64\u6AA2\u8996\u6C92\u6709\u539F\u59CB\u8CC7\u6599\u3002",
+      "ja": "\u3053\u306E\u30D3\u30E5\u30FC\u306B\u306F\u4E00\u6B21\u8CC7\u6599\u304C\u3042\u308A\u307E\u305B\u3093\u3002",
+      "ko": "\uC774 \uBCF4\uAE30\uC5D0\uB294 1\uCC28 \uC790\uB8CC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."
+    },
+    "La fuente no pertenece a esta vista.": {
+      "en": "The source does not belong to this view.",
+      "fr": "La source n\u2019appartient pas \xE0 cette vue.",
+      "de": "Die Quelle geh\xF6rt nicht zu dieser Ansicht.",
+      "pt": "A fonte n\xE3o pertence a esta vista.",
+      "pt-BR": "A fonte n\xE3o pertence a esta visualiza\xE7\xE3o.",
+      "it": "La fonte non appartiene a questa vista.",
+      "tr": "Kaynak bu g\xF6r\xFCn\xFCme ait de\u011Fil.",
+      "zh-CN": "\u6B64\u8D44\u6599\u4E0D\u5C5E\u4E8E\u5F53\u524D\u89C6\u56FE\u3002",
+      "zh-TW": "\u6B64\u8CC7\u6599\u4E0D\u5C6C\u65BC\u76EE\u524D\u7684\u6AA2\u8996\u3002",
+      "ja": "\u3053\u306E\u8CC7\u6599\u306F\u73FE\u5728\u306E\u30D3\u30E5\u30FC\u306B\u5C5E\u3057\u3066\u3044\u307E\u305B\u3093\u3002",
+      "ko": "\uC774 \uC790\uB8CC\uB294 \uD604\uC7AC \uBCF4\uAE30\uC5D0 \uC18D\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "El filtro no corresponde a esta propiedad.": {
+      "en": "The filter does not match this property.",
+      "fr": "Le filtre ne correspond pas \xE0 cette propri\xE9t\xE9.",
+      "de": "Der Filter geh\xF6rt nicht zu dieser Eigenschaft.",
+      "pt": "O filtro n\xE3o corresponde a esta propriedade.",
+      "pt-BR": "O filtro n\xE3o corresponde a esta propriedade.",
+      "it": "Il filtro non corrisponde a questa propriet\xE0.",
+      "tr": "Filtre bu \xF6zellik i\xE7in ge\xE7erli de\u011Fil.",
+      "zh-CN": "\u6B64\u7B5B\u9009\u6761\u4EF6\u4E0D\u9002\u7528\u4E8E\u8BE5\u5C5E\u6027\u3002",
+      "zh-TW": "\u6B64\u7BE9\u9078\u689D\u4EF6\u4E0D\u9069\u7528\u65BC\u8A72\u5C6C\u6027\u3002",
+      "ja": "\u3053\u306E\u30D5\u30A3\u30EB\u30BF\u30FC\u306F\u5BFE\u8C61\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u306B\u9069\u7528\u3067\u304D\u307E\u305B\u3093\u3002",
+      "ko": "\uC774 \uD544\uD130\uB294 \uD574\uB2F9 \uC18D\uC131\uC5D0 \uC801\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."
+    },
+    "La vista guardada ya no existe.": {
+      "en": "The saved view no longer exists.",
+      "fr": "La vue enregistr\xE9e n\u2019existe plus.",
+      "de": "Die gespeicherte Ansicht existiert nicht mehr.",
+      "pt": "A vista guardada j\xE1 n\xE3o existe.",
+      "pt-BR": "A visualiza\xE7\xE3o salva n\xE3o existe mais.",
+      "it": "La vista salvata non esiste pi\xF9.",
+      "tr": "Kaydedilen g\xF6r\xFCn\xFCm art\u0131k mevcut de\u011Fil.",
+      "zh-CN": "\u4FDD\u5B58\u7684\u89C6\u56FE\u5DF2\u4E0D\u5B58\u5728\u3002",
+      "zh-TW": "\u5132\u5B58\u7684\u6AA2\u8996\u5DF2\u4E0D\u5B58\u5728\u3002",
+      "ja": "\u4FDD\u5B58\u3057\u305F\u30D3\u30E5\u30FC\u306F\u5B58\u5728\u3057\u306A\u304F\u306A\u308A\u307E\u3057\u305F\u3002",
+      "ko": "\uC800\uC7A5\uB41C \uBCF4\uAE30\uAC00 \uB354 \uC774\uC0C1 \uC874\uC7AC\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "La consulta descargada ha cambiado.": {
+      "en": "The downloaded query has changed.",
+      "fr": "La requ\xEAte t\xE9l\xE9charg\xE9e a chang\xE9.",
+      "de": "Die heruntergeladene Abfrage hat sich ge\xE4ndert.",
+      "pt": "A consulta descarregada foi alterada.",
+      "pt-BR": "A consulta baixada foi alterada.",
+      "it": "La query scaricata \xE8 cambiata.",
+      "tr": "\u0130ndirilen sorgu de\u011Fi\u015Fti.",
+      "zh-CN": "\u4E0B\u8F7D\u7684\u67E5\u8BE2\u5DF2\u66F4\u6539\u3002",
+      "zh-TW": "\u4E0B\u8F09\u7684\u67E5\u8A62\u5DF2\u8B8A\u66F4\u3002",
+      "ja": "\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u305F\u30AF\u30A8\u30EA\u304C\u5909\u66F4\u3055\u308C\u307E\u3057\u305F\u3002",
+      "ko": "\uB2E4\uC6B4\uB85C\uB4DC\uD55C \uCFFC\uB9AC\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4."
+    },
+    "La copia no pertenece a esta base de datos.": {
+      "en": "The copy does not belong to this database.",
+      "fr": "La copie n\u2019appartient pas \xE0 cette base de donn\xE9es.",
+      "de": "Die Kopie geh\xF6rt nicht zu dieser Datenbank.",
+      "pt": "A c\xF3pia n\xE3o pertence a esta base de dados.",
+      "pt-BR": "A c\xF3pia n\xE3o pertence a este banco de dados.",
+      "it": "La copia non appartiene a questo database.",
+      "tr": "Kopya bu veritaban\u0131na ait de\u011Fil.",
+      "zh-CN": "\u6B64\u526F\u672C\u4E0D\u5C5E\u4E8E\u8BE5\u6570\u636E\u5E93\u3002",
+      "zh-TW": "\u6B64\u526F\u672C\u4E0D\u5C6C\u65BC\u8A72\u8CC7\u6599\u5EAB\u3002",
+      "ja": "\u3053\u306E\u30B3\u30D4\u30FC\u306F\u5BFE\u8C61\u306E\u30C7\u30FC\u30BF\u30D9\u30FC\u30B9\u306B\u5C5E\u3057\u3066\u3044\u307E\u305B\u3093\u3002",
+      "ko": "\uC774 \uC0AC\uBCF8\uC740 \uD574\uB2F9 \uB370\uC774\uD130\uBCA0\uC774\uC2A4\uC5D0 \uC18D\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "Consulta de base de datos no disponible.": {
+      "en": "Database query unavailable.",
+      "fr": "Requ\xEAte de base de donn\xE9es indisponible.",
+      "de": "Datenbankabfrage nicht verf\xFCgbar.",
+      "pt": "Consulta da base de dados indispon\xEDvel.",
+      "pt-BR": "Consulta do banco de dados indispon\xEDvel.",
+      "it": "Query del database non disponibile.",
+      "tr": "Veritaban\u0131 sorgusu kullan\u0131lam\u0131yor.",
+      "zh-CN": "\u6570\u636E\u5E93\u67E5\u8BE2\u4E0D\u53EF\u7528\u3002",
+      "zh-TW": "\u8CC7\u6599\u5EAB\u67E5\u8A62\u7121\u6CD5\u4F7F\u7528\u3002",
+      "ja": "\u30C7\u30FC\u30BF\u30D9\u30FC\u30B9\u306E\u30AF\u30A8\u30EA\u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002",
+      "ko": "\uB370\uC774\uD130\uBCA0\uC774\uC2A4 \uCFFC\uB9AC\uB97C \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."
+    },
+    "El contexto de estudio supera 16 MB. Elige fuentes concretas para llevar.": {
+      "en": "The study context exceeds 16 MB. Choose specific sources to take with you.",
+      "fr": "Le contexte d\u2019\xE9tude d\xE9passe 16 MB. Choisissez des sources pr\xE9cises \xE0 emporter.",
+      "de": "Der Studienkontext \xFCberschreitet 16 MB. W\xE4hlen Sie gezielt Quellen zum Mitnehmen aus.",
+      "pt": "O contexto de estudo excede 16 MB. Escolha fontes espec\xEDficas para levar.",
+      "pt-BR": "O contexto de estudo excede 16 MB. Escolha fontes espec\xEDficas para levar.",
+      "it": "Il contesto di studio supera 16 MB. Scegli fonti specifiche da portare con te.",
+      "tr": "\xC7al\u0131\u015Fma ba\u011Flam\u0131 16 MB s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor. Yan\u0131n\u0131za almak i\xE7in belirli kaynaklar se\xE7in.",
+      "zh-CN": "\u5B66\u4E60\u4E0A\u4E0B\u6587\u8D85\u8FC7 16 MB\u3002\u8BF7\u9009\u62E9\u5177\u4F53\u8D44\u6599\u968F\u8EAB\u643A\u5E26\u3002",
+      "zh-TW": "\u5B78\u7FD2\u8108\u7D61\u8D85\u904E 16 MB\u3002\u8ACB\u9078\u64C7\u7279\u5B9A\u8CC7\u6599\u96A8\u8EAB\u651C\u5E36\u3002",
+      "ja": "\u5B66\u7FD2\u7528\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8\u304C16 MB\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002\u6301\u3061\u51FA\u3059\u8CC7\u6599\u3092\u500B\u5225\u306B\u9078\u3093\u3067\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uD559\uC2B5 \uB9E5\uB77D\uC774 16 MB\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4. \uD734\uB300\uD560 \uC790\uB8CC\uB97C \uAC1C\uBCC4\uC801\uC73C\uB85C \uC120\uD0DD\uD558\uC138\uC694."
+    },
+    "Identidad de opci\xF3n no v\xE1lida.": {
+      "en": "Invalid option ID.",
+      "fr": "Identifiant d\u2019option invalide.",
+      "de": "Ung\xFCltige Options-ID.",
+      "pt": "ID de op\xE7\xE3o inv\xE1lido.",
+      "pt-BR": "ID de op\xE7\xE3o inv\xE1lido.",
+      "it": "ID dell\u2019opzione non valido.",
+      "tr": "Se\xE7enek kimli\u011Fi ge\xE7ersiz.",
+      "zh-CN": "\u9009\u9879\u6807\u8BC6\u65E0\u6548\u3002",
+      "zh-TW": "\u9078\u9805\u8B58\u5225\u78BC\u7121\u6548\u3002",
+      "ja": "\u9078\u629E\u80A2\u306E\u8B58\u5225\u5B50\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "ko": "\uC635\uC158 \uC2DD\uBCC4\uC790\uAC00 \uC720\uD6A8\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "La opci\xF3n ya existe.": {
+      "en": "The option already exists.",
+      "fr": "L\u2019option existe d\xE9j\xE0.",
+      "de": "Die Option existiert bereits.",
+      "pt": "A op\xE7\xE3o j\xE1 existe.",
+      "pt-BR": "A op\xE7\xE3o j\xE1 existe.",
+      "it": "L\u2019opzione esiste gi\xE0.",
+      "tr": "Se\xE7enek zaten mevcut.",
+      "zh-CN": "\u9009\u9879\u5DF2\u5B58\u5728\u3002",
+      "zh-TW": "\u9078\u9805\u5DF2\u5B58\u5728\u3002",
+      "ja": "\u9078\u629E\u80A2\u306F\u3059\u3067\u306B\u5B58\u5728\u3057\u307E\u3059\u3002",
+      "ko": "\uC635\uC158\uC774 \uC774\uBBF8 \uC874\uC7AC\uD569\uB2C8\uB2E4."
+    },
+    "Identidad de adjunto no v\xE1lida o ya utilizada.": {
+      "en": "The attachment ID is invalid or already in use.",
+      "fr": "L\u2019identifiant de la pi\xE8ce jointe est invalide ou d\xE9j\xE0 utilis\xE9.",
+      "de": "Die Anhangs-ID ist ung\xFCltig oder wird bereits verwendet.",
+      "pt": "O ID do anexo \xE9 inv\xE1lido ou j\xE1 est\xE1 a ser utilizado.",
+      "pt-BR": "O ID do anexo \xE9 inv\xE1lido ou j\xE1 est\xE1 em uso.",
+      "it": "L\u2019ID dell\u2019allegato non \xE8 valido o \xE8 gi\xE0 utilizzato.",
+      "tr": "Ek kimli\u011Fi ge\xE7ersiz veya zaten kullan\u0131l\u0131yor.",
+      "zh-CN": "\u9644\u4EF6\u6807\u8BC6\u65E0\u6548\u6216\u5DF2\u88AB\u4F7F\u7528\u3002",
+      "zh-TW": "\u9644\u4EF6\u8B58\u5225\u78BC\u7121\u6548\u6216\u5DF2\u88AB\u4F7F\u7528\u3002",
+      "ja": "\u6DFB\u4ED8\u30D5\u30A1\u30A4\u30EB\u306E\u8B58\u5225\u5B50\u304C\u7121\u52B9\u304B\u3001\u3059\u3067\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059\u3002",
+      "ko": "\uCCA8\uBD80 \uD30C\uC77C \uC2DD\uBCC4\uC790\uAC00 \uC720\uD6A8\uD558\uC9C0 \uC54A\uAC70\uB098 \uC774\uBBF8 \uC0AC\uC6A9 \uC911\uC785\uB2C8\uB2E4."
+    },
+    "El destino ya tiene otra identidad de relaci\xF3n.": {
+      "en": "The destination already has a different relation ID.",
+      "fr": "La destination poss\xE8de d\xE9j\xE0 un autre identifiant de relation.",
+      "de": "Das Ziel hat bereits eine andere Beziehungs-ID.",
+      "pt": "O destino j\xE1 tem outro ID de rela\xE7\xE3o.",
+      "pt-BR": "O destino j\xE1 tem outro ID de rela\xE7\xE3o.",
+      "it": "La destinazione ha gi\xE0 un altro ID di relazione.",
+      "tr": "Hedefte zaten ba\u015Fka bir ili\u015Fki kimli\u011Fi var.",
+      "zh-CN": "\u76EE\u6807\u5DF2\u6709\u53E6\u4E00\u4E2A\u5173\u7CFB\u6807\u8BC6\u3002",
+      "zh-TW": "\u76EE\u6A19\u5DF2\u6709\u53E6\u4E00\u500B\u95DC\u806F\u8B58\u5225\u78BC\u3002",
+      "ja": "\u30EA\u30F3\u30AF\u5148\u306B\u306F\u3001\u3059\u3067\u306B\u5225\u306E\u30EA\u30EC\u30FC\u30B7\u30E7\u30F3\u8B58\u5225\u5B50\u304C\u3042\u308A\u307E\u3059\u3002",
+      "ko": "\uB300\uC0C1\uC5D0 \uC774\uBBF8 \uB2E4\uB978 \uAD00\uACC4 \uC2DD\uBCC4\uC790\uAC00 \uC788\uC2B5\uB2C8\uB2E4."
+    },
+    "Identidad de relaci\xF3n no v\xE1lida o ya utilizada.": {
+      "en": "The relation ID is invalid or already in use.",
+      "fr": "L\u2019identifiant de relation est invalide ou d\xE9j\xE0 utilis\xE9.",
+      "de": "Die Beziehungs-ID ist ung\xFCltig oder wird bereits verwendet.",
+      "pt": "O ID da rela\xE7\xE3o \xE9 inv\xE1lido ou j\xE1 est\xE1 a ser utilizado.",
+      "pt-BR": "O ID da rela\xE7\xE3o \xE9 inv\xE1lido ou j\xE1 est\xE1 em uso.",
+      "it": "L\u2019ID della relazione non \xE8 valido o \xE8 gi\xE0 utilizzato.",
+      "tr": "\u0130li\u015Fki kimli\u011Fi ge\xE7ersiz veya zaten kullan\u0131l\u0131yor.",
+      "zh-CN": "\u5173\u7CFB\u6807\u8BC6\u65E0\u6548\u6216\u5DF2\u88AB\u4F7F\u7528\u3002",
+      "zh-TW": "\u95DC\u806F\u8B58\u5225\u78BC\u7121\u6548\u6216\u5DF2\u88AB\u4F7F\u7528\u3002",
+      "ja": "\u30EA\u30EC\u30FC\u30B7\u30E7\u30F3\u306E\u8B58\u5225\u5B50\u304C\u7121\u52B9\u304B\u3001\u3059\u3067\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059\u3002",
+      "ko": "\uAD00\uACC4 \uC2DD\uBCC4\uC790\uAC00 \uC720\uD6A8\uD558\uC9C0 \uC54A\uAC70\uB098 \uC774\uBBF8 \uC0AC\uC6A9 \uC911\uC785\uB2C8\uB2E4."
+    },
+    "El contexto seleccionado supera 16 MB. Reduce los elementos que llevas juntos.": {
+      "en": "The selected context exceeds 16 MB. Reduce the items you take together.",
+      "fr": "Le contexte s\xE9lectionn\xE9 d\xE9passe 16 MB. R\xE9duisez les \xE9l\xE9ments que vous emportez ensemble.",
+      "de": "Der ausgew\xE4hlte Kontext \xFCberschreitet 16 MB. Reduzieren Sie die gemeinsam mitgenommenen Elemente.",
+      "pt": "O contexto selecionado excede 16 MB. Reduza os elementos que leva em conjunto.",
+      "pt-BR": "O contexto selecionado excede 16 MB. Reduza os elementos que voc\xEA leva juntos.",
+      "it": "Il contesto selezionato supera 16 MB. Riduci gli elementi che porti con te insieme.",
+      "tr": "Se\xE7ilen ba\u011Flam 16 MB s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor. Birlikte ta\u015F\u0131d\u0131\u011F\u0131n\u0131z \xF6\u011Fe say\u0131s\u0131n\u0131 azalt\u0131n.",
+      "zh-CN": "\u6240\u9009\u4E0A\u4E0B\u6587\u8D85\u8FC7 16 MB\u3002\u8BF7\u51CF\u5C11\u4E00\u540C\u643A\u5E26\u7684\u9879\u76EE\u3002",
+      "zh-TW": "\u9078\u53D6\u7684\u8108\u7D61\u8D85\u904E 16 MB\u3002\u8ACB\u6E1B\u5C11\u4E00\u540C\u651C\u5E36\u7684\u9805\u76EE\u3002",
+      "ja": "\u9078\u629E\u3057\u305F\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8\u304C16 MB\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002\u307E\u3068\u3081\u3066\u6301\u3061\u51FA\u3059\u9805\u76EE\u3092\u6E1B\u3089\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uC120\uD0DD\uD55C \uB9E5\uB77D\uC774 16 MB\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4. \uD568\uAED8 \uD734\uB300\uD560 \uD56D\uBAA9 \uC218\uB97C \uC904\uC774\uC138\uC694."
+    },
+    "Identidad de documento no v\xE1lida.": {
+      "en": "Invalid document ID.",
+      "fr": "Identifiant de document invalide.",
+      "de": "Ung\xFCltige Dokument-ID.",
+      "pt": "ID de documento inv\xE1lido.",
+      "pt-BR": "ID de documento inv\xE1lido.",
+      "it": "ID del documento non valido.",
+      "tr": "Belge kimli\u011Fi ge\xE7ersiz.",
+      "zh-CN": "\u6587\u6863\u6807\u8BC6\u65E0\u6548\u3002",
+      "zh-TW": "\u6587\u4EF6\u8B58\u5225\u78BC\u7121\u6548\u3002",
+      "ja": "\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u8B58\u5225\u5B50\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "ko": "\uBB38\uC11C \uC2DD\uBCC4\uC790\uAC00 \uC720\uD6A8\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "Descarga de nuevo la base seleccionada: esta copia no incluye su perfil completo de chat.": {
+      "en": "Download the selected database again: this copy does not include its complete chat profile.",
+      "fr": "T\xE9l\xE9chargez \xE0 nouveau la base s\xE9lectionn\xE9e : cette copie ne contient pas son profil de chat complet.",
+      "de": "Laden Sie die ausgew\xE4hlte Datenbank erneut herunter: Diese Kopie enth\xE4lt nicht ihr vollst\xE4ndiges Chatprofil.",
+      "pt": "Descarregue novamente a base de dados selecionada: esta c\xF3pia n\xE3o inclui o seu perfil completo de chat.",
+      "pt-BR": "Baixe novamente o banco de dados selecionado: esta c\xF3pia n\xE3o inclui seu perfil completo de chat.",
+      "it": "Scarica di nuovo il database selezionato: questa copia non include il suo profilo completo di chat.",
+      "tr": "Se\xE7ilen veritaban\u0131n\u0131 yeniden indirin: bu kopya sohbet profilinin tamam\u0131n\u0131 i\xE7ermiyor.",
+      "zh-CN": "\u8BF7\u91CD\u65B0\u4E0B\u8F7D\u6240\u9009\u6570\u636E\u5E93\uFF1A\u6B64\u526F\u672C\u672A\u5305\u542B\u5B8C\u6574\u7684\u804A\u5929\u6982\u51B5\u3002",
+      "zh-TW": "\u8ACB\u91CD\u65B0\u4E0B\u8F09\u9078\u53D6\u7684\u8CC7\u6599\u5EAB\uFF1A\u6B64\u526F\u672C\u672A\u5305\u542B\u5B8C\u6574\u7684\u804A\u5929\u6982\u6CC1\u3002",
+      "ja": "\u9078\u629E\u3057\u305F\u30C7\u30FC\u30BF\u30D9\u30FC\u30B9\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u3053\u306E\u30B3\u30D4\u30FC\u306B\u306F\u30C1\u30E3\u30C3\u30C8\u7528\u30D7\u30ED\u30D5\u30A1\u30A4\u30EB\u5168\u4F53\u304C\u542B\u307E\u308C\u3066\u3044\u307E\u305B\u3093\u3002",
+      "ko": "\uC120\uD0DD\uD55C \uB370\uC774\uD130\uBCA0\uC774\uC2A4\uB97C \uB2E4\uC2DC \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694. \uC774 \uC0AC\uBCF8\uC5D0\uB294 \uC804\uCCB4 \uCC44\uD305 \uD504\uB85C\uD544\uC774 \uD3EC\uD568\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "La configuraci\xF3n guardada no est\xE1 incluida en la copia. Actualiza la descarga.": {
+      "en": "The saved configuration is not included in the copy. Update the download.",
+      "fr": "La configuration enregistr\xE9e n\u2019est pas incluse dans la copie. Actualisez le t\xE9l\xE9chargement.",
+      "de": "Die gespeicherte Konfiguration ist in der Kopie nicht enthalten. Aktualisieren Sie den Download.",
+      "pt": "A configura\xE7\xE3o guardada n\xE3o est\xE1 inclu\xEDda na c\xF3pia. Atualize a descarga.",
+      "pt-BR": "A configura\xE7\xE3o salva n\xE3o est\xE1 inclu\xEDda na c\xF3pia. Atualize o download.",
+      "it": "La configurazione salvata non \xE8 inclusa nella copia. Aggiorna il download.",
+      "tr": "Kaydedilen yap\u0131land\u0131rma kopyaya dahil de\u011Fil. \u0130ndirmeyi g\xFCncelleyin.",
+      "zh-CN": "\u6B64\u526F\u672C\u672A\u5305\u542B\u5DF2\u4FDD\u5B58\u7684\u914D\u7F6E\u3002\u8BF7\u66F4\u65B0\u4E0B\u8F7D\u5185\u5BB9\u3002",
+      "zh-TW": "\u6B64\u526F\u672C\u672A\u5305\u542B\u5DF2\u5132\u5B58\u7684\u8A2D\u5B9A\u3002\u8ACB\u66F4\u65B0\u4E0B\u8F09\u5167\u5BB9\u3002",
+      "ja": "\u4FDD\u5B58\u3057\u305F\u8A2D\u5B9A\u304C\u30B3\u30D4\u30FC\u306B\u542B\u307E\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5185\u5BB9\u3092\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uC800\uC7A5\uB41C \uC124\uC815\uC774 \uC0AC\uBCF8\uC5D0 \uD3EC\uD568\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB2E4\uC6B4\uB85C\uB4DC\uD55C \uB0B4\uC6A9\uC744 \uC5C5\uB370\uC774\uD2B8\uD558\uC138\uC694."
+    },
+    "La vista cambi\xF3 durante la descarga. Actualiza la copia completa.": {
+      "en": "The view changed during the download. Update the complete copy.",
+      "fr": "La vue a chang\xE9 pendant le t\xE9l\xE9chargement. Actualisez la copie compl\xE8te.",
+      "de": "Die Ansicht wurde w\xE4hrend des Downloads ge\xE4ndert. Aktualisieren Sie die vollst\xE4ndige Kopie.",
+      "pt": "A vista foi alterada durante a descarga. Atualize a c\xF3pia completa.",
+      "pt-BR": "A visualiza\xE7\xE3o foi alterada durante o download. Atualize a c\xF3pia completa.",
+      "it": "La vista \xE8 cambiata durante il download. Aggiorna la copia completa.",
+      "tr": "\u0130ndirme s\u0131ras\u0131nda g\xF6r\xFCn\xFCm de\u011Fi\u015Fti. Kopyan\u0131n tamam\u0131n\u0131 g\xFCncelleyin.",
+      "zh-CN": "\u4E0B\u8F7D\u671F\u95F4\u89C6\u56FE\u5DF2\u66F4\u6539\u3002\u8BF7\u66F4\u65B0\u5B8C\u6574\u526F\u672C\u3002",
+      "zh-TW": "\u4E0B\u8F09\u671F\u9593\u6AA2\u8996\u5DF2\u8B8A\u66F4\u3002\u8ACB\u66F4\u65B0\u5B8C\u6574\u526F\u672C\u3002",
+      "ja": "\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D\u306B\u30D3\u30E5\u30FC\u304C\u5909\u66F4\u3055\u308C\u307E\u3057\u305F\u3002\u30B3\u30D4\u30FC\u5168\u4F53\u3092\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uB2E4\uC6B4\uB85C\uB4DC \uC911 \uBCF4\uAE30\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC804\uCCB4 \uC0AC\uBCF8\uC744 \uC5C5\uB370\uC774\uD2B8\uD558\uC138\uC694."
+    },
+    "Falta una fuente vinculada en la copia. Descarga de nuevo la vista completa.": {
+      "en": "A linked source is missing from the copy. Download the complete view again.",
+      "fr": "Une source li\xE9e manque dans la copie. T\xE9l\xE9chargez \xE0 nouveau la vue compl\xE8te.",
+      "de": "In der Kopie fehlt eine verkn\xFCpfte Quelle. Laden Sie die vollst\xE4ndige Ansicht erneut herunter.",
+      "pt": "Falta uma fonte vinculada na c\xF3pia. Descarregue novamente a vista completa.",
+      "pt-BR": "Falta uma fonte vinculada na c\xF3pia. Baixe novamente a visualiza\xE7\xE3o completa.",
+      "it": "Nella copia manca una fonte collegata. Scarica di nuovo la vista completa.",
+      "tr": "Kopyada ba\u011Flant\u0131l\u0131 bir kaynak eksik. G\xF6r\xFCn\xFCm\xFCn tamam\u0131n\u0131 yeniden indirin.",
+      "zh-CN": "\u6B64\u526F\u672C\u7F3A\u5C11\u4E00\u4EFD\u5173\u8054\u8D44\u6599\u3002\u8BF7\u91CD\u65B0\u4E0B\u8F7D\u5B8C\u6574\u89C6\u56FE\u3002",
+      "zh-TW": "\u6B64\u526F\u672C\u7F3A\u5C11\u4E00\u4EFD\u9023\u7D50\u7684\u8CC7\u6599\u3002\u8ACB\u91CD\u65B0\u4E0B\u8F09\u5B8C\u6574\u6AA2\u8996\u3002",
+      "ja": "\u30B3\u30D4\u30FC\u306B\u30EA\u30F3\u30AF\u6E08\u307F\u306E\u8CC7\u6599\u304C\u4E0D\u8DB3\u3057\u3066\u3044\u307E\u3059\u3002\u30D3\u30E5\u30FC\u5168\u4F53\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uC0AC\uBCF8\uC5D0 \uC5F0\uACB0\uB41C \uC790\uB8CC\uAC00 \uB204\uB77D\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. \uC804\uCCB4 \uBCF4\uAE30\uB97C \uB2E4\uC2DC \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694."
+    },
+    "Las propiedades vinculadas cambiaron durante la descarga. Actualiza la copia completa.": {
+      "en": "The linked properties changed during the download. Update the complete copy.",
+      "fr": "Les propri\xE9t\xE9s li\xE9es ont chang\xE9 pendant le t\xE9l\xE9chargement. Actualisez la copie compl\xE8te.",
+      "de": "Die verkn\xFCpften Eigenschaften wurden w\xE4hrend des Downloads ge\xE4ndert. Aktualisieren Sie die vollst\xE4ndige Kopie.",
+      "pt": "As propriedades vinculadas foram alteradas durante a descarga. Atualize a c\xF3pia completa.",
+      "pt-BR": "As propriedades vinculadas foram alteradas durante o download. Atualize a c\xF3pia completa.",
+      "it": "Le propriet\xE0 collegate sono cambiate durante il download. Aggiorna la copia completa.",
+      "tr": "\u0130ndirme s\u0131ras\u0131nda ba\u011Flant\u0131l\u0131 \xF6zellikler de\u011Fi\u015Fti. Kopyan\u0131n tamam\u0131n\u0131 g\xFCncelleyin.",
+      "zh-CN": "\u4E0B\u8F7D\u671F\u95F4\u5173\u8054\u5C5E\u6027\u5DF2\u66F4\u6539\u3002\u8BF7\u66F4\u65B0\u5B8C\u6574\u526F\u672C\u3002",
+      "zh-TW": "\u4E0B\u8F09\u671F\u9593\u9023\u7D50\u7684\u5C6C\u6027\u5DF2\u8B8A\u66F4\u3002\u8ACB\u66F4\u65B0\u5B8C\u6574\u526F\u672C\u3002",
+      "ja": "\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D\u306B\u30EA\u30F3\u30AF\u5148\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u304C\u5909\u66F4\u3055\u308C\u307E\u3057\u305F\u3002\u30B3\u30D4\u30FC\u5168\u4F53\u3092\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uB2E4\uC6B4\uB85C\uB4DC \uC911 \uC5F0\uACB0\uB41C \uC18D\uC131\uC774 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC804\uCCB4 \uC0AC\uBCF8\uC744 \uC5C5\uB370\uC774\uD2B8\uD558\uC138\uC694."
+    },
+    "Respuesta de filas no v\xE1lida.": {
+      "en": "Invalid row response.",
+      "fr": "R\xE9ponse de lignes invalide.",
+      "de": "Ung\xFCltige Antwort mit Zeilendaten.",
+      "pt": "Resposta de linhas inv\xE1lida.",
+      "pt-BR": "Resposta de linhas inv\xE1lida.",
+      "it": "Risposta con le righe non valida.",
+      "tr": "Sat\u0131r yan\u0131t\u0131 ge\xE7ersiz.",
+      "zh-CN": "\u884C\u6570\u636E\u54CD\u5E94\u65E0\u6548\u3002",
+      "zh-TW": "\u8CC7\u6599\u5217\u56DE\u61C9\u7121\u6548\u3002",
+      "ja": "\u884C\u30C7\u30FC\u30BF\u306E\u30EC\u30B9\u30DD\u30F3\u30B9\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "ko": "\uD589 \uB370\uC774\uD130 \uC751\uB2F5\uC774 \uC720\uD6A8\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "Una dependencia de c\xE1lculo no pertenece a esta copia.": {
+      "en": "A calculation dependency does not belong to this copy.",
+      "fr": "Une d\xE9pendance de calcul n\u2019appartient pas \xE0 cette copie.",
+      "de": "Eine Berechnungsabh\xE4ngigkeit geh\xF6rt nicht zu dieser Kopie.",
+      "pt": "Uma depend\xEAncia de c\xE1lculo n\xE3o pertence a esta c\xF3pia.",
+      "pt-BR": "Uma depend\xEAncia de c\xE1lculo n\xE3o pertence a esta c\xF3pia.",
+      "it": "Una dipendenza di calcolo non appartiene a questa copia.",
+      "tr": "Bir hesaplama ba\u011F\u0131ml\u0131l\u0131\u011F\u0131 bu kopyaya ait de\u011Fil.",
+      "zh-CN": "\u67D0\u4E2A\u8BA1\u7B97\u4F9D\u8D56\u9879\u4E0D\u5C5E\u4E8E\u6B64\u526F\u672C\u3002",
+      "zh-TW": "\u67D0\u500B\u8A08\u7B97\u76F8\u4F9D\u9805\u76EE\u4E0D\u5C6C\u65BC\u6B64\u526F\u672C\u3002",
+      "ja": "\u8A08\u7B97\u306B\u5FC5\u8981\u306A\u4F9D\u5B58\u9805\u76EE\u304C\u3053\u306E\u30B3\u30D4\u30FC\u306B\u5C5E\u3057\u3066\u3044\u307E\u305B\u3093\u3002",
+      "ko": "\uACC4\uC0B0\uC5D0 \uD544\uC694\uD55C \uC758\uC874 \uD56D\uBAA9\uC774 \uC774 \uC0AC\uBCF8\uC5D0 \uC18D\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "Falta una dependencia de c\xE1lculo en la descarga. Renueva la copia completa.": {
+      "en": "A calculation dependency is missing from the download. Refresh the complete copy.",
+      "fr": "Une d\xE9pendance de calcul manque dans le t\xE9l\xE9chargement. Renouvelez la copie compl\xE8te.",
+      "de": "Im Download fehlt eine Berechnungsabh\xE4ngigkeit. Erneuern Sie die vollst\xE4ndige Kopie.",
+      "pt": "Falta uma depend\xEAncia de c\xE1lculo na descarga. Renove a c\xF3pia completa.",
+      "pt-BR": "Falta uma depend\xEAncia de c\xE1lculo no download. Renove a c\xF3pia completa.",
+      "it": "Nel download manca una dipendenza di calcolo. Rinnova la copia completa.",
+      "tr": "\u0130ndirmede bir hesaplama ba\u011F\u0131ml\u0131l\u0131\u011F\u0131 eksik. Kopyan\u0131n tamam\u0131n\u0131 yenileyin.",
+      "zh-CN": "\u4E0B\u8F7D\u5185\u5BB9\u7F3A\u5C11\u4E00\u4E2A\u8BA1\u7B97\u4F9D\u8D56\u9879\u3002\u8BF7\u91CD\u65B0\u4E0B\u8F7D\u5B8C\u6574\u526F\u672C\u3002",
+      "zh-TW": "\u4E0B\u8F09\u5167\u5BB9\u7F3A\u5C11\u4E00\u500B\u8A08\u7B97\u76F8\u4F9D\u9805\u76EE\u3002\u8ACB\u91CD\u65B0\u4E0B\u8F09\u5B8C\u6574\u526F\u672C\u3002",
+      "ja": "\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5185\u5BB9\u306B\u8A08\u7B97\u306B\u5FC5\u8981\u306A\u4F9D\u5B58\u9805\u76EE\u304C\u4E0D\u8DB3\u3057\u3066\u3044\u307E\u3059\u3002\u30B3\u30D4\u30FC\u5168\u4F53\u3092\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uB2E4\uC6B4\uB85C\uB4DC\uD55C \uB0B4\uC6A9\uC5D0 \uACC4\uC0B0\uC5D0 \uD544\uC694\uD55C \uC758\uC874 \uD56D\uBAA9\uC774 \uB204\uB77D\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. \uC804\uCCB4 \uC0AC\uBCF8\uC744 \uB2E4\uC2DC \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694."
+    },
+    "Las propiedades calculadas contienen una referencia circular. Revisa su configuraci\xF3n en Nodus.": {
+      "en": "The calculated properties contain a circular reference. Review their configuration in Nodus.",
+      "fr": "Les propri\xE9t\xE9s calcul\xE9es contiennent une r\xE9f\xE9rence circulaire. V\xE9rifiez leur configuration dans Nodus.",
+      "de": "Die berechneten Eigenschaften enthalten einen Zirkelverweis. Pr\xFCfen Sie ihre Konfiguration in Nodus.",
+      "pt": "As propriedades calculadas cont\xEAm uma refer\xEAncia circular. Reveja a sua configura\xE7\xE3o no Nodus.",
+      "pt-BR": "As propriedades calculadas cont\xEAm uma refer\xEAncia circular. Revise sua configura\xE7\xE3o no Nodus.",
+      "it": "Le propriet\xE0 calcolate contengono un riferimento circolare. Rivedi la loro configurazione in Nodus.",
+      "tr": "Hesaplanan \xF6zellikler d\xF6ng\xFCsel bir ba\u015Fvuru i\xE7eriyor. Nodus'taki yap\u0131land\u0131rmalar\u0131n\u0131 inceleyin.",
+      "zh-CN": "\u8BA1\u7B97\u5C5E\u6027\u5305\u542B\u5FAA\u73AF\u5F15\u7528\u3002\u8BF7\u5728 Nodus \u4E2D\u68C0\u67E5\u5176\u914D\u7F6E\u3002",
+      "zh-TW": "\u8A08\u7B97\u5C6C\u6027\u5305\u542B\u5FAA\u74B0\u53C3\u7167\u3002\u8ACB\u5728 Nodus \u4E2D\u6AA2\u67E5\u5176\u8A2D\u5B9A\u3002",
+      "ja": "\u8A08\u7B97\u30D7\u30ED\u30D1\u30C6\u30A3\u306B\u5FAA\u74B0\u53C2\u7167\u304C\u3042\u308A\u307E\u3059\u3002Nodus\u3067\u8A2D\u5B9A\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uACC4\uC0B0 \uC18D\uC131\uC5D0 \uC21C\uD658 \uCC38\uC870\uAC00 \uC788\uC2B5\uB2C8\uB2E4. Nodus\uC5D0\uC11C \uC124\uC815\uC744 \uAC80\uD1A0\uD558\uC138\uC694."
+    },
+    "El filtro no corresponde a una propiedad de esta vista.": {
+      "en": "The filter does not match a property in this view.",
+      "fr": "Le filtre ne correspond \xE0 aucune propri\xE9t\xE9 de cette vue.",
+      "de": "Der Filter geh\xF6rt zu keiner Eigenschaft dieser Ansicht.",
+      "pt": "O filtro n\xE3o corresponde a uma propriedade desta vista.",
+      "pt-BR": "O filtro n\xE3o corresponde a uma propriedade desta visualiza\xE7\xE3o.",
+      "it": "Il filtro non corrisponde a una propriet\xE0 di questa vista.",
+      "tr": "Filtre bu g\xF6r\xFCn\xFCmdeki bir \xF6zellik i\xE7in ge\xE7erli de\u011Fil.",
+      "zh-CN": "\u6B64\u7B5B\u9009\u6761\u4EF6\u4E0D\u9002\u7528\u4E8E\u5F53\u524D\u89C6\u56FE\u7684\u4EFB\u4F55\u5C5E\u6027\u3002",
+      "zh-TW": "\u6B64\u7BE9\u9078\u689D\u4EF6\u4E0D\u9069\u7528\u65BC\u76EE\u524D\u6AA2\u8996\u4E2D\u7684\u4EFB\u4F55\u5C6C\u6027\u3002",
+      "ja": "\u3053\u306E\u30D5\u30A3\u30EB\u30BF\u30FC\u306F\u73FE\u5728\u306E\u30D3\u30E5\u30FC\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u306B\u5BFE\u5FDC\u3057\u3066\u3044\u307E\u305B\u3093\u3002",
+      "ko": "\uC774 \uD544\uD130\uB294 \uD604\uC7AC \uBCF4\uAE30\uC758 \uC18D\uC131\uC5D0 \uC801\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."
+    },
+    "La propiedad del filtro ya no existe.": {
+      "en": "The filter property no longer exists.",
+      "fr": "La propri\xE9t\xE9 du filtre n\u2019existe plus.",
+      "de": "Die Eigenschaft des Filters existiert nicht mehr.",
+      "pt": "A propriedade do filtro j\xE1 n\xE3o existe.",
+      "pt-BR": "A propriedade do filtro n\xE3o existe mais.",
+      "it": "La propriet\xE0 del filtro non esiste pi\xF9.",
+      "tr": "Filtrenin \xF6zelli\u011Fi art\u0131k mevcut de\u011Fil.",
+      "zh-CN": "\u7B5B\u9009\u6761\u4EF6\u6240\u7528\u7684\u5C5E\u6027\u5DF2\u4E0D\u5B58\u5728\u3002",
+      "zh-TW": "\u7BE9\u9078\u689D\u4EF6\u4F7F\u7528\u7684\u5C6C\u6027\u5DF2\u4E0D\u5B58\u5728\u3002",
+      "ja": "\u30D5\u30A3\u30EB\u30BF\u30FC\u306E\u5BFE\u8C61\u30D7\u30ED\u30D1\u30C6\u30A3\u306F\u5B58\u5728\u3057\u306A\u304F\u306A\u308A\u307E\u3057\u305F\u3002",
+      "ko": "\uD544\uD130\uC758 \uB300\uC0C1 \uC18D\uC131\uC774 \uB354 \uC774\uC0C1 \uC874\uC7AC\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "La vista hace referencia a una propiedad que ya no existe.": {
+      "en": "The view refers to a property that no longer exists.",
+      "fr": "La vue fait r\xE9f\xE9rence \xE0 une propri\xE9t\xE9 qui n\u2019existe plus.",
+      "de": "Die Ansicht verweist auf eine Eigenschaft, die nicht mehr existiert.",
+      "pt": "A vista faz refer\xEAncia a uma propriedade que j\xE1 n\xE3o existe.",
+      "pt-BR": "A visualiza\xE7\xE3o faz refer\xEAncia a uma propriedade que n\xE3o existe mais.",
+      "it": "La vista fa riferimento a una propriet\xE0 che non esiste pi\xF9.",
+      "tr": "G\xF6r\xFCn\xFCm art\u0131k mevcut olmayan bir \xF6zelli\u011Fe ba\u015Fvuruyor.",
+      "zh-CN": "\u6B64\u89C6\u56FE\u5F15\u7528\u7684\u67D0\u4E2A\u5C5E\u6027\u5DF2\u4E0D\u5B58\u5728\u3002",
+      "zh-TW": "\u6B64\u6AA2\u8996\u53C3\u7167\u7684\u67D0\u500B\u5C6C\u6027\u5DF2\u4E0D\u5B58\u5728\u3002",
+      "ja": "\u3053\u306E\u30D3\u30E5\u30FC\u306F\u3001\u5B58\u5728\u3057\u306A\u304F\u306A\u3063\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u53C2\u7167\u3057\u3066\u3044\u307E\u3059\u3002",
+      "ko": "\uC774 \uBCF4\uAE30\uB294 \uB354 \uC774\uC0C1 \uC874\uC7AC\uD558\uC9C0 \uC54A\uB294 \uC18D\uC131\uC744 \uCC38\uC870\uD569\uB2C8\uB2E4."
+    },
+    "Descarga las bases de origen para incluir el snapshot bruto.": {
+      "en": "Download the source databases to include the raw snapshot.",
+      "fr": "T\xE9l\xE9chargez les bases sources pour inclure l\u2019instantan\xE9 brut.",
+      "de": "Laden Sie die Quelldatenbanken herunter, um den Snapshot mit Rohdaten einzuschlie\xDFen.",
+      "pt": "Descarregue as bases de dados de origem para incluir o snapshot em bruto.",
+      "pt-BR": "Baixe os bancos de dados de origem para incluir o snapshot bruto.",
+      "it": "Scarica i database di origine per includere lo snapshot grezzo.",
+      "tr": "Ham anl\u0131k g\xF6r\xFCnt\xFCy\xFC dahil etmek i\xE7in kaynak veritabanlar\u0131n\u0131 indirin.",
+      "zh-CN": "\u8BF7\u4E0B\u8F7D\u6E90\u6570\u636E\u5E93\uFF0C\u4EE5\u5305\u542B\u539F\u59CB\u6570\u636E\u5FEB\u7167\u3002",
+      "zh-TW": "\u8ACB\u4E0B\u8F09\u4F86\u6E90\u8CC7\u6599\u5EAB\uFF0C\u4EE5\u5305\u542B\u539F\u59CB\u8CC7\u6599\u5FEB\u7167\u3002",
+      "ja": "\u672A\u52A0\u5DE5\u306E\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u3092\u542B\u3081\u308B\u306B\u306F\u3001\u5143\u306E\u30C7\u30FC\u30BF\u30D9\u30FC\u30B9\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uC6D0\uC2DC \uC2A4\uB0C5\uC0F7\uC744 \uD3EC\uD568\uD558\uB824\uBA74 \uC6D0\uBCF8 \uB370\uC774\uD130\uBCA0\uC774\uC2A4\uB97C \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694."
+    },
+    "Los datos han cambiado desde el informe. No se puede exportar un snapshot diferente.": {
+      "en": "The data has changed since the report. A different snapshot cannot be exported.",
+      "fr": "Les donn\xE9es ont chang\xE9 depuis le rapport. Un instantan\xE9 diff\xE9rent ne peut pas \xEAtre export\xE9.",
+      "de": "Die Daten haben sich seit dem Bericht ge\xE4ndert. Ein abweichender Snapshot kann nicht exportiert werden.",
+      "pt": "Os dados foram alterados desde o relat\xF3rio. N\xE3o \xE9 poss\xEDvel exportar um snapshot diferente.",
+      "pt-BR": "Os dados foram alterados desde o relat\xF3rio. N\xE3o \xE9 poss\xEDvel exportar um snapshot diferente.",
+      "it": "I dati sono cambiati dopo il rapporto. Non \xE8 possibile esportare uno snapshot diverso.",
+      "tr": "Rapor haz\u0131rland\u0131\u011F\u0131ndan beri veriler de\u011Fi\u015Fti. Farkl\u0131 bir anl\u0131k g\xF6r\xFCnt\xFC d\u0131\u015Fa aktar\u0131lamaz.",
+      "zh-CN": "\u62A5\u544A\u751F\u6210\u540E\u6570\u636E\u5DF2\u66F4\u6539\uFF0C\u65E0\u6CD5\u5BFC\u51FA\u4E0D\u540C\u7684\u6570\u636E\u5FEB\u7167\u3002",
+      "zh-TW": "\u5831\u544A\u7522\u751F\u5F8C\u8CC7\u6599\u5DF2\u8B8A\u66F4\uFF0C\u7121\u6CD5\u532F\u51FA\u4E0D\u540C\u7684\u8CC7\u6599\u5FEB\u7167\u3002",
+      "ja": "\u30EC\u30DD\u30FC\u30C8\u306E\u4F5C\u6210\u5F8C\u306B\u30C7\u30FC\u30BF\u304C\u5909\u66F4\u3055\u308C\u307E\u3057\u305F\u3002\u7570\u306A\u308B\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u306F\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3067\u304D\u307E\u305B\u3093\u3002",
+      "ko": "\uBCF4\uACE0\uC11C \uC791\uC131 \uD6C4 \uB370\uC774\uD130\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uB2E4\uB978 \uC2A4\uB0C5\uC0F7\uC744 \uB0B4\uBCF4\uB0BC \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."
+    },
+    "Esta entrada no est\xE1 descargada. Conecta con tu Mac para abrirla.": {
+      "en": "This entry has not been downloaded. Connect to your Mac to open it.",
+      "fr": "Cette entr\xE9e n\u2019est pas t\xE9l\xE9charg\xE9e. Connectez-vous \xE0 votre Mac pour l\u2019ouvrir.",
+      "de": "Dieser Eintrag wurde nicht heruntergeladen. Stellen Sie eine Verbindung zu Ihrem Mac her, um ihn zu \xF6ffnen.",
+      "pt": "Esta entrada n\xE3o est\xE1 descarregada. Ligue-se ao seu Mac para a abrir.",
+      "pt-BR": "Esta entrada n\xE3o foi baixada. Conecte-se ao seu Mac para abri-la.",
+      "it": "Questa voce non \xE8 stata scaricata. Collegati al tuo Mac per aprirla.",
+      "tr": "Bu kay\u0131t indirilmemi\u015F. A\xE7mak i\xE7in Mac'inize ba\u011Flan\u0131n.",
+      "zh-CN": "\u6B64\u6761\u76EE\u5C1A\u672A\u4E0B\u8F7D\u3002\u8BF7\u8FDE\u63A5 Mac \u540E\u6253\u5F00\u3002",
+      "zh-TW": "\u6B64\u9805\u76EE\u5C1A\u672A\u4E0B\u8F09\u3002\u8ACB\u9023\u7DDA\u81F3 Mac \u5F8C\u958B\u555F\u3002",
+      "ja": "\u3053\u306E\u9805\u76EE\u306F\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u958B\u304F\u306B\u306FMac\u306B\u63A5\u7D9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uC774 \uD56D\uBAA9\uC740 \uB2E4\uC6B4\uB85C\uB4DC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uC5F4\uB824\uBA74 Mac\uC5D0 \uC5F0\uACB0\uD558\uC138\uC694."
+    },
+    "Selecciona un modelo del m\xF3vil.": {
+      "en": "Select a phone model.",
+      "fr": "S\xE9lectionnez un mod\xE8le du t\xE9l\xE9phone.",
+      "de": "W\xE4hlen Sie ein Modell auf dem Mobilger\xE4t aus.",
+      "pt": "Selecione um modelo do telem\xF3vel.",
+      "pt-BR": "Selecione um modelo do celular.",
+      "it": "Seleziona un modello del cellulare.",
+      "tr": "Telefondaki bir modeli se\xE7in.",
+      "zh-CN": "\u8BF7\u9009\u62E9\u624B\u673A\u4E0A\u7684\u6A21\u578B\u3002",
+      "zh-TW": "\u8ACB\u9078\u64C7\u624B\u6A5F\u4E0A\u7684\u6A21\u578B\u3002",
+      "ja": "\u30B9\u30DE\u30FC\u30C8\u30D5\u30A9\u30F3\u306E\u30E2\u30C7\u30EB\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uD734\uB300\uD3F0\uC758 \uBAA8\uB378\uC744 \uC120\uD0DD\uD558\uC138\uC694."
+    },
+    "El coste estimado supera el l\xEDmite configurado.": {
+      "en": "The estimated cost exceeds the configured limit.",
+      "fr": "Le co\xFBt estim\xE9 d\xE9passe la limite configur\xE9e.",
+      "de": "Die gesch\xE4tzten Kosten \xFCberschreiten das festgelegte Limit.",
+      "pt": "O custo estimado excede o limite configurado.",
+      "pt-BR": "O custo estimado excede o limite configurado.",
+      "it": "Il costo stimato supera il limite configurato.",
+      "tr": "Tahmini maliyet, yap\u0131land\u0131r\u0131lan s\u0131n\u0131r\u0131 a\u015F\u0131yor.",
+      "zh-CN": "\u9884\u4F30\u8D39\u7528\u8D85\u8FC7\u914D\u7F6E\u7684\u9650\u989D\u3002",
+      "zh-TW": "\u9810\u4F30\u8CBB\u7528\u8D85\u904E\u8A2D\u5B9A\u7684\u4E0A\u9650\u3002",
+      "ja": "\u63A8\u5B9A\u8CBB\u7528\u304C\u8A2D\u5B9A\u3057\u305F\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002",
+      "ko": "\uC608\uC0C1 \uBE44\uC6A9\uC774 \uC124\uC815\uB41C \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."
+    },
+    "El foco de esta pregunta no est\xE1 reunido en una misma descarga. Vuelve a descargar juntos los elementos que quieras comparar.": {
+      "en": "The focus of this question is not covered by a single download. Download the items you want to compare together again.",
+      "fr": "Les \xE9l\xE9ments vis\xE9s par cette question ne sont pas r\xE9unis dans un m\xEAme t\xE9l\xE9chargement. T\xE9l\xE9chargez \xE0 nouveau ensemble les \xE9l\xE9ments \xE0 comparer.",
+      "de": "Die f\xFCr diese Frage relevanten Elemente sind nicht in einem einzigen Download enthalten. Laden Sie die Elemente, die Sie vergleichen m\xF6chten, erneut gemeinsam herunter.",
+      "pt": "Os elementos relevantes para esta pergunta n\xE3o est\xE3o reunidos numa \xFAnica descarga. Volte a descarregar em conjunto os elementos que pretende comparar.",
+      "pt-BR": "Os elementos relevantes para esta pergunta n\xE3o est\xE3o reunidos em um \xFAnico download. Baixe novamente, juntos, os elementos que voc\xEA quer comparar.",
+      "it": "Gli elementi su cui verte questa domanda non sono riuniti in un unico download. Scarica di nuovo insieme gli elementi che vuoi confrontare.",
+      "tr": "Bu sorunun oda\u011F\u0131ndaki \xF6\u011Feler ayn\u0131 indirmede bir araya getirilmemi\u015F. Kar\u015F\u0131la\u015Ft\u0131rmak istedi\u011Finiz \xF6\u011Feleri birlikte yeniden indirin.",
+      "zh-CN": "\u6B64\u95EE\u9898\u6D89\u53CA\u7684\u5185\u5BB9\u672A\u6C47\u96C6\u5728\u540C\u4E00\u6B21\u4E0B\u8F7D\u4E2D\u3002\u8BF7\u5C06\u9700\u8981\u6BD4\u8F83\u7684\u9879\u76EE\u4E00\u540C\u91CD\u65B0\u4E0B\u8F7D\u3002",
+      "zh-TW": "\u6B64\u554F\u984C\u6D89\u53CA\u7684\u5167\u5BB9\u672A\u5F59\u96C6\u65BC\u540C\u4E00\u6B21\u4E0B\u8F09\u4E2D\u3002\u8ACB\u5C07\u8981\u6BD4\u8F03\u7684\u9805\u76EE\u4E00\u540C\u91CD\u65B0\u4E0B\u8F09\u3002",
+      "ja": "\u3053\u306E\u8CEA\u554F\u306E\u5BFE\u8C61\u304C\u3001\u540C\u3058\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u306B\u307E\u3068\u3081\u3089\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u6BD4\u8F03\u3057\u305F\u3044\u9805\u76EE\u3092\u307E\u3068\u3081\u3066\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "ko": "\uC774 \uC9C8\uBB38\uC758 \uB300\uC0C1\uC774 \uAC19\uC740 \uB2E4\uC6B4\uB85C\uB4DC\uC5D0 \uBAA8\uC5EC \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uBE44\uAD50\uD560 \uD56D\uBAA9\uC744 \uD568\uAED8 \uB2E4\uC2DC \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694."
+    }
+  };
+  var unavailableDatabase = {
+    "en": "Database {id} has not been downloaded for research.",
+    "fr": "La base {id} n\u2019est pas t\xE9l\xE9charg\xE9e pour la recherche.",
+    "de": "Die Datenbank {id} wurde nicht f\xFCr die Recherche heruntergeladen.",
+    "pt": "A base de dados {id} n\xE3o est\xE1 descarregada para investiga\xE7\xE3o.",
+    "pt-BR": "O banco de dados {id} n\xE3o foi baixado para pesquisa.",
+    "it": "Il database {id} non \xE8 stato scaricato per la ricerca.",
+    "tr": "{id} veritaban\u0131 ara\u015Ft\u0131rma i\xE7in indirilmemi\u015F.",
+    "zh-CN": "\u6570\u636E\u5E93 {id} \u5C1A\u672A\u4E0B\u8F7D\uFF0C\u65E0\u6CD5\u7528\u4E8E\u7814\u7A76\u3002",
+    "zh-TW": "\u8CC7\u6599\u5EAB {id} \u5C1A\u672A\u4E0B\u8F09\uFF0C\u7121\u6CD5\u7528\u65BC\u7814\u7A76\u3002",
+    "ja": "\u30C7\u30FC\u30BF\u30D9\u30FC\u30B9{id}\u306F\u7814\u7A76\u7528\u306B\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002",
+    "ko": "\uB370\uC774\uD130\uBCA0\uC774\uC2A4 {id}\uAC00 \uC5F0\uAD6C\uC6A9\uC73C\uB85C \uB2E4\uC6B4\uB85C\uB4DC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."
+  };
+  var COMPANION_RUNTIME_ERROR_PATTERNS = [{
+    pattern: /^La base (.+) no está descargada para investigar\.$/,
+    translate: (id) => Object.fromEntries(
+      Object.entries(unavailableDatabase).map(([language, message]) => [language, message.replace("{id}", () => id)])
+    )
+  }];
+
+  // shared/backupsErrors.ts
+  var BACKUPS_RUNTIME_ERRORS = {
+    "Confirma la exportaci\xF3n de los materiales seleccionados.": {
+      en: "Confirm the export of the selected materials.",
+      fr: "Confirmez l\u2019exportation des \xE9l\xE9ments s\xE9lectionn\xE9s.",
+      de: "Best\xE4tigen Sie den Export der ausgew\xE4hlten Materialien.",
+      pt: "Confirme a exporta\xE7\xE3o dos materiais selecionados.",
+      it: "Conferma l\u2019esportazione dei materiali selezionati.",
+      tr: "Se\xE7ilen materyallerin d\u0131\u015Fa aktar\u0131lmas\u0131n\u0131 onaylay\u0131n.",
+      "zh-CN": "\u8BF7\u786E\u8BA4\u5BFC\u51FA\u6240\u9009\u6750\u6599\u3002",
+      "zh-TW": "\u8ACB\u78BA\u8A8D\u532F\u51FA\u6240\u9078\u6750\u6599\u3002",
+      ko: "\uC120\uD0DD\uD55C \uC790\uB8CC\uC758 \uB0B4\uBCF4\uB0B4\uAE30\uB97C \uD655\uC778\uD558\uC138\uC694.",
+      ja: "\u9078\u629E\u3057\u305F\u8CC7\u6599\u306E\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "pt-BR": "Confirme a exporta\xE7\xE3o dos materiais selecionados."
+    },
+    "Confirma la exportaci\xF3n del paquete de preservaci\xF3n de testimonios.": {
+      en: "Confirm the export of the testimony preservation package.",
+      fr: "Confirmez l\u2019exportation du paquet de conservation des t\xE9moignages.",
+      de: "Best\xE4tigen Sie den Export des Pakets zur Bewahrung der Zeugnisse.",
+      pt: "Confirme a exporta\xE7\xE3o do pacote de preserva\xE7\xE3o de testemunhos.",
+      it: "Conferma l\u2019esportazione del pacchetto di conservazione delle testimonianze.",
+      tr: "Tan\u0131kl\u0131k koruma paketinin d\u0131\u015Fa aktar\u0131lmas\u0131n\u0131 onaylay\u0131n.",
+      "zh-CN": "\u8BF7\u786E\u8BA4\u5BFC\u51FA\u8BC1\u8A00\u4FDD\u5B58\u5305\u3002",
+      "zh-TW": "\u8ACB\u78BA\u8A8D\u532F\u51FA\u8B49\u8A00\u4FDD\u5B58\u5957\u4EF6\u3002",
+      ko: "\uC99D\uC5B8 \uBCF4\uC874 \uD328\uD0A4\uC9C0\uC758 \uB0B4\uBCF4\uB0B4\uAE30\uB97C \uD655\uC778\uD558\uC138\uC694.",
+      ja: "\u8A3C\u8A00\u4FDD\u5B58\u30D1\u30C3\u30B1\u30FC\u30B8\u306E\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "pt-BR": "Confirme a exporta\xE7\xE3o do pacote de preserva\xE7\xE3o de testemunhos."
+    },
+    "Un archivo cambi\xF3 durante la exportaci\xF3n. Vuelve a intentarlo.": {
+      en: "A file changed during export. Try again.",
+      fr: "Un fichier a chang\xE9 pendant l\u2019exportation. R\xE9essayez.",
+      de: "Eine Datei wurde w\xE4hrend des Exports ge\xE4ndert. Versuchen Sie es erneut.",
+      pt: "Um ficheiro mudou durante a exporta\xE7\xE3o. Tente novamente.",
+      it: "Un file \xE8 cambiato durante l\u2019esportazione. Riprova.",
+      tr: "D\u0131\u015Fa aktarma s\u0131ras\u0131nda bir dosya de\u011Fi\u015Fti. Yeniden deneyin.",
+      "zh-CN": "\u5BFC\u51FA\u671F\u95F4\u6587\u4EF6\u53D1\u751F\u4E86\u53D8\u5316\u3002\u8BF7\u91CD\u8BD5\u3002",
+      "zh-TW": "\u532F\u51FA\u671F\u9593\u6A94\u6848\u767C\u751F\u4E86\u8B8A\u66F4\u3002\u8ACB\u91CD\u8A66\u3002",
+      ko: "\uB0B4\uBCF4\uB0B4\uAE30 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.",
+      ja: "\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u4E2D\u306B\u30D5\u30A1\u30A4\u30EB\u304C\u5909\u66F4\u3055\u308C\u307E\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002",
+      "pt-BR": "Um arquivo mudou durante a exporta\xE7\xE3o. Tente novamente."
+    },
+    "Adjunto ausente en la instant\xE1nea.": {
+      en: "An attachment is missing from the snapshot.",
+      fr: "Une pi\xE8ce jointe est absente de l\u2019instantan\xE9.",
+      de: "Ein Anhang fehlt im Snapshot.",
+      pt: "Falta um anexo na c\xF3pia instant\xE2nea.",
+      it: "Manca un allegato nell\u2019istantanea.",
+      tr: "Anl\u0131k g\xF6r\xFCnt\xFCde bir ek eksik.",
+      "zh-CN": "\u5FEB\u7167\u4E2D\u7F3A\u5C11\u9644\u4EF6\u3002",
+      "zh-TW": "\u5FEB\u7167\u4E2D\u7F3A\u5C11\u9644\u4EF6\u3002",
+      ko: "\uC2A4\uB0C5\uC0F7\uC5D0 \uCCA8\uBD80 \uD30C\uC77C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      ja: "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u306B\u6DFB\u4ED8\u30D5\u30A1\u30A4\u30EB\u304C\u3042\u308A\u307E\u305B\u3093\u3002",
+      "pt-BR": "Falta um anexo na c\xF3pia instant\xE2nea."
+    },
+    "Selecci\xF3n de exportaci\xF3n no v\xE1lida.": {
+      en: "Invalid export selection.",
+      fr: "S\xE9lection d\u2019exportation non valide.",
+      de: "Ung\xFCltige Exportauswahl.",
+      pt: "Sele\xE7\xE3o de exporta\xE7\xE3o inv\xE1lida.",
+      it: "Selezione di esportazione non valida.",
+      tr: "Ge\xE7ersiz d\u0131\u015Fa aktarma se\xE7imi.",
+      "zh-CN": "\u5BFC\u51FA\u9009\u62E9\u65E0\u6548\u3002",
+      "zh-TW": "\u532F\u51FA\u9078\u64C7\u7121\u6548\u3002",
+      ko: "\uB0B4\uBCF4\uB0B4\uAE30 \uC120\uD0DD\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u306E\u9078\u629E\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "pt-BR": "Sele\xE7\xE3o de exporta\xE7\xE3o inv\xE1lida."
+    },
+    "La selecci\xF3n contiene una b\xF3veda ausente.": {
+      en: "The selection contains a missing vault.",
+      fr: "La s\xE9lection contient un coffre introuvable.",
+      de: "Die Auswahl enth\xE4lt einen fehlenden Vault.",
+      pt: "A sele\xE7\xE3o cont\xE9m um cofre que j\xE1 n\xE3o existe.",
+      it: "La selezione contiene una raccolta non pi\xF9 disponibile.",
+      tr: "Se\xE7imde bulunamayan bir kasa var.",
+      "zh-CN": "\u6240\u9009\u5185\u5BB9\u5305\u542B\u4E0D\u5B58\u5728\u7684\u77E5\u8BC6\u5E93\u3002",
+      "zh-TW": "\u6240\u9078\u5167\u5BB9\u5305\u542B\u4E0D\u5B58\u5728\u7684\u77E5\u8B58\u5EAB\u3002",
+      ko: "\uC120\uD0DD\uC5D0 \uC5C6\uB294 \uBCF4\uAD00\uD568\uC774 \uD3EC\uD568\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4.",
+      ja: "\u9078\u629E\u306B\u5B58\u5728\u3057\u306A\u3044\u4FDD\u7BA1\u5EAB\u304C\u542B\u307E\u308C\u3066\u3044\u307E\u3059\u3002",
+      "pt-BR": "A sele\xE7\xE3o cont\xE9m um cofre que j\xE1 n\xE3o existe."
+    },
+    "Categor\xEDas no v\xE1lidas.": {
+      en: "Invalid categories.",
+      fr: "Cat\xE9gories non valides.",
+      de: "Ung\xFCltige Kategorien.",
+      pt: "Categorias inv\xE1lidas.",
+      it: "Categorie non valide.",
+      tr: "Ge\xE7ersiz kategoriler.",
+      "zh-CN": "\u7C7B\u522B\u65E0\u6548\u3002",
+      "zh-TW": "\u985E\u5225\u7121\u6548\u3002",
+      ko: "\uCE74\uD14C\uACE0\uB9AC\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "\u30AB\u30C6\u30B4\u30EA\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "pt-BR": "Categorias inv\xE1lidas."
+    },
+    "Elige al menos un formato.": {
+      en: "Choose at least one format.",
+      fr: "Choisissez au moins un format.",
+      de: "W\xE4hlen Sie mindestens ein Format.",
+      pt: "Escolha pelo menos um formato.",
+      it: "Scegli almeno un formato.",
+      tr: "En az bir bi\xE7im se\xE7in.",
+      "zh-CN": "\u8BF7\u81F3\u5C11\u9009\u62E9\u4E00\u79CD\u683C\u5F0F\u3002",
+      "zh-TW": "\u8ACB\u81F3\u5C11\u9078\u64C7\u4E00\u7A2E\u683C\u5F0F\u3002",
+      ko: "\uD615\uC2DD\uC744 \uD558\uB098 \uC774\uC0C1 \uC120\uD0DD\uD558\uC138\uC694.",
+      ja: "\u5F62\u5F0F\u3092\u5C11\u306A\u304F\u3068\u30821\u3064\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "pt-BR": "Escolha pelo menos um formato."
+    },
+    "Presentaci\xF3n no v\xE1lida.": {
+      en: "Invalid export presentation.",
+      fr: "Pr\xE9sentation d\u2019exportation non valide.",
+      de: "Ung\xFCltige Exportdarstellung.",
+      pt: "Apresenta\xE7\xE3o de exporta\xE7\xE3o inv\xE1lida.",
+      it: "Presentazione di esportazione non valida.",
+      tr: "Ge\xE7ersiz d\u0131\u015Fa aktarma d\xFCzeni.",
+      "zh-CN": "\u5BFC\u51FA\u5448\u73B0\u65B9\u5F0F\u65E0\u6548\u3002",
+      "zh-TW": "\u532F\u51FA\u5448\u73FE\u65B9\u5F0F\u7121\u6548\u3002",
+      ko: "\uB0B4\uBCF4\uB0B4\uAE30 \uD45C\uC2DC \uBC29\uC2DD\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u306E\u8868\u793A\u5F62\u5F0F\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "pt-BR": "Apresenta\xE7\xE3o de exporta\xE7\xE3o inv\xE1lida."
+    },
+    "Selecci\xF3n de elementos no v\xE1lida.": {
+      en: "Invalid item selection.",
+      fr: "S\xE9lection d\u2019\xE9l\xE9ments non valide.",
+      de: "Ung\xFCltige Elementauswahl.",
+      pt: "Sele\xE7\xE3o de elementos inv\xE1lida.",
+      it: "Selezione di elementi non valida.",
+      tr: "Ge\xE7ersiz \xF6\u011Fe se\xE7imi.",
+      "zh-CN": "\u9879\u76EE\u9009\u62E9\u65E0\u6548\u3002",
+      "zh-TW": "\u9805\u76EE\u9078\u64C7\u7121\u6548\u3002",
+      ko: "\uD56D\uBAA9 \uC120\uD0DD\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "\u9805\u76EE\u306E\u9078\u629E\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "pt-BR": "Sele\xE7\xE3o de elementos inv\xE1lida."
+    },
+    "Opci\xF3n de contenido no v\xE1lida.": {
+      en: "Invalid content option.",
+      fr: "Option de contenu non valide.",
+      de: "Ung\xFCltige Inhaltsoption.",
+      pt: "Op\xE7\xE3o de conte\xFAdo inv\xE1lida.",
+      it: "Opzione di contenuto non valida.",
+      tr: "Ge\xE7ersiz i\xE7erik se\xE7ene\u011Fi.",
+      "zh-CN": "\u5185\u5BB9\u9009\u9879\u65E0\u6548\u3002",
+      "zh-TW": "\u5167\u5BB9\u9078\u9805\u7121\u6548\u3002",
+      ko: "\uCF58\uD150\uCE20 \uC635\uC158\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "\u30B3\u30F3\u30C6\u30F3\u30C4\u306E\u30AA\u30D7\u30B7\u30E7\u30F3\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "pt-BR": "Op\xE7\xE3o de conte\xFAdo inv\xE1lida."
+    },
+    "Escribe un nombre para el preset.": {
+      en: "Enter a name for the preset.",
+      fr: "Saisissez un nom pour le pr\xE9r\xE9glage.",
+      de: "Geben Sie einen Namen f\xFCr die Vorlage ein.",
+      pt: "Introduza um nome para a predefini\xE7\xE3o.",
+      it: "Inserisci un nome per la preimpostazione.",
+      tr: "\xD6n ayar i\xE7in bir ad girin.",
+      "zh-CN": "\u8BF7\u8F93\u5165\u9884\u8BBE\u540D\u79F0\u3002",
+      "zh-TW": "\u8ACB\u8F38\u5165\u9810\u8A2D\u540D\u7A31\u3002",
+      ko: "\uD504\uB9AC\uC14B \uC774\uB984\uC744 \uC785\uB825\uD558\uC138\uC694.",
+      ja: "\u30D7\u30EA\u30BB\u30C3\u30C8\u306E\u540D\u524D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "pt-BR": "Digite um nome para a predefini\xE7\xE3o."
+    },
+    "Identificador de exportaci\xF3n no v\xE1lido.": {
+      en: "Invalid export identifier.",
+      fr: "Identifiant d\u2019exportation non valide.",
+      de: "Ung\xFCltige Exportkennung.",
+      pt: "Identificador de exporta\xE7\xE3o inv\xE1lido.",
+      it: "Identificatore di esportazione non valido.",
+      tr: "Ge\xE7ersiz d\u0131\u015Fa aktarma kimli\u011Fi.",
+      "zh-CN": "\u5BFC\u51FA\u6807\u8BC6\u7B26\u65E0\u6548\u3002",
+      "zh-TW": "\u532F\u51FA\u8B58\u5225\u78BC\u7121\u6548\u3002",
+      ko: "\uB0B4\uBCF4\uB0B4\uAE30 \uC2DD\uBCC4\uC790\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u306E\u8B58\u5225\u5B50\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "pt-BR": "Identificador de exporta\xE7\xE3o inv\xE1lido."
+    },
+    "La exportaci\xF3n ya est\xE1 en curso.": {
+      en: "The export is already running.",
+      fr: "L\u2019exportation est d\xE9j\xE0 en cours.",
+      de: "Der Export l\xE4uft bereits.",
+      pt: "A exporta\xE7\xE3o j\xE1 est\xE1 em curso.",
+      it: "L\u2019esportazione \xE8 gi\xE0 in corso.",
+      tr: "D\u0131\u015Fa aktarma zaten devam ediyor.",
+      "zh-CN": "\u5BFC\u51FA\u5DF2\u5728\u8FDB\u884C\u4E2D\u3002",
+      "zh-TW": "\u532F\u51FA\u5DF2\u5728\u9032\u884C\u4E2D\u3002",
+      ko: "\uB0B4\uBCF4\uB0B4\uAE30\uAC00 \uC774\uBBF8 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4.",
+      ja: "\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u306F\u3059\u3067\u306B\u5B9F\u884C\u4E2D\u3067\u3059\u3002",
+      "pt-BR": "A exporta\xE7\xE3o j\xE1 est\xE1 em curso."
+    },
+    "La carpeta de destino no est\xE1 disponible.": {
+      en: "The destination folder is unavailable.",
+      fr: "Le dossier de destination n\u2019est pas disponible.",
+      de: "Der Zielordner ist nicht verf\xFCgbar.",
+      pt: "A pasta de destino n\xE3o est\xE1 dispon\xEDvel.",
+      it: "La cartella di destinazione non \xE8 disponibile.",
+      tr: "Hedef klas\xF6r kullan\u0131lam\u0131yor.",
+      "zh-CN": "\u76EE\u6807\u6587\u4EF6\u5939\u4E0D\u53EF\u7528\u3002",
+      "zh-TW": "\u76EE\u6A19\u8CC7\u6599\u593E\u7121\u6CD5\u4F7F\u7528\u3002",
+      ko: "\uB300\uC0C1 \uD3F4\uB354\uB97C \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      ja: "\u4FDD\u5B58\u5148\u306E\u30D5\u30A9\u30EB\u30C0\u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002",
+      "pt-BR": "A pasta de destino n\xE3o est\xE1 dispon\xEDvel."
+    }
+  };
+  function withValue(messages, value) {
+    return Object.fromEntries(
+      Object.entries(messages).map(([language, message]) => [language, message.replace("{value}", value)])
+    );
+  }
+  var BACKUPS_RUNTIME_ERROR_PATTERNS = [
+    {
+      pattern: /^Tabla sin clasificación de exportación: (.+)$/,
+      translate: (value) => withValue(
+        {
+          en: "Unclassified export table: {value}",
+          fr: "Table d\u2019exportation non class\xE9e : {value}",
+          de: "Nicht klassifizierte Exporttabelle: {value}",
+          pt: "Tabela de exporta\xE7\xE3o sem classifica\xE7\xE3o: {value}",
+          it: "Tabella di esportazione non classificata: {value}",
+          tr: "S\u0131n\u0131fland\u0131r\u0131lmam\u0131\u015F d\u0131\u015Fa aktarma tablosu: {value}",
+          "zh-CN": "\u672A\u5206\u7C7B\u7684\u5BFC\u51FA\u8868\uFF1A{value}",
+          "zh-TW": "\u672A\u5206\u985E\u7684\u532F\u51FA\u8CC7\u6599\u8868\uFF1A{value}",
+          ko: "\uBD84\uB958\uB418\uC9C0 \uC54A\uC740 \uB0B4\uBCF4\uB0B4\uAE30 \uD14C\uC774\uBE14: {value}",
+          ja: "\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u306E\u5206\u985E\u304C\u306A\u3044\u30C6\u30FC\u30D6\u30EB: {value}",
+          "pt-BR": "Tabela de exporta\xE7\xE3o sem classifica\xE7\xE3o: {value}"
+        },
+        value
+      )
+    },
+    {
+      pattern: /^El proceso de exportación terminó con código (.+)\.$/,
+      translate: (value) => withValue(
+        {
+          en: "The export process exited with code {value}.",
+          fr: "Le processus d\u2019exportation s\u2019est termin\xE9 avec le code {value}.",
+          de: "Der Exportprozess wurde mit Code {value} beendet.",
+          pt: "O processo de exporta\xE7\xE3o terminou com o c\xF3digo {value}.",
+          it: "Il processo di esportazione \xE8 terminato con il codice {value}.",
+          tr: "D\u0131\u015Fa aktarma i\u015Flemi {value} koduyla sona erdi.",
+          "zh-CN": "\u5BFC\u51FA\u8FDB\u7A0B\u5DF2\u9000\u51FA\uFF0C\u4EE3\u7801\u4E3A {value}\u3002",
+          "zh-TW": "\u532F\u51FA\u7A0B\u5E8F\u5DF2\u7D50\u675F\uFF0C\u4EE3\u78BC\u70BA {value}\u3002",
+          ko: "\uB0B4\uBCF4\uB0B4\uAE30 \uD504\uB85C\uC138\uC2A4\uAC00 \uCF54\uB4DC {value}\uB85C \uC885\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+          ja: "\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u306E\u30D7\u30ED\u30BB\u30B9\u304C\u30B3\u30FC\u30C9 {value}\u3067\u7D42\u4E86\u3057\u307E\u3057\u305F\u3002",
+          "pt-BR": "O processo de exporta\xE7\xE3o terminou com o c\xF3digo {value}."
+        },
+        value
+      )
+    },
+    {
+      pattern: /^Ruta duplicada: (.+)$/,
+      translate: (value) => withValue(
+        {
+          en: "Duplicate output path: {value}",
+          fr: "Chemin de sortie en double : {value}",
+          de: "Doppelter Ausgabepfad: {value}",
+          pt: "Caminho de sa\xEDda duplicado: {value}",
+          it: "Percorso di output duplicato: {value}",
+          tr: "Yinelenen \xE7\u0131kt\u0131 yolu: {value}",
+          "zh-CN": "\u8F93\u51FA\u8DEF\u5F84\u91CD\u590D\uFF1A{value}",
+          "zh-TW": "\u8F38\u51FA\u8DEF\u5F91\u91CD\u8907\uFF1A{value}",
+          ko: "\uC911\uBCF5\uB41C \uCD9C\uB825 \uACBD\uB85C: {value}",
+          ja: "\u51FA\u529B\u5148\u306E\u30D1\u30B9\u304C\u91CD\u8907\u3057\u3066\u3044\u307E\u3059: {value}",
+          "pt-BR": "Caminho de sa\xEDda duplicado: {value}"
+        },
+        value
+      )
+    }
+  ];
+
   // shared/scriptorErrors.ts
   var languages = ["en", "fr", "de", "pt", "it", "tr", "zh-CN"];
   var rows = [
@@ -2318,18 +3046,342 @@ ${conversation}`;
     ["Hijos de bloque no v\xE1lidos.", "Invalid block children.", "Blocs enfants invalides.", "Ung\xFCltige untergeordnete Bl\xF6cke.", "Blocos filhos inv\xE1lidos.", "Blocchi figli non validi.", "Alt bloklar ge\xE7ersiz.", "\u5B50\u5757\u65E0\u6548\u3002"],
     ["ACADEMIC_PROJECTION_CONFLICT: Esta edici\xF3n eliminar\xEDa citas o notas estructuradas. Abre Scriptor para resolverla; el borrador se conserva.", "ACADEMIC_PROJECTION_CONFLICT: This edit would remove structured citations or notes. Open Scriptor to resolve it; your draft is preserved.", "ACADEMIC_PROJECTION_CONFLICT: Cette modification supprimerait des citations ou notes structur\xE9es. Ouvrez Scriptor pour la r\xE9soudre ; votre brouillon est conserv\xE9.", "ACADEMIC_PROJECTION_CONFLICT: Diese \xC4nderung w\xFCrde strukturierte Zitate oder Notizen entfernen. \xD6ffnen Sie Scriptor, um sie zu kl\xE4ren; Ihr Entwurf bleibt erhalten.", "ACADEMIC_PROJECTION_CONFLICT: Esta edi\xE7\xE3o eliminaria cita\xE7\xF5es ou notas estruturadas. Abra o Scriptor para a resolver; o rascunho \xE9 preservado.", "ACADEMIC_PROJECTION_CONFLICT: Questa modifica eliminerebbe citazioni o note strutturate. Apri Scriptor per risolverla; la bozza \xE8 conservata.", "ACADEMIC_PROJECTION_CONFLICT: Bu d\xFCzenleme yap\u0131land\u0131r\u0131lm\u0131\u015F at\u0131flar\u0131 veya notlar\u0131 silecektir. \xC7\xF6zmek i\xE7in Scriptor\u2019u a\xE7\u0131n; tasla\u011F\u0131n\u0131z korunuyor.", "ACADEMIC_PROJECTION_CONFLICT: \u6B64\u7F16\u8F91\u4F1A\u5220\u9664\u7ED3\u6784\u5316\u5F15\u6587\u6216\u6CE8\u91CA\u3002\u8BF7\u6253\u5F00 Scriptor \u89E3\u51B3\uFF1B\u8349\u7A3F\u5DF2\u4FDD\u7559\u3002"]
   ];
-  var SCRIPTOR_RUNTIME_ERRORS = Object.fromEntries(rows.map(([source, ...values]) => {
-    const translations = Object.fromEntries(languages.map((language, index) => [language, values[index]]));
-    translations["pt-BR"] = translations.pt;
-    return [source, translations];
-  }));
+  var SCRIPTOR_RUNTIME_ERRORS = {
+    ...Object.fromEntries(rows.map(([source, ...values]) => {
+      const translations2 = Object.fromEntries(languages.map((language, index) => [language, values[index]]));
+      translations2["pt-BR"] = translations2.pt;
+      return [source, translations2];
+    })),
+    "Solicitud de imagen inv\xE1lida.": {
+      en: "Invalid image request.",
+      fr: "Demande d\u2019image invalide.",
+      de: "Ung\xFCltige Bildanfrage.",
+      pt: "Pedido de imagem inv\xE1lido.",
+      "pt-BR": "Solicita\xE7\xE3o de imagem inv\xE1lida.",
+      it: "Richiesta di immagine non valida.",
+      tr: "Ge\xE7ersiz g\xF6rsel iste\u011Fi.",
+      "zh-CN": "\u56FE\u50CF\u8BF7\u6C42\u65E0\u6548\u3002",
+      "zh-TW": "\u5716\u50CF\u8ACB\u6C42\u7121\u6548\u3002",
+      ja: "\u753B\u50CF\u30EA\u30AF\u30A8\u30B9\u30C8\u304C\u7121\u52B9\u3067\u3059\u3002",
+      ko: "\uC774\uBBF8\uC9C0 \uC694\uCCAD\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4."
+    },
+    "Describe la imagen con un m\xE1ximo de 8.000 caracteres.": {
+      en: "Describe the image using no more than 8,000 characters.",
+      fr: "D\xE9crivez l\u2019image en 8 000 caract\xE8res maximum.",
+      de: "Beschreiben Sie das Bild mit h\xF6chstens 8.000 Zeichen.",
+      pt: "Descreva a imagem com um m\xE1ximo de 8.000 caracteres.",
+      "pt-BR": "Descreva a imagem com no m\xE1ximo 8.000 caracteres.",
+      it: "Descrivi l\u2019immagine con un massimo di 8.000 caratteri.",
+      tr: "G\xF6rseli en fazla 8.000 karakterle a\xE7\u0131klay\u0131n.",
+      "zh-CN": "\u8BF7\u7528\u4E0D\u8D85\u8FC7 8,000 \u4E2A\u5B57\u7B26\u63CF\u8FF0\u56FE\u50CF\u3002",
+      "zh-TW": "\u8ACB\u7528\u4E0D\u8D85\u904E 8,000 \u500B\u5B57\u5143\u63CF\u8FF0\u5716\u50CF\u3002",
+      ja: "\u753B\u50CF\u306E\u8AAC\u660E\u306F8,000\u6587\u5B57\u4EE5\u5185\u3067\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      ko: "\uC774\uBBF8\uC9C0 \uC124\uBA85\uC740 8,000\uC790 \uC774\uB0B4\uB85C \uC785\uB825\uD558\uC138\uC694."
+    },
+    "Elige un modelo de imagen disponible.": {
+      en: "Choose an available image model.",
+      fr: "Choisissez un mod\xE8le d\u2019image disponible.",
+      de: "W\xE4hlen Sie ein verf\xFCgbares Bildmodell.",
+      pt: "Escolha um modelo de imagem dispon\xEDvel.",
+      "pt-BR": "Escolha um modelo de imagem dispon\xEDvel.",
+      it: "Scegli un modello di immagine disponibile.",
+      tr: "Kullan\u0131labilir bir g\xF6rsel modeli se\xE7in.",
+      "zh-CN": "\u8BF7\u9009\u62E9\u53EF\u7528\u7684\u56FE\u50CF\u6A21\u578B\u3002",
+      "zh-TW": "\u8ACB\u9078\u64C7\u53EF\u7528\u7684\u5716\u50CF\u6A21\u578B\u3002",
+      ja: "\u5229\u7528\u53EF\u80FD\u306A\u753B\u50CF\u30E2\u30C7\u30EB\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      ko: "\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uC774\uBBF8\uC9C0 \uBAA8\uB378\uC744 \uC120\uD0DD\uD558\uC138\uC694."
+    },
+    "La imagen supera 20 MB.": {
+      en: "The image exceeds 20 MB.",
+      fr: "L\u2019image d\xE9passe 20 Mo.",
+      de: "Das Bild \xFCberschreitet 20 MB.",
+      pt: "A imagem excede 20 MB.",
+      "pt-BR": "A imagem excede 20 MB.",
+      it: "L\u2019immagine supera 20 MB.",
+      tr: "G\xF6rsel 20 MB s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.",
+      "zh-CN": "\u56FE\u50CF\u8D85\u8FC7 20 MB\u3002",
+      "zh-TW": "\u5716\u50CF\u8D85\u904E 20 MB\u3002",
+      ja: "\u753B\u50CF\u304C20 MB\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002",
+      ko: "\uC774\uBBF8\uC9C0\uAC00 20 MB\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."
+    },
+    "Las instrucciones superan el l\xEDmite de 4.000 caracteres.": {
+      en: "The instructions exceed the 4,000-character limit.",
+      fr: "Les instructions d\xE9passent la limite de 4 000 caract\xE8res.",
+      de: "Die Anweisungen \xFCberschreiten das Limit von 4.000 Zeichen.",
+      pt: "As instru\xE7\xF5es excedem o limite de 4.000 caracteres.",
+      "pt-BR": "As instru\xE7\xF5es excedem o limite de 4.000 caracteres.",
+      it: "Le istruzioni superano il limite di 4.000 caratteri.",
+      tr: "Talimatlar 4.000 karakter s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.",
+      "zh-CN": "\u6307\u4EE4\u8D85\u8FC7 4,000 \u4E2A\u5B57\u7B26\u7684\u9650\u5236\u3002",
+      "zh-TW": "\u6307\u4EE4\u8D85\u904E 4,000 \u500B\u5B57\u5143\u7684\u9650\u5236\u3002",
+      ja: "\u6307\u793A\u304C4,000\u6587\u5B57\u306E\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002",
+      ko: "\uC9C0\uC2DC\uAC00 4,000\uC790 \uC81C\uD55C\uC744 \uCD08\uACFC\uD569\uB2C8\uB2E4."
+    },
+    "La IA no devolvi\xF3 texto. El original no se ha modificado.": {
+      en: "AI returned no text. The original has not been modified.",
+      fr: "L\u2019IA n\u2019a renvoy\xE9 aucun texte. L\u2019original n\u2019a pas \xE9t\xE9 modifi\xE9.",
+      de: "Die KI hat keinen Text zur\xFCckgegeben. Das Original wurde nicht ge\xE4ndert.",
+      pt: "A IA n\xE3o devolveu texto. O original n\xE3o foi alterado.",
+      "pt-BR": "A IA n\xE3o retornou texto. O original n\xE3o foi alterado.",
+      it: "L\u2019IA non ha restituito testo. L\u2019originale non \xE8 stato modificato.",
+      tr: "Yapay zek\xE2 metin d\xF6nd\xFCrmedi. Orijinal metin de\u011Fi\u015Ftirilmedi.",
+      "zh-CN": "AI \u672A\u8FD4\u56DE\u6587\u672C\u3002\u539F\u6587\u672A\u88AB\u4FEE\u6539\u3002",
+      "zh-TW": "AI \u672A\u50B3\u56DE\u6587\u5B57\u3002\u539F\u6587\u672A\u88AB\u4FEE\u6539\u3002",
+      ja: "AI\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u304C\u8FD4\u3055\u308C\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u539F\u6587\u306F\u5909\u66F4\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002",
+      ko: "AI\uAC00 \uD14D\uC2A4\uD2B8\uB97C \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uC6D0\uBB38\uC740 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."
+    },
+    "La solicitud ya est\xE1 en curso.": {
+      en: "The request is already in progress.",
+      fr: "La demande est d\xE9j\xE0 en cours.",
+      de: "Die Anfrage wird bereits bearbeitet.",
+      pt: "O pedido j\xE1 est\xE1 em curso.",
+      "pt-BR": "A solicita\xE7\xE3o j\xE1 est\xE1 em andamento.",
+      it: "La richiesta \xE8 gi\xE0 in corso.",
+      tr: "\u0130stek zaten devam ediyor.",
+      "zh-CN": "\u8BF7\u6C42\u5DF2\u5728\u8FDB\u884C\u4E2D\u3002",
+      "zh-TW": "\u8ACB\u6C42\u5DF2\u5728\u9032\u884C\u4E2D\u3002",
+      ja: "\u30EA\u30AF\u30A8\u30B9\u30C8\u306F\u3059\u3067\u306B\u51E6\u7406\u4E2D\u3067\u3059\u3002",
+      ko: "\uC694\uCCAD\uC774 \uC774\uBBF8 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4."
+    }
+  };
   var SCRIPTOR_RUNTIME_ERROR_PATTERNS = [{
     pattern: /^La fórmula contiene un elemento no compatible con Word: (.+)$/,
     translate: (element) => Object.fromEntries(Object.entries(SCRIPTOR_RUNTIME_ERRORS["La f\xF3rmula contiene un elemento no compatible con Word:"]).map(([language, prefix]) => [language, `${prefix} ${element}`]))
   }];
 
+  // shared/cloudflare.ts
+  var CLOUDFLARE_SAFETY_UPGRADE_MESSAGE = "Actualiza el Worker de Nodus Cloud y aplica sus migraciones antes de sincronizar: esta instalaci\xF3n todav\xEDa no anuncia los l\xEDmites acumulados y la limpieza persistente.";
+
+  // shared/cloudflareSyncErrors.ts
+  var languages2 = ["en", "fr", "de", "pt", "it", "tr", "zh-CN", "zh-TW", "ja", "ko"];
+  var rows2 = [
+    ["Cloudflare no confirm\xF3 todas las versiones de la biblioteca.", "Cloudflare did not acknowledge every Library version.", "Cloudflare n\u2019a pas confirm\xE9 toutes les versions de la biblioth\xE8que.", "Cloudflare hat nicht alle Bibliotheksversionen best\xE4tigt.", "A Cloudflare n\xE3o confirmou todas as vers\xF5es da biblioteca.", "Cloudflare non ha confermato tutte le versioni della libreria.", "Cloudflare t\xFCm kitapl\u0131k s\xFCr\xFCmlerini onaylamad\u0131.", "Cloudflare \u672A\u786E\u8BA4\u6240\u6709\u8D44\u6599\u5E93\u7248\u672C\u3002", "Cloudflare \u672A\u78BA\u8A8D\u6240\u6709\u8CC7\u6599\u5EAB\u7248\u672C\u3002", "Cloudflare \u304C\u3059\u3079\u3066\u306E\u30E9\u30A4\u30D6\u30E9\u30EA\u30D0\u30FC\u30B8\u30E7\u30F3\u3092\u78BA\u8A8D\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002", "Cloudflare\uAC00 \uBAA8\uB4E0 \uB77C\uC774\uBE0C\uB7EC\uB9AC \uBC84\uC804\uC744 \uD655\uC778\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."],
+    ["La actualizaci\xF3n Yjs supera 8 MiB.", "The Yjs update exceeds 8 MiB.", "La mise \xE0 jour Yjs d\xE9passe 8 MiB.", "Das Yjs-Update \xFCberschreitet 8 MiB.", "A atualiza\xE7\xE3o Yjs excede 8 MiB.", "L\u2019aggiornamento Yjs supera 8 MiB.", "Yjs g\xFCncellemesi 8 MiB s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "Yjs \u66F4\u65B0\u8D85\u8FC7 8 MiB\u3002", "Yjs \u66F4\u65B0\u8D85\u904E 8 MiB\u3002", "Yjs \u306E\u66F4\u65B0\u304C 8 MiB \u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "Yjs \uC5C5\uB370\uC774\uD2B8\uAC00 8 MiB\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["El adjunto supera el tama\xF1o permitido.", "The attachment exceeds the allowed size.", "La pi\xE8ce jointe d\xE9passe la taille autoris\xE9e.", "Der Anhang \xFCberschreitet die zul\xE4ssige Gr\xF6\xDFe.", "O anexo excede o tamanho permitido.", "L\u2019allegato supera le dimensioni consentite.", "Ek izin verilen boyutu a\u015F\u0131yor.", "\u9644\u4EF6\u8D85\u8FC7\u5141\u8BB8\u7684\u5927\u5C0F\u3002", "\u9644\u4EF6\u8D85\u904E\u5141\u8A31\u7684\u5927\u5C0F\u3002", "\u6DFB\u4ED8\u30D5\u30A1\u30A4\u30EB\u304C\u8A31\u5BB9\u30B5\u30A4\u30BA\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "\uCCA8\uBD80\uD30C\uC77C\uC774 \uD5C8\uC6A9 \uD06C\uAE30\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["El servidor devolvi\xF3 un rango de adjunto incorrecto.", "The server returned an incorrect attachment range.", "Le serveur a renvoy\xE9 une plage incorrecte pour la pi\xE8ce jointe.", "Der Server hat einen falschen Bytebereich des Anhangs zur\xFCckgegeben.", "O servidor devolveu um intervalo incorreto do anexo.", "Il server ha restituito un intervallo errato dell\u2019allegato.", "Sunucu ek i\xE7in yanl\u0131\u015F bir bayt aral\u0131\u011F\u0131 d\xF6nd\xFCrd\xFC.", "\u670D\u52A1\u5668\u8FD4\u56DE\u4E86\u9519\u8BEF\u7684\u9644\u4EF6\u5B57\u8282\u8303\u56F4\u3002", "\u4F3A\u670D\u5668\u50B3\u56DE\u4E86\u932F\u8AA4\u7684\u9644\u4EF6\u4F4D\u5143\u7D44\u7BC4\u570D\u3002", "\u30B5\u30FC\u30D0\u30FC\u304C\u6DFB\u4ED8\u30D5\u30A1\u30A4\u30EB\u306E\u8AA4\u3063\u305F\u30D0\u30A4\u30C8\u7BC4\u56F2\u3092\u8FD4\u3057\u307E\u3057\u305F\u3002", "\uC11C\uBC84\uAC00 \uC798\uBABB\uB41C \uCCA8\uBD80\uD30C\uC77C \uBC14\uC774\uD2B8 \uBC94\uC704\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4."],
+    ["Una fila supera el l\xEDmite de publicaci\xF3n de Cloudflare.", "A row exceeds the Cloudflare publication limit.", "Une ligne d\xE9passe la limite de publication de Cloudflare.", "Eine Zeile \xFCberschreitet das Ver\xF6ffentlichungslimit von Cloudflare.", "Uma linha excede o limite de publica\xE7\xE3o da Cloudflare.", "Una riga supera il limite di pubblicazione di Cloudflare.", "Bir sat\u0131r Cloudflare yay\u0131mlama s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "\u67D0\u4E00\u884C\u8D85\u8FC7 Cloudflare \u7684\u53D1\u5E03\u9650\u5236\u3002", "\u67D0\u4E00\u5217\u8D85\u904E Cloudflare \u7684\u767C\u4F48\u9650\u5236\u3002", "\u884C\u304C Cloudflare \u306E\u516C\u958B\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "\uD589\uC774 Cloudflare \uAC8C\uC2DC \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["Cloudflare devolvi\xF3 un tama\xF1o de parte no v\xE1lido. Se ha detenido la publicaci\xF3n.", "Cloudflare returned an invalid part size. Publication has stopped.", "Cloudflare a renvoy\xE9 une taille de partie invalide. La publication a \xE9t\xE9 arr\xEAt\xE9e.", "Cloudflare hat eine ung\xFCltige Teilgr\xF6\xDFe zur\xFCckgegeben. Die Ver\xF6ffentlichung wurde gestoppt.", "A Cloudflare devolveu um tamanho de parte inv\xE1lido. A publica\xE7\xE3o foi interrompida.", "Cloudflare ha restituito una dimensione di parte non valida. La pubblicazione \xE8 stata interrotta.", "Cloudflare ge\xE7ersiz bir par\xE7a boyutu d\xF6nd\xFCrd\xFC. Yay\u0131mlama durduruldu.", "Cloudflare \u8FD4\u56DE\u4E86\u65E0\u6548\u7684\u5206\u5757\u5927\u5C0F\u3002\u53D1\u5E03\u5DF2\u505C\u6B62\u3002", "Cloudflare \u50B3\u56DE\u4E86\u7121\u6548\u7684\u5206\u584A\u5927\u5C0F\u3002\u767C\u4F48\u5DF2\u505C\u6B62\u3002", "Cloudflare \u304C\u7121\u52B9\u306A\u30D1\u30FC\u30C8\u30B5\u30A4\u30BA\u3092\u8FD4\u3057\u307E\u3057\u305F\u3002\u516C\u958B\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002", "Cloudflare\uAC00 \uC798\uBABB\uB41C \uD30C\uD2B8 \uD06C\uAE30\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4. \uAC8C\uC2DC\uAC00 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4."],
+    ["La publicaci\xF3n alcanz\xF3 el l\xEDmite de seguridad de llamadas a Cloudflare.", "Publication reached the safety limit for Cloudflare requests.", "La publication a atteint la limite de s\xE9curit\xE9 des requ\xEAtes Cloudflare.", "Die Ver\xF6ffentlichung hat das Sicherheitslimit f\xFCr Cloudflare-Anfragen erreicht.", "A publica\xE7\xE3o atingiu o limite de seguran\xE7a de pedidos \xE0 Cloudflare.", "La pubblicazione ha raggiunto il limite di sicurezza delle richieste a Cloudflare.", "Yay\u0131mlama Cloudflare istekleri i\xE7in g\xFCvenlik s\u0131n\u0131r\u0131na ula\u015Ft\u0131.", "\u53D1\u5E03\u5DF2\u8FBE\u5230 Cloudflare \u8BF7\u6C42\u7684\u5B89\u5168\u4E0A\u9650\u3002", "\u767C\u4F48\u5DF2\u9054\u5230 Cloudflare \u8ACB\u6C42\u7684\u5B89\u5168\u4E0A\u9650\u3002", "\u516C\u958B\u51E6\u7406\u304C Cloudflare \u30EA\u30AF\u30A8\u30B9\u30C8\u306E\u5B89\u5168\u4E0A\u9650\u306B\u9054\u3057\u307E\u3057\u305F\u3002", "\uAC8C\uC2DC\uAC00 Cloudflare \uC694\uCCAD \uC548\uC804 \uD55C\uB3C4\uC5D0 \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4."],
+    ["Cloudflare devolvi\xF3 una p\xE1gina sin avanzar el cursor. Se ha detenido la sincronizaci\xF3n.", "Cloudflare returned a page without advancing the cursor. Synchronization has stopped.", "Cloudflare a renvoy\xE9 une page sans faire avancer le curseur. La synchronisation a \xE9t\xE9 arr\xEAt\xE9e.", "Cloudflare hat eine Seite ohne Fortschritt des Cursors zur\xFCckgegeben. Die Synchronisierung wurde gestoppt.", "A Cloudflare devolveu uma p\xE1gina sem avan\xE7ar o cursor. A sincroniza\xE7\xE3o foi interrompida.", "Cloudflare ha restituito una pagina senza avanzare il cursore. La sincronizzazione \xE8 stata interrotta.", "Cloudflare imleci ilerletmeden bir sayfa d\xF6nd\xFCrd\xFC. E\u015Fitleme durduruldu.", "Cloudflare \u8FD4\u56DE\u4E86\u672A\u63A8\u8FDB\u6E38\u6807\u7684\u9875\u9762\u3002\u540C\u6B65\u5DF2\u505C\u6B62\u3002", "Cloudflare \u50B3\u56DE\u4E86\u672A\u63A8\u9032\u6E38\u6A19\u7684\u9801\u9762\u3002\u540C\u6B65\u5DF2\u505C\u6B62\u3002", "Cloudflare \u304C\u30AB\u30FC\u30BD\u30EB\u3092\u9032\u3081\u305A\u306B\u30DA\u30FC\u30B8\u3092\u8FD4\u3057\u307E\u3057\u305F\u3002\u540C\u671F\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002", "Cloudflare\uAC00 \uCEE4\uC11C\uB97C \uC774\uB3D9\uD558\uC9C0 \uC54A\uACE0 \uD398\uC774\uC9C0\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4. \uB3D9\uAE30\uD654\uAC00 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4."],
+    ["Cloudflare contiene un cambio que no se pudo aplicar.", "Cloudflare contains a change that could not be applied.", "Cloudflare contient une modification qui n\u2019a pas pu \xEAtre appliqu\xE9e.", "Cloudflare enth\xE4lt eine \xC4nderung, die nicht angewendet werden konnte.", "A Cloudflare cont\xE9m uma altera\xE7\xE3o que n\xE3o foi poss\xEDvel aplicar.", "Cloudflare contiene una modifica che non \xE8 stato possibile applicare.", "Cloudflare uygulanamayan bir de\u011Fi\u015Fiklik i\xE7eriyor.", "Cloudflare \u5305\u542B\u65E0\u6CD5\u5E94\u7528\u7684\u66F4\u6539\u3002", "Cloudflare \u5305\u542B\u7121\u6CD5\u5957\u7528\u7684\u8B8A\u66F4\u3002", "Cloudflare \u306B\u9069\u7528\u3067\u304D\u306A\u304B\u3063\u305F\u5909\u66F4\u304C\u3042\u308A\u307E\u3059\u3002", "Cloudflare\uC5D0 \uC801\uC6A9\uD560 \uC218 \uC5C6\uB294 \uBCC0\uACBD \uC0AC\uD56D\uC774 \uC788\uC2B5\uB2C8\uB2E4."],
+    ["Un cambio del relay no pudo aplicarse.", "A relay change could not be applied.", "Une modification du relais n\u2019a pas pu \xEAtre appliqu\xE9e.", "Eine Relay-\xC4nderung konnte nicht angewendet werden.", "N\xE3o foi poss\xEDvel aplicar uma altera\xE7\xE3o do relay.", "Non \xE8 stato possibile applicare una modifica del relay.", "Bir aktar\u0131m de\u011Fi\u015Fikli\u011Fi uygulanamad\u0131.", "\u65E0\u6CD5\u5E94\u7528\u4E2D\u7EE7\u4E2D\u7684\u66F4\u6539\u3002", "\u7121\u6CD5\u5957\u7528\u8F49\u9001\u4E2D\u7684\u8B8A\u66F4\u3002", "\u30EA\u30EC\u30FC\u306E\u5909\u66F4\u3092\u9069\u7528\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002", "\uB9B4\uB808\uC774 \uBCC0\uACBD \uC0AC\uD56D\uC744 \uC801\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."],
+    ["La publicaci\xF3n de Cloudflare se ha detenido.", "Cloudflare publication has stopped.", "La publication Cloudflare a \xE9t\xE9 arr\xEAt\xE9e.", "Die Cloudflare-Ver\xF6ffentlichung wurde gestoppt.", "A publica\xE7\xE3o na Cloudflare foi interrompida.", "La pubblicazione su Cloudflare \xE8 stata interrotta.", "Cloudflare yay\u0131mlamas\u0131 durduruldu.", "Cloudflare \u53D1\u5E03\u5DF2\u505C\u6B62\u3002", "Cloudflare \u767C\u4F48\u5DF2\u505C\u6B62\u3002", "Cloudflare \u306E\u516C\u958B\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002", "Cloudflare \uAC8C\uC2DC\uAC00 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4."],
+    ["El snapshot supera el l\xEDmite de descarga de 512 MiB.", "The snapshot exceeds the 512 MiB download limit.", "L\u2019instantan\xE9 d\xE9passe la limite de t\xE9l\xE9chargement de 512 MiB.", "Der Snapshot \xFCberschreitet das Downloadlimit von 512 MiB.", "O snapshot excede o limite de transfer\xEAncia de 512 MiB.", "L\u2019istantanea supera il limite di download di 512 MiB.", "Anl\u0131k g\xF6r\xFCnt\xFC 512 MiB indirme s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "\u5FEB\u7167\u8D85\u8FC7 512 MiB \u4E0B\u8F7D\u4E0A\u9650\u3002", "\u5FEB\u7167\u8D85\u904E 512 MiB \u4E0B\u8F09\u4E0A\u9650\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u304C\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E0A\u9650\u306E 512 MiB \u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "\uC2A4\uB0C5\uC0F7\uC774 512 MiB \uB2E4\uC6B4\uB85C\uB4DC \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["El snapshot supera el l\xEDmite de importaci\xF3n de 256 MiB.", "The snapshot exceeds the 256 MiB import limit.", "L\u2019instantan\xE9 d\xE9passe la limite d\u2019importation de 256 MiB.", "Der Snapshot \xFCberschreitet das Importlimit von 256 MiB.", "O snapshot excede o limite de importa\xE7\xE3o de 256 MiB.", "L\u2019istantanea supera il limite di importazione di 256 MiB.", "Anl\u0131k g\xF6r\xFCnt\xFC 256 MiB i\xE7e aktarma s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "\u5FEB\u7167\u8D85\u8FC7 256 MiB \u5BFC\u5165\u4E0A\u9650\u3002", "\u5FEB\u7167\u8D85\u904E 256 MiB \u532F\u5165\u4E0A\u9650\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u304C\u30A4\u30F3\u30DD\u30FC\u30C8\u4E0A\u9650\u306E 256 MiB \u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "\uC2A4\uB0C5\uC0F7\uC774 256 MiB \uAC00\uC838\uC624\uAE30 \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["El snapshot remoto no tiene un formato v\xE1lido.", "The remote snapshot has an invalid format.", "Le format de l\u2019instantan\xE9 distant est invalide.", "Der entfernte Snapshot hat ein ung\xFCltiges Format.", "O snapshot remoto tem um formato inv\xE1lido.", "L\u2019istantanea remota ha un formato non valido.", "Uzak anl\u0131k g\xF6r\xFCnt\xFCn\xFCn bi\xE7imi ge\xE7ersiz.", "\u8FDC\u7A0B\u5FEB\u7167\u7684\u683C\u5F0F\u65E0\u6548\u3002", "\u9060\u7AEF\u5FEB\u7167\u7684\u683C\u5F0F\u7121\u6548\u3002", "\u30EA\u30E2\u30FC\u30C8\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u306E\u5F62\u5F0F\u304C\u7121\u52B9\u3067\u3059\u3002", "\uC6D0\uACA9 \uC2A4\uB0C5\uC0F7 \uD615\uC2DD\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4."],
+    ["El snapshot requiere una versi\xF3n de Nodus m\xE1s reciente o tiene un esquema inv\xE1lido.", "The snapshot requires a newer Nodus version or has an invalid schema.", "L\u2019instantan\xE9 n\xE9cessite une version plus r\xE9cente de Nodus ou poss\xE8de un sch\xE9ma invalide.", "Der Snapshot erfordert eine neuere Nodus-Version oder hat ein ung\xFCltiges Schema.", "O snapshot requer uma vers\xE3o mais recente do Nodus ou tem um esquema inv\xE1lido.", "L\u2019istantanea richiede una versione pi\xF9 recente di Nodus o ha uno schema non valido.", "Anl\u0131k g\xF6r\xFCnt\xFC daha yeni bir Nodus s\xFCr\xFCm\xFC gerektiriyor veya \u015Femas\u0131 ge\xE7ersiz.", "\u5FEB\u7167\u9700\u8981\u66F4\u65B0\u7248\u672C\u7684 Nodus\uFF0C\u6216\u5176\u67B6\u6784\u65E0\u6548\u3002", "\u5FEB\u7167\u9700\u8981\u66F4\u65B0\u7248\u672C\u7684 Nodus\uFF0C\u6216\u5176\u7D50\u69CB\u63CF\u8FF0\u7121\u6548\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u306B\u306F\u65B0\u3057\u3044 Nodus \u30D0\u30FC\u30B8\u30E7\u30F3\u304C\u5FC5\u8981\u304B\u3001\u30B9\u30AD\u30FC\u30DE\u304C\u7121\u52B9\u3067\u3059\u3002", "\uC2A4\uB0C5\uC0F7\uC5D0 \uB354 \uCD5C\uC2E0 Nodus \uBC84\uC804\uC774 \uD544\uC694\uD558\uAC70\uB098 \uC2A4\uD0A4\uB9C8\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4."],
+    ["El snapshot contiene tablas inv\xE1lidas.", "The snapshot contains invalid tables.", "L\u2019instantan\xE9 contient des tables invalides.", "Der Snapshot enth\xE4lt ung\xFCltige Tabellen.", "O snapshot cont\xE9m tabelas inv\xE1lidas.", "L\u2019istantanea contiene tabelle non valide.", "Anl\u0131k g\xF6r\xFCnt\xFC ge\xE7ersiz tablolar i\xE7eriyor.", "\u5FEB\u7167\u5305\u542B\u65E0\u6548\u7684\u8868\u3002", "\u5FEB\u7167\u5305\u542B\u7121\u6548\u7684\u8CC7\u6599\u8868\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u306B\u7121\u52B9\u306A\u30C6\u30FC\u30D6\u30EB\u304C\u542B\u307E\u308C\u3066\u3044\u307E\u3059\u3002", "\uC2A4\uB0C5\uC0F7\uC5D0 \uC798\uBABB\uB41C \uD14C\uC774\uBE14\uC774 \uD3EC\uD568\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4."],
+    ["El snapshot supera el l\xEDmite de dos millones de filas.", "The snapshot exceeds the limit of two million rows.", "L\u2019instantan\xE9 d\xE9passe la limite de deux millions de lignes.", "Der Snapshot \xFCberschreitet das Limit von zwei Millionen Zeilen.", "O snapshot excede o limite de dois milh\xF5es de linhas.", "L\u2019istantanea supera il limite di due milioni di righe.", "Anl\u0131k g\xF6r\xFCnt\xFC iki milyon sat\u0131r s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "\u5FEB\u7167\u8D85\u8FC7\u4E24\u767E\u4E07\u884C\u7684\u4E0A\u9650\u3002", "\u5FEB\u7167\u8D85\u904E\u5169\u767E\u842C\u5217\u7684\u4E0A\u9650\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u304C 200 \u4E07\u884C\u306E\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "\uC2A4\uB0C5\uC0F7\uC774 200\uB9CC \uD589 \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["El snapshot supera el l\xEDmite de diez mil im\xE1genes.", "The snapshot exceeds the limit of ten thousand images.", "L\u2019instantan\xE9 d\xE9passe la limite de dix mille images.", "Der Snapshot \xFCberschreitet das Limit von zehntausend Bildern.", "O snapshot excede o limite de dez mil imagens.", "L\u2019istantanea supera il limite di diecimila immagini.", "Anl\u0131k g\xF6r\xFCnt\xFC on bin g\xF6r\xFCnt\xFC s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "\u5FEB\u7167\u8D85\u8FC7\u4E00\u4E07\u5F20\u56FE\u7247\u7684\u4E0A\u9650\u3002", "\u5FEB\u7167\u8D85\u904E\u4E00\u842C\u5F35\u5716\u7247\u7684\u4E0A\u9650\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u304C 1 \u4E07\u679A\u306E\u753B\u50CF\u306E\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "\uC2A4\uB0C5\uC0F7\uC774 \uC774\uBBF8\uC9C0 1\uB9CC \uAC1C \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["El snapshot contiene referencias de im\xE1genes inv\xE1lidas.", "The snapshot contains invalid image references.", "L\u2019instantan\xE9 contient des r\xE9f\xE9rences d\u2019images invalides.", "Der Snapshot enth\xE4lt ung\xFCltige Bildverweise.", "O snapshot cont\xE9m refer\xEAncias de imagens inv\xE1lidas.", "L\u2019istantanea contiene riferimenti a immagini non validi.", "Anl\u0131k g\xF6r\xFCnt\xFC ge\xE7ersiz g\xF6r\xFCnt\xFC ba\u015Fvurular\u0131 i\xE7eriyor.", "\u5FEB\u7167\u5305\u542B\u65E0\u6548\u7684\u56FE\u7247\u5F15\u7528\u3002", "\u5FEB\u7167\u5305\u542B\u7121\u6548\u7684\u5716\u7247\u53C3\u7167\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u306B\u7121\u52B9\u306A\u753B\u50CF\u53C2\u7167\u304C\u542B\u307E\u308C\u3066\u3044\u307E\u3059\u3002", "\uC2A4\uB0C5\uC0F7\uC5D0 \uC798\uBABB\uB41C \uC774\uBBF8\uC9C0 \uCC38\uC870\uAC00 \uD3EC\uD568\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4."],
+    ["Las referencias de im\xE1genes superan 2 MiB.", "Image references exceed 2 MiB.", "Les r\xE9f\xE9rences d\u2019images d\xE9passent 2 MiB.", "Die Bildverweise \xFCberschreiten 2 MiB.", "As refer\xEAncias de imagens excedem 2 MiB.", "I riferimenti alle immagini superano 2 MiB.", "G\xF6r\xFCnt\xFC ba\u015Fvurular\u0131 2 MiB s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "\u56FE\u7247\u5F15\u7528\u8D85\u8FC7 2 MiB\u3002", "\u5716\u7247\u53C3\u7167\u8D85\u904E 2 MiB\u3002", "\u753B\u50CF\u53C2\u7167\u304C 2 MiB \u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "\uC774\uBBF8\uC9C0 \uCC38\uC870\uAC00 2 MiB\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["La importaci\xF3n de la r\xE9plica se ha cancelado.", "Replica import was cancelled.", "L\u2019importation de la r\xE9plique a \xE9t\xE9 annul\xE9e.", "Der Replikatimport wurde abgebrochen.", "A importa\xE7\xE3o da r\xE9plica foi cancelada.", "L\u2019importazione della replica \xE8 stata annullata.", "Kopya i\xE7e aktar\u0131m\u0131 iptal edildi.", "\u526F\u672C\u5BFC\u5165\u5DF2\u53D6\u6D88\u3002", "\u526F\u672C\u532F\u5165\u5DF2\u53D6\u6D88\u3002", "\u30EC\u30D7\u30EA\u30AB\u306E\u30A4\u30F3\u30DD\u30FC\u30C8\u3092\u30AD\u30E3\u30F3\u30BB\u30EB\u3057\u307E\u3057\u305F\u3002", "\uBCF5\uC81C\uBCF8 \uAC00\uC838\uC624\uAE30\uAC00 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4."],
+    ["La descarga del snapshot ha superado el plazo m\xE1ximo.", "The snapshot download exceeded its deadline.", "Le t\xE9l\xE9chargement de l\u2019instantan\xE9 a d\xE9pass\xE9 le d\xE9lai maximal.", "Der Snapshot-Download hat das Zeitlimit \xFCberschritten.", "A transfer\xEAncia do snapshot excedeu o prazo m\xE1ximo.", "Il download dell\u2019istantanea ha superato il tempo massimo.", "Anl\u0131k g\xF6r\xFCnt\xFC indirme i\u015Flemi zaman s\u0131n\u0131r\u0131n\u0131 a\u015Ft\u0131.", "\u5FEB\u7167\u4E0B\u8F7D\u8D85\u8FC7\u4E86\u65F6\u95F4\u4E0A\u9650\u3002", "\u5FEB\u7167\u4E0B\u8F09\u8D85\u904E\u4E86\u6642\u9593\u4E0A\u9650\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u306E\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u304C\u5236\u9650\u6642\u9593\u3092\u8D85\u3048\u307E\u3057\u305F\u3002", "\uC2A4\uB0C5\uC0F7 \uB2E4\uC6B4\uB85C\uB4DC\uAC00 \uC81C\uD55C \uC2DC\uAC04\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4."],
+    ["El snapshot remoto est\xE1 vac\xEDo.", "The remote snapshot is empty.", "L\u2019instantan\xE9 distant est vide.", "Der entfernte Snapshot ist leer.", "O snapshot remoto est\xE1 vazio.", "L\u2019istantanea remota \xE8 vuota.", "Uzak anl\u0131k g\xF6r\xFCnt\xFC bo\u015F.", "\u8FDC\u7A0B\u5FEB\u7167\u4E3A\u7A7A\u3002", "\u9060\u7AEF\u5FEB\u7167\u70BA\u7A7A\u3002", "\u30EA\u30E2\u30FC\u30C8\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u304C\u7A7A\u3067\u3059\u3002", "\uC6D0\uACA9 \uC2A4\uB0C5\uC0F7\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4."],
+    ["El proceso auxiliar de r\xE9plica no est\xE1 disponible. Reinstala o actualiza Nodus.", "The replica utility process is unavailable. Reinstall or update Nodus.", "Le processus auxiliaire de r\xE9plique est indisponible. R\xE9installez ou mettez \xE0 jour Nodus.", "Der Replikat-Hilfsprozess ist nicht verf\xFCgbar. Installieren Sie Nodus neu oder aktualisieren Sie es.", "O processo auxiliar de r\xE9plica n\xE3o est\xE1 dispon\xEDvel. Reinstale ou atualize o Nodus.", "Il processo ausiliario della replica non \xE8 disponibile. Reinstalla o aggiorna Nodus.", "Kopya yard\u0131mc\u0131 i\u015Flemi kullan\u0131lam\u0131yor. Nodus\u2019u yeniden y\xFCkleyin veya g\xFCncelleyin.", "\u526F\u672C\u8F85\u52A9\u8FDB\u7A0B\u4E0D\u53EF\u7528\u3002\u8BF7\u91CD\u65B0\u5B89\u88C5\u6216\u66F4\u65B0 Nodus\u3002", "\u526F\u672C\u8F14\u52A9\u7A0B\u5E8F\u7121\u6CD5\u4F7F\u7528\u3002\u8ACB\u91CD\u65B0\u5B89\u88DD\u6216\u66F4\u65B0 Nodus\u3002", "\u30EC\u30D7\u30EA\u30AB\u306E\u88DC\u52A9\u30D7\u30ED\u30BB\u30B9\u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002Nodus \u3092\u518D\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u307E\u305F\u306F\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044\u3002", "\uBCF5\uC81C\uBCF8 \uBCF4\uC870 \uD504\uB85C\uC138\uC2A4\uB97C \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. Nodus\uB97C \uB2E4\uC2DC \uC124\uCE58\uD558\uAC70\uB098 \uC5C5\uB370\uC774\uD2B8\uD558\uC138\uC694."],
+    ["La importaci\xF3n del snapshot ha superado el plazo m\xE1ximo de dos minutos.", "The snapshot import exceeded its two-minute deadline.", "L\u2019importation de l\u2019instantan\xE9 a d\xE9pass\xE9 le d\xE9lai maximal de deux minutes.", "Der Snapshot-Import hat das Zeitlimit von zwei Minuten \xFCberschritten.", "A importa\xE7\xE3o do snapshot excedeu o prazo m\xE1ximo de dois minutos.", "L\u2019importazione dell\u2019istantanea ha superato il tempo massimo di due minuti.", "Anl\u0131k g\xF6r\xFCnt\xFC i\xE7e aktar\u0131m\u0131 iki dakikal\u0131k zaman s\u0131n\u0131r\u0131n\u0131 a\u015Ft\u0131.", "\u5FEB\u7167\u5BFC\u5165\u8D85\u8FC7\u4E86\u4E24\u5206\u949F\u7684\u65F6\u95F4\u4E0A\u9650\u3002", "\u5FEB\u7167\u532F\u5165\u8D85\u904E\u4E86\u5169\u5206\u9418\u7684\u6642\u9593\u4E0A\u9650\u3002", "\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u306E\u30A4\u30F3\u30DD\u30FC\u30C8\u304C\u5236\u9650\u6642\u9593\u306E 2 \u5206\u3092\u8D85\u3048\u307E\u3057\u305F\u3002", "\uC2A4\uB0C5\uC0F7 \uAC00\uC838\uC624\uAE30\uAC00 2\uBD84 \uC81C\uD55C \uC2DC\uAC04\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4."],
+    ["El proceso auxiliar no devolvi\xF3 un resultado.", "The utility process did not return a result.", "Le processus auxiliaire n\u2019a renvoy\xE9 aucun r\xE9sultat.", "Der Hilfsprozess hat kein Ergebnis zur\xFCckgegeben.", "O processo auxiliar n\xE3o devolveu um resultado.", "Il processo ausiliario non ha restituito un risultato.", "Yard\u0131mc\u0131 i\u015Flem bir sonu\xE7 d\xF6nd\xFCrmedi.", "\u8F85\u52A9\u8FDB\u7A0B\u672A\u8FD4\u56DE\u7ED3\u679C\u3002", "\u8F14\u52A9\u7A0B\u5E8F\u672A\u50B3\u56DE\u7D50\u679C\u3002", "\u88DC\u52A9\u30D7\u30ED\u30BB\u30B9\u304C\u7D50\u679C\u3092\u8FD4\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002", "\uBCF4\uC870 \uD504\uB85C\uC138\uC2A4\uAC00 \uACB0\uACFC\uB97C \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."],
+    ["La publicaci\xF3n se ha detenido.", "Publication has stopped.", "La publication a \xE9t\xE9 arr\xEAt\xE9e.", "Die Ver\xF6ffentlichung wurde gestoppt.", "A publica\xE7\xE3o foi interrompida.", "La pubblicazione \xE8 stata interrotta.", "Yay\u0131mlama durduruldu.", "\u53D1\u5E03\u5DF2\u505C\u6B62\u3002", "\u767C\u4F48\u5DF2\u505C\u6B62\u3002", "\u516C\u958B\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002", "\uAC8C\uC2DC\uAC00 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4."],
+    ["Cloudflare no confirm\xF3 la p\xE1gina privada del inbox.", "Cloudflare did not acknowledge the private inbox page.", "Cloudflare n\u2019a pas confirm\xE9 la page priv\xE9e de la bo\xEEte de r\xE9ception.", "Cloudflare hat die private Posteingangsseite nicht best\xE4tigt.", "A Cloudflare n\xE3o confirmou a p\xE1gina privada da caixa de entrada.", "Cloudflare non ha confermato la pagina privata della posta in arrivo.", "Cloudflare \xF6zel gelen kutusu sayfas\u0131n\u0131 onaylamad\u0131.", "Cloudflare \u672A\u786E\u8BA4\u79C1\u6709\u6536\u4EF6\u7BB1\u9875\u9762\u3002", "Cloudflare \u672A\u78BA\u8A8D\u79C1\u4EBA\u6536\u4EF6\u5323\u9801\u9762\u3002", "Cloudflare \u304C\u30D7\u30E9\u30A4\u30D9\u30FC\u30C8\u53D7\u4FE1\u30C8\u30EC\u30A4\u306E\u30DA\u30FC\u30B8\u3092\u78BA\u8A8D\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002", "Cloudflare\uAC00 \uBE44\uACF5\uAC1C \uBC1B\uC740 \uD3B8\uC9C0\uD568 \uD398\uC774\uC9C0\uB97C \uD655\uC778\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."],
+    ["Cloudflare no confirm\xF3 el cursor del relay.", "Cloudflare did not acknowledge the relay cursor.", "Cloudflare n\u2019a pas confirm\xE9 le curseur du relais.", "Cloudflare hat den Relay-Cursor nicht best\xE4tigt.", "A Cloudflare n\xE3o confirmou o cursor do relay.", "Cloudflare non ha confermato il cursore del relay.", "Cloudflare aktar\u0131m imlecini onaylamad\u0131.", "Cloudflare \u672A\u786E\u8BA4\u4E2D\u7EE7\u6E38\u6807\u3002", "Cloudflare \u672A\u78BA\u8A8D\u8F49\u9001\u6E38\u6A19\u3002", "Cloudflare \u304C\u30EA\u30EC\u30FC\u306E\u30AB\u30FC\u30BD\u30EB\u3092\u78BA\u8A8D\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002", "Cloudflare\uAC00 \uB9B4\uB808\uC774 \uCEE4\uC11C\uB97C \uD655\uC778\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."],
+    ["Cloudflare no devolvi\xF3 una imagen.", "Cloudflare did not return an image.", "Cloudflare n\u2019a pas renvoy\xE9 d\u2019image.", "Cloudflare hat kein Bild zur\xFCckgegeben.", "A Cloudflare n\xE3o devolveu uma imagem.", "Cloudflare non ha restituito un\u2019immagine.", "Cloudflare bir g\xF6r\xFCnt\xFC d\xF6nd\xFCrmedi.", "Cloudflare \u672A\u8FD4\u56DE\u56FE\u7247\u3002", "Cloudflare \u672A\u50B3\u56DE\u5716\u7247\u3002", "Cloudflare \u304C\u753B\u50CF\u3092\u8FD4\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002", "Cloudflare\uAC00 \uC774\uBBF8\uC9C0\uB97C \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."],
+    ["La actualizaci\xF3n Yjs supera el l\xEDmite de Cloudflare de 8 MiB.", "The Yjs update exceeds Cloudflare\u2019s 8 MiB limit.", "La mise \xE0 jour Yjs d\xE9passe la limite de 8 MiB de Cloudflare.", "Das Yjs-Update \xFCberschreitet das Cloudflare-Limit von 8 MiB.", "A atualiza\xE7\xE3o Yjs excede o limite de 8 MiB da Cloudflare.", "L\u2019aggiornamento Yjs supera il limite di 8 MiB di Cloudflare.", "Yjs g\xFCncellemesi Cloudflare\u2019in 8 MiB s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "Yjs \u66F4\u65B0\u8D85\u8FC7 Cloudflare \u7684 8 MiB \u4E0A\u9650\u3002", "Yjs \u66F4\u65B0\u8D85\u904E Cloudflare \u7684 8 MiB \u4E0A\u9650\u3002", "Yjs \u306E\u66F4\u65B0\u304C Cloudflare \u306E\u4E0A\u9650\u306E 8 MiB \u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "Yjs \uC5C5\uB370\uC774\uD2B8\uAC00 Cloudflare\uC758 8 MiB \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["El adjunto supera el l\xEDmite de Cloudflare de 32 MiB.", "The attachment exceeds Cloudflare\u2019s 32 MiB limit.", "La pi\xE8ce jointe d\xE9passe la limite de 32 MiB de Cloudflare.", "Der Anhang \xFCberschreitet das Cloudflare-Limit von 32 MiB.", "O anexo excede o limite de 32 MiB da Cloudflare.", "L\u2019allegato supera il limite di 32 MiB di Cloudflare.", "Ek Cloudflare\u2019in 32 MiB s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "\u9644\u4EF6\u8D85\u8FC7 Cloudflare \u7684 32 MiB \u4E0A\u9650\u3002", "\u9644\u4EF6\u8D85\u904E Cloudflare \u7684 32 MiB \u4E0A\u9650\u3002", "\u6DFB\u4ED8\u30D5\u30A1\u30A4\u30EB\u304C Cloudflare \u306E\u4E0A\u9650\u306E 32 MiB \u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "\uCCA8\uBD80\uD30C\uC77C\uC774 Cloudflare\uC758 32 MiB \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."],
+    ["La sincronizaci\xF3n autom\xE1tica se ha detenido para evitar llamadas repetidas.", "Automatic synchronization has stopped to prevent repeated requests.", "La synchronisation automatique a \xE9t\xE9 arr\xEAt\xE9e pour \xE9viter les requ\xEAtes r\xE9p\xE9t\xE9es.", "Die automatische Synchronisierung wurde gestoppt, um wiederholte Anfragen zu vermeiden.", "A sincroniza\xE7\xE3o autom\xE1tica foi interrompida para evitar pedidos repetidos.", "La sincronizzazione automatica \xE8 stata interrotta per evitare richieste ripetute.", "Tekrarlanan istekleri \xF6nlemek i\xE7in otomatik e\u015Fitleme durduruldu.", "\u81EA\u52A8\u540C\u6B65\u5DF2\u505C\u6B62\uFF0C\u4EE5\u9632\u6B62\u91CD\u590D\u8BF7\u6C42\u3002", "\u81EA\u52D5\u540C\u6B65\u5DF2\u505C\u6B62\uFF0C\u4EE5\u9632\u6B62\u91CD\u8907\u8ACB\u6C42\u3002", "\u30EA\u30AF\u30A8\u30B9\u30C8\u306E\u7E70\u308A\u8FD4\u3057\u3092\u9632\u3050\u305F\u3081\u3001\u81EA\u52D5\u540C\u671F\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002", "\uBC18\uBCF5 \uC694\uCCAD\uC744 \uBC29\uC9C0\uD558\uAE30 \uC704\uD574 \uC790\uB3D9 \uB3D9\uAE30\uD654\uAC00 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4."],
+    ["La sincronizaci\xF3n autom\xE1tica se ha detenido para evitar llamadas repetidas. Vuelve a conectar o sincroniza manualmente tras resolver el error.", "Automatic synchronization has stopped to prevent repeated requests. Reconnect or synchronize manually after resolving the error.", "La synchronisation automatique a \xE9t\xE9 arr\xEAt\xE9e pour \xE9viter les requ\xEAtes r\xE9p\xE9t\xE9es. Reconnectez-vous ou synchronisez manuellement apr\xE8s avoir r\xE9solu l\u2019erreur.", "Die automatische Synchronisierung wurde gestoppt, um wiederholte Anfragen zu vermeiden. Verbinden Sie sich erneut oder synchronisieren Sie nach Behebung des Fehlers manuell.", "A sincroniza\xE7\xE3o autom\xE1tica foi interrompida para evitar pedidos repetidos. Volte a ligar ou sincronize manualmente ap\xF3s resolver o erro.", "La sincronizzazione automatica \xE8 stata interrotta per evitare richieste ripetute. Riconnettiti o sincronizza manualmente dopo aver risolto l\u2019errore.", "Tekrarlanan istekleri \xF6nlemek i\xE7in otomatik e\u015Fitleme durduruldu. Hatay\u0131 giderdikten sonra yeniden ba\u011Flan\u0131n veya elle e\u015Fitleyin.", "\u81EA\u52A8\u540C\u6B65\u5DF2\u505C\u6B62\uFF0C\u4EE5\u9632\u6B62\u91CD\u590D\u8BF7\u6C42\u3002\u89E3\u51B3\u9519\u8BEF\u540E\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u6216\u624B\u52A8\u540C\u6B65\u3002", "\u81EA\u52D5\u540C\u6B65\u5DF2\u505C\u6B62\uFF0C\u4EE5\u9632\u6B62\u91CD\u8907\u8ACB\u6C42\u3002\u89E3\u6C7A\u932F\u8AA4\u5F8C\uFF0C\u8ACB\u91CD\u65B0\u9023\u7DDA\u6216\u624B\u52D5\u540C\u6B65\u3002", "\u30EA\u30AF\u30A8\u30B9\u30C8\u306E\u7E70\u308A\u8FD4\u3057\u3092\u9632\u3050\u305F\u3081\u3001\u81EA\u52D5\u540C\u671F\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002\u30A8\u30E9\u30FC\u3092\u89E3\u6C7A\u3057\u3066\u304B\u3089\u518D\u63A5\u7D9A\u3059\u308B\u304B\u3001\u624B\u52D5\u3067\u540C\u671F\u3057\u3066\u304F\u3060\u3055\u3044\u3002", "\uBC18\uBCF5 \uC694\uCCAD\uC744 \uBC29\uC9C0\uD558\uAE30 \uC704\uD574 \uC790\uB3D9 \uB3D9\uAE30\uD654\uAC00 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC624\uB958\uB97C \uD574\uACB0\uD55C \uD6C4 \uB2E4\uC2DC \uC5F0\uACB0\uD558\uAC70\uB098 \uC218\uB3D9\uC73C\uB85C \uB3D9\uAE30\uD654\uD558\uC138\uC694."],
+    [CLOUDFLARE_SAFETY_UPGRADE_MESSAGE, "Update the Nodus Cloud Worker and apply its migrations before synchronizing: this installation does not yet advertise cumulative limits and persistent cleanup.", "Mettez \xE0 jour le Worker Nodus Cloud et appliquez ses migrations avant de synchroniser : cette installation n\u2019annonce pas encore de limites cumul\xE9es ni de nettoyage persistant.", "Aktualisieren Sie den Nodus Cloud Worker und wenden Sie seine Migrationen vor der Synchronisierung an: Diese Installation meldet noch keine kumulierten Limits und keine dauerhafte Bereinigung.", "Atualize o Worker do Nodus Cloud e aplique as suas migra\xE7\xF5es antes de sincronizar: esta instala\xE7\xE3o ainda n\xE3o anuncia limites acumulados e limpeza persistente.", "Aggiorna il Worker di Nodus Cloud e applica le sue migrazioni prima di sincronizzare: questa installazione non dichiara ancora limiti cumulativi e pulizia persistente.", "E\u015Fitlemeden \xF6nce Nodus Cloud Worker\u2019\u0131 g\xFCncelleyin ve ge\xE7i\u015Flerini uygulay\u0131n: bu kurulum hen\xFCz birikimli s\u0131n\u0131rlar\u0131 ve kal\u0131c\u0131 temizlemeyi bildirmiyor.", "\u540C\u6B65\u524D\u8BF7\u66F4\u65B0 Nodus Cloud Worker \u5E76\u5E94\u7528\u8FC1\u79FB\uFF1A\u6B64\u5B89\u88C5\u5C1A\u672A\u58F0\u660E\u7D2F\u8BA1\u9650\u989D\u548C\u6301\u4E45\u5316\u6E05\u7406\u3002", "\u540C\u6B65\u524D\u8ACB\u66F4\u65B0 Nodus Cloud Worker \u4E26\u5957\u7528\u79FB\u8F49\uFF1A\u6B64\u5B89\u88DD\u5C1A\u672A\u5BA3\u544A\u7D2F\u8A08\u9650\u984D\u548C\u6301\u7E8C\u6027\u6E05\u7406\u3002", "\u540C\u671F\u524D\u306B Nodus Cloud Worker \u3092\u66F4\u65B0\u3057\u3001\u30DE\u30A4\u30B0\u30EC\u30FC\u30B7\u30E7\u30F3\u3092\u9069\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u3053\u306E\u74B0\u5883\u3067\u306F\u7D2F\u7A4D\u4E0A\u9650\u3068\u6C38\u7D9A\u7684\u306A\u30AF\u30EA\u30FC\u30F3\u30A2\u30C3\u30D7\u3078\u306E\u5BFE\u5FDC\u304C\u307E\u3060\u901A\u77E5\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002", "\uB3D9\uAE30\uD654 \uC804\uC5D0 Nodus Cloud Worker\uB97C \uC5C5\uB370\uC774\uD2B8\uD558\uACE0 \uB9C8\uC774\uADF8\uB808\uC774\uC158\uC744 \uC801\uC6A9\uD558\uC138\uC694. \uC774 \uC124\uCE58\uB294 \uC544\uC9C1 \uB204\uC801 \uD55C\uB3C4\uC640 \uC601\uAD6C \uC815\uB9AC\uB97C \uC9C0\uC6D0\uD55C\uB2E4\uACE0 \uC54C\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."]
+  ];
+  function translations(row, value) {
+    const result = Object.fromEntries(languages2.map((language, index) => [
+      language,
+      value === void 0 ? row[index + 1] : row[index + 1].replaceAll("{value}", value)
+    ]));
+    result["pt-BR"] = result.pt;
+    return result;
+  }
+  var CLOUDFLARE_SYNC_ERRORS = Object.fromEntries(rows2.map((row) => [row[0], translations(row)]));
+  var patterns = [
+    [/^El índice (.+) supera el límite seguro de búsqueda exacta de Cloudflare\.$/, ["El \xEDndice {value} supera el l\xEDmite seguro de b\xFAsqueda exacta de Cloudflare.", "The {value} index exceeds Cloudflare\u2019s safe exact-search limit.", "L\u2019index {value} d\xE9passe la limite s\xFBre de recherche exacte de Cloudflare.", "Der {value}-Index \xFCberschreitet das sichere Limit f\xFCr die exakte Suche von Cloudflare.", "O \xEDndice {value} excede o limite seguro de pesquisa exata da Cloudflare.", "L\u2019indice {value} supera il limite sicuro di ricerca esatta di Cloudflare.", "{value} dizini Cloudflare\u2019in g\xFCvenli tam arama s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "{value} \u7D22\u5F15\u8D85\u8FC7 Cloudflare \u7684\u7CBE\u786E\u641C\u7D22\u5B89\u5168\u4E0A\u9650\u3002", "{value} \u7D22\u5F15\u8D85\u904E Cloudflare \u7684\u7CBE\u78BA\u641C\u5C0B\u5B89\u5168\u4E0A\u9650\u3002", "{value} \u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u304C Cloudflare \u306E\u5B8C\u5168\u4E00\u81F4\u691C\u7D22\u306E\u5B89\u5168\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "{value} \uC778\uB371\uC2A4\uAC00 Cloudflare\uC758 \uC815\uD655 \uAC80\uC0C9 \uC548\uC804 \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."]],
+    [/^El proceso auxiliar de réplica terminó sin completar la importación \((.+)\)\.$/, ["El proceso auxiliar de r\xE9plica termin\xF3 sin completar la importaci\xF3n ({value}).", "The replica utility process exited without completing the import ({value}).", "Le processus auxiliaire de r\xE9plique s\u2019est termin\xE9 sans achever l\u2019importation ({value}).", "Der Replikat-Hilfsprozess wurde beendet, ohne den Import abzuschlie\xDFen ({value}).", "O processo auxiliar de r\xE9plica terminou sem concluir a importa\xE7\xE3o ({value}).", "Il processo ausiliario della replica \xE8 terminato senza completare l\u2019importazione ({value}).", "Kopya yard\u0131mc\u0131 i\u015Flemi i\xE7e aktar\u0131m\u0131 tamamlamadan sonland\u0131 ({value}).", "\u526F\u672C\u8F85\u52A9\u8FDB\u7A0B\u5728\u5B8C\u6210\u5BFC\u5165\u524D\u9000\u51FA\uFF08{value}\uFF09\u3002", "\u526F\u672C\u8F14\u52A9\u7A0B\u5E8F\u5728\u5B8C\u6210\u532F\u5165\u524D\u7D50\u675F\uFF08{value}\uFF09\u3002", "\u30EC\u30D7\u30EA\u30AB\u306E\u88DC\u52A9\u30D7\u30ED\u30BB\u30B9\u304C\u30A4\u30F3\u30DD\u30FC\u30C8\u3092\u5B8C\u4E86\u305B\u305A\u306B\u7D42\u4E86\u3057\u307E\u3057\u305F\uFF08{value}\uFF09\u3002", "\uBCF5\uC81C\uBCF8 \uBCF4\uC870 \uD504\uB85C\uC138\uC2A4\uAC00 \uAC00\uC838\uC624\uAE30\uB97C \uC644\uB8CC\uD558\uC9C0 \uC54A\uACE0 \uC885\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4({value})."]],
+    [/^No se pudieron verificar las protecciones de Cloudflare \(HTTP (\d+)\)\.$/, ["No se pudieron verificar las protecciones de Cloudflare (HTTP {value}).", "Cloudflare safeguards could not be verified (HTTP {value}).", "Les protections Cloudflare n\u2019ont pas pu \xEAtre v\xE9rifi\xE9es (HTTP {value}).", "Die Cloudflare-Schutzma\xDFnahmen konnten nicht \xFCberpr\xFCft werden (HTTP {value}).", "N\xE3o foi poss\xEDvel verificar as prote\xE7\xF5es da Cloudflare (HTTP {value}).", "Non \xE8 stato possibile verificare le protezioni di Cloudflare (HTTP {value}).", "Cloudflare korumalar\u0131 do\u011Frulanamad\u0131 (HTTP {value}).", "\u65E0\u6CD5\u9A8C\u8BC1 Cloudflare \u7684\u4FDD\u62A4\u63AA\u65BD\uFF08HTTP {value}\uFF09\u3002", "\u7121\u6CD5\u9A57\u8B49 Cloudflare \u7684\u4FDD\u8B77\u63AA\u65BD\uFF08HTTP {value}\uFF09\u3002", "Cloudflare \u306E\u4FDD\u8B77\u6A5F\u80FD\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08HTTP {value}\uFF09\u3002", "Cloudflare \uBCF4\uD638 \uAE30\uB2A5\uC744 \uD655\uC778\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4(HTTP {value})."]],
+    [/^Cloudflare no devolvió el relay \(HTTP (\d+)\)\.$/, ["Cloudflare no devolvi\xF3 el relay (HTTP {value}).", "Cloudflare did not return the relay (HTTP {value}).", "Cloudflare n\u2019a pas renvoy\xE9 le relais (HTTP {value}).", "Cloudflare hat das Relay nicht zur\xFCckgegeben (HTTP {value}).", "A Cloudflare n\xE3o devolveu o relay (HTTP {value}).", "Cloudflare non ha restituito il relay (HTTP {value}).", "Cloudflare aktar\u0131m\u0131 d\xF6nd\xFCrmedi (HTTP {value}).", "Cloudflare \u672A\u8FD4\u56DE\u4E2D\u7EE7\uFF08HTTP {value}\uFF09\u3002", "Cloudflare \u672A\u50B3\u56DE\u8F49\u9001\u8CC7\u6599\uFF08HTTP {value}\uFF09\u3002", "Cloudflare \u304C\u30EA\u30EC\u30FC\u3092\u8FD4\u3057\u307E\u305B\u3093\u3067\u3057\u305F\uFF08HTTP {value}\uFF09\u3002", "Cloudflare\uAC00 \uB9B4\uB808\uC774\uB97C \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4(HTTP {value})."]]
+  ];
+  var CLOUDFLARE_SYNC_ERROR_PATTERNS = patterns.map(([pattern, row]) => ({
+    pattern,
+    translate: (value) => translations(row, value)
+  }));
+
+  // shared/sttErrors.ts
+  var STT_RUNTIME_ERRORS = {
+    "Ya hay una transcripci\xF3n con este identificador.": {
+      en: "A transcription with this identifier is already running.",
+      fr: "Une transcription avec cet identifiant est d\xE9j\xE0 en cours.",
+      de: "Eine Transkription mit dieser Kennung l\xE4uft bereits.",
+      pt: "J\xE1 est\xE1 em curso uma transcri\xE7\xE3o com este identificador.",
+      "pt-BR": "J\xE1 h\xE1 uma transcri\xE7\xE3o em andamento com este identificador.",
+      it: "\xC8 gi\xE0 in corso una trascrizione con questo identificatore.",
+      tr: "Bu tan\u0131mlay\u0131c\u0131yla bir de\u015Fifre i\u015Flemi zaten \xE7al\u0131\u015F\u0131yor.",
+      "zh-CN": "\u4F7F\u7528\u6B64\u6807\u8BC6\u7B26\u7684\u8F6C\u5F55\u5DF2\u5728\u8FD0\u884C\u3002",
+      "zh-TW": "\u4F7F\u7528\u6B64\u8B58\u5225\u78BC\u7684\u8F49\u9304\u5DF2\u5728\u57F7\u884C\u3002",
+      ja: "\u3053\u306E\u8B58\u5225\u5B50\u306E\u6587\u5B57\u8D77\u3053\u3057\u306F\u3059\u3067\u306B\u5B9F\u884C\u4E2D\u3067\u3059\u3002",
+      ko: "\uC774 \uC2DD\uBCC4\uC790\uB85C \uC9C4\uD589 \uC911\uC778 \uC804\uC0AC\uAC00 \uC774\uBBF8 \uC788\uC2B5\uB2C8\uB2E4."
+    },
+    "El dictado en directo necesita whisper-server, incluido en whisper.cpp. Actualiza la instalaci\xF3n desde Ajustes \u2192 Modelos IA.": {
+      en: "Live dictation requires whisper-server, included in whisper.cpp. Update the installation in Settings \u2192 AI Models.",
+      fr: "La dict\xE9e en direct n\xE9cessite whisper-server, inclus dans whisper.cpp. Mettez \xE0 jour l\u2019installation dans R\xE9glages \u2192 Mod\xE8les IA.",
+      de: "Live-Diktat ben\xF6tigt whisper-server, das in whisper.cpp enthalten ist. Aktualisieren Sie die Installation unter Einstellungen \u2192 KI-Modelle.",
+      pt: "O ditado em direto necessita de whisper-server, inclu\xEDdo no whisper.cpp. Atualize a instala\xE7\xE3o em Defini\xE7\xF5es \u2192 Modelos IA.",
+      "pt-BR": "O ditado ao vivo precisa de whisper-server, inclu\xEDdo no whisper.cpp. Atualize a instala\xE7\xE3o em Configura\xE7\xF5es \u2192 Modelos IA.",
+      it: "La dettatura in diretta richiede whisper-server, incluso in whisper.cpp. Aggiorna l\u2019installazione in Impostazioni \u2192 Modelli IA.",
+      tr: "Canl\u0131 dikte, whisper.cpp ile gelen whisper-server gerektirir. Ayarlar \u2192 Yapay Zek\xE2 Modelleri b\xF6l\xFCm\xFCnden kurulumu g\xFCncelleyin.",
+      "zh-CN": "\u5B9E\u65F6\u542C\u5199\u9700\u8981 whisper.cpp \u4E2D\u5305\u542B\u7684 whisper-server\u3002\u8BF7\u5728\u8BBE\u7F6E \u2192 AI \u6A21\u578B\u4E2D\u66F4\u65B0\u5B89\u88C5\u3002",
+      "zh-TW": "\u5373\u6642\u807D\u5BEB\u9700\u8981 whisper.cpp \u4E2D\u5305\u542B\u7684 whisper-server\u3002\u8ACB\u5728\u8A2D\u5B9A \u2192 AI \u6A21\u578B\u4E2D\u66F4\u65B0\u5B89\u88DD\u3002",
+      ja: "\u30EA\u30A2\u30EB\u30BF\u30A4\u30E0\u306E\u97F3\u58F0\u5165\u529B\u306B\u306F whisper.cpp \u306B\u542B\u307E\u308C\u308B whisper-server \u304C\u5FC5\u8981\u3067\u3059\u3002\u8A2D\u5B9A \u2192 AI \u30E2\u30C7\u30EB\u3067\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u3092\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      ko: "\uC2E4\uC2DC\uAC04 \uBC1B\uC544\uC4F0\uAE30\uC5D0\uB294 whisper.cpp\uC5D0 \uD3EC\uD568\uB41C whisper-server\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4. \uC124\uC815 \u2192 AI \uBAA8\uB378\uC5D0\uC11C \uC124\uCE58\uB97C \uC5C5\uB370\uC774\uD2B8\uD558\uC138\uC694."
+    },
+    "La sesi\xF3n de dictado ya est\xE1 procesando otro audio.": {
+      en: "The dictation session is already processing another audio segment.",
+      fr: "La session de dict\xE9e traite d\xE9j\xE0 un autre segment audio.",
+      de: "Die Diktatsitzung verarbeitet bereits einen anderen Audioabschnitt.",
+      pt: "A sess\xE3o de ditado j\xE1 est\xE1 a processar outro segmento de \xE1udio.",
+      "pt-BR": "A sess\xE3o de ditado j\xE1 est\xE1 processando outro trecho de \xE1udio.",
+      it: "La sessione di dettatura sta gi\xE0 elaborando un altro segmento audio.",
+      tr: "Dikte oturumu zaten ba\u015Fka bir ses b\xF6l\xFCm\xFCn\xFC i\u015Fliyor.",
+      "zh-CN": "\u542C\u5199\u4F1A\u8BDD\u5DF2\u5728\u5904\u7406\u53E6\u4E00\u4E2A\u97F3\u9891\u7247\u6BB5\u3002",
+      "zh-TW": "\u807D\u5BEB\u5DE5\u4F5C\u968E\u6BB5\u5DF2\u5728\u8655\u7406\u53E6\u4E00\u500B\u97F3\u8A0A\u7247\u6BB5\u3002",
+      ja: "\u97F3\u58F0\u5165\u529B\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u306F\u5225\u306E\u97F3\u58F0\u533A\u9593\u3092\u51E6\u7406\u4E2D\u3067\u3059\u3002",
+      ko: "\uBC1B\uC544\uC4F0\uAE30 \uC138\uC158\uC774 \uC774\uBBF8 \uB2E4\uB978 \uC624\uB514\uC624 \uAD6C\uAC04\uC744 \uCC98\uB9AC\uD558\uACE0 \uC788\uC2B5\uB2C8\uB2E4."
+    },
+    "Identificador de dictado no v\xE1lido.": {
+      en: "Invalid dictation identifier.",
+      fr: "Identifiant de dict\xE9e invalide.",
+      de: "Ung\xFCltige Diktatkennung.",
+      pt: "Identificador de ditado inv\xE1lido.",
+      "pt-BR": "Identificador de ditado inv\xE1lido.",
+      it: "Identificatore di dettatura non valido.",
+      tr: "Dikte tan\u0131mlay\u0131c\u0131s\u0131 ge\xE7ersiz.",
+      "zh-CN": "\u542C\u5199\u6807\u8BC6\u7B26\u65E0\u6548\u3002",
+      "zh-TW": "\u807D\u5BEB\u8B58\u5225\u78BC\u7121\u6548\u3002",
+      ja: "\u97F3\u58F0\u5165\u529B\u306E\u8B58\u5225\u5B50\u304C\u7121\u52B9\u3067\u3059\u3002",
+      ko: "\uBC1B\uC544\uC4F0\uAE30 \uC2DD\uBCC4\uC790\uAC00 \uC720\uD6A8\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    },
+    "Whisper no termin\xF3 de preparar el modelo local.": {
+      en: "Whisper did not finish preparing the local model.",
+      fr: "Whisper n\u2019a pas termin\xE9 la pr\xE9paration du mod\xE8le local.",
+      de: "Whisper hat die Vorbereitung des lokalen Modells nicht abgeschlossen.",
+      pt: "O Whisper n\xE3o terminou de preparar o modelo local.",
+      "pt-BR": "O Whisper n\xE3o terminou de preparar o modelo local.",
+      it: "Whisper non ha completato la preparazione del modello locale.",
+      tr: "Whisper yerel modeli haz\u0131rlamay\u0131 tamamlayamad\u0131.",
+      "zh-CN": "Whisper \u672A\u80FD\u5B8C\u6210\u672C\u5730\u6A21\u578B\u7684\u51C6\u5907\u3002",
+      "zh-TW": "Whisper \u672A\u80FD\u5B8C\u6210\u672C\u6A5F\u6A21\u578B\u7684\u6E96\u5099\u3002",
+      ja: "Whisper \u306F\u30ED\u30FC\u30AB\u30EB\u30E2\u30C7\u30EB\u306E\u6E96\u5099\u3092\u5B8C\u4E86\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002",
+      ko: "Whisper\uAC00 \uB85C\uCEEC \uBAA8\uB378 \uC900\uBE44\uB97C \uC644\uB8CC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4."
+    }
+  };
+  var STT_RUNTIME_ERROR_PATTERNS = [
+    {
+      pattern: /^Whisper no pudo transcribir el audio \((\d+)\)\.$/,
+      translate: (status) => ({
+        en: `Whisper could not transcribe the audio (${status}).`,
+        fr: `Whisper n\u2019a pas pu transcrire l\u2019audio (${status}).`,
+        de: `Whisper konnte die Audiodatei nicht transkribieren (${status}).`,
+        pt: `O Whisper n\xE3o conseguiu transcrever o \xE1udio (${status}).`,
+        "pt-BR": `O Whisper n\xE3o conseguiu transcrever o \xE1udio (${status}).`,
+        it: `Whisper non ha potuto trascrivere l\u2019audio (${status}).`,
+        tr: `Whisper sesi de\u015Fifre edemedi (${status}).`,
+        "zh-CN": `Whisper \u65E0\u6CD5\u8F6C\u5F55\u97F3\u9891\uFF08${status}\uFF09\u3002`,
+        "zh-TW": `Whisper \u7121\u6CD5\u8F49\u9304\u97F3\u8A0A\uFF08${status}\uFF09\u3002`,
+        ja: `Whisper \u306F\u97F3\u58F0\u3092\u6587\u5B57\u8D77\u3053\u3057\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08${status}\uFF09\u3002`,
+        ko: `Whisper\uAC00 \uC624\uB514\uC624\uB97C \uC804\uC0AC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4(${status}).`
+      })
+    },
+    {
+      pattern: /^whisper-server terminó \(([^)]+)\)\.$/,
+      translate: (code) => ({
+        en: `whisper-server exited (${code}).`,
+        fr: `whisper-server s\u2019est arr\xEAt\xE9 (${code}).`,
+        de: `whisper-server wurde beendet (${code}).`,
+        pt: `O whisper-server terminou (${code}).`,
+        "pt-BR": `O whisper-server terminou (${code}).`,
+        it: `whisper-server \xE8 terminato (${code}).`,
+        tr: `whisper-server sonland\u0131 (${code}).`,
+        "zh-CN": `whisper-server \u5DF2\u9000\u51FA\uFF08${code}\uFF09\u3002`,
+        "zh-TW": `whisper-server \u5DF2\u7D50\u675F\uFF08${code}\uFF09\u3002`,
+        ja: `whisper-server \u304C\u7D42\u4E86\u3057\u307E\u3057\u305F\uFF08${code}\uFF09\u3002`,
+        ko: `whisper-server\uAC00 \uC885\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4(${code}).`
+      })
+    }
+  ];
+
   // shared/mainProcessErrors.ts
   var MAIN_PROCESS_ERRORS = {
+    ...COMPANION_RUNTIME_ERRORS,
+    "Directorio ZIP64 da\xF1ado.": {
+      en: "The ZIP64 directory is damaged.",
+      fr: "Le r\xE9pertoire ZIP64 est endommag\xE9.",
+      de: "Das ZIP64-Verzeichnis ist besch\xE4digt.",
+      pt: "O diret\xF3rio ZIP64 est\xE1 danificado.",
+      "pt-BR": "O diret\xF3rio ZIP64 est\xE1 danificado.",
+      it: "La directory ZIP64 \xE8 danneggiata.",
+      tr: "ZIP64 dizini bozuk.",
+      "zh-CN": "ZIP64 \u76EE\u5F55\u5DF2\u635F\u574F\u3002",
+      "zh-TW": "ZIP64 \u76EE\u9304\u5DF2\u640D\u58DE\u3002",
+      ko: "ZIP64 \uB514\uB809\uD130\uB9AC\uAC00 \uC190\uC0C1\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "ZIP64 \u30C7\u30A3\u30EC\u30AF\u30C8\u30EA\u304C\u7834\u640D\u3057\u3066\u3044\u307E\u3059\u3002"
+    },
+    "Directorio ZIP64 inv\xE1lido.": {
+      en: "The ZIP64 directory is invalid.",
+      fr: "Le r\xE9pertoire ZIP64 n\u2019est pas valide.",
+      de: "Das ZIP64-Verzeichnis ist ung\xFCltig.",
+      pt: "O diret\xF3rio ZIP64 \xE9 inv\xE1lido.",
+      "pt-BR": "O diret\xF3rio ZIP64 \xE9 inv\xE1lido.",
+      it: "La directory ZIP64 non \xE8 valida.",
+      tr: "ZIP64 dizini ge\xE7ersiz.",
+      "zh-CN": "ZIP64 \u76EE\u5F55\u65E0\u6548\u3002",
+      "zh-TW": "ZIP64 \u76EE\u9304\u7121\u6548\u3002",
+      ko: "ZIP64 \uB514\uB809\uD130\uB9AC\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "ZIP64 \u30C7\u30A3\u30EC\u30AF\u30C8\u30EA\u304C\u7121\u52B9\u3067\u3059\u3002"
+    },
+    "Directorio ZIP64 no encontrado.": {
+      en: "The ZIP64 directory was not found.",
+      fr: "Le r\xE9pertoire ZIP64 est introuvable.",
+      de: "Das ZIP64-Verzeichnis wurde nicht gefunden.",
+      pt: "O diret\xF3rio ZIP64 n\xE3o foi encontrado.",
+      "pt-BR": "O diret\xF3rio ZIP64 n\xE3o foi encontrado.",
+      it: "La directory ZIP64 non \xE8 stata trovata.",
+      tr: "ZIP64 dizini bulunamad\u0131.",
+      "zh-CN": "\u672A\u627E\u5230 ZIP64 \u76EE\u5F55\u3002",
+      "zh-TW": "\u627E\u4E0D\u5230 ZIP64 \u76EE\u9304\u3002",
+      ko: "ZIP64 \uB514\uB809\uD130\uB9AC\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      ja: "ZIP64 \u30C7\u30A3\u30EC\u30AF\u30C8\u30EA\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002"
+    },
+    "Entrada ZIP64 sin datos de tama\xF1o.": {
+      en: "A ZIP64 entry has no size data.",
+      fr: "Une entr\xE9e ZIP64 n\u2019a pas de donn\xE9es de taille.",
+      de: "Einem ZIP64-Eintrag fehlen die Gr\xF6\xDFenangaben.",
+      pt: "Uma entrada ZIP64 n\xE3o tem dados de tamanho.",
+      "pt-BR": "Uma entrada ZIP64 n\xE3o tem dados de tamanho.",
+      it: "Una voce ZIP64 non ha dati di dimensione.",
+      tr: "Bir ZIP64 girdisinde boyut verisi yok.",
+      "zh-CN": "ZIP64 \u6761\u76EE\u7F3A\u5C11\u5927\u5C0F\u6570\u636E\u3002",
+      "zh-TW": "ZIP64 \u9805\u76EE\u7F3A\u5C11\u5927\u5C0F\u8CC7\u6599\u3002",
+      ko: "ZIP64 \uD56D\uBAA9\uC5D0 \uD06C\uAE30 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      ja: "ZIP64 \u30A8\u30F3\u30C8\u30EA\u306B\u30B5\u30A4\u30BA\u60C5\u5831\u304C\u3042\u308A\u307E\u305B\u3093\u3002"
+    },
+    "El vault est\xE1 en uso por otra conexi\xF3n y no se puede copiar antes de migrar. No se ha modificado nada; vuelve a abrirlo en unos segundos.": {
+      en: "The vault is in use by another connection and cannot be copied before migrating. Nothing was changed; open it again in a few seconds.",
+      fr: "Le coffre est utilis\xE9 par une autre connexion et ne peut pas \xEAtre copi\xE9 avant la migration. Rien n\u2019a \xE9t\xE9 modifi\xE9 ; rouvrez-le dans quelques secondes.",
+      de: "Der Tresor wird von einer anderen Verbindung verwendet und kann vor der Migration nicht kopiert werden. Es wurde nichts ge\xE4ndert; \xF6ffnen Sie ihn in einigen Sekunden erneut.",
+      pt: "O cofre est\xE1 a ser usado por outra liga\xE7\xE3o e n\xE3o pode ser copiado antes de migrar. Nada foi alterado; volte a abri-lo dentro de alguns segundos.",
+      "pt-BR": "O cofre est\xE1 em uso por outra conex\xE3o e n\xE3o pode ser copiado antes de migrar. Nada foi alterado; abra-o novamente em alguns segundos.",
+      it: "Il vault \xE8 in uso da un\u2019altra connessione e non pu\xF2 essere copiato prima della migrazione. Non \xE8 stato modificato nulla; riaprilo tra qualche secondo.",
+      tr: "Kasa ba\u015Fka bir ba\u011Flant\u0131 taraf\u0131ndan kullan\u0131l\u0131yor ve ta\u015F\u0131madan \xF6nce kopyalanam\u0131yor. Hi\xE7bir \u015Fey de\u011Fi\u015Ftirilmedi; birka\xE7 saniye sonra yeniden a\xE7\u0131n.",
+      "zh-CN": "\u8BE5\u5E93\u6B63\u88AB\u53E6\u4E00\u4E2A\u8FDE\u63A5\u4F7F\u7528\uFF0C\u8FC1\u79FB\u524D\u65E0\u6CD5\u590D\u5236\u3002\u672A\u505A\u4EFB\u4F55\u66F4\u6539\uFF1B\u8BF7\u51E0\u79D2\u949F\u540E\u91CD\u65B0\u6253\u5F00\u3002",
+      "zh-TW": "\u8A72\u5EAB\u6B63\u88AB\u53E6\u4E00\u500B\u9023\u7DDA\u4F7F\u7528\uFF0C\u9077\u79FB\u524D\u7121\u6CD5\u8907\u88FD\u3002\u672A\u505A\u4EFB\u4F55\u8B8A\u66F4\uFF1B\u8ACB\u5E7E\u79D2\u9418\u5F8C\u91CD\u65B0\u958B\u555F\u3002",
+      ko: "\uBCFC\uD2B8\uAC00 \uB2E4\uB978 \uC5F0\uACB0\uC5D0\uC11C \uC0AC\uC6A9 \uC911\uC774\uC5B4\uC11C \uB9C8\uC774\uADF8\uB808\uC774\uC158 \uC804\uC5D0 \uBCF5\uC0AC\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBA87 \uCD08 \uD6C4 \uB2E4\uC2DC \uC5EC\uC138\uC694.",
+      ja: "\u30DC\u30FC\u30EB\u30C8\u306F\u5225\u306E\u63A5\u7D9A\u3067\u4F7F\u7528\u4E2D\u306E\u305F\u3081\u3001\u79FB\u884C\u524D\u306B\u30B3\u30D4\u30FC\u3067\u304D\u307E\u305B\u3093\u3002\u4F55\u3082\u5909\u66F4\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u6570\u79D2\u5F8C\u306B\u3082\u3046\u4E00\u5EA6\u958B\u3044\u3066\u304F\u3060\u3055\u3044\u3002"
+    },
     ...SCRIPTOR_RUNTIME_ERRORS,
     "El llavero del sistema est\xE1 bloqueado; no se pueden leer los dispositivos vinculados.": { "en": "The system keychain is locked; linked devices cannot be read.", "fr": "Le trousseau syst\xE8me est verrouill\xE9 ; les appareils associ\xE9s ne peuvent pas \xEAtre lus.", "de": "Der Systemschl\xFCsselbund ist gesperrt; verbundene Ger\xE4te k\xF6nnen nicht gelesen werden.", "pt": "O porta-chaves do sistema est\xE1 bloqueado; n\xE3o \xE9 poss\xEDvel ler os dispositivos vinculados.", "pt-BR": "O chaveiro do sistema est\xE1 bloqueado; n\xE3o \xE9 poss\xEDvel ler os dispositivos vinculados.", "it": "Il portachiavi di sistema \xE8 bloccato; impossibile leggere i dispositivi collegati.", "tr": "Sistem anahtar zinciri kilitli; ba\u011Fl\u0131 cihazlar okunam\u0131yor.", "zh-CN": "\u7CFB\u7EDF\u94A5\u5319\u4E32\u5DF2\u9501\u5B9A\uFF0C\u65E0\u6CD5\u8BFB\u53D6\u5DF2\u5173\u8054\u7684\u8BBE\u5907\u3002", "zh-TW": "\u7CFB\u7D71\u9470\u5319\u5708\u5DF2\u9396\u5B9A\uFF0C\u7121\u6CD5\u8B80\u53D6\u5DF2\u9023\u7D50\u7684\u88DD\u7F6E\u3002", "ja": "\u30B7\u30B9\u30C6\u30E0\u306E\u30AD\u30FC\u30C1\u30A7\u30FC\u30F3\u304C\u30ED\u30C3\u30AF\u3055\u308C\u3066\u3044\u308B\u305F\u3081\u3001\u9023\u643A\u3057\u305F\u30C7\u30D0\u30A4\u30B9\u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093\u3002", "ko": "\uC2DC\uC2A4\uD15C \uD0A4\uCCB4\uC778\uC774 \uC7A0\uACA8 \uC5F0\uACB0\uB41C \uAE30\uAE30\uB97C \uC77D\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4." },
     "No se pueden descifrar los dispositivos vinculados. Sus credenciales se conservan; desbloquea el llavero o restaura su copia de seguridad.": { "en": "Linked devices cannot be decrypted. Their credentials are retained; unlock the keychain or restore its backup.", "fr": "Impossible de d\xE9chiffrer les appareils associ\xE9s. Leurs identifiants sont conserv\xE9s ; d\xE9verrouillez le trousseau ou restaurez sa sauvegarde.", "de": "Verbundene Ger\xE4te k\xF6nnen nicht entschl\xFCsselt werden. Ihre Zugangsdaten bleiben erhalten; entsperren Sie den Schl\xFCsselbund oder stellen Sie seine Sicherung wieder her.", "pt": "N\xE3o \xE9 poss\xEDvel decifrar os dispositivos vinculados. As credenciais s\xE3o conservadas; desbloqueie o porta-chaves ou restaure a sua c\xF3pia de seguran\xE7a.", "pt-BR": "N\xE3o \xE9 poss\xEDvel descriptografar os dispositivos vinculados. As credenciais s\xE3o preservadas; desbloqueie o chaveiro ou restaure o backup.", "it": "Impossibile decifrare i dispositivi collegati. Le credenziali sono conservate; sblocca il portachiavi o ripristina il suo backup.", "tr": "Ba\u011Fl\u0131 cihazlar\u0131n \u015Fifresi \xE7\xF6z\xFClemiyor. Kimlik bilgileri korunuyor; anahtar zincirini a\xE7\u0131n veya yede\u011Fini geri y\xFCkleyin.", "zh-CN": "\u65E0\u6CD5\u89E3\u5BC6\u5DF2\u5173\u8054\u7684\u8BBE\u5907\u3002\u5176\u51ED\u636E\u5DF2\u4FDD\u7559\uFF1B\u8BF7\u89E3\u9501\u94A5\u5319\u4E32\u6216\u6062\u590D\u5176\u5907\u4EFD\u3002", "zh-TW": "\u7121\u6CD5\u89E3\u5BC6\u5DF2\u9023\u7D50\u7684\u88DD\u7F6E\u3002\u5176\u6191\u8B49\u5DF2\u4FDD\u7559\uFF1B\u8ACB\u89E3\u9396\u9470\u5319\u5708\u6216\u9084\u539F\u5176\u5099\u4EFD\u3002", "ja": "\u9023\u643A\u3057\u305F\u30C7\u30D0\u30A4\u30B9\u3092\u5FA9\u53F7\u3067\u304D\u307E\u305B\u3093\u3002\u8A8D\u8A3C\u60C5\u5831\u306F\u4FDD\u6301\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u30AD\u30FC\u30C1\u30A7\u30FC\u30F3\u3092\u89E3\u9664\u3059\u308B\u304B\u3001\u305D\u306E\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u3092\u5FA9\u5143\u3057\u3066\u304F\u3060\u3055\u3044\u3002", "ko": "\uC5F0\uACB0\uB41C \uAE30\uAE30\uB97C \uBCF5\uD638\uD654\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC778\uC99D \uC815\uBCF4\uB294 \uBCF4\uC874\uB429\uB2C8\uB2E4. \uD0A4\uCCB4\uC778 \uC7A0\uAE08\uC744 \uD574\uC81C\uD558\uAC70\uB098 \uBC31\uC5C5\uC744 \uBCF5\uC6D0\uD558\uC138\uC694." },
@@ -2338,6 +3390,9 @@ ${conversation}`;
     "El cat\xE1logo de documentos guardados tiene un formato inv\xE1lido.": { "en": "The saved-document catalogue has an invalid format.", "fr": "Le catalogue des documents enregistr\xE9s a un format invalide.", "de": "Der Katalog gespeicherter Dokumente hat ein ung\xFCltiges Format.", "pt": "O cat\xE1logo de documentos guardados tem um formato inv\xE1lido.", "pt-BR": "O cat\xE1logo de documentos salvos tem um formato inv\xE1lido.", "it": "Il catalogo dei documenti salvati ha un formato non valido.", "tr": "Kay\u0131tl\u0131 belge katalo\u011Funun bi\xE7imi ge\xE7ersiz.", "zh-CN": "\u5DF2\u4FDD\u5B58\u6587\u6863\u76EE\u5F55\u7684\u683C\u5F0F\u65E0\u6548\u3002", "zh-TW": "\u5DF2\u5132\u5B58\u6587\u4EF6\u76EE\u9304\u7684\u683C\u5F0F\u7121\u6548\u3002", "ja": "\u4FDD\u5B58\u6E08\u307F\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u30AB\u30BF\u30ED\u30B0\u5F62\u5F0F\u304C\u7121\u52B9\u3067\u3059\u3002", "ko": "\uC800\uC7A5\uB41C \uBB38\uC11C \uBAA9\uB85D\uC758 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." },
     "La p\xE1gina de ideas solicitada no es v\xE1lida.": { "en": "The requested page of ideas is invalid.", "fr": "La page d\u2019id\xE9es demand\xE9e n\u2019est pas valide.", "de": "Die angeforderte Ideenseite ist ung\xFCltig.", "pt": "A p\xE1gina de ideias pedida n\xE3o \xE9 v\xE1lida.", "pt-BR": "A p\xE1gina de ideias solicitada n\xE3o \xE9 v\xE1lida.", "it": "La pagina di idee richiesta non \xE8 valida.", "tr": "\u0130stenen fikir sayfas\u0131 ge\xE7ersiz.", "zh-CN": "\u8BF7\u6C42\u7684\u60F3\u6CD5\u9875\u9762\u65E0\u6548\u3002", "zh-TW": "\u8ACB\u6C42\u7684\u60F3\u6CD5\u9801\u9762\u7121\u6548\u3002", "ja": "\u8981\u6C42\u3055\u308C\u305F\u30A2\u30A4\u30C7\u30A2\u306E\u30DA\u30FC\u30B8\u306F\u7121\u52B9\u3067\u3059\u3002", "ko": "\uC694\uCCAD\uD55C \uC544\uC774\uB514\uC5B4 \uD398\uC774\uC9C0\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." },
     "La mejora no devolvi\xF3 texto. El original no se ha modificado.": { "en": "The improvement returned no text. The original has not been changed.", "fr": "L\u2019am\xE9lioration n\u2019a renvoy\xE9 aucun texte. L\u2019original n\u2019a pas \xE9t\xE9 modifi\xE9.", "de": "Die \xDCberarbeitung lieferte keinen Text. Das Original wurde nicht ver\xE4ndert.", "pt": "A melhoria n\xE3o devolveu texto. O original n\xE3o foi alterado.", "pt-BR": "A melhoria n\xE3o retornou texto. O original n\xE3o foi alterado.", "it": "Il miglioramento non ha restituito testo. L\u2019originale non \xE8 stato modificato.", "tr": "\u0130yile\u015Ftirme metin d\xF6nd\xFCrmedi. \xD6zg\xFCn metin de\u011Fi\u015Ftirilmedi.", "zh-CN": "\u6539\u8FDB\u64CD\u4F5C\u672A\u8FD4\u56DE\u6587\u672C\uFF0C\u539F\u6587\u672A\u88AB\u4FEE\u6539\u3002", "zh-TW": "\u6539\u9032\u64CD\u4F5C\u672A\u50B3\u56DE\u6587\u5B57\uFF0C\u539F\u6587\u672A\u88AB\u4FEE\u6539\u3002", "ja": "\u6539\u5584\u7D50\u679C\u306B\u30C6\u30AD\u30B9\u30C8\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u539F\u6587\u306F\u5909\u66F4\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002", "ko": "\uAC1C\uC120 \uACB0\uACFC\uC5D0 \uD14D\uC2A4\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC6D0\uBB38\uC740 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4." },
+    ...CLOUDFLARE_SYNC_ERRORS,
+    ...STT_RUNTIME_ERRORS,
+    ...BACKUPS_RUNTIME_ERRORS,
     "La copia de Focus est\xE1 da\xF1ada.": {
       en: "The Focus backup is corrupted.",
       fr: "La sauvegarde de Focus est endommag\xE9e.",
@@ -4794,6 +5849,10 @@ ${conversation}`;
       ko: "GitHub Copilot\uC774 \uBE44\uD65C\uC131\uD654\uB41C \uB3C4\uAD6C\uB97C \uC0AC\uC6A9\uD558\uB824\uACE0 \uD588\uC2B5\uB2C8\uB2E4. Nodus\uAC00 \uC694\uCCAD\uC744 \uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4.",
       ja: "GitHub Copilot \u304C\u7121\u52B9\u5316\u3055\u308C\u305F\u30C4\u30FC\u30EB\u3092\u4F7F\u7528\u3057\u3088\u3046\u3068\u3057\u307E\u3057\u305F\u3002Nodus\u306F\u30EA\u30AF\u30A8\u30B9\u30C8\u3092\u4E2D\u6B62\u3057\u307E\u3057\u305F\u3002"
     },
+    "No se pudo descargar el motor oficial. Comprueba la conexi\xF3n y vuelve a intentarlo.": { en: "The official engine could not be downloaded. Check your connection and try again.", fr: "Impossible de t\xE9l\xE9charger le moteur officiel. V\xE9rifiez la connexion et r\xE9essayez.", de: "Die offizielle Engine konnte nicht heruntergeladen werden. Pr\xFCfen Sie die Verbindung und versuchen Sie es erneut.", pt: "N\xE3o foi poss\xEDvel transferir o motor oficial. Verifica a liga\xE7\xE3o e tenta novamente.", "pt-BR": "N\xE3o foi poss\xEDvel baixar o motor oficial. Verifique a conex\xE3o e tente novamente.", it: "Impossibile scaricare il motore ufficiale. Controlla la connessione e riprova.", tr: "Resmi motor indirilemedi. Ba\u011Flant\u0131y\u0131 kontrol edip yeniden deneyin.", "zh-CN": "\u65E0\u6CD5\u4E0B\u8F7D\u5B98\u65B9\u5F15\u64CE\u3002\u8BF7\u68C0\u67E5\u7F51\u7EDC\u8FDE\u63A5\u540E\u91CD\u8BD5\u3002", "zh-TW": "\u7121\u6CD5\u4E0B\u8F09\u5B98\u65B9\u5F15\u64CE\u3002\u8ACB\u6AA2\u67E5\u7DB2\u8DEF\u9023\u7DDA\u5F8C\u518D\u8A66\u4E00\u6B21\u3002", ko: "\uACF5\uC2DD \uC5D4\uC9C4\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC5F0\uACB0\uC744 \uD655\uC778\uD558\uACE0 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.", ja: "\u516C\u5F0F\u30A8\u30F3\u30B8\u30F3\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u63A5\u7D9A\u3092\u78BA\u8A8D\u3057\u3066\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002" },
+    "El motor descargado no coincide con su huella publicada y se ha descartado.": { en: "The downloaded engine does not match its published fingerprint and was discarded.", fr: "Le moteur t\xE9l\xE9charg\xE9 ne correspond pas \xE0 son empreinte publi\xE9e et a \xE9t\xE9 \xE9cart\xE9.", de: "Die heruntergeladene Engine stimmt nicht mit ihrem ver\xF6ffentlichten Fingerabdruck \xFCberein und wurde verworfen.", pt: "O motor transferido n\xE3o corresponde \xE0 impress\xE3o digital publicada e foi descartado.", "pt-BR": "O motor baixado n\xE3o corresponde \xE0 impress\xE3o digital publicada e foi descartado.", it: "Il motore scaricato non corrisponde alla sua impronta pubblicata ed \xE8 stato scartato.", tr: "\u0130ndirilen motor yay\u0131mlanan parmak iziyle e\u015Fle\u015Fmiyor ve at\u0131ld\u0131.", "zh-CN": "\u4E0B\u8F7D\u7684\u5F15\u64CE\u4E0E\u5176\u516C\u5E03\u7684\u6307\u7EB9\u4E0D\u7B26\uFF0C\u5DF2\u88AB\u4E22\u5F03\u3002", "zh-TW": "\u4E0B\u8F09\u7684\u5F15\u64CE\u8207\u5176\u516C\u5E03\u7684\u6307\u7D0B\u4E0D\u7B26\uFF0C\u5DF2\u88AB\u6368\u68C4\u3002", ko: "\uB2E4\uC6B4\uB85C\uB4DC\uD55C \uC5D4\uC9C4\uC774 \uAC8C\uC2DC\uB41C \uC9C0\uBB38\uACFC \uC77C\uCE58\uD558\uC9C0 \uC54A\uC544 \uD3D0\uAE30\uD588\uC2B5\uB2C8\uB2E4.", ja: "\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u305F\u30A8\u30F3\u30B8\u30F3\u304C\u516C\u958B\u3055\u308C\u3066\u3044\u308B\u30D5\u30A3\u30F3\u30AC\u30FC\u30D7\u30EA\u30F3\u30C8\u3068\u4E00\u81F4\u3057\u306A\u3044\u305F\u3081\u3001\u7834\u68C4\u3057\u307E\u3057\u305F\u3002" },
+    "Esta instalaci\xF3n de Nodus no indica de d\xF3nde descargar el motor oficial.": { en: "This Nodus installation does not say where to download the official engine from.", fr: "Cette installation de Nodus n\u2019indique pas o\xF9 t\xE9l\xE9charger le moteur officiel.", de: "Diese Nodus-Installation gibt nicht an, woher die offizielle Engine heruntergeladen wird.", pt: "Esta instala\xE7\xE3o do Nodus n\xE3o indica de onde transferir o motor oficial.", "pt-BR": "Esta instala\xE7\xE3o do Nodus n\xE3o indica de onde baixar o motor oficial.", it: "Questa installazione di Nodus non indica da dove scaricare il motore ufficiale.", tr: "Bu Nodus kurulumu resmi motorun nereden indirilece\u011Fini belirtmiyor.", "zh-CN": "\u6B64 Nodus \u5B89\u88C5\u672A\u6307\u660E\u4ECE\u4F55\u5904\u4E0B\u8F7D\u5B98\u65B9\u5F15\u64CE\u3002", "zh-TW": "\u6B64 Nodus \u5B89\u88DD\u672A\u6307\u660E\u5F9E\u4F55\u8655\u4E0B\u8F09\u5B98\u65B9\u5F15\u64CE\u3002", ko: "\uC774 Nodus \uC124\uCE58\uC5D0\uB294 \uACF5\uC2DD \uC5D4\uC9C4\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD560 \uC704\uCE58\uAC00 \uC9C0\uC815\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.", ja: "\u3053\u306E Nodus \u306E\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u306B\u306F\u3001\u516C\u5F0F\u30A8\u30F3\u30B8\u30F3\u306E\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5143\u304C\u793A\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002" },
+    "El paquete descargado no contiene el ejecutable esperado.": { en: "The downloaded package does not contain the expected executable.", fr: "Le paquet t\xE9l\xE9charg\xE9 ne contient pas l\u2019ex\xE9cutable attendu.", de: "Das heruntergeladene Paket enth\xE4lt nicht die erwartete ausf\xFChrbare Datei.", pt: "O pacote transferido n\xE3o cont\xE9m o execut\xE1vel esperado.", "pt-BR": "O pacote baixado n\xE3o cont\xE9m o execut\xE1vel esperado.", it: "Il pacchetto scaricato non contiene l\u2019eseguibile previsto.", tr: "\u0130ndirilen paket beklenen y\xFCr\xFCt\xFClebilir dosyay\u0131 i\xE7ermiyor.", "zh-CN": "\u4E0B\u8F7D\u7684\u8F6F\u4EF6\u5305\u4E0D\u5305\u542B\u9884\u671F\u7684\u53EF\u6267\u884C\u6587\u4EF6\u3002", "zh-TW": "\u4E0B\u8F09\u7684\u5957\u4EF6\u4E0D\u5305\u542B\u9810\u671F\u7684\u53EF\u57F7\u884C\u6A94\u3002", ko: "\uB2E4\uC6B4\uB85C\uB4DC\uD55C \uD328\uD0A4\uC9C0\uC5D0 \uC608\uC0C1\uD55C \uC2E4\uD589 \uD30C\uC77C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", ja: "\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u305F\u30D1\u30C3\u30B1\u30FC\u30B8\u306B\u60F3\u5B9A\u3055\u308C\u305F\u5B9F\u884C\u30D5\u30A1\u30A4\u30EB\u304C\u542B\u307E\u308C\u3066\u3044\u307E\u305B\u3093\u3002" },
     "No se encontr\xF3 el runtime oficial de Codex incluido con Nodus.": {
       en: "The official Codex runtime bundled with Nodus was not found.",
       fr: "Le runtime officiel de Codex fourni avec Nodus est introuvable.",
@@ -11249,6 +12308,19 @@ ${conversation}`;
       ko: "\uBC30\uACBD \uBCA1\uD130 \uAC80\uC0C9 \uC2DC\uAC04\uC774 \uCD08\uACFC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
       ja: "\u80CC\u666F\u30D9\u30AF\u30C8\u30EB\u691C\u7D22\u304C\u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F\u3002"
     },
+    "La b\xFAsqueda vectorial se detuvo para sustituir la base de datos.": {
+      en: "The vector search stopped so the database could be replaced.",
+      fr: "La recherche vectorielle s\u2019est arr\xEAt\xE9e pour remplacer la base de donn\xE9es.",
+      de: "Die Vektorsuche wurde angehalten, um die Datenbank zu ersetzen.",
+      pt: "A pesquisa vetorial parou para substituir a base de dados.",
+      "pt-BR": "A busca vetorial parou para substituir o banco de dados.",
+      it: "La ricerca vettoriale si \xE8 fermata per sostituire il database.",
+      tr: "Vekt\xF6r aramas\u0131 veritaban\u0131n\u0131n de\u011Fi\u015Ftirilmesi i\xE7in durduruldu.",
+      "zh-CN": "\u5411\u91CF\u641C\u7D22\u5DF2\u505C\u6B62\uFF0C\u4EE5\u4FBF\u66FF\u6362\u6570\u636E\u5E93\u3002",
+      "zh-TW": "\u5411\u91CF\u641C\u5C0B\u5DF2\u505C\u6B62\uFF0C\u4EE5\u4FBF\u66FF\u63DB\u8CC7\u6599\u5EAB\u3002",
+      ko: "\uB370\uC774\uD130\uBCA0\uC774\uC2A4\uB97C \uAD50\uCCB4\uD558\uAE30 \uC704\uD574 \uBCA1\uD130 \uAC80\uC0C9\uC774 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      ja: "\u30C7\u30FC\u30BF\u30D9\u30FC\u30B9\u3092\u7F6E\u304D\u63DB\u3048\u308B\u305F\u3081\u3001\u30D9\u30AF\u30C8\u30EB\u691C\u7D22\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002"
+    },
     "El art\xEDculo necesita un t\xEDtulo.": {
       en: "The article needs a title.",
       fr: "L\u2019article doit avoir un titre.",
@@ -16680,6 +17752,19 @@ ${conversation}`;
       "zh-TW": "\u627E\u4E0D\u5230\u79D1\u76EE\u3002",
       ko: "\uACFC\uBAA9\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
       ja: "\u79D1\u76EE\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002"
+    },
+    "El servidor MCP local no est\xE1 activo.": {
+      en: "The local MCP server is not running.",
+      fr: "Le serveur MCP local n\u2019est pas actif.",
+      de: "Der lokale MCP-Server l\xE4uft nicht.",
+      pt: "O servidor MCP local n\xE3o est\xE1 ativo.",
+      "pt-BR": "O servidor MCP local n\xE3o est\xE1 ativo.",
+      it: "Il server MCP locale non \xE8 attivo.",
+      tr: "Yerel MCP sunucusu \xE7al\u0131\u015Fm\u0131yor.",
+      "zh-CN": "\u672C\u5730 MCP \u670D\u52A1\u5668\u672A\u8FD0\u884C\u3002",
+      "zh-TW": "\u672C\u6A5F MCP \u4F3A\u670D\u5668\u672A\u57F7\u884C\u3002",
+      ko: "\uB85C\uCEEC MCP \uC11C\uBC84\uAC00 \uC2E4\uD589 \uC911\uC774 \uC544\uB2D9\uB2C8\uB2E4.",
+      ja: "\u30ED\u30FC\u30AB\u30EB MCP \u30B5\u30FC\u30D0\u30FC\u304C\u8D77\u52D5\u3057\u3066\u3044\u307E\u305B\u3093\u3002"
     }
   };
   function localProviderDetail(detail) {
@@ -16716,8 +17801,12 @@ ${conversation}`;
     return null;
   }
   var MAIN_PROCESS_ERROR_PATTERNS = [
+    ...COMPANION_RUNTIME_ERROR_PATTERNS,
     { pattern: /^La copia publicada no incluye la tabla (.+)\. Descarga una publicación compatible\.$/, translate: (table) => ({ "en": "The published copy lacks table {table}. Download a compatible publication.".replace("{table}", table), "fr": "La copie publi\xE9e ne contient pas la table {table}. T\xE9l\xE9chargez une publication compatible.".replace("{table}", table), "de": "Die ver\xF6ffentlichte Kopie enth\xE4lt die Tabelle {table} nicht. Laden Sie eine kompatible Ver\xF6ffentlichung herunter.".replace("{table}", table), "pt": "A c\xF3pia publicada n\xE3o inclui a tabela {table}. Descarregue uma publica\xE7\xE3o compat\xEDvel.".replace("{table}", table), "pt-BR": "A c\xF3pia publicada n\xE3o inclui a tabela {table}. Baixe uma publica\xE7\xE3o compat\xEDvel.".replace("{table}", table), "it": "La copia pubblicata non include la tabella {table}. Scarica una pubblicazione compatibile.".replace("{table}", table), "tr": "Yay\u0131mlanan kopyada {table} tablosu yok. Uyumlu bir yay\u0131n indirin.".replace("{table}", table), "zh-CN": "\u5DF2\u53D1\u5E03\u7684\u526F\u672C\u4E0D\u5305\u542B\u8868 {table}\uFF0C\u8BF7\u4E0B\u8F7D\u517C\u5BB9\u7684\u53D1\u5E03\u5185\u5BB9\u3002".replace("{table}", table), "zh-TW": "\u5DF2\u767C\u4F48\u7684\u526F\u672C\u4E0D\u5305\u542B\u8CC7\u6599\u8868 {table}\uFF0C\u8ACB\u4E0B\u8F09\u76F8\u5BB9\u7684\u767C\u4F48\u5167\u5BB9\u3002".replace("{table}", table), "ja": "\u516C\u958B\u6E08\u307F\u306E\u30B3\u30D4\u30FC\u306B\u30C6\u30FC\u30D6\u30EB {table} \u304C\u3042\u308A\u307E\u305B\u3093\u3002\u4E92\u63DB\u6027\u306E\u3042\u308B\u516C\u958B\u5185\u5BB9\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002".replace("{table}", table), "ko": "\uAC8C\uC2DC\uB41C \uC0AC\uBCF8\uC5D0 {table} \uD14C\uC774\uBE14\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uD638\uD658\uB418\uB294 \uAC8C\uC2DC \uB0B4\uC6A9\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694.".replace("{table}", table) }) },
+    ...STT_RUNTIME_ERROR_PATTERNS,
+    ...BACKUPS_RUNTIME_ERROR_PATTERNS,
     ...SCRIPTOR_RUNTIME_ERROR_PATTERNS,
+    ...CLOUDFLARE_SYNC_ERROR_PATTERNS,
     // ── Local providers: the failure this whole table was opened for ─────────────
     {
       pattern: /^No se pudo conectar con (Ollama|LM Studio) en (.+?)\. (.+)$/,
@@ -19932,10 +21021,10 @@ ${SOURCE_LABEL[language] ?? SOURCE_LABEL.es}: ${links.join(" \xB7 ")}`;
       }
     }
     const computed = [];
-    const push = (heading, rows2) => {
-      if (!rows2.length) return;
+    const push = (heading, rows3) => {
+      if (!rows3.length) return;
       computed.push(heading);
-      computed.push(...rows2.map((row) => `- ${row}`));
+      computed.push(...rows3.map((row) => `- ${row}`));
     };
     push(
       copy.rules,
