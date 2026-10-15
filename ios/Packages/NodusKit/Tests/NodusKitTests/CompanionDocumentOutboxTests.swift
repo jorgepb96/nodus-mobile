@@ -1172,6 +1172,57 @@ struct CompanionDocumentOutboxTests {
         #expect(try await CompanionIdeaCopy.authored(cache: fixture.cache, vaultId: "vault-b") == nil)
         #expect(await confirmed.confirmedEditorData(noteId: id)?.objectValue?["contentMarkdown"] == .string("Complete authored content"))
     }
+    @Test("seeded workspace captures preserve all provenance and native content across restart and lost acknowledgements")
+    func seededWorkspaceCapture() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let queue = try await fixture.open(), sent = Requests()
+        let markdown = "# Captured response\n\nCitation [S1](nodus://idea/source-37) and $x^2$."
+        let native: JSONValue = .array([.object(["id": .string("canonical-block-37"), "type": .string("paragraph"), "props": .object([:]),
+            "content": .array([.object(["type": .string("link"), "href": .string("nodus://idea/source-37"), "content": .array([.object(["type": .string("text"), "text": .string("S1"), "styles": .object([:])])])])]), "children": .array([])])])
+        let source: JSONValue = .object(["origin": .string("assistant"), "model": .object(["provider": .string("openai"), "model": .string("model-reference"), "pending": .bool(false), "reasoningEffort": .string("high")]),
+            "ref": .string("answer-37"), "note": .string("Actual captured answer"), "authoredOn": .string("mobile"),
+            "researchChat": .object(["surface": .string("research"), "conversationId": .string("conversation-37"), "conversationTitle": .string("Original conversation"), "messageId": .string("message-7"), "messageIndex": .int(2),
+                "references": .array([.object(["citationId": .string("S1"), "label": .string("Actual citation"), "subtitle": .null, "quote": .string("Exact quotation"), "href": .string("nodus://idea/source-37")])])])])
+        var ids = Set<String>(), expectedNative: [String: JSONValue] = [:]
+        for kind in ["markdown", "assistant", "writing", "debate", "idea", "hypothesis"] {
+            let input: JSONValue = .object(["title": .string("Same explicit capture"), "content": .string(markdown), "kind": .string(kind), "source": source, "nativeDocument": native, "tags": .array([.string("capture")])])
+            var block = native.arrayValue![0].objectValue!; block["id"] = .string(UUID().uuidString)
+            var firstInput = input.objectValue!; firstInput["nativeDocument"] = .array([.object(block)])
+            let first = try await queue.create(input: .object(firstInput))
+            block["id"] = .string(UUID().uuidString)
+            var secondInput = input.objectValue!; secondInput["nativeDocument"] = .array([.object(block)])
+            let second = try await queue.create(input: .object(secondInput))
+            let id = try #require(first.objectValue?["id"]?.stringValue), secondID = try #require(second.objectValue?["id"]?.stringValue)
+            #expect(id != secondID); ids.insert(id); ids.insert(secondID)
+            expectedNative[id] = firstInput["nativeDocument"]; expectedNative[secondID] = secondInput["nativeDocument"]
+            #expect(first.objectValue?["source"] == source && first.objectValue?["kind"] == .string(kind) && first.objectValue?["content"] == .string(markdown))
+        }
+        #expect(ids.count == 12)
+        let nativeById = expectedNative
+        let reopened = try await fixture.open()
+        for id in ids { #expect(await reopened.editorData(noteId: id)?.objectValue?["nativeDocument"] == nativeById[id]) }
+        await #expect(throws: URLError.self) { try await reopened.synchronize { request in await sent.append(request); throw URLError(.networkConnectionLost) } }
+        let retry = try await fixture.open()
+        try await retry.synchronize { request in
+            await sent.append(request)
+            #expect(request.creation?.objectValue?["source"] == source)
+            #expect(request.creation?.objectValue?["globalId"] == nil)
+            #expect(request.input.objectValue?["contentMarkdown"] == .string(markdown) && request.input.objectValue?["nativeDocument"] == nativeById[request.noteId])
+            var response = Self.receipt(request, revision: 8).objectValue!
+            var editor = Self.editor(8, text: markdown).objectValue!; editor["nativeDocument"] = nativeById[request.noteId]
+            response["editorData"] = .object(editor)
+            response["note"] = .object(["id": .string(request.noteId), "title": .string("Same explicit capture"), "kind": request.creation!.objectValue!["kind"]!, "source": source, "content": .string(markdown), "folderId": .null, "tags": .array([.string("capture")]), "trashedAt": .null])
+            return .object(response)
+        }
+        let requests = await sent.all(); #expect(requests.count == 13 && requests[0] == requests[1])
+        #expect(await retry.pendingCount() == 0)
+        for id in ids { #expect(await retry.confirmedEditorData(noteId: id)?.objectValue?["nativeDocument"] == nativeById[id]) }
+        let tree = try #require(await retry.confirmedTree())
+        #expect(tree.objectValue?["notes"]?.arrayValue?.allSatisfy { $0.objectValue?["source"] == source } == true)
+        // A nonempty Markdown capture cannot silently become an empty native editor.
+        await #expect(throws: DesktopBridgeError.self) { _ = try await retry.create(input: .object(["title": .string("No native"), "content": .string(markdown), "source": source])) }
+        await #expect(throws: DesktopBridgeError.self) { _ = try await retry.createManualIdea(input: .object(["title": .string("Not a manual idea request"), "content": .string(markdown), "source": source])) }
+    }
     @Test("new offline documents preserve stable identity, metadata and structured content through restart")
     func offlineCreation() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }

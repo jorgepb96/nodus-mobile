@@ -861,14 +861,21 @@ public actor CompanionDocumentOutbox {
     }
     private func createDocument(input: JSONValue, ideaId: String?) async throws -> JSONValue {
         guard kind == .workspaceNote else { throw DesktopBridgeError.permissionDenied }
-        let kind = ideaId == nil ? "markdown" : "idea"
-        guard let fields = input.objectValue,
-              fields.keys.allSatisfy({ ["title", "content", "kind", "folderId", "tags", "source"].contains($0) }),
-              fields["source"] == nil || fields["source"] == .null,
-              fields["content"] == .string(""),
+        guard try JSONEncoder.nodus.encode(input).count <= Self.maximumRequestBytes - 65_536,
+              let fields = input.objectValue,
+              fields.keys.allSatisfy({ ["title", "content", "kind", "folderId", "tags", "source", "nativeDocument"].contains($0) }),
+              let content = fields["content"]?.stringValue,
               case let .string(title)? = fields["title"], title.count <= 4096,
-              fields["kind"] == nil || fields["kind"] == .string(kind),
+              fields["kind"] == nil || fields["kind"]?.stringValue != nil,
               fields["tags"] == nil || fields["tags"]?.arrayValue != nil else { throw DesktopBridgeError.malformedResponse }
+        let kind = fields["kind"]?.stringValue ?? "markdown"
+        guard ["markdown", "assistant", "writing", "debate", "idea", "hypothesis"].contains(kind),
+              fields["source"] == nil || fields["source"] == .null || fields["source"]?.objectValue?["origin"]?.stringValue.map({ ["markdown", "assistant", "writing", "debate", "idea", "hypothesis"].contains($0) }) == true,
+              fields["nativeDocument"] == nil || fields["nativeDocument"]?.arrayValue != nil,
+              content.isEmpty || fields["nativeDocument"]?.arrayValue != nil,
+              ideaId == nil || (kind == "idea" && content.isEmpty && (fields["source"] == nil || fields["source"] == .null) && fields["nativeDocument"] == nil)
+        else { throw DesktopBridgeError.malformedResponse }
+        let native = fields["nativeDocument"] ?? .array([])
         if let folder = fields["folderId"], folder != .null {
             guard case let .string(id) = folder, !id.isEmpty, id.count <= 128 else { throw DesktopBridgeError.malformedResponse }
         }
@@ -879,20 +886,21 @@ public actor CompanionDocumentOutbox {
         let created = JSONValue.string(ISO8601DateFormatter().string(from: Date()))
         var creationFields: [String: JSONValue] = ["kind": .string(kind), "folderId": fields["folderId"] ?? .null, "tags": .array(tags)]
         if let ideaId { creationFields["globalId"] = .string(ideaId) }
+        else if let source = fields["source"] { creationFields["source"] = source }
         let creation: JSONValue = .object(creationFields)
-        let source: JSONValue = ideaId.map { .object(["origin": .string("idea"), "ref": .string($0), "note": .string("manual-idea")]) } ?? .null
-        let note: JSONValue = .object(["id": .string(noteId), "title": titleValue, "content": .string(""), "kind": .string(kind),
+        let source: JSONValue = ideaId.map { .object(["origin": .string("idea"), "ref": .string($0), "note": .string("manual-idea")]) } ?? fields["source"] ?? .null
+        let note: JSONValue = .object(["id": .string(noteId), "title": titleValue, "content": .string(content), "kind": .string(kind),
             "folderId": fields["folderId"] ?? .null, "tags": .array(tags), "source": source, "trashedAt": .null,
             "orderIdx": .int(0), "createdAt": created, "updatedAt": created])
-        let baseline: JSONValue = .object(["revision": .int(0), "documentTitle": titleValue, "contentMarkdown": .string(""),
-            "nativeDocument": .array([]), "schemaVersion": .int(2), "academicMetadata": .null,
+        let baseline: JSONValue = .object(["revision": .int(0), "documentTitle": titleValue, "contentMarkdown": .string(content),
+            "nativeDocument": native, "schemaVersion": .int(2), "academicMetadata": .null,
             "versions": .array([]), "annotations": .array([]), "outgoingLinks": .array([]), "backlinks": .array([]),
             "style": .object(["fontFamily": .string("serif"), "fontSize": .int(18), "lineHeight": .double(1.75),
                 "pageWidth": .int(820), "marginX": .int(56), "paragraphSpacing": .double(0.8), "firstLineIndent": .int(0),
                 "alignment": .string("justify"), "theme": .string("paper")]),
             "spellcheckLanguage": .string("es-ES"), "customDictionary": .array([])])
-        let draft: JSONValue = .object(["expectedRevision": .int(0), "title": titleValue, "contentMarkdown": .string(""),
-            "nativeDocument": .array([]), "schemaVersion": .int(2)])
+        let draft: JSONValue = .object(["expectedRevision": .int(0), "title": titleValue, "contentMarkdown": .string(content),
+            "nativeDocument": native, "schemaVersion": .int(2)])
         records[noteId] = Record(baseline: baseline, draft: draft, generation: 1, sending: nil, state: .pending, creation: creation, createdNote: note)
         do { try await persist() } catch { records[noteId] = nil; throw error }
         return noteResult(noteId: noteId)
