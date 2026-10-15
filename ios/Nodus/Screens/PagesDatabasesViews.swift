@@ -245,6 +245,7 @@ private struct PageDocumentWorkspace: View {
         .nodusSheet(isPresented: $compactInspector) {
             NavigationStack { inspectorRail.navigationTitle("Detalles de la página").nodusModalClose(accent: session.accent) }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("page-document-\(page.id)")
     }
 
@@ -658,6 +659,7 @@ struct DatabaseDetailWorkspace: View {
             guard case .success(let url) = result else { return }
             Task { await requestDesktopImport(url) }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("database-detail-\(database.id)")
     }
 
