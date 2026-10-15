@@ -1404,6 +1404,27 @@ public actor PrivateBridgeCache {
             try FileManager.default.removeItem(at: directory)
         }
     }
+    private static func validateDocumentVisualSummary(_ data: Data, parent: JSONValue, vaultId: String, recordId: String, entity: String) throws {
+        guard data.count <= 256 * 1024 else { throw DesktopBridgeError.malformedResponse }
+        _ = try CompanionDocumentFigureAssets.Parent(parent, vaultId: vaultId, recordId: recordId)
+        let value = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
+        guard let fields = value.objectValue, let checkpoint = parent.objectValue,
+              fields.keys.allSatisfy({ ["kind", "id", "entityKey", "target", "source", "state", "error", "createdAt", "updatedAt", "recoveryReviewRequired"].contains($0) }),
+              fields["kind"] == .string("documentVisuals"), fields["id"] == checkpoint["id"], fields["entityKey"] == .string(entity),
+              let target = fields["target"]?.objectValue, target.keys.allSatisfy({ ["kind", "id"].contains($0) }), fields["target"] == checkpoint["target"],
+              let source = fields["source"]?.objectValue, source.keys.allSatisfy({ ["title", "origin", "contentHash"].contains($0) }),
+              let title = source["title"]?.stringValue, title.utf8.count <= 16_384,
+              source["title"] == checkpoint["source"]?.objectValue?["draft"]?.objectValue?["title"],
+              source["origin"] == checkpoint["source"]?.objectValue?["origin"], source["contentHash"] == checkpoint["source"]?.objectValue?["contentHash"],
+              fields["recoveryReviewRequired"] == nil || fields["recoveryReviewRequired"]?.boolValue != nil,
+              checkpoint["recoveryReviewRequired"] != .bool(true) || fields["recoveryReviewRequired"] == .bool(true)
+        else { throw DesktopBridgeError.malformedResponse }
+        for key in ["state", "error", "createdAt", "updatedAt"] {
+            if let value = fields[key], value != .null {
+                guard value.stringValue != nil, checkpoint[key] == nil || checkpoint[key] == value else { throw DesktopBridgeError.malformedResponse }
+            }
+        }
+    }
     /// The commit marker makes checkpoint, index and optional summary recover as
     /// one durable generation, even if the process stops between file replacements.
     public func storeIndexedGeneration(_ data: Data,vaultId: String,recordId: String,indexId: String,entity: String,
@@ -1421,10 +1442,14 @@ public actor PrivateBridgeCache {
             guard entries.count <= 10_000 else { throw DesktopBridgeError.malformedResponse }
             var values = [(indexURL,try JSONEncoder.nodus.encode(entries)),(fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:recordId),data)]
             if let summary {
-                guard summary.recordId == "autonomous:deepResearch:summary:" + entity,
-                      indexId == "autonomous:deepResearch:index:v1",
-                      recordId == (try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)),
+                let kind = indexId == "autonomous:documentVisuals:index:v1" ? "documentVisuals" : "deepResearch"
+                guard summary.recordId == "autonomous:\(kind):summary:" + entity,
+                      indexId == "autonomous:\(kind):index:v1",
+                      recordId == (try CompanionGenerationPublication.recordId(kind: kind, entity: entity)),
                       summary.data.count <= 256 * 1024 else { throw DesktopBridgeError.malformedResponse }
+                if kind == "documentVisuals" {
+                    try Self.validateDocumentVisualSummary(summary.data, parent: JSONDecoder.nodus.decode(JSONValue.self, from: data), vaultId: vaultId, recordId: recordId, entity: entity)
+                }
                 values.append((fileURL(vaultId:vaultId,domain:.researchGeneration,recordId:summary.recordId),summary.data))
             }
             guard Set(values.map { $0.0.lastPathComponent }).count == values.count else { throw DesktopBridgeError.malformedResponse }
@@ -1725,6 +1750,14 @@ public actor PrivateBridgeCache {
                         let parent = try JSONDecoder.nodus.decode(JSONValue.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: url)), using: key))
                         _ = try CompanionDocumentFigureAssets.Parent(parent, vaultId: vault, recordId: record)
                         known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: record).lastPathComponent] = (vault, false, false, record, "documentVisuals")
+                        let summary = "autonomous:documentVisuals:summary:" + entity
+                        let summaryURL = fileURL(vaultId: vault, domain: .researchGeneration, recordId: summary)
+                        if FileManager.default.fileExists(atPath: summaryURL.path) {
+                            let bytes = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: summaryURL)), using: key)
+                            try Self.validateDocumentVisualSummary(bytes, parent: parent, vaultId: vault, recordId: record, entity: entity)
+                        }
+                        known[legacyURL(vaultId: vault, domain: .researchGeneration, recordId: summary).lastPathComponent] = (vault, false, false, summary, "documentVisualsSummary")
+
                     }
                 }
             }

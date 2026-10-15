@@ -83,4 +83,62 @@ struct IndexedGenerationTransactionTests {
         }
         #expect(try await reopened.data(vaultId: "vault", domain: .researchGeneration, recordId: summary) == header)
     }
+    @Test("visual-only summaries commit with their actual parent, reject bodies, and remain review-only after relink")
+    func documentVisualSummary() async throws {
+        let f = try PrivateBridgeAuthoringRecoveryTests.Fixture(); defer { f.clean() }
+        let old = try f.pairing("visual-summary-old"), cache = try f.cache(old.id), session = UUID(), target = UUID().uuidString.lowercased()
+        let entity = "deep-research:" + target, index = "autonomous:documentVisuals:index:v1", summaryId = "autonomous:documentVisuals:summary:" + entity
+        let record = try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)
+        let scope: JSONValue = .object(["kind": .string("deep-research"), "id": .string(target)])
+        var parent: [String: JSONValue] = ["version": .int(1), "kind": .string("documentVisuals"), "id": .string(session.uuidString.lowercased()), "entityKey": .string(entity), "target": scope, "manifest": .null,
+            "state": .string("running"), "source": .object(["vaultId": .string("vault"), "draft": .object(["title": .string("Existing report"), "draftMarkdown": .string(String(repeating: "private authored text", count: 10_000))]), "origin": .string("desktop-capture"), "contentHash": .string(String(repeating: "a", count: 64))])]
+        var header: [String: JSONValue] = ["kind": .string("documentVisuals"), "id": parent["id"]!, "entityKey": .string(entity), "target": scope, "state": .string("running"),
+            "source": .object(["title": .string("Existing report"), "origin": .string("desktop-capture"), "contentHash": .string(String(repeating: "a", count: 64))])]
+        let oldData = try JSONEncoder.nodus.encode(JSONValue.object(parent)), oldHeader = try JSONEncoder.nodus.encode(JSONValue.object(header))
+        try await cache.storeIndexedGeneration(oldData, vaultId: "vault", recordId: record, indexId: index, entity: entity, summary: .init(recordId: summaryId, data: oldHeader))
+        #expect(oldHeader.count < 1_024 && oldData.count > 100_000)
+        var invalid = header; invalid["calls"] = .object(["body": .string("must not enter polling metadata")])
+        let invalidData = try JSONEncoder.nodus.encode(JSONValue.object(invalid))
+        await #expect(throws: DesktopBridgeError.self) { try await cache.storeIndexedGeneration(oldData, vaultId: "vault", recordId: record, indexId: index, entity: entity, summary: .init(recordId: summaryId, data: invalidData)) }
+        invalid = header; invalid["id"] = .string(UUID().uuidString)
+        let wrongIdentity = try JSONEncoder.nodus.encode(JSONValue.object(invalid))
+        await #expect(throws: DesktopBridgeError.self) { try await cache.storeIndexedGeneration(oldData, vaultId: "vault", recordId: record, indexId: index, entity: entity, summary: .init(recordId: summaryId, data: wrongIdentity)) }
+        #expect(try await cache.data(vaultId: "vault", domain: .researchGeneration, recordId: summaryId) == oldHeader)
+        parent["state"] = .string("failed"); parent["error"] = .string("Actual interrupted snapshot")
+        header["state"] = parent["state"]; header["error"] = parent["error"]
+        let next = try JSONEncoder.nodus.encode(JSONValue.object(parent)), nextHeader = try JSONEncoder.nodus.encode(JSONValue.object(header))
+        // Model termination after replacing just the checkpoint, leaving the old
+        // summary. Reopening must complete the same three-file durable commit.
+        let folder = f.root.appendingPathComponent("bridge-" + old.id)
+        let encodedKey = try #require(f.keychain.value(for: KeychainStore.desktopBridgeCacheKey(pairingId: old.id)))
+        let key = SymmetricKey(data: try #require(Data(base64Encoded: encodedKey)))
+        func filename(_ id: String) -> String { "work-" + PrivateBridgeAuthoringRecovery.hash(Data("vault\u{1f}\(DesktopBridgeDomain.researchGeneration.rawValue)\u{1f}\(id)".utf8)) + ".bridgecache" }
+        let staged = folder.appendingPathComponent("indexed-" + UUID().uuidString + ".transaction")
+        try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: false)
+        var hashes: [String: String] = [:]
+        for (id, bytes) in [(index, try JSONEncoder.nodus.encode([entity])), (record, next), (summaryId, nextHeader)] {
+            let encrypted = try #require(try AES.GCM.seal(bytes, using: key).combined), name = filename(id)
+            try PrivateBridgeProtectedFile.write(encrypted, to: staged.appendingPathComponent(name)); hashes[name] = PrivateBridgeAuthoringRecovery.hash(encrypted)
+        }
+        try PrivateBridgeProtectedFile.write(JSONEncoder.nodus.encode(JSONValue.object(["files": .object(hashes.mapValues(JSONValue.string))])), to: staged.appendingPathComponent("commit.json"))
+        try PrivateBridgeProtectedFile.write(Data(contentsOf: staged.appendingPathComponent(filename(record))), to: folder.appendingPathComponent(filename(record)))
+        let reopened = try f.cache(old.id)
+        #expect(try await reopened.data(vaultId: "vault", domain: .researchGeneration, recordId: summaryId) == nextHeader)
+        #expect(try await reopened.data(vaultId: "vault", domain: .researchGeneration, recordId: record) == next)
+        let snapshot = try await reopened.authoringRecoverySnapshot(vaultIds: ["vault"])
+        #expect(snapshot.records.first { $0.recordId == summaryId }?.generationKind == "documentVisualsSummary")
+        let saved = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "real-mac")
+        try await f.recovery.completeRevocation(saved)
+        let fresh = try f.pairing("visual-summary-new"), destination = try f.cache(fresh.id)
+        _ = try await f.recovery.adopt(pairing: fresh, macDeviceId: "real-mac", cache: destination)
+        let restoredData = try #require(await destination.data(vaultId: "vault", domain: .researchGeneration, recordId: summaryId))
+        #expect(try JSONDecoder.nodus.decode(JSONValue.self, from: restoredData).objectValue?["recoveryReviewRequired"] == .bool(true))
+        let ledgerData = try #require(await destination.data(vaultId: "vault", domain: .researchGeneration, recordId: "job-ledger-v1"))
+        let ledger = try JSONDecoder.nodus.decode([String: DesktopJobLedger.Request].self, from: ledgerData)
+        #expect(ledger.count == 1 && ledger.values.first?.method == "localDocumentVisuals" && ledger.values.first?.args.isEmpty == true)
+        // A restored summary and checkpoint still form one valid authored scope.
+        _ = try await destination.authoringRecoverySnapshot(vaultIds: ["vault"])
+        for id in [old.id, fresh.id] { try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: id)) }; try? f.keychain.remove(saved.recoveryKeyName)
+    }
+
 }
