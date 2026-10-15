@@ -390,7 +390,7 @@ struct SpaceShell: View {
         case .studyLibrary:
             StudyTeachingWorkspaceView(session: session, mode: .materials)
         case .studyIdeas:
-            collection("study-ideas", route: .studyIdeas)
+            SharedDesktopSurface(session: session, surface: .studyIdeas)
         case .studySchedule:
             StudyTeachingWorkspaceView(session: session, mode: .schedule)
         case .studyCalendar:

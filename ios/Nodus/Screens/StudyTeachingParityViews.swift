@@ -201,7 +201,7 @@ private struct StudyCoursesWorkspace: View {
                     }
                 }
             }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor()
-        }.accessibilityIdentifier("study-course-detail-\(course.id)")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("study-course-detail-\(course.id)")
     }
 
     private func metric(_ title: LocalizedStringKey, _ value: Int, _ image: String) -> some View { VStack(alignment: .leading, spacing: 5) { Image(systemName: image).foregroundStyle(session.accent); Text("\(value)").font(.title2.bold().monospacedDigit()); Text(title).font(.caption2).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent).frame(maxWidth: .infinity) }
