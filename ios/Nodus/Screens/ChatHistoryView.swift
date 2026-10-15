@@ -145,6 +145,7 @@ struct ChatHistoryView: View {
                             : "Ask the vault something and the exchange is kept on this device.")
                     )
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             }
             .scrollContentBackground(.hidden)

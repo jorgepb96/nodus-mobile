@@ -465,7 +465,7 @@ struct ChatScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Ask \(session.connection.spaceName)")
                 .font(.headline)
-            Text("Every answer rests on real corpus rows. Citations are checked against the catalogue: if the model invents a source, it is removed.")
+            Text("Ask about your ideas and sources. Add context to focus the conversation.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

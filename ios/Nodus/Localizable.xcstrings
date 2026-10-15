@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Ask about your ideas and sources. Add context to focus the conversation.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pregunta sobre tus ideas y fuentes. Añade contexto para centrar la conversación."
+          }
+        }
+      }
+    },
     "Could not save": {
       "extractionState": "manual",
       "localizations": {
