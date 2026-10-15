@@ -122,6 +122,101 @@ final class DesktopWorkspaceUITests: XCTestCase {
         XCTAssertFalse(app.textFields["pairing-code"].exists)
     }
 
+    /// Uses the existing real grant. Root runs this before the destructive revocation test.
+    @MainActor
+    func testRenewExistingMacConnectionStaysLiveAfterReopeningWithoutCode() throws {
+        let expected = try required("NODUS_ACCEPTANCE_EXPECTED_MAC_MODEL")
+        let app = try launchExistingMacSettings()
+        defer { capture(app, "existing-mac-renewal-final"); app.terminate() }
+        let renewal = app.buttons["renew-mac-connection"].firstMatch
+        reveal(renewal, in: app)
+        XCTAssertTrue(renewal.isEnabled); renewal.tap()
+        let result = app.staticTexts["mac-connection-result"].firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 35), app.debugDescription)
+        XCTAssertEqual(result.label, "Conexión renovada. Se conservan las copias, los borradores y las solicitudes.")
+        XCTAssertTrue(renewal.isEnabled)
+        assertLiveMacModel(expected, in: app)
+        capture(app, "existing-mac-renewal-success")
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["settings-workspace"].firstMatch.waitForExistence(timeout: 30), app.debugDescription)
+        assertLiveMacModel(expected, in: app)
+        XCTAssertFalse(app.textFields["pairing-code"].exists)
+    }
+
+    /// Destructive only to the already linked isolated lab grant supplied by Root.
+    @MainActor
+    func testRevokeExistingMacConnectionCancelPreservesThenConfirmRemovesAllVaults() throws {
+        let ids = try JSONDecoder().decode([String].self, from: Data(required("NODUS_ACCEPTANCE_REVOKED_VAULT_IDS").utf8))
+        XCTAssertFalse(ids.isEmpty); XCTAssertEqual(Set(ids).count, ids.count)
+        XCTAssertTrue(ids.allSatisfy { !$0.isEmpty })
+        let app = try launchExistingMacSettings()
+        defer { capture(app, "existing-mac-revocation-final"); app.terminate() }
+        let settings = app.descendants(matching: .any)["settings-workspace"].firstMatch
+        let revoke = app.buttons["revoke-mac-connection"].firstMatch
+        reveal(revoke, in: app); XCTAssertTrue(revoke.isEnabled); revoke.tap()
+        let cancel = app.buttons["Cancelar"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10)); cancel.tap()
+        XCTAssertTrue(settings.exists); XCTAssertTrue(revoke.isEnabled)
+        let mode = app.buttons["ai-execution-mode"].firstMatch
+        reveal(mode, in: app)
+        XCTAssertTrue((mode.label + " " + (mode.value as? String ?? "")).contains("Live"))
+        XCTAssertFalse(app.textFields["pairing-code"].exists)
+        capture(app, "existing-mac-revocation-cancel-preserves-live")
+        reveal(revoke, in: app); revoke.tap()
+        let confirm = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Revocar conexión con el Mac", "revoke-mac-connection")).firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10)); XCTAssertTrue(confirm.isHittable)
+        capture(app, "existing-mac-revocation-confirmation"); confirm.tap()
+        let closed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: settings)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 45), .completed, app.debugDescription)
+        XCTAssertTrue(app.buttons["nodus-add-server"].waitForExistence(timeout: 30), app.debugDescription)
+        for id in ids { XCTAssertFalse(app.buttons["space-" + id].exists, "Revoked vault remains: " + id) }
+        capture(app, "existing-mac-revocation-removed")
+        app.terminate()
+        let reopened = try launchLinkedPicker()
+        defer { reopened.terminate() }
+        for id in ids { XCTAssertFalse(reopened.buttons["space-" + id].exists, "Revoked vault returned after restart: " + id) }
+        XCTAssertFalse(reopened.buttons["revoke-mac-connection"].exists)
+        capture(reopened, "existing-mac-revocation-after-restart")
+    }
+
+    @MainActor private func launchExistingMacSettings() throws -> XCUIApplication {
+        for forbidden in ["NODUS_UI_TEST_DEMO", "NODUS_ACCEPTANCE_PAIRING_LINK", "NODUS_ACCEPTANCE_LINK", "NODUS_ACCEPTANCE_PAIRING_CODE", "NODUS_ACCEPTANCE_SNAPSHOT_FILENAME", "NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] {
+            XCTAssertNil(ProcessInfo.processInfo.environment[forbidden], "The existing real grant is required.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        app.launchEnvironment["NODUS_START_ROUTE"] = "settings"
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["settings-workspace"].firstMatch.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertFalse(app.textFields["pairing-code"].exists)
+        return app
+    }
+
+    @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for step in 0..<32 {
+            if element.exists && element.isHittable { return }
+            if step % 16 < 8 { app.swipeUp() } else { app.swipeDown() }
+        }
+        XCTAssertTrue(element.exists && element.isHittable, app.debugDescription)
+    }
+
+    @MainActor private func assertLiveMacModel(_ expected: String, in app: XCUIApplication) {
+        let model = app.staticTexts[expected].firstMatch
+        let deadline = Date().addingTimeInterval(35)
+        var step = 0
+        while Date() < deadline && !(model.exists && model.isHittable) {
+            if step % 16 < 8 { app.swipeUp() } else { app.swipeDown() }
+            step += 1
+            _ = model.waitForExistence(timeout: 0.5)
+        }
+        XCTAssertTrue(model.exists && model.isHittable, "The actual Mac settings must answer after renewal.\n" + app.debugDescription)
+        XCTAssertFalse(app.staticTexts["mac-live-settings-error"].exists)
+        let mode = app.buttons["ai-execution-mode"].firstMatch
+        reveal(mode, in: app)
+        XCTAssertTrue((mode.label + " " + (mode.value as? String ?? "")).contains("Live"))
+        XCTAssertFalse(app.textFields["pairing-code"].exists)
+    }
+
     private func required(_ key: String) throws -> String {
         let value = try XCTUnwrap(ProcessInfo.processInfo.environment[key], "Actual isolated Desktop acceptance input is required: \(key)")
         XCTAssertFalse(value.isEmpty); return value
