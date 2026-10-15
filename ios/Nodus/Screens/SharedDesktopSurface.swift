@@ -1117,6 +1117,10 @@ private struct DesktopWebView: UIViewRepresentable {
                         autonomous.endAuthoring(generation); value = .null
                     } else if method == "mobileDeepResearchCheckpoints", args.isEmpty || args == [.string("summaries")] || args == [.string("reports")] {
                         value = try await autonomous.deepResearchCheckpoints(session: session, summaries: args.first == .string("summaries"), includeArchived: args.first == .string("reports"))
+                    } else if method == "mobileGenealogyResearchSource", args.count == 1 {
+                        value = try await CompanionCompleteGuideSource.genealogySource(session: session, request: args[0])
+                    } else if method == "mobileGenealogyResearchDownload", args.count == 2, case .int(let rawDays) = args[1], let days = Int(exactly: rawDays) {
+                        try await CompanionCompleteGuideSource.downloadGenealogy(session: session, request: args[0], days: days); value = .null
                     } else if method == "mobileStudyResearchSource", args.count == 1 {
                         value = try await CompanionCompleteGuideSource.studySource(session: session, request: args[0])
                     } else if method == "mobileCompleteGuideSource", args.count == 1 {

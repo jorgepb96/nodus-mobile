@@ -26,6 +26,46 @@ enum CompanionCompleteGuideSource {
               try JSONEncoder.nodus.encode(value).count <= 16_000_000 else { throw DesktopBridgeError.malformedResponse }
         return value
     }
+    private static func genealogyRecord(_ request: JSONValue) throws -> String {
+        let args = request.objectValue ?? [:]
+        let selection = JSONValue.object(["objective": args["objective"] ?? .null, "focusPersonId": args["focusPersonId"] ?? .null])
+        return "companion:genealogy-research:source:v1:" + SHA256.hash(data: try JSONEncoder.nodus.encode(selection)).map { String(format: "%02x", $0) }.joined()
+    }
+    static func genealogySource(session: SpaceSession, request: JSONValue) async throws -> JSONValue {
+        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+        if request.objectValue?["mobileSourceScope"] == .string("device_downloads") {
+            let cache = try PrivateBridgeCache(pairingId: pairing.id)
+            let copies = try await cache.downloadedData(vaultId: vault, domain: .corpus, recordId: genealogyRecord(request))
+            var selected: JSONValue?, identity: String?
+            for data in copies {
+                guard var value = try JSONDecoder.nodus.decode(JSONValue.self, from: data).objectValue,
+                      var context = value["context"]?.objectValue, context["vaultId"] == .string(vault),
+                      let sourceHash = value["sourceHash"]?.stringValue, let revision = context["revision"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                let current = sourceHash + ":" + revision
+                if let identity, identity != current { throw APIError(status: 409, message: "Hay copias distintas de estas fuentes genealógicas. Elige de nuevo la descarga antes de generar.") }
+                identity = current; context["sourceScope"] = .string("device_downloads"); value["context"] = .object(context); selected = .object(value)
+            }
+            guard let selected else { throw APIError(status: 404, message: "Guarda las fuentes de este objetivo y esta persona antes de investigar sin el Mac.") }
+            return selected
+        }
+        let response = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDeepResearchSource", args: [.object([
+            "request": request, "generationId": .string(UUID().uuidString.lowercased()), "stage": .string("genealogySnapshot"), "input": .array([]), "history": .array([]), "replies": .object([:])
+        ])])
+        guard let value = response.objectValue?["value"], value.objectValue?["kind"] == .string("genealogy"),
+              value.objectValue?["context"]?.objectValue?["vaultId"] == .string(vault),
+              try JSONEncoder.nodus.encode(value).count <= 16_000_000 else { throw DesktopBridgeError.malformedResponse }
+        return value
+    }
+    static func downloadGenealogy(session: SpaceSession, request: JSONValue, days: Int) async throws {
+        guard [7, 30].contains(days), var linked = request.objectValue else { throw DesktopBridgeError.malformedResponse }
+        linked["mobileSourceScope"] = .string("linked_corpus")
+        let value = try await genealogySource(session: session, request: .object(linked))
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+        let recordId = try genealogyRecord(request), cache = try PrivateBridgeCache(pairingId: pairing.id)
+        let id = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: [recordId])
+        try await cache.saveReadPack(id: id, vaultId: vault, title: "Fuentes de investigación genealógica", expiresAt: Date().addingTimeInterval(Double(days) * 86_400), records: [.init(domain: .corpus, recordId: recordId, data: try JSONEncoder.nodus.encode(value))])
+        session.didChangeCompanionDownloads()
+    }
     static func studySource(session: SpaceSession, request: JSONValue) async throws -> JSONValue {
         let downloaded = request.objectValue?["mobileSourceScope"] == .string("device_downloads")
         if downloaded {
