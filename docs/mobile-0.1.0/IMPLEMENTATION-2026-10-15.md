@@ -11,7 +11,7 @@ La beta **0.1.0 (1003)** ya está disponible en TestFlight interno, según [el r
 - Un contenedor explícito sustituye la regla genérica que asignaba `flex:1` a cualquier `div` directo de la superficie. Las barras y los avisos no deben crecer como si fueran el documento.
 - Las barras SwiftUI también reservan 44 puntos para cerrar, escalan con el texto accesible y limitan los atajos a la sección visible, evitando que una sección residente reciba Command-W.
 - Desktop `a1ff170e` y `06666c21`; móvil `457442b`, `082b9c2`, `6cf19ab` y `6efd44a`. El recorrido de geometría de los componentes React reales (lectores y cabecera editorial) en Electron pasó **40 escenarios** (ancho/orientación/tema/texto ampliado), cierre, catálogo y navegación con teclado. Evidencia privada Desktop: `artifacts/interface-2026-10-15/workspace-tabs/result.json` y capturas. ESLint focalizado pasó.
-- La regresión nativa `WorkspaceTabLayoutUITests` está preparada; **no está compilada ni ejecutada todavía**. El parseo de Swift pasó. Se ejecutará sobre el bundle integrado, junto a la revisión real de WebKit; la prueba Electron no equivale a aceptación iOS.
+- La regresión nativa `WorkspaceTabLayoutUITests` ya se compiló y ejecutó sobre el bundle preliminar integrado. Los resultados detallados aparecen abajo: el recorrido completo todavía no está aprobado. La prueba Electron no equivale a aceptación iOS.
 
 ## Integraciones activas
 
@@ -31,10 +31,22 @@ La beta **0.1.0 (1003)** ya está disponible en TestFlight interno, según [el r
 - Adjuntos/acciones/relaciones y recuperación: 38 pruebas Kit en 7 suites aprobadas; los resultados se solapan con la campaña anterior y no se suman como cobertura nueva.
 - Gestión de archivos históricos y paginación de Autores: 15 pruebas en 2 suites aprobadas (`recovery-storage-author-focused-01.log`), incluidos los tres casos de Autores.
 - Componentes compartidos: 40 escenarios de geometría y 26 contratos UI aprobados. Son pruebas locales de componentes, no aceptación nativa iOS.
-- Las fuentes de cada ejecución y sus logs están en los artefactos privados `artifacts/pairing-2026-10-15/` de cada repositorio. Compilación nativa integrada y E2E de las nuevas operaciones siguen pendientes.
+- Las fuentes de cada ejecución y sus logs están en los artefactos privados `artifacts/pairing-2026-10-15/` de cada repositorio. Tres compilaciones Swift integradas pasaron; la aceptación completa con recursos compartidos regenerados y E2E de las nuevas operaciones sigue pendiente.
 
 Los checkpoints anteriores conservan sus resultados y fallos originales. Las fuentes se congelarán antes de regenerar recursos compartidos y compilar; después se realizarán las pruebas locales y simuladores de la integración completa. Las pruebas físicas siguen asignadas al propietario. La ruta real VPN permanece pendiente de una red utilizable.
 
 La segunda CI de Desktop ejecutó los 1.046 archivos, 5.259 pruebas aprobadas y 10 omisiones explícitas por plataforma/ABI. Su E2E de Stellar falló; la corrección posterior pasó localmente. **El PR no está verde y no se lanzará una tercera CI sin nueva autorización.** [Registro](https://github.com/jorgepb96/nodus/blob/codex/mobile-0.1.0-parity/docs/mobile-0.1.0/checkpoints/ci-corrections-2026-10-15.md).
 
 Los pushes usan `[skip ci]` y no han iniciado otra CI de compilación/pruebas. GitHub sí ejecutó automáticamente los controles de metadatos `PR checks` y CLA de tipo `pull_request_target` sobre Desktop `6b2900fe`; ya habían terminado cuando se consultó su estado. Los workflows permanecen intactos.
+
+## Comprobaciones nativas y correcciones posteriores
+
+- `native-integration-build-{01,02,03}.xcresult`: tres builds de pruebas locales correctas. En cada compilación se registraron las fuentes antes y después sin cambios durante el proceso. Estos bundles todavía contienen los recursos WebKit anteriores; no son aceptación final de las superficies nuevas.
+- La primera ejecución de iPhone detectó cuatro fallos: teclado horizontal y propagación de identificadores de accesibilidad, corregidos en `2c33e7f`. Los callbacks de navegación de cuatro lectores WebKit también se ajustaron a la firma real del SDK en `7748c61`.
+- La segunda ejecución aprobó chat completo en ambos temas (teclado, giro, historial y borrador durable), navegación Autores→obra→autor relacionado y pestañas con tamaño de texto accesible. El cuarto caso detectó un bloqueo real SQLite al reabrir Ideas; se conserva el fallo completo.
+- `0801eb8` corrige esa contención con WAL y espera acotada. Once pruebas de MirrorStore pasaron, incluidas tres con varios handles, lecturas e importación reales; las importaciones conservan su atomicidad.
+- La tercera ejecución vuelve a aprobar los tres recorridos anteriores. El último caso se detuvo ante `43.99999999999994` frente a 44 puntos. Se ha corregido la tolerancia de medida a 0,01 puntos en el test; falta repetir el recorrido completo de cuatro secciones, incluida Biblioteca. No se ha reducido el tamaño de los controles.
+- Los cinco contratos HTTP del nuevo host web pasaron dentro del simulador. El smoke separado con la fuente Swift exacta pasó en macOS contra HTTPS real (HTML, JSON, redirect, cancelación y límite de cuerpo); no acredita todavía tráfico iOS. Los dos contratos de embeddings propios del móvil también pasaron en el paquete NodusAI.
+- `5b620b2` corrige otra integración: los accesos a Deep Research enviaban el modo autónomo vinculado al formulario nativo anterior. Ambos accesos usan ahora el espacio completo, con desmontaje y configuración explícita al cambiar de modo. Esta corrección de ruta queda pendiente de la compilación final y su prueba visual.
+
+Las ejecuciones fallidas se mantienen en `artifacts/interface-2026-10-15/`, junto con `.xcresult`, capturas exportadas, hashes de fuentes y de los ejecutables. Ninguna de ellas se contabiliza como una aprobación global.
