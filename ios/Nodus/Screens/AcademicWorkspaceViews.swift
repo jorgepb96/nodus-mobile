@@ -52,6 +52,7 @@ struct IdeasWorkspaceView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-ideas")
     }
 
@@ -423,6 +424,7 @@ struct AuthorsWorkspaceView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-authors")
         .task { loadSaved() }
     }

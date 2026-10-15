@@ -8,6 +8,7 @@ import UIKit
 
 struct ChatScreen: View {
     @Environment(AISettings.self) private var ai
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     /// Optional for the same reason `ScrollToTopModifier`'s is: a non-optional `@Environment`
     /// for an `@Observable` is a crash where it is missing, and this screen is previewable
     /// outside the shell that provides one.
@@ -237,42 +238,44 @@ struct ChatScreen: View {
                     }
                 }
 
-            if session.vaultType == .databases {
-                Button { composerFocused = false;showingDatabases = true } label: {
-                    Label("\(databaseIds.count) databases",systemImage:"tablecells").font(.caption).lineLimit(1).padding(.horizontal,12).frame(minHeight:44)
-                }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
-            } else if isStudy {
-                Button { composerFocused = false;showingStudyOptions = true } label: {
-                    Label("Fuentes y opciones de estudio",systemImage:"books.vertical").font(.caption).padding(.horizontal,12).frame(minHeight:44)
-                }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
-            } else if session.vaultType == .worldbuilding {
-                Button { composerFocused = false;showingWorldOptions = true } label: {
-                    Label(worldOptions.focus.isEmpty ? "Contexto del mundo":worldOptions.focus.map(\.title).joined(separator:" · "),systemImage:"globe").font(.caption).lineLimit(1).padding(.horizontal,12).frame(minHeight:44)
-                }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
-            } else if session.aiExecutionMode == .live {
-                Button { composerFocused=false;showingLiveOptions=true } label: {
-                    Label("Contexto y opciones",systemImage:"square.3.layers.3d").font(.caption).frame(minHeight:44)
-                }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
-            } else {
-                Menu {
-                    ForEach(ContextSectionKind.allCases,id:\.self) { kind in
-                        Toggle(contextLabel(kind),isOn:Binding(get:{controls.include.contains(kind)},set:{ enabled in if enabled { controls.include.insert(kind) } else { controls.include.remove(kind) } }))
-                    }
-                } label: {
-                    Label("Context",systemImage:"square.3.layers.3d").font(.caption).frame(minHeight:44)
-                }.foregroundStyle(session.accent).disabled(isThinking)
-            }
+            if !compactKeyboardLayout {
+                if session.vaultType == .databases {
+                    Button { composerFocused = false;showingDatabases = true } label: {
+                        Label("\(databaseIds.count) databases",systemImage:"tablecells").font(.caption).lineLimit(1).padding(.horizontal,12).frame(minHeight:44)
+                    }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+                } else if isStudy {
+                    Button { composerFocused = false;showingStudyOptions = true } label: {
+                        Label("Fuentes y opciones de estudio",systemImage:"books.vertical").font(.caption).padding(.horizontal,12).frame(minHeight:44)
+                    }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+                } else if session.vaultType == .worldbuilding {
+                    Button { composerFocused = false;showingWorldOptions = true } label: {
+                        Label(worldOptions.focus.isEmpty ? "Contexto del mundo":worldOptions.focus.map(\.title).joined(separator:" · "),systemImage:"globe").font(.caption).lineLimit(1).padding(.horizontal,12).frame(minHeight:44)
+                    }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+                } else if session.aiExecutionMode == .live {
+                    Button { composerFocused=false;showingLiveOptions=true } label: {
+                        Label("Contexto y opciones",systemImage:"square.3.layers.3d").font(.caption).frame(minHeight:44)
+                    }.buttonStyle(.plain).foregroundStyle(session.accent).disabled(isThinking)
+                } else {
+                    Menu {
+                        ForEach(ContextSectionKind.allCases,id:\.self) { kind in
+                            Toggle(contextLabel(kind),isOn:Binding(get:{controls.include.contains(kind)},set:{ enabled in if enabled { controls.include.insert(kind) } else { controls.include.remove(kind) } }))
+                        }
+                    } label: {
+                        Label("Context",systemImage:"square.3.layers.3d").font(.caption).frame(minHeight:44)
+                    }.foregroundStyle(session.accent).disabled(isThinking)
+                }
 
-            // Which conversation this is, when it is one that has a name. A new conversation
-            // says nothing here rather than saying "New conversation", because an empty screen
-            // with a composer under it has already said that.
-            if !conversationTitle.isEmpty {
-                Text(conversationTitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.horizontal, 52)
+                // Which conversation this is, when it is one that has a name. A new conversation
+                // says nothing here rather than saying "New conversation", because an empty screen
+                // with a composer under it has already said that.
+                if !conversationTitle.isEmpty {
+                    Text(conversationTitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.horizontal, 52)
+                }
             }
             if let pending=conversationId.flatMap({ id in history.conversations.first(where:{$0.id == id})?.pendingLive }),let issue=pending.issue {
                 Text(issue).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
@@ -485,11 +488,15 @@ struct ChatScreen: View {
     /// `fixedSize` vertically, because in a `VStack` under a `ScrollView` the greedy sibling
     /// wins ties: the composer was being compressed to a fraction of its height and the capsule
     /// with it. A row that states its own height cannot be squeezed by the conversation above.
+    private var compactKeyboardLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone && verticalSizeClass == .compact && composerFocused
+    }
+
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
             TextField("", text: $draft, prompt: placeholder, axis: .vertical)
                 .accessibilityIdentifier("nodus-chat-composer")
-                .lineLimit(1...5)
+                .lineLimit(1...(compactKeyboardLayout ? 1 : 5))
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
                 .padding(.horizontal, 15)

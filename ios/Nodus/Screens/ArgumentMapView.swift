@@ -48,6 +48,7 @@ struct ArgumentMapView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-argument")
         .task(id: seed?.id) {
             if let seed { open(seed) }

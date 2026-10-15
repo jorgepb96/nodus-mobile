@@ -39,9 +39,10 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
     func testAuthorCatalogueActionsAndRelatedDossiersAreReachable() throws {
         let app = launch(route: "authors", style: "light")
         defer { app.terminate() }
+        _ = try activeTab(app, section: "authors")
         app.buttons["workspace-catalogue-authors"].tap()
         let search = app.textFields["nodus-search-field"]
-        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        XCTAssertTrue(search.waitForExistence(timeout: 10), app.debugDescription)
         search.tap(); search.typeText("Mill\n")
         let select = app.buttons["workspace-author-select-demo-a-mill"]
         XCTAssertTrue(select.waitForExistence(timeout: 10)); select.tap()

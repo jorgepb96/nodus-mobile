@@ -33,7 +33,10 @@ final class NativeChatMobileUITests: XCTestCase {
                 }
                 XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
                 XCTAssertEqual(composer.value as? String, draft)
-                XCTAssertTrue(composer.isHittable); XCTAssertTrue(send.isHittable); XCTAssertTrue(history.isHittable)
+                capture(app, "native-chat-probe-\(style)-\(orientation == .portrait ? "portrait" : "landscape")")
+                XCTAssertTrue(composer.isHittable, app.debugDescription)
+                XCTAssertTrue(send.isHittable, app.debugDescription)
+                XCTAssertTrue(history.isHittable, app.debugDescription)
                 XCTAssertTrue(model.isHittable)
                 XCTAssertGreaterThanOrEqual(model.frame.width, 44)
                 XCTAssertGreaterThanOrEqual(model.frame.height, 44)

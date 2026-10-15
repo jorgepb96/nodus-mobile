@@ -53,6 +53,7 @@ struct CollectionListView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("workspace-\(workspaceRoute.rawValue)")
         } else {
             catalogue
