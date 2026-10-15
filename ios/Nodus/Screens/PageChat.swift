@@ -15,8 +15,8 @@ import SwiftUI
 ///
 /// The conversation lives as long as the report does. Closing the modal keeps it; closing or
 /// replacing the report — "New", a different report, leaving the screen — forgets it. Nothing is
-/// written to disk: a conversation about a document that is still being written is not something
-/// to come back to a week later.
+/// saved as a separate chat conversation. A submitted Mac request does have a durable job
+/// receipt, so a lost acknowledgement cannot purchase the answer twice.
 struct PageChatSubject: Identifiable, Equatable {
     /// The report this conversation belongs to. Two reports are two conversations.
     let id: String
@@ -81,6 +81,19 @@ final class PageChatStore {
     var failure: String?
 
     private var running: Task<Void, Never>?
+    private struct PendingMac {
+        let id:String, vault:String, pairing:String, answerId:UUID
+        let args:[JSONValue]
+        let catalog:CitationCatalog
+        let passageCount:Int
+        var stream=PageChatLiveWire.Stream()
+    }
+    private var pendingMac:PendingMac?
+    private var macSession:SpaceSession?
+    private var macObservation=UUID()
+    private(set) var isCancellingMac=false
+    var canResumeMac:Bool { pendingMac != nil }
+
     /// The corpus, asked what the sources of this conversation are called.
     ///
     /// Held for as long as the conversation is, rather than built per question: the actor
@@ -105,13 +118,32 @@ final class PageChatStore {
     }
 
     func cancel() {
-        running?.cancel()
-        running = nil
-        isThinking = false
+        guard !isCancellingMac else {return}
+        macObservation=UUID()
+        running?.cancel();running=nil
+        guard let pending=pendingMac,let session=macSession else {isThinking=false;return}
+        isCancellingMac=true;isThinking=true
+        Task { @MainActor in
+            defer {isCancellingMac=false;isThinking=false}
+            do {
+                let (_,pairing,token)=try privateBridgeConnection(session,domain:.researchGeneration)
+                guard pairing.id == pending.pairing else {throw DesktopBridgeError.permissionDenied}
+                let ledger=try await DesktopJobLedgers.shared.ledger(pairingId:pairing.id,vaultId:pending.vault)
+                try await ledger.requestCancellation(id:pending.id)
+                // The request tombstone is atomic even if the original POST arrives late.
+                let client=DesktopBridgeClient(pairing:pairing,token:token)
+                let stopped=try await PageChatLiveWire.cancelRequest(vaultId:pending.vault,args:pending.args,id:pending.id) { vault,method,args,id in
+                    try await client.cancelJobRequest(vaultId:vault,method:method,args:args,idempotencyKey:id)
+                }
+                try await ledger.update(id:pending.id,job:stopped)
+                if pendingMac?.id == pending.id {pendingMac=nil}
+            } catch {failure=error.localizedDescription}
+        }
     }
 
     func clear() {
         cancel()
+        pendingMac=nil
         turns = []
         failure = nil
         quoted = nil
@@ -136,6 +168,8 @@ final class PageChatStore {
         subject: PageChatSubject,
         ai: AISettings
     ) {
+        if subject.session.aiExecutionMode == .live { askMac(question,passages:passages,subject:subject,ai:ai);return }
+        do {try BetaAIFeatures.requireAutonomousGeneration()} catch {failure=error.localizedDescription;return}
         guard let model = ai.model(for: .chat) else {
             failure = String(localized: "Choose a chat model under Providers.")
             return
@@ -231,6 +265,97 @@ final class PageChatStore {
                 }
                 turns.removeLast()
                 failure = error.localizedDescription
+            }
+        }
+    }
+
+    /// The existing Mac stream job owns provider execution. The page keeps only its own
+    /// temporary turns; the durable ledger preserves the exact request after a lost ACK.
+    private func askMac(_ question:String,passages:[PageChatPassage],subject:PageChatSubject,ai:AISettings) {
+        guard !isThinking else {return}
+        let session=subject.session,asked=question.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard pendingMac != nil || !asked.isEmpty else {return}
+        guard session.connection.desktopPairingId != nil,session.connection.role.canSendChanges else {failure=BetaAIFeatures.macRequiredMessage;return}
+        macSession=session;isThinking=true;failure=nil
+        let observation=UUID();macObservation=observation
+        running=Task { @MainActor in
+            defer {if macObservation == observation {isThinking=false}}
+            do {
+                let (vault,pairing,token)=try privateBridgeConnection(session,domain:.researchGeneration)
+                guard pairing.domains.contains(.corpus) else {throw DesktopBridgeError.permissionDenied}
+                let client=DesktopBridgeClient(pairing:pairing,token:token)
+                let capabilities=try await client.liveCapabilities()
+                guard capabilities.operations.contains("researchChatStream") else {throw APIError(status:426,code:"page_chat_mac_upgrade_required",message:"Actualiza Nodus en el Mac para conversar sobre este informe.")}
+                try Task.checkCancellation()
+                if pendingMac == nil {
+                    let retrieval=CorpusRetrieval(client:session.client,spaceId:session.connection.spaceId,embeddings:EmbeddingService(keyProvider:ai.keyProvider),identity:nil)
+                    let material=try? await retrieval.material(for:"\(subject.title)\n\(asked)")
+                    try Task.checkCancellation()
+                    let catalog=material?.catalog ?? CitationCatalog(entries:[])
+                    let configuration=try await client.operation(vaultId:vault,method:"getMobileLiveChatConfiguration",args:[.string("research")])
+                    try Task.checkCancellation()
+                    let selection=configuration.objectValue?["selection"] ?? NativeLiveChatOptions.defaultSelection
+                    let history=turns.suffix(8).map {JSONValue.object(["role":.string($0.role == .assistant ? "assistant":"user"),"content":.string(PageChatPrompt.asked($0.text,quoting:$0.quote))])}
+                    let prompt=PageChatPrompt.system(language:Prompts.interfaceLanguage)+"\n\n"+PageChatPrompt.question(asked,title:subject.title,passages:passages,catalog:catalog,quote:quoted)
+                    let id=UUID().uuidString,args:[JSONValue]=[.string(id),PageChatLiveWire.payload(history:history,prompt:prompt,selection:selection)]
+                    let ledger=try await DesktopJobLedgers.shared.ledger(pairingId:pairing.id,vaultId:vault)
+                    _=try await ledger.prepare(id:id,method:"researchChatStream",args:args)
+                    try Task.checkCancellation()
+                    let answer=Turn(role:.assistant,text:"")
+                    pendingMac=PendingMac(id:id,vault:vault,pairing:pairing.id,answerId:answer.id,args:args,catalog:catalog,passageCount:passages.count)
+                    turns.append(Turn(role:.user,text:asked,quote:quoted));turns.append(answer)
+                    draft="";quoted=nil
+                    if let index=turns.firstIndex(where:{$0.id == answer.id}) {turns[index].warning=material?.warning}
+                }
+                guard let pending=pendingMac,pending.vault == vault,pending.pairing == pairing.id else {throw DesktopBridgeError.permissionDenied}
+                let ledger=try await DesktopJobLedgers.shared.ledger(pairingId:pairing.id,vaultId:vault)
+                _=try await ledger.prepare(id:pending.id,method:"researchChatStream",args:pending.args)
+                let known=await ledger.all().first(where:{$0.id == pending.id})
+                try Task.checkCancellation()
+                var job:DesktopBridgeJob
+                if known?.cancellationRequested == true {job=try await client.cancelJobRequest(vaultId:vault,method:"researchChatStream",args:pending.args,idempotencyKey:pending.id)}
+                else if let jobId=known?.jobId {job=try await client.readJob(vaultId:vault,id:jobId,cursor:pending.stream.sequence)}
+                else if let found=try await client.jobForRequest(vaultId:vault,requestId:pending.id) {job=found}
+                else {job=try await client.submitJob(vaultId:vault,method:"researchChatStream",args:pending.args,idempotencyKey:pending.id)}
+                while true {
+                    try Task.checkCancellation()
+                    try await ledger.update(id:pending.id,job:job)
+                    try Task.checkCancellation()
+                    guard macObservation == observation else {return}
+                    guard var current=pendingMac,current.id == pending.id else {return}
+                    for event in job.events {current.stream.apply(event,requestId:pending.id)}
+                    pendingMac=current
+                    if let index=turns.firstIndex(where:{$0.id == pending.answerId}) {turns[index].text=current.stream.text}
+                    switch job.state {
+                    case .available:
+                        guard let text=job.result.objectValue?["answer"]?.stringValue else {throw DesktopBridgeError.malformedResponse}
+                        let checked=CitationValidator.validate(prose:text,against:pending.catalog)
+                        if let index=turns.firstIndex(where:{$0.id == pending.answerId}) {
+                            turns[index].text=PageChatPrompt.dropUnknownReferences(checked.prose,count:pending.passageCount)
+                            turns[index].passages=PageChatPrompt.referenced(in:turns[index].text,count:pending.passageCount)
+                            let cited=checked.accepted.compactMap(pending.catalog.entry(for:))
+                            if !cited.isEmpty {
+                                let labels=await namer(for:session).labelling(for:cited).inline.filter{!$0.value.isEmpty}
+                                try Task.checkCancellation()
+                                guard macObservation == observation,pendingMac?.id == pending.id else {return}
+                                if let currentIndex=turns.firstIndex(where:{$0.id == pending.answerId}) {turns[currentIndex].labels=labels}
+                            }
+                        }
+                        pendingMac=nil;return
+                    case .failed,.interrupted,.cancelled:
+                        pendingMac=nil
+                        throw APIError(status:409,code:job.state.rawValue,message:job.error ?? "La respuesta se detuvo en el Mac. Se conserva el texto recibido.")
+                    case .accepted,.running,.saved:break
+                    }
+                    try await Task.sleep(for:.milliseconds(700))
+                    job=try await client.readJob(vaultId:vault,id:job.id,cursor:current.stream.sequence)
+                }
+            } catch {
+                guard macObservation == observation else {return}
+                if let pending=pendingMac,let ledger=try? await DesktopJobLedgers.shared.ledger(pairingId:pending.pairing,vaultId:pending.vault) {try? await ledger.disconnected(id:pending.id,issue:error.localizedDescription)}
+                if error.isCancellation {failure="Se ha detenido la observación. El trabajo del Mac conserva su identidad."}
+                else if isPrivateBridgeOffline(error) {failure=BetaAIFeatures.macRequiredMessage}
+                else {failure=error.localizedDescription}
             }
         }
     }
@@ -500,7 +625,7 @@ struct PageChatSheet: View {
                 .font(.headline)
             Text("The whole report is in front of the model, numbered. When an answer rests on a passage it says which one, and tapping the number takes you there. Corpus citations work as they do everywhere else.")
                 .font(.footnote).foregroundStyle(.secondary)
-            Text("The conversation lasts as long as this report is open. Nothing is saved.")
+            Text("La conversación pertenece a este informe. El trabajo enviado al Mac conserva su identidad para evitar solicitudes duplicadas.")
                 .font(.caption2).foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -541,8 +666,8 @@ struct PageChatSheet: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .disabled(!store.isThinking && store.draft.trimmingCharacters(in: .whitespaces).isEmpty)
-                .accessibilityLabel(store.isThinking ? "Stop" : "Send")
+                .accessibilityLabel(store.isThinking ? "Detener respuesta" : store.canResumeMac ? "Retomar respuesta del Mac" : "Enviar pregunta")
+                .disabled(!store.isThinking && !store.canResumeMac && store.draft.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -665,6 +790,27 @@ private struct PageChatBubble: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Only the existing research stream wire shape; no provider or prompt ID is invented.
+enum PageChatLiveWire {
+    @MainActor static func cancelRequest(vaultId:String,args:[JSONValue],id:String,send:(String,String,[JSONValue],String) async throws -> DesktopBridgeJob) async throws -> DesktopBridgeJob {
+        guard args.count == 2,args[0] == .string(id),UUID(uuidString:id) != nil else {throw DesktopBridgeError.malformedResponse}
+        return try await send(vaultId,"researchChatStream",args,id)
+    }
+    nonisolated static func payload(history:[JSONValue],prompt:String,selection:JSONValue)->JSONValue {
+        .object(["messages":.array(Array(history.suffix(8))+[.object(["role":.string("user"),"content":.string(prompt)])]),"selection":selection,"webSearch":.string("off")])
+    }
+    struct Stream {
+        var sequence=0
+        var text=""
+        mutating func apply(_ event:DesktopBridgeJob.Event,requestId:String) {
+            guard event.sequence > sequence else {return};sequence=event.sequence
+            guard event.args.first == .string(requestId),event.args.count >= 2,let content=event.args[1].stringValue else {return}
+            if event.channel == "research:chatStream:delta" {text+=content}
+            else if event.channel == "research:chatStream:replace" {text=content}
         }
     }
 }
