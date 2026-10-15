@@ -109,6 +109,16 @@ final class DesktopWorkspaceUITests: XCTestCase {
         XCTAssertTrue(mode.exists, app.debugDescription)
         let selectedMode = mode.label + " " + (mode.value as? String ?? "")
         XCTAssertTrue(selectedMode.contains("Live"), "Disconnection must not change execution mode: " + selectedMode)
+        let published = app.descendants(matching: .any)["mac-embedding-published"].firstMatch
+        let noVectors = app.descendants(matching: .any)["mac-embedding-no-vectors"].firstMatch
+        var embeddingScrolls = 0
+        while Date() < deadline && !(published.exists || noVectors.exists) {
+            if embeddingScrolls % 16 < 8 { app.swipeUp() } else { app.swipeDown() }
+            embeddingScrolls += 1
+            _ = published.waitForExistence(timeout: 0.5)
+        }
+        XCTAssertTrue(published.exists || noVectors.exists, "A real successful semantic identity response must replace the obsolete transport failure.\n" + app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["mac-embedding-error"].firstMatch.exists, app.debugDescription)
         XCTAssertFalse(app.textFields["pairing-code"].exists)
     }
 

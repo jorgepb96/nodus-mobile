@@ -6,6 +6,28 @@ import Testing
 @Suite("Local surface draft isolation")
 @MainActor
 struct MobileSurfaceStorageTests {
+    @Test("a verified origin change reprobes an unavailable embedding without replacing the session")
+    func embeddingRecoversAfterOriginChange() async throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var connection = AppModel.Connection(origin: "https://embedding-recovery.test", spaceId: "live:embedding-mac:embedding-\(UUID())",
+            spaceName: "Fixture", serverName: "Mac", role: .owner, vaultId: "isolated", desktopPairingId: "isolated-grant")
+        defer { UserDefaults.standard.removeObject(forKey: "ai-execution-mode:\(connection.id)") }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [EmbeddingRecoveryProtocol.self]
+        let transport = URLSession(configuration: configuration)
+        defer { transport.invalidateAndCancel() }
+        let client = NodusClient(address: ServerAddress(trusted: connection.origin), token: "isolated", session: transport,
+            cache: ResponseCache(directory: root))
+        let session = SpaceSession(connection: connection, client: client, mirrorDirectory: root)
+        await session.probeEmbedding()
+        guard case .unavailable = session.embedding else { Issue.record("Expected the initial real transport failure"); return }
+        connection.origin = "https://verified-new-origin.test"
+        session.refreshConnectionMetadata(connection)
+        await session.probeEmbedding()
+        #expect(session.embedding == .published(EmbeddingIdentity(provider: "fixture", model: "recovered", dim: 384)))
+        #expect(session.aiExecutionMode == .live)
+    }
     @Test("an unchanged Mac revision flushes authorized work without a downloaded mirror")
     func reconnectWithoutPublicationChange() async throws {
         let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -396,4 +418,29 @@ struct AppWiringTests {
         let modes = Set(Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? [])
         #expect(modes.contains("processing"))
     }
+}
+
+/// Each isolated URLSession gets a transport failure followed by an actual semantic refusal
+/// carrying the server's canonical identity. No Keychain or real workspace is involved.
+private nonisolated final class EmbeddingRecoveryProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var failedSpaces: Set<String> = []
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "embedding-recovery.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let path = request.url!.path
+        Self.lock.lock()
+        let first = Self.failedSpaces.insert(path).inserted
+        Self.lock.unlock()
+        guard !first else { client?.urlProtocol(self, didFailWithError: URLError(.secureConnectionFailed)); return }
+        guard request.httpMethod == "POST", path.hasSuffix("/search/semantic") else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL)); return
+        }
+        let body = Data(#"{"indexed":false,"reason":"provider_mismatch","expected":{"provider":"fixture","model":"recovered","dim":384}}"#.utf8)
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type":"application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

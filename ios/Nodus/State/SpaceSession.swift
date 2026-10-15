@@ -60,6 +60,8 @@ final class SpaceSession {
     /// The vault's embedding identity, read once by probing the semantic endpoint. Nil until
     /// probed, `.none` when the vault has no published vectors.
     private(set) var embedding: EmbeddingProbeResult = .unknown
+    private var embeddingProbeGeneration = UUID()
+    private var embeddingProbeTask: Task<Void, Never>?
 
     /// The offline copy, when one has been downloaded.
     private(set) var mirror: MirrorStore?
@@ -74,7 +76,14 @@ final class SpaceSession {
     func refreshConnectionMetadata(_ updated: AppModel.Connection) {
         guard updated.id == connection.id, updated.desktopPairingId == connection.desktopPairingId,
               updated.vaultId == connection.vaultId else { return }
+        let changedOrigin = connection.origin != updated.origin
         connection = updated
+        if changedOrigin {
+            embeddingProbeGeneration = UUID()
+            embeddingProbeTask?.cancel()
+            embedding = .unknown
+            embeddingProbeTask = Task { [weak self] in await self?.probeEmbedding() }
+        }
     }
 
     var vaultId: String? { connection.desktopPairingId != nil ? connection.vaultId : overview?.vault?.id ?? connection.vaultId }
@@ -481,13 +490,13 @@ final class SpaceSession {
     /// needs instead of silently returning nothing.
     func probeEmbedding() async {
         guard case .unknown = embedding else { return }
+        let generation = embeddingProbeGeneration
         do {
-            if let identity = try await client.publishedEmbeddingIdentity(in: connection.spaceId) {
-                embedding = .published(identity)
-            } else {
-                embedding = .noVectors
-            }
+            let identity = try await client.publishedEmbeddingIdentity(in: connection.spaceId)
+            guard !Task.isCancelled, generation == embeddingProbeGeneration else { return }
+            embedding = identity.map(EmbeddingProbeResult.published) ?? .noVectors
         } catch {
+            guard !Task.isCancelled, generation == embeddingProbeGeneration else { return }
             embedding = .unavailable(error.localizedDescription)
         }
     }

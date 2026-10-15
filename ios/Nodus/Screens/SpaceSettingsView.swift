@@ -104,15 +104,18 @@ struct SpaceSettingsView: View {
                         labelled("Provider", identity.provider)
                         labelled("Model", identity.model)
                         labelled("Dimensions", "\(identity.dim)")
+                            .accessibilityIdentifier("mac-embedding-published")
                         if !session.embedding.isReachableFromPhone {
                             Text("This provider runs on the computer where Nodus desktop lives. iOS cannot produce a matching vector, so search is lexical.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     case .noVectors:
                         Text("This space has no published vectors.")
+                            .accessibilityIdentifier("mac-embedding-no-vectors")
                             .font(.caption).foregroundStyle(.secondary)
                     case .unavailable(let message):
                         Text(message).font(.caption).foregroundStyle(Color.nodusCaution)
+                            .accessibilityIdentifier("mac-embedding-error")
                     case .unknown:
                         ProgressView()
                     }
