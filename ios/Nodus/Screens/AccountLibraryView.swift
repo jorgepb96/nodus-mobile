@@ -342,7 +342,9 @@ struct AccountLibraryView: View {
     // Both header and rows share five fixed columns, five gaps and page padding.
     // The remaining flexible title column receives at least 220 points.
     private var libraryTableMinimumWidth: CGFloat {
-        220 + 24 + 220 + 60 + 150 + 100 + 5 * 12 + 2 * NodusSpace.page
+        let fixedColumns: CGFloat = 554 // 24 + 220 + 60 + 150 + 100
+        let titleAndGaps: CGFloat = 280 // 220 + five 12-point gaps
+        return fixedColumns + titleAndGaps + 2 * NodusSpace.page
     }
 
     private func tableRow(_ item: AccountLibraryItem) -> some View {
