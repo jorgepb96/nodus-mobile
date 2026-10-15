@@ -92,8 +92,8 @@ import NodusKit
         guard receipt.vaultId == vault else { throw DesktopBridgeError.permissionDenied }
         let store = CompanionDocumentFigureAssets(cache: cache, vaultId: vault)
         if let offset = input.objectValue?["offset"]?.intValue, let count = input.objectValue?["count"]?.intValue,
-           let bounded = Int(exactly: count), (1...CompanionDocumentFigureAssets.chunkBytes).contains(bounded) {
-            return .string(try await chunk(receipt, store: store, parent: parent, generation: generation, offset: offset, count: bounded).base64EncodedString())
+           let exactOffset = Int64(exactly: offset), let bounded = Int(exactly: count), (1...CompanionDocumentFigureAssets.chunkBytes).contains(bounded) {
+            return .string(try await chunk(receipt, store: store, parent: parent, generation: generation, offset: exactOffset, count: bounded).base64EncodedString())
         }
         guard receipt.byteCount <= 8 * 1_048_576 else { throw DesktopBridgeError.malformedResponse }
         return .object(["base64": .string(try await data(receipt, store: store, parent: parent, generation: generation).base64EncodedString()), "mimeType": .string(receipt.mimeType)])
@@ -114,7 +114,7 @@ import NodusKit
                   let receipt = receipts.first(where: { $0.id == id }), receipt.byteCount <= 8 * 1_048_576 else { throw DesktopBridgeError.permissionDenied }
             guard object["owner"] == .string(receipt.owner), object["ownerRevision"] == .string(receipt.ownerRevision),
                   object["generationId"] == .string(receipt.targetId), object["figureId"] == .string(receipt.figureKey),
-                  object["mimeType"] == .string(receipt.mimeType), object["byteCount"]?.intValue == receipt.byteCount,
+                  object["mimeType"] == .string(receipt.mimeType), object["byteCount"] == .int(receipt.byteCount),
                   object["sha256"] == .string(receipt.sha256) else { throw DesktopBridgeError.permissionDenied }
             if captured.contains(where: { $0.objectValue?["id"]?.stringValue?.lowercased() == receipt.id.uuidString.lowercased() && $0.objectValue?["owner"] == .string(receipt.owner) && $0.objectValue?["sha256"] == .string(receipt.sha256) }) {
                 // These bytes already belong to the exact captured Mac report.
@@ -137,7 +137,10 @@ import NodusKit
             }
             let begun = try await send("begin", request)
             if begun.objectValue?["state"] != .string("available") {
-                let received = Set((begun.objectValue?["received"]?.arrayValue ?? []).compactMap { $0.objectValue?["index"]?.intValue })
+                let received = Set((begun.objectValue?["received"]?.arrayValue ?? []).compactMap { value -> Int64? in
+                    guard let index = value.objectValue?["index"]?.intValue else { return nil }
+                    return Int64(exactly: index)
+                })
                 var offset: Int64 = 0, index: Int64 = 0
                 while offset < receipt.byteCount {
                     let count = Int(min(Int64(CompanionDocumentFigureAssets.chunkBytes), receipt.byteCount - offset))
