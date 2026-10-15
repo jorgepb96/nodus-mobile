@@ -150,7 +150,7 @@ final class DesktopWorkspaceUITests: XCTestCase {
         XCTAssertFalse(ids.isEmpty); XCTAssertEqual(Set(ids).count, ids.count)
         XCTAssertTrue(ids.allSatisfy { !$0.isEmpty })
         let app = try launchExistingMacSettings()
-        defer { capture(app, "existing-mac-revocation-final"); app.terminate() }
+        defer { app.terminate() }
         let settings = app.descendants(matching: .any)["settings-workspace"].firstMatch
         let revoke = app.buttons["revoke-mac-connection"].firstMatch
         reveal(revoke, in: app); XCTAssertTrue(revoke.isEnabled); revoke.tap()
