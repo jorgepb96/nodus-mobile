@@ -62,6 +62,7 @@ struct IdeasWorkspaceView: View {
                 if sizeClass == .regular, !(page?.items.isEmpty ?? true) { ideaTableHeader }
                 if let error {
                     NodusNotice(tone: .blocked, title: "Could not load Ideas", message: LocalizedStringKey(error))
+                    Button("Retry") { Task { await reload() } }.buttonStyle(.bordered).disabled(isLoading)
                 }
                 ForEach(page?.items ?? []) { item in
                     Button { open(row(for: item)) } label: {
@@ -76,6 +77,7 @@ struct IdeasWorkspaceView: View {
                         else { Label("Load more", systemImage: "arrow.down.circle") }
                     }
                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .disabled(isLoading || loadedQueryID != loadID)
                     .padding(.vertical, 12)
                 }
                 if page?.items.isEmpty == true, !isLoading, error == nil {
@@ -201,6 +203,9 @@ struct IdeasWorkspaceView: View {
                 items: loaded.items, total: loaded.total, limit: loaded.limit, offset: loaded.offset,
                 hasMore: loaded.hasMore, revision: loaded.revision ?? "unversioned"
             ))
+            guard loaded.items.allSatisfy({ !$0.id.isEmpty }), Set(loaded.items.map(\.id)).count == loaded.items.count else {
+                throw PageTraversalError.invalidProgress
+            }
             if replacing || page == nil {
                 page = loaded
             } else if let prior = page {
