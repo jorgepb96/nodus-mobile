@@ -67,6 +67,73 @@ final class AppModel {
     private var acceptanceCapabilitiesFailureDelivered = false
 #endif
 
+    private let linkedMacDiscovery = LinkedMacDiscovery()
+    private var linkedDiscoveryTasks: [String: Task<Void, Never>] = [:]
+    private var linkedDiscoveryAttempts: [String: Date] = [:]
+    private var linkedDiscoveryOperationIds: [String: UUID] = [:]
+
+    func stopLinkedMacDiscovery() {
+        linkedMacDiscovery.stop()
+        linkedDiscoveryTasks.values.forEach { $0.cancel() }; linkedDiscoveryTasks = [:]
+        linkedDiscoveryAttempts = [:]; linkedDiscoveryOperationIds = [:]
+    }
+    private func receiveLinkedMacAdvertisement(_ advertisement: DesktopLinkedMacAdvertisement) {
+        guard connectingDesktopGrants.isEmpty else { return }
+        let store = DesktopBridgePairingStore()
+        for pairing in store.pairings() where !pairing.isExpired {
+            let linked = connections.filter { $0.desktopPairingId == pairing.id }
+            guard !linked.isEmpty,
+                  pairing.macDeviceId == advertisement.macDeviceId || (pairing.macDeviceId == nil && linked.allSatisfy({ connection in
+                      guard let vault = connection.vaultId else { return false }
+                      return connection.macDeviceId == advertisement.macDeviceId || connection.spaceId == "live:\(advertisement.macDeviceId):\(vault)"
+                  })), linkedDiscoveryTasks[pairing.id] == nil,
+                  Date().timeIntervalSince(linkedDiscoveryAttempts[pairing.id] ?? .distantPast) >= 20,
+                  (try? store.hasPendingWorkspaceRegistration(grantId: pairing.id)) == false,
+                  let token = store.credential(for: pairing) else { continue }
+            linkedDiscoveryAttempts[pairing.id] = Date()
+            let operationId = UUID(); linkedDiscoveryOperationIds[pairing.id] = operationId
+            linkedDiscoveryTasks[pairing.id] = Task { [weak self] in
+                guard let self else { return }
+                defer { if self.linkedDiscoveryOperationIds[pairing.id] == operationId { self.linkedDiscoveryTasks[pairing.id] = nil; self.linkedDiscoveryOperationIds[pairing.id] = nil } }
+                let client = DesktopBridgeClient(pairing: pairing, token: token)
+                let candidates = advertisement.origins.contains(pairing.origin)
+                    ? [pairing.origin] + advertisement.origins.filter { $0 != pairing.origin } : advertisement.origins
+                var verifiedPrimary = false
+                for origin in candidates {
+                    guard !Task.isCancelled, self.connectingDesktopGrants.isEmpty else { return }
+                    do {
+                        let updated = try await client.verifyDiscoveredOrigin(origin, trustedMacDeviceId: advertisement.macDeviceId, makePrimary: !verifiedPrimary)
+                        guard !Task.isCancelled, self.connectingDesktopGrants.isEmpty,
+                              (try? store.hasPendingWorkspaceRegistration(grantId: pairing.id)) == false,
+                              let credential = store.credential(for: updated) else { return }
+                        verifiedPrimary = true
+                        // Keep connection/storage/preference identities and mounted editors.
+                        // Only the transport address and its corresponding credential alias change.
+                        var obsoleteAliases: [(String, String)] = []
+                        for index in self.connections.indices where self.connections[index].desktopPairingId == updated.id {
+                            let connection = self.connections[index]
+                            try self.keychain.set(credential, for: KeychainStore.deviceTokenKey(origin: updated.origin, spaceId: connection.spaceId))
+                            if connection.origin != updated.origin { obsoleteAliases.append((connection.origin, connection.spaceId)) }
+                            self.connections[index].origin = updated.origin
+                            self.connections[index].macDeviceId = advertisement.macDeviceId
+                            if self.session?.connection.id == connection.id { self.session?.refreshConnectionMetadata(self.connections[index]) }
+                        }
+                        self.persist()
+                        for (oldOrigin, spaceId) in obsoleteAliases {
+                            do { try self.keychain.remove(KeychainStore.deviceTokenKey(origin: oldOrigin, spaceId: spaceId)) }
+                            catch { self.desktopRecoveryIssue = error.localizedDescription }
+                        }
+                    } catch where Task.isCancelled { return }
+                    catch { /* An untrusted or unreachable hint leaves the approved origin intact. */ }
+                }
+                if verifiedPrimary, !Task.isCancelled, let session = self.session, session.connection.desktopPairingId == pairing.id {
+                    if session.loadFailure != nil { await session.load() }
+                    await session.refreshPublishedContent()
+                }
+            }
+        }
+    }
+
     init() {
         cacheDirectory = URL.cachesDirectory.appendingPathComponent("nodus-http", isDirectory: true)
         connections = Self.loadConnections(key: Self.defaultsKey)
@@ -384,6 +451,7 @@ final class AppModel {
         // no, and the picker would draw the one card that always works as the one card that is
         // broken.
         if connection.isDemo { return true }
+        if connection.desktopPairingId != nil { return ConnectionClient.credential(for: connection) != nil }
         return keychain.contains(KeychainStore.deviceTokenKey(origin: connection.origin, spaceId: connection.spaceId))
     }
 
@@ -485,10 +553,7 @@ final class AppModel {
     /// there was no way to sign in again, and nothing ever suggested there was one.
     @discardableResult
     func open(_ connection: Connection) -> Bool {
-        guard let token = keychain.value(for: KeychainStore.deviceTokenKey(
-            origin: connection.origin,
-            spaceId: connection.spaceId
-        )) else {
+        guard let token = ConnectionClient.credential(for: connection) else {
             session = nil
             needsSignIn = connection
             return false
@@ -648,6 +713,10 @@ final class AppModel {
         var cleanupIssue: (any Error)?
         for linked in connections.filter({ $0.desktopPairingId == pairing.id }) {
             do { try ChatHistoryStore.shared(spaceId:linked.storageId).revokeLink() } catch { cleanupIssue = error }
+            for origin in Set([linked.origin, pairing.origin] + (pairing.alternateOrigins ?? [])) {
+                do { try keychain.remove(KeychainStore.deviceTokenKey(origin: origin, spaceId: linked.spaceId)) }
+                catch { cleanupIssue = error }
+            }
             forget(linked)
         }
         if let cleanupIssue { throw cleanupIssue }
@@ -682,6 +751,15 @@ final class AppModel {
         refreshingDesktopCatalogues = true
         defer { refreshingDesktopCatalogues = false }
         let store = DesktopBridgePairingStore()
+        let linkedIds = Set(connections.compactMap(\.desktopPairingId))
+        let hasLinkedGrant = store.pairings().contains { pairing in
+            linkedIds.contains(pairing.id) && !pairing.isExpired && store.credential(for: pairing) != nil
+                && (try? store.hasPendingWorkspaceRegistration(grantId: pairing.id)) == false
+        }
+        if hasLinkedGrant {
+            linkedMacDiscovery.start { [weak self] in self?.receiveLinkedMacAdvertisement($0) }
+            for advertisement in linkedMacDiscovery.advertisements { receiveLinkedMacAdvertisement(advertisement) }
+        } else { stopLinkedMacDiscovery() }
         for pending in store.pairings(includeRevoked: true) where store.isAuthorizationRevoked(pairingId: pending.id) {
             await handleDesktopAuthorizationRevocation(pairingId: pending.id)
         }

@@ -42,3 +42,46 @@ final class PairingDiscovery: NSObject, @preconcurrency NetServiceBrowserDelegat
         offer = validated; stop()
     }
 }
+
+/// Separate from single-use-code discovery: these TXT records are address hints
+/// for Macs whose identity and certificate were already approved by the user.
+@MainActor
+final class LinkedMacDiscovery: NSObject, @preconcurrency NetServiceBrowserDelegate, @preconcurrency NetServiceDelegate {
+    private let browser = NetServiceBrowser()
+    private var services: [String: NetService] = [:]
+    private(set) var advertisements: [DesktopLinkedMacAdvertisement] = []
+    private var callback: ((DesktopLinkedMacAdvertisement) -> Void)?
+    private var searching = false
+    private var restartAfter = Date.distantPast
+    private func key(_ service: NetService) -> String { service.domain + service.type + service.name }
+    func start(receive: @escaping (DesktopLinkedMacAdvertisement) -> Void) {
+        callback = receive
+        guard !searching, Date() >= restartAfter else { return }
+        searching = true; browser.delegate = self
+        browser.searchForServices(ofType: "_nodus-mobile._tcp.", inDomain: "local.")
+    }
+    func stop() {
+        browser.stop(); services.values.forEach { $0.stopMonitoring(); $0.stop() }
+        services = [:]; advertisements = []; callback = nil; searching = false
+    }
+    func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
+        guard services.count < 32 else { return }
+        services[key(service)] = service; service.delegate = self; service.resolve(withTimeout: 4)
+    }
+    func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
+        if let old = services.removeValue(forKey: key(service)) { old.stopMonitoring(); old.stop() }
+        refreshAdvertisements()
+    }
+    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
+        stop(); restartAfter = Date().addingTimeInterval(30)
+    }
+    func netServiceDidResolveAddress(_ sender: NetService) { sender.startMonitoring(); refreshAdvertisements() }
+    func netService(_ sender: NetService, didUpdateTXTRecord data: Data) { refreshAdvertisements() }
+    private func refreshAdvertisements() {
+        advertisements = services.values.compactMap { service in
+            guard let bytes = service.txtRecordData() else { return nil }
+            return try? DesktopLinkedMacAdvertisement(txt: NetService.dictionary(fromTXTRecord: bytes))
+        }
+        for advertisement in advertisements { callback?(advertisement) }
+    }
+}

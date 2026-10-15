@@ -193,6 +193,7 @@ struct RootView: View {
             // question — somebody may have opened their desktop and collected it. It is a
             // handful of SQLite opens and, only for spaces actually holding changes in a
             // ledger, one request each.
+            if phase != .active { model.stopLinkedMacDiscovery() }
             if phase == .active {
                 Task { await tray.confirmDeliveries() }
                 Task { await model.refreshDesktopWorkspaceCatalogues() }

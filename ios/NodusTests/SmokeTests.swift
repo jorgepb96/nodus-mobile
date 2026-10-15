@@ -54,6 +54,26 @@ struct MobileSurfaceStorageTests {
             deviceId: pairing.deviceId, deviceName: pairing.deviceName, vaultIds: pairing.vaultIds, domains: pairing.domains, pairedAt: .distantPast, expiresAt: .distantPast)
         #expect(ConnectionClient.make(for: connection, token: "fixture-token", pairings: [expired], cacheDirectory: directory) == nil)
     }
+    @Test("captured private connections follow their canonical grant after origin aliases are retired")
+    func capturedConnectionAfterDiscovery() throws {
+        let id = UUID().uuidString, suite = "nodus.discovery-native." + id
+        let defaults = try #require(UserDefaults(suiteName: suite)), keychain = KeychainStore(service: suite)
+        let store = DesktopBridgePairingStore(defaults: defaults, keychain: keychain)
+        defer { defaults.removePersistentDomain(forName: suite); try? keychain.remove(KeychainStore.desktopBridgeKey(pairingId: id)) }
+        let pairing = try DesktopBridgePairing(id: id, origin: "https://new-lan.test:7443", certificateFingerprint: String(repeating: "a", count: 64),
+            deviceId: "phone", deviceName: "Phone", vaultIds: ["vault"], domains: [.corpus,.writing], pairedAt: .now, expiresAt: nil)
+        try store.save(pairing, token: "current-isolated-grant")
+        let captured = AppModel.Connection(origin: "https://old-lan.test:7443", spaceId: "live:mac:vault", spaceName: "Vault", serverName: "Mac", role: .writer,
+            vaultId: "vault", desktopPairingId: pairing.id, macDeviceId: "mac")
+        #expect(keychain.value(for: KeychainStore.deviceTokenKey(origin: captured.origin, spaceId: captured.spaceId)) == nil)
+        #expect(ConnectionClient.credential(for: captured, store: store, keychain: keychain) == "current-isolated-grant")
+        var moved = captured; moved.origin = pairing.origin
+        #expect(captured.id == moved.id && captured.storageId == moved.storageId)
+        var unauthorized = captured; unauthorized.vaultId = "another-vault"
+        #expect(ConnectionClient.credential(for: unauthorized, store: store, keychain: keychain) == nil)
+        _ = store.markAuthorizationRevoked(pairingId: id)
+        #expect(ConnectionClient.credential(for: captured, store: store, keychain: keychain) == nil)
+    }
     @Test("an evidence quote resolves to the paragraph rendered by the document reader")
     func evidenceDocumentAnchor() {
         let prose = CorpusProse("# Documento\n\nPrimer párrafo.\n\n## Evidencia\n\nLa definición A 222 pertenece a este\ncorpus de pruebas ficticio.", accent: .blue)

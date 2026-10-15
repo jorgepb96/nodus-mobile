@@ -158,7 +158,7 @@ public actor DesktopBridgeClient {
             }
             let approvedOrigins = [current.origin] + (current.alternateOrigins ?? [])
             for origin in approvedOrigins { try DesktopBridgePairing.validateOrigin(origin) }
-            if !approvedOrigins.contains(directOrigin) { directOrigin = current.origin }
+            if current.origin != pairing.origin || !approvedOrigins.contains(directOrigin) { directOrigin = current.origin }
             pairing = current
         } else if requiresStoredCredential {
             throw DesktopBridgeError.permissionDenied
@@ -387,6 +387,28 @@ public actor DesktopBridgeClient {
     public func liveCapabilities() async throws -> DesktopLiveCapabilities {
         try refreshPairing()
         return try await request("/bridge/v2/capabilities", as: DesktopLiveCapabilities.self)
+    }
+
+    /// Probe with the existing pinned session, without any credential. A forged
+    /// Bonjour record cannot receive a bearer or change the approved Mac identity.
+    public func verifyDiscoveredOrigin(_ origin: String, trustedMacDeviceId: String, makePrimary: Bool = true) async throws -> DesktopBridgePairing {
+        try refreshPairing()
+        guard requiresStoredCredential, !pairing.isExpired, try !store.hasPendingWorkspaceRegistration(grantId: pairing.id), !trustedMacDeviceId.isEmpty,
+              pairing.macDeviceId == nil || pairing.macDeviceId == trustedMacDeviceId else { throw DesktopBridgeError.permissionDenied }
+        try DesktopBridgePairing.validateOrigin(origin)
+        guard let url = URL(string: origin + "/bridge/v1/capabilities") else { throw DesktopBridgeError.invalidOrigin }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"; request.timeoutInterval = 4; request.httpShouldHandleCookies = false
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200, http.url == url,
+              data.count <= 64 * 1024 else { throw DesktopBridgeError.malformedResponse }
+        let document = try JSONDecoder.nodus.decode(DesktopBridgeCapabilitiesDocument.self, from: data)
+        guard document.protocolVersion == 1, document.deviceId == trustedMacDeviceId else { throw DesktopBridgeError.permissionDenied }
+        try refreshPairing()
+        let updated = try store.approveDiscoveredOrigin(origin, expectedPairing: pairing, trustedMacDeviceId: trustedMacDeviceId, makePrimary: makePrimary)
+        pairing = updated; directOrigin = updated.origin
+        return updated
     }
 
     public func revoke() async throws {
@@ -946,6 +968,29 @@ public struct DesktopBridgePairingStore: @unchecked Sendable {
             return refreshed
         }
     }
+    /// Re-read under the renewal lock so discovery never rolls back a new token,
+    /// scope, expiry or revocation, nor completes a pending initial handshake.
+    func approveDiscoveredOrigin(_ origin: String, expectedPairing: DesktopBridgePairing, trustedMacDeviceId: String, makePrimary: Bool) throws -> DesktopBridgePairing {
+        try Self.renewalLock.withLock {
+            guard !isAuthorizationRevoked(pairingId: expectedPairing.id),
+                  try !hasPendingWorkspaceRegistration(grantId: expectedPairing.id),
+                  let current = pairings().first(where: { $0.id == expectedPairing.id }), !current.isExpired,
+                  credential(for: current) != nil, current.deviceId == expectedPairing.deviceId,
+                  current.certificateFingerprint == expectedPairing.certificateFingerprint,
+                  abs(current.pairedAt.timeIntervalSince(expectedPairing.pairedAt)) < 0.001,
+                  current.macDeviceId == nil || current.macDeviceId == trustedMacDeviceId else { throw DesktopBridgeError.permissionDenied }
+            let primary = makePrimary ? origin : current.origin
+            let alternatives = Array(([origin, current.origin] + (current.alternateOrigins ?? [])).filter { $0 != primary }.prefix(31))
+            let updated = try DesktopBridgePairing(id: current.id, origin: primary, certificateFingerprint: current.certificateFingerprint,
+                deviceId: current.deviceId, deviceName: current.deviceName, vaultIds: current.vaultIds, domains: current.domains,
+                pairedAt: current.pairedAt, expiresAt: current.expiresAt, alternateOrigins: alternatives,
+                wholeWorkspace: current.wholeWorkspace, macDeviceId: trustedMacDeviceId, retainedAuthoringVaultIds: current.retainedAuthoringVaultIds)
+            let values = pairings(includeRevoked: true).map { $0.id == current.id ? updated : $0 }
+            defaults.set(try JSONEncoder.nodus.encode(values), forKey: metadataKey)
+            return updated
+        }
+    }
+
     public func completeAuthoringRetirement(pairingId: String, retiredVaultIds: Set<String>) throws -> DesktopBridgePairing {
         try Self.renewalLock.withLock {
             guard !isAuthorizationRevoked(pairingId: pairingId), let current = pairings().first(where: { $0.id == pairingId }) else { throw DesktopBridgeError.credentialRevoked }

@@ -42,11 +42,19 @@ enum ConnectionClient {
     /// - Returns: nil when this device holds no token for the space, which on a locked phone
     ///   means "not right now" rather than "never" — the Keychain item is protected until first
     ///   unlock, and a background task can run before that.
+    /// Private grants own their credentials independently of a remembered network
+    /// address. A queued callback may still carry the old Connection after discovery.
+    static func credential(for connection: AppModel.Connection, store: DesktopBridgePairingStore = DesktopBridgePairingStore(),
+                           keychain: KeychainStore = KeychainStore()) -> String? {
+        if let id = connection.desktopPairingId {
+            guard let pairing = store.pairings().first(where: { $0.id == id }), !pairing.isExpired,
+                  let vault = connection.vaultId, pairing.vaultIds.contains(vault) else { return nil }
+            return store.credential(for: pairing)
+        }
+        return keychain.value(for: KeychainStore.deviceTokenKey(origin: connection.origin, spaceId: connection.spaceId))
+    }
     static func make(for connection: AppModel.Connection) -> NodusClient? {
-        guard let token = keychain.value(for: KeychainStore.deviceTokenKey(
-            origin: connection.origin,
-            spaceId: connection.spaceId
-        )) else { return nil }
+        guard let token = credential(for: connection) else { return nil }
         return make(for: connection, token: token, pairings: DesktopBridgePairingStore().pairings())
     }
 
