@@ -6,9 +6,9 @@ Scope: Desktop connection, reconnection and native connection controls. Broader 
 
 Original references: Desktop `0a173fd9c698a7cb2d5989aa64b59cddd329bcf9`, mobile `ad6e3069bcea67b48de76de561fc27c3db417563`.
 
-Delivered beta **0.1.0 (1002)** remains available internally. Before these changes, mobile `07e0fca65ea5be9113893fec2ea2334f495975ad` had no connection-source differences from the supplied beta source `bd1f008`; this is a source comparison, not retrospective binary acceptance.
+Delivered beta **0.1.0 (1003)** is now available internally; the earlier **1002** remains historical. Before these changes, mobile `07e0fca65ea5be9113893fec2ea2334f495975ad` had no connection-source differences from the supplied beta source `bd1f008`; this is a source comparison, not retrospective binary acceptance.
 
-The successor is configured as **0.1.0 (1003)** for app and extension. It contains native connection fixes; it is **not yet archived/uploaded** by this checkpoint. Shared Desktop surface resources intentionally retain beta 1002's Desktop `80c54bd09e0aa8d85f96b1978f05094fe7d2316f` provenance. No claim of current-main renderer parity is made.
+The successor is configured as **0.1.0 (1003)** for app and extension. It contains native connection fixes. Release archive, strict app/extension signature verification, upload and Apple processing passed at mobile `d51aa71aae1f4450efe6e2293d3dc635b760c165`. App Store Connect shows **En pruebas** for 1003 in **Nodus interno**, with the existing single tester and saved notes. [Delivery record](../TESTFLIGHT-2026-10-15.md). Shared Desktop surface resources intentionally retain beta 1002's Desktop `80c54bd09e0aa8d85f96b1978f05094fe7d2316f` provenance. No claim of current-main renderer parity is made.
 
 Desktop's compatible private preview is Nodus 5.10.0, arm64, Electron 43.6.0, Developer-ID signed with team `6RPLS9EA4X`; strict/deep verification and all 81 individual code components passed. It is not notarized, installed over normal Nodus or published. Its production code is built at Desktop `9dfa24f7`, with dependency/signing corrections at `756c6473`/`63100ae9`. The [Desktop checkpoint](https://github.com/jorgepb96/nodus/blob/codex/mobile-0.1.0-parity/docs/mobile-0.1.0/checkpoints/direct-connection-2026-10-15.md) records hashes and packaging details.
 
@@ -57,6 +57,6 @@ Raw failed attempts are preserved. `code-iphone-01` linked successfully but then
 - Tailscale is installed but its backend is stopped and no online peer/route is available. **Real VPN handover remains unverified.** Learned approved VPN-origin fixtures do not prove multicast or actual VPN routing.
 - QR decoding used actual pixels and Apple Vision. Camera-sheet UI open/close passed; a physical iPhone camera scan is not claimed.
 - No provider-generation or whole-application parity campaign is approved by these connection tests.
-- Version 1002 does not contain these native rediscovery fixes. Build 1003 delivery remains a separate release step; do not tell testers they already have the new binary.
+- Version 1002 does not contain these native rediscovery fixes. Build 1003 is delivered internally; installation/physical validation belongs to the owner. Installing it does not update the normal Desktop installation.
 
 Credentials, private offers, copied vault contents, screenshots, logs and `.xcresult` bundles remain local. Only sanitized descriptions and source are committed.
