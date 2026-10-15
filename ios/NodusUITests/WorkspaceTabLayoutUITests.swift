@@ -36,6 +36,35 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
     }
 
     @MainActor
+    func testPhoneCanChooseAndCloseAnOffscreenDocumentWithoutSwipingThePage() throws {
+        XCTAssertEqual(UIDevice.current.userInterfaceIdiom, .phone, "Run this interaction on the isolated iPhone simulator.")
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(route: "ideas", style: "light")
+        defer { app.terminate() }
+        let initial = try activeTab(app, section: "ideas")
+        let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workspace-tab-ideas-"))
+        let destination = try XCTUnwrap(tabs.allElementsBoundByIndex.first { $0.identifier != initial.identifier })
+        let destinationID = destination.identifier
+        let picker = app.buttons["workspace-tab-chooser-ideas"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10) && picker.isHittable)
+        XCTAssertGreaterThanOrEqual(picker.frame.width + 0.01, 44)
+        XCTAssertGreaterThanOrEqual(picker.frame.height + 0.01, 44)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(picker.frame))
+        picker.tap()
+        let actionID = destinationID.replacingOccurrences(of: "workspace-tab-", with: "workspace-switch-tab-")
+        let action = app.buttons[actionID]
+        XCTAssertTrue(action.waitForExistence(timeout: 5) && action.isHittable, app.debugDescription)
+        action.tap()
+        XCTAssertEqual(try activeTab(app, section: "ideas").identifier, destinationID)
+        let closeID = destinationID.replacingOccurrences(of: "workspace-tab-", with: "workspace-close-")
+        XCTAssertTrue(app.buttons[closeID].isHittable)
+        app.buttons[closeID].tap()
+        XCTAssertFalse(app.buttons[destinationID].exists)
+        XCTAssertFalse(picker.exists, "One remaining document does not need an overflow picker.")
+        XCTAssertEqual(try activeTab(app, section: "ideas").identifier, initial.identifier)
+    }
+
+    @MainActor
     func testAuthorCatalogueActionsAndRelatedDossiersAreReachable() throws {
         let app = launch(route: "authors", style: "light")
         defer { app.terminate() }

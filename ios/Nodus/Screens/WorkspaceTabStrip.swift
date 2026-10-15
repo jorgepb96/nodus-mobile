@@ -24,6 +24,7 @@ struct WorkspaceTabStrip: View {
     private var usesTouchTabs: Bool { UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact }
     private var height: CGFloat { max(44, scaledTouchHeight) }
     private var compactCatalogue: Bool { usesTouchTabs && activeId != nil }
+    private var showsTabChooser: Bool { usesTouchTabs && tabs.count > 1 }
     private var catalogueWidth: CGFloat { compactCatalogue ? 44 : usesTouchTabs ? 150 : 168 }
     private var localizedCatalogueTitle: String {
         Bundle.main.localizedString(forKey: catalogueTitle, value: catalogueTitle, table: nil)
@@ -32,7 +33,7 @@ struct WorkspaceTabStrip: View {
     var body: some View {
         GeometryReader { geometry in
             let documentWidth: CGFloat = usesTouchTabs && geometry.size.width <= 600
-                ? max(44, geometry.size.width - catalogueWidth - 1)
+                ? max(44, geometry.size.width - catalogueWidth - 1 - (showsTabChooser ? 44 : 0))
                 : usesTouchTabs ? 218.0 : 260.0
             HStack(spacing: 0) {
                 catalogueTab
@@ -62,6 +63,7 @@ struct WorkspaceTabStrip: View {
                         proxy.scrollTo(activeId, anchor: .leading)
                     }
                 }
+                if showsTabChooser { tabChooser }
             }
         }
         .frame(height: height)
@@ -72,6 +74,34 @@ struct WorkspaceTabStrip: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-tab-strip-\(section)")
         .background { if routeActive { keyboardCommands } }
+    }
+
+    /// A long document fills the phone strip. Keep every other open document
+    /// discoverable without requiring a horizontal swipe or truncating titles further.
+    private var tabChooser: some View {
+        Menu {
+            Section("Open tabs") {
+                ForEach(tabs) { tab in
+                    Button { workspaceTabs.activate(tab.id, in: section) } label: {
+                        Label(tab.title, systemImage: activeId == tab.id ? "checkmark" : tab.systemImage)
+                    }
+                    .accessibilityIdentifier("workspace-switch-tab-\(section)-\(safeIdentifier(tab.id))")
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "square.on.square")
+                Text(tabs.count, format: .number).font(.caption2.monospacedDigit())
+            }
+            .font(.caption)
+            .foregroundStyle(Color.nodusSecondaryText)
+            .frame(width: 44, height: height)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(Text("Open tabs"))
+        .accessibilityValue(Text(tabs.count, format: .number))
+        .accessibilityHint(Text("Choose an open document"))
+        .accessibilityIdentifier("workspace-tab-chooser-\(section)")
     }
 
     private var catalogueTab: some View {

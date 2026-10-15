@@ -1,6 +1,28 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Open tabs": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pestañas abiertas"
+          }
+        }
+      }
+    },
+    "Choose an open document": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un documento abierto"
+          }
+        }
+      }
+    },
     "Obeys": {
       "extractionState": "manual",
       "localizations": {
