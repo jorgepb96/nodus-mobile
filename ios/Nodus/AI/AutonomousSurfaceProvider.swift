@@ -361,7 +361,7 @@ final class AutonomousSurfaceProvider {
         let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
         let hash = SHA256.hash(data: try JSONEncoder.nodus.encode(input)).map { String(format: "%02x", $0) }.joined()
         guard let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: "autonomous:\(generation):completion:\(hash)") else { return .null }
-        return try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+        return try imageCompletionResponse(try JSONDecoder.nodus.decode(JSONValue.self, from: bytes), input: input, record: "autonomous:\(generation):completion:\(hash)")
     }
     func cancel(_ generation: String) throws {
         guard UUID(uuidString: generation) != nil else { throw DesktopBridgeError.malformedResponse }
@@ -389,7 +389,7 @@ final class AutonomousSurfaceProvider {
         let hash = SHA256.hash(data: try JSONEncoder.nodus.encode(input)).map { String(format: "%02x", $0) }.joined()
         let record = "autonomous:\(generation):completion:\(hash)"
         if let saved = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: record) {
-            return try JSONDecoder.nodus.decode(JSONValue.self, from: saved)
+            return try imageCompletionResponse(try JSONDecoder.nodus.decode(JSONValue.self, from: saved), input: input, record: record)
         }
         try await cache.requireGenerationExecutionAllowed(vaultId: vault, generationId: generation)
         guard settings.hasKey(for: model.provider) else { throw ProviderError.missingKey(model.provider) }
@@ -409,7 +409,12 @@ final class AutonomousSurfaceProvider {
         let result: String
         if format == "image" {
             guard system.isEmpty, model.provider.supportsImageGeneration else { throw DesktopBridgeError.permissionDenied }
-            let image = try await images.generate(prompt: user, with: model, aspectRatio: "16:9")
+            let aspect = request["aspectRatio"]?.stringValue ?? "16:9"
+            guard ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"].contains(aspect) else { throw DesktopBridgeError.malformedResponse }
+            if request["responseMode"] == .string("receipt") {
+                guard let owner = request["figureOwner"]?.stringValue, owner.count == 64, owner.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw DesktopBridgeError.permissionDenied }
+            }
+            let image = try await images.generate(prompt: user, with: model, aspectRatio: aspect)
             guard let source = CGImageSourceCreateWithData(image.data as CFData, nil), let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1600, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary), let jpeg = UIImage(cgImage: decoded).jpegData(compressionQuality: 0.88), jpeg.count <= 5 * 1_048_576 else { throw DesktopBridgeError.malformedResponse }
             result = String(decoding: try JSONEncoder.nodus.encode(JSONValue.object(["bytes": .string(jpeg.base64EncodedString()), "mime": .string("image/jpeg")])), as: UTF8.self)
         } else if format == "embedding" {
@@ -429,6 +434,44 @@ final class AutonomousSurfaceProvider {
             indexId: "autonomous:completion-index:v1", entity: record)
         try Task.checkCancellation()
         guard !cancelled.contains(generation) else { throw CancellationError() }
-        return value
+        return try imageCompletionResponse(value, input: input, record: record)
+    }
+    /// Receipt mode keeps the paid bytes in their durable record rather than duplicating
+    /// every figure inside the report checkpoint. Legacy callers retain their string.
+    private func imageCompletionResponse(_ value: JSONValue, input: JSONValue, record: String) throws -> JSONValue {
+        guard input.objectValue?["format"] == .string("image"), input.objectValue?["responseMode"] == .string("receipt") else { return value }
+        let mime: String, count: Int64, hash: String
+        if let receiptValue = value.objectValue?["documentFigureAsset"] {
+            let receipt = try CompanionDocumentFigureAssets.Receipt(value: receiptValue)
+            guard input.objectValue?["figureOwner"] == .string(receipt.owner), UUID(uuidString: input.objectValue?["generationId"]?.stringValue ?? "") == receipt.generationId else { throw DesktopBridgeError.permissionDenied }
+            mime = receipt.mimeType; count = receipt.byteCount; hash = receipt.sha256
+        } else {
+            guard let raw = value.stringValue, let json = try JSONDecoder.nodus.decode(JSONValue.self, from: Data(raw.utf8)).objectValue,
+                  let encoded = json["bytes"]?.stringValue, let bytes = Data(base64Encoded: encoded), bytes.count <= 5 * 1_048_576,
+                  let rawMime = json["mime"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+            mime = rawMime; count = Int64(bytes.count); hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        }
+        return .string(String(decoding: try JSONEncoder.nodus.encode(JSONValue.object(["recordId": .string(record), "mimeType": .string(mime), "byteCount": .int(count), "sha256": .string(hash)])), as: UTF8.self))
+    }
+    func readImageCompletion(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
+        guard input.objectValue?["format"] == .string("image"), input.objectValue?["responseMode"] == .string("receipt"),
+              let generation = input.objectValue?["generationId"]?.stringValue, UUID(uuidString: generation) != nil,
+              try JSONEncoder.nodus.encode(input).count <= 1_200_000 else { throw DesktopBridgeError.permissionDenied }
+        let scope = try session.surfaceStorageScope(), cache = try PrivateBridgeCache(pairingId: scope.cacheId)
+        let hash = SHA256.hash(data: try JSONEncoder.nodus.encode(input)).map { String(format: "%02x", $0) }.joined(), record = "autonomous:\(generation):completion:\(hash)"
+        guard let stored = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: record) else { throw DesktopBridgeError.malformedResponse }
+        let value = try JSONDecoder.nodus.decode(JSONValue.self, from: stored)
+        _ = try imageCompletionResponse(value, input: input, record: record)
+        let bytes: Data, mime: String
+        if let receiptValue = value.objectValue?["documentFigureAsset"] {
+            let receipt = try CompanionDocumentFigureAssets.Receipt(value: receiptValue)
+            bytes = try await CompanionDocumentFigureAssets(cache: cache, vaultId: scope.recordVaultId).data(receipt); mime = receipt.mimeType
+        } else {
+            guard let raw = value.stringValue, let json = try JSONDecoder.nodus.decode(JSONValue.self, from: Data(raw.utf8)).objectValue,
+                  let encoded = json["bytes"]?.stringValue, let decoded = Data(base64Encoded: encoded), let rawMime = json["mime"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+            bytes = decoded; mime = rawMime
+        }
+        guard bytes.count <= 5 * 1_048_576 else { throw DesktopBridgeError.malformedResponse }
+        return .object(["base64": .string(bytes.base64EncodedString()), "mimeType": .string(mime), "sourceCompletionRecordId": .string(record)])
     }
 }

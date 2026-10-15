@@ -530,6 +530,26 @@ public actor DesktopBridgeClient {
         return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
     }
 
+    /// Report figures use the same pinned grant with a separate authored domain route.
+    public func researchFigureUpload(vaultId: String, uploadId: UUID, action: String, body: JSONValue) async throws -> JSONValue {
+        try refreshPairing()
+        guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+        guard ["begin", "chunk", "status", "commit", "cancel"].contains(action),
+              try JSONEncoder.nodus.encode(body).count <= 1024 * 1024 else { throw DesktopBridgeError.malformedResponse }
+        if action == "begin" {
+            let capabilities = try await raw(path: "/bridge/v2/server-capabilities", method: "GET")
+            let document = try JSONDecoder.nodus.decode(JSONValue.self, from: capabilities.data)
+            guard document.objectValue?["researchFigureAssets"]?.objectValue?["version"] == .int(1),
+                  document.objectValue?["researchFigureAssets"]?.objectValue?["chunkBytes"] == .int(512 * 1024) else {
+                throw APIError(status: 426, code: "research_figure_transfer_upgrade_required", message: "Actualiza Nodus en el Mac para publicar las figuras. El informe y las imágenes siguen guardados en este dispositivo; no se volverán a generar.")
+            }
+        }
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+        guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed) else { throw DesktopBridgeError.invalidOrigin }
+        let response = try await raw(path: "/bridge/v2/vaults/\(vault)/research-figure-assets/\(uploadId.uuidString.lowercased())/\(action)", method: "POST", body: body)
+        return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
+    }
+
     public func operation(vaultId: String, method: String, args: [JSONValue], timeout: TimeInterval? = nil) async throws -> JSONValue {
         try refreshPairing()
         guard !pairing.isExpired, pairing.vaultIds.contains(vaultId) else { throw DesktopBridgeError.permissionDenied }

@@ -1331,6 +1331,9 @@ struct PublishedReportReader: View {
                 } else if detail == nil, error == nil {
                     ProgressView().tint(session.accent).frame(maxWidth: .infinity)
                 }
+                if detail != nil, let reportID = currentRow.string("id") {
+                    CompanionResearchFigures(session: session, reportID: reportID)
+                }
             }
             .padding(NodusSpace.page)
             .frame(maxWidth: ReportLayout.readerMeasure)

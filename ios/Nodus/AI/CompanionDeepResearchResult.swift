@@ -24,6 +24,11 @@ enum CompanionDeepResearchResult {
         let ledger = session.connection.desktopPairingId != nil ? try await DesktopJobLedgers.shared.ledger(pairingId: scope.cacheId, vaultId: scope.recordVaultId) : nil
         for entity in entities {
             let key = try CompanionGenerationPublication.recordId(kind: "deepResearch", entity: entity)
+            if let summaryData = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: "autonomous:deepResearch:summary:\(entity)"),
+               let summary = try? JSONDecoder.nodus.decode(JSONValue.self, from: summaryData) {
+                if localID, summary.objectValue?["id"] != .string(identity) { continue }
+                if !localID, let savedID = summary.objectValue?["result"]?.objectValue?["id"]?.stringValue, savedID != identity { continue }
+            }
             guard let data = try await cache.data(vaultId: scope.recordVaultId, domain: .researchGeneration, recordId: key) else { continue }
             let stored = try JSONDecoder.nodus.decode(JSONValue.self, from: data)
             let value = await ledger?.generationCheckpoint(recordId: key, generationId: stored.objectValue?["id"]?.stringValue) ?? stored

@@ -1149,6 +1149,20 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try autonomous.embeddingConfiguration()
                     } else if method == "mobileSavedStructuredCompletion" {
                         value = try await autonomous.savedCompletion(args.first ?? .null, session: session)
+                    } else if method == "documentFigureSnapshot", args.count == 1 {
+                        value = .string(try await CompanionDocumentFigureSnapshot.snapshot(args[0]))
+                    } else if method == "documentSvgEvaluate", args.count == 1 {
+                        value = try await CompanionDocumentSvgEvaluation.evaluate(args[0])
+                    } else if method == "documentFigureStoreAsset", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.store(args[0], session: session)
+                    } else if method == "documentFigureAssetReceipts", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.receipts(args[0], session: session)
+                    } else if method == "documentFigurePublishAssets", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.publish(args[0], session: session)
+                    } else if method == "documentFigureReadAsset", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.read(args[0], session: session)
+                    } else if method == "mobileReadStructuredImage" {
+                        value = try await autonomous.readImageCompletion(args.first ?? .null, session: session)
                     } else if method == "mobileStructuredCompletion" {
                         value = try await autonomous.complete(args.first ?? .null, session: session)
                     } else if method == "cancelAutonomousGeneration", let generation = args.first?.stringValue {

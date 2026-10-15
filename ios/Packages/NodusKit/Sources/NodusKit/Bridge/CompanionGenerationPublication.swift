@@ -46,6 +46,9 @@ public struct CompanionGenerationPublication: Sendable {
         let operation: String
         switch kind {
         case "deepResearch":
+            // Native assets transfer separately. A text-complete local checkpoint
+            // must not race the uploader into an unsatisfiable remote publication.
+            if value["report"]?.objectValue?["mobileVisuals"] != nil, value["visualAssetsPublished"] != .bool(true) { return nil }
             guard let report = value["report"]?.objectValue,
                   let draft = report["draft"]?.objectValue,
                   draft["brief"]?.objectValue?["kind"] == .string("deep_research"),
