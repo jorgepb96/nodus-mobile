@@ -95,6 +95,52 @@ final class CompanionLiveFigureReadAcceptanceTests: XCTestCase {
             "transport": .string("pinned-https"), "assets": .array(fixture.assets), "providerCalls": .int(0)]), name: "actual-native-figure-read-and-pack.json")
     }
 
+    /// Explicit paid-provider acceptance, distinct from provider-free figure transfer.
+    @MainActor
+    func testReportQuestionStreamsFromActualMacAndCitesItsNumberedPassage() async throws {
+        let fixture = try fixture(flag: "NODUS_ACCEPTANCE_PAGE_CHAT")
+        executionTimeAllowance = 360
+        let session = fixture.session
+        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .researchGeneration)
+        let client = DesktopBridgeClient(pairing: pairing, token: token)
+        let detail = try await client.corpus(vaultId: vault, path: "deep-research/\(fixture.reportID)")
+        let saved = try JSONDecoder.nodus.decode(JSONValue.self, from: detail.data)
+        let draft = try XCTUnwrap(saved.objectValue?["report"]?.objectValue?["draft"]?.objectValue)
+        let markdown = try XCTUnwrap(draft["draftMarkdown"]?.stringValue)
+        let paragraphs = markdown.components(separatedBy: "\n\n").filter { !$0.isEmpty }
+        XCTAssertEqual(paragraphs.count, 2)
+        XCTAssertTrue(paragraphs[1].contains("verde") && paragraphs[1].contains("azul"))
+        let passages = paragraphs.enumerated().map { PageChatPassage(number: $0.offset + 1, path: [$0.offset], text: $0.element) }
+        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
+        let before = Set(await ledger.all().map(\.id))
+        let store = PageChatStore.shared(for: fixture.reportID)
+        defer { PageChatStore.forget(fixture.reportID) }
+        XCTAssertTrue(store.turns.isEmpty)
+        let question = "¿De qué colores son la imagen y el recurso descritos en el segundo pasaje? Responde en una frase, basada en ese pasaje, y cita su número."
+        store.draft = question
+        store.ask(question, passages: passages,
+            subject: PageChatSubject(id: fixture.reportID, title: "Aceptación de figuras Mac 0.1.0", session: session), ai: AISettings())
+        let deadline = Date().addingTimeInterval(300)
+        while store.isThinking && Date() < deadline { try await Task.sleep(for: .milliseconds(300)) }
+        XCTAssertFalse(store.isThinking, "The actual Mac provider must finish within the diagnostic budget.")
+        XCTAssertNil(store.failure, store.failure ?? "")
+        XCTAssertFalse(store.canResumeMac)
+        XCTAssertEqual(store.turns.count, 2)
+        let answer = try XCTUnwrap(store.turns.last)
+        XCTAssertTrue(answer.text.localizedCaseInsensitiveContains("verde") && answer.text.localizedCaseInsensitiveContains("azul"), answer.text)
+        XCTAssertTrue(answer.passages.contains(2), "The answer must cite the actual numbered paragraph: " + answer.text)
+        let added = await ledger.all().filter { !before.contains($0.id) && $0.method == "researchChatStream" }
+        XCTAssertEqual(added.count, 1, "One reader question must create only one Mac request identity.")
+        let receipt = try XCTUnwrap(added.first)
+        let job = try await client.readJob(vaultId: vault, id: XCTUnwrap(receipt.jobId))
+        XCTAssertEqual(job.state, .available)
+        XCTAssertTrue(job.events.contains { $0.channel == "research:chatStream:delta" }, "This must exercise actual streamed response events.")
+        let config = try await client.operation(vaultId: vault, method: "getMobileLiveChatConfiguration", args: [.string("research")])
+        try attach(.object(["reportID": .string(fixture.reportID), "requestID": .string(receipt.id), "jobID": .string(job.id),
+            "transport": .string("pinned-https"), "execution": .string("mac-live"), "macModel": config.objectValue?["model"] ?? .null,
+            "answer": .string(answer.text), "passages": .array(answer.passages.map { .int(Int64($0)) })]), name: "actual-native-reader-mac-stream.json")
+    }
+
     @MainActor
     func testChosenFiguresAndPDFRemainReadableWithOwningBridgeActuallyStopped() async throws {
         let fixture = try fixture(flag: "NODUS_ACCEPTANCE_FIGURE_OFFLINE")

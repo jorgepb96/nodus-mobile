@@ -549,9 +549,16 @@ struct PageChatSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                ChatModelMenu(accent: accent, openProviders: { showingProviders = true })
-                    .padding(.top, 4)
-                    .padding(.bottom, 6)
+                if subject.session.aiExecutionMode == .live {
+                    Label("Modelo del Mac conectado", systemImage: "desktopcomputer")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.vertical, 6)
+                        .accessibilityIdentifier("page-chat-mac-model")
+                } else if BetaAIFeatures.autonomousGeneration {
+                    ChatModelMenu(accent: accent, openProviders: { showingProviders = true })
+                        .padding(.top, 4)
+                        .padding(.bottom, 6)
+                }
 
                 conversation
                 composer
