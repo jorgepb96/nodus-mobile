@@ -2859,6 +2859,10 @@ final class MobileReleaseUITests: XCTestCase {
         try linkMacByTypedCode(renewal: false, consultExistingReport: true)
     }
     @MainActor
+    func testMacCodeLinksWorkspaceAndReopensWithoutAnotherCode() throws {
+        try linkMacByTypedCode(renewal: false, connectionOnly: true)
+    }
+    @MainActor
     func testRenewExistingMacConnectionByDesktopCode() throws {
         try linkMacByTypedCode(renewal: true)
     }
@@ -2870,7 +2874,7 @@ final class MobileReleaseUITests: XCTestCase {
     func testAcceptedMacCodeResumesAfterCapabilitiesFailureAndAppRestart() throws {
         try linkMacByTypedCode(renewal: false, capabilitiesFailureFirst: true)
     }
-    @MainActor private func linkMacByTypedCode(renewal: Bool, invalidCodeFirst: Bool = false, capabilitiesFailureFirst: Bool = false, consultExistingReport: Bool = false) throws {
+    @MainActor private func linkMacByTypedCode(renewal: Bool, invalidCodeFirst: Bool = false, capabilitiesFailureFirst: Bool = false, consultExistingReport: Bool = false, connectionOnly: Bool = false) throws {
         executionTimeAllowance = 300
         let code = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_PAIRING_CODE"], "A fresh Mac code is required.")
         XCTAssertNil(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_LINK"], "This test must discover the Mac, not receive an injected link.")
@@ -2948,6 +2952,15 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.buttons["Nuevo informe"].waitForExistence(timeout: 60))
         XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
         capture(app, "pairing-code-linked-research-loaded")
+        if connectionOnly {
+            app.terminate(); app.launch()
+            XCTAssertTrue(app.buttons["nodus-navigation-toggle"].waitForExistence(timeout: 30))
+            XCTAssertTrue(app.webViews.firstMatch.buttons["Nuevo informe"].waitForExistence(timeout: 60))
+            XCTAssertFalse(app.textFields["pairing-code"].exists)
+            XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+            capture(app, "pairing-code-connection-restored-after-process-restart")
+            return
+        }
         if consultExistingReport {
             try verifyExistingResearchReport(app)
             app.terminate(); app.launch()
