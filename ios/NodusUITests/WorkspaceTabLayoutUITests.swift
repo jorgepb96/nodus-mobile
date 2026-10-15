@@ -66,6 +66,67 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryCatalogueKeepsActionsVisibleAndPansOnlyItsTable() throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchEnvironment = ["NODUS_UI_TEST_DEMO": "1", "NODUS_START_ROUTE": "library",
+            "NODUS_VAULT_TYPE_OVERRIDE": "academic", "NODUS_INTERFACE_STYLE": "light"]
+        app.launch()
+        defer { app.terminate() }
+        let catalogue = app.buttons["workspace-catalogue-library"]
+        XCTAssertTrue(catalogue.waitForExistence(timeout: 25))
+        catalogue.tap()
+        let row = app.buttons["workspace-open-library-demo-library-demo-w-mill-liberty"]
+        XCTAssertTrue(row.waitForExistence(timeout: 20), app.debugDescription)
+
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let oriented = NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: oriented, object: nil)], timeout: 15), .completed)
+            let controls = [app.buttons["Filter Library"], app.buttons["Sort Library"],
+                app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Duplicates ")).firstMatch,
+                app.buttons["Trash"], app.buttons["Saved searches"], app.buttons["Select"],
+                app.buttons["library-more-actions"]]
+            for control in controls {
+                XCTAssertTrue(control.exists, app.debugDescription)
+                XCTAssertTrue(app.windows.firstMatch.frame.insetBy(dx: -1, dy: -1).contains(control.frame))
+                XCTAssertGreaterThanOrEqual(control.frame.width + 0.01, 44)
+                XCTAssertGreaterThanOrEqual(control.frame.height + 0.01, 44)
+            }
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                let table = app.scrollViews["library-reference-table"]
+                XCTAssertTrue(table.waitForExistence(timeout: 10), app.debugDescription)
+                let window = app.windows.firstMatch.frame, chooser = app.buttons["nodus-workspace-switch"]
+                XCTAssertTrue(window.insetBy(dx: -1, dy: -1).contains(table.frame))
+                let chooserBefore = chooser.frame
+                let status = app.staticTexts["Status"]
+                for _ in 0..<4 {
+                    if status.exists && status.isHittable { break }
+                    table.swipeLeft()
+                }
+                XCTAssertTrue(status.exists && status.isHittable, "The trailing columns must remain reachable.")
+                for _ in 0..<4 {
+                    if app.staticTexts["On Liberty"].firstMatch.isHittable { break }
+                    table.swipeRight()
+                }
+                XCTAssertTrue(app.staticTexts["On Liberty"].firstMatch.isHittable)
+                XCTAssertEqual(chooser.frame.minX, chooserBefore.minX, accuracy: 1,
+                    "Panning the table must not move the page header.")
+            }
+            let picture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+            picture.name = "library-catalogue-" + (orientation == .portrait ? "portrait" : "landscape")
+            picture.lifetime = .keepAlways; add(picture)
+        }
+        row.tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workspace-tab-library-")).firstMatch.waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) throws {
         XCTAssertTrue(element.waitForExistence(timeout: 15), app.debugDescription)
         for _ in 0..<8 {
