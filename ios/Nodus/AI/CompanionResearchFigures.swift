@@ -36,7 +36,8 @@ import NodusKit
         }
         return figures.contains { value in
             guard let figure = value.objectValue, figure["owner"] == .string(parts[0]) else { return false }
-            return figure["poster"] == .string(source) || includes(figure["view"]?.objectValue?["nodes"]?.arrayValue ?? [])
+            if url.scheme == "nodus-image" { return figure["poster"] == .string(source) }
+            return includes(figure["view"]?.objectValue?["nodes"]?.arrayValue ?? [])
         }
     }
     static func svg(_ svg: String, figureID: String, context: JSONValue?) -> Bool {

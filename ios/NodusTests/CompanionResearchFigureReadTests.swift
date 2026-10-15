@@ -7,6 +7,23 @@ import NodusKit
 
 @Suite("Scoped report figure reads", .serialized)
 @MainActor struct CompanionResearchFigureReadTests {
+    @Test("poster and embedded-file schemes keep their distinct manifest identities")
+    func sourceKinds() {
+        let owner = String(repeating: "a", count: 64)
+        let poster = "10f1cf1a-6545-4704-8378-416035d55a01"
+        let embedded = "10f1cf1a-6545-4704-8378-416035d55a02"
+        let image = "nodus-image://chat/\(owner)/\(poster)"
+        let file = "nodus-capability://chat/\(owner)/\(embedded)"
+        let context: JSONValue = .object(["manifest": .object(["figures": .array([
+            .object(["owner": .string(owner), "poster": .string(image),
+                "view": .object(["nodes": .array([.object(["kind": .string("image"), "attachmentId": .string(embedded)])])])])
+        ])])])
+        #expect(CompanionResearchFigures.allows(image, context: context))
+        #expect(CompanionResearchFigures.allows(file, context: context))
+        #expect(!CompanionResearchFigures.allows("nodus-image://chat/\(owner)/\(embedded)", context: context))
+        #expect(!CompanionResearchFigures.allows("nodus-capability://chat/\(owner)/\(poster)", context: context))
+    }
+
     @Test("bounded chunk decoding rejects wrong offsets, fractional sizes and corrupt final hashes")
     func chunks() async throws {
         let bytes=Data(repeating:7,count:600_000),sha=hash(bytes)
