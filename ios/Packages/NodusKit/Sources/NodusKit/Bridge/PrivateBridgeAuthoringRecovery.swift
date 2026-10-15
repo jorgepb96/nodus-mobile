@@ -145,7 +145,7 @@ public actor PrivateBridgeAuthoringRecovery {
     private func lazyRecord(_ record: Record, archiveID: UUID, resolvedKey: SymmetricKey? = nil) throws -> Record {
         guard let external = record.external else { return record }
         let url = recordsURL(archiveID).appendingPathComponent(external.filename), archiveKey = try resolvedKey ?? key(archiveID)
-        return record.replacing(data: Data(), source: RecordSource {
+        return record.replacing(data: Data(), external: external, source: RecordSource {
             let ciphertext = try Data(contentsOf: url)
             guard Self.hash(ciphertext) == external.ciphertextSHA256 else { throw RecoveryError.invalidArchive }
             let bytes = try AES.GCM.open(AES.GCM.SealedBox(combined: ciphertext), using: archiveKey)
@@ -278,7 +278,7 @@ public actor PrivateBridgeAuthoringRecovery {
     /// User-selected export of authored state, not a credential or a private reading cache.
     public func export(id: UUID) throws -> Data {
         var archive = try read(id)
-        guard !archive.records.contains(where: { $0.generationKind == "databaseFileChunk" }) else { throw RecoveryError.recoveryRequired }
+        guard !archive.records.contains(where: { ["databaseFileChunk", "documentFigureAssetChunk", "completion"].contains($0.generationKind ?? "") }) else { throw RecoveryError.recoveryRequired }
         let archiveKey = try key(id)
         archive.records = try archive.records.map { record in record.replacing(data: try lazyRecord(record, archiveID: id, resolvedKey: archiveKey).materializedData()) }
         archive.version = 1
@@ -290,11 +290,11 @@ public actor PrivateBridgeAuthoringRecovery {
         var archive = try read(id)
         let archiveKey = try key(id)
         let lazy = try archive.records.map { try lazyRecord($0, archiveID: id, resolvedKey: archiveKey) }
-        guard lazy.contains(where: { $0.generationKind == "databaseFile" }) else {
+        guard lazy.contains(where: { ["databaseFile", "documentFigureAsset", "completion"].contains($0.generationKind ?? "") }) else {
             return try PrivateBridgeFileLease.write(export(id: id), filename: "Nodus-local-work.json")
         }
         var chunks: [String: Record] = [:]
-        for record in lazy where record.generationKind == "databaseFileChunk" {
+        for record in lazy where ["databaseFileChunk", "documentFigureAssetChunk"].contains(record.generationKind ?? "") {
             guard let vault = record.vaultId, let recordId = record.recordId else { throw RecoveryError.invalidArchive }
             chunks[vault + "\u{1f}" + recordId] = record
         }
@@ -309,7 +309,30 @@ public actor PrivateBridgeAuthoringRecovery {
             exportedFiles.append(.object(["recordId": .string(CompanionDatabaseAttachments.recordId(transfer.id)), "vaultId": .string(transfer.vaultId),
                 "filename": .string(filename), "bytes": .int(transfer.importedBytes), "complete": .bool(complete)]))
         }
-        archive.records = try lazy.filter { $0.generationKind != "databaseFileChunk" }.map { $0.replacing(data: try $0.materializedData()) }
+        for record in lazy where record.generationKind == "documentFigureAsset" {
+            let asset = try JSONDecoder.nodus.decode(CompanionDocumentFigureAssets.Manifest.self, from: record.materializedData())
+            try CompanionDocumentFigureAssets.validate(asset)
+            guard record.vaultId == asset.receipt.vaultId else { throw RecoveryError.invalidArchive }
+            let byteCount = min(asset.receipt.byteCount, Int64(asset.chunkHashes.count) * Int64(CompanionDocumentFigureAssets.chunkBytes))
+            let complete = byteCount == asset.receipt.byteCount
+            let ext = asset.receipt.mimeType == "image/png" ? "png" : asset.receipt.mimeType == "image/webp" ? "webp" : "jpg"
+            let filename = "figure-" + asset.receipt.id.uuidString.lowercased() + "." + ext + (complete ? "" : ".partial")
+            let source = try RecoveryFileReader(asset: asset, records: chunks)
+            entries.append(.init(filename: filename, byteCount: byteCount, read: { try source.read(offset: $0, count: $1) }))
+            exportedFiles.append(.object(["recordId": .string(CompanionDocumentFigureAssets.recordId(asset.receipt.id)), "vaultId": .string(asset.receipt.vaultId),
+                "filename": .string(filename), "bytes": .int(byteCount), "complete": .bool(complete), "sha256": .string(asset.receipt.sha256)]))
+        }
+        // A process can stop after a paid image was durably cached, before it was
+        // claimed as a figure asset. Export that exact response in its own stream,
+        // rather than decoding every base64 response into the metadata document.
+        for record in lazy where record.generationKind == "completion" {
+            let byteCount = record.external?.byteCount ?? record.data.count
+            let filename = "provider-completion-" + String(Self.hash(Data(record.filename.utf8)).prefix(20)) + ".json"
+            let source = RecoveryRecordReader(record)
+            entries.append(.init(filename: filename, byteCount: Int64(byteCount), read: { try source.read(offset: $0, count: $1) }))
+            exportedFiles.append(.object(["recordId": record.recordId.map(JSONValue.string) ?? .null, "filename": .string(filename), "bytes": .int(Int64(byteCount)), "complete": .bool(true)]))
+        }
+        archive.records = try lazy.filter { !["databaseFileChunk", "documentFigureAssetChunk", "completion"].contains($0.generationKind ?? "") }.map { $0.replacing(data: try $0.materializedData()) }
         archive.version = 1
         var document = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(archive)).objectValue!
         document["files"] = .array(exportedFiles)
@@ -395,7 +418,7 @@ public actor PrivateBridgeAuthoringRecovery {
     static func hash(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
     static func reviewed(_ record: Record) throws -> Data {
         var value = try JSONDecoder.nodus.decode(JSONValue.self, from: record.data)
-        if record.generationKind == "databaseFile", var fields = value.objectValue {
+        if ["databaseFile", "documentFigureAsset"].contains(record.generationKind ?? ""), var fields = value.objectValue {
             fields["recoveryReviewRequired"] = .bool(true)
             return try JSONEncoder.nodus.encode(JSONValue.object(fields))
         }
@@ -435,34 +458,46 @@ public actor PrivateBridgeAuthoringRecovery {
 /// blocks. Each chunk and the complete original hash are checked before sharing.
 private final class RecoveryFileReader: @unchecked Sendable {
     private let lock = NSLock()
-    private let transfer: CompanionDatabaseAttachments.Transfer
+    private let id: UUID
+    private let byteCount: Int64
+    private let importedBytes: Int64
+    private let chunkHashes: [String]
+    private let expectedSHA256: String?
     private let chunks: [PrivateBridgeAuthoringRecovery.Record]
     private var cachedIndex = -1
     private var cached = Data()
     private var offset: Int64 = 0
     private var sha = SHA256()
-    init(transfer: CompanionDatabaseAttachments.Transfer, records: [String: PrivateBridgeAuthoringRecovery.Record]) throws {
-        self.transfer = transfer
-        if transfer.byteCount == 0, let expected = transfer.sha256 {
-            guard expected == PrivateBridgeAuthoringRecovery.hash(Data()) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
-        }
-        chunks = try transfer.chunkHashes.indices.map { index in
-            guard let record = records[transfer.vaultId + "\u{1f}" + CompanionDatabaseAttachments.chunkId(transfer.id, index)] else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
-            return record
+    convenience init(transfer: CompanionDatabaseAttachments.Transfer, records: [String: PrivateBridgeAuthoringRecovery.Record]) throws {
+        try self.init(id: transfer.id, vault: transfer.vaultId, byteCount: transfer.byteCount, importedBytes: transfer.importedBytes,
+            hashes: transfer.chunkHashes, sha: transfer.sha256, chunkID: CompanionDatabaseAttachments.chunkId, records: records)
+    }
+    convenience init(asset: CompanionDocumentFigureAssets.Manifest, records: [String: PrivateBridgeAuthoringRecovery.Record]) throws {
+        let receipt = asset.receipt
+        try self.init(id: receipt.id, vault: receipt.vaultId, byteCount: receipt.byteCount,
+            importedBytes: min(receipt.byteCount, Int64(asset.chunkHashes.count) * Int64(CompanionDocumentFigureAssets.chunkBytes)),
+            hashes: asset.chunkHashes, sha: receipt.sha256, chunkID: CompanionDocumentFigureAssets.chunkId, records: records)
+    }
+    private init(id: UUID, vault: String, byteCount: Int64, importedBytes: Int64, hashes: [String], sha: String?,
+        chunkID: (UUID, Int) -> String, records: [String: PrivateBridgeAuthoringRecovery.Record]) throws {
+        self.id = id; self.byteCount = byteCount; self.importedBytes = importedBytes; self.chunkHashes = hashes; self.expectedSHA256 = sha
+        if byteCount == 0, let sha { guard sha == PrivateBridgeAuthoringRecovery.hash(Data()) else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive } }
+        chunks = try hashes.indices.map { index in
+            guard let record = records[vault + "\u{1f}" + chunkID(id, index)] else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }; return record
         }
     }
     func read(offset: Int64, count: Int) throws -> Data {
         try lock.withLock {
-            guard offset == self.offset, count >= 0, Int64(count) <= transfer.importedBytes - offset else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+            guard offset == self.offset, count >= 0, Int64(count) <= importedBytes - offset else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
             var result = Data(), position = offset
             while result.count < count {
                 let index = Int(position / Int64(CompanionDatabaseAttachments.chunkBytes))
                 if cachedIndex != index {
                     let object = try JSONDecoder.nodus.decode(CompanionDatabaseAttachments.Chunk.self, from: chunks[index].materializedData())
-                    guard object.version == 1, object.id == transfer.id, object.index == index,
+                    guard object.version == 1, object.id == id, object.index == index,
                           let bytes = Data(base64Encoded: object.bytes), bytes.base64EncodedString() == object.bytes,
-                          bytes.count == min(CompanionDatabaseAttachments.chunkBytes, Int(transfer.byteCount - Int64(index) * Int64(CompanionDatabaseAttachments.chunkBytes))),
-                          PrivateBridgeAuthoringRecovery.hash(bytes) == transfer.chunkHashes[index] else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+                          bytes.count == min(CompanionDatabaseAttachments.chunkBytes, Int(byteCount - Int64(index) * Int64(CompanionDatabaseAttachments.chunkBytes))),
+                          PrivateBridgeAuthoringRecovery.hash(bytes) == chunkHashes[index] else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
                     cached = bytes; cachedIndex = index
                 }
                 let start = Int(position % Int64(CompanionDatabaseAttachments.chunkBytes)), length = min(count - result.count, cached.count - start)
@@ -470,9 +505,27 @@ private final class RecoveryFileReader: @unchecked Sendable {
                 result.append(cached.subdata(in: start..<(start + length))); position += Int64(length)
             }
             sha.update(data: result); self.offset = position
-            if position == transfer.byteCount, let expected = transfer.sha256 {
+            if position == byteCount, let expected = expectedSHA256 {
                 guard sha.finalize().map({ String(format: "%02x", $0) }).joined() == expected else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
             }
+            return result
+        }
+    }
+}
+
+/// ZIP asks for small sequential slices; retain just the current opaque paid
+/// response, not all report images or their base64 strings at once.
+private final class RecoveryRecordReader: @unchecked Sendable {
+    private let record: PrivateBridgeAuthoringRecovery.Record
+    private let lock = NSLock()
+    private var data: Data?
+    init(_ record: PrivateBridgeAuthoringRecovery.Record) { self.record = record }
+    func read(offset: Int64, count: Int) throws -> Data {
+        try lock.withLock {
+            if data == nil { data = try record.materializedData() }
+            guard let bytes = data, offset >= 0, offset <= bytes.count, count >= 0, Int64(count) <= Int64(bytes.count) - offset else { throw PrivateBridgeAuthoringRecovery.RecoveryError.invalidArchive }
+            let result = bytes.subdata(in: Int(offset)..<(Int(offset) + count))
+            if offset + Int64(count) == Int64(bytes.count) { data = nil }
             return result
         }
     }
