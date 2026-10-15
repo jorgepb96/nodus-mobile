@@ -14626,6 +14626,17 @@
         }
       }
     },
+    "Only on Desktop": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo en Nodus Desktop"
+          }
+        }
+      }
+    },
     "Only files stored on this device will be removed. Catalogues, annotations and server publications are preserved.": {
       "extractionState": "manual",
       "localizations": {
