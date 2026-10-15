@@ -256,6 +256,9 @@ private struct PublishedWorkspaceItemView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 if let item {
+                    if let error {
+                        NodusNotice(tone: .blocked, title: "Could not save", message: LocalizedStringKey(error))
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         if canEdit {
                             TextField("Untitled", text: $draftTitle, axis: .vertical)
@@ -324,19 +327,25 @@ private struct PublishedWorkspaceItemView: View {
     private func save() async {
         guard let item, let note = EditableNote(item), hasChanges else { return }
         saving = true; defer { saving = false }
-        guard let outbox = await OutboxController.open(session: session) else { return }
-        await outbox.queueNote(
-            id: note.id,
-            title: draftTitle,
-            body: draftContent,
-            folderId: note.folderId,
-            createdAt: note.createdAt
-        )
-        queued = true
-        // Keep the queued draft as the new local baseline. The published server copy changes
-        // only when the owner's desktop accepts the mutation, but the editor must not keep
-        // presenting a change it has already safely written to this device as unsaved.
-        self.item = rowReplacing(item, title: draftTitle, content: draftContent)
+        let titleToSave = draftTitle, contentToSave = draftContent
+        do {
+            guard let outbox = await OutboxController.open(session: session) else { throw DesktopBridgeError.permissionDenied }
+            try await outbox.queueNote(
+                id: note.id,
+                title: titleToSave,
+                body: contentToSave,
+                folderId: note.folderId,
+                createdAt: note.createdAt
+            )
+            queued = true
+            // Keep the queued draft as the new local baseline. The published server copy changes
+            // only when the owner's desktop accepts the mutation, but the editor must not keep
+            // presenting a change it has already safely written to this device as unsaved.
+            self.item = rowReplacing(item, title: titleToSave, content: contentToSave)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func rowReplacing(_ row: Row, title: String, content: String) -> Row {

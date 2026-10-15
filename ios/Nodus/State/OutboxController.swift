@@ -114,10 +114,10 @@ final class OutboxController {
         body: String,
         folderId: String?,
         createdAt: String? = nil
-    ) async {
+    ) async throws {
         let activity: PrivateBridgeCache?
         do { activity = try beginAuthoringActivity() }
-        catch { lastError = error.localizedDescription; return }
+        catch { lastError = error.localizedDescription; throw error }
         defer { activity?.endAuthoringActivity() }
 
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
@@ -138,7 +138,14 @@ final class OutboxController {
             row: row,
             schemaVersion: schemaVersion
         )
-        try? await outbox.enqueue(mutation, title: title.isEmpty ? String(localized: "Untitled note") : title)
+        do {
+            try await outbox.enqueue(mutation, title: title.isEmpty ? String(localized: "Untitled note") : title)
+            lastSavedMutationID = mutation.id
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
         await refresh()
     }
 
@@ -147,10 +154,10 @@ final class OutboxController {
     /// A delete carries no row — the server refuses one that does (`delete_has_row`) — and it
     /// is a tombstone, not an erasure: the owner's desktop applies it when it next drains the
     /// ledger, and until then the note is still in the vault everybody else reads.
-    func queueNoteDeletion(id: String, title: String) async {
+    func queueNoteDeletion(id: String, title: String) async throws {
         let activity: PrivateBridgeCache?
         do { activity = try beginAuthoringActivity() }
-        catch { lastError = error.localizedDescription; return }
+        catch { lastError = error.localizedDescription; throw error }
         defer { activity?.endAuthoringActivity() }
 
         let mutation = Mutation(
@@ -160,7 +167,14 @@ final class OutboxController {
             key: [id],
             schemaVersion: schemaVersion
         )
-        try? await outbox.enqueue(mutation, title: String(localized: "Delete “\(title)”"))
+        do {
+            try await outbox.enqueue(mutation, title: String(localized: "Delete “\(title)”"))
+            lastSavedMutationID = mutation.id
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
         await refresh()
     }
 

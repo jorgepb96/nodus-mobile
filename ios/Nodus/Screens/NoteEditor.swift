@@ -12,15 +12,20 @@ struct NoteEditor: View {
     let accent: Color
     /// Nil for a new note.
     let note: EditableNote?
-    let onSave: (_ title: String, _ body: String) async -> Void
+    let onSave: (_ title: String, _ body: String) async throws -> Void
 
     @State private var title = ""
     @State private var text = ""
+    @State private var saving = false
+    @State private var saveError: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: NodusSpace.block) {
+                    if let saveError {
+                        NodusNotice(tone: .blocked, title: "Could not save", message: LocalizedStringKey(saveError))
+                    }
                     VStack(alignment: .leading, spacing: 7) {
                         Label("Title", systemImage: "textformat")
                             .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -43,22 +48,31 @@ struct NoteEditor: View {
                 }
                 .padding(NodusSpace.page)
             }
+            .disabled(saving)
             .navigationTitle(note == nil ? "New note" : "Edit note")
             .navigationBarTitleDisplayMode(.inline)
             .nodusPageBackdrop(accent: accent)
             .tint(accent)
             .nodusDismissesKeyboard()
+            .interactiveDismissDisabled(saving)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        guard !saving else { return }
+                        saving = true
                         Task {
-                            await onSave(title, text)
-                            dismiss()
+                            defer { saving = false }
+                            do {
+                                try await onSave(title, text)
+                                dismiss()
+                            } catch {
+                                saveError = error.localizedDescription
+                            }
                         }
                     }
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty
-                        && text.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(saving || (title.trimmingCharacters(in: .whitespaces).isEmpty
+                        && text.trimmingCharacters(in: .whitespaces).isEmpty))
                 }
             }
             .task {
