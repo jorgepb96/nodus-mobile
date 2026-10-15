@@ -17,7 +17,7 @@ fs.rmSync(receipt, {force: true});
 const before = acceptanceSourceRevision(mobileRoot);
 const code = await new Promise((resolve, reject) => {
   const child = spawn('xcodebuild', ['build-for-testing', '-project', 'ios/Nodus.xcodeproj', '-scheme', 'Nodus',
-    '-destination', `platform=${target === 'physical' ? 'iOS' : 'iOS Simulator'},id=${device}`, '-derivedDataPath', derivedData, '-resultBundlePath', result],
+    '-destination', `platform=${target === 'physical' ? 'iOS' : 'iOS Simulator'},id=${device}`, '-jobs', '2', '-derivedDataPath', derivedData, '-resultBundlePath', result],
     {cwd: mobileRoot, stdio: 'inherit'});
   child.on('error', reject);
   child.on('exit', (code, signal) => signal ? reject(new Error(`Native build terminated: ${signal}`)) : resolve(code));
