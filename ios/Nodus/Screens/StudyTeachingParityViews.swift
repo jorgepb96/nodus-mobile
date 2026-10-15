@@ -381,6 +381,7 @@ private struct TeachingGradebookWorkspace: View {
             }
             .frame(width: 220, alignment: .leading)
             .padding(9)
+            .overlay(alignment: .trailing) { columnSeparator }
             ForEach(items) { item in
                 let value = row.values[item.id] ?? nil
                 cell(value.map { String(format: "%.2f", $0) } ?? "—", 150, false)
@@ -389,7 +390,11 @@ private struct TeachingGradebookWorkspace: View {
         }
         .overlay(alignment: .bottom) { Divider() }
     }
-    private func cell(_ value:String,_ width:CGFloat,_ heading:Bool)->some View { Text(value).font(heading ? .caption.weight(.semibold):.caption).frame(width:width,alignment:.leading).padding(9).overlay(alignment:.trailing){Divider()} }
+    private func cell(_ value:String,_ width:CGFloat,_ heading:Bool)->some View { Text(value).font(heading ? .caption.weight(.semibold):.caption).frame(width:width,alignment:.leading).padding(9).overlay(alignment:.trailing){columnSeparator} }
+    private var columnSeparator: some View {
+        Rectangle().fill(Color.secondary.opacity(0.22)).frame(width: 1)
+            .allowsHitTesting(false).accessibilityHidden(true)
+    }
     private func load() async { do { let roster = try await loadPrivateStudyTables(session, domain:.teachingRoster,names:["teaching_students"]); let grades = try await loadPrivateStudyTables(session,domain:.teachingGrades,names:["teaching_assessment_plans","teaching_assessment_items","teaching_grade_entries","teaching_rubric_evaluations"]); tables=roster.merging(grades){$1}; bridgeIssue=nil } catch { tables=[:]; bridgeIssue=error.localizedDescription } }
 }
 

@@ -302,25 +302,39 @@ struct AccountLibraryView: View {
     }
 
     private var libraryTable: some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(filtered) { item in tableRow(item) }
-                } header: {
-                    HStack(spacing: 12) {
-                        Text("").frame(width: 24)
-                        Text("Title").frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Creator").frame(width: 220, alignment: .leading)
-                        Text("Year").frame(width: 60, alignment: .leading)
-                        Text("Type").frame(width: 150, alignment: .leading)
-                        Text("Status").frame(width: 100, alignment: .leading)
+        GeometryReader { geometry in
+            // Size class describes the window, not the room left beside its sidebar.
+            // Keep a readable title column and pan only this table when that room is narrow.
+            let tableWidth = max(geometry.size.width, libraryTableMinimumWidth)
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(filtered) { item in tableRow(item) }
+                    } header: {
+                        HStack(spacing: 12) {
+                            Text("").frame(width: 24)
+                            Text("Title").frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+                            Text("Creator").frame(width: 220, alignment: .leading)
+                            Text("Year").frame(width: 60, alignment: .leading)
+                            Text("Type").frame(width: 150, alignment: .leading)
+                            Text("Status").frame(width: 100, alignment: .leading)
+                        }
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .padding(.horizontal, NodusSpace.page).frame(height: 36)
+                        .background(.bar)
                     }
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    .padding(.horizontal, NodusSpace.page).frame(height: 36)
-                    .background(.bar)
                 }
+                .frame(width: tableWidth, alignment: .leading)
+                .frame(minHeight: geometry.size.height, alignment: .topLeading)
             }
+            .accessibilityIdentifier("library-reference-table")
         }
+    }
+
+    // Both header and rows share five fixed columns, five gaps and page padding.
+    // The remaining flexible title column receives at least 220 points.
+    private var libraryTableMinimumWidth: CGFloat {
+        220 + 24 + 220 + 60 + 150 + 100 + 5 * 12 + 2 * NodusSpace.page
     }
 
     private func tableRow(_ item: AccountLibraryItem) -> some View {
@@ -331,7 +345,7 @@ struct AccountLibraryView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.metadata.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                     Text(item.metadata.tags.prefix(3).map { "#\($0)" }.joined(separator: "  ")).font(.caption2).foregroundStyle(session.accent.nodusReadable).lineLimit(1)
-                }.frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
                 Text(item.metadata.creators.first?.label ?? "—").frame(width: 220, alignment: .leading).lineLimit(1)
                 Text(item.metadata.year.map(String.init) ?? "—").frame(width: 60, alignment: .leading)
                 Text(item.metadata.itemType).frame(width: 150, alignment: .leading).lineLimit(1)
