@@ -28,6 +28,13 @@ struct MobileSurfaceStorageTests {
         if changesOrigin { connection.origin = "https://verified-new-origin.test" }
         session.refreshConnectionMetadata(connection)
         await session.probeEmbedding(retryUnavailable: true)
+        // Origin refresh schedules its own probe. A newer probe deliberately supersedes
+        // this awaited call, so wait for its actual terminal response, not just one caller.
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while case .unknown = session.embedding, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         #expect(session.embedding == .published(EmbeddingIdentity(provider: "fixture", model: "recovered", dim: 384)))
         #expect(session.aiExecutionMode == .live)
     }
