@@ -120,6 +120,54 @@ struct CompanionDocumentFigureAssetsTests {
         #expect(exported == bytes)
         try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: old.id)); try? f.keychain.remove(saved.recoveryKeyName)
     }
+    @Test("legacy poster retry is a PNG derivation of only the exact captured view and survives regrant for review")
+    func derivedLegacyPoster() async throws {
+        let f = try PrivateBridgeAuthoringRecoveryTests.Fixture(); defer { f.clean() }
+        let old = try f.pairing("derived-poster-old"), cache = try f.cache(old.id)
+        let session = UUID(), target = UUID(), figure = UUID(), revision = UUID(), asset = UUID()
+        let owner = String(repeating: "c", count: 64), entity = "deep-research:" + target.uuidString.lowercased()
+        let record = try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)
+        let view: JSONValue = .object(["schemaVersion": .int(1), "summary": .string("Original table"), "nodes": .array([.object(["kind": .string("table"), "columns": .array([.object(["label": .string("Value")])]), "rows": .array([.array([.string("Exact source")])])])])])
+        let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jN3sAAAAASUVORK5CYII="))
+        var fields = visualParent(session: session, target: target, figure: figure, revision: revision, owner: owner).objectValue!
+        var manifest = fields["manifest"]!.objectValue!, item = manifest["figures"]!.arrayValue![0].objectValue!
+        item["ownerRevision"] = nil; item["view"] = view; item["state"] = .string("failed"); manifest["figures"] = .array([.object(item)])
+        let capture: JSONValue = .object(["version": .int(1), "vaultId": .string("vault"), "target": fields["target"]!, "contentHash": .string(String(repeating: "a", count: 64)), "manifest": .object(manifest), "assets": .array([])])
+        let serialized = try JSONEncoder.nodus.encode(capture), proof = CompanionDocumentFigureAssets.hash(serialized)
+        var source = fields["source"]!.objectValue!; source["capture"] = capture; source["captureCanonical"] = .string(String(decoding: serialized, as: UTF8.self)); source["captureHash"] = .string(proof)
+        fields["source"] = .object(source); fields["manifest"] = .object(manifest)
+        try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(JSONValue.object(fields)), vaultId: "vault", recordId: record, indexId: "autonomous:documentVisuals:index:v1", entity: entity)
+        let store = CompanionDocumentFigureAssets(cache: cache, vaultId: "vault")
+        let receipt = try await store.storeDerivedCapturedPoster(data: png, view: view, parentRecordId: record, generationId: session, figureId: figure, owner: owner, assetId: asset)
+        #expect(receipt.derivation == "captured-view-poster-v1" && receipt.ownerRevision.isEmpty && receipt.captureHash == proof && receipt.capturedAssetId == nil)
+        #expect(try await store.data(receipt) == png)
+        #expect(try await store.storeDerivedCapturedPoster(data: png, view: view, parentRecordId: record, generationId: session, figureId: figure, owner: owner, assetId: asset) == receipt)
+        var changedView = view.objectValue!; changedView["summary"] = .string("Different view")
+        await #expect(throws: (any Error).self) { _ = try await store.storeDerivedCapturedPoster(data: png, view: .object(changedView), parentRecordId: record, generationId: session, figureId: figure, owner: owner) }
+        await #expect(throws: (any Error).self) { _ = try await store.storeDerivedCapturedPoster(data: png, view: view, parentRecordId: record, generationId: target, figureId: figure, owner: owner) }
+        await #expect(throws: (any Error).self) { _ = try await store.storeDerivedCapturedPoster(data: png, view: view, parentRecordId: record, generationId: session, figureId: UUID(), owner: owner) }
+        await #expect(throws: (any Error).self) { _ = try await store.storeDerivedCapturedPoster(data: png, view: view, parentRecordId: record, generationId: session, figureId: figure, owner: String(repeating: "d", count: 64)) }
+        await #expect(throws: (any Error).self) { _ = try await store.storeDerivedCapturedPoster(data: Data([1,2,3]), view: view, parentRecordId: record, generationId: session, figureId: figure, owner: owner) }
+        var changed = fields, changedManifest = manifest, changedItem = item
+        changedItem["view"] = .object(changedView); changedManifest["figures"] = .array([.object(changedItem)]); changed["manifest"] = .object(changedManifest)
+        #expect(throws: (any Error).self) { try CompanionDocumentFigureAssets.validate(receipt, parent: .object(changed)) }
+        changed = fields; changed["target"] = .object(["kind": .string("deep-research"), "id": .string(UUID().uuidString.lowercased())])
+        #expect(throws: (any Error).self) { try CompanionDocumentFigureAssets.validate(receipt, parent: .object(changed)) }
+        changed = fields; var changedSource = source; changedSource["captureHash"] = .string(String(repeating: "e", count: 64)); changed["source"] = .object(changedSource)
+        #expect(throws: (any Error).self) { try CompanionDocumentFigureAssets.validate(receipt, parent: .object(changed)) }
+        // The general import path cannot relabel a derived poster as an original asset.
+        await #expect(throws: (any Error).self) { _ = try await store.importCapturedLegacyAsset(data: png, mimeType: "image/png", parentRecordId: record, generationId: session, figureId: figure, owner: owner, sourceAssetId: asset.uuidString.lowercased()) }
+        try await cache.freezeForRevocation(true)
+        let snapshot = try await cache.authoringRecoverySnapshot(vaultIds: ["vault"]), saved = try await f.recovery.preserve(snapshot: snapshot, pairing: old, macDeviceId: "real-mac")
+        try await f.recovery.completeRevocation(saved)
+        let fresh = try f.pairing("derived-poster-new"), destination = try f.cache(fresh.id)
+        _ = try await f.recovery.adopt(pairing: fresh, macDeviceId: "real-mac", cache: destination)
+        let restored = CompanionDocumentFigureAssets(cache: destination, vaultId: "vault")
+        #expect(try await restored.data(receipt) == png)
+        #expect(try await restored.receipts(parentRecordId: record, generationId: session) == [receipt])
+        await #expect(throws: (any Error).self) { _ = try await restored.storeDerivedCapturedPoster(data: png, view: view, parentRecordId: record, generationId: session, figureId: figure, owner: owner, assetId: UUID()) }
+        for key in [old.id, fresh.id] { try? f.keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId: key)) }; try? f.keychain.remove(saved.recoveryKeyName)
+    }
     @Test("a receipt-only paid image becomes encrypted chunks and a thin durable replay pointer")
     func paidImageReceipt() async throws {
         let f = try PrivateBridgeAuthoringRecoveryTests.Fixture(); defer { f.clean() }
