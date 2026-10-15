@@ -4,7 +4,13 @@ import NodusKit
 /// The rich reader receives only the exact manifest and small receipts. Its
 /// Markdown source and UTF-16 annotation offsets remain unchanged.
 @MainActor enum CompanionResearchFigures {
-    static func context(session: SpaceSession, reportID: String) async throws -> JSONValue? {
+    static func context(session: SpaceSession, reportID: String, downloadedOnly: Bool = false, preferAuthored: Bool = false, expectedDraft:JSONValue? = nil) async throws -> JSONValue? {
+        if !downloadedOnly, !preferAuthored, !reportID.hasPrefix("mobile-dr-"), session.connection.desktopPairingId != nil, !session.isDemo {
+            return try await CompanionLiveDocumentVisualRead.context(session:session,reportID:reportID,expectedDraft:expectedDraft)
+        }
+        if downloadedOnly, !preferAuthored, session.connection.desktopPairingId != nil, !session.isDemo {
+            return try await CompanionDownloadedResearchFigures.context(session:session,reportID:reportID,expectedDraft:expectedDraft)
+        }
         let identity = reportID.hasPrefix("mobile-dr-") ? String(reportID.dropFirst(10)) : reportID
         if UUID(uuidString: identity) != nil, let context = try await CompanionDocumentVisualSession.context(reportID: identity, session: session) { return context }
         guard let checkpoint = try await CompanionDeepResearchResult.checkpoint(session: session, id: reportID, publishedReceipt: !reportID.hasPrefix("mobile-dr-")),
@@ -42,6 +48,9 @@ import NodusKit
         return contains(figure.objectValue?["view"]?.objectValue?["nodes"]?.arrayValue ?? [])
     }
     static func load(_ source: String, context: JSONValue, session: SpaceSession) async throws -> ReaderImageSource.Content {
+        if context.objectValue?["unsupportedOriginals"]?.arrayValue?.contains(.string(source)) == true { throw APIError(status:415,code:"figure_original_not_available",message:"Este tipo de original todavía no está disponible en este lector. La vista previa se conserva.") }
+        if context.objectValue?["origin"] == .string("downloaded-mac") { return try await CompanionDownloadedResearchFigures.data(source,context:context,session:session) }
+        if context.objectValue?["origin"] == .string("live-mac") { return try await CompanionLiveDocumentVisualRead.data(source,context:context,session:session) }
         guard allows(source, context: context), let url = URL(string: source), let id = url.path.split(separator: "/").last,
               let raw = context.objectValue?["receipts"]?.arrayValue?.first(where: { $0.objectValue?["id"]?.stringValue?.lowercased() == id.lowercased() }) else { throw DesktopBridgeError.permissionDenied }
         let receipt = try CompanionDocumentFigureAssets.Receipt(value: raw)

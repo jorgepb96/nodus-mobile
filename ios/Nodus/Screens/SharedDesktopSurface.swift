@@ -714,7 +714,7 @@ private struct DesktopWebView: UIViewRepresentable {
             "documentDraftScope": session.connection.storageId, "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
         let visualPairing = DesktopBridgePairingStore().pairings().first { $0.id == session.connection.desktopPairingId }
-        data["visualCanWrite"] = !downloadedOnly && session.connection.role.canSendChanges && visualPairing.map { !$0.isExpired && $0.vaultIds.contains(session.connection.vaultId) && $0.domains.contains(.corpus) && $0.domains.contains(.writing) } == true
+        data["visualCanWrite"] = !downloadedOnly && session.connection.role.canSendChanges && visualPairing.map { !$0.isExpired && $0.vaultIds.contains(session.connection.vaultId ?? "") && $0.domains.contains(.corpus) && $0.domains.contains(.writing) } == true
         data["visualCanGenerate"] = data["visualCanWrite"] as? Bool == true && visualPairing?.domains.contains(.researchGeneration) == true
         if let initialArgumentMap, let bytes = try? JSONEncoder.nodus.encode(initialArgumentMap), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialArgumentMap"] = value }
         if let initialArgumentSeed { data["initialArgumentSeed"] = initialArgumentSeed }

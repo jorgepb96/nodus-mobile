@@ -160,6 +160,7 @@ struct CompanionResearchDownloadsView: View {
             guard chosen.count == selected.count, !chosen.isEmpty else { throw PrivateBridgeCache.ReadPackError.invalidSelection }
             var records: [PrivateBridgeCache.ReadPackRecord] = [], bytes = 0, dictionaryBytes = 0
             var selectedImages = Set<String>()
+            var figureSnapshots:[(String,JSONValue)] = []
             let (_, pairing, _) = try privateBridgeConnection(session,domain:.corpus)
             var citations = Set<JSONValue>()
             func collectCitations(_ value: JSONValue) {
@@ -205,7 +206,7 @@ struct CompanionResearchDownloadsView: View {
                     definition["progress"] = nil; value = .object(definition)
                 }
                 try add(method, args, value)
-                for sourceURL in try CompanionCorpusImage.sourceURLs(in:value) {
+                for sourceURL in (method == "getDocumentVisuals" && kind == .reports ? [] : try CompanionCorpusImage.sourceURLs(in:value)) {
                     guard selectedImages.insert(sourceURL).inserted else { continue }
                     let image = try await CompanionCorpusImage.load(client:client,cache:cache,vaultId:vault,source:sourceURL,domains:Array(pairing.domains))
                     let data = try JSONEncoder.nodus.encode(image); bytes += data.count
@@ -247,7 +248,7 @@ struct CompanionResearchDownloadsView: View {
                 } else {
                     let entity = kind == .reports ? "deep_research" : "immersion"
                     let readerMethod = kind == .reports ? "getWritingWorkshopDraft" : "getImmersionSession"
-                    _ = try await fetch("getDocumentVisuals",[.object(["kind":.string(kind == .reports ? "deep-research" : "immersion"),"id":.string(id)])])
+                    let visualManifest = try await fetch("getDocumentVisuals",[.object(["kind":.string(kind == .reports ? "deep-research" : "immersion"),"id":.string(id)])])
                     let reader: JSONValue
                     if kind == .reports {
                         let report = try await fetch("getWritingWorkshopDraft", [.string(id)])
@@ -262,6 +263,10 @@ struct CompanionResearchDownloadsView: View {
                         let document = try await client.corpus(vaultId: vault, path: "deep-research/\(escaped)/document.html", percentEncoded: true)
                         guard let html = String(data: document.data, encoding: .utf8), !html.isEmpty else { throw DesktopBridgeError.malformedResponse }
                         var nativeEntry: [String: JSONValue] = ["detail": nativeDetail, "documentHTML": .string(html)]
+                        guard let nativeDraft=nativeDetail.objectValue?["report"]?.objectValue?["draft"],let editorDraft=report.objectValue?["draft"],
+                              ["title","draftMarkdown","abstract"].allSatisfy({nativeDraft.objectValue?[$0] == editorDraft.objectValue?[$0]}) else { throw DesktopBridgeError.malformedResponse }
+                        let figures=try await CompanionDownloadedResearchFigures.capture(session:session,reportID:id,manifest:visualManifest,draft:nativeDraft,remaining:PrivateBridgeCache.maximumSelectedCopyBytes-bytes-dictionaryBytes)
+                        records.append(contentsOf:figures.records);bytes += figures.bytes;nativeEntry["figureContext"]=figures.context;figureSnapshots.append((id,visualManifest))
                         if let image = nativeDetail.objectValue?["image"]?.objectValue {
                             guard let hash = image["hash"]?.stringValue, hash.count == 64,
                                   hash.allSatisfy({ $0.isHexDigit }), let mime = image["mime"]?.stringValue,
@@ -347,6 +352,10 @@ struct CompanionResearchDownloadsView: View {
                 records.append(.init(domain: .corpus, recordId: "companion:dictionary:v1", data: data))
             }
             try Task.checkCancellation()
+            for (id,manifest) in figureSnapshots {
+                let current=try await client.operation(vaultId:vault,method:"getDocumentVisuals",args:[.object(["kind":.string("deep-research"),"id":.string(id)])])
+                guard current == manifest else { throw APIError(status:409,code:"report_figures_changed",message:"Los recursos visuales cambiaron durante la descarga. La copia anterior se conserva; vuelve a descargar la selección.") }
+            }
             let current = try await session.client.snapshotRevision(in: session.connection.spaceId)
             guard current == revision else { throw DesktopBridgeError.malformedResponse }
             let packId = try PrivateBridgeCache.readPackSelectionId(vaultId: vault, recordIds: selected.map { "\(kind.rawValue):\($0)" })

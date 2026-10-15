@@ -53,28 +53,50 @@ enum ReportDocument {
         return html
     }
 
-    static func html(session: SpaceSession, reportId: String) async throws -> String {
+    static func html(session: SpaceSession, reportId: String, downloadedOnly:Bool = false) async throws -> String {
+        try await exportSource(session:session,reportId:reportId,downloadedOnly:downloadedOnly).html
+    }
+    /// Prose and figure context are resolved together, never from two revisions.
+    static func exportSource(session:SpaceSession,reportId:String,downloadedOnly:Bool = false) async throws -> (html:String,figures:JSONValue?) {
+        if downloadedOnly,session.connection.desktopPairingId != nil,!session.isDemo {
+            let scope=try session.surfaceStorageScope(),cache=try PrivateBridgeCache(pairingId:scope.cacheId)
+            guard let copy=try await CompanionResearchCorpusCopy.downloaded(cache:cache,vaultId:scope.recordVaultId),
+                  let response=try copy.nativeResponse(path:"deep-research/\(reportId)/document.html",query:[],percentEncoded:false),
+                  let html=String(data:response.data,encoding:.utf8),!html.isEmpty,
+                  let context=try copy.figureContext(reportID:reportId),context.objectValue?["vaultId"] == .string(scope.recordVaultId),context.objectValue?["reportId"] == .string(reportId),context.objectValue?["origin"] == .string("downloaded-mac") else { throw APIError(status:404,code:"report_not_downloaded",message:"El documento completo y sus recursos visuales no están incluidos en esta descarga. Actualiza la copia elegida.") }
+            return (html,context.objectValue?["manifest"] == .null ? nil : context)
+        }
         if let own = try await CompanionDeepResearchResult.draft(session: session, id: reportId) {
             let cover = try await CompanionDeepResearchResult.cover(session: session, id: reportId, dataURL: true)
-            let figures = try await CompanionResearchFigures.context(session: session, reportID: reportId)
-            return try renderHTML(draft: own, image: .object(["dataUrl": cover, "credit": .null]), visuals: figures?.objectValue?["manifest"] ?? .null)
+            let figures = try await CompanionResearchFigures.context(session: session, reportID: reportId, preferAuthored: true)
+            return (try renderHTML(draft: own, image: .object(["dataUrl": cover, "credit": .null]), visuals: figures?.objectValue?["manifest"] ?? .null),figures)
         }
+        if session.connection.desktopPairingId == nil { return (try await publishedHTML(session:session,reportId:reportId),nil) }
+        let detail=try await session.client.deepResearchReport(reportId,in:session.connection.spaceId)
+        if detail.fromDevice { return try await exportSource(session:session,reportId:reportId,downloadedOnly:true) }
+        guard let draft=detail.report.embeddedJSON("draft") else { throw Failure.couldNotRender }
+        let figures=try await CompanionResearchFigures.context(session:session,reportID:reportId,expectedDraft:draft)
+        let html=try await renderPublishedHTML(draft:draft,hash:detail.image?.string("hash"),mime:detail.image?.string("mime"),session:session,visuals:figures?.objectValue?["manifest"] ?? .null)
+        return (html,figures)
+    }
+
+    /// Published servers and bundled examples keep their original transport and
+    /// mirror fallback; neither is a private Desktop read pack.
+    private static func publishedHTML(session:SpaceSession,reportId:String) async throws -> String {
         if !session.isDemo {
-            do { return try await session.client.deepResearchDocument(reportId, in: session.connection.spaceId) }
+            do { return try await session.client.deepResearchDocument(reportId,in:session.connection.spaceId) }
             catch {
-                let offline = isPrivateBridgeOffline(error) || [.offline, .timedOut, .hostNotFound, .cannotConnect].contains(error as? TransportError ?? .cancelled)
+                let offline=isPrivateBridgeOffline(error) || [.offline,.timedOut,.hostNotFound,.cannotConnect].contains(error as? TransportError ?? .cancelled)
                 guard offline else { throw error }
                 if session.mirror == nil { await session.loadMirror() }
-                guard let mirror = session.mirror,
-                      let row = try await mirror.row(table: "writing_saved_drafts", id: reportId),
-                      let draft = row.embeddedJSON("draft_json") else { throw error }
-                let image = try await mirror.deepResearchImage(entityId: reportId)
-                return try await renderPublishedHTML(draft: draft, hash: image?.hash, mime: image?.mime, session: session)
+                guard let mirror=session.mirror,let row=try await mirror.row(table:"writing_saved_drafts",id:reportId),let draft=row.embeddedJSON("draft_json") else { throw error }
+                let image=try await mirror.deepResearchImage(entityId:reportId)
+                return try await renderPublishedHTML(draft:draft,hash:image?.hash,mime:image?.mime,session:session)
             }
         }
-        let detail = try await session.client.deepResearchReport(reportId, in: session.connection.spaceId)
-        guard let draft = detail.report.embeddedJSON("draft") else { throw Failure.couldNotRender }
-        return try await renderPublishedHTML(draft: draft, hash: detail.image?.string("hash"), mime: detail.image?.string("mime"), session: session)
+        let detail=try await session.client.deepResearchReport(reportId,in:session.connection.spaceId)
+        guard let draft=detail.report.embeddedJSON("draft") else { throw Failure.couldNotRender }
+        return try await renderPublishedHTML(draft:draft,hash:detail.image?.string("hash"),mime:detail.image?.string("mime"),session:session)
     }
 
     static func html(saved: LocalReportStore.Saved, store: LocalReportStore) throws -> String {
@@ -88,13 +110,13 @@ enum ReportDocument {
         return try renderHTML(draft: draft, image: image)
     }
 
-    private static func renderPublishedHTML(draft: JSONValue, hash: String?, mime: String?, session: SpaceSession) async throws -> String {
+    private static func renderPublishedHTML(draft: JSONValue, hash: String?, mime: String?, session: SpaceSession, visuals:JSONValue = .null) async throws -> String {
         var cover: JSONValue = .object(["dataUrl": .null, "credit": .null])
         if let hash {
             let bytes = try await session.client.asset(hash: hash, in: session.connection.spaceId)
             cover = .object(["dataUrl": .string("data:\(mime ?? "image/png");base64,\(bytes.base64EncodedString())"), "credit": .null])
         }
-        return try renderHTML(draft: draft, image: cover)
+        return try renderHTML(draft: draft, image: cover, visuals:visuals)
     }
 
     /// A4 at 72 points to the inch — the page the desktop prints
@@ -493,6 +515,7 @@ nonisolated final class FixedPageRenderer: UIPrintPageRenderer {
 
 /// The third button beside the two copies: the report as the desktop prints it.
 struct ReportPDFButton: View {
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     let session: SpaceSession
     let reportId: String
     let title: String
@@ -565,11 +588,10 @@ struct ReportPDFButton: View {
         Task {
             defer { isBuilding = false }
             do {
-                let html: String
-                if let local { html = try ReportDocument.html(saved: local.saved, store: local.store) }
-                else { html = try await ReportDocument.html(session: session, reportId: reportId) }
-                let figures = local == nil ? try await CompanionResearchFigures.context(session: session, reportID: reportId) : nil
-                let bytes = try await ReportDocument.pdf(from: html, session: session, figureContext: figures)
+                let source:(html:String,figures:JSONValue?)
+                if let local { source=(try ReportDocument.html(saved:local.saved,store:local.store),nil) }
+                else { source=try await ReportDocument.exportSource(session:session,reportId:reportId,downloadedOnly:downloadedOnly) }
+                let bytes = try await ReportDocument.pdf(from:source.html,session:session,figureContext:source.figures)
                 file = try ReportDocument.file(named: title, bytes: bytes)
             } catch {
                 self.error = error.localizedDescription

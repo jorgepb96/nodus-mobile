@@ -1254,6 +1254,8 @@ struct PublishedReportReader: View {
     @State private var metadataExpanded = false
     @State private var authoredFigureContext: JSONValue?
     @State private var figureIssue: String?
+    @State private var figureSourceIsAuthored = false
+    @State private var figureSourceIsDevice = false
     private var phoneHeader: Bool { UIDevice.current.userInterfaceIdiom == .phone }
     private var currentRow: Row { detail?.report ?? row }
     private var localCoverID: String? {
@@ -1315,7 +1317,7 @@ struct PublishedReportReader: View {
                 }
 
                 if let figureIssue {
-                    NodusNotice(tone: .blocked, title: "No se pudieron abrir las figuras", message: LocalizedStringKey(figureIssue))
+                    NodusNotice(tone: .blocked, title: "Recursos visuales del informe", message: LocalizedStringKey(figureIssue))
                     Button("Reintentar figuras") { Task { if let id = currentRow.string("id") { authoredFigureContext = await loadFigureContext(id) } } }.frame(minHeight: 44)
                 }
                 if let sections = prose {
@@ -1425,6 +1427,7 @@ struct PublishedReportReader: View {
                             },
                             accent: session.accent
                         )
+                        .environment(\.downloadedReaderOnly, downloadedOnly || (figureSourceIsDevice && session.connection.desktopPairingId != nil))
                         .padding(.top, 6)
                     }
     }
@@ -1480,8 +1483,8 @@ struct PublishedReportReader: View {
             .joined(separator: "\n\n")
     }
 
-    private func loadFigureContext(_ id: String) async -> JSONValue? {
-        do { let value = try await CompanionResearchFigures.context(session: session, reportID: id); figureIssue = nil; return value }
+    private func loadFigureContext(_ id: String, preferAuthored: Bool? = nil, expectedDraft:JSONValue? = nil) async -> JSONValue? {
+        do { let value = try await CompanionResearchFigures.context(session: session, reportID: id, downloadedOnly:(downloadedOnly || figureSourceIsDevice) && session.connection.desktopPairingId != nil && !session.isDemo, preferAuthored:preferAuthored ?? figureSourceIsAuthored, expectedDraft:expectedDraft ?? detail?.report.embeddedJSON("draft")); figureIssue = value?.objectValue?["unsupportedOriginals"]?.arrayValue?.isEmpty == false ? "La vista previa está disponible. Algunos originales de capacidades todavía no se pueden abrir en este lector." : nil; return value }
         catch is CancellationError { return nil }
         catch { figureIssue = error.localizedDescription; return nil }
     }
@@ -1490,18 +1493,25 @@ struct PublishedReportReader: View {
         loading = true; error = nil
         defer { loading = false }
         do {
-            if let own = try await CompanionDeepResearchResult.detail(session: session, id: id) {
-                authoredFigureContext = await loadFigureContext(id); detail = own; error = nil; return
+            if (!downloadedOnly || id.hasPrefix("mobile-dr-")), let own = try await CompanionDeepResearchResult.detail(session: session, id: id) {
+                figureSourceIsAuthored = true; figureSourceIsDevice = false; authoredFigureContext = await loadFigureContext(id,preferAuthored:true); detail = own; error = nil; return
+            }
+            if downloadedOnly,session.connection.desktopPairingId != nil,!session.isDemo {
+                let source=try await CompanionDownloadedResearchFigures.source(session:session,reportID:id)
+                detail=source.detail;figureSourceIsAuthored=false;figureSourceIsDevice=true
+                authoredFigureContext=await loadFigureContext(id,expectedDraft:source.detail.report.embeddedJSON("draft"));error=nil;return
             }
             do {
                 let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
-                authoredFigureContext = await loadFigureContext(id)
+                figureSourceIsAuthored = false; figureSourceIsDevice = loaded.fromDevice
+                authoredFigureContext = await loadFigureContext(id,expectedDraft:loaded.report.embeddedJSON("draft"))
                 detail = loaded
                 error = nil
             } catch {
-                guard isPrivateBridgeOffline(error),
+                guard !downloadedOnly, isPrivateBridgeOffline(error),
                       let own = try await CompanionDeepResearchResult.detail(session: session, id: id, publishedReceipt: true) else { throw error }
-                authoredFigureContext = await loadFigureContext(id)
+                figureSourceIsAuthored = true; figureSourceIsDevice = false
+                authoredFigureContext = await loadFigureContext(id,preferAuthored:true)
                 detail = own
                 self.error = nil
             }

@@ -47,6 +47,26 @@ public struct CompanionResearchCorpusCopy: Sendable {
         revision = "companion:deep-research:" + Self.hash(try JSONEncoder.nodus.encode(JSONValue.array(entries)))
     }
 
+    public struct SelectedReportSource:Sendable {
+        public let detail:DeepResearchReportDetail
+        public let documentHTML:String
+        public let figureContext:JSONValue?
+    }
+    public func selectedReportSource(reportID:String) throws -> SelectedReportSource? {
+        guard let entry=entries.first(where:{$0.objectValue?["detail"]?.objectValue?["report"]?.objectValue?["id"] == .string(reportID)}),
+              let detail=entry.objectValue?["detail"],let html=entry.objectValue?["documentHTML"]?.stringValue else { return nil }
+        var typed=try JSONDecoder.nodus.decode(DeepResearchReportDetail.self,from:JSONEncoder.nodus.encode(detail));typed.fromDevice=true
+        return SelectedReportSource(detail:typed,documentHTML:html,figureContext:try figureContext(reportID:reportID))
+    }
+
+    /// Metadata comes from the same selected report entry as its prose/HTML.
+    public func figureContext(reportID:String) throws -> JSONValue? {
+        guard let entry=entries.first(where:{$0.objectValue?["detail"]?.objectValue?["report"]?.objectValue?["id"] == .string(reportID)}),
+              let context=entry.objectValue?["figureContext"],let draft=entry.objectValue?["detail"]?.objectValue?["report"]?.objectValue?["draft"] else { return nil }
+        guard context.objectValue?["draftHash"] == .string(Self.hash(try JSONEncoder.nodus.encode(draft))) else { throw DesktopBridgeError.malformedResponse }
+        return context
+    }
+
     public static func downloaded(cache: PrivateBridgeCache, vaultId: String) async throws -> Self? {
         let bytes = try await cache.downloadedData(vaultId: vaultId, domain: .corpus, recordId: recordId)
         return bytes.isEmpty ? nil : try Self(copies: bytes.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) })
