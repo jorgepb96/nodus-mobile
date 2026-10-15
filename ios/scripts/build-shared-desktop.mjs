@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 const mobile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const desktop = path.resolve(process.argv.slice(2).find(argument => !argument.startsWith('--')) ?? path.join(mobile, '../nodus'));
@@ -48,14 +48,19 @@ if (process.argv.includes('--verify')) {
 } else {
   execFileSync(process.execPath, [path.join(desktop, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'vite.mobile-web.config.ts'],
     { cwd: desktop, env: { ...process.env, NODUS_MOBILE_SURFACE_OUT: output, NODUS_MOBILE_CHAT_READ:'0', NODUS_MOBILE_PROSE_READ:'0', NODUS_MOBILE_MAP_READ:'0', NODUS_MOBILE_FIGURE_SNAPSHOT:'0' }, stdio: 'inherit' });
-  execFileSync(process.execPath,[path.join(desktop,'node_modules/vite/bin/vite.js'),'build','--config','vite.mobile-web.config.ts'],
-    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'1',NODUS_MOBILE_PROSE_READ:'0',NODUS_MOBILE_MAP_READ:'0',NODUS_MOBILE_FIGURE_SNAPSHOT:'0'},stdio:'inherit'});
-  execFileSync(process.execPath,[path.join(desktop,'node_modules/vite/bin/vite.js'),'build','--config','vite.mobile-web.config.ts'],
-    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'0',NODUS_MOBILE_PROSE_READ:'1',NODUS_MOBILE_MAP_READ:'0',NODUS_MOBILE_FIGURE_SNAPSHOT:'0'},stdio:'inherit'});
-  execFileSync(process.execPath,[path.join(desktop,'node_modules/vite/bin/vite.js'),'build','--config','vite.mobile-web.config.ts'],
-    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'0',NODUS_MOBILE_PROSE_READ:'0',NODUS_MOBILE_MAP_READ:'1',NODUS_MOBILE_FIGURE_SNAPSHOT:'0'},stdio:'inherit'});
-  execFileSync(process.execPath,[path.join(desktop,'node_modules/vite/bin/vite.js'),'build','--config','vite.mobile-web.config.ts'],
-    {cwd:desktop,env:{...process.env,NODUS_MOBILE_SURFACE_OUT:output,NODUS_MOBILE_CHAT_READ:'0',NODUS_MOBILE_PROSE_READ:'0',NODUS_MOBILE_MAP_READ:'0',NODUS_MOBILE_FIGURE_SNAPSHOT:'1'},stdio:'inherit'});
+  // The primary entry above is the only one that clears the output directory.
+  // Secondary entries own distinct filenames and may run in bounded pairs.
+  const entries = ['NODUS_MOBILE_CHAT_READ', 'NODUS_MOBILE_PROSE_READ', 'NODUS_MOBILE_MAP_READ', 'NODUS_MOBILE_FIGURE_SNAPSHOT'];
+  for (let offset = 0; offset < entries.length; offset += 2) {
+    const results = await Promise.allSettled(entries.slice(offset, offset + 2).map(flag => new Promise((resolve, reject) => {
+      const env = {...process.env, NODUS_MOBILE_SURFACE_OUT: output, ...Object.fromEntries(entries.map(key => [key, key === flag ? '1' : '0']))};
+      const child = spawn(process.execPath, [path.join(desktop, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'vite.mobile-web.config.ts'], {cwd: desktop, env, stdio: 'inherit'});
+      child.on('error', reject);
+      child.on('exit', (code, signal) => code === 0 ? resolve() : reject(new Error(`${flag} build failed: ${signal ?? code}`)));
+    })));
+    const failures = results.filter(result => result.status === 'rejected');
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Secondary mobile entries did not all build.');
+  }
   execFileSync(path.join(desktop, 'node_modules/esbuild/bin/esbuild'), [path.join(desktop, 'shared/deepResearchReport.ts'),
     '--bundle', '--platform=browser', '--format=iife', '--global-name=NodusReport', '--target=es2020',
     '--outfile='+path.join(output,'report-renderer.js')], {cwd:desktop,stdio:'inherit'});
