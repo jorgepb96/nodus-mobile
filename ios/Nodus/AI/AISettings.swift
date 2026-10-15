@@ -27,6 +27,17 @@ final class AISettings {
         var argumentMap: ModelRef?
     }
 
+    private(set) var embeddingConfiguration: EmbeddingIdentity?
+    private let embeddingConfigurationKey = "nodus.ai.embedding-configuration.v1"
+    func setEmbeddingConfiguration(_ value: EmbeddingIdentity?) throws {
+        if let value {
+            guard let provider = AIProvider(rawValue: value.provider), provider.supportsEmbeddings,
+                  !value.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value.model.utf8.count <= 256,
+                  (1...65_536).contains(value.dim) else { throw DesktopBridgeError.malformedResponse }
+            store.set(try JSONEncoder.nodus.encode(value), forKey: embeddingConfigurationKey)
+        } else { store.set(Data(), forKey: embeddingConfigurationKey) }
+        embeddingConfiguration = value
+    }
     private(set) var models = Models()
     /// Models the user pinned, so a list of several hundred opens on the four they use.
     private(set) var pinnedModels: [ModelRef] = []
@@ -57,6 +68,7 @@ final class AISettings {
            let decoded = try? JSONDecoder().decode([ModelRef].self, from: data) {
             pinnedModels = decoded
         }
+        embeddingConfiguration = store.data(forKey: embeddingConfigurationKey).flatMap { try? JSONDecoder.nodus.decode(EmbeddingIdentity.self, from: $0) }
         refreshConfigured()
 #if DEBUG && targetEnvironment(simulator)
         // Used only by the isolated acceptance simulator. No secret enters XCTest
@@ -74,7 +86,7 @@ final class AISettings {
             } catch { /* Missing configuration remains a failing acceptance condition. */ }
         }
 #endif
-        store.onExternalChange(of: [defaultsKey, pinnedKey]) { [weak self] in self?.adoptRemote() }
+        store.onExternalChange(of: [defaultsKey, pinnedKey, embeddingConfigurationKey]) { [weak self] in self?.adoptRemote() }
     }
 
     /// Take what another device chose.
@@ -83,6 +95,7 @@ final class AISettings {
     /// those persist, and persisting a value that came from iCloud would stamp it as this
     /// device's own newer choice and send it straight back — see `SyncedDefaults`.
     private func adoptRemote() {
+        embeddingConfiguration = store.data(forKey: embeddingConfigurationKey).flatMap { try? JSONDecoder.nodus.decode(EmbeddingIdentity.self, from: $0) }
         if let data = store.data(forKey: defaultsKey),
            let decoded = try? JSONDecoder().decode(Models.self, from: data) {
             models = decoded

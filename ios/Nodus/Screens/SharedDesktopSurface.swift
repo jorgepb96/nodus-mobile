@@ -1079,7 +1079,7 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try await autonomous.argumentMaps(session: session)
                     } else if method == "mobileAcademicSource", args.count == 1 {
                         value = try await CompanionAcademicGeneration.source(session: session, request: args[0])
-                    } else if method == "mobileAcademicDownload", args.count == 2, let days = args[1].intValue, [7, 30].contains(days) {
+                    } else if method == "mobileAcademicDownload", args.count == 2, case .int(let rawDays) = args[1], let days = Int(exactly: rawDays), [7, 30].contains(days) {
                         try await CompanionAcademicGeneration.download(session: session, request: args[0], days: days); value = .null
                     } else if ["mobileDictionaryCheckpoint", "mobileGenerationCheckpoint"].contains(method) {
                         value = method == "mobileDictionaryCheckpoint" ? try await autonomous.dictionaryCheckpoint(args, session: session) : try await autonomous.generationCheckpoint(args, session: session)
@@ -1109,6 +1109,16 @@ private struct DesktopWebView: UIViewRepresentable {
                         autonomous.endAuthoring(generation); value = .null
                     } else if method == "mobileDeepResearchCheckpoints", args.isEmpty || args == [.string("summaries")] || args == [.string("reports")] {
                         value = try await autonomous.deepResearchCheckpoints(session: session, summaries: args.first == .string("summaries"), includeArchived: args.first == .string("reports"))
+                    } else if method == "mobileCompleteGuideSource", args.count == 1 {
+                        value = try await CompanionCompleteGuideSource.source(session: session, request: args[0])
+                    } else if method == "mobileCompleteGuideDownload", args.count == 2, case .int(let rawDays) = args[1], let days = Int(exactly: rawDays) {
+                        try await CompanionCompleteGuideSource.download(session: session, request: args[0], days: days); value = .null
+                    } else if method == "mobileCompleteGuideCatalog", args.isEmpty {
+                        value = try await CompanionCompleteGuideSource.catalog(session: session)
+                    } else if method == "mobileGuideCommonsResource", args.count == 2, let url = args[0].stringValue, let kind = args[1].stringValue {
+                        value = try await CompanionCompleteGuideSource.commonsResource(session: session, url: url, kind: kind)
+                    } else if method == "mobileEmbeddingConfiguration", args.isEmpty {
+                        value = try autonomous.embeddingConfiguration()
                     } else if method == "mobileSavedStructuredCompletion" {
                         value = try await autonomous.savedCompletion(args.first ?? .null, session: session)
                     } else if method == "mobileStructuredCompletion" {

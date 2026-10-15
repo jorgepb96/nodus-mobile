@@ -9,6 +9,7 @@ final class AutonomousSurfaceProvider {
     private let settings: AISettings
     private let provider: ProviderClient
     private let catalogue: ModelCatalogue
+    private let embeddings: EmbeddingService
     private var completions: [UUID: (generation: String, task: Task<JSONValue, Error>)] = [:]
     private var cancelled: Set<String> = []
     private var acceptedDeepResearchCompletions: Set<UUID> = []
@@ -24,6 +25,7 @@ final class AutonomousSurfaceProvider {
     init(settings: AISettings) {
         self.settings = settings
         provider = ProviderClient(keyProvider: settings.keyProvider)
+        embeddings = EmbeddingService(keyProvider: settings.keyProvider)
         catalogue = ModelCatalogue(keyProvider: settings.keyProvider)
     }
     func portableSettings(_ value: JSONValue) throws -> JSONValue {
@@ -104,6 +106,10 @@ final class AutonomousSurfaceProvider {
             }
         }
         return .array(values)
+    }
+    func embeddingConfiguration() throws -> JSONValue {
+        guard let configuration = settings.embeddingConfiguration else { return .null }
+        return try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(configuration))
     }
     func models(_ providerName: String, includeStatus: Bool) async throws -> JSONValue {
         guard let kind = AIProvider(rawValue: providerName), settings.hasKey(for: kind) else { throw DesktopBridgeError.permissionDenied }
@@ -386,12 +392,24 @@ final class AutonomousSurfaceProvider {
         let allowance = request["thinkingAllowance"]?.intValue ?? 0
         guard (0...131_072).contains(allowance) else { throw DesktopBridgeError.permissionDenied }
         let format = request["format"]?.stringValue ?? "json"
-        guard ["json", "text"].contains(format) else { throw DesktopBridgeError.malformedResponse }
+        guard ["json", "text", "embedding"].contains(format) else { throw DesktopBridgeError.malformedResponse }
         try Task.checkCancellation()
         guard !cancelled.contains(generation) else { throw CancellationError() }
         if request["completionKey"]?.stringValue != nil { acceptedDeepResearchCompletions.insert(completionId) }
         defer { acceptedDeepResearchCompletions.remove(completionId) }
-        let result = try await provider.complete(ChatRequest(model: model, messages: [.init(role: .system, content: system), .init(role: .user, content: user)], temperature: temperature, maxTokens: maxTokens + allowance, jsonMode: format == "json", researchParameters: parameters))
+        let result: String
+        if format == "embedding" {
+            guard system.isEmpty, model.provider.supportsEmbeddings,
+                  case .some(.int(let rawDimensions)) = request["embeddingDimensions"],
+                  let dimensions = Int(exactly: rawDimensions), (1...65_536).contains(dimensions) else { throw DesktopBridgeError.permissionDenied }
+            // A resumed job keeps its explicitly captured model, even if the next
+            // job's preference changed. Keys are still required on this device.
+            let configuration = EmbeddingIdentity(provider: model.provider.rawValue, model: model.model, dim: dimensions)
+            let vector = try await embeddings.embed(user, as: configuration)
+            result = String(decoding: try JSONEncoder.nodus.encode(vector), as: UTF8.self)
+        } else {
+            result = try await provider.complete(ChatRequest(model: model, messages: [.init(role: .system, content: system), .init(role: .user, content: user)], temperature: temperature, maxTokens: maxTokens + allowance, jsonMode: format == "json", researchParameters: parameters))
+        }
         let value = JSONValue.string(result)
         try await cache.storeIndexedGeneration(JSONEncoder.nodus.encode(value), vaultId: vault, recordId: record,
             indexId: "autonomous:completion-index:v1", entity: record)
