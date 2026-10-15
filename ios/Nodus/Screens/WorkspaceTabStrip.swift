@@ -11,6 +11,7 @@ import UIKit
 struct WorkspaceTabStrip: View {
     @Environment(WorkspaceTabs.self) private var workspaceTabs
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @ScaledMetric(relativeTo: .caption) private var scaledTouchHeight: CGFloat = 44
 
     let section: String
     let catalogueTitle: String
@@ -20,42 +21,53 @@ struct WorkspaceTabStrip: View {
     private var tabs: [WorkspaceTab] { workspaceTabs.tabs(in: section) }
     private var activeId: String? { workspaceTabs.activeTabId(in: section) }
     private var usesTouchTabs: Bool { UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact }
-    private var height: CGFloat {
-        usesTouchTabs
-            ? NodusChromeMetrics.compactWorkspaceTabs
-            : NodusChromeMetrics.workspaceTabs
-    }
-    private var catalogueWidth: CGFloat { usesTouchTabs ? 150 : 168 }
-    private var documentWidth: CGFloat { usesTouchTabs ? 218 : 260 }
+    private var height: CGFloat { max(44, scaledTouchHeight) }
+    private var compactCatalogue: Bool { usesTouchTabs && activeId != nil }
+    private var catalogueWidth: CGFloat { compactCatalogue ? 44 : usesTouchTabs ? 150 : 168 }
     private var localizedCatalogueTitle: String {
         Bundle.main.localizedString(forKey: catalogueTitle, value: catalogueTitle, table: nil)
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            catalogueTab
-            Divider().frame(height: 22)
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 0) {
-                        ForEach(tabs) { tab in
-                            documentTab(tab).id(tab.id)
+        GeometryReader { geometry in
+            let documentWidth: CGFloat = usesTouchTabs && geometry.size.width <= 600
+                ? max(44, geometry.size.width - catalogueWidth - 1)
+                : usesTouchTabs ? 218.0 : 260.0
+            HStack(spacing: 0) {
+                catalogueTab
+                Divider().frame(height: 22)
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 0) {
+                            ForEach(tabs) { tab in
+                                documentTab(tab, width: documentWidth).id(tab.id)
+                            }
                         }
+                        .fixedSize(horizontal: true, vertical: false)
                     }
-                    .fixedSize(horizontal: true, vertical: false)
-                }
-                .scrollIndicators(.hidden)
-                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                .accessibilityIdentifier("workspace-tabs-\(section)")
-                .onChange(of: activeId, initial: true) { _, id in
-                    guard let id else { return }
-                    withAnimation(NodusMotion.quick) { proxy.scrollTo(id, anchor: .center) }
+                    .scrollIndicators(.hidden)
+                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                    .accessibilityIdentifier("workspace-tabs-\(section)")
+                    .onChange(of: activeId, initial: true) { _, id in
+                        guard let id else { return }
+                        withAnimation(NodusMotion.quick) { proxy.scrollTo(id, anchor: .leading) }
+                    }
+                    .onChange(of: horizontalSizeClass) { _, _ in
+                        guard let activeId else { return }
+                        proxy.scrollTo(activeId, anchor: .leading)
+                    }
+                    .onChange(of: documentWidth) { _, _ in
+                        guard let activeId else { return }
+                        proxy.scrollTo(activeId, anchor: .leading)
+                    }
                 }
             }
         }
         .frame(height: height)
+        .frame(maxWidth: .infinity)
         .background(Color(uiColor: .secondarySystemBackground).opacity(0.94))
         .overlay(alignment: .bottom) { Divider() }
+        .clipped()
         .accessibilityElement(children: .contain)
         .background { keyboardCommands }
     }
@@ -64,7 +76,9 @@ struct WorkspaceTabStrip: View {
         Button { workspaceTabs.activateCatalog(in: section) } label: {
             HStack(spacing: 7) {
                 Image(systemName: catalogueImage).font(.system(size: 12, weight: .semibold))
-                Text(localizedCatalogueTitle).font(.caption.weight(.medium)).lineLimit(1)
+                if !compactCatalogue {
+                    Text(localizedCatalogueTitle).font(.caption.weight(.medium)).lineLimit(1)
+                }
             }
             .foregroundStyle(activeId == nil ? Color.primary : Color.nodusSecondaryText)
             .padding(.horizontal, 13)
@@ -82,7 +96,7 @@ struct WorkspaceTabStrip: View {
         .accessibilityIdentifier("workspace-catalogue-\(section)")
     }
 
-    private func documentTab(_ tab: WorkspaceTab) -> some View {
+    private func documentTab(_ tab: WorkspaceTab, width: CGFloat) -> some View {
         let isActive = activeId == tab.id
         return HStack(spacing: 5) {
             Button { workspaceTabs.activate(tab.id, in: section) } label: {
@@ -99,6 +113,8 @@ struct WorkspaceTabStrip: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .layoutPriority(-1)
             .accessibilityLabel(tab.title)
             .accessibilityAddTraits(isActive ? .isSelected : [])
             .accessibilityIdentifier("workspace-tab-\(section)-\(safeIdentifier(tab.id))")
@@ -106,16 +122,18 @@ struct WorkspaceTabStrip: View {
             Button { workspaceTabs.close(tab.id, in: section) } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
-                    .frame(width: usesTouchTabs ? 44 : 26, height: height)
+                    .frame(width: 44, height: height)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(isActive ? Color.nodusSecondaryText : Color.nodusTertiaryText)
             .accessibilityLabel("Close \(tab.title)")
             .accessibilityIdentifier("workspace-close-\(section)-\(safeIdentifier(tab.id))")
+            .fixedSize()
         }
         .padding(.leading, 11)
-        .frame(width: documentWidth, height: height)
+        .frame(width: width, height: height)
+        .clipped()
         .background(tabBackground(active: isActive))
         .overlay(alignment: .bottom) { selectionLine(active: isActive) }
         .overlay(alignment: .trailing) { Divider().frame(height: 18) }
