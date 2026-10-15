@@ -21,4 +21,10 @@ Los detalles y evidencias anteriores permanecen en [STATUS-2026-10-13.md](STATUS
 
 ## Entrega
 
-En preparación. Se registrarán aquí el resultado de archive/carga y la disponibilidad real en TestFlight cuando Apple la confirme. Las pruebas del iPhone físico corresponden al usuario después de recibirla.
+- Archive Release: **correcto**, firmado y verificado; app/extensión 0.1.0 (1002).
+- Fuentes del archivo: móvil `bd1f0081214bf90847c4714f4942dafc88c0b14f`; superficies Desktop `80c54bd09e0aa8d85f96b1978f05094fe7d2316f`.
+- Carga a Apple: **correcta**, `Upload succeeded` / `EXPORT SUCCEEDED`.
+- Disponibilidad en TestFlight: **pendiente del procesamiento de Apple y asignación al grupo interno**. No se presenta la carga como una beta ya instalable.
+- Las pruebas del iPhone físico corresponden al usuario después de recibirla. La campaña completa de aceptación continúa pendiente.
+
+El primer archive detectó errores de tipos en los helpers nuevos. Se corrigieron de forma acotada en `9698599`, `97be1b6` y `49043a0`; el segundo archive pasó. Los registros y `.xcresult` se conservan fuera de Git en `artifacts/testflight-0.1.0/2026-10-15` y el directorio privado del archivo.
