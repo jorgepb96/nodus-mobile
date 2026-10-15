@@ -87,8 +87,8 @@ struct CompanionDeepResearchCitationView: View {
                         guard ["snapshot", "ideas", "works", "passages", "gaps", "contradictions", "sources"].contains(field), let next = result.objectValue?[field] else { throw DesktopBridgeError.malformedResponse }
                         result = next
                     case .int(let position):
-                        guard let rows = result.arrayValue, rows.indices.contains(position) else { throw DesktopBridgeError.malformedResponse }
-                        result = rows[position]
+                        guard let index = Int(exactly: position), let rows = result.arrayValue, rows.indices.contains(index) else { throw DesktopBridgeError.malformedResponse }
+                        result = rows[index]
                     default: throw DesktopBridgeError.malformedResponse
                     }
                 }
