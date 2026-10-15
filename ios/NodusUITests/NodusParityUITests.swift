@@ -682,7 +682,26 @@ final class NodusParityUITests: XCTestCase {
         let evidence = databases.buttons["database-open-db-evidence"].firstMatch
         XCTAssertTrue(evidence.waitForExistence(timeout: 5)); evidence.tap()
         XCTAssertTrue(databases.buttons["workspace-tab-databases-db-evidence"].waitForExistence(timeout: 8))
-        XCTAssertTrue(databases.staticTexts["Weighted"].exists, "Formula columns must remain visible")
+        // Phone cards deliberately preview three properties. Use the real full
+        // table control to consult later columns rather than assuming Desktop's
+        // initial table layout on every device.
+        if databases.windows.firstMatch.frame.width < 600 {
+            let viewMenu = databases.buttons["database-view-menu"]
+            XCTAssertTrue(viewMenu.waitForExistence(timeout: 5)); viewMenu.tap()
+            let fullTable = databases.descendants(matching: .any)["database-full-table"].firstMatch
+            XCTAssertTrue(fullTable.waitForExistence(timeout: 5)); fullTable.tap()
+        }
+        let table = databases.scrollViews["database-table"].firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+        let formula = databases.staticTexts["Weighted"].firstMatch
+        for _ in 0..<12 {
+            if formula.isHittable { break }
+            table.swipeLeft()
+        }
+        XCTAssertTrue(formula.isHittable, "Formula columns must remain consultable in the full table")
+        XCTAssertGreaterThanOrEqual(formula.frame.minX, 0)
+        XCTAssertLessThanOrEqual(formula.frame.maxX, databases.windows.firstMatch.frame.maxX)
+        attachScreenshot(named: "database-full-table-formula")
         let board = databases.buttons["Review board"].firstMatch
         XCTAssertTrue(board.waitForExistence(timeout: 5)); board.tap()
         XCTAssertTrue(databases.staticTexts["In review"].waitForExistence(timeout: 5))
@@ -711,10 +730,30 @@ final class NodusParityUITests: XCTestCase {
             XCTAssertTrue(app.descendants(matching: .any)["study-courses-workspace"].waitForExistence(timeout: 5))
         }
         let courseTabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'workspace-tab-studyCourses-'"))
-        let courseClosers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'workspace-close-studyCourses-'"))
         XCTAssertTrue(courseTabs.element(boundBy: 1).waitForExistence(timeout: 10), "Study must keep simultaneous course dossiers")
-        courseTabs.element(boundBy: 1).tap()
-        courseClosers.element(boundBy: 1).tap()
+        let secondCourse = courseTabs.element(boundBy: 1)
+        let secondCloser = app.buttons[secondCourse.identifier.replacingOccurrences(of: "workspace-tab-", with: "workspace-close-")]
+        let courseStrip = app.descendants(matching: .any)["workspace-tab-strip-studyCourses"].firstMatch
+        XCTAssertTrue(courseStrip.exists)
+        // A second full-width phone tab is intentionally outside the viewport.
+        // Pan its own strip, just as a person does, before tapping either control.
+        for _ in 0..<8 {
+            if secondCourse.isHittable && app.windows.firstMatch.frame.contains(CGPoint(x: secondCourse.frame.midX, y: secondCourse.frame.midY)) { break }
+            courseStrip.swipeLeft()
+        }
+        XCTAssertTrue(secondCourse.isHittable)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(CGPoint(x: secondCourse.frame.midX, y: secondCourse.frame.midY)), "Scroll the course tab into the viewport before tapping")
+        XCTAssertGreaterThanOrEqual(secondCourse.frame.height + 0.01, 44)
+        secondCourse.tap()
+        for _ in 0..<8 {
+            if secondCloser.isHittable { break }
+            courseStrip.swipeLeft()
+        }
+        XCTAssertTrue(secondCloser.isHittable)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(CGPoint(x: secondCloser.frame.midX, y: secondCloser.frame.midY)))
+        XCTAssertGreaterThanOrEqual(secondCloser.frame.height + 0.01, 44)
+        XCTAssertGreaterThanOrEqual(secondCloser.frame.width + 0.01, 44)
+        secondCloser.tap()
         XCTAssertTrue(courseTabs.element(boundBy: 0).isSelected, "Closing the active course must select its neighbour")
 
         openRoute("teachingGrades", in: app)

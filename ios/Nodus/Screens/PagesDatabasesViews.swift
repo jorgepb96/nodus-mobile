@@ -684,9 +684,9 @@ struct DatabaseDetailWorkspace: View {
                             .buttonStyle(.bordered).tint(activeViewId == view.id ? session.accent : .secondary)
                     }
                     Menu {
-                        if compactPresentation { Toggle("Tabla completa", isOn: $phoneTable) }
+                        if compactPresentation { Toggle("Tabla completa", isOn: $phoneTable).accessibilityIdentifier("database-full-table") }
                         ForEach(["table", "list", "gallery", "board", "calendar", "timeline", "chart", "map", "feed", "dashboard"], id: \.self) { candidate in Button { activeViewId = nil; adHocLayout = candidate } label: { Label(candidate.capitalized, systemImage: layoutIcon(candidate)) } }
-                    } label: { Label("View", systemImage: "plus") }.buttonStyle(.bordered)
+                    } label: { Label("View", systemImage: "plus") }.buttonStyle(.bordered).accessibilityIdentifier("database-view-menu")
                 }
             }.scrollIndicators(.hidden)
             Spacer(minLength: 0)
@@ -739,6 +739,7 @@ struct DatabaseDetailWorkspace: View {
                 .frame(minHeight: proxy.size.height, alignment: .top)
             }
             .scrollIndicators(.visible)
+            .accessibilityIdentifier("database-table")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
