@@ -331,7 +331,8 @@ struct SpecialListView: View {
     @State private var rows: [Row] = []
     @State private var folders: [Row] = []
     @State private var total = 0
-    @State private var hasMore = false
+    @State private var reader = SpecialCatalogueReader()
+    @State private var requestID = UUID()
     @State private var error: String?
     @State private var isLoading = false
     @State private var outbox: OutboxController?
@@ -359,6 +360,9 @@ struct SpecialListView: View {
             NodusTopAnchorRow()
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load", message: LocalizedStringKey(error))
+                    .listRowBackground(Color.clear)
+                Button("Retry") { Task { await reload() } }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                     .listRowBackground(Color.clear)
             }
             ForEach(Array(visible.enumerated()), id: \.offset) { _, row in
@@ -436,13 +440,15 @@ struct SpecialListView: View {
         }
         .nodusSheet(isPresented: $composing) {
             NoteEditor(accent: session.accent, note: nil) { title, body in
-                await outbox?.queueNote(title: title, body: body, folderId: nil)
+                guard let outbox else { throw DesktopBridgeError.permissionDenied }
+                try await outbox.queueNote(title: title, body: body, folderId: nil)
                 queued = true
             }
         }
         .nodusSheet(item: $editing) { note in
             NoteEditor(accent: session.accent, note: note) { title, body in
-                await outbox?.queueNote(
+                guard let outbox else { throw DesktopBridgeError.permissionDenied }
+                try await outbox.queueNote(
                     id: note.id,
                     title: title,
                     body: body,
@@ -461,7 +467,7 @@ struct SpecialListView: View {
         } message: {
             Text("Send it from the send queue. It joins the vault when its owner next opens Nodus desktop and republishes — until then this list still shows what was published.")
         }
-        .task(id: session.publishedRevision) {
+        .task(id: [resource.rawValue, session.connection.spaceId, session.publishedRevision ?? ""]) {
             // The rows first, and the queue afterwards. The queue is a SQLite file being opened
             // and migrated, and opening it before the fetch meant Debates, Deep Research and
             // Immersion — none of which can write anything — all waited on a disk they were
@@ -481,8 +487,11 @@ struct SpecialListView: View {
 
     private func deleteNote(_ row: Row) async {
         guard let id = row.string("id") else { return }
-        await outbox?.queueNoteDeletion(id: id, title: row.text("title") ?? String(localized: "Untitled"))
-        queued = true
+        do {
+            guard let outbox else { throw DesktopBridgeError.permissionDenied }
+            try await outbox.queueNoteDeletion(id: id, title: row.text("title") ?? String(localized: "Untitled"))
+            queued = true
+        } catch { self.error = error.localizedDescription }
     }
 
     private var title: String {
@@ -566,29 +575,35 @@ struct SpecialListView: View {
     }
 
     private func reload() async {
+        let token = UUID(), client = session.client, spaceID = session.connection.spaceId
+        requestID = token
         isLoading = true
-        defer { isLoading = false }
+        defer { if requestID == token { isLoading = false } }
         do {
-            switch resource {
-            case .debates:
-                let page = try await session.client.debates(in: session.connection.spaceId, limit: 60)
-                rows = page.items; total = page.total; hasMore = page.hasMore
-            case .notes:
-                let page = try await session.client.notes(in: session.connection.spaceId, limit: 60)
-                rows = page.notes; folders = page.folders; total = page.total; hasMore = page.hasMore
-            case .deepResearch:
-                let page = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 60)
-                rows = page.items; total = page.total; hasMore = page.hasMore
-            case .immersion:
-                let page = try await session.client.immersionSessions(in: session.connection.spaceId, limit: 60)
-                rows = page.items; total = page.total; hasMore = page.hasMore
+            let loaded = try await reader.load(resource) { resource, limit, offset in
+                switch resource {
+                case .debates:
+                    return .init(page: try await client.debates(in: spaceID, limit: limit, offset: offset))
+                case .notes:
+                    let page = try await client.notes(in: spaceID, limit: limit, offset: offset)
+                    return .init(page: Page(items: page.notes, total: page.total, limit: page.limit, offset: page.offset,
+                        hasMore: page.hasMore, revision: page.revision), folders: page.folders)
+                case .deepResearch:
+                    return .init(page: try await client.deepResearchReports(in: spaceID, limit: limit, offset: offset))
+                case .immersion:
+                    return .init(page: try await client.immersionSessions(in: spaceID, limit: limit, offset: offset))
+                }
             }
+            guard requestID == token, let loaded, !Task.isCancelled else { return }
+            rows = loaded.page.items; total = loaded.page.total; folders = loaded.folders
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
-            rows = []; error = nil
+            guard requestID == token else { return }
+            rows = []; folders = []; total = 0; error = nil
         } catch where error.isCancellation {
-            // Superseded or let go of. Nothing failed, so nothing is reported.
+            // A replaced request never commits stale rows, errors or loading state.
         } catch {
+            guard requestID == token else { return }
             self.error = error.localizedDescription
         }
     }
