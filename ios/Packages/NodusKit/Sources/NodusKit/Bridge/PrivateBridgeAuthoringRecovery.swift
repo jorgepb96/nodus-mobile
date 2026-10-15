@@ -78,6 +78,8 @@ public actor PrivateBridgeAuthoringRecovery {
         public let recordCount: Int
         public let macIdentityKnown: Bool
         public let adopted: Bool
+        public let byteCount: Int64
+        public let isBusy: Bool
     }
     private struct Archive: Codable {
         var version = 1
@@ -93,13 +95,14 @@ public actor PrivateBridgeAuthoringRecovery {
         var forceReview: Bool? = nil
     }
     public enum RecoveryError: Error, LocalizedError {
-        case unclassifiedWork, recoveryRequired, revokedWrites, invalidArchive, activeGeneration
+        case unclassifiedWork, recoveryRequired, revokedWrites, invalidArchive, activeGeneration, archiveBusy
         public var errorDescription: String? {
             switch self {
             case .unclassifiedWork: "Hay trabajo local de una versión anterior que debe recuperarse antes de desvincular este Mac. No se ha borrado."
             case .recoveryRequired: "No se ha podido conservar todo el trabajo local. La conexión sigue disponible y no se ha borrado ningún borrador."
             case .revokedWrites: "Este enlace se está cerrando. El trabajo guardado se conserva para recuperarlo al volver a enlazar."
             case .activeGeneration: "Hay una generación en curso. Espera a que se guarde su resultado antes de desvincular o reemplazar este enlace."
+            case .archiveBusy: "Este archivo se está usando. Espera a que termine la exportación o recuperación."
             case .invalidArchive: "No se ha podido abrir el archivo de trabajo conservado. El original sigue guardado."
             }
         }
@@ -114,6 +117,7 @@ public actor PrivateBridgeAuthoringRecovery {
     }
     private let directory: URL
     private let keychain: KeychainStore
+    private var archiveUses: [UUID: UUID] = [:]
     public init(directory: URL = PrivateBridgeAuthoringRecovery.defaultDirectory, keychain: KeychainStore = KeychainStore()) {
         self.directory = directory; self.keychain = keychain
     }
@@ -198,9 +202,44 @@ public actor PrivateBridgeAuthoringRecovery {
         guard archive.sourcePairingId == receipt.pairingId else { throw RecoveryError.invalidArchive }
         archive.revoked = true; _ = try write(archive)
     }
+    /// Hold this lease until sharing or recovery finishes. Only the exact archive is protected.
+    public func beginArchiveUse(id: UUID) throws -> UUID {
+        _ = try read(id)
+        let token = UUID(); archiveUses[token] = id; return token
+    }
+    public func endArchiveUse(_ token: UUID) { archiveUses.removeValue(forKey: token) }
+    private func archiveIsBusy(_ id: UUID) -> Bool { archiveUses.values.contains(id) }
+    private func archiveByteCount(_ id: UUID) throws -> Int64 {
+        let manager = FileManager.default
+        var urls = [archiveURL(id)]
+        if manager.fileExists(atPath: recordsURL(id).path) {
+            let folder = try recordsURL(id).resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard folder.isDirectory == true, folder.isSymbolicLink != true else { throw RecoveryError.invalidArchive }
+            urls += try manager.contentsOfDirectory(at: recordsURL(id), includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        }
+        return try urls.reduce(Int64(0)) { total, url in
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true, let size = values.fileSize else { throw RecoveryError.invalidArchive }
+            let (sum, overflow) = total.addingReportingOverflow(Int64(size))
+            guard !overflow else { throw RecoveryError.invalidArchive }; return sum
+        }
+    }
+    /// Explicit user deletion only. Retained plaintext export leases are independent files.
+    public func delete(id: UUID) throws {
+        guard !archiveIsBusy(id) else { throw RecoveryError.archiveBusy }
+        _ = try read(id)
+        let folder = recordsURL(id)
+        if FileManager.default.fileExists(atPath: folder.path) {
+            let values = try folder.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true, values.isSymbolicLink != true else { throw RecoveryError.invalidArchive }
+            try FileManager.default.removeItem(at: folder)
+        }
+        try FileManager.default.removeItem(at: archiveURL(id))
+        try keychain.remove(keyName(id))
+    }
     public func discard(_ receipt: Receipt) throws {
         guard let id = UUID(uuidString: receipt.archiveURL.deletingPathExtension().lastPathComponent), receipt.archiveURL == archiveURL(id) else { throw RecoveryError.invalidArchive }
-        try FileManager.default.removeItem(at: archiveURL(id)); try keychain.remove(keyName(id))
+        try delete(id: id)
     }
     /// A new grant does not inherit permission to automatically replay old scoped receipts.
     @discardableResult
@@ -208,6 +247,9 @@ public actor PrivateBridgeAuthoringRecovery {
         guard !pairing.isExpired, pairing.domains.contains(.writing) else { return 0 }
         var count = 0
         for var archive in try archives() where archive.revoked && archive.macDeviceId == macDeviceId && archive.fingerprint == pairing.certificateFingerprint {
+            guard !archiveIsBusy(archive.id) else { throw RecoveryError.archiveBusy }
+            let use = try beginArchiveUse(id: archive.id)
+            defer { endArchiveUse(use) }
             let previous = archive.adoptedBy[pairing.id] ?? []
             let selected = archive.records.filter { record in
                 record.generationKind != "legacySurfaceStorage" && record.generationKind != "mutationOutbox" && record.generationKind != "discardedDatabaseFileChunk" && !previous.contains(record.filename) && (record.vaultId.map { pairing.vaultIds.contains($0) } ?? archive.vaultIds.isSubset(of: pairing.vaultIds))
@@ -225,12 +267,12 @@ public actor PrivateBridgeAuthoringRecovery {
     public func allSummaries() throws -> [ArchiveInfo] {
         try archives().filter { !$0.records.isEmpty }.map {
             ArchiveInfo(id: $0.id, createdAt: $0.createdAt, recordCount: $0.records.count,
-                macIdentityKnown: $0.macDeviceId != nil, adopted: !$0.adoptedBy.isEmpty)
+                macIdentityKnown: $0.macDeviceId != nil, adopted: !$0.adoptedBy.isEmpty, byteCount: try archiveByteCount($0.id), isBusy: archiveIsBusy($0.id))
         }
     }
     public func summaries(macDeviceId: String?, pairingId: String) throws -> [ArchiveInfo] {
         try archives().filter { $0.macDeviceId == nil || $0.macDeviceId == macDeviceId }.map {
-            ArchiveInfo(id: $0.id, createdAt: $0.createdAt, recordCount: $0.records.count, macIdentityKnown: $0.macDeviceId != nil, adopted: !($0.adoptedBy[pairingId] ?? []).isEmpty)
+            ArchiveInfo(id: $0.id, createdAt: $0.createdAt, recordCount: $0.records.count, macIdentityKnown: $0.macDeviceId != nil, adopted: !($0.adoptedBy[pairingId] ?? []).isEmpty, byteCount: try archiveByteCount($0.id), isBusy: archiveIsBusy($0.id))
         }
     }
     /// User-selected export of authored state, not a credential or a private reading cache.

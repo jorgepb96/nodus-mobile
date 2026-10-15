@@ -26,6 +26,40 @@ struct PrivateBridgeAuthoringRecoveryTests {
         func cache(_ id: String) throws -> PrivateBridgeCache { try PrivateBridgeCache(pairingId: id, directory: root, keychain: keychain) }
         func clean() { defaults.removePersistentDomain(forName: "authoring-recovery-\(id)"); try? FileManager.default.removeItem(at: root) }
     }
+    @Test("archive size reads existing encrypted files and deletion respects active leases and other archives")
+    func archiveStorageManagement() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let pairing = try f.pairing("storage")
+        let record = PrivateBridgeAuthoringRecovery.Record(filename: "work-" + String(repeating: "a", count: 64) + ".bridgecache", vaultId: "vault", data: Data("exact authored state".utf8), ledger: false, writing: true, recordId: "draft", generationKind: "mutationOutbox")
+        let snapshot = PrivateBridgeAuthoringRecovery.Snapshot(records: [record], fingerprints: [:])
+        let first = try await f.recovery.preserve(snapshot: snapshot, pairing: pairing, macDeviceId: "mac")
+        let second = try await f.recovery.preserve(snapshot: snapshot, pairing: pairing, macDeviceId: "mac")
+        let firstID = try #require(UUID(uuidString: first.archiveURL.deletingPathExtension().lastPathComponent))
+        let secondID = try #require(UUID(uuidString: second.archiveURL.deletingPathExtension().lastPathComponent))
+        let folder = first.archiveURL.deletingPathExtension().appendingPathExtension("records")
+        let filesBefore = try FileManager.default.contentsOfDirectory(atPath: folder.deletingLastPathComponent().path).sorted()
+        let bytes = try ([first.archiveURL] + FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)).reduce(Int64(0)) { total, url in
+            total + Int64(try url.resourceValues(forKeys: [.fileSizeKey]).fileSize!)
+        }
+        let infos = try await f.recovery.allSummaries()
+        #expect(infos.first { $0.id == firstID }?.byteCount == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.deletingLastPathComponent().path).sorted() == filesBefore)
+        let originalSecond = try await f.recovery.export(id: secondID)
+        let use = try await f.recovery.beginArchiveUse(id: firstID)
+        #expect(try await f.recovery.allSummaries().first { $0.id == firstID }?.isBusy == true)
+        await #expect(throws: PrivateBridgeAuthoringRecovery.RecoveryError.self) { try await f.recovery.delete(id: firstID) }
+        #expect(FileManager.default.fileExists(atPath: folder.path))
+        await f.recovery.endArchiveUse(use)
+        try await f.recovery.delete(id: firstID)
+        #expect(!FileManager.default.fileExists(atPath: first.archiveURL.path))
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+        #expect(f.keychain.value(for: first.recoveryKeyName) == nil)
+        #expect(try await f.recovery.export(id: secondID) == originalSecond)
+        #expect(try await f.recovery.allSummaries().map(\.id) == [secondID])
+        try await f.recovery.discard(second)
+        #expect(try await f.recovery.allSummaries().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: second.archiveURL.deletingPathExtension().appendingPathExtension("records").path))
+    }
     @Test("a confirmed file discard survives interrupted cleanup without orphaning chunks or retaining their bytes")
     func discardedFileCleanup() async throws {
         for discarded in [false, true] {
