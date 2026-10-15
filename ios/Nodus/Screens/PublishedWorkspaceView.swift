@@ -250,6 +250,7 @@ private struct PublishedWorkspaceItemView: View {
 
     private var canEdit: Bool {
         session.connection.role.canSendChanges && item != nil && loadedStorageID == session.connection.storageId
+            && item?.string("id") == summary.string("id")
     }
     private var hasChanges: Bool {
         guard let item else { return false }
@@ -320,7 +321,7 @@ private struct PublishedWorkspaceItemView: View {
         guard let id = summary.string("id") else { return }
         let storageID = session.connection.storageId, client = session.client, spaceID = session.connection.spaceId
         let token = UUID(); loadRequestID = token
-        if loadedStorageID != storageID { item = nil }
+        if loadedStorageID != storageID || item?.string("id") != id { item = nil }
         do {
             let loaded = try await client.note(id, in: spaceID)
             guard loadRequestID == token, session.connection.storageId == storageID, !Task.isCancelled else { return }
@@ -341,9 +342,10 @@ private struct PublishedWorkspaceItemView: View {
         saving = true; defer { saving = false }
         let titleToSave = draftTitle, contentToSave = draftContent
         let storageID = session.connection.storageId
+        let token = loadRequestID
         do {
             guard let outbox = await OutboxController.open(session: session) else { throw DesktopBridgeError.permissionDenied }
-            guard session.connection.storageId == storageID else { throw DesktopBridgeError.permissionDenied }
+            guard session.connection.storageId == storageID, loadRequestID == token else { throw DesktopBridgeError.permissionDenied }
             try await outbox.queueNote(
                 id: note.id,
                 title: titleToSave,
@@ -351,7 +353,7 @@ private struct PublishedWorkspaceItemView: View {
                 folderId: note.folderId,
                 createdAt: note.createdAt
             )
-            guard session.connection.storageId == storageID else { return }
+            guard session.connection.storageId == storageID, loadRequestID == token else { return }
             queued = true
             // Keep the queued draft as the new local baseline. The published server copy changes
             // only when the owner's desktop accepts the mutation, but the editor must not keep
@@ -359,7 +361,7 @@ private struct PublishedWorkspaceItemView: View {
             self.item = rowReplacing(item, title: titleToSave, content: contentToSave)
             error = nil
         } catch {
-            guard session.connection.storageId == storageID else { return }
+            guard session.connection.storageId == storageID, loadRequestID == token else { return }
             self.error = error.localizedDescription
         }
     }
