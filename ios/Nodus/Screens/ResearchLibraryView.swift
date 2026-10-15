@@ -1562,3 +1562,46 @@ private struct CompanionReportCoverImage: View {
         }
     }
 }
+
+/// Explicit access from the current gallery. Original IDs, images, send receipts
+/// and the original reader stay in their original store; nothing is migrated or
+/// reclassified as a new generation checkpoint.
+struct LegacyResearchReportsView: View {
+    let session: SpaceSession
+    @Bindable var local: LocalReportStore
+    var body: some View {
+        List {
+            if let checkpoint = DeepResearchCheckpointStore.load(spaceId: session.connection.storageId), !checkpoint.isComplete {
+                Section {
+                    if session.aiExecutionMode == .autonomous {
+                        NavigationLink("Continuar el informe anterior inacabado") {
+                            DeepResearchScreen(session: session, local: local)
+                        }
+                    } else {
+                        Text("Hay un informe anterior inacabado. Elige el modo autónomo para continuarlo con sus respuestas conservadas.")
+                    }
+                }
+            }
+
+            if local.reports.isEmpty {
+                ContentUnavailableView("No hay informes de versiones anteriores", systemImage: "doc.text")
+            } else {
+                Section {
+                    ForEach(local.reports) { saved in
+                        NavigationLink {
+                            LocalReportReader(session: session, local: local, saved: saved)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(saved.title)
+                                Text(saved.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                                if saved.wasSent { Label("Enviado al Mac", systemImage: "paperplane").font(.caption) }
+                            }
+                        }
+                    }
+                } header: { Text("Guardados en este dispositivo por versiones anteriores") }
+            }
+        }
+        .navigationTitle("Informes anteriores")
+        .nodusPageBackdrop(accent: session.accent)
+    }
+}

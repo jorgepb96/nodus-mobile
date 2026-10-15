@@ -60,7 +60,7 @@ enum CompanionDeepResearchResult {
               let bytes = cover["bytes"]?.stringValue, let mime = cover["mime"]?.stringValue,
               mime == "image/jpeg", bytes.utf8.count <= 7_000_000, Data(base64Encoded: bytes) != nil else { return .null }
         if dataURL { return .string("data:\(mime);base64,\(bytes)") }
-        return .object(["entityKind": .string("deep_research"), "entityId": .string(id), "requested": .bool(true), "status": .string("ready"), "provider": cover["model"]?.objectValue?["provider"] ?? .null, "model": cover["model"]?.objectValue?["model"] ?? .null, "style": cover["style"] ?? .null, "visualContext": cover["context"] ?? .null, "prompt": cover["prompt"] ?? .null, "assetRef": .null, "mimeType": .string(mime), "error": .null, "source": .string("ai"), "hasPrevious": .bool(false), "createdAt": fields["createdAt"] ?? .null, "updatedAt": fields["createdAt"] ?? .null])
+        return .object(["entityKind": .string("deep_research"), "entityId": .string(id), "requested": .bool(true), "status": .string("ready"), "provider": cover["model"]?.objectValue?["provider"] == .string("gemini") ? .string("google") : cover["model"]?.objectValue?["provider"] ?? .null, "model": cover["model"]?.objectValue?["model"] ?? .null, "style": cover["style"] ?? .null, "visualContext": cover["context"] ?? .null, "prompt": cover["prompt"] ?? .null, "assetRef": .null, "mimeType": .string(mime), "error": .null, "source": .string("ai"), "hasPrevious": .bool(false), "createdAt": fields["createdAt"] ?? .null, "updatedAt": fields["createdAt"] ?? .null])
     }
     static func draft(session: SpaceSession, id: String) async throws -> JSONValue? {
         try await checkpoint(session: session, id: id)?.objectValue?["report"]?.objectValue?["draft"]
@@ -105,7 +105,7 @@ struct CompanionDeepResearchCitationView: View {
                 for component in path {
                     switch component {
                     case .string(let field):
-                        guard ["frozen", "snapshot", "ideas", "works", "passages", "gaps", "contradictions", "sources"].contains(field), let next = result.objectValue?[field] else { throw DesktopBridgeError.malformedResponse }
+                        guard ["entries", "frozen", "snapshot", "ideas", "works", "passages", "gaps", "contradictions", "sources"].contains(field), let next = result.objectValue?[field] else { throw DesktopBridgeError.malformedResponse }
                         result = next
                     case .int(let position):
                         guard let index = Int(exactly: position), let rows = result.arrayValue, rows.indices.contains(index) else { throw DesktopBridgeError.malformedResponse }
@@ -117,6 +117,12 @@ struct CompanionDeepResearchCitationView: View {
                     guard let url = URL(string: citation), let capturedReference = CorpusReference(url), capturedReference.kind == reference.kind, capturedReference.recordId == reference.recordId else { throw DesktopBridgeError.malformedResponse }
                 } else {
                     guard result.objectValue?["id"] == .string(reference.recordId) else { throw DesktopBridgeError.malformedResponse }
+                }
+                if callKey == "source:study", let sourceID = result.objectValue?["sourceId"], let kind = result.objectValue?["kind"],
+                   let entries = value.objectValue?["calls"]?.objectValue?[callKey]?.objectValue?["output"]?.objectValue?["entries"]?.arrayValue {
+                    let capturedEntries = entries.filter { $0.objectValue?["sourceId"] == sourceID && $0.objectValue?["kind"] == kind }
+                    guard !capturedEntries.isEmpty else { throw DesktopBridgeError.malformedResponse }
+                    result = .object(["title": result.objectValue?["title"] ?? .null, "passages": .array(capturedEntries)])
                 }
                 if callKey == "source:completeGuide", let sourceKey = result.objectValue?["sourceKey"]?.stringValue,
                    let passages = value.objectValue?["calls"]?.objectValue?[callKey]?.objectValue?["output"]?.objectValue?["frozen"]?.objectValue?["snapshot"]?.objectValue?["passages"]?.arrayValue {

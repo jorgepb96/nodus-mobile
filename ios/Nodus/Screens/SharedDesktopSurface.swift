@@ -76,6 +76,7 @@ struct SharedDesktopSurface: View {
     @State private var citation: CorpusReference?
     @State private var sourceDocument: SourceDocumentTarget?
     @State private var nativeReport: SurfaceDestination?
+    @State private var legacyReports = false
     @State private var issue: String?
     @State private var surfaceMounted = false
     @State private var reloadRevision = 0
@@ -114,6 +115,7 @@ struct SharedDesktopSurface: View {
                     catch { issue = error.localizedDescription }
                 }; return
             }
+            if kind == "legacyResearchReports", surface == .deepResearch { legacyReports = true; return }
             if kind == "deepResearchReport" {
                 guard surface == .deepResearch, !id.isEmpty, id.utf8.count <= 1024 else { issue = "El informe solicitado no tiene una identidad válida."; return }
                 nativeReport = SurfaceDestination(path: "deep-research", id: id, location: nil, quote: nil); return
@@ -226,6 +228,12 @@ struct SharedDesktopSurface: View {
                 .modifier(SourceReaderSheetSizing())
                 .environment(\.dynamicTypeSize, textSize)
                 .nodusTextHierarchy()
+        }
+        .nodusSheet(isPresented: $legacyReports) {
+            NavigationStack {
+                LegacyResearchReportsView(session: session, local: LocalReportStore.shared(for: session.connection.storageId))
+                    .nodusModalClose(accent: session.accent)
+            }.environment(\.dynamicTypeSize, textSize).nodusTextHierarchy()
         }
         .nodusSheet(item: $nativeReport) { target in
             NavigationStack {
@@ -1109,6 +1117,8 @@ private struct DesktopWebView: UIViewRepresentable {
                         autonomous.endAuthoring(generation); value = .null
                     } else if method == "mobileDeepResearchCheckpoints", args.isEmpty || args == [.string("summaries")] || args == [.string("reports")] {
                         value = try await autonomous.deepResearchCheckpoints(session: session, summaries: args.first == .string("summaries"), includeArchived: args.first == .string("reports"))
+                    } else if method == "mobileStudyResearchSource", args.count == 1 {
+                        value = try await CompanionCompleteGuideSource.studySource(session: session, request: args[0])
                     } else if method == "mobileCompleteGuideSource", args.count == 1 {
                         value = try await CompanionCompleteGuideSource.source(session: session, request: args[0])
                     } else if method == "mobileCompleteGuideDownload", args.count == 2, case .int(let rawDays) = args[1], let days = Int(exactly: rawDays) {

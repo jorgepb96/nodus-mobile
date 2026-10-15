@@ -26,6 +26,18 @@ enum CompanionCompleteGuideSource {
               try JSONEncoder.nodus.encode(value).count <= 16_000_000 else { throw DesktopBridgeError.malformedResponse }
         return value
     }
+    static func studySource(session: SpaceSession, request: JSONValue) async throws -> JSONValue {
+        let downloaded = request.objectValue?["mobileSourceScope"] == .string("device_downloads")
+        if downloaded {
+            return .object(["packs": .array(try await CompanionStudyChatSources.packs(session: session)), "sourceScope": .string("device_downloads")])
+        }
+        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+        let response = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDeepResearchSource", args: [.object([
+            "request": request, "generationId": .string(UUID().uuidString.lowercased()), "stage": .string("studySnapshot"), "input": .array([]), "history": .array([]), "replies": .object([:])
+        ])])
+        guard let pack = response.objectValue?["value"], pack.objectValue?["vaultId"] == .string(vault) else { throw DesktopBridgeError.malformedResponse }
+        return .object(["packs": .array([pack]), "sourceScope": .string("linked_corpus")])
+    }
     static func source(session: SpaceSession, request: JSONValue) async throws -> JSONValue {
         let downloaded = request.objectValue?["mobileSourceScope"] == .string("device_downloads")
         if !downloaded { return .array([try await captured(session: session, request: request)]) }
@@ -143,8 +155,9 @@ extension CompanionCompleteGuideSource {
             guard mime == "application/json" else { throw DesktopBridgeError.malformedResponse }
             return try JSONDecoder.nodus.decode(JSONValue.self, from: response.data)
         }
-        guard ["text/html", "application/xhtml+xml", "text/plain"].contains(mime), response.data.count <= 3 * 1_048_576,
-              let text = String(data: response.data, encoding: .utf8) else { throw APIError(status: 415, message: "Esta página no ofrece texto HTML o UTF-8 legible en el móvil.") }
-        return .object(["url": .string(url), "finalUrl": .string(response.url.absoluteString), "kind": .string(mime == "text/plain" ? "text" : "html"), "body": .string(text), "contentType": .string(mime)])
+        guard ["text/html", "application/xhtml+xml", "text/plain"].contains(mime), response.data.count <= 3 * 1_048_576 else { throw APIError(status: 415, message: "Esta página no ofrece texto HTML o texto plano legible en el móvil.") }
+        // Decode in the shared browser host with the exact Desktop HTTP/meta
+        // charset rules, rather than dropping Latin-1 sources on this boundary.
+        return .object(["url": .string(url), "finalUrl": .string(response.url.absoluteString), "kind": .string(mime == "text/plain" ? "text" : "html"), "bodyBytes": .string(response.data.base64EncodedString()), "contentType": .string(response.headers["content-type"] ?? mime)])
     }
 }
