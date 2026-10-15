@@ -1057,7 +1057,7 @@ private struct DesktopWebView: UIViewRepresentable {
                         session.isSurfaceFullscreen = enabled; value = .null
                     } else if method == "mobileSettings", (session.connection.desktopPairingId == nil || ((surface == .studyIdeas || surface == .graph) && session.aiExecutionMode == .autonomous)) {
                         value = try autonomous.portableSettings(args.first ?? .null)
-                    } else if method == "studyKnowledgeCopy", (surface == .studyIdeas || (surface == .graph && ["estudio", "docencia"].contains(session.connection.vaultType ?? ""))), let action = args.first?.stringValue {
+                    } else if method == "studyKnowledgeCopy", (surface == .studyIdeas || (surface == .graph && (session.connection.vaultType == .estudio || session.connection.vaultType == .docencia))), let action = args.first?.stringValue {
                         value = try await CompanionStudyKnowledgeSources.perform(session:session,action:action,input:args.count>1 ? args[1]:nil)
                     } else if method == "snapshot" {
                         value = .object(try await session.client.snapshot(in: session.connection.spaceId).document)
