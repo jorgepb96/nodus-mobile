@@ -3,6 +3,8 @@ import SwiftUI
 
 struct LiveJobsView: View {
     let session: SpaceSession
+    @State private var visualSessions: [DeviceMapJob] = []
+    @State private var visualSessionsIssue: String?
     @State private var deviceMapsIssue: String?
     private struct DeviceMapJob: Identifiable { let id: String; let value: JSONValue }
     @State private var deviceMaps: [DeviceMapJob] = []
@@ -15,6 +17,25 @@ struct LiveJobsView: View {
             if let issue { Section { Text(issue).foregroundStyle(.red) } }
             if let deviceMapsIssue { Section("Trabajos del dispositivo") { Text(deviceMapsIssue).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) } }
             if loading { ProgressView() }
+            if let visualSessionsIssue { Section("Ediciones visuales conservadas") { Text(visualSessionsIssue).foregroundStyle(.red) } }
+            if !visualSessions.isEmpty {
+                Section("Ediciones visuales conservadas") {
+                    ForEach(visualSessions) { item in
+                        if let target = item.value.objectValue?["target"]?.objectValue?["id"]?.stringValue {
+                            NavigationLink {
+                                SharedDesktopSurface(session: session, surface: .deepResearch, initialResearchVisualReportId: target)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(item.value.objectValue?["source"]?.objectValue?["title"]?.stringValue ?? "Informe conservado").font(.headline)
+                                    Text("Fuente propia del dispositivo · edición de figuras").font(.caption)
+                                    Text(visualState(item.value.objectValue?["state"]?.stringValue ?? "pending")).font(.subheadline)
+                                    if let error = item.value.objectValue?["error"]?.stringValue { Text(error).foregroundStyle(.red).font(.caption) }
+                                }.fixedSize(horizontal: false, vertical: true)
+                            }.frame(minHeight: 44).accessibilityIdentifier("document-visual-session-\(item.id)")
+                        }
+                    }
+                }
+            }
             ForEach(deviceMaps) { item in
                 let summary = item.value
                 if let scope = summary.objectValue?["scope"]?.stringValue {
@@ -63,7 +84,7 @@ struct LiveJobsView: View {
                     if job?.state == .interrupted { Text("Review the result in the vault before starting this generation again.").font(.caption) }
                 }.padding(.vertical, 5)
             }
-            if pending.isEmpty, deviceMaps.isEmpty, !loading, issue == nil { ContentUnavailableView("No pending requests", systemImage: "tray") }
+            if pending.isEmpty, deviceMaps.isEmpty, visualSessions.isEmpty, !loading, issue == nil { ContentUnavailableView("No pending requests", systemImage: "tray") }
         }
         .navigationTitle("Trabajos y resultados")
         .accessibilityIdentifier("live-job-ledger")
@@ -71,10 +92,29 @@ struct LiveJobsView: View {
         .refreshable { await refresh() }
         .task {
             while !Task.isCancelled {
+                await loadVisualSessions()
                 await loadDeviceMaps()
                 do { try await Task.sleep(for: .seconds(1)) } catch { break }
             }
         }
+    }
+    private func visualState(_ state: String) -> String {
+        switch state {
+        case "capturing": "Descargando la fuente visual"
+        case "ready": "Fuente conservada en este dispositivo"
+        case "running": "Preparando figuras"
+        case "available": "Edición confirmada en el Mac"
+        case "failed": "Edición interrumpida: requiere revisión"
+        case "cancelled": "Generación detenida; trabajo conservado"
+        case "blocked": "Conflicto: trabajo local conservado"
+        default: "Pendiente de sincronización"
+        }
+    }
+    private func loadVisualSessions() async {
+        do {
+            visualSessions = try await CompanionDocumentVisualSession.summaries(session: session).compactMap { value in value.objectValue?["id"]?.stringValue.map { DeviceMapJob(id: $0, value: value) } }
+            visualSessionsIssue = nil
+        } catch { visualSessionsIssue = error.localizedDescription }
     }
     private func loadDeviceMaps() async {
         guard session.connection.desktopPairingId != nil else { return }

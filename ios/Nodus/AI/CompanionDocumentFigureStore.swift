@@ -14,6 +14,14 @@ import NodusKit
         return (try PrivateBridgeCache(pairingId: scope.cacheId), scope.recordVaultId,
                 try CompanionGenerationPublication.recordId(kind: parentKind, entity: entity), generation)
     }
+    private static func data(_ receipt: CompanionDocumentFigureAssets.Receipt, store: CompanionDocumentFigureAssets, parent: String, generation: UUID) async throws -> Data {
+        if receipt.parentRecordId == parent && receipt.generationId == generation { return try await store.data(receipt) }
+        return try await store.dataReferenced(receipt, parentRecordId: parent, generationId: generation)
+    }
+    private static func chunk(_ receipt: CompanionDocumentFigureAssets.Receipt, store: CompanionDocumentFigureAssets, parent: String, generation: UUID, offset: Int64, count: Int) async throws -> Data {
+        if receipt.parentRecordId == parent && receipt.generationId == generation { return try await store.read(receipt, offset: offset, count: count) }
+        return try await store.readReferenced(receipt, parentRecordId: parent, generationId: generation, offset: offset, count: count)
+    }
     static func store(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
         let (cache, vault, parent, generation) = try context(session, input)
         guard let object = input.objectValue, let owner = object["owner"]?.stringValue,
@@ -27,34 +35,79 @@ import NodusKit
         let hex = String(identity.prefix(32)), cuts = [8, 12, 16, 20]
         let formatted = hex.enumerated().map { (cuts.contains($0.offset) ? "-" : "") + String($0.element) }.joined()
         guard let id = UUID(uuidString: formatted) else { throw DesktopBridgeError.malformedResponse }
-        let receipt = try await CompanionDocumentFigureAssets(cache: cache, vaultId: vault).store(data: bytes, mimeType: mime, parentRecordId: parent, generationId: generation, figureId: figure, owner: owner, assetId: id, sourceCompletionRecordId: object["sourceCompletionRecordId"]?.stringValue)
+        let assets = CompanionDocumentFigureAssets(cache: cache, vaultId: vault)
+        let referenced = try await assets.referencedReceipts(parentRecordId: parent, generationId: generation)
+        let receipt: CompanionDocumentFigureAssets.Receipt
+        if let original = referenced.first(where: { $0.id == id && $0.owner == owner && $0.sha256 == hash && $0.mimeType == mime }) {
+            _ = try await assets.dataReferenced(original, parentRecordId: parent, generationId: generation)
+            receipt = original
+        } else {
+            receipt = try await assets.store(data: bytes, mimeType: mime, parentRecordId: parent, generationId: generation, figureId: figure, owner: owner, assetId: id, sourceCompletionRecordId: object["sourceCompletionRecordId"]?.stringValue)
+        }
         let source = "nodus-\(kind == "image" ? "image" : "capability")://chat/\(owner)/\(receipt.id.uuidString.lowercased())"
         return .object(["receipt": try receipt.jsonValue(), "source": .string(source), "attachmentId": .string(receipt.id.uuidString.lowercased()), "sha256": .string(receipt.sha256), "byteCount": .int(receipt.byteCount)])
+    }
+    /// A legacy poster is derived by the trusted native renderer from its exact
+    /// captured view and encrypted attachments, never from caller supplied PNG.
+    static func derivedPoster(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
+        let (cache, vault, parent, generation) = try context(session, input)
+        guard input.objectValue?["parentKind"] == .string("documentVisuals"),
+              let view = input.objectValue?["view"], let owner = input.objectValue?["owner"]?.stringValue,
+              let figure = UUID(uuidString: input.objectValue?["figureId"]?.stringValue ?? "") else { throw DesktopBridgeError.permissionDenied }
+        let store = CompanionDocumentFigureAssets(cache: cache, vaultId: vault)
+        let ownReceipts = try await store.receipts(parentRecordId: parent, generationId: generation, figureId: figure, owner: owner)
+        let receipts = ownReceipts + (try await store.referencedReceipts(parentRecordId: parent, generationId: generation)).filter { $0.figureId == figure && $0.owner == owner }
+        var referenced = Set<String>()
+        func visit(_ nodes: [JSONValue]) {
+            for node in nodes { if let id = node.objectValue?["attachmentId"]?.stringValue { referenced.insert(id.lowercased()) }; visit(node.objectValue?["children"]?.arrayValue ?? []) }
+        }
+        visit(view.objectValue?["nodes"]?.arrayValue ?? [])
+        var assets: [String: JSONValue] = [:], total: Int64 = 0
+        for receipt in receipts where referenced.contains(receipt.id.uuidString.lowercased()) {
+            total += receipt.byteCount
+            guard total <= 12 * 1_048_576 else { throw DesktopBridgeError.malformedResponse }
+            assets[receipt.id.uuidString.lowercased()] = .object(["base64": .string(try await data(receipt, store: store, parent: parent, generation: generation).base64EncodedString()), "mimeType": .string(receipt.mimeType)])
+        }
+        let png = try await CompanionDocumentFigureSnapshot.snapshot(.object(["view": view, "owner": .string(owner), "assets": .object(assets)]))
+        guard png.hasPrefix("data:image/png;base64,"), let bytes = Data(base64Encoded: String(png.dropFirst("data:image/png;base64,".count))) else { throw DesktopBridgeError.malformedResponse }
+        let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = SHA256.hash(data: Data("\(owner):image/png:\(hash)".utf8)).map { String(format: "%02x", $0) }.joined()
+        let hex = String(identity.prefix(32)), cuts = [8, 12, 16, 20]
+        guard let id = UUID(uuidString: hex.enumerated().map { (cuts.contains($0.offset) ? "-" : "") + String($0.element) }.joined()) else { throw DesktopBridgeError.malformedResponse }
+        let receipt = try await store.storeDerivedCapturedPoster(data: bytes, view: view, parentRecordId: parent, generationId: generation, figureId: figure, owner: owner, assetId: id)
+        return .object(["receipt": try receipt.jsonValue(), "source": .string("nodus-image://chat/\(owner)/\(id.uuidString.lowercased())"), "attachmentId": .string(id.uuidString.lowercased()), "sha256": .string(receipt.sha256), "byteCount": .int(receipt.byteCount)])
     }
     static func receipts(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
         let (cache, vault, parent, generation) = try context(session, input)
         let figure = input.objectValue?["figureId"]?.stringValue.flatMap(UUID.init(uuidString:))
-        let values = try await CompanionDocumentFigureAssets(cache: cache, vaultId: vault).receipts(parentRecordId: parent, generationId: generation, figureId: figure, owner: input.objectValue?["owner"]?.stringValue)
-        return .array(try values.map { try $0.jsonValue() })
+        let store = CompanionDocumentFigureAssets(cache: cache, vaultId: vault)
+        let own = try await store.receipts(parentRecordId: parent, generationId: generation, figureId: figure, owner: input.objectValue?["owner"]?.stringValue)
+        let referenced = try await store.referencedReceipts(parentRecordId: parent, generationId: generation).filter { (figure == nil || $0.figureId == figure) && (input.objectValue?["owner"]?.stringValue == nil || $0.owner == input.objectValue?["owner"]?.stringValue) }
+        return .array(try (own + referenced).map { try $0.jsonValue() })
     }
     static func read(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
         let (cache, vault, parent, generation) = try context(session, input)
         guard let value = input.objectValue?["receipt"] else { throw DesktopBridgeError.malformedResponse }
         let receipt = try CompanionDocumentFigureAssets.Receipt(value: value)
-        guard receipt.parentRecordId == parent, receipt.generationId == generation, receipt.vaultId == vault else { throw DesktopBridgeError.permissionDenied }
+        guard receipt.vaultId == vault else { throw DesktopBridgeError.permissionDenied }
         let store = CompanionDocumentFigureAssets(cache: cache, vaultId: vault)
         if let offset = input.objectValue?["offset"]?.intValue, let count = input.objectValue?["count"]?.intValue,
            let bounded = Int(exactly: count), (1...CompanionDocumentFigureAssets.chunkBytes).contains(bounded) {
-            return .string(try await store.read(receipt, offset: offset, count: bounded).base64EncodedString())
+            return .string(try await chunk(receipt, store: store, parent: parent, generation: generation, offset: offset, count: bounded).base64EncodedString())
         }
         guard receipt.byteCount <= 8 * 1_048_576 else { throw DesktopBridgeError.malformedResponse }
-        return .object(["base64": .string(try await store.data(receipt).base64EncodedString()), "mimeType": .string(receipt.mimeType)])
+        return .object(["base64": .string(try await data(receipt, store: store, parent: parent, generation: generation).base64EncodedString()), "mimeType": .string(receipt.mimeType)])
     }
     static func publish(_ input: JSONValue, session: SpaceSession) async throws -> JSONValue {
         let (cache, vault, parent, generation) = try context(session, input)
+        if input.objectValue?["parentKind"] == .string("documentVisuals") { try await CompanionDocumentVisualSession.requirePublishingSupport(session: session) }
         guard let raw = input.objectValue?["assets"]?.arrayValue, raw.count <= 1000 else { throw DesktopBridgeError.malformedResponse }
         let store = CompanionDocumentFigureAssets(cache: cache, vaultId: vault)
-        let receipts = try await store.receipts(parentRecordId: parent, generationId: generation)
+        let ownReceipts = try await store.receipts(parentRecordId: parent, generationId: generation)
+        let receipts = ownReceipts + (try await store.referencedReceipts(parentRecordId: parent, generationId: generation))
+        let parentData = try await cache.data(vaultId: vault, domain: .researchGeneration, recordId: parent)
+        let parentValue = try parentData.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) }
+        let captured = parentValue?.objectValue?["source"]?.objectValue?["capture"]?.objectValue?["assets"]?.arrayValue ?? []
         var results: [JSONValue] = []
         for asset in raw {
             guard let object = asset.objectValue, let id = UUID(uuidString: object["id"]?.stringValue ?? ""),
@@ -63,6 +116,14 @@ import NodusKit
                   object["generationId"] == .string(receipt.targetId), object["figureId"] == .string(receipt.figureKey),
                   object["mimeType"] == .string(receipt.mimeType), object["byteCount"]?.intValue == receipt.byteCount,
                   object["sha256"] == .string(receipt.sha256) else { throw DesktopBridgeError.permissionDenied }
+            if captured.contains(where: { $0.objectValue?["id"]?.stringValue?.lowercased() == receipt.id.uuidString.lowercased() && $0.objectValue?["owner"] == .string(receipt.owner) && $0.objectValue?["sha256"] == .string(receipt.sha256) }) {
+                // These bytes already belong to the exact captured Mac report.
+                // The visual command verifies their continued existence; this
+                // does not manufacture an upload or report publication ACK.
+                results.append(.object(["id": .string(receipt.id.uuidString.lowercased()), "state": .string("source-retained")]))
+                continue
+            }
+            if let derivation = receipt.derivation { guard object["derivation"] == .string(derivation), object["captureHash"] == receipt.captureHash.map(JSONValue.string) else { throw DesktopBridgeError.permissionDenied } }
             try await cache.requireGenerationExecutionAllowed(vaultId: vault, generationId: generation.uuidString.lowercased())
             var manifest = object
             manifest["version"] = .int(1); manifest["vaultId"] = .string(vault)

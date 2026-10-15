@@ -1245,6 +1245,8 @@ struct PublishedReportReader: View {
     let row: Row
 
     @Environment(AppPreferences.self) private var preferences
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
+    @State private var visualEditorOpen = false
     @State private var detail: DeepResearchReportDetail?
     @State private var error: String?
     @State private var translationOpen = false
@@ -1366,11 +1368,28 @@ struct PublishedReportReader: View {
             rows: detail?.annotations ?? []
         ))
         .toolbar {
+            if session.aiExecutionMode == .autonomous {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { visualEditorOpen = true } label: { Image(systemName: "photo.badge.plus") }
+                        .accessibilityLabel("Recursos visuales del informe")
+                        .accessibilityIdentifier("report-tool-visuals")
+                        .disabled(document == nil)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { translationOpen = true } label: { Image(systemName: "character.book.closed") }
                     .accessibilityLabel("Translations")
                     .accessibilityIdentifier("report-tool-translations")
                     .disabled(document == nil)
+            }
+        }
+        .sheet(isPresented: $visualEditorOpen, onDismiss: { Task { if let id = currentRow.string("id") { authoredFigureContext = await loadFigureContext(id) } } }) {
+            if let id = currentRow.string("id") {
+                NavigationStack {
+                    SharedDesktopSurface(session: session, surface: .deepResearch, initialResearchVisualReportId: id, downloadedOnly: downloadedOnly)
+                        .navigationTitle("Recursos visuales")
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { visualEditorOpen = false } } }
+                }.presentationDetents([.large])
             }
         }
         .sheet(isPresented: $translationOpen) {

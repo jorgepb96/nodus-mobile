@@ -151,6 +151,20 @@ public actor DesktopJobLedger {
             checkpointRecordId: recordId, checkpoint: checkpoint)
         try await persist()
     }
+    /// Preserve an explicitly superseded visual session without creating a report
+    /// publication or a sendable provider request.
+    public func archiveDocumentVisualCheckpoint(recordId: String, checkpoint: JSONValue) async throws {
+        guard let value = checkpoint.objectValue, value["kind"] == .string("documentVisuals"),
+              let id = value["id"]?.stringValue, UUID(uuidString: id) != nil,
+              value["source"]?.objectValue?["vaultId"] == .string(vaultId),
+              let entity = value["entityKey"]?.stringValue,
+              recordId == (try CompanionGenerationPublication.recordId(kind: "documentVisuals", entity: entity)),
+              try JSONEncoder.nodus.encode(checkpoint).count <= 50 * 1024 * 1024 else { throw DesktopBridgeError.permissionDenied }
+        if requests[id] != nil { return }
+        requests[id] = Request(id: id, method: "localDocumentVisuals", args: [], createdAt: Date(), jobId: nil,
+            state: "saved", issue: value["error"]?.stringValue, checkpointRecordId: recordId, checkpoint: checkpoint)
+        try await persist()
+    }
     /// Local observation of a paid DB action is never sendable as a provider job.
     public func archiveDatabaseActionCheckpoint(recordId: String, checkpoint: JSONValue) async throws {
         let value = try CompanionDatabaseActionCheckpoint(checkpoint)

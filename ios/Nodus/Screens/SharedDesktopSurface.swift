@@ -7,7 +7,7 @@ import QuickLook
 
 typealias MobileEditorFlush = @MainActor () async -> Bool
 
-enum DesktopSurface: String { case graph, dictionary, workspace, studyDocument, page, databasePresentation, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
+enum DesktopSurface: String { case graph, dictionary, workspace, studyIdeas, studyDocument, page, databasePresentation, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
 
 private struct MobileWritingResultTarget: Identifiable {
     let request: DesktopJobLedger.Request
@@ -58,6 +58,7 @@ extension SpaceSession {
 struct SharedDesktopSurface: View {
     let session: SpaceSession
     let surface: DesktopSurface
+    var initialResearchVisualReportId: String? = nil
     var initialDatabaseReportId: String? = nil
     var initialPageId: String? = nil
     var initialStudyDocumentId: String? = nil
@@ -93,9 +94,10 @@ struct SharedDesktopSurface: View {
     @State private var immersionPlan: ImmersionPlan?
     @State private var showImmersionProgress = false
     @State private var showWorkspaceOrganization = false
+    @State private var showStudyIdeaAssistant = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialResearchVisualReportId:initialResearchVisualReportId, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -124,6 +126,18 @@ struct SharedDesktopSurface: View {
                 guard let url = URL(string:id), let reference = CorpusReference(url) else { issue = "No se pudo abrir la fuente de esta cita."; return }
                 citation = reference; return
             }
+            if kind == "studyAssistant", surface == .studyIdeas {
+                do {
+                    guard let data = id.data(using: .utf8), data.count <= 256_000,
+                          let target = try JSONDecoder.nodus.decode(JSONValue.self, from: data).objectValue,
+                          let prompt = target["prompt"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                    let history = ChatHistoryStore.shared(spaceId: session.connection.storageId)
+                    let existing = try history.loadComposerDraft()
+                    try history.saveComposerDraft(existing.isEmpty ? prompt : existing + "\n\n" + prompt)
+                    showStudyIdeaAssistant = true
+                } catch { issue = error.localizedDescription }
+                return
+            }
             if kind == "section" {
                 guard NodusRoute(rawValue:id) != nil else { issue = "La sección solicitada no está disponible."; return }
                 NotificationCenter.default.post(name:.nodusMobileNavigate,object:nil,userInfo:["connectionId":session.connection.id,"route":id]); return
@@ -146,6 +160,7 @@ struct SharedDesktopSurface: View {
                 : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
             destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
         }
+        .nodusSheet(isPresented: $showStudyIdeaAssistant) { NavigationStack { ChatTab(session: session, showsModalDone: true) } }
         .id("\(session.connection.id):\(surface.rawValue):\(session.aiExecutionMode.rawValue):\(reloadRevision)")
         .overlay {
             if !surfaceMounted, issue == nil {
@@ -666,6 +681,7 @@ private struct DesktopWebView: UIViewRepresentable {
     let publicationRevision: Int
     let corpusRevision: String?
     let databaseReadingRevision:Int
+    let initialResearchVisualReportId: String?
     let initialDatabaseReportId: String?
     let initialPageId: String?
     let initialStudyDocumentId: String?
@@ -692,7 +708,7 @@ private struct DesktopWebView: UIViewRepresentable {
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
         config.userContentController.add(context.coordinator, name: "nodus")
-        var data: [String: Any] = ["surface": surface.rawValue, "pageDownloadedOnly":downloadedOnly, "initialPageId":initialPageId ?? "", "initialStudyDocumentId":initialStudyDocumentId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+        var data: [String: Any] = ["initialResearchVisualReportId":initialResearchVisualReportId ?? "", "surface": surface.rawValue, "vaultId":session.connection.vaultId, "pageDownloadedOnly":downloadedOnly, "initialPageId":initialPageId ?? "", "initialStudyDocumentId":initialStudyDocumentId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
             "documentDraftScope": session.connection.storageId, "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
         if let initialArgumentMap, let bytes = try? JSONEncoder.nodus.encode(initialArgumentMap), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialArgumentMap"] = value }
@@ -1038,8 +1054,10 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(vault))
                     } else if method == "surfaceFullscreen", let enabled = input.first as? Bool {
                         session.isSurfaceFullscreen = enabled; value = .null
-                    } else if method == "mobileSettings", session.connection.desktopPairingId == nil {
+                    } else if method == "mobileSettings", (session.connection.desktopPairingId == nil || ((surface == .studyIdeas || surface == .graph) && session.aiExecutionMode == .autonomous)) {
                         value = try autonomous.portableSettings(args.first ?? .null)
+                    } else if method == "studyKnowledgeCopy", (surface == .studyIdeas || (surface == .graph && ["estudio", "docencia"].contains(session.connection.vaultType ?? ""))), let action = args.first?.stringValue {
+                        value = try await CompanionStudyKnowledgeSources.perform(session:session,action:action,input:args.count>1 ? args[1]:nil)
                     } else if method == "snapshot" {
                         value = .object(try await session.client.snapshot(in: session.connection.spaceId).document)
                     } else if method == "dictionarySnapshotTables", input.isEmpty {
@@ -1149,6 +1167,43 @@ private struct DesktopWebView: UIViewRepresentable {
                         value = try autonomous.embeddingConfiguration()
                     } else if method == "mobileSavedStructuredCompletion" {
                         value = try await autonomous.savedCompletion(args.first ?? .null, session: session)
+                    } else if method == "mobileDocumentVisualResolve", args.count == 1, let id = args[0].stringValue {
+                        value = try await CompanionDocumentVisualSession.resolve(reportID: id, session: session)
+                    } else if method == "mobileDocumentVisualCheckpoint", args.count >= 2, let action = args[0].stringValue, let id = args[1].stringValue {
+                        value = try await CompanionDocumentVisualSession.checkpoint(action, reportID: id, value: args.count == 3 ? args[2] : nil, session: session)
+                    } else if method == "mobileDocumentVisualSource", args.count == 1, let id = args[0].stringValue {
+                        guard !downloadedOnly else { throw APIError(status: 404, code: "document_visual_source_not_downloaded", message: "Esta copia no conserva la fuente necesaria para editar las figuras. Descárgala explícitamente desde el Mac.") }
+                        value = try await CompanionDocumentVisualSession.source(reportID: id, session: session)
+                    } else if method == "mobileDocumentVisualCaptureAssets", args.count == 1, let id = args[0].stringValue {
+                        value = try await CompanionDocumentVisualSession.captureAssets(reportID: id, session: session, downloadedOnly: downloadedOnly)
+                    } else if method == "mobileDocumentVisualCanPublish", args.isEmpty {
+                        guard !downloadedOnly else { throw APIError(status: 503, code: "offline", message: "La edición visual permanece guardada en este dispositivo; la copia seleccionada no establece una conexión de sincronización.") }
+                        try await CompanionDocumentVisualSession.requirePublishingSupport(session: session); value = .null
+                    } else if method == "mobileDocumentVisualPublicationReady", args.count == 1, let id = args[0].stringValue {
+                        value = .bool(try await CompanionDocumentVisualSession.publicationReady(reportID: id, session: session))
+                    } else if method == "mobileDocumentVisualArchives", let id = args.first?.stringValue {
+                        value = try await CompanionDocumentVisualSession.archives(reportID: id, session: session, id: args.count == 2 ? args[1].stringValue : nil)
+                    } else if method == "mobileDocumentVisualImage", args.count >= 2, let id = args[0].stringValue, let source = args[1].stringValue {
+                        guard let context = try await CompanionDocumentVisualSession.context(reportID: id, generationID: args.count == 3 ? args[2].stringValue : nil, session: session) else { throw DesktopBridgeError.permissionDenied }
+                        let content = try await CompanionResearchFigures.load(source, context: context, session: session)
+                        value = .object(["base64": .string(content.data.base64EncodedString()), "mimeType": .string(content.mime)])
+                    } else if method == "mobileDocumentVisualOpenSource", args.count == 1, let source = args[0].stringValue, let url = URL(string: source) {
+                        if url.scheme == "nodus" { onNavigate("citation", source, nil, nil) }
+                        else if url.scheme == "https" { guard await UIApplication.shared.open(url) else { throw DesktopBridgeError.malformedResponse } }
+                        else { throw DesktopBridgeError.permissionDenied }
+                        value = .null
+                    } else if method == "mobileDocumentVisualExport", args.count == 2, let id = args[0].stringValue, let input = args[1].objectValue {
+                        guard let context = try await CompanionDocumentVisualSession.context(reportID: id, generationID: input["generationId"]?.stringValue, session: session) else { throw DesktopBridgeError.permissionDenied }
+                        if let svg = input["svg"]?.stringValue, let figureID = input["figureId"]?.stringValue, CompanionResearchFigures.svg(svg, figureID: figureID, context: context) {
+                            onExport(try PrivateBridgeFileLease.write(Data(svg.utf8), filename: "Nodus-figure.svg"))
+                        } else if let source = input["source"]?.stringValue {
+                            let content = try await CompanionResearchFigures.load(source, context: context, session: session)
+                            let ext = content.mime == "image/png" ? "png" : content.mime == "image/webp" ? "webp" : "jpg"
+                            onExport(try PrivateBridgeFileLease.write(content.data, filename: "Nodus-figure.\(ext)"))
+                        } else { throw DesktopBridgeError.permissionDenied }
+                        value = .null
+                    } else if method == "documentFigureDerivedPoster", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.derivedPoster(args[0], session: session)
                     } else if method == "documentFigureSnapshot", args.count == 1 {
                         value = .string(try await CompanionDocumentFigureSnapshot.snapshot(args[0]))
                     } else if method == "documentSvgEvaluate", args.count == 1 {
@@ -1158,7 +1213,7 @@ private struct DesktopWebView: UIViewRepresentable {
                     } else if method == "documentFigureAssetReceipts", args.count == 1 {
                         value = try await CompanionDocumentFigureStore.receipts(args[0], session: session)
                     } else if method == "documentFigurePublishAssets", args.count == 1 {
-                        value = try await CompanionDocumentFigureStore.publish(args[0], session: session)
+                        guard !downloadedOnly else { throw APIError(status: 503, code: "offline", message: "Las figuras están guardadas en este dispositivo y esperan una sincronización explícita con el Mac.") }; value = try await CompanionDocumentFigureStore.publish(args[0], session: session)
                     } else if method == "documentFigureReadAsset", args.count == 1 {
                         value = try await CompanionDocumentFigureStore.read(args[0], session: session)
                     } else if method == "mobileReadStructuredImage" {
@@ -1173,12 +1228,8 @@ private struct DesktopWebView: UIViewRepresentable {
                         guard let provider = args.first?.stringValue else { throw DesktopBridgeError.malformedResponse }
                         value = try await autonomous.models(provider, includeStatus: method == "getModelCatalog")
                     } else {
-                        let creationFields = args.first?.objectValue
                         let localIdeaCreation = method == "createManualIdea"
-                        let localCreation = localIdeaCreation || (method == "createNote" &&
-                            (creationFields?["kind"] == nil || creationFields?["kind"] == .string("markdown")) &&
-                            (creationFields?["source"] == nil || creationFields?["source"] == .null) &&
-                            creationFields?["content"] == .string(""))
+                        let localCreation = localIdeaCreation || method == "createNote"
                         if Self.operationDomains[method] == "research-generation", session.aiExecutionMode != .live, !localCreation,
                            !["cancelDatabaseDeepResearchJob","clearFinishedDatabaseDeepResearchJobs"].contains(method) {
                             throw APIError(status: 409, code: "explicit_mode_required", message: String(localized: "Choose live mode to run this operation on the Mac. The app does not switch execution modes automatically."))
@@ -1230,7 +1281,8 @@ private struct DesktopWebView: UIViewRepresentable {
                         } else if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
                             let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
-                            if localCreation, args.count == 1 {
+                            if localCreation {
+                                guard args.count == 1 else { throw DesktopBridgeError.malformedResponse }
                                 guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
                                 value = localIdeaCreation ? try await documents.createManualIdea(input: args[0]) : try await documents.create(input: args[0])
                                 Task { await session.synchronizeCompanionChanges() }
@@ -1283,10 +1335,14 @@ private struct DesktopWebView: UIViewRepresentable {
                                 }
                             }
                         } else if DesktopBridgeClient.jobMethods.contains(method) {
+                            if method == "saveMobileDeepResearchVisuals" {
+                                guard !downloadedOnly else { throw APIError(status: 503, code: "offline", message: "La edición permanece guardada en este dispositivo y espera sincronización.") }
+                                try await CompanionDocumentVisualSession.requirePublishingSupport(session: session)
+                            }
                             let first = input.first as? String
                             if method == "buildArgumentMap", first.flatMap({ UUID(uuidString: $0) }) != nil { args.removeFirst() }
                             let streamMethod = ["buildArgumentMap", "generateImmersionSession", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "exportDeepResearchArchive"].contains(method)
-                            let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveMobileAcademicResult"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
+                            let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveMobileAcademicResult", "saveMobileDeepResearchVisuals"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
                             let requestId = (persistedId ?? (streamMethod ? first : nil)).flatMap { UUID(uuidString: $0) == nil ? nil : $0 } ?? UUID().uuidString
                             let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vaultId)
                             _ = try await ledger.prepare(id: requestId, method: method, args: args)

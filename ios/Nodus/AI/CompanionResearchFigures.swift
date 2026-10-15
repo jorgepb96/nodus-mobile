@@ -5,6 +5,8 @@ import NodusKit
 /// Markdown source and UTF-16 annotation offsets remain unchanged.
 @MainActor enum CompanionResearchFigures {
     static func context(session: SpaceSession, reportID: String) async throws -> JSONValue? {
+        let identity = reportID.hasPrefix("mobile-dr-") ? String(reportID.dropFirst(10)) : reportID
+        if UUID(uuidString: identity) != nil, let context = try await CompanionDocumentVisualSession.context(reportID: identity, session: session) { return context }
         guard let checkpoint = try await CompanionDeepResearchResult.checkpoint(session: session, id: reportID, publishedReceipt: !reportID.hasPrefix("mobile-dr-")),
               let object = checkpoint.objectValue,
               let manifest = object["report"]?.objectValue?["mobileVisuals"]?.objectValue?["manifest"],

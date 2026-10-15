@@ -537,7 +537,7 @@ public actor DesktopBridgeClient {
         guard ["begin", "chunk", "status", "commit", "cancel"].contains(action),
               try JSONEncoder.nodus.encode(body).count <= 1024 * 1024 else { throw DesktopBridgeError.malformedResponse }
         if action == "begin" {
-            let capabilities = try await raw(path: "/bridge/v2/server-capabilities", method: "GET")
+            let capabilities = try await raw(path: "/bridge/v2/capabilities", method: "GET")
             let document = try JSONDecoder.nodus.decode(JSONValue.self, from: capabilities.data)
             guard document.objectValue?["researchFigureAssets"]?.objectValue?["version"] == .int(1),
                   document.objectValue?["researchFigureAssets"]?.objectValue?["chunkBytes"] == .int(512 * 1024) else {
