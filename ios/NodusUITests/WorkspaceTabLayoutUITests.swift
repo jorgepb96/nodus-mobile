@@ -36,6 +36,45 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
     }
 
     @MainActor
+    func testAuthorCatalogueActionsAndRelatedDossiersAreReachable() throws {
+        let app = launch(route: "authors", style: "light")
+        defer { app.terminate() }
+        app.buttons["workspace-catalogue-authors"].tap()
+        let search = app.textFields["nodus-search-field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.tap(); search.typeText("Mill\n")
+        let select = app.buttons["workspace-author-select-demo-a-mill"]
+        XCTAssertTrue(select.waitForExistence(timeout: 10)); select.tap()
+        let export = app.buttons["authors-export-selection"]
+        XCTAssertTrue(export.waitForExistence(timeout: 5) && export.isHittable)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(export.frame))
+        XCTAssertFalse(search.frame.intersects(export.frame), "Selection actions must not cover the search field.")
+        app.buttons["workspace-open-author-row-demo-a-mill"].tap()
+        let work = app.buttons["author-open-work-demo-w-mill-liberty"]
+        try reveal(work, in: app)
+        work.tap()
+        XCTAssertTrue(app.staticTexts["On Liberty"].waitForExistence(timeout: 15), app.debugDescription)
+        let back = app.navigationBars.buttons.firstMatch
+        XCTAssertTrue(back.exists && back.isHittable); back.tap()
+        let related = app.buttons["author-open-related-demo-a-tocqueville"]
+        try reveal(related, in: app)
+        related.tap()
+        XCTAssertTrue(app.buttons["workspace-tab-authors-authors-demo-a-tocqueville"].waitForExistence(timeout: 10))
+        let selected = try activeTab(app, section: "authors")
+        XCTAssertEqual(selected.identifier, "workspace-tab-authors-authors-demo-a-tocqueville")
+    }
+
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) throws {
+        XCTAssertTrue(element.waitForExistence(timeout: 15), app.debugDescription)
+        for _ in 0..<8 {
+            if element.isHittable { return }
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable, app.debugDescription)
+    }
+
+    @MainActor
     private func launch(route: String, style: String, accessible: Bool = false) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
