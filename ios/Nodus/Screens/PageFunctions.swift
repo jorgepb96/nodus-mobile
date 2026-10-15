@@ -136,7 +136,10 @@ private struct PageFunctionsModifier: ViewModifier {
                 // Only where there is a conversation to invite anybody into. Absent, the prose
                 // shows no "ask about this" in its selection menu rather than an inert one.
                 .environment(chat == nil ? nil : invite)
-                .onChange(of: chat?.id, initial: true) { _, id in invite.reportId = id }
+                .onChange(of: chat?.storeKey, initial: true) { previous, key in
+                    if previous != nil, previous != key { invite.isOpen = false }
+                    invite.reportId = key
+                }
                 // An inset rather than an overlay: the bar has to move with the keyboard, and
                 // the last paragraph of a report has to stay readable while it is on screen.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -197,6 +200,7 @@ private struct PageFunctionsModifier: ViewModifier {
                             // tapping a reference is to see the paragraph it names.
                             onReveal: { passage in search.reveal(passage.path) }
                         )
+                        .id(chat.storeKey)
                     }
                 }
                 // Every scrollable in the shell reports its position, including the ones on

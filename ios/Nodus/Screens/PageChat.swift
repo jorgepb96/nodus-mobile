@@ -23,7 +23,12 @@ struct PageChatSubject: Identifiable, Equatable {
     let title: String
     let session: SpaceSession
 
-    static func == (lhs: PageChatSubject, rhs: PageChatSubject) -> Bool { lhs.id == rhs.id }
+    @MainActor var storeKey: String { Self.storeKey(storageId: session.connection.storageId, reportId: id) }
+    nonisolated static func storeKey(storageId: String, reportId: String) -> String {
+        "\(storageId.utf8.count):\(storageId)\(reportId.utf8.count):\(reportId)"
+    }
+
+    static func == (lhs: PageChatSubject, rhs: PageChatSubject) -> Bool { lhs.id == rhs.id && lhs.session === rhs.session }
 }
 
 /// Opening a report's conversation from somewhere that is not the wheel.
@@ -40,7 +45,7 @@ final class PageChatInvite {
     // PageSearch. Avoid the inferred isolated-deinit runtime path (#88036).
     nonisolated deinit {}
 
-    /// The report whose conversation this page's chat belongs to.
+    /// The storage-scoped conversation key for this page (not the raw report ID).
     var reportId: String?
     /// Whether the modal is up. The page's own chat button sets it too, so there is one answer
     /// to "is the chat open" rather than two that can disagree.
@@ -331,7 +336,7 @@ final class PageChatStore {
                         guard let text=job.result.objectValue?["answer"]?.stringValue else {throw DesktopBridgeError.malformedResponse}
                         let checked=CitationValidator.validate(prose:text,against:pending.catalog)
                         if let index=turns.firstIndex(where:{$0.id == pending.answerId}) {
-                            turns[index].text=PageChatPrompt.dropUnknownReferences(checked.prose,count:pending.passageCount)
+                            turns[index].text=PageChatLiveWire.validatedMacAnswer(text,passageCount:pending.passageCount)
                             turns[index].passages=PageChatPrompt.referenced(in:turns[index].text,count:pending.passageCount)
                             let cited=checked.accepted.compactMap(pending.catalog.entry(for:))
                             if !cited.isEmpty {
@@ -543,7 +548,7 @@ struct PageChatSheet: View {
         self.passages = passages
         self.accent = accent
         self.onReveal = onReveal
-        _store = State(initialValue: PageChatStore.shared(for: subject.id))
+        _store = State(initialValue: PageChatStore.shared(for: subject.storeKey))
     }
 
     var body: some View {
@@ -803,6 +808,11 @@ private struct PageChatBubble: View {
 
 /// Only the existing research stream wire shape; no provider or prompt ID is invented.
 enum PageChatLiveWire {
+    /// Corpus tokens are already validated against the Mac retrieval context.
+    /// The local catalog enriches labels only; it cannot invalidate Mac sources.
+    nonisolated static func validatedMacAnswer(_ text: String, passageCount: Int) -> String {
+        PageChatPrompt.dropUnknownReferences(text, count: passageCount)
+    }
     @MainActor static func cancelRequest(vaultId:String,args:[JSONValue],id:String,send:(String,String,[JSONValue],String) async throws -> DesktopBridgeJob) async throws -> DesktopBridgeJob {
         guard args.count == 2,args[0] == .string(id),UUID(uuidString:id) != nil else {throw DesktopBridgeError.malformedResponse}
         return try await send(vaultId,"researchChatStream",args,id)

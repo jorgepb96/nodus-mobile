@@ -65,14 +65,35 @@ struct PageChatTests {
         let connection=AppModel.Connection(origin:"https://page-chat-preflight.test",spaceId:UUID().uuidString,spaceName:"Fixture",serverName:"Mac",role:.owner)
         let session=SpaceSession(connection:connection,client:NodusClient(address:ServerAddress(trusted:connection.origin),token:"fixture",cache:ResponseCache(directory:root)),mirrorDirectory:root)
         defer {UserDefaults.standard.removeObject(forKey:"ai-execution-mode:\(connection.id)")}
-        let id=UUID().uuidString,store=PageChatStore.shared(for:id)
-        defer {PageChatStore.forget(id)}
+        let id=UUID().uuidString,subject=PageChatSubject(id:id,title:"Fixture",session:session)
+        let store=PageChatStore.shared(for:subject.storeKey)
+        defer {PageChatStore.forget(subject.storeKey)}
         store.draft="Pregunta conservada";store.quote("Cita conservada")
-        store.ask(store.draft,passages:[],subject:PageChatSubject(id:id,title:"Fixture",session:session),ai:AISettings())
+        store.ask(store.draft,passages:[],subject:subject,ai:AISettings())
         #expect(store.draft == "Pregunta conservada" && store.quoted == "Cita conservada")
         #expect(store.turns.isEmpty && !store.isThinking && !store.canResumeMac)
         #expect(store.failure == BetaAIFeatures.macRequiredMessage)
     }
+    @Test("Mac corpus citations survive without a matching local catalog while invalid page anchors are removed")
+    func macCitationsRemainAuthoritative() {
+        let text = "Mac evidence (nodus://idea/mac-only-source), page [1] and [999]."
+        let local = CitationCatalog(entries: [])
+        #expect(!CitationValidator.validate(prose: text, against: local).rejected.isEmpty)
+        let answer = PageChatLiveWire.validatedMacAnswer(text, passageCount: 2)
+        #expect(answer.contains("nodus://idea/mac-only-source"))
+        #expect(answer.contains("[1]"))
+        #expect(!answer.contains("[999]"))
+    }
+
+    @Test("conversation keys separate owning storage and report identities without delimiter collisions")
+    func conversationScopeKeys() {
+        let a = PageChatSubject.storeKey(storageId: "vault-a", reportId: "same-report")
+        #expect(a != PageChatSubject.storeKey(storageId: "vault-b", reportId: "same-report"))
+        #expect(a != PageChatSubject.storeKey(storageId: "vault-a", reportId: "other-report"))
+        #expect(PageChatSubject.storeKey(storageId: "a:b", reportId: "c") != PageChatSubject.storeKey(storageId: "a", reportId: "b:c"))
+        #expect(a == PageChatSubject.storeKey(storageId: "vault-a", reportId: "same-report"))
+    }
+
     @Test("the passages an answer cites come back in the order they were used")
     func referencedInOrder() {
         let prose = "It says so in [3], and again in [1]. Also [3] once more."

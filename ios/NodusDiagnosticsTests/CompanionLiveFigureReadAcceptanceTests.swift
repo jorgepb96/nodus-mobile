@@ -113,13 +113,14 @@ final class CompanionLiveFigureReadAcceptanceTests: XCTestCase {
         let passages = paragraphs.enumerated().map { PageChatPassage(number: $0.offset + 1, path: [$0.offset], text: $0.element) }
         let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
         let before = Set(await ledger.all().map(\.id))
-        let store = PageChatStore.shared(for: fixture.reportID)
-        defer { PageChatStore.forget(fixture.reportID) }
+        let subject = PageChatSubject(id: fixture.reportID, title: "Aceptación de figuras Mac 0.1.0", session: session)
+        let store = PageChatStore.shared(for: subject.storeKey)
+        defer { PageChatStore.forget(subject.storeKey) }
         XCTAssertTrue(store.turns.isEmpty)
         let question = "¿De qué colores son la imagen y el recurso descritos en el segundo pasaje? Responde en una frase, basada en ese pasaje, y cita su número."
         store.draft = question
         store.ask(question, passages: passages,
-            subject: PageChatSubject(id: fixture.reportID, title: "Aceptación de figuras Mac 0.1.0", session: session), ai: AISettings())
+            subject: subject, ai: AISettings())
         let deadline = Date().addingTimeInterval(300)
         while store.isThinking && Date() < deadline { try await Task.sleep(for: .milliseconds(300)) }
         XCTAssertFalse(store.isThinking, "The actual Mac provider must finish within the diagnostic budget.")
