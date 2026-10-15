@@ -40,13 +40,7 @@ public actor MirrorStore {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         fileURL = folder.appendingPathComponent("mirror.sqlite")
 
-        var configuration = Configuration()
-        configuration.prepareDatabase { db in
-            // The corpus is read far more than it is written — once per import, then only
-            // read — so a generous page cache pays for itself on every list.
-            try db.execute(sql: "PRAGMA cache_size = -20000")
-        }
-        dbQueue = try DatabaseQueue(path: fileURL.path, configuration: configuration)
+        dbQueue = try DatabaseQueue(path: fileURL.path, configuration: Self.databaseConfiguration())
 #if os(iOS)
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUnlessOpen],
@@ -59,6 +53,30 @@ public actor MirrorStore {
         // tap re-downloads it, so restoring a phone should not spend an hour on it.
         BackupPolicy.apply(.excluded, to: fileURL)
         try migrate()
+        // WAL sidecars are equally reproducible corpus data. They are created by
+        // opening/migrating this handle, so mark them after that work completes.
+        for suffix in ["-wal", "-shm"] {
+            let companion = URL(fileURLWithPath: fileURL.path + suffix)
+            BackupPolicy.apply(.excluded, to: companion)
+#if os(iOS)
+            if FileManager.default.fileExists(atPath: companion.path) {
+                try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: companion.path)
+            }
+#endif
+        }
+    }
+
+    /// Multiple scene/session handles can share one mirror during snapshot refresh.
+    /// WAL keeps those readers on their committed revision while another handle imports;
+    /// a bounded busy timeout also permits short competing migration/write transactions.
+    nonisolated static func databaseConfiguration() -> Configuration {
+        var configuration = Configuration()
+        configuration.journalMode = .wal
+        configuration.busyMode = .timeout(5)
+        configuration.prepareDatabase { db in
+            try db.execute(sql: "PRAGMA cache_size = -20000")
+        }
+        return configuration
     }
 
     private nonisolated func migrate() throws {
