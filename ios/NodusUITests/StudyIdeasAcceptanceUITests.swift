@@ -10,7 +10,18 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         let value = try XCTUnwrap(ProcessInfo.processInfo.environment[key], "Required copied-lab configuration: " + key)
         guard !value.isEmpty else { throw SetupError.missingConfiguration }; return value
     }
-    @MainActor func testChosenSubjectCopyCreatesStructuredNoteAndReopensOffline() throws {
+    @MainActor func testConnectedAutonomousCopyCreatesStructuredNoteAndReopens() throws { try runCopy(phase: "connected") }
+    @MainActor func testPrepareChosenSubjectForOwningMacOfflinePhase() throws { try runCopy(phase: "prepare") }
+    @MainActor func testActuallyOfflineChosenSubjectCreatesStructuredNoteAndReopens() async throws {
+        let origin=try required("NODUS_ACCEPTANCE_OFFLINE_ORIGIN")
+        let url=try XCTUnwrap(URL(string:origin + "/bridge/v2/capabilities"))
+        let probe=URLSession(configuration:.ephemeral);defer{probe.invalidateAndCancel()}
+        var request=URLRequest(url:url);request.timeoutInterval=8
+        do { _ = try await probe.data(for:request);XCTFail("The copied owning Mac must actually be unavailable.");throw SetupError.missingConfiguration }
+        catch let error as URLError { XCTAssertTrue([.cannotConnectToHost,.networkConnectionLost,.notConnectedToInternet,.timedOut].contains(error.code));guard [.cannotConnectToHost,.networkConnectionLost,.notConnectedToInternet,.timedOut].contains(error.code) else { throw error } }
+        try runCopy(phase:"offline")
+    }
+    @MainActor private func runCopy(phase:String) throws {
         let enabled = try required("NODUS_ACCEPTANCE_STUDY_IDEAS_MUTATION")
         XCTAssertEqual(enabled, "1"); guard enabled == "1" else { throw SetupError.missingConfiguration }
         let vault = try required("NODUS_ACCEPTANCE_STUDY_VAULT")
@@ -22,8 +33,16 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         app.launch(); defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
         XCTAssertTrue(app.buttons["Cambiar de espacio"].waitForExistence(timeout:45)); app.buttons["Cambiar de espacio"].tap()
         let owning = app.buttons["space-" + vault]; XCTAssertTrue(owning.waitForExistence(timeout:20)); reveal(owning,app); owning.tap()
+        var before=Set<String>()
+        if phase == "offline" {
+            let encoded=try required("NODUS_ACCEPTANCE_STUDY_BASELINE_JSON")
+            let baseline=try XCTUnwrap(try JSONSerialization.jsonObject(with:Data(encoded.utf8)) as? [String:Any])
+            XCTAssertEqual(baseline["vaultId"] as? String,vault);XCTAssertEqual(baseline["courseId"] as? String,course);XCTAssertEqual(baseline["ideaLabel"] as? String,idea)
+            guard baseline["vaultId"] as? String == vault,baseline["courseId"] as? String == course,baseline["ideaLabel"] as? String == idea else { throw SetupError.missingConfiguration }
+            before=Set(try XCTUnwrap(baseline["noteIdentifiers"] as? [String]))
+        } else {
         try mode(app, autonomous:false)
-        let before = try notes(app, course:course, title:idea)
+        before = try notes(app, course:course, title:idea)
         try navigate(app,"studyIdeas")
         let selector = app.webViews.descendants(matching:.any).matching(NSPredicate(format:"label == %@", "Asignatura")).firstMatch
         XCTAssertTrue(selector.waitForExistence(timeout:30)); selector.tap()
@@ -35,6 +54,11 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         let download = app.buttons["Descargar 7 días"]; XCTAssertTrue(download.waitForExistence(timeout:15)); download.tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@", "Disponible en este dispositivo durante 7")).firstMatch.waitForExistence(timeout:60))
         try mode(app, autonomous:true)
+        if phase == "prepare" {
+            let baseline:[String:Any]=["vaultId":vault,"courseId":course,"ideaLabel":idea,"noteIdentifiers":before.sorted()]
+            let data=try JSONSerialization.data(withJSONObject:baseline,options:[.sortedKeys]);let attachment=XCTAttachment(data:data,uniformTypeIdentifier:"public.json");attachment.name="study-ideas-offline-baseline.json";attachment.lifetime = .keepAlways;add(attachment);return
+        }
+        }
         app.terminate(); app.launch(); try navigate(app,"studyIdeas")
         let row = app.buttons.containing(NSPredicate(format:"label CONTAINS %@",idea)).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout:30)); reveal(row,app); row.tap()
@@ -43,7 +67,9 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","Apunte guardado en este dispositivo")).firstMatch.waitForExistence(timeout:20))
         app.terminate(); app.launch()
         let after = try notes(app,course:course,title:idea)
-        let created = after.subtracting(before); XCTAssertEqual(created.count,1,"One explicit save creates exactly one discoverable document after restart.")
+        let created = after.subtracting(before);
+        let receipt=XCTAttachment(string:created.sorted().joined(separator:"\n"));receipt.name="study-ideas-created-note-identifiers";receipt.lifetime = .keepAlways;add(receipt)
+        XCTAssertEqual(created.count,1,"One explicit save creates exactly one discoverable document after restart.")
         let id = try XCTUnwrap(created.first); let note = app.buttons[id]; reveal(note,app); note.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout:30))
         for orientation in [UIDeviceOrientation.landscapeLeft,.portrait] {
