@@ -130,4 +130,48 @@ private actor PageProbe {
         requests.append(request);if lose{throw URLError(.networkConnectionLost)}
         return .object(["id":.string(request.id),"document":document,"assets":.array([]),"dependencies":.array([])])
     }
+    @Test("Action-created pages retain structured edits offline and wait for their exact creation receipt")
+    func actionPageDependency() async throws {
+        let (cache,directory,keychain,id)=try setup(); defer {try? FileManager.default.removeItem(at:directory);try? keychain.remove(KeychainStore.desktopBridgeCacheKey(pairingId:id))}
+        let actionId = UUID().uuidString.lowercased(), rowId = "drow-exact", pageId = "row:drow-exact"
+        let originalBlocks: [JSONValue] = [
+            .object(["id":.string("table"),"type":.string("table"),"content":.object(["rows":.array([.array([.string("Original cell")])]),"columnWidths":.array([.int(180)])])]),
+            .object(["id":.string("child"),"parentBlockId":.string("table"),"type":.string("paragraph"),"content":.object(["text":.string("Nested source"),"reference":.object(["id":.string("actual-reference")])])])]
+        let checkpoint = try CompanionDatabaseActionCheckpoint(.object(["version":.int(1),"vaultId":.string("vault"),"id":.string(actionId),
+            "request":.object(["rowId":.string("source-row"),"columnId":.string("button"),"kind":.string("button"),"revision":.string(String(repeating:"a",count:64))]),"model":.null,
+            "createdAt":.string("2026-10-15T10:00:00Z"),"state":.string("failed"),
+            "source":.object(["plan":.object(["operations":.array([.object(["type":.string("create_page"),"rowId":.string(rowId),"databaseId":.string("destination"),"blocks":.array(originalBlocks)])])])]),
+            "buttonResult":.object(["clickedAt":.string("2026-10-15T10:00:00Z"),"completedSteps":.int(1),"pendingWebhook":.int(1),"webhooks":.object([:])])]))
+        let store = try await open(cache)
+        #expect(try await store.prepareDatabaseActionPage(checkpoint:checkpoint,rowId:rowId) == pageId)
+        let first = try #require(await store.document(pageId:pageId))
+        #expect(first.objectValue?["blocks"]?.arrayValue?.map { $0.objectValue?["content"] } == originalBlocks.map { $0.objectValue?["content"] })
+        let native: JSONValue = .array([.object(["id":.string("table"),"type":.string("table"),"content":.object(["type":.string("tableContent"),"rows":.array([.object(["cells":.array([.array([.object(["type":.string("text"),"text":.string("Edited cell"),"styles":.object(["bold":.bool(true)])])])])])])])])])
+        var editedBlocks = originalBlocks
+        var table = editedBlocks[0].objectValue!, content = table["content"]!.objectValue!
+        content["rows"] = .array([.array([.string("Edited cell")])]);table["content"] = .object(content);editedBlocks[0] = .object(table)
+        let edit: JSONValue = .object(["pageId":.string(pageId),"expectedRevision":.int(-1),"title":.string("Edited offline"),"blocks":.array(editedBlocks),"nativeDocument":native,"markdown":.string("Editor projection"),"reason":.string("Explicit edit")])
+        _ = try await store.save(pageId:pageId,input:edit)
+        let reopened = try await open(cache)
+        #expect(await reopened.document(pageId:pageId)?.objectValue?["nativeDocument"] == native)
+        try await reopened.synchronize { _ in Issue.record("No page save may precede the owning creation receipt");throw URLError(.notConnectedToInternet) }
+        var canonical = first.objectValue!
+        canonical["revision"] = .int(4);canonical["blocks"] = .array(originalBlocks)
+        var metadata = canonical["page"]!.objectValue!;metadata["revision"] = .int(7);canonical["page"] = .object(metadata)
+        let receipt = DesktopJobLedger.Request(id:actionId,method:"saveMobileDatabaseButtonResult",args:[],createdAt:Date(),jobId:"actual-job",state:"available",issue:nil,result:.object(["createdPages":.array([.object(canonical)])]))
+        try await cache.store(JSONEncoder.nodus.encode([actionId:receipt]),vaultId:"vault",domain:.researchGeneration,recordId:"job-ledger-v1")
+        let committedBase = canonical, expectedBlocks = editedBlocks
+        try await reopened.synchronize { request in
+            #expect(request.input.objectValue?["expectedRevision"] == .int(4))
+            #expect(request.input.objectValue?["expectedPageRevision"] == .int(7))
+            #expect(request.input.objectValue?["blocks"] == .array(expectedBlocks))
+            #expect(request.input.objectValue?["nativeDocument"] == native)
+            var committed = committedBase;committed["revision"] = .int(5);committed["blocks"] = .array(expectedBlocks);committed["nativeDocument"] = native
+            return .object(["id":.string(request.id),"document":.object(committed)])
+        }
+        let final = try await open(cache)
+        #expect(await final.authoredSource(pageId:pageId)?.objectValue?["document"]?.objectValue?["nativeDocument"] == native)
+        #expect(await final.hasDraft(pageId:pageId) == false)
+    }
+
 }

@@ -10,6 +10,11 @@ public actor CompanionPageDocuments {
         public let input: JSONValue
         let generation: Int
     }
+    private struct DatabaseActionPrerequisite: Codable {
+        let requestId: String
+        let rowId: String
+        let originalBlocks: [JSONValue]
+    }
     private struct Record: Codable {
         var baseline: JSONValue
         var input: JSONValue
@@ -18,6 +23,7 @@ public actor CompanionPageDocuments {
         var state: String
         var remote: JSONValue?
         var issue: String?
+        var databaseAction: DatabaseActionPrerequisite? = nil
     }
     private struct StoredState: Codable {
         var version: Int
@@ -110,6 +116,59 @@ public actor CompanionPageDocuments {
         let input: JSONValue = .object(["pageId": .string(id), "expectedRevision": .int(1), "title": .string(title), "markdown": .string(""), "blocks": .array([]), "reason": .string("Página creada en el móvil")])
         return try await save(pageId: id, input: input).objectValue!["document"]!
     }
+    /// Open only a real, confirmed create_page operation. Its original blocks
+    /// remain the immutable creation baseline; later editor drafts are separate.
+    public func prepareDatabaseActionPage(checkpoint: CompanionDatabaseActionCheckpoint, rowId: String) async throws -> String {
+        guard checkpoint.value.objectValue?["vaultId"] == .string(vaultId), checkpoint.value.objectValue?["recoveryReviewRequired"] != .bool(true),
+              let receipt = checkpoint.value.objectValue?["buttonResult"]?.objectValue,
+              let count = receipt["completedSteps"]?.intValue, let clicked = receipt["clickedAt"]?.stringValue,
+              let plan = checkpoint.value.objectValue?["source"]?.objectValue?["plan"],
+              let operations = try CompanionDatabaseActionCheckpoint.instantiate(plan, requestId: checkpoint.id, clickedAt: clicked).objectValue?["operations"]?.arrayValue,
+              count >= 0, count <= operations.count,
+              let creation = operations.prefix(count).first(where: { $0.objectValue?["type"] == .string("create_page") && $0.objectValue?["rowId"] == .string(rowId) }),
+              let blocks = creation.objectValue?["blocks"]?.arrayValue else { throw DesktopBridgeError.permissionDenied }
+        let pageId = "row:" + rowId
+        if records[pageId] != nil || authored[pageId] != nil { return pageId }
+        var title = ""
+        let columns = checkpoint.value.objectValue?["source"]?.objectValue?["automationContext"]?.objectValue?["columns"]?.arrayValue ?? []
+        if let column = columns.first(where: { $0.objectValue?["type"] == .string("title") && $0.objectValue?["databaseId"] == creation.objectValue?["databaseId"] })?.objectValue?["id"]?.stringValue {
+            title = try checkpoint.projectedCells()[rowId]?[column]?.stringValue ?? ""
+        }
+        let metadata: JSONValue = .object(["id":.string(pageId),"rowId":.string(rowId),"origin":.string("database_row"),"title":.string(title),"state":.string("active"),"revision":.int(1),"locked":.bool(false),"fullWidth":.bool(false)])
+        let baseline: JSONValue = .object(["page":metadata,"revision":.int(1),"blocks":.array(blocks),"markdown":.string(""),"nativeDocument":.null,"schemaVersion":.int(1)])
+        try Self.validate(baseline, id:pageId, local:false)
+        let input: JSONValue = .object(["pageId":.string(pageId),"expectedRevision":.int(1),"title":.string(title),"blocks":.array(blocks),"markdown":.string(""),"reason":.string("Página creada por acción local")])
+        records[pageId] = Record(baseline:baseline,input:input,generation:1,state:"pending",databaseAction:DatabaseActionPrerequisite(requestId:checkpoint.id,rowId:rowId,originalBlocks:blocks))
+        try await persist()
+        return pageId
+    }
+    private func reconcileDatabaseAction(pageId: String) async throws -> Bool {
+        guard var record = records[pageId], let dependency = record.databaseAction else { return true }
+        guard let bytes = try await cache.data(vaultId:vaultId,domain:.researchGeneration,recordId:"job-ledger-v1") else { return false }
+        let ledger = try JSONDecoder.nodus.decode([String:DesktopJobLedger.Request].self,from:bytes)
+        guard let latest = records[pageId], latest.databaseAction?.requestId == dependency.requestId else { return false }
+        record = latest
+        guard let action = ledger[dependency.requestId], action.state == "available", action.method == "saveMobileDatabaseButtonResult",
+              let document = action.result?.objectValue?["createdPages"]?.arrayValue?.first(where: { $0.objectValue?["page"]?.objectValue?["id"] == .string(pageId) }) else { return false }
+        try Self.validate(document,id:pageId,local:false)
+        guard document.objectValue?["page"]?.objectValue?["rowId"] == .string(dependency.rowId),
+              let blocks = document.objectValue?["blocks"]?.arrayValue else { throw DesktopBridgeError.malformedResponse }
+        func canonicalBlocks(_ blocks:[JSONValue]) -> [JSONValue] {
+            blocks.map { block in
+                let fields = block.objectValue ?? [:]
+                return .object(["id":fields["id"] ?? .null,"type":fields["type"] ?? .null,"content":fields["content"] ?? .null,"parentBlockId":fields["parentBlockId"] ?? .null])
+            }
+        }
+        guard canonicalBlocks(blocks) == canonicalBlocks(dependency.originalBlocks) else {
+            throw APIError(status:409,code:"database_action_page_conflict",message:"El contenido confirmado de la página cambió. El borrador estructurado se conserva sin sobrescribir el Mac.")
+        }
+        let source: JSONValue = .object(["version":.int(1),"vaultId":.string(vaultId),"document":document])
+        authored[pageId] = source; baselines[pageId] = document
+        if record.generation == 1 { records[pageId] = nil; acknowledged[pageId] = -1 }
+        else { record.baseline = document; record.databaseAction = nil; record.sending = nil; records[pageId] = record }
+        try await persist()
+        return records[pageId] != nil
+    }
     public func document(pageId: String) -> JSONValue? {
         guard let record = records[pageId] else { return nil }
         var document = record.baseline.objectValue!
@@ -150,6 +209,7 @@ public actor CompanionPageDocuments {
     public func synchronize(send: @Sendable (Request) async throws -> JSONValue) async throws {
         guard !synchronizing else { return }; synchronizing = true; defer { synchronizing = false }
         for pageId in records.keys.sorted() {
+            guard try await reconcileDatabaseAction(pageId:pageId) else { continue }
             while var record = records[pageId], record.state == "pending" {
                 if record.sending == nil {
                     var fields = record.input.objectValue!

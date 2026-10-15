@@ -145,6 +145,15 @@ import NodusKit
             throw error
         }
     }
+    static func resolveInterruptedButton(session: SpaceSession, checkpoint: CompanionDatabaseActionCheckpoint) async throws -> DesktopJobLedger.Request {
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+        let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        try cache.beginAuthoringActivity(); defer { cache.endAuthoringActivity() }
+        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vault)
+        let result = try await journal(session: session).resolveInterruptedButton(checkpoint, ledger: ledger)
+        session.didSaveCompanionResult()
+        return result
+    }
     static func runButton(session:SpaceSession,rowId:String,columnId:String)async throws->DesktopJobLedger.Request {
         let input=request(rowId:rowId,columnId:columnId,kind:"button"),source=try await source(session:session,input:input)
         var fields=input.objectValue!;fields["revision"]=source.objectValue?["revision"];let captured=JSONValue.object(fields)

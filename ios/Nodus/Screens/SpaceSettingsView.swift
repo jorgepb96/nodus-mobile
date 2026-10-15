@@ -908,6 +908,7 @@ struct RecoveredAuthoringArchiveRow: View {
             }
             if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
         }
+        .accessibilityIdentifier("recovered-work-archive-" + archive.id.uuidString)
         .confirmationDialog("Eliminar archivo del \(archive.createdAt.formatted(date: .abbreviated, time: .omitted))", isPresented: $confirmingDeletion, titleVisibility: .visible) {
             Button("Eliminar archivo conservado", role: .destructive) {
                 Task {

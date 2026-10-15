@@ -10,6 +10,7 @@ struct DatabaseActionResultView: View {
     let checkpoint: JSONValue
     @State private var latest: DesktopJobLedger.Request?
     @State private var busy = false
+    @State private var confirmingResolution = false
     @State private var issue: String?
     private var current: DesktopJobLedger.Request { latest ?? request }
     private var value: JSONValue { current.checkpoint ?? checkpoint }
@@ -50,10 +51,17 @@ struct DatabaseActionResultView: View {
                         .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(busy).frame(minHeight: 44).accessibilityIdentifier("database-action-publish")
                 } else if fields["buttonResult"]?.objectValue?["pendingWebhook"] != nil {
                     Text("La acción externa no tiene una respuesta confirmada. El registro se conserva y no se vuelve a enviar automáticamente.").font(.footnote).foregroundStyle(.secondary)
+                    Button("Conservar sólo los pasos confirmados") { confirmingResolution = true }
+                        .frame(minHeight: 44).disabled(busy).accessibilityIdentifier("database-action-resolve-interrupted")
                 } else { Text("La petición permanece conservada. No se iniciará otra generación al abrirla.").font(.footnote).foregroundStyle(.secondary) }
                 if busy { ProgressView("Publicando resultado guardado…") }
                 if let issue { Text(issue).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             }.padding(NodusSpace.page).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
+        }.confirmationDialog("Publicar únicamente los pasos confirmados", isPresented: $confirmingResolution, titleVisibility: .visible) {
+            Button("Conservar y publicar pasos confirmados") { Task { await resolveInterrupted() } }
+            Button("Cancelar", role: .cancel) { }
+        } message: {
+            Text("Se conservarán \(fields["buttonResult"]?.objectValue?["completedSteps"]?.intValue ?? 0) pasos. La acción externa pudo haberse recibido: no se reenviará ni se ejecutarán los pasos posteriores. Su intento y los recibos originales permanecerán guardados.")
         }.task(id: session.companionPublicationRevision) { await refresh() }.accessibilityIdentifier("database-action-result")
     }
     private var buttonReceipt: some View {
@@ -61,6 +69,9 @@ struct DatabaseActionResultView: View {
         let completed = min(operations.count, max(0, receipt["completedSteps"]?.intValue ?? 0))
         return VStack(alignment: .leading, spacing: 12) {
             Text("\(completed) de \(operations.count) pasos conservados").font(.headline)
+            if receipt["resolution"] == .string("publishConfirmedPrefix") {
+                Text("Resolución manual: se detuvo antes de la acción externa sin respuesta. No se reenviará. El registro original del intento permanece conservado.").font(.footnote).foregroundStyle(.secondary)
+            }
             ForEach(Array(operations.prefix(completed).enumerated()), id: \.offset) { index, operation in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(label(operation)).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
@@ -68,7 +79,9 @@ struct DatabaseActionResultView: View {
                         Text(operation.objectValue?["title"]?.stringValue ?? "Aviso").font(.callout)
                         if let body = operation.objectValue?["body"]?.stringValue { CorpusProse(body, accent: session.accent, session: session) }
                     }
-                    if operation.objectValue?["type"] == .string("create_page"), let blocks = operation.objectValue?["blocks"]?.arrayValue {
+                    if operation.objectValue?["type"] == .string("create_page"), let rowId = operation.objectValue?["rowId"]?.stringValue, let blocks = operation.objectValue?["blocks"]?.arrayValue {
+                        NavigationLink("Abrir editor de bloques") { DatabaseActionPageEditor(session: session, checkpoint: value, rowId: rowId) }
+                            .frame(minHeight: 44).accessibilityIdentifier("database-action-edit-page-" + rowId)
                         ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                             if let text = block.objectValue?["content"]?.objectValue?["text"]?.stringValue { CorpusProse(text, accent: session.accent, session: session) }
                         }
@@ -95,6 +108,13 @@ struct DatabaseActionResultView: View {
             let (vault, pair, _) = try privateBridgeConnection(session, domain: .writing)
             let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pair.id, vaultId: vault)
             latest = await ledger.all().first { $0.id == request.id }
+        } catch { issue = error.localizedDescription }
+    }
+    private func resolveInterrupted() async {
+        busy = true; issue = nil; defer { busy = false }
+        do {
+            latest = try await DatabasePropertyActions.resolveInterruptedButton(session: session, checkpoint: CompanionDatabaseActionCheckpoint(value))
+            await session.synchronizeCompanionChanges(); await refresh()
         } catch { issue = error.localizedDescription }
     }
     private func publish(_ checkpoint: CompanionDatabaseActionCheckpoint) async {

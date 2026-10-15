@@ -42,6 +42,27 @@ public struct CompanionDatabaseActionCheckpoint: Sendable, Identifiable {
         self.scope=try Self.scope(request:request,model:model)
         self.publicationInput = [.saved,.failed,.interrupted].contains(state) ? publication:nil
     }
+    /// Explicitly stop at the uncertain external step. Keep the original intent,
+    /// receipts and identity; only the confirmed prefix becomes publishable.
+    public func resolvingInterruptedButton(at date: Date = Date()) throws -> Self {
+        guard var fields = value.objectValue, var result = fields["buttonResult"]?.objectValue,
+              let pending = result["pendingWebhook"]?.intValue, pending == result["completedSteps"]?.intValue,
+              result["finishedAt"] == nil, result["failedStep"] == nil,
+              let plan = fields["source"]?.objectValue?["plan"], let clicked = result["clickedAt"]?.stringValue,
+              let operations = try Self.instantiate(plan, requestId: id, clickedAt: clicked).objectValue?["operations"]?.arrayValue,
+              pending >= 0, pending < operations.count, operations[pending].objectValue?["type"] == .string("webhook")
+        else { throw DesktopBridgeError.malformedResponse }
+        let original = JSONValue.object(result)
+        result["pendingWebhook"] = nil
+        if var receipts = result["webhooks"]?.objectValue { receipts[String(pending)] = nil; result["webhooks"] = .object(receipts) }
+        result["interruptedStep"] = .int(Int64(pending))
+        result["resolution"] = .string("publishConfirmedPrefix")
+        result["interruptedExecution"] = original
+        result["finishedAt"] = .string(ISO8601DateFormatter().string(from: date))
+        fields["buttonResult"] = .object(result); fields["state"] = .string("saved")
+        fields["error"] = nil; fields["recoveryReviewRequired"] = nil
+        return try Self(.object(fields))
+    }
     public static func scope(request: JSONValue, model: JSONValue) throws -> String {
         "companion:database-action:v1:"+SHA256.hash(data:try JSONEncoder.nodus.encode(JSONValue.array([request,model]))).map {String(format:"%02x",$0)}.joined()
     }
@@ -75,6 +96,17 @@ public actor CompanionDatabaseActionJournal {
         try await cache.storeAuthoredBatch(vaultId:vault,records:[
             .init(domain:.researchGeneration,recordId:checkpoint.scope,data:try JSONEncoder.nodus.encode(checkpoint.value)),
             .init(domain:.researchGeneration,recordId:Self.indexKey,data:try JSONEncoder.nodus.encode(JSONValue.object(index)))])
+    }
+    public func resolveInterruptedButton(_ original: CompanionDatabaseActionCheckpoint, ledger: DesktopJobLedger) async throws -> DesktopJobLedger.Request {
+        guard active[original.scope] == nil, let stored = try await load(scope: original.scope), stored.value == original.value else { throw DesktopBridgeError.permissionDenied }
+        let resolved = try original.resolvingInterruptedButton()
+        var summary = resolved.value.objectValue!
+        for key in ["bytes","text","buttonResult","source","references"] { summary[key] = nil }
+        summary["scope"] = .string(resolved.scope)
+        var updated = index; updated[resolved.scope] = .object(summary)
+        let request = try await ledger.resolveInterruptedDatabaseAction(original: original, resolved: resolved, index: .object(updated))
+        index = updated
+        return request
     }
     public func perform(accepted:CompanionDatabaseActionCheckpoint,regenerateCompleted:Bool = false,generate:@escaping @Sendable () async throws -> JSONValue) async throws -> CompanionDatabaseActionCheckpoint {
         if let task=active[accepted.scope] {return try await task.value}

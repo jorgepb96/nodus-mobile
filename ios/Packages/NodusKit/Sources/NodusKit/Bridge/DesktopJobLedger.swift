@@ -161,6 +161,27 @@ public actor DesktopJobLedger {
             state: "saved", issue: value.value.objectValue?["error"]?.stringValue, checkpointRecordId: recordId, checkpoint: checkpoint)
         try await persist()
     }
+    /// One encrypted transaction changes the checkpoint, its catalogue and the
+    /// provider-free request. A crash cannot restore the uncertain send intent.
+    public func resolveInterruptedDatabaseAction(original: CompanionDatabaseActionCheckpoint, resolved: CompanionDatabaseActionCheckpoint, index: JSONValue) async throws -> Request {
+        guard !isSynchronizing, let prior = requests[original.id], prior.method == "localDatabaseAction",
+              prior.jobId == nil, prior.checkpoint == original.value, prior.checkpointRecordId == original.scope,
+              original.value.objectValue?["vaultId"] == .string(vaultId), original.id == resolved.id,
+              original.scope == resolved.scope, index.objectValue?[resolved.scope]?.objectValue?["id"] == .string(resolved.id),
+              let finished = resolved.value.objectValue?["buttonResult"]?.objectValue?["finishedAt"]?.stringValue,
+              let date = ISO8601DateFormatter().date(from: finished),
+              try original.resolvingInterruptedButton(at: date).value == resolved.value,
+              let publication = try CompanionGenerationPublication(databaseAction: resolved) else { throw DesktopBridgeError.permissionDenied }
+        let request = Request(id: prior.id, method: publication.method, args: publication.args, createdAt: prior.createdAt,
+            jobId: nil, state: "pending", issue: nil, checkpointRecordId: resolved.scope, checkpoint: resolved.value)
+        var next = requests; next[request.id] = request
+        try await cache.storeAuthoredBatch(vaultId: vaultId, records: [
+            .init(domain: .researchGeneration, recordId: resolved.scope, data: try JSONEncoder.nodus.encode(resolved.value)),
+            .init(domain: .researchGeneration, recordId: CompanionDatabaseActionJournal.indexKey, data: try JSONEncoder.nodus.encode(index)),
+            .init(domain: .researchGeneration, recordId: "job-ledger-v1", data: try JSONEncoder.nodus.encode(next))])
+        requests[request.id] = request; durablyPrepared.insert(request.id)
+        return request
+    }
     public func generationCheckpoint(recordId: String, generationId: String? = nil) -> JSONValue? {
         guard let request = all().first(where: { $0.checkpointRecordId == recordId && (generationId == nil || $0.id == generationId) }) else { return nil }
         return reconciledCheckpoint(request)

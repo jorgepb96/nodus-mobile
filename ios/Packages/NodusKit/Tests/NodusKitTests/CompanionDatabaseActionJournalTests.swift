@@ -62,4 +62,40 @@ import Testing
         #expect(throws: DesktopBridgeError.self) { try CompanionGenerationPublication(databaseAction: checkpoint, stagedImage: .object(["blobUploadId":.string(checkpoint.id),"sha256":.string(String(repeating:"0",count:64)),"mimeType":.string("image/png")])) }
     }
 
+    @Test func manualUncertainResolutionRetainsIntentAndAtomicallyReopensProviderFree() async throws {
+        let fixture = try Fixture(); defer { fixture.clear() }
+        var fields = try accepted().value.objectValue!, request = fields["request"]!.objectValue!
+        request["kind"] = .string("button"); fields["request"] = .object(request); fields["model"] = .null
+        let clicked = fields["createdAt"]!
+        let attempt: JSONValue = .object(["clickedAt":clicked,"completedSteps":.int(1),"pendingWebhook":.int(1),"webhooks":.object([:])])
+        fields["buttonResult"] = attempt; fields["state"] = .string("failed")
+        fields["source"] = .object(["plan":.object(["operations":.array([
+            .object(["type":.string("button_click"),"rowId":.string("own-row"),"columnId":.string("own-column"),"clicks":.int(1)]),
+            .object(["type":.string("webhook"),"url":.string("https://never-called.invalid")]),
+            .object(["type":.string("notify"),"id":.string("never-created")])])])])
+        let original = try CompanionDatabaseActionCheckpoint(.object(fields))
+        #expect(original.publicationInput == nil)
+        let journal = try await CompanionDatabaseActionJournal(cache:fixture.cache,vault:"vault")
+        try await journal.put(original)
+        let ledger = try DesktopJobLedger(cache:fixture.cache,vaultId:"vault",data:nil)
+        try await ledger.archiveDatabaseActionCheckpoint(recordId:original.scope,checkpoint:original.value)
+        let prepared = try await journal.resolveInterruptedButton(original,ledger:ledger)
+        #expect(prepared.id == original.id); #expect(prepared.method == "saveMobileDatabaseButtonResult")
+        #expect(prepared.state == "pending"); #expect(prepared.jobId == nil)
+        #expect(prepared.args[0].objectValue?["result"]?.objectValue?["interruptedExecution"] == attempt)
+        #expect(prepared.args[0].objectValue?["result"]?.objectValue?["pendingWebhook"] == nil)
+        let ledgerData = try await fixture.cache.data(vaultId:"vault",domain:.researchGeneration,recordId:"job-ledger-v1")
+        let reopenedLedger = try DesktopJobLedger(cache:fixture.cache,vaultId:"vault",data:ledgerData)
+        #expect(await reopenedLedger.all().first?.args == prepared.args)
+        let reopenedJournal = try await CompanionDatabaseActionJournal(cache:fixture.cache,vault:"vault")
+        let loaded = try await reopenedJournal.load(scope:original.scope)
+        let reopened = try #require(loaded)
+        #expect(reopened.id == original.id); #expect(reopened.publicationInput == prepared.args.first)
+        #expect(try reopened.projectedAuthoredRows().isEmpty)
+        await #expect(throws:DesktopBridgeError.self) { try await reopenedJournal.resolveInterruptedButton(original,ledger:reopenedLedger) }
+        let calls = Calls()
+        let reused = try await reopenedJournal.perform(accepted:original) { await calls.next() }
+        #expect(reused.id == original.id); #expect(await calls.value() == 0)
+    }
+
 }
