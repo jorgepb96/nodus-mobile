@@ -488,9 +488,14 @@ final class SpaceSession {
 
     /// Ask the space which embedding it was indexed with, so the search screen can say what it
     /// needs instead of silently returning nothing.
-    func probeEmbedding() async {
-        guard case .unknown = embedding else { return }
-        let generation = embeddingProbeGeneration
+    func probeEmbedding(retryUnavailable: Bool = false) async {
+        switch embedding {
+        case .unknown: break
+        case .unavailable where retryUnavailable: break
+        default: return
+        }
+        let generation = UUID()
+        embeddingProbeGeneration = generation
         do {
             let identity = try await client.publishedEmbeddingIdentity(in: connection.spaceId)
             guard !Task.isCancelled, generation == embeddingProbeGeneration else { return }

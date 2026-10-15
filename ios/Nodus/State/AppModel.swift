@@ -128,6 +128,7 @@ final class AppModel {
                 }
                 if verifiedPrimary, !Task.isCancelled, let session = self.session, session.connection.desktopPairingId == pairing.id {
                     if session.loadFailure != nil { await session.load() }
+                    await session.probeEmbedding(retryUnavailable: true)
                     await session.refreshPublishedContent()
                 }
             }

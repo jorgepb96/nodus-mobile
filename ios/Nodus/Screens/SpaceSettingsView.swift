@@ -307,7 +307,15 @@ struct SpaceSettingsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .nodusPageBackdrop(accent: session.accent)
             .tint(session.accent)
-            .task(id: session.connection.origin) { await diagnose() }
+            .task(id: session.connection.origin) {
+                while !Task.isCancelled {
+                    await diagnose()
+                    guard !Task.isCancelled else { return }
+                    await session.probeEmbedding(retryUnavailable: true)
+                    do { try await Task.sleep(for: .seconds(30)) }
+                    catch { return }
+                }
+            }
             .confirmationDialog("Delete downloaded copies?", isPresented: $showingLibraryDeletion, titleVisibility: .visible) {
                 Button(libraryDeletion == .space ? "Delete in this space" : "Delete in every space", role: .destructive) {
                     confirmLibraryDeletion()

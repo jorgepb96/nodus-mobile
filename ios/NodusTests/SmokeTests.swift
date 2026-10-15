@@ -6,8 +6,8 @@ import Testing
 @Suite("Local surface draft isolation")
 @MainActor
 struct MobileSurfaceStorageTests {
-    @Test("a verified origin change reprobes an unavailable embedding without replacing the session")
-    func embeddingRecoversAfterOriginChange() async throws {
+    @Test("a recovered Mac reprobes unavailable embeddings with the same or a changed origin", arguments: [false, true])
+    func embeddingRecoversAfterOriginChange(changesOrigin: Bool) async throws {
         let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var connection = AppModel.Connection(origin: "https://embedding-recovery.test", spaceId: "live:embedding-mac:embedding-\(UUID())",
@@ -22,9 +22,12 @@ struct MobileSurfaceStorageTests {
         let session = SpaceSession(connection: connection, client: client, mirrorDirectory: root)
         await session.probeEmbedding()
         guard case .unavailable = session.embedding else { Issue.record("Expected the initial real transport failure"); return }
-        connection.origin = "https://verified-new-origin.test"
-        session.refreshConnectionMetadata(connection)
+        // Merely reopening the settings must not invent a successful identity.
         await session.probeEmbedding()
+        guard case .unavailable = session.embedding else { Issue.record("Default probing must retain the real failure"); return }
+        if changesOrigin { connection.origin = "https://verified-new-origin.test" }
+        session.refreshConnectionMetadata(connection)
+        await session.probeEmbedding(retryUnavailable: true)
         #expect(session.embedding == .published(EmbeddingIdentity(provider: "fixture", model: "recovered", dim: 384)))
         #expect(session.aiExecutionMode == .live)
     }
