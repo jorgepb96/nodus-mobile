@@ -336,6 +336,9 @@ struct SpecialListView: View {
     @State private var error: String?
     @State private var isLoading = false
     @State private var outbox: OutboxController?
+    @State private var outboxStorageID: String?
+    @State private var catalogueStorageID: String?
+    @State private var editorStorageID: String?
     @State private var composing = false
     @State private var editing: EditableNote?
     @State private var queued = false
@@ -391,6 +394,7 @@ struct SpecialListView: View {
                             Label("Delete", systemImage: "trash")
                         }
                         Button {
+                            editorStorageID = session.connection.storageId
                             editing = EditableNote(row)
                         } label: {
                             Label("Edit", systemImage: "pencil")
@@ -433,21 +437,23 @@ struct SpecialListView: View {
         .toolbar {
             if canEditNotes {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { composing = true } label: { Image(systemName: "square.and.pencil") }
+                    Button { editorStorageID = session.connection.storageId; composing = true } label: { Image(systemName: "square.and.pencil") }
                         .tint(session.accent)
                 }
             }
         }
         .nodusSheet(isPresented: $composing) {
+            let storageID = editorStorageID
             NoteEditor(accent: session.accent, note: nil) { title, body in
-                guard let outbox else { throw DesktopBridgeError.permissionDenied }
+                guard let outbox, outboxStorageID == storageID, session.connection.storageId == storageID else { throw DesktopBridgeError.permissionDenied }
                 try await outbox.queueNote(title: title, body: body, folderId: nil)
-                queued = true
+                if outboxStorageID == storageID { queued = true }
             }
         }
         .nodusSheet(item: $editing) { note in
+            let storageID = editorStorageID
             NoteEditor(accent: session.accent, note: note) { title, body in
-                guard let outbox else { throw DesktopBridgeError.permissionDenied }
+                guard let outbox, outboxStorageID == storageID, session.connection.storageId == storageID else { throw DesktopBridgeError.permissionDenied }
                 try await outbox.queueNote(
                     id: note.id,
                     title: title,
@@ -455,7 +461,7 @@ struct SpecialListView: View {
                     folderId: note.folderId,
                     createdAt: note.createdAt
                 )
-                queued = true
+                if outboxStorageID == storageID { queued = true }
             }
         }
         // The one sentence this screen owes the user. A change here is not in the vault: it is
@@ -467,14 +473,21 @@ struct SpecialListView: View {
         } message: {
             Text("Send it from the send queue. It joins the vault when its owner next opens Nodus desktop and republishes — until then this list still shows what was published.")
         }
-        .task(id: [resource.rawValue, session.connection.spaceId, session.publishedRevision ?? ""]) {
-            // The rows first, and the queue afterwards. The queue is a SQLite file being opened
-            // and migrated, and opening it before the fetch meant Debates, Deep Research and
-            // Immersion — none of which can write anything — all waited on a disk they were
-            // never going to use.
+        .task(id: [resource.rawValue, session.connection.storageId, session.publishedRevision ?? ""]) {
+            let storageID = session.connection.storageId
+            if catalogueStorageID != storageID {
+                catalogueStorageID = storageID
+                rows = []; folders = []; total = 0; error = nil
+                outbox = nil; outboxStorageID = nil
+                queued = false
+            }
             await reload()
-            if resource == .notes, outbox == nil {
-                outbox = await OutboxController.open(session: session)
+            guard !Task.isCancelled, catalogueStorageID == storageID else { return }
+            if resource == .notes, outboxStorageID != storageID {
+                let opened = await OutboxController.open(session: session)
+                guard !Task.isCancelled, catalogueStorageID == storageID else { return }
+                outbox = opened
+                outboxStorageID = opened == nil ? nil : storageID
             }
         }
         .refreshable { await reload() }
@@ -482,16 +495,19 @@ struct SpecialListView: View {
 
     /// Only notes are writable here, and only for a role the server would accept a change from.
     private var canEditNotes: Bool {
-        resource == .notes && session.connection.role.canSendChanges && outbox != nil
+        resource == .notes && session.connection.role.canSendChanges && outbox != nil && outboxStorageID == session.connection.storageId
     }
 
     private func deleteNote(_ row: Row) async {
         guard let id = row.string("id") else { return }
+        let storageID = session.connection.storageId
         do {
-            guard let outbox else { throw DesktopBridgeError.permissionDenied }
+            guard let outbox, outboxStorageID == storageID else { throw DesktopBridgeError.permissionDenied }
             try await outbox.queueNoteDeletion(id: id, title: row.text("title") ?? String(localized: "Untitled"))
-            queued = true
-        } catch { self.error = error.localizedDescription }
+            if outboxStorageID == storageID { queued = true }
+        } catch {
+            if catalogueStorageID == storageID { self.error = error.localizedDescription }
+        }
     }
 
     private var title: String {
