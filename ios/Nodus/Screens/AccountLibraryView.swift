@@ -749,7 +749,7 @@ private struct AccountLibraryReader: View {
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
-            case .read: "Read"
+            case .read: "Reading"
             case .metadata: "Metadata"
             case .notes: "Notes"
             case .relations: "Relations"

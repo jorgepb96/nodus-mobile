@@ -16839,6 +16839,17 @@
       },
       "extractionState": "manual"
     },
+    "Reading": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lectura"
+          }
+        }
+      }
+    },
     "Reading bookmark": {
       "extractionState": "manual",
       "localizations": {
