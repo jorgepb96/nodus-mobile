@@ -82,7 +82,9 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         let statement = try required("NODUS_ACCEPTANCE_STUDY_IDEA_STATEMENT")
         let app = XCUIApplication(); app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launch(); defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
-        XCTAssertTrue(app.buttons["Cambiar de espacio"].waitForExistence(timeout:45)); app.buttons["Cambiar de espacio"].tap()
+        XCTAssertTrue(app.buttons["Cambiar de espacio"].waitForExistence(timeout: phase == "offline" ? 10 : 45),
+                      "Saved work must open without waiting for the disconnected Mac's catalogue timeout.")
+        app.buttons["Cambiar de espacio"].tap()
         let owning = app.buttons["space-" + vault]; XCTAssertTrue(owning.waitForExistence(timeout:20)); reveal(owning,app); owning.tap()
         var before=Set<String>()
         do {

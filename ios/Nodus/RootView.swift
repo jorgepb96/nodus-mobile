@@ -154,7 +154,6 @@ struct RootView: View {
                 return
             }
 #endif
-            await model.refreshDesktopWorkspaceCatalogues()
             // Reopen where the user left off, but only if the credential is still there — a
             // revoked token should land on the picker, not on a broken shell.
             if model.session == nil, let recent = model.mostRecent {
@@ -164,6 +163,10 @@ struct RootView: View {
                     model.open(recent)
                 }
             }
+            // A sleeping Mac must not hold downloaded reading and authored work
+            // behind the catalogue request's network timeout. Opening checks the
+            // saved grant locally; the refresh still handles remote revocation.
+            await model.refreshDesktopWorkspaceCatalogues()
             // Which of this device's files a backup carries, decided in one place and applied
             // to whatever is already on disk. Detached because it is `setxattr` per file and
             // this is the launch path; nothing on screen waits for the answer.

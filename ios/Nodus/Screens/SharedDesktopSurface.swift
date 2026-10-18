@@ -1405,6 +1405,9 @@ private struct DesktopWebView: UIViewRepresentable {
                             let authoredIdeas = CompanionIdeaCopy.operationMethods.contains(method)
                                 ? try await CompanionIdeaCopy.authored(cache: cache, vaultId: vaultId) : nil
                             let hasIdeas = hasDownloadedIdeas || authoredIdeas != nil
+                            let hasStudyCopy = ["getStudyWorkspace", "listStudyIdeas", "getStudyIdeaDetail", "getStudyKnowledgeGraph"].contains(method)
+                                && (surface == .studyIdeas || (surface == .graph && [.estudio, .docencia].contains(session.connection.vaultType)))
+                                ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionStudyKnowledgeCopy.recordId) : false
                             // A new autonomous request has no exact cached
                             // context yet. Its selected source still gives it
                             // the same short offline deadline as a cached read.
@@ -1425,7 +1428,7 @@ private struct DesktopWebView: UIViewRepresentable {
                                     recordId: CompanionDocumentOutbox.operationKey(sourceMethod, sourceArgs))
                             } else { hasPortableSource = false }
                             do {
-                                value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification && !hasIdeas && !hasPortableSource ? nil : 4)
+                                value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification && !hasIdeas && !hasStudyCopy && !hasPortableSource ? nil : 4)
                                 onOfflineCopy(false)
                                 if Self.operationDomains[method] == "corpus" {
                                     var reusable = value

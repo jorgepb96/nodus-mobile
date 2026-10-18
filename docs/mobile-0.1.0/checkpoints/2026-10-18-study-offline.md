@@ -1,0 +1,15 @@
+# Descarga elegida de ideas Study — 18 de octubre de 2026
+
+La repetición `native-phone-graph-reader-recheck-02` sobre Mobile `6013639` y Desktop `50e7f7d3` pasa grafo y lector; falla de nuevo la segunda apertura del diccionario con el mismo callback nulo de `XCTAutomationSupport` durante una conexión TLS. Las capturas confirman el contraste del menú del lector y el dossier inferior del grafo. No se declara resuelto el cierre del entorno de pruebas.
+
+`native-study-chosen-copy-prepare-02` pasa sobre Mobile `93b8a0a`: selecciona la asignatura ficticia del vault Clases y confirma su descarga explícita durante siete días. El primer intento del controlador había buscado texto estático donde iOS expone un botón del menú nativo; se conserva su fallo y se corrige esa interacción según su captura de accesibilidad.
+
+Se detiene sólo el Bridge del laboratorio en el puerto 52172, conservando perfil, identidad, certificado y vínculos. La prueba offline verifica una desconexión real, pero falla al consultar las ideas descargadas: asignatura correcta, cero ideas y timeout de `listStudyIdeas`. Se interrumpe el intento después de registrar esos fallos para evitar reintentos sobre controles inexistentes. No se crea ninguna nota; el resultado es **fallido e incompleto**, con fuentes y ejecutables sin cambios durante la ejecución.
+
+Se han identificado dos defectos: el arranque esperaba la petición del catálogo del Mac antes de restaurar el espacio local, y el lector del pack Study estaba restringido al modo autónomo, deshabilitado en esta beta. Ahora se restaura primero el espacio usando el vínculo guardado y se actualiza después el catálogo. Las cuatro consultas Study pueden recuperar exclusivamente sus descargas elegidas tras un error de transporte offline, también en modo Live. Con un pack elegido se utiliza el mismo plazo corto de consulta que otras lecturas descargadas. No se habilita ejecución local de IA ni se convierten errores de permisos, TLS o formato en contenido local.
+
+Desktop `b8a3b9c9` incorpora una regresión ejecutable del lector real: 161 ideas completas, filtros, detalle, grafo y rechazo de packs ausentes, incompatibles o de otro vault; ocho límites de autorización, transporte y escritura no consultan el pack. Pasan la regresión, ESLint focalizado y TypeScript. Se regenera el bundle compartido desde ese commit. La aceptación nativa de estas correcciones, creación offline y reconexión con recibo único sigue pendiente al guardar este checkpoint.
+
+Durante la parada se crea mediante repositorios canónicos una persona prosopográfica QA expresamente ficticia con autoridad QA para dos pruebas de consulta. SQLite independiente confirma que las dos personas originales de la copia y el registro de vaults conservan sus hashes. Cero llamadas de IA, extracción o indexación en esta preparación.
+
+No se ejecutan Actions ni se modifican workflows. Sigue disponible TestFlight 0.1.0 (1003); 1004 no está subida. Las operaciones pendientes no se contabilizan como aprobadas.
