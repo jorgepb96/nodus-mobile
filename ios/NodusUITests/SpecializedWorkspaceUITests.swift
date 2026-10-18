@@ -104,27 +104,7 @@ final class SpecializedWorkspaceUITests: XCTestCase {
             let inspector = app.descendants(matching: .any)["database-row-inspector"].firstMatch
             XCTAssertTrue(inspector.waitForExistence(timeout: 20))
             XCTAssertTrue(app.staticTexts[try string(fixture, "rowTitle")].firstMatch.exists)
-            for property in properties {
-                let name = try string(property, "name"), expected = try XCTUnwrap(property["expected"] as? String, "A stored-value oracle is required even for an intentionally empty cell.")
-                let label = app.staticTexts[name].firstMatch
-                reveal(label, app: app); XCTAssertTrue(label.exists, "Missing stored property: " + name)
-                switch try string(property, "control") {
-                case "field":
-                    let field = app.textFields[name].exists ? app.textFields[name] : app.textViews[name]
-                    XCTAssertTrue(field.exists); reveal(field, app: app)
-                    XCTAssertEqual(field.value as? String, expected, "The actual saved value must arrive in its property control.")
-                case "choice":
-                    let choice = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
-                    XCTAssertTrue(choice.exists); reveal(choice, app: app); XCTAssertTrue(choice.label.contains(expected))
-                case "toggle":
-                    let toggle = app.switches["Marcadas"].firstMatch
-                    XCTAssertTrue(toggle.exists); reveal(toggle, app: app); XCTAssertEqual(toggle.value as? String, expected)
-                case "computed":
-                    let value = exactText(expected, app: app)
-                    XCTAssertTrue(value.exists); reveal(value, app: app)
-                default: throw FixtureError.invalid("property control")
-                }
-            }
+            for property in properties { try verifyStoredProperty(property, app: app) }
             let links = app.segmentedControls.buttons["Enlaces"].firstMatch
             reveal(links, app: app); links.tap()
             let related = containsText(try string(fixture, "relatedTitle"), app: app)
@@ -143,6 +123,77 @@ final class SpecializedWorkspaceUITests: XCTestCase {
             capture(app, "typed-database-owning-rich-row-page-\(attempt)")
             app.terminate()
         }
+    }
+
+    /// Queries only: never executes AI/button actions or changes a stored property.
+    @MainActor private func verifyStoredProperty(_ property: [String: Any], app: XCUIApplication) throws {
+        let id = try string(property, "id"), name = try string(property, "name"), type = try string(property, "type")
+        let expected = try XCTUnwrap(property["expected"] as? String)
+        let container = app.descendants(matching: .any)["database-property-value-" + id].firstMatch
+        reveal(container, app: app)
+        XCTAssertTrue(container.exists, "Missing owning property " + id)
+        XCTAssertTrue(container.staticTexts[name].firstMatch.exists, "The exact column name must remain visible.")
+        func valueField(_ label: String, _ value: String) {
+            let field = container.textFields[label].exists ? container.textFields[label] : container.textViews[label]
+            XCTAssertTrue(field.exists, "Missing typed field " + label + " for " + type)
+            reveal(field, app: app); XCTAssertEqual(field.value as? String, value)
+        }
+        func touch(_ element: XCUIElement) throws {
+            reveal(element, app: app); XCTAssertTrue(element.exists && element.isHittable)
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(element.frame))
+            let minimum = try XCTUnwrap(property["minimumTouchHeight"] as? Double)
+            XCTAssertGreaterThanOrEqual(element.frame.height + 0.01, minimum, "Touch control too short for " + type)
+            XCTAssertGreaterThanOrEqual(element.frame.width + 0.01, 44)
+        }
+        func shows(_ value: String) { XCTAssertTrue(container.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR value == %@", value, value)).firstMatch.exists, "Missing saved value for " + type) }
+        switch type {
+        case "date", "time":
+            let label = type == "date" ? "Inicio" : "Hora"
+            let picker = container.datePickers[label].exists ? container.datePickers[label] : container.datePickers.firstMatch
+            try touch(picker)
+            let raw = try string(property, "raw")
+            let actual = try XCTUnwrap(picker.value as? String)
+            let alternatives = try localizedDateValues(raw, timeOnly: type == "time")
+            XCTAssertTrue(alternatives.contains(actual), "Saved " + raw + " must be displayed, not a fallback current date; got " + actual)
+            if type == "date" { XCTAssertEqual(container.switches["Incluir hora"].value as? String, "0"); XCTAssertEqual(container.switches["Fecha final"].value as? String, "0") }
+        case "select", "status":
+            let picker = container.buttons.matching(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
+            try touch(picker); XCTAssertTrue(picker.label.contains(expected) || (picker.value as? String) == expected)
+        case "multi_select":
+            let options = try XCTUnwrap(property["options"] as? [[String: Any]])
+            for option in options { let toggle = container.switches[try string(option, "label")]; try touch(toggle); XCTAssertEqual(toggle.value as? String, "1") }
+        case "checkbox": let toggle = container.switches["Marcada"]; try touch(toggle); XCTAssertEqual(toggle.value as? String, expected)
+        case "person":
+            valueField("Nombre", ""); XCTAssertTrue(container.segmentedControls["Tipo"].exists)
+            XCTAssertFalse(container.buttons["Añadir"].isEnabled, "An empty saved people list must not become a new person.")
+        case "location": for label in ["Lugar", "Dirección", "Latitud", "Longitud"] { valueField(label, "") }
+        case "relation": shows("QA ficticio LAB18 · Fila relacionada"); try touch(container.buttons["database-relation-add-" + id])
+        case "files", "attachment", "ai_image":
+            try touch(container.buttons["database-file-import-" + id])
+            let count = try XCTUnwrap(property["attachmentCount"] as? Int)
+            XCTAssertEqual(container.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'bridge-file-databaseAttachment-'")).count, count)
+            if count > 0 { shows("qa-lab18.txt") }
+            if type == "ai_image" { try touch(container.buttons["database-property-action-" + id]) }
+        case "button": shows("Sin valor"); try touch(container.buttons["database-property-action-" + id])
+        case "formula", "rollup", "comparison", "created_by", "last_edited_by", "unique_id": shows(expected)
+        case "created_time", "last_edited_time":
+            let alternatives = try localizedDateValues(try string(property, "raw"), timeOnly: false, includeTime: true)
+            XCTAssertTrue(alternatives.contains { value in container.staticTexts[value].firstMatch.exists }, "Stored row metadata must match, never a fabricated timestamp.")
+        default: valueField(name, expected)
+        }
+    }
+
+    private func localizedDateValues(_ raw: String, timeOnly: Bool, includeTime: Bool = false) throws -> [String] {
+        let parser = DateFormatter(); parser.locale = Locale(identifier: "en_US_POSIX"); parser.dateFormat = timeOnly ? "HH:mm" : "yyyy-MM-dd"
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = try XCTUnwrap(iso.date(from: raw) ?? ISO8601DateFormatter().date(from: raw) ?? parser.date(from: raw))
+        var result = [raw]
+        for style in [DateFormatter.Style.short, .medium, .long] {
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "es_ES")
+            formatter.dateStyle = timeOnly ? .none : style; formatter.timeStyle = timeOnly || includeTime ? .short : .none
+            result.append(formatter.string(from: date))
+        }
+        return result
     }
 
     private func input(_ key: String) throws -> [String: Any] {

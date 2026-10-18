@@ -3001,6 +3001,162 @@ final class MobileReleaseUITests: XCTestCase {
             capture(app, "desktop-code-renewal-mode-after-restart")
         }
     }
+    // Real Mac generation requires explicit copied-lab configuration; missing inputs fail.
+    @MainActor private func liveGenerationInput(_ key: String) throws -> String {
+        let value = try XCTUnwrap(ProcessInfo.processInfo.environment[key], "Real laboratory configuration is required: " + key)
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NSError(domain: "NodusAcceptance", code: 2) }
+        return value
+    }
+    @MainActor private func liveGenerationStart(route: String) throws -> XCUIApplication {
+        XCTAssertEqual(try liveGenerationInput("NODUS_ACCEPTANCE_ALLOW_LIVE_GENERATION"), "1")
+        let app = try openExistingPrincipal(destination: "settings")
+        let mode = app.staticTexts["ai-execution-mode"].firstMatch
+        for _ in 0..<8 { if mode.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(mode.waitForExistence(timeout: 20)); XCTAssertTrue(mode.label.contains("Live · modelos del Mac"))
+        XCTAssertFalse(app.buttons["ai-execution-mode"].exists)
+        app.buttons["nodus-navigation-toggle"].tap()
+        let target = app.buttons["nodus-nav-" + route]
+        for _ in 0..<10 { if target.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(target.isHittable); target.tap()
+        return app
+    }
+    @MainActor private func liveGenerationTouch(_ element: XCUIElement, in web: XCUIElement) throws {
+        XCTAssertTrue(element.waitForExistence(timeout: 30), web.debugDescription)
+        for _ in 0..<10 { if element.isHittable { break }; web.swipeUp() }
+        guard element.isHittable else { XCTFail("The actual control must be touchable: " + element.label); throw NSError(domain: "NodusAcceptance", code: 2) }
+        element.tap()
+    }
+    @MainActor private func liveGenerationWait(_ app: XCUIApplication, seconds: TimeInterval, _ condition: @escaping () -> Bool) throws {
+        let predicate = NSPredicate { _, _ in condition() || app.staticTexts["shared-surface-error"].exists }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: seconds), .completed, app.debugDescription)
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists, app.debugDescription)
+        guard condition() else { throw NSError(domain: "NodusAcceptance", code: 2, userInfo: [NSLocalizedDescriptionKey: "The real generation did not reach its required state."]) }
+    }
+    @MainActor private func liveGenerationIdentity(_ value: String, name: String) {
+        let attachment = XCTAttachment(string: value); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+    @MainActor private func liveGenerationMacModelVisible(_ web: XCUIElement, key: String) throws {
+        // This is an actual Mac model identifier, independently read from getSettings and its catalogue.
+        // The test never configures a phone model or silently selects a different Mac provider.
+        let id = try liveGenerationInput(key)
+        let selected = web.buttons.containing(NSPredicate(format: "label CONTAINS %@", id)).firstMatch
+        XCTAssertTrue(selected.waitForExistence(timeout: 30), "The configured owning Mac model must appear in the real composer: " + id)
+    }
+    @MainActor
+    func testLiveDictionaryCreatesDefinitionPersistsVersionAndReopens() throws {
+        executionTimeAllowance = 1200
+        let concept = try liveGenerationInput("NODUS_ACCEPTANCE_LIVE_DICTIONARY_CONCEPT")
+        let marker = "NodusDictQA-" + UUID().uuidString
+        let name = concept + " · " + marker
+        liveGenerationIdentity(name, name: "live-dictionary-created-name")
+        let app = try liveGenerationStart(route: "dictionary")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
+        try liveGenerationTouch(web.buttons["Nueva entrada"].firstMatch, in: web)
+        let field = web.textFields["Concepto 1"].firstMatch
+        try liveGenerationTouch(field, in: web); field.typeText(name)
+        let focus = web.textViews.firstMatch
+        try liveGenerationTouch(focus, in: web)
+        if let old = focus.value as? String, !old.isEmpty { focus.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count)) }
+        focus.typeText("Define el concepto a partir de las fuentes existentes del corpus. Distingue los usos de los autores, conserva citas verificables y no inventes evidencias. El identificador " + marker + " sólo identifica esta solicitud de aceptación.")
+        try dismissResearchKeyboard(app)
+        try liveGenerationMacModelVisible(web, key: "NODUS_ACCEPTANCE_DICTIONARY_MAC_MODEL_ID")
+        let automaticWeb = web.buttons["Web · Automática"].firstMatch
+        if automaticWeb.exists { try liveGenerationTouch(automaticWeb, in: web) }
+        XCTAssertTrue(web.buttons["Web · Desactivada"].firstMatch.exists)
+        let generate = web.buttons["Generar definición"].firstMatch
+        XCTAssertTrue(generate.isEnabled); capture(app, "live-dictionary-configured")
+        try liveGenerationTouch(generate, in: web)
+        let entry = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 60), "The unique newly saved entry must exist before generation can count.")
+        try liveGenerationTouch(entry, in: web)
+        let progress = web.staticTexts.matching(NSPredicate(format: "label MATCHES[c] %@", ".*(En cola|Generando|Buscando|Recuperando|Sintetizando|Revisando).*" )).firstMatch
+        XCTAssertTrue(progress.waitForExistence(timeout: 45), "Require visible real lifecycle/progress, not only an available button.")
+        capture(app, "live-dictionary-progress")
+        openDictionaryEntryOptions(in: web)
+        let regenerate = web.buttons["Regenerar"].firstMatch
+        try liveGenerationWait(app, seconds: 900) { regenerate.exists && regenerate.isEnabled }
+        XCTAssertFalse(web.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "Síntesis pendiente")).firstMatch.exists)
+        XCTAssertFalse(web.staticTexts["Evidencia insuficiente"].exists)
+        try liveGenerationTouch(web.buttons["Versiones"].firstMatch, in: web)
+        let versions = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Versión ·"))
+        XCTAssertTrue(versions.firstMatch.waitForExistence(timeout: 30)); XCTAssertEqual(versions.count, 1, "A uniquely created entry must have one actual generated version.")
+        try liveGenerationTouch(versions.firstMatch, in: web)
+        // Capture actual saved version prose. The root's independent SQLite readback must also
+        // verify outcome=synthesis, model provenance, evidence and matching current_version_id.
+        let paragraphs = web.staticTexts.allElementsBoundByIndex.map(\.label).filter { $0.count > 160 && !$0.contains("La evidencia extractiva se conserva") }
+        let paragraph = try XCTUnwrap(paragraphs.first, "A saved version must contain readable generated prose, not just a title.")
+        let snippet = String(paragraph.prefix(90)); liveGenerationIdentity(snippet, name: "live-dictionary-saved-version-snippet")
+        capture(app, "live-dictionary-saved-version")
+        let close = web.buttons["Cerrar pestaña: " + name].firstMatch
+        try liveGenerationTouch(close, in: web)
+        app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK"); app.launch()
+        XCTAssertFalse(app.buttons["pairing-confirm"].exists)
+        let reopened = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
+        let search = reopened.textFields.firstMatch
+        try liveGenerationTouch(search, in: reopened); search.typeText(name + "\n")
+        let saved = reopened.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", name))
+        XCTAssertTrue(saved.firstMatch.waitForExistence(timeout: 45)); XCTAssertEqual(saved.count, 1)
+        try liveGenerationTouch(saved.firstMatch, in: reopened)
+        try liveGenerationTouch(reopened.buttons["Versiones"].firstMatch, in: reopened)
+        let restored = reopened.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Versión ·"))
+        XCTAssertTrue(restored.firstMatch.waitForExistence(timeout: 30)); XCTAssertEqual(restored.count, 1)
+        try liveGenerationTouch(restored.firstMatch, in: reopened)
+        XCTAssertTrue(reopened.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", snippet)).firstMatch.waitForExistence(timeout: 30))
+        capture(app, "live-dictionary-generated-reopened")
+    }
+    @MainActor
+    func testLiveImmersionGeneratesSavedRouteAndReopensProgress() throws {
+        executionTimeAllowance = 1800
+        let base = try liveGenerationInput("NODUS_ACCEPTANCE_LIVE_IMMERSION_TOPIC")
+        let marker = "NodusImmQA-" + UUID().uuidString
+        let topic = base + " · " + marker
+        liveGenerationIdentity(topic, name: "live-immersion-request-topic")
+        let app = try liveGenerationStart(route: "immersion")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-immersion"].webViews.firstMatch
+        try liveGenerationTouch(web.buttons["Nueva inmersión"].firstMatch, in: web)
+        let topicField = web.textFields.containing(NSPredicate(format: "placeholderValue BEGINSWITH %@", "¿De qué quieres hacerte experto?")).firstMatch
+        try liveGenerationTouch(topicField, in: web); topicField.typeText(topic)
+        try dismissResearchKeyboard(app)
+        try liveGenerationTouch(web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Exprés")).firstMatch, in: web)
+        try liveGenerationMacModelVisible(web, key: "NODUS_ACCEPTANCE_IMMERSION_MAC_MODEL_ID")
+        let explore = web.buttons["Explorar el territorio"].firstMatch
+        XCTAssertTrue(explore.isEnabled); try liveGenerationTouch(explore, in: web)
+        let generate = web.buttons["Generar inmersión"].firstMatch
+        XCTAssertTrue(generate.waitForExistence(timeout: 120)); XCTAssertTrue(generate.isEnabled, "The actual prepared corpus must have at least four ideas and the Mac model/key must be usable.")
+        capture(app, "live-immersion-real-scope"); try liveGenerationTouch(generate, in: web)
+        XCTAssertTrue(web.staticTexts["Generando tu inmersión…"].waitForExistence(timeout: 45))
+        capture(app, "live-immersion-progress")
+        let start = web.buttons["Comenzar inmersión"].firstMatch
+        try liveGenerationWait(app, seconds: 1200) { start.exists }
+        XCTAssertFalse(web.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "generación degradada")).firstMatch.exists)
+        let texts = web.staticTexts.allElementsBoundByIndex.map(\.label)
+        let readyIndex = try XCTUnwrap(texts.firstIndex(of: "Tu inmersión está lista"))
+        guard texts.indices.contains(readyIndex + 1), !texts[readyIndex + 1].isEmpty else { throw NSError(domain: "NodusAcceptance", code: 2) }
+        let title = texts[readyIndex + 1] // Current production intro DOM: ready banner followed immediately by h1 plan.title.
+        liveGenerationIdentity(title, name: "live-immersion-saved-plan-title")
+        try liveGenerationTouch(start, in: web)
+        let next = web.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Siguiente:")).firstMatch
+        try liveGenerationTouch(next, in: web)
+        XCTAssertTrue(web.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Paso 2 de")).firstMatch.waitForExistence(timeout: 30))
+        capture(app, "live-immersion-first-station")
+        // Exit saves progress; the root must independently match this unique request's topic,
+        // real session UUID/model/plan/stations and unchanged provider-call count on reopen.
+        try liveGenerationTouch(web.buttons["Salir"].firstMatch, in: web)
+        app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK"); app.launch()
+        let reopened = app.otherElements["shared-desktop-immersion"].webViews.firstMatch
+        let search = reopened.textFields["Buscar entre tus inmersiones…"].firstMatch
+        try liveGenerationTouch(search, in: reopened); search.typeText(title + "\n")
+        let row = reopened.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", title, "estaciones"))
+        XCTAssertTrue(row.firstMatch.waitForExistence(timeout: 45)); XCTAssertEqual(row.count, 1, "Reopen the exact saved generated plan, never the first generic Continue button.")
+        try liveGenerationTouch(row.firstMatch, in: reopened)
+        XCTAssertTrue(reopened.buttons["Salir"].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(reopened.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Paso 2 de")).firstMatch.exists)
+        XCTAssertFalse(reopened.buttons["Generar inmersión"].exists)
+        capture(app, "live-immersion-generated-progress-reopened")
+    }
+
     @MainActor
     func testLiveDeepResearchComposerAndMacModels() throws {
         let app = try liveDeepResearchComposerSelectingMacModel()
