@@ -21,6 +21,7 @@ final class NativeLiveChatOptions {
         let name:String
     }
     var preferences=Preferences()
+    private(set) var academicContext=false
     var providers:[Named]=[]
     var models:[JSONValue]=[]
     var skills:[Named]=[]
@@ -30,6 +31,17 @@ final class NativeLiveChatOptions {
     var works:[Named]=[]
     var attachments:[Named]=[]
     var efforts:[String]=[]
+    enum MacVerification:String { case off, legacy, structured }
+    private(set) var macVerification:MacVerification?
+    var macVerificationLabel:String {
+        switch macVerification {
+        case .off: return "Desactivada"
+        case .legacy: return "Verificación clásica"
+        case .structured: return "Verificación estructurada"
+        case nil: return "No disponible en esta versión de Nodus"
+        }
+    }
+    func adoptMacVerification(_ value:JSONValue?) { macVerification=value?.stringValue.flatMap(MacVerification.init(rawValue:)) }
     var macModel:JSONValue?
     var issue:String?
     var loading=false
@@ -41,7 +53,7 @@ final class NativeLiveChatOptions {
     @ObservationIgnored private var catalogueRequest=UUID()
     nonisolated static let defaultSelection:JSONValue = .object([
         "ideas":.bool(true),"themes":.bool(true),"contradictions":.bool(true),"gaps":.bool(true),"readingPath":.bool(true),"authors":.bool(true),"graph":.bool(true),"documents":.bool(true),"passages":.bool(true),
-        "graphParts":.object(["ideaNodes":.bool(true),"themeNodes":.bool(true),"ideaEdges":.bool(true),"authorGraph":.bool(true)]),"layers":.object(["ideas":.bool(true),"documents":.bool(true)])
+        "graphParts":.object(["ideaNodes":.bool(true),"themeNodes":.bool(true),"ideaEdges":.bool(true),"authorGraph":.bool(true)]),"layers":.object(["ideas":.bool(true),"documents":.bool(true),"indexed":.bool(true)])
     ])
     init(spaceId:String) {
         file=ChatHistoryStore.directory(spaceId:spaceId).appendingPathComponent("live-options.snapshot")
@@ -49,6 +61,49 @@ final class NativeLiveChatOptions {
             do { preferences=try JSONDecoder.nodus.decode(Preferences.self,from:Data(contentsOf:file));restored=true }
             catch { issue="No se han podido leer las opciones guardadas del chat live. Se conserva su archivo." }
         }
+    }
+    /// Mirrors shared/researchContextLayers.ts. All unrelated selection fields remain opaque.
+    nonisolated static func contextLayers(_ selection:JSONValue,academic:Bool=false) -> [String:Bool] {
+        let raw=selection.objectValue ?? [:]
+        if let saved=raw["layers"]?.objectValue {
+            if saved["indexedOnly"] == .bool(true) { return ["ideas":false,"documents":false,"indexed":true] }
+            let documents=saved["documents"] == .bool(true)
+            return ["ideas":saved["ideas"] == .bool(true),"documents":documents,"indexed":documents || (saved["indexed"] ?? saved["documents"]) == .bool(true)]
+        }
+        let ideas=["ideas","themes","contradictions","gaps","readingPath","authors","graph"].contains { raw[$0] == .bool(true) }
+        let documents=academic || raw["documents"] == .bool(true) || raw["passages"] != .bool(false)
+        return ["ideas":ideas,"documents":documents,"indexed":documents]
+    }
+    nonisolated static func effectiveWeb(_ selection:JSONValue,saved:String) -> String {
+        let layers=selection.objectValue?["layers"]?.objectValue
+        if let explicit=layers?["web"],case .bool(let enabled)=explicit { return enabled ? "auto":"off" }
+        if layers?["indexedOnly"] == .bool(true) { return "off" }
+        return saved == "off" ? "off":"auto"
+    }
+    nonisolated static func normalizedSelection(_ selection:JSONValue,webSearch:String,academic:Bool=false) -> JSONValue {
+        var raw=selection.objectValue ?? [:]
+        let layers=contextLayers(selection,academic:academic),ideas=layers["ideas"] == true,documents=layers["documents"] == true,indexed=layers["indexed"] == true
+        raw["layers"] = .object(["ideas":.bool(ideas),"documents":.bool(documents),"indexed":.bool(indexed),"web":.bool(effectiveWeb(selection,saved:webSearch) == "auto")])
+        for key in ["ideas","themes","contradictions","gaps","readingPath","authors","graph"] { raw[key] = .bool(ideas) }
+        raw["graphParts"] = .object(Dictionary(uniqueKeysWithValues:["ideaNodes","themeNodes","ideaEdges","authorGraph"].map { ($0,JSONValue.bool(ideas)) }))
+        raw["documents"] = .bool(documents);raw["passages"] = .bool(indexed)
+        return .object(raw)
+    }
+    func layerEnabled(_ key:String) -> Bool { Self.contextLayers(preferences.selection,academic:academicContext)[key] == true }
+    func setLayer(_ key:String,enabled:Bool) {
+        guard ["ideas","documents","indexed"].contains(key) else { return }
+        var raw=Self.normalizedSelection(preferences.selection,webSearch:preferences.webSearch,academic:academicContext).objectValue ?? [:]
+        var layers=raw["layers"]?.objectValue ?? [:];layers[key] = .bool(enabled)
+        if key == "documents",enabled { layers["indexed"] = .bool(true) }
+        if key == "indexed",!enabled { layers["documents"] = .bool(false) }
+        raw["layers"] = .object(layers)
+        preferences.selection=Self.normalizedSelection(.object(raw),webSearch:preferences.webSearch,academic:academicContext)
+        preferences.webSearch=Self.effectiveWeb(preferences.selection,saved:preferences.webSearch)
+    }
+    func setWebSearch(enabled:Bool) {
+        var raw=Self.normalizedSelection(preferences.selection,webSearch:preferences.webSearch,academic:academicContext).objectValue ?? [:]
+        var layers=raw["layers"]?.objectValue ?? [:];layers["web"] = .bool(enabled);raw["layers"] = .object(layers)
+        preferences.selection = .object(raw);preferences.webSearch=enabled ? "auto":"off"
     }
     var effectiveModel:JSONValue? { preferences.model ?? macModel }
     func modelKey(_ value:JSONValue) -> String { (value.objectValue?["provider"]?.stringValue ?? "")+"::"+(value.objectValue?["model"]?.stringValue ?? "") }
@@ -67,6 +122,8 @@ final class NativeLiveChatOptions {
         if preferences.useMacPrompt == false { result["systemPromptId"] = preferences.systemPromptId.map(JSONValue.string) ?? .null }
         if !preferences.attachmentIds.isEmpty { result["attachmentIds"] = .array(preferences.attachmentIds.map(JSONValue.string)) }
         if kind == .research {
+            preferences.webSearch=Self.effectiveWeb(preferences.selection,saved:preferences.webSearch)
+            preferences.selection=Self.normalizedSelection(preferences.selection,webSearch:preferences.webSearch,academic:academicContext)
             result["selection"]=preferences.selection;result["webSearch"] = .string(preferences.webSearch)
             result["skillIds"] = .array(preferences.skillIds.map(JSONValue.string))
             if !preferences.council.isEmpty {
@@ -77,6 +134,7 @@ final class NativeLiveChatOptions {
         try persist();return .object(result)
     }
     func load(session:SpaceSession,conversationId:String? = nil) async {
+        academicContext=session.vaultType == .academic
         guard let vault=session.vaultId else { issue=DesktopBridgeError.permissionDenied.localizedDescription;return }
         let identity=UUID();configurationRequest=identity;loading=true
         defer { if configurationRequest == identity { loading=false } }
@@ -85,6 +143,7 @@ final class NativeLiveChatOptions {
             let config=try await bridge.operation(vaultId:vault,method:"getMobileLiveChatConfiguration",args:[.string(kind.rawValue),preferences.model ?? .null],timeout:30)
             guard configurationRequest == identity else { return }
             guard let raw=config.objectValue,raw["version"] == .int(1),raw["vaultId"] == .string(vault),raw["kind"] == .string(kind.rawValue) else { throw DesktopBridgeError.malformedResponse }
+            adoptMacVerification(raw["researchAnswerVerification"])
             providers=Self.named(raw["providers"],name:"name");skills=Self.named(raw["skills"],name:"name")
             macModel=raw["model"] == .null ? nil:raw["model"]
             models=raw["favorites"]?.arrayValue ?? []
@@ -96,6 +155,7 @@ final class NativeLiveChatOptions {
                 preferences.thinkingEffort=raw["thinkingEffort"]?.stringValue ?? "standard"
                 restored=true
             }
+            preferences.webSearch=Self.effectiveWeb(preferences.selection,saved:preferences.webSearch)
             if preferences.thinkingEffort != "standard",!efforts.contains(preferences.thinkingEffort) { preferences.thinkingEffort=raw["thinkingEffort"]?.stringValue ?? "standard" }
             loaded=true;issue=nil
             let promptState=try await bridge.operation(vaultId:vault,method:"getResearchSystemPrompts",args:[conversationId.map { .string(kind.rawValue+":"+$0) } ?? .null])
@@ -150,7 +210,7 @@ final class NativeLiveChatOptions {
     func adoptConversation(_ document:CompanionChatDocument?) {
         preferences.useMacPrompt=true;preferences.systemPromptId=nil
         if let model=document?.data.objectValue?["model"],model != .null { preferences.model=model }
-        if let selection=document?.data.objectValue?["selection"],selection.objectValue != nil,document?.kind == .research { preferences.selection=selection }
+        if let selection=document?.data.objectValue?["selection"],selection.objectValue != nil,document?.kind == .research { preferences.selection=selection;preferences.webSearch=Self.effectiveWeb(selection,saved:preferences.webSearch) }
         preferences.attachmentIds=[]
     }
 }

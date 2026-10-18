@@ -34,7 +34,7 @@ struct NativeLiveChatOptionsView:View {
                         if options.preferences.thinkingEffort == "standard" { Text("Según el Mac").tag("standard") }
                         ForEach(options.efforts,id:\.self) { Text(effortName($0)).tag($0) }
                     }
-                    if research { Toggle("Búsqueda web",isOn:Binding(get:{options.preferences.webSearch == "auto"},set:{options.preferences.webSearch=$0 ? "auto":"off"})) }
+                    if research { Toggle("Búsqueda web",isOn:Binding(get:{options.preferences.webSearch == "auto"},set:{options.setWebSearch(enabled:$0)})) }
                 }
                 if research { researchSections }
                 if !options.attachments.isEmpty {
@@ -51,8 +51,12 @@ struct NativeLiveChatOptionsView:View {
     }
     @ViewBuilder private var researchSections:some View {
         Section {
+            LabeledContent("Verificación de fuentes",value:options.macVerificationLabel)
+        } footer: { Text("Usa la configuración de tu Mac. Puedes cambiarla en Nodus para Mac.") }
+        Section {
             Toggle("Ideas y relaciones",isOn:layer("ideas"))
-            Toggle("Documentos y pasajes",isOn:layer("documents"))
+            Toggle("Textos indexados",isOn:layer("indexed"))
+            Toggle("Documentos completos",isOn:layer("documents"))
             Picker("Cuaderno",selection:Binding<String?>(get:{options.preferences.selection.objectValue?["notebookId"]?.stringValue},set:{setSelection("notebookId",$0.map(JSONValue.string) ?? .null)})) {
                 Text("Todo el vault").tag(nil as String?)
                 ForEach(options.notebooks) { Text($0.name).tag(Optional($0.id)) }
@@ -163,12 +167,7 @@ struct NativeLiveChatOptionsView:View {
         })
     }
     private func layer(_ key:String) -> Binding<Bool> {
-        Binding(get:{options.preferences.selection.objectValue?["layers"]?.objectValue?[key] == .bool(true)},set:{ enabled in
-            var raw=options.preferences.selection.objectValue ?? [:],layers=raw["layers"]?.objectValue ?? [:];layers[key] = .bool(enabled);raw["layers"] = .object(layers)
-            for field in key == "ideas" ? ["ideas","themes","contradictions","gaps","readingPath","authors","graph"]:["documents","passages"] { raw[field] = .bool(enabled) }
-            if key == "ideas" { raw["graphParts"] = .object(Dictionary(uniqueKeysWithValues:["ideaNodes","themeNodes","ideaEdges","authorGraph"].map { ($0,JSONValue.bool(enabled)) })) }
-            options.preferences.selection = .object(raw)
-        })
+        Binding(get:{options.layerEnabled(key)},set:{options.setLayer(key,enabled:$0)})
     }
     private func chooseRetrieval(_ preset:String) {
         if preset == "agent" { var raw=options.preferences.selection.objectValue ?? [:];raw["retrieval"]=nil;options.preferences.selection = .object(raw);return }

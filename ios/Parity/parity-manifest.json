@@ -11472,6 +11472,20 @@
       ]
     },
     {
+      "id": "BrowserApi.enqueueBrowserCaptures",
+      "interface": "BrowserApi",
+      "method": "enqueueBrowserCaptures",
+      "source": "shared/types.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "BrowserApi.exportBrowserBookmarks",
       "interface": "BrowserApi",
       "method": "exportBrowserBookmarks",
@@ -11643,6 +11657,20 @@
       "id": "BrowserApi.importBrowserPdf",
       "interface": "BrowserApi",
       "method": "importBrowserPdf",
+      "source": "shared/types.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "BrowserApi.listBrowserCaptureJobs",
+      "interface": "BrowserApi",
+      "method": "listBrowserCaptureJobs",
       "source": "shared/types.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
@@ -11895,6 +11923,20 @@
       "id": "BrowserApi.restartNodusBrowser",
       "interface": "BrowserApi",
       "method": "restartNodusBrowser",
+      "source": "shared/types.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "BrowserApi.retryBrowserCaptureJob",
+      "interface": "BrowserApi",
+      "method": "retryBrowserCaptureJob",
       "source": "shared/types.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
