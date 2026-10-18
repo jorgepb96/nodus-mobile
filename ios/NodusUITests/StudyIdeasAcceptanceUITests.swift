@@ -26,6 +26,44 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         let own=app.buttons["study-local-document-"+note];XCTAssertTrue(own.waitForExistence(timeout:30));reveal(own,app);own.tap()
         XCTAssertTrue(app.webViews.staticTexts.containing(NSPredicate(format:"label CONTAINS %@",statement)).firstMatch.waitForExistence(timeout:30))
     }
+    /// Run only after resuming the same owning Mac/profile/grant. No new pairing input.
+    @MainActor func testReconnectedChosenNoteKeepsIdentityAndMacAcknowledgementAfterReopen() throws {
+        let env = ProcessInfo.processInfo.environment
+        for key in ["NODUS_UI_TEST_DEMO", "NODUS_ACCEPTANCE_LINK", "NODUS_ACCEPTANCE_PAIRING_LINK", "NODUS_ACCEPTANCE_PAIRING_CODE", "NODUS_ACCEPTANCE_SNAPSHOT_FILENAME", "NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] {
+            XCTAssertNil(env[key], "Use the previously linked grant without importing another source.")
+        }
+        let id = try required("NODUS_ACCEPTANCE_STUDY_CREATED_NOTE_ID")
+        XCTAssertNotNil(UUID(uuidString: id), "Pass the UUID, without the study-local-document- AX prefix.")
+        let course = try required("NODUS_ACCEPTANCE_STUDY_COURSE")
+        let title = try required("NODUS_ACCEPTANCE_STUDY_IDEA_LABEL")
+        let statement = try required("NODUS_ACCEPTANCE_STUDY_IDEA_STATEMENT")
+        let rowID = "study-local-document-" + id
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        defer { app.terminate() }
+        for pass in 1...2 {
+            app.launch()
+            // SpaceShell.monitorPublishedContent performs a real direct probe and
+            // synchronizeCompanionChanges, even when the publication revision is unchanged.
+            let current = try notes(app, course: course, title: title)
+            XCTAssertEqual(current, Set([rowID]), "Reconnection must retain the exact authored note identity.")
+            let row = app.buttons[rowID]; reveal(row, app); row.tap()
+            let edit = app.buttons["study-document-edit"]
+            XCTAssertTrue(edit.waitForExistence(timeout: 30)); edit.tap()
+            let web = app.webViews.firstMatch
+            XCTAssertTrue(web.waitForExistence(timeout: 30))
+            XCTAssertTrue(web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", statement)).firstMatch.waitForExistence(timeout: 30))
+            let acknowledged = NSPredicate { _, _ in
+                web.staticTexts["Guardado"].exists &&
+                !web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Guardado en este dispositivo")).firstMatch.exists
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: acknowledged, object: nil)], timeout: 60), .completed,
+                "Only the editor's confirmed Mac state is an acknowledgement; local persistence alone is insufficient.")
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "study-reconnected-same-note-mac-ack-\(pass)"; attachment.lifetime = .keepAlways; add(attachment)
+            app.terminate()
+        }
+    }
     private func verifyOwningMacUnavailable() async throws {
         let origin=try required("NODUS_ACCEPTANCE_OFFLINE_ORIGIN")
         let url=try XCTUnwrap(URL(string:origin + "/bridge/v2/capabilities"))
