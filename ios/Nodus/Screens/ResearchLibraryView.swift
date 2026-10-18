@@ -693,16 +693,33 @@ struct SyncedReportReadingTools: ViewModifier {
             .environment(legacyBookmark)
             .environment(annotations)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { readButton }
-                if annotations.isWritable {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        undoHighlightButton
-                        highlighterButton
-                        highlightColorMenu
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            readButton
+                            if annotations.isWritable {
+                                highlighterButton
+                                highlightColorMenu
+                                undoHighlightButton
+                            }
+                            if annotations.bookmark != nil || legacyBookmark.bookmark != nil { bookmarkMenu }
+                        } label: {
+                            Label("Reading tools", systemImage: "ellipsis.circle")
+                        }
+                        .accessibilityIdentifier("report-reading-tools")
                     }
-                }
-                if annotations.bookmark != nil || legacyBookmark.bookmark != nil {
-                    ToolbarItem(placement: .topBarTrailing) { bookmarkMenu }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) { readButton }
+                    if annotations.isWritable {
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            undoHighlightButton
+                            highlighterButton
+                            highlightColorMenu
+                        }
+                    }
+                    if annotations.bookmark != nil || legacyBookmark.bookmark != nil {
+                        ToolbarItem(placement: .topBarTrailing) { bookmarkMenu }
+                    }
                 }
             }
             .sheet(

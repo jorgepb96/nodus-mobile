@@ -1,6 +1,17 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Reading tools": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramientas de lectura"
+          }
+        }
+      }
+    },
     "Ask about your ideas and sources. Add context to focus the conversation.": {
       "localizations": {
         "es": {

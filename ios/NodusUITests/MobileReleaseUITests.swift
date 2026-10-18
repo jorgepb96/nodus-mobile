@@ -606,6 +606,8 @@ final class MobileReleaseUITests: XCTestCase {
         try revealResearchControl(read, in: gallery, upwards: true); read.tap()
         let reader = app.scrollViews["report-native-reader"]
         XCTAssertTrue(reader.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(app.buttons["report-reading-tools"].firstMatch.isHittable,
+                      "Phone reading tools must remain reachable without crowding the report title.")
         let body = reader.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Este informe analiza")).firstMatch
         for _ in 0..<12 { if body.exists && body.isHittable { break }; reader.swipeUp() }
         XCTAssertTrue(body.waitForExistence(timeout: 30), app.debugDescription)
@@ -3155,6 +3157,153 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(reopened.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Paso 2 de")).firstMatch.exists)
         XCTAssertFalse(reopened.buttons["Generar inmersión"].exists)
         capture(app, "live-immersion-generated-progress-reopened")
+    }
+
+    // Requires the QA-only fixture/oracle, never a copied user's note.
+    @MainActor
+    func testLiveWritingImprovementReviewsAppliesAndReopensStructuredQAFixture() throws {
+        executionTimeAllowance = 1200
+        let title = try liveGenerationInput("NODUS_ACCEPTANCE_WRITING_QA_TITLE")
+        let noteID = try liveGenerationInput("NODUS_ACCEPTANCE_WRITING_QA_NOTE_ID")
+        guard title.hasPrefix("QA ficticio LAB18"), UUID(uuidString: noteID) != nil else {
+            XCTFail("Only the explicitly created fictional QA fixture may be improved."); throw NSError(domain: "NodusAcceptance", code: 2)
+        }
+        let app = try liveGenerationStart(route: "workspace")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        let search = web.textFields["Buscar en notas e ideas…"].firstMatch
+        try liveGenerationTouch(search, in: web); search.typeText(title + "\n")
+        let note = web.buttons["Abrir " + title].firstMatch
+        try liveGenerationTouch(note, in: web)
+        let editor = web.textViews["Editor del documento"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 45))
+        let original = try XCTUnwrap(editor.value as? String)
+        for token in ["37", "2024", "García"] { XCTAssertTrue(original.contains(token)) }
+        liveGenerationIdentity(noteID, name: "live-writing-improvement-qa-note-id")
+        capture(app, "live-writing-qa-original")
+        let prompts = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Prompts de mejora")).firstMatch
+        XCTAssertTrue(prompts.waitForExistence(timeout: 20))
+        for _ in 0..<8 { if prompts.isHittable { break }; web.swipeLeft() }
+        XCTAssertTrue(prompts.isHittable); prompts.tap()
+        let promptSearch = web.searchFields["Buscar prompts…"].firstMatch
+        try liveGenerationTouch(promptSearch, in: web); promptSearch.typeText("Claro")
+        try dismissResearchKeyboard(app)
+        // Production StudyImproveDialog uses a pressed BUTTON, not the obsolete switch.
+        try liveGenerationTouch(web.buttons["Claro"].firstMatch, in: web)
+        try liveGenerationTouch(web.buttons["Mejorar con IA"].firstMatch, in: web)
+        try liveGenerationTouch(web.buttons["Mejorar documento completo"].firstMatch, in: web)
+        let instructions = web.textViews["Instrucciones adicionales"].firstMatch
+        try liveGenerationTouch(instructions, in: web)
+        instructions.typeText("Mejora sólo la claridad y elimina repeticiones. Conserva exactamente 37, 2024, García, 2023, la tabla y sus celdas, la fórmula E=mc^2, el enlace https://example.org/nodus-lab18, las citas y las listas. No añadas hechos ni nuevas fuentes.")
+        try dismissResearchKeyboard(app)
+        try liveGenerationMacModelVisible(web, key: "NODUS_ACCEPTANCE_WRITING_MAC_MODEL_ID")
+        // Prompt choice opens the new Pulir review composer; it does NOT generate/apply yet.
+        let panel = web.otherElements.matching(NSPredicate(format: "label == %@", "Pulir")).firstMatch
+        XCTAssertTrue(panel.exists)
+        let submit = panel.buttons["Enviar"].firstMatch
+        try liveGenerationTouch(submit, in: web)
+        XCTAssertTrue(web.staticTexts["Mejorando texto…"].firstMatch.waitForExistence(timeout: 45))
+        capture(app, "live-writing-mac-streaming")
+        let accept = web.buttons["Aceptar"].firstMatch
+        try liveGenerationWait(app, seconds: 900) { accept.exists && accept.isEnabled }
+        XCTAssertTrue(web.staticTexts["Revisa la propuesta"].firstMatch.exists)
+        XCTAssertEqual(editor.value as? String, original, "A streamed proposal cannot overwrite the real document before explicit acceptance.")
+        capture(app, "live-writing-review-before-accept")
+        try liveGenerationTouch(accept, in: web)
+        XCTAssertTrue(web.buttons["Deshacer mejora"].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(web.staticTexts["Guardado"].firstMatch.waitForExistence(timeout: 45))
+        let saved = try XCTUnwrap(editor.value as? String)
+        XCTAssertNotEqual(saved, original, "The Mac provider must return an actual applied improvement.")
+        for token in ["37", "2024", "García"] { XCTAssertTrue(saved.contains(token)) }
+        liveGenerationIdentity(String(saved.prefix(200)), name: "live-writing-applied-ui-text")
+        capture(app, "live-writing-accepted-saved")
+        app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK"); app.launch()
+        let reopened = app.otherElements["shared-desktop-workspace"].webViews.firstMatch
+        let restored = reopened.textViews["Editor del documento"].firstMatch
+        if !restored.waitForExistence(timeout: 10) {
+            let filter = reopened.textFields["Buscar en notas e ideas…"].firstMatch
+            try liveGenerationTouch(filter, in: reopened); filter.typeText(title + "\n")
+            try liveGenerationTouch(reopened.buttons["Abrir " + title].firstMatch, in: reopened)
+        }
+        XCTAssertTrue(restored.waitForExistence(timeout: 30)); XCTAssertEqual(restored.value as? String, saved)
+        capture(app, "live-writing-applied-reopened")
+        // Independent actual-Mac readback must verify SAME note ID, native block kinds/IDs,
+        // table/formula/link/list/style/academic metadata, protected content and log action=replace.
+    }
+    @MainActor private func liveWorkshopReveal(_ element: XCUIElement, app: XCUIApplication) throws {
+        XCTAssertTrue(element.waitForExistence(timeout: 30), app.debugDescription)
+        for _ in 0..<15 { if element.isHittable { break }; app.swipeUp() }
+        guard element.isHittable else { XCTFail("Native workshop control must be touchable: " + element.label); throw NSError(domain: "NodusAcceptance", code: 2) }
+    }
+    @MainActor
+    func testLiveWorkshopSelectedRealSourcesGeneratesSavedDraftAndReopens() throws {
+        executionTimeAllowance = 1800
+        let encoded = try liveGenerationInput("NODUS_ACCEPTANCE_WORKSHOP_SOURCE_LABELS")
+        let labels = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String])
+        XCTAssertEqual(labels.count, 3); XCTAssertEqual(Set(labels).count, 3)
+        let query = try liveGenerationInput("NODUS_ACCEPTANCE_WORKSHOP_SOURCE_QUERY")
+        let marker = "NodusWorkshopQA-" + UUID().uuidString
+        let title = "QA ficticio LAB18 · " + marker
+        liveGenerationIdentity(title, name: "live-workshop-request-title")
+        let app = try liveGenerationStart(route: "writing")
+        defer { app.terminate() }
+        // This route is native WritingWorkshopMobileView, NOT Desktop WritingWorkshopView.
+        let newDraft = app.buttons["Nuevo borrador"].firstMatch
+        try liveWorkshopReveal(newDraft, app: app); newDraft.tap()
+        let titleField = app.textFields["Título del borrador"].firstMatch
+        try liveWorkshopReveal(titleField, app: app); titleField.tap(); titleField.typeText(title)
+        let objective = app.textViews["Objetivo, argumento o pregunta"].firstMatch
+        try liveWorkshopReveal(objective, app: app); objective.tap()
+        objective.typeText("Explica cómo las fuentes elegidas relacionan el turismo con la imagen de España durante el franquismo. Distingue autores y conserva citas verificables sin inventarlas. " + marker)
+        try dismissResearchKeyboard(app)
+        XCTAssertTrue(app.staticTexts["Modelo de Nodus"].exists)
+        let filter = app.textFields["Buscar fuentes"].firstMatch
+        try liveWorkshopReveal(filter, app: app); filter.tap(); filter.typeText(query)
+        try dismissResearchKeyboard(app)
+        let ideas = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Ideas · 0 seleccionadas")).firstMatch
+        try liveWorkshopReveal(ideas, app: app); ideas.tap()
+        for label in labels {
+            let source = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+            try liveWorkshopReveal(source, app: app); source.tap()
+        }
+        XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Ideas · 3 seleccionadas")).firstMatch.exists)
+        capture(app, "live-workshop-three-real-sources")
+        let generate = app.buttons["Generar con Nodus"].firstMatch
+        try liveWorkshopReveal(generate, app: app); XCTAssertTrue(generate.isEnabled); generate.tap()
+        // The canonical action ACK closes the native composer. An explicit accepted/running
+        // receipt is required; a local pending-to-connect receipt is not generation evidence.
+        let acknowledged = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@", "Solicitud aceptada por Nodus", "Nodus está ejecutando", "Resultado guardado y disponible en Nodus")).firstMatch
+        XCTAssertTrue(acknowledged.waitForExistence(timeout: 60))
+        capture(app, "live-workshop-mac-action-acknowledged")
+        // Read-only catalogue refresh by user-visible filtering; never press Generate again.
+        let deadline = Date().addingTimeInterval(1200)
+        var found: XCUIElement?
+        while Date() < deadline {
+            let search = app.textFields["Buscar borradores"].firstMatch
+            try liveWorkshopReveal(search, app: app); search.tap()
+            if let old = search.value as? String, old != search.placeholderValue { search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count)) }
+            search.typeText(title); try dismissResearchKeyboard(app)
+            let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
+            if row.waitForExistence(timeout: 12) { found = row; break }
+            // The next visible filter edit refreshes the real Mac catalogue, not the job.
+        }
+        let row = try XCTUnwrap(found, "The exact Mac-generated draft must be saved and visible, not merely accepted.")
+        try liveWorkshopReveal(row, app: app); row.tap()
+        XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 30))
+        let prose = app.staticTexts.allElementsBoundByIndex.map(\.label).filter { $0.count > 180 && !$0.contains(marker) }
+        let paragraph = try XCTUnwrap(prose.first, "A saved generated draft must show actual readable prose.")
+        let snippet = String(paragraph.prefix(90)); liveGenerationIdentity(snippet, name: "live-workshop-saved-prose-snippet")
+        capture(app, "live-workshop-generated-reader")
+        app.terminate(); app.launchEnvironment.removeValue(forKey: "NODUS_ACCEPTANCE_PAIRING_LINK"); app.launch()
+        let search = app.textFields["Buscar borradores"].firstMatch
+        try liveWorkshopReveal(search, app: app); search.tap(); search.typeText(title); try dismissResearchKeyboard(app)
+        let restored = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", title))
+        XCTAssertTrue(restored.firstMatch.waitForExistence(timeout: 45)); XCTAssertEqual(restored.count, 1)
+        try liveWorkshopReveal(restored.firstMatch, app: app); restored.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", snippet)).firstMatch.waitForExistence(timeout: 30))
+        capture(app, "live-workshop-saved-reopened")
+        // Root RO oracle must bind the action's request title/selection/model to its new saved
+        // draft UUID and ensure no second request/provider call occurred during filter/reopen.
     }
 
     @MainActor
