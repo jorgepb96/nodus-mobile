@@ -36,7 +36,18 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         let enabled=try required("NODUS_ACCEPTANCE_STUDY_IDEAS_MUTATION");XCTAssertEqual(enabled,"1");guard enabled == "1" else { throw SetupError.missingConfiguration }
         let pack=try required("NODUS_ACCEPTANCE_STUDY_COPY_ID"),note=try required("NODUS_ACCEPTANCE_STUDY_CREATED_NOTE_ID"),statement=try required("NODUS_ACCEPTANCE_STUDY_IDEA_STATEMENT")
         let app=XCUIApplication();app.launchArguments=["-AppleLanguages","(es)","-AppleLocale","es_ES"];app.launch();defer{app.terminate()}
-        try navigate(app,"settings");let remove=app.buttons["companion-download-remove-"+pack];XCTAssertTrue(remove.waitForExistence(timeout:20));reveal(remove,app);remove.tap();XCTAssertTrue(remove.waitForNonExistence(timeout:20))
+        try navigate(app,"settings")
+        let remove=app.buttons["companion-download-remove-"+pack]
+        let list=app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout:10))
+        // List virtualizes rows below the viewport. Scroll the actual settings
+        // list before asking whether its selected-pack control exists.
+        for _ in 0..<20 {
+            if remove.exists && remove.isHittable { break }
+            list.swipeUp()
+        }
+        XCTAssertTrue(remove.exists && remove.isHittable)
+        remove.tap();XCTAssertTrue(remove.waitForNonExistence(timeout:20))
         app.terminate();app.launch();try navigate(app,"studyCourses");let catalogue=app.buttons["workspace-catalogue-studyCourses"];XCTAssertTrue(catalogue.waitForExistence(timeout:20));reveal(catalogue,app);catalogue.tap()
         let own=app.buttons["study-local-document-"+note];XCTAssertTrue(own.waitForExistence(timeout:30));reveal(own,app);own.tap()
         try verifyAuthoredReader(app, statement: statement)
@@ -181,9 +192,9 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
     }
     @MainActor private func navigate(_ app:XCUIApplication,_ route:String) throws {
         let toggle=app.buttons["nodus-navigation-toggle"];XCTAssertTrue(toggle.waitForExistence(timeout:45));let target=app.buttons["nodus-nav-"+route]
-        if !target.isHittable { toggle.tap() };XCTAssertTrue(target.waitForExistence(timeout:15));reveal(target,app);target.tap()
+        if !target.exists || !target.isHittable { toggle.tap() };XCTAssertTrue(target.waitForExistence(timeout:15));reveal(target,app);target.tap()
     }
     @MainActor private func reveal(_ element:XCUIElement,_ app:XCUIApplication) {
-        for _ in 0..<16 { if element.isHittable { break };app.swipeUp() };XCTAssertTrue(element.isHittable)
+        for _ in 0..<16 { if element.exists && element.isHittable { break };app.swipeUp() };XCTAssertTrue(element.exists && element.isHittable)
     }
 }
