@@ -23,6 +23,10 @@ enum AIExecutionMode: String, CaseIterable, Identifiable { case live, autonomous
 @Observable
 @MainActor
 final class SpaceSession {
+    // Releasing a document's WebKit scheme also releases its owning session.
+    // No actor work is needed during teardown (swiftlang/swift#88036).
+    nonisolated deinit {}
+
     var isSurfaceFullscreen = false
     private(set) var connection: AppModel.Connection
     let client: NodusClient
