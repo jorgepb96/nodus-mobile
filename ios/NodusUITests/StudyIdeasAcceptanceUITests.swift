@@ -101,7 +101,12 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
             app.pickerWheels.firstMatch.adjust(toPickerWheelValue:subject)
             let done = app.buttons.matching(NSPredicate(format:"label IN %@", ["Done","Aceptar","Listo"])).firstMatch
             XCTAssertTrue(done.waitForExistence(timeout:5)); done.tap()
-        } else { let option = app.staticTexts[subject]; XCTAssertTrue(option.waitForExistence(timeout:5)); option.tap() }
+        } else {
+            // iOS exposes the native HTML select popover as labelled buttons,
+            // rather than static text (captured in the actual copied-lab run).
+            let option = app.buttons[subject].firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout:5)); option.tap()
+        }
         let download = app.buttons["Descargar 7 días"]; XCTAssertTrue(download.waitForExistence(timeout:15)); download.tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@", "Disponible en este dispositivo durante 7")).firstMatch.waitForExistence(timeout:60))
         // Downloaded reading and manual writing remain available without a
