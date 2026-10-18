@@ -15,7 +15,7 @@ import WebKit
     }
     static func reply(_ view: WKWebView?, envelope: JSONValue) throws {
         let arguments = try replyArguments(envelope)
-        view?.callAsyncJavaScript(replyBody, arguments: arguments, in: nil, contentWorld: .page, completionHandler: nil)
+        view?.callAsyncJavaScript(replyBody, arguments: arguments, in: nil, in: .page, completionHandler: nil)
     }
     static func events(_ view: WKWebView?, payload: Any, optional: Bool) throws {
         // Public WebKit supports NSDictionary/NSArray/NSString/NSNumber/NSNull.
@@ -24,6 +24,6 @@ import WebKit
             throw DesktopBridgeError.malformedResponse
         }
         view?.callAsyncJavaScript(optional ? optionalEventBody : eventBody,
-            arguments: ["batch": batch], in: nil, contentWorld: .page, completionHandler: nil)
+            arguments: ["batch": batch], in: nil, in: .page, completionHandler: nil)
     }
 }

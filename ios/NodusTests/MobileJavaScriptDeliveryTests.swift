@@ -96,7 +96,7 @@ import WebKit
                         do { try await Task.sleep(for: .seconds(15)) } catch { return }
                         self?.finishCall(id, .failure(Deadline.javaScript))
                     }
-                    web.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: .page) { [weak self] result in
+                    web.callAsyncJavaScript(body, arguments: arguments, in: nil, in: .page) { [weak self] result in
                         switch result {
                         case .success(let value): self?.finishCall(id, .success(value))
                         case .failure(let error): self?.finishCall(id, .failure(error))
