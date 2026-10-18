@@ -705,7 +705,9 @@ struct SyncedReportReadingTools: ViewModifier {
                             if annotations.bookmark != nil || legacyBookmark.bookmark != nil { bookmarkMenu }
                         } label: {
                             Label("Reading tools", systemImage: "ellipsis.circle")
+                                .foregroundStyle(session.accent)
                         }
+                        .tint(session.accent)
                         .accessibilityIdentifier("report-reading-tools")
                     }
                 } else {

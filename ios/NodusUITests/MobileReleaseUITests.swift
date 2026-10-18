@@ -677,7 +677,12 @@ final class MobileReleaseUITests: XCTestCase {
             // Captions can disappear when they collide after zooming, and
             // WebKit does not expose every empty node button to XCTest.
             let before = try XCTUnwrap(stage.label.components(separatedBy: "Zoom: ").last.flatMap { Int($0.filter(\.isNumber)) })
-            let frame = stage.frame
+            // The generic canvas AX frame encloses moving/clipped node captions;
+            // actual iOS evidence showed 779→665pt while the viewport stayed440pt.
+            // Compare stable viewport/chrome geometry, preserving actual camera zoom.
+            let viewport = web.frame
+            let controls = [back, search, fullscreen, web.buttons["Acercar"].firstMatch]
+            let controlFrames = controls.map(\.frame)
             capture(app, "phone-graph-before-native-pinch")
             stage.pinch(withScale: 1.2, velocity: 1)
             capture(app, "phone-graph-after-native-pinch")
@@ -687,8 +692,19 @@ final class MobileReleaseUITests: XCTestCase {
             }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enlarged, object: nil)], timeout: 10), .completed,
                            "Two native touches must enlarge the actual graph camera, not just the page text.")
-            XCTAssertEqual(stage.frame.width, frame.width, accuracy: 1)
-            XCTAssertEqual(stage.frame.height, frame.height, accuracy: 1)
+            XCTAssertEqual(web.frame.width, viewport.width, accuracy: 1)
+            XCTAssertEqual(web.frame.height, viewport.height, accuracy: 1)
+            XCTAssertEqual(web.frame.minX, viewport.minX, accuracy: 1)
+            XCTAssertEqual(web.frame.minY, viewport.minY, accuracy: 1)
+            for (control, original) in zip(controls, controlFrames) {
+                XCTAssertEqual(control.frame.minX, original.minX, accuracy: 1)
+                XCTAssertEqual(control.frame.minY, original.minY, accuracy: 1)
+                XCTAssertEqual(control.frame.width, original.width, accuracy: 1)
+                XCTAssertEqual(control.frame.height, original.height, accuracy: 1)
+                XCTAssertTrue(control.isHittable)
+            }
+            XCTAssertTrue(stage.exists && stage.isHittable)
+            XCTAssertFalse(stage.frame.intersection(web.frame).isEmpty)
             XCTAssertFalse(web.otherElements.matching(NSPredicate(format: "label CONTAINS %@", "cuadro de diálogo de web")).firstMatch.exists,
                            "Pinching the graph must not open an idea dossier.")
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: nil)], timeout: 5), .completed)

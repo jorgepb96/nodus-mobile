@@ -640,22 +640,35 @@ private struct LoadingCountArrow: View {
     let accent: Color
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nodusResidentRouteActive) private var routeActive
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Group {
+            if routeActive, scenePhase == .active, !reduceMotion {
+                AnimatedLoadingCountArrow()
+            } else {
+                Image(systemName: "arrow.clockwise")
+            }
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(accent)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(accent.opacity(0.16), in: Capsule())
+        .accessibilityLabel("Loading…")
+    }
+}
+
+/// Removing this decorative subtree also removes its repeating animation. The resident
+/// Home, its counts and its navigation remain mounted while inactive or in the background.
+private struct AnimatedLoadingCountArrow: View {
     @State private var isTurning = false
 
     var body: some View {
         Image(systemName: "arrow.clockwise")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(accent)
-            .rotationEffect(.degrees(isTurning && !reduceMotion ? 360 : 0))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(accent.opacity(0.16), in: Capsule())
-            .animation(
-                reduceMotion ? nil : .linear(duration: 0.85).repeatForever(autoreverses: false),
-                value: isTurning
-            )
+            .rotationEffect(.degrees(isTurning ? 360 : 0))
+            .animation(.linear(duration: 0.85).repeatForever(autoreverses: false), value: isTurning)
             .onAppear { isTurning = true }
-            .onDisappear { isTurning = false }
-            .accessibilityLabel("Loading…")
     }
 }
