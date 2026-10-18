@@ -95,11 +95,17 @@ if args.mac_unavailable:
     # The test independently probes this address and rejects TLS/auth failures.
     values["NODUS_ACCEPTANCE_OFFLINE_ORIGIN"] = offer["origins"][-1]
 if args.bridge_pid:
-    expected = "node_modules/electron/dist/Electron.app/Contents/MacOS/Electron node_modules/.cache/nodus-mobile-acceptance"
-    command = subprocess.check_output(["ps", "-p", str(args.bridge_pid), "-o", "command="], text=True).strip()
     repository = Path(__file__).resolve().parents[3] / "nodus"
+    executable = "node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+    host = "node_modules/.cache/nodus-mobile-acceptance"
+    # Electron's launcher may use an absolute executable or host argument.
+    # Accept only literal paths into this checkout, with its exact cwd below.
+    expected = {binary + " " + argument
+                for binary in (executable, str(repository / executable))
+                for argument in (host, str(repository / host))}
+    command = subprocess.check_output(["ps", "-p", str(args.bridge_pid), "-o", "command="], text=True).strip()
     cwd = subprocess.check_output(["lsof", "-a", "-p", str(args.bridge_pid), "-d", "cwd", "-Fn"], text=True)
-    if command != expected or "n" + str(repository) not in cwd.splitlines():
+    if command not in expected or "n" + str(repository) not in cwd.splitlines():
         raise SystemExit("Refusing to signal a process outside this checkout's acceptance Bridge")
     offer_path = args.lab / "mobile-pairing-offer.json"
     previous_id = json.loads(offer_path.read_text())["id"]
