@@ -53,7 +53,7 @@ import WebKit
         } catch {
             let failure = error as NSError
             #expect(failure.domain == WKError.errorDomain)
-            #expect(failure.code == WKError.Code.javaScriptException.rawValue)
+            #expect(failure.code == WKError.Code.javaScriptExceptionOccurred.rawValue)
         }
     }
 
@@ -69,7 +69,7 @@ import WebKit
             try Task.checkCancellation()
             web.navigationDelegate = self
             try await withTaskCancellationHandler(operation: {
-                try await withCheckedThrowingContinuation { continuation in
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                     guard !Task.isCancelled else { continuation.resume(throwing: CancellationError()); return }
                     loaded = continuation
                     loadTimeout = Task { @MainActor [weak self] in
