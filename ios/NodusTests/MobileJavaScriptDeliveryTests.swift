@@ -14,11 +14,11 @@ import WebKit
         let arguments = try MobileJavaScriptDelivery.replyArguments(envelope)
         _ = try await page.call(MobileJavaScriptDelivery.replyBody, arguments: arguments)
         let raw = try await page.call("return JSON.stringify(window.reply);", arguments: [:])
-        let encoded = try #require(raw as? String)
+        let encoded = try #require(raw.stringValue)
         let actual = try JSONDecoder.nodus.decode(JSONValue.self, from: Data(encoded.utf8))
         #expect(actual == envelope)
         let injected = try await page.call("return Boolean(window.injected);", arguments: [:])
-        #expect(injected as? Bool == false)
+        #expect(injected == .bool(false))
     }
 
     @Test("real WebKit receives large ordered event batches then the final reply with unchanged channel, sequence and request ID")
@@ -30,7 +30,7 @@ import WebKit
         try MobileJavaScriptDelivery.events(page.web, payload: batch, optional: false)
         try MobileJavaScriptDelivery.reply(page.web, envelope: .array([.string(requestID), .object(["answer": .string(text)]), .null]))
         let raw = try await page.call("return JSON.stringify({events:window.events,reply:window.reply,order:window.order});", arguments: [:])
-        let encoded = try #require(raw as? String)
+        let encoded = try #require(raw.stringValue)
         let actual = try JSONDecoder.nodus.decode(JSONValue.self, from: Data(encoded.utf8))
         let events = try #require(actual.objectValue?["events"]?.arrayValue)
         #expect(events.count == batch.count)
@@ -62,7 +62,7 @@ import WebKit
         let web = WKWebView(frame: .zero)
         private var loaded: CheckedContinuation<Void, any Error>?
         private var loadTimeout: Task<Void, Never>?
-        private var pendingCall: (id: UUID, continuation: CheckedContinuation<Any?, any Error>)?
+        private var pendingCall: (id: UUID, continuation: CheckedContinuation<JSONValue, any Error>)?
         private var callTimeout: Task<Void, Never>?
 
         func load() async throws {
@@ -84,7 +84,7 @@ import WebKit
 
         /// Bounded public WebKit completion path. Late completions cannot resume
         /// another call's continuation; all state is isolated to the main actor.
-        func call(_ body: String, arguments: [String: Any] = [:]) async throws -> Any? {
+        func call(_ body: String, arguments: [String: Any] = [:]) async throws -> JSONValue {
             try Task.checkCancellation()
             guard pendingCall == nil else { throw Deadline.invalidConcurrentCall }
             let id = UUID()
@@ -98,7 +98,11 @@ import WebKit
                     }
                     web.callAsyncJavaScript(body, arguments: arguments, in: nil, in: .page) { [weak self] result in
                         switch result {
-                        case .success(let value): self?.finishCall(id, .success(value))
+                        case .success(let value):
+                            do {
+                                let data = try JSONSerialization.data(withJSONObject: value ?? NSNull(), options: [.fragmentsAllowed])
+                                self?.finishCall(id, .success(try JSONDecoder.nodus.decode(JSONValue.self, from: data)))
+                            } catch { self?.finishCall(id, .failure(error)) }
                         case .failure(let error): self?.finishCall(id, .failure(error))
                         }
                     }
@@ -110,7 +114,7 @@ import WebKit
             loaded = nil; loadTimeout?.cancel(); loadTimeout = nil
             continuation.resume(with: result)
         }
-        private func finishCall(_ id: UUID, _ result: Result<Any?, any Error>) {
+        private func finishCall(_ id: UUID, _ result: Result<JSONValue, any Error>) {
             guard let call = pendingCall, call.id == id else { return }
             pendingCall = nil; callTimeout?.cancel(); callTimeout = nil
             call.continuation.resume(with: result)
