@@ -3061,9 +3061,9 @@ ${conversation}`;
   ];
   var SCRIPTOR_RUNTIME_ERRORS = {
     ...Object.fromEntries(rows.map(([source, ...values]) => {
-      const translations2 = Object.fromEntries(languages.map((language, index) => [language, values[index]]));
-      translations2["pt-BR"] = translations2.pt;
-      return [source, translations2];
+      const translations3 = Object.fromEntries(languages.map((language, index) => [language, values[index]]));
+      translations3["pt-BR"] = translations3.pt;
+      return [source, translations3];
     })),
     "Solicitud de imagen inv\xE1lida.": {
       en: "Invalid image request.",
@@ -3162,6 +3162,372 @@ ${conversation}`;
     translate: (element) => Object.fromEntries(Object.entries(SCRIPTOR_RUNTIME_ERRORS["La f\xF3rmula contiene un elemento no compatible con Word:"]).map(([language, prefix]) => [language, `${prefix} ${element}`]))
   }];
 
+  // shared/embeddingContract.ts
+  var EMBEDDING_CONTRACT_FIELDS = [
+    "provider",
+    "model",
+    "dim",
+    "protocol",
+    "task",
+    "preprocessing",
+    "normalization",
+    "quantization",
+    "configVersion"
+  ];
+  var FIELD_SET = new Set(EMBEDDING_CONTRACT_FIELDS);
+
+  // shared/embeddingGemma2Availability.ts
+  var EMBEDDING_GEMMA2_INTEL_UNAVAILABLE = "EmbeddingGemma no est\xE1 disponible en los Mac con procesador Intel. Elige otro modelo de embeddings.";
+  var EMBEDDING_GEMMA2_INTEL_COPY = {
+    en: "EmbeddingGemma is unavailable on Intel Macs. Choose another embedding model.",
+    fr: "EmbeddingGemma est indisponible sur les Mac Intel. Choisissez un autre mod\xE8le de plongements.",
+    de: "EmbeddingGemma ist auf Intel-Macs nicht verf\xFCgbar. W\xE4hle ein anderes Embedding-Modell.",
+    pt: "O EmbeddingGemma n\xE3o est\xE1 dispon\xEDvel em Macs Intel. Escolhe outro modelo de embeddings.",
+    "pt-BR": "O EmbeddingGemma n\xE3o est\xE1 dispon\xEDvel em Macs Intel. Escolha outro modelo de embeddings.",
+    it: "EmbeddingGemma non \xE8 disponibile sui Mac Intel. Scegli un altro modello di embedding.",
+    tr: "EmbeddingGemma Intel Mac bilgisayarlarda kullan\u0131lamaz. Ba\u015Fka bir g\xF6mme modeli se\xE7in.",
+    "zh-CN": "EmbeddingGemma \u4E0D\u652F\u6301 Intel Mac\u3002\u8BF7\u9009\u62E9\u5176\u4ED6\u5D4C\u5165\u6A21\u578B\u3002",
+    "zh-TW": "EmbeddingGemma \u4E0D\u652F\u63F4 Intel Mac\u3002\u8ACB\u9078\u64C7\u5176\u4ED6\u5D4C\u5165\u6A21\u578B\u3002",
+    ja: "EmbeddingGemma \u306F Intel Mac \u3067\u306F\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002\u5225\u306E\u57CB\u3081\u8FBC\u307F\u30E2\u30C7\u30EB\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+    ko: "Intel Mac\uC5D0\uC11C\uB294 EmbeddingGemma\uB97C \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB2E4\uB978 \uC784\uBCA0\uB529 \uBAA8\uB378\uC744 \uC120\uD0DD\uD558\uC138\uC694."
+  };
+
+  // shared/embeddingGemma2Errors.ts
+  var KEYS = [
+    "EmbeddingGemma: runtime cerrado.",
+    "EmbeddingGemma: runtime inactivo.",
+    "EmbeddingGemma: solicitud cancelada.",
+    "Perfil EmbeddingGemma desconocido.",
+    "EmbeddingGemma: otra biblioteca est\xE1 en uso.",
+    "EmbeddingGemma: t\xEDtulos desalineados.",
+    "EmbeddingGemma: tiempo de inferencia agotado.",
+    "EmbeddingGemma tiene solicitudes en curso.",
+    "El proxy de recursos exige un perfil aislado.",
+    "Proxy de recursos QA inv\xE1lido.",
+    "Puerto de runtime QA inv\xE1lido.",
+    "EmbeddingGemma: cantidad o dimensi\xF3n incompatible.",
+    "EmbeddingGemma: vector nativo inv\xE1lido.",
+    "EmbeddingGemma: vector vac\xEDo.",
+    "EmbeddingGemma: lote excede el presupuesto de tokens.",
+    "La b\xF3veda o la configuraci\xF3n de embeddings cambi\xF3 durante la solicitud. No se publicar\xE1 el resultado.",
+    "La b\xF3veda cambi\xF3 durante la consulta. No se publicar\xE1 el resultado.",
+    "Los t\xEDtulos de embeddings no coinciden con las entradas.",
+    "Perfil EmbeddingGemma desconocido: {value}",
+    "EmbeddingGemma no disponible: {value}",
+    "EmbeddingGemma: worker termin\xF3 ({value}).",
+    "EmbeddingGemma: entrada {value} supera el l\xEDmite de 8192 tokens (incluidos prefijos y tokens especiales).",
+    "Descarga y verifica \xAB{value}\xBB desde Ajustes \u2192 Modelos IA."
+  ];
+  function table(values) {
+    if (values.length !== KEYS.length) throw new Error("EmbeddingGemma error translations are incomplete.");
+    return values;
+  }
+  var TABLES = {
+    en: table([
+      "EmbeddingGemma: runtime closed.",
+      "EmbeddingGemma: runtime idle.",
+      "EmbeddingGemma: request cancelled.",
+      "Unknown EmbeddingGemma profile.",
+      "EmbeddingGemma: another library is in use.",
+      "EmbeddingGemma: misaligned titles.",
+      "EmbeddingGemma: inference timed out.",
+      "EmbeddingGemma has active requests.",
+      "The asset proxy requires an isolated profile.",
+      "Invalid QA asset proxy.",
+      "Invalid QA runtime port.",
+      "EmbeddingGemma: incompatible count or dimension.",
+      "EmbeddingGemma: invalid native vector.",
+      "EmbeddingGemma: empty vector.",
+      "EmbeddingGemma: batch exceeds the token budget.",
+      "The vault or embedding configuration changed during the request. The result will not be published.",
+      "The vault changed during the query. The result will not be published.",
+      "Embedding titles do not match the inputs.",
+      "Unknown EmbeddingGemma profile: {value}",
+      "EmbeddingGemma unavailable: {value}",
+      "EmbeddingGemma: worker exited ({value}).",
+      "EmbeddingGemma: input {value} exceeds the 8192-token limit (including prefixes and special tokens).",
+      "Download and verify \u201C{value}\u201D in Settings \u2192 AI Models."
+    ]),
+    fr: table([
+      "EmbeddingGemma : moteur ferm\xE9.",
+      "EmbeddingGemma : moteur inactif.",
+      "EmbeddingGemma : requ\xEAte annul\xE9e.",
+      "Profil EmbeddingGemma inconnu.",
+      "EmbeddingGemma : une autre biblioth\xE8que est utilis\xE9e.",
+      "EmbeddingGemma : titres mal align\xE9s.",
+      "EmbeddingGemma : d\xE9lai d\u2019inf\xE9rence d\xE9pass\xE9.",
+      "EmbeddingGemma a des requ\xEAtes en cours.",
+      "Le proxy de ressources exige un profil isol\xE9.",
+      "Proxy de ressources QA non valide.",
+      "Port du moteur QA non valide.",
+      "EmbeddingGemma : nombre ou dimension incompatible.",
+      "EmbeddingGemma : vecteur natif non valide.",
+      "EmbeddingGemma : vecteur vide.",
+      "EmbeddingGemma : le lot d\xE9passe le budget de jetons.",
+      "Le coffre ou la configuration des embeddings a chang\xE9 pendant la requ\xEAte. Le r\xE9sultat ne sera pas publi\xE9.",
+      "Le coffre a chang\xE9 pendant la recherche. Le r\xE9sultat ne sera pas publi\xE9.",
+      "Les titres des embeddings ne correspondent pas aux entr\xE9es.",
+      "Profil EmbeddingGemma inconnu : {value}",
+      "EmbeddingGemma indisponible : {value}",
+      "EmbeddingGemma : processus termin\xE9 ({value}).",
+      "EmbeddingGemma : l\u2019entr\xE9e {value} d\xE9passe la limite de 8192 jetons (pr\xE9fixes et jetons sp\xE9ciaux inclus).",
+      "T\xE9l\xE9chargez et v\xE9rifiez \xAB {value} \xBB dans R\xE9glages \u2192 Mod\xE8les d\u2019IA."
+    ]),
+    de: table([
+      "EmbeddingGemma: Laufzeit geschlossen.",
+      "EmbeddingGemma: Laufzeit inaktiv.",
+      "EmbeddingGemma: Anfrage abgebrochen.",
+      "Unbekanntes EmbeddingGemma-Profil.",
+      "EmbeddingGemma: eine andere Bibliothek wird verwendet.",
+      "EmbeddingGemma: Titel nicht zugeordnet.",
+      "EmbeddingGemma: Zeitlimit der Inferenz \xFCberschritten.",
+      "EmbeddingGemma hat laufende Anfragen.",
+      "Der Ressourcenproxy ben\xF6tigt ein isoliertes Profil.",
+      "Ung\xFCltiger QA-Ressourcenproxy.",
+      "Ung\xFCltiger QA-Laufzeitport.",
+      "EmbeddingGemma: Anzahl oder Dimension nicht kompatibel.",
+      "EmbeddingGemma: ung\xFCltiger nativer Vektor.",
+      "EmbeddingGemma: leerer Vektor.",
+      "EmbeddingGemma: der Stapel \xFCberschreitet das Tokenbudget.",
+      "Der Vault oder die Embedding-Konfiguration wurde w\xE4hrend der Anfrage ge\xE4ndert. Das Ergebnis wird nicht ver\xF6ffentlicht.",
+      "Der Vault wurde w\xE4hrend der Suche ge\xE4ndert. Das Ergebnis wird nicht ver\xF6ffentlicht.",
+      "Die Embedding-Titel passen nicht zu den Eingaben.",
+      "Unbekanntes EmbeddingGemma-Profil: {value}",
+      "EmbeddingGemma nicht verf\xFCgbar: {value}",
+      "EmbeddingGemma: Worker beendet ({value}).",
+      "EmbeddingGemma: Eingabe {value} \xFCberschreitet die Grenze von 8192 Tokens (einschlie\xDFlich Pr\xE4fixen und Spezialtokens).",
+      "Laden Sie \u201E{value}\u201C unter Einstellungen \u2192 KI-Modelle herunter und \xFCberpr\xFCfen Sie es."
+    ]),
+    pt: table([
+      "EmbeddingGemma: motor encerrado.",
+      "EmbeddingGemma: motor inativo.",
+      "EmbeddingGemma: pedido cancelado.",
+      "Perfil EmbeddingGemma desconhecido.",
+      "EmbeddingGemma: outra biblioteca est\xE1 a ser utilizada.",
+      "EmbeddingGemma: t\xEDtulos desalinhados.",
+      "EmbeddingGemma: tempo de infer\xEAncia excedido.",
+      "EmbeddingGemma tem pedidos em curso.",
+      "O proxy de recursos exige um perfil isolado.",
+      "Proxy QA de recursos inv\xE1lido.",
+      "Porta do motor QA inv\xE1lida.",
+      "EmbeddingGemma: quantidade ou dimens\xE3o incompat\xEDvel.",
+      "EmbeddingGemma: vetor nativo inv\xE1lido.",
+      "EmbeddingGemma: vetor vazio.",
+      "EmbeddingGemma: o lote excede o or\xE7amento de tokens.",
+      "O cofre ou a configura\xE7\xE3o de embeddings mudou durante o pedido. O resultado n\xE3o ser\xE1 publicado.",
+      "O cofre mudou durante a consulta. O resultado n\xE3o ser\xE1 publicado.",
+      "Os t\xEDtulos dos embeddings n\xE3o correspondem \xE0s entradas.",
+      "Perfil EmbeddingGemma desconhecido: {value}",
+      "EmbeddingGemma indispon\xEDvel: {value}",
+      "EmbeddingGemma: processo terminado ({value}).",
+      "EmbeddingGemma: a entrada {value} excede o limite de 8192 tokens (incluindo prefixos e tokens especiais).",
+      "Transfira e verifique \xAB{value}\xBB em Defini\xE7\xF5es \u2192 Modelos de IA."
+    ]),
+    "pt-BR": table([
+      "EmbeddingGemma: runtime encerrado.",
+      "EmbeddingGemma: runtime inativo.",
+      "EmbeddingGemma: solicita\xE7\xE3o cancelada.",
+      "Perfil EmbeddingGemma desconhecido.",
+      "EmbeddingGemma: outra biblioteca est\xE1 em uso.",
+      "EmbeddingGemma: t\xEDtulos desalinhados.",
+      "EmbeddingGemma: tempo de infer\xEAncia excedido.",
+      "EmbeddingGemma tem solicita\xE7\xF5es em andamento.",
+      "O proxy de recursos exige um perfil isolado.",
+      "Proxy QA para recursos inv\xE1lido.",
+      "Porta do runtime QA inv\xE1lida.",
+      "EmbeddingGemma: quantidade ou dimens\xE3o incompat\xEDvel.",
+      "EmbeddingGemma: vetor nativo inv\xE1lido.",
+      "EmbeddingGemma: vetor vazio.",
+      "EmbeddingGemma: o lote excede o or\xE7amento de tokens.",
+      "O cofre ou a configura\xE7\xE3o de embeddings mudou durante a solicita\xE7\xE3o. O resultado n\xE3o ser\xE1 publicado.",
+      "O cofre mudou durante a consulta. O resultado n\xE3o ser\xE1 publicado.",
+      "Os t\xEDtulos dos embeddings n\xE3o correspondem \xE0s entradas.",
+      "Perfil EmbeddingGemma desconhecido: {value}",
+      "EmbeddingGemma indispon\xEDvel: {value}",
+      "EmbeddingGemma: processo encerrado ({value}).",
+      "EmbeddingGemma: a entrada {value} excede o limite de 8192 tokens (incluindo prefixos e tokens especiais).",
+      "Baixe e verifique \u201C{value}\u201D em Configura\xE7\xF5es \u2192 Modelos de IA."
+    ]),
+    it: table([
+      "EmbeddingGemma: motore chiuso.",
+      "EmbeddingGemma: motore inattivo.",
+      "EmbeddingGemma: richiesta annullata.",
+      "Profilo EmbeddingGemma sconosciuto.",
+      "EmbeddingGemma: un\u2019altra biblioteca \xE8 in uso.",
+      "EmbeddingGemma: titoli non allineati.",
+      "EmbeddingGemma: tempo di inferenza scaduto.",
+      "EmbeddingGemma ha richieste in corso.",
+      "Il proxy delle risorse richiede un profilo isolato.",
+      "Proxy delle risorse QA non valido.",
+      "Porta del motore QA non valida.",
+      "EmbeddingGemma: quantit\xE0 o dimensione incompatibile.",
+      "EmbeddingGemma: vettore nativo non valido.",
+      "EmbeddingGemma: vettore vuoto.",
+      "EmbeddingGemma: il lotto supera il budget di token.",
+      "Il vault o la configurazione degli embedding \xE8 cambiato durante la richiesta. Il risultato non verr\xE0 pubblicato.",
+      "Il vault \xE8 cambiato durante la ricerca. Il risultato non verr\xE0 pubblicato.",
+      "I titoli degli embedding non corrispondono agli input.",
+      "Profilo EmbeddingGemma sconosciuto: {value}",
+      "EmbeddingGemma non disponibile: {value}",
+      "EmbeddingGemma: processo terminato ({value}).",
+      "EmbeddingGemma: l\u2019input {value} supera il limite di 8192 token (inclusi prefissi e token speciali).",
+      "Scarica e verifica \xAB{value}\xBB in Impostazioni \u2192 Modelli IA."
+    ]),
+    tr: table([
+      "EmbeddingGemma: \xE7al\u0131\u015Fma zaman\u0131 kapat\u0131ld\u0131.",
+      "EmbeddingGemma: \xE7al\u0131\u015Fma zaman\u0131 bo\u015Fta.",
+      "EmbeddingGemma: istek iptal edildi.",
+      "Bilinmeyen EmbeddingGemma profili.",
+      "EmbeddingGemma: ba\u015Fka bir k\xFCt\xFCphane kullan\u0131l\u0131yor.",
+      "EmbeddingGemma: ba\u015Fl\u0131klar e\u015Fle\u015Fmiyor.",
+      "EmbeddingGemma: \xE7\u0131kar\u0131m zaman a\u015F\u0131m\u0131na u\u011Frad\u0131.",
+      "EmbeddingGemma i\xE7in devam eden istekler var.",
+      "Kaynak proxy\u2019si izole bir profil gerektirir.",
+      "Ge\xE7ersiz QA kaynak proxy\u2019si.",
+      "Ge\xE7ersiz QA \xE7al\u0131\u015Fma zaman\u0131 portu.",
+      "EmbeddingGemma: uyumsuz say\u0131 veya boyut.",
+      "EmbeddingGemma: ge\xE7ersiz yerel vekt\xF6r.",
+      "EmbeddingGemma: bo\u015F vekt\xF6r.",
+      "EmbeddingGemma: toplu i\u015Flem token b\xFCt\xE7esini a\u015F\u0131yor.",
+      "\u0130stek s\u0131ras\u0131nda kasa veya embedding yap\u0131land\u0131rmas\u0131 de\u011Fi\u015Fti. Sonu\xE7 yay\u0131mlanmayacak.",
+      "Sorgu s\u0131ras\u0131nda kasa de\u011Fi\u015Fti. Sonu\xE7 yay\u0131mlanmayacak.",
+      "Embedding ba\u015Fl\u0131klar\u0131 girdilerle e\u015Fle\u015Fmiyor.",
+      "Bilinmeyen EmbeddingGemma profili: {value}",
+      "EmbeddingGemma kullan\u0131lam\u0131yor: {value}",
+      "EmbeddingGemma: i\u015F\xE7i sonland\u0131 ({value}).",
+      "EmbeddingGemma: {value} girdisi 8192 token s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor (\xF6nekler ve \xF6zel tokenlar dahil).",
+      "Ayarlar \u2192 Yapay Zek\xE2 Modelleri b\xF6l\xFCm\xFCnden \u201C{value}\u201D modelini indirin ve do\u011Frulay\u0131n."
+    ]),
+    "zh-CN": table([
+      "EmbeddingGemma\uFF1A\u8FD0\u884C\u65F6\u5DF2\u5173\u95ED\u3002",
+      "EmbeddingGemma\uFF1A\u8FD0\u884C\u65F6\u7A7A\u95F2\u3002",
+      "EmbeddingGemma\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88\u3002",
+      "\u672A\u77E5\u7684 EmbeddingGemma \u914D\u7F6E\u3002",
+      "EmbeddingGemma\uFF1A\u53E6\u4E00\u4E2A\u8D44\u6599\u5E93\u6B63\u5728\u4F7F\u7528\u4E2D\u3002",
+      "EmbeddingGemma\uFF1A\u6807\u9898\u672A\u5BF9\u9F50\u3002",
+      "EmbeddingGemma\uFF1A\u63A8\u7406\u8D85\u65F6\u3002",
+      "EmbeddingGemma \u6709\u6B63\u5728\u8FDB\u884C\u7684\u8BF7\u6C42\u3002",
+      "\u8D44\u6E90\u4EE3\u7406\u8981\u6C42\u4F7F\u7528\u9694\u79BB\u914D\u7F6E\u3002",
+      "\u65E0\u6548\u7684 QA \u8D44\u6E90\u4EE3\u7406\u3002",
+      "\u65E0\u6548\u7684 QA \u8FD0\u884C\u65F6\u7AEF\u53E3\u3002",
+      "EmbeddingGemma\uFF1A\u6570\u91CF\u6216\u7EF4\u5EA6\u4E0D\u517C\u5BB9\u3002",
+      "EmbeddingGemma\uFF1A\u539F\u751F\u5411\u91CF\u65E0\u6548\u3002",
+      "EmbeddingGemma\uFF1A\u5411\u91CF\u4E3A\u7A7A\u3002",
+      "EmbeddingGemma\uFF1A\u6279\u6B21\u8D85\u51FA\u8BCD\u5143\u9884\u7B97\u3002",
+      "\u8BF7\u6C42\u671F\u95F4\uFF0C\u4FDD\u9669\u5E93\u6216\u5D4C\u5165\u914D\u7F6E\u53D1\u751F\u4E86\u53D8\u5316\u3002\u7ED3\u679C\u4E0D\u4F1A\u53D1\u5E03\u3002",
+      "\u67E5\u8BE2\u671F\u95F4\uFF0C\u4FDD\u9669\u5E93\u53D1\u751F\u4E86\u53D8\u5316\u3002\u7ED3\u679C\u4E0D\u4F1A\u53D1\u5E03\u3002",
+      "\u5D4C\u5165\u6807\u9898\u4E0E\u8F93\u5165\u4E0D\u5339\u914D\u3002",
+      "\u672A\u77E5\u7684 EmbeddingGemma \u914D\u7F6E\uFF1A{value}",
+      "EmbeddingGemma \u4E0D\u53EF\u7528\uFF1A{value}",
+      "EmbeddingGemma\uFF1A\u5DE5\u4F5C\u7EBF\u7A0B\u5DF2\u9000\u51FA\uFF08{value}\uFF09\u3002",
+      "EmbeddingGemma\uFF1A\u8F93\u5165 {value} \u8D85\u51FA 8192 \u8BCD\u5143\u9650\u5236\uFF08\u5305\u62EC\u524D\u7F00\u548C\u7279\u6B8A\u8BCD\u5143\uFF09\u3002",
+      "\u8BF7\u5728\u8BBE\u7F6E \u2192 AI \u6A21\u578B\u4E2D\u4E0B\u8F7D\u5E76\u9A8C\u8BC1\u201C{value}\u201D\u3002"
+    ]),
+    "zh-TW": table([
+      "EmbeddingGemma\uFF1A\u57F7\u884C\u6642\u5DF2\u95DC\u9589\u3002",
+      "EmbeddingGemma\uFF1A\u57F7\u884C\u6642\u9592\u7F6E\u3002",
+      "EmbeddingGemma\uFF1A\u8ACB\u6C42\u5DF2\u53D6\u6D88\u3002",
+      "\u672A\u77E5\u7684 EmbeddingGemma \u8A2D\u5B9A\u3002",
+      "EmbeddingGemma\uFF1A\u53E6\u4E00\u500B\u8CC7\u6599\u5EAB\u6B63\u5728\u4F7F\u7528\u4E2D\u3002",
+      "EmbeddingGemma\uFF1A\u6A19\u984C\u672A\u5C0D\u9F4A\u3002",
+      "EmbeddingGemma\uFF1A\u63A8\u8AD6\u903E\u6642\u3002",
+      "EmbeddingGemma \u6709\u6B63\u5728\u9032\u884C\u7684\u8ACB\u6C42\u3002",
+      "\u8CC7\u6E90\u4EE3\u7406\u8981\u6C42\u4F7F\u7528\u9694\u96E2\u8A2D\u5B9A\u3002",
+      "\u7121\u6548\u7684 QA \u8CC7\u6E90\u4EE3\u7406\u3002",
+      "\u7121\u6548\u7684 QA \u57F7\u884C\u6642\u9023\u63A5\u57E0\u3002",
+      "EmbeddingGemma\uFF1A\u6578\u91CF\u6216\u7DAD\u5EA6\u4E0D\u76F8\u5BB9\u3002",
+      "EmbeddingGemma\uFF1A\u539F\u751F\u5411\u91CF\u7121\u6548\u3002",
+      "EmbeddingGemma\uFF1A\u5411\u91CF\u70BA\u7A7A\u3002",
+      "EmbeddingGemma\uFF1A\u6279\u6B21\u8D85\u51FA\u8A5E\u5143\u9810\u7B97\u3002",
+      "\u8ACB\u6C42\u671F\u9593\uFF0C\u4FDD\u96AA\u5EAB\u6216\u5D4C\u5165\u8A2D\u5B9A\u767C\u751F\u4E86\u8B8A\u5316\u3002\u7D50\u679C\u4E0D\u6703\u767C\u5E03\u3002",
+      "\u67E5\u8A62\u671F\u9593\uFF0C\u4FDD\u96AA\u5EAB\u767C\u751F\u4E86\u8B8A\u5316\u3002\u7D50\u679C\u4E0D\u6703\u767C\u5E03\u3002",
+      "\u5D4C\u5165\u6A19\u984C\u8207\u8F38\u5165\u4E0D\u7B26\u3002",
+      "\u672A\u77E5\u7684 EmbeddingGemma \u8A2D\u5B9A\uFF1A{value}",
+      "EmbeddingGemma \u7121\u6CD5\u4F7F\u7528\uFF1A{value}",
+      "EmbeddingGemma\uFF1A\u5DE5\u4F5C\u57F7\u884C\u7DD2\u5DF2\u9000\u51FA\uFF08{value}\uFF09\u3002",
+      "EmbeddingGemma\uFF1A\u8F38\u5165 {value} \u8D85\u51FA 8192 \u8A5E\u5143\u9650\u5236\uFF08\u5305\u542B\u524D\u7DB4\u548C\u7279\u6B8A\u8A5E\u5143\uFF09\u3002",
+      "\u8ACB\u5728\u8A2D\u5B9A \u2192 AI \u6A21\u578B\u4E2D\u4E0B\u8F09\u4E26\u9A57\u8B49\u300C{value}\u300D\u3002"
+    ]),
+    ja: table([
+      "EmbeddingGemma: \u30E9\u30F3\u30BF\u30A4\u30E0\u3092\u7D42\u4E86\u3057\u307E\u3057\u305F\u3002",
+      "EmbeddingGemma: \u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5F85\u6A5F\u4E2D\u3067\u3059\u3002",
+      "EmbeddingGemma: \u30EA\u30AF\u30A8\u30B9\u30C8\u3092\u30AD\u30E3\u30F3\u30BB\u30EB\u3057\u307E\u3057\u305F\u3002",
+      "\u4E0D\u660E\u306A EmbeddingGemma \u30D7\u30ED\u30D5\u30A1\u30A4\u30EB\u3067\u3059\u3002",
+      "EmbeddingGemma: \u5225\u306E\u30E9\u30A4\u30D6\u30E9\u30EA\u304C\u4F7F\u7528\u4E2D\u3067\u3059\u3002",
+      "EmbeddingGemma: \u30BF\u30A4\u30C8\u30EB\u304C\u5165\u529B\u3068\u5BFE\u5FDC\u3057\u3066\u3044\u307E\u305B\u3093\u3002",
+      "EmbeddingGemma: \u63A8\u8AD6\u304C\u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F\u3002",
+      "EmbeddingGemma \u306B\u51E6\u7406\u4E2D\u306E\u30EA\u30AF\u30A8\u30B9\u30C8\u304C\u3042\u308A\u307E\u3059\u3002",
+      "\u30EA\u30BD\u30FC\u30B9\u30D7\u30ED\u30AD\u30B7\u306B\u306F\u9694\u96E2\u3055\u308C\u305F\u30D7\u30ED\u30D5\u30A1\u30A4\u30EB\u304C\u5FC5\u8981\u3067\u3059\u3002",
+      "QA \u30EA\u30BD\u30FC\u30B9\u30D7\u30ED\u30AD\u30B7\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "QA \u30E9\u30F3\u30BF\u30A4\u30E0\u306E\u30DD\u30FC\u30C8\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "EmbeddingGemma: \u4EF6\u6570\u307E\u305F\u306F\u6B21\u5143\u304C\u4E00\u81F4\u3057\u307E\u305B\u3093\u3002",
+      "EmbeddingGemma: \u30CD\u30A4\u30C6\u30A3\u30D6\u30D9\u30AF\u30C8\u30EB\u304C\u7121\u52B9\u3067\u3059\u3002",
+      "EmbeddingGemma: \u30D9\u30AF\u30C8\u30EB\u304C\u7A7A\u3067\u3059\u3002",
+      "EmbeddingGemma: \u30D0\u30C3\u30C1\u304C\u30C8\u30FC\u30AF\u30F3\u6570\u306E\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002",
+      "\u30EA\u30AF\u30A8\u30B9\u30C8\u4E2D\u306B\u4FDD\u7BA1\u5EAB\u307E\u305F\u306F\u57CB\u3081\u8FBC\u307F\u8A2D\u5B9A\u304C\u5909\u66F4\u3055\u308C\u307E\u3057\u305F\u3002\u7D50\u679C\u306F\u516C\u958B\u3055\u308C\u307E\u305B\u3093\u3002",
+      "\u30AF\u30A8\u30EA\u4E2D\u306B\u4FDD\u7BA1\u5EAB\u304C\u5909\u66F4\u3055\u308C\u307E\u3057\u305F\u3002\u7D50\u679C\u306F\u516C\u958B\u3055\u308C\u307E\u305B\u3093\u3002",
+      "\u57CB\u3081\u8FBC\u307F\u306E\u30BF\u30A4\u30C8\u30EB\u304C\u5165\u529B\u3068\u4E00\u81F4\u3057\u307E\u305B\u3093\u3002",
+      "\u4E0D\u660E\u306A EmbeddingGemma \u30D7\u30ED\u30D5\u30A1\u30A4\u30EB: {value}",
+      "EmbeddingGemma \u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093: {value}",
+      "EmbeddingGemma: \u30EF\u30FC\u30AB\u30FC\u304C\u7D42\u4E86\u3057\u307E\u3057\u305F\uFF08{value}\uFF09\u3002",
+      "EmbeddingGemma: \u5165\u529B {value} \u304C8192\u30C8\u30FC\u30AF\u30F3\u306E\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\uFF08\u30D7\u30EC\u30D5\u30A3\u30C3\u30AF\u30B9\u3068\u7279\u6B8A\u30C8\u30FC\u30AF\u30F3\u3092\u542B\u3080\uFF09\u3002",
+      "\u8A2D\u5B9A \u2192 AI \u30E2\u30C7\u30EB\u3067\u300C{value}\u300D\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u691C\u8A3C\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+    ]),
+    ko: table([
+      "EmbeddingGemma: \uB7F0\uD0C0\uC784\uC774 \uC885\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uB7F0\uD0C0\uC784\uC774 \uC720\uD734 \uC0C1\uD0DC\uC785\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uC694\uCCAD\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      "\uC54C \uC218 \uC5C6\uB294 EmbeddingGemma \uD504\uB85C\uD544\uC785\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uB2E4\uB978 \uB77C\uC774\uBE0C\uB7EC\uB9AC\uAC00 \uC0AC\uC6A9 \uC911\uC785\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uC81C\uBAA9\uC774 \uC785\uB825\uACFC \uB9DE\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uCD94\uB860 \uC2DC\uAC04\uC774 \uCD08\uACFC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      "EmbeddingGemma\uC5D0 \uC9C4\uD589 \uC911\uC778 \uC694\uCCAD\uC774 \uC788\uC2B5\uB2C8\uB2E4.",
+      "\uB9AC\uC18C\uC2A4 \uD504\uB85D\uC2DC\uC5D0\uB294 \uACA9\uB9AC\uB41C \uD504\uB85C\uD544\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.",
+      "\uC798\uBABB\uB41C QA \uB9AC\uC18C\uC2A4 \uD504\uB85D\uC2DC\uC785\uB2C8\uB2E4.",
+      "\uC798\uBABB\uB41C QA \uB7F0\uD0C0\uC784 \uD3EC\uD2B8\uC785\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uAC1C\uC218 \uB610\uB294 \uCC28\uC6D0\uC774 \uD638\uD658\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uB124\uC774\uD2F0\uBE0C \uBCA1\uD130\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uBCA1\uD130\uAC00 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4.",
+      "EmbeddingGemma: \uBC30\uCE58\uAC00 \uD1A0\uD070 \uC608\uC0B0\uC744 \uCD08\uACFC\uD569\uB2C8\uB2E4.",
+      "\uC694\uCCAD \uC911\uC5D0 \uBCF4\uAD00\uD568 \uB610\uB294 \uC784\uBCA0\uB529 \uC124\uC815\uC774 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uACB0\uACFC\uB97C \uAC8C\uC2DC\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "\uCFFC\uB9AC \uC911\uC5D0 \uBCF4\uAD00\uD568\uC774 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uACB0\uACFC\uB97C \uAC8C\uC2DC\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "\uC784\uBCA0\uB529 \uC81C\uBAA9\uC774 \uC785\uB825\uACFC \uC77C\uCE58\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "\uC54C \uC218 \uC5C6\uB294 EmbeddingGemma \uD504\uB85C\uD544: {value}",
+      "EmbeddingGemma\uB97C \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: {value}",
+      "EmbeddingGemma: \uC6CC\uCEE4\uAC00 \uC885\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4({value}).",
+      "EmbeddingGemma: \uC785\uB825 {value}\uC774 8192 \uD1A0\uD070 \uC81C\uD55C\uC744 \uCD08\uACFC\uD569\uB2C8\uB2E4(\uC811\uB450\uC0AC \uBC0F \uD2B9\uC218 \uD1A0\uD070 \uD3EC\uD568).",
+      "\uC124\uC815 \u2192 AI \uBAA8\uB378\uC5D0\uC11C \u201C{value}\u201D\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD558\uACE0 \uAC80\uC99D\uD558\uC138\uC694."
+    ])
+  };
+  var dynamic = [
+    /^Perfil EmbeddingGemma desconocido: (.+)$/,
+    /^EmbeddingGemma no disponible: (.+)$/s,
+    /^EmbeddingGemma: worker terminó \((.+)\)\.$/,
+    /^EmbeddingGemma: entrada (\d+) supera el límite de 8192 tokens \(incluidos prefijos y tokens especiales\)\.$/,
+    /^Descarga y verifica «(.+)» desde Ajustes → Modelos IA\.$/
+  ];
+  var staticCount = KEYS.length - dynamic.length;
+  var translations = (index, value) => Object.fromEntries(
+    Object.entries(TABLES).map(([lang, strings]) => [lang, strings[index].replace("{value}", () => value ?? "")])
+  );
+  var EMBEDDING_GEMMA2_ERRORS = {
+    ...Object.fromEntries(KEYS.slice(0, staticCount).map((key, index) => [key, translations(index)])),
+    [EMBEDDING_GEMMA2_INTEL_UNAVAILABLE]: EMBEDDING_GEMMA2_INTEL_COPY
+  };
+  var EMBEDDING_GEMMA2_ERROR_PATTERNS = dynamic.map((pattern, index) => ({
+    pattern,
+    translate: (value) => {
+      const result = translations(staticCount + index, value);
+      if (index === 1) {
+        const fixed = EMBEDDING_GEMMA2_ERRORS[value];
+        const nested = dynamic.findIndex((candidate) => candidate !== pattern && candidate.test(value));
+        const cause = fixed ?? (nested >= 0 ? translations(staticCount + nested, dynamic[nested].exec(value)[1]) : void 0);
+        if (cause) for (const lang of Object.keys(TABLES)) result[lang] = TABLES[lang][staticCount + index].replace("{value}", () => cause[lang] ?? cause.en);
+      }
+      return result;
+    }
+  }));
+
   // shared/cloudflare.ts
   var CLOUDFLARE_SAFETY_UPGRADE_MESSAGE = "Actualiza el Worker de Nodus Cloud y aplica sus migraciones antes de sincronizar: esta instalaci\xF3n todav\xEDa no anuncia los l\xEDmites acumulados y la limpieza persistente.";
 
@@ -3204,7 +3570,7 @@ ${conversation}`;
     ["La sincronizaci\xF3n autom\xE1tica se ha detenido para evitar llamadas repetidas. Vuelve a conectar o sincroniza manualmente tras resolver el error.", "Automatic synchronization has stopped to prevent repeated requests. Reconnect or synchronize manually after resolving the error.", "La synchronisation automatique a \xE9t\xE9 arr\xEAt\xE9e pour \xE9viter les requ\xEAtes r\xE9p\xE9t\xE9es. Reconnectez-vous ou synchronisez manuellement apr\xE8s avoir r\xE9solu l\u2019erreur.", "Die automatische Synchronisierung wurde gestoppt, um wiederholte Anfragen zu vermeiden. Verbinden Sie sich erneut oder synchronisieren Sie nach Behebung des Fehlers manuell.", "A sincroniza\xE7\xE3o autom\xE1tica foi interrompida para evitar pedidos repetidos. Volte a ligar ou sincronize manualmente ap\xF3s resolver o erro.", "La sincronizzazione automatica \xE8 stata interrotta per evitare richieste ripetute. Riconnettiti o sincronizza manualmente dopo aver risolto l\u2019errore.", "Tekrarlanan istekleri \xF6nlemek i\xE7in otomatik e\u015Fitleme durduruldu. Hatay\u0131 giderdikten sonra yeniden ba\u011Flan\u0131n veya elle e\u015Fitleyin.", "\u81EA\u52A8\u540C\u6B65\u5DF2\u505C\u6B62\uFF0C\u4EE5\u9632\u6B62\u91CD\u590D\u8BF7\u6C42\u3002\u89E3\u51B3\u9519\u8BEF\u540E\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u6216\u624B\u52A8\u540C\u6B65\u3002", "\u81EA\u52D5\u540C\u6B65\u5DF2\u505C\u6B62\uFF0C\u4EE5\u9632\u6B62\u91CD\u8907\u8ACB\u6C42\u3002\u89E3\u6C7A\u932F\u8AA4\u5F8C\uFF0C\u8ACB\u91CD\u65B0\u9023\u7DDA\u6216\u624B\u52D5\u540C\u6B65\u3002", "\u30EA\u30AF\u30A8\u30B9\u30C8\u306E\u7E70\u308A\u8FD4\u3057\u3092\u9632\u3050\u305F\u3081\u3001\u81EA\u52D5\u540C\u671F\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002\u30A8\u30E9\u30FC\u3092\u89E3\u6C7A\u3057\u3066\u304B\u3089\u518D\u63A5\u7D9A\u3059\u308B\u304B\u3001\u624B\u52D5\u3067\u540C\u671F\u3057\u3066\u304F\u3060\u3055\u3044\u3002", "\uBC18\uBCF5 \uC694\uCCAD\uC744 \uBC29\uC9C0\uD558\uAE30 \uC704\uD574 \uC790\uB3D9 \uB3D9\uAE30\uD654\uAC00 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC624\uB958\uB97C \uD574\uACB0\uD55C \uD6C4 \uB2E4\uC2DC \uC5F0\uACB0\uD558\uAC70\uB098 \uC218\uB3D9\uC73C\uB85C \uB3D9\uAE30\uD654\uD558\uC138\uC694."],
     [CLOUDFLARE_SAFETY_UPGRADE_MESSAGE, "Update the Nodus Cloud Worker and apply its migrations before synchronizing: this installation does not yet advertise cumulative limits and persistent cleanup.", "Mettez \xE0 jour le Worker Nodus Cloud et appliquez ses migrations avant de synchroniser : cette installation n\u2019annonce pas encore de limites cumul\xE9es ni de nettoyage persistant.", "Aktualisieren Sie den Nodus Cloud Worker und wenden Sie seine Migrationen vor der Synchronisierung an: Diese Installation meldet noch keine kumulierten Limits und keine dauerhafte Bereinigung.", "Atualize o Worker do Nodus Cloud e aplique as suas migra\xE7\xF5es antes de sincronizar: esta instala\xE7\xE3o ainda n\xE3o anuncia limites acumulados e limpeza persistente.", "Aggiorna il Worker di Nodus Cloud e applica le sue migrazioni prima di sincronizzare: questa installazione non dichiara ancora limiti cumulativi e pulizia persistente.", "E\u015Fitlemeden \xF6nce Nodus Cloud Worker\u2019\u0131 g\xFCncelleyin ve ge\xE7i\u015Flerini uygulay\u0131n: bu kurulum hen\xFCz birikimli s\u0131n\u0131rlar\u0131 ve kal\u0131c\u0131 temizlemeyi bildirmiyor.", "\u540C\u6B65\u524D\u8BF7\u66F4\u65B0 Nodus Cloud Worker \u5E76\u5E94\u7528\u8FC1\u79FB\uFF1A\u6B64\u5B89\u88C5\u5C1A\u672A\u58F0\u660E\u7D2F\u8BA1\u9650\u989D\u548C\u6301\u4E45\u5316\u6E05\u7406\u3002", "\u540C\u6B65\u524D\u8ACB\u66F4\u65B0 Nodus Cloud Worker \u4E26\u5957\u7528\u79FB\u8F49\uFF1A\u6B64\u5B89\u88DD\u5C1A\u672A\u5BA3\u544A\u7D2F\u8A08\u9650\u984D\u548C\u6301\u7E8C\u6027\u6E05\u7406\u3002", "\u540C\u671F\u524D\u306B Nodus Cloud Worker \u3092\u66F4\u65B0\u3057\u3001\u30DE\u30A4\u30B0\u30EC\u30FC\u30B7\u30E7\u30F3\u3092\u9069\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u3053\u306E\u74B0\u5883\u3067\u306F\u7D2F\u7A4D\u4E0A\u9650\u3068\u6C38\u7D9A\u7684\u306A\u30AF\u30EA\u30FC\u30F3\u30A2\u30C3\u30D7\u3078\u306E\u5BFE\u5FDC\u304C\u307E\u3060\u901A\u77E5\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002", "\uB3D9\uAE30\uD654 \uC804\uC5D0 Nodus Cloud Worker\uB97C \uC5C5\uB370\uC774\uD2B8\uD558\uACE0 \uB9C8\uC774\uADF8\uB808\uC774\uC158\uC744 \uC801\uC6A9\uD558\uC138\uC694. \uC774 \uC124\uCE58\uB294 \uC544\uC9C1 \uB204\uC801 \uD55C\uB3C4\uC640 \uC601\uAD6C \uC815\uB9AC\uB97C \uC9C0\uC6D0\uD55C\uB2E4\uACE0 \uC54C\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."]
   ];
-  function translations(row, value) {
+  function translations2(row, value) {
     const result = Object.fromEntries(languages2.map((language, index) => [
       language,
       value === void 0 ? row[index + 1] : row[index + 1].replaceAll("{value}", value)
@@ -3212,7 +3578,7 @@ ${conversation}`;
     result["pt-BR"] = result.pt;
     return result;
   }
-  var CLOUDFLARE_SYNC_ERRORS = Object.fromEntries(rows2.map((row) => [row[0], translations(row)]));
+  var CLOUDFLARE_SYNC_ERRORS = Object.fromEntries(rows2.map((row) => [row[0], translations2(row)]));
   var patterns = [
     [/^El índice (.+) supera el límite seguro de búsqueda exacta de Cloudflare\.$/, ["El \xEDndice {value} supera el l\xEDmite seguro de b\xFAsqueda exacta de Cloudflare.", "The {value} index exceeds Cloudflare\u2019s safe exact-search limit.", "L\u2019index {value} d\xE9passe la limite s\xFBre de recherche exacte de Cloudflare.", "Der {value}-Index \xFCberschreitet das sichere Limit f\xFCr die exakte Suche von Cloudflare.", "O \xEDndice {value} excede o limite seguro de pesquisa exata da Cloudflare.", "L\u2019indice {value} supera il limite sicuro di ricerca esatta di Cloudflare.", "{value} dizini Cloudflare\u2019in g\xFCvenli tam arama s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "{value} \u7D22\u5F15\u8D85\u8FC7 Cloudflare \u7684\u7CBE\u786E\u641C\u7D22\u5B89\u5168\u4E0A\u9650\u3002", "{value} \u7D22\u5F15\u8D85\u904E Cloudflare \u7684\u7CBE\u78BA\u641C\u5C0B\u5B89\u5168\u4E0A\u9650\u3002", "{value} \u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u304C Cloudflare \u306E\u5B8C\u5168\u4E00\u81F4\u691C\u7D22\u306E\u5B89\u5168\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "{value} \uC778\uB371\uC2A4\uAC00 Cloudflare\uC758 \uC815\uD655 \uAC80\uC0C9 \uC548\uC804 \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."]],
     [/^El proceso auxiliar de réplica terminó sin completar la importación \((.+)\)\.$/, ["El proceso auxiliar de r\xE9plica termin\xF3 sin completar la importaci\xF3n ({value}).", "The replica utility process exited without completing the import ({value}).", "Le processus auxiliaire de r\xE9plique s\u2019est termin\xE9 sans achever l\u2019importation ({value}).", "Der Replikat-Hilfsprozess wurde beendet, ohne den Import abzuschlie\xDFen ({value}).", "O processo auxiliar de r\xE9plica terminou sem concluir a importa\xE7\xE3o ({value}).", "Il processo ausiliario della replica \xE8 terminato senza completare l\u2019importazione ({value}).", "Kopya yard\u0131mc\u0131 i\u015Flemi i\xE7e aktar\u0131m\u0131 tamamlamadan sonland\u0131 ({value}).", "\u526F\u672C\u8F85\u52A9\u8FDB\u7A0B\u5728\u5B8C\u6210\u5BFC\u5165\u524D\u9000\u51FA\uFF08{value}\uFF09\u3002", "\u526F\u672C\u8F14\u52A9\u7A0B\u5E8F\u5728\u5B8C\u6210\u532F\u5165\u524D\u7D50\u675F\uFF08{value}\uFF09\u3002", "\u30EC\u30D7\u30EA\u30AB\u306E\u88DC\u52A9\u30D7\u30ED\u30BB\u30B9\u304C\u30A4\u30F3\u30DD\u30FC\u30C8\u3092\u5B8C\u4E86\u305B\u305A\u306B\u7D42\u4E86\u3057\u307E\u3057\u305F\uFF08{value}\uFF09\u3002", "\uBCF5\uC81C\uBCF8 \uBCF4\uC870 \uD504\uB85C\uC138\uC2A4\uAC00 \uAC00\uC838\uC624\uAE30\uB97C \uC644\uB8CC\uD558\uC9C0 \uC54A\uACE0 \uC885\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4({value})."]],
@@ -3221,7 +3587,7 @@ ${conversation}`;
   ];
   var CLOUDFLARE_SYNC_ERROR_PATTERNS = patterns.map(([pattern, row]) => ({
     pattern,
-    translate: (value) => translations(row, value)
+    translate: (value) => translations2(row, value)
   }));
 
   // shared/sttErrors.ts
@@ -3403,6 +3769,72 @@ ${conversation}`;
     "El cat\xE1logo de documentos guardados tiene un formato inv\xE1lido.": { "en": "The saved-document catalogue has an invalid format.", "fr": "Le catalogue des documents enregistr\xE9s a un format invalide.", "de": "Der Katalog gespeicherter Dokumente hat ein ung\xFCltiges Format.", "pt": "O cat\xE1logo de documentos guardados tem um formato inv\xE1lido.", "pt-BR": "O cat\xE1logo de documentos salvos tem um formato inv\xE1lido.", "it": "Il catalogo dei documenti salvati ha un formato non valido.", "tr": "Kay\u0131tl\u0131 belge katalo\u011Funun bi\xE7imi ge\xE7ersiz.", "zh-CN": "\u5DF2\u4FDD\u5B58\u6587\u6863\u76EE\u5F55\u7684\u683C\u5F0F\u65E0\u6548\u3002", "zh-TW": "\u5DF2\u5132\u5B58\u6587\u4EF6\u76EE\u9304\u7684\u683C\u5F0F\u7121\u6548\u3002", "ja": "\u4FDD\u5B58\u6E08\u307F\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u30AB\u30BF\u30ED\u30B0\u5F62\u5F0F\u304C\u7121\u52B9\u3067\u3059\u3002", "ko": "\uC800\uC7A5\uB41C \uBB38\uC11C \uBAA9\uB85D\uC758 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." },
     "La p\xE1gina de ideas solicitada no es v\xE1lida.": { "en": "The requested page of ideas is invalid.", "fr": "La page d\u2019id\xE9es demand\xE9e n\u2019est pas valide.", "de": "Die angeforderte Ideenseite ist ung\xFCltig.", "pt": "A p\xE1gina de ideias pedida n\xE3o \xE9 v\xE1lida.", "pt-BR": "A p\xE1gina de ideias solicitada n\xE3o \xE9 v\xE1lida.", "it": "La pagina di idee richiesta non \xE8 valida.", "tr": "\u0130stenen fikir sayfas\u0131 ge\xE7ersiz.", "zh-CN": "\u8BF7\u6C42\u7684\u60F3\u6CD5\u9875\u9762\u65E0\u6548\u3002", "zh-TW": "\u8ACB\u6C42\u7684\u60F3\u6CD5\u9801\u9762\u7121\u6548\u3002", "ja": "\u8981\u6C42\u3055\u308C\u305F\u30A2\u30A4\u30C7\u30A2\u306E\u30DA\u30FC\u30B8\u306F\u7121\u52B9\u3067\u3059\u3002", "ko": "\uC694\uCCAD\uD55C \uC544\uC774\uB514\uC5B4 \uD398\uC774\uC9C0\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." },
     "La mejora no devolvi\xF3 texto. El original no se ha modificado.": { "en": "The improvement returned no text. The original has not been changed.", "fr": "L\u2019am\xE9lioration n\u2019a renvoy\xE9 aucun texte. L\u2019original n\u2019a pas \xE9t\xE9 modifi\xE9.", "de": "Die \xDCberarbeitung lieferte keinen Text. Das Original wurde nicht ver\xE4ndert.", "pt": "A melhoria n\xE3o devolveu texto. O original n\xE3o foi alterado.", "pt-BR": "A melhoria n\xE3o retornou texto. O original n\xE3o foi alterado.", "it": "Il miglioramento non ha restituito testo. L\u2019originale non \xE8 stato modificato.", "tr": "\u0130yile\u015Ftirme metin d\xF6nd\xFCrmedi. \xD6zg\xFCn metin de\u011Fi\u015Ftirilmedi.", "zh-CN": "\u6539\u8FDB\u64CD\u4F5C\u672A\u8FD4\u56DE\u6587\u672C\uFF0C\u539F\u6587\u672A\u88AB\u4FEE\u6539\u3002", "zh-TW": "\u6539\u9032\u64CD\u4F5C\u672A\u50B3\u56DE\u6587\u5B57\uFF0C\u539F\u6587\u672A\u88AB\u4FEE\u6539\u3002", "ja": "\u6539\u5584\u7D50\u679C\u306B\u30C6\u30AD\u30B9\u30C8\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u539F\u6587\u306F\u5909\u66F4\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002", "ko": "\uAC1C\uC120 \uACB0\uACFC\uC5D0 \uD14D\uC2A4\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC6D0\uBB38\uC740 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4." },
+    ...EMBEDDING_GEMMA2_ERRORS,
+    "EmbeddingGemma: falta configuraci\xF3n del proceso aislado.": {
+      en: "EmbeddingGemma: isolated process configuration is missing.",
+      fr: "EmbeddingGemma : la configuration du processus isol\xE9 est manquante.",
+      de: "EmbeddingGemma: Die Konfiguration des isolierten Prozesses fehlt.",
+      pt: "EmbeddingGemma: falta a configura\xE7\xE3o do processo isolado.",
+      "pt-BR": "EmbeddingGemma: falta a configura\xE7\xE3o do processo isolado.",
+      it: "EmbeddingGemma: manca la configurazione del processo isolato.",
+      tr: "EmbeddingGemma: yal\u0131t\u0131lm\u0131\u015F s\xFCre\xE7 yap\u0131land\u0131rmas\u0131 eksik.",
+      "zh-CN": "EmbeddingGemma\uFF1A\u7F3A\u5C11\u9694\u79BB\u8FDB\u7A0B\u914D\u7F6E\u3002",
+      "zh-TW": "EmbeddingGemma\uFF1A\u7F3A\u5C11\u9694\u96E2\u7A0B\u5E8F\u8A2D\u5B9A\u3002",
+      ja: "EmbeddingGemma: \u5206\u96E2\u30D7\u30ED\u30BB\u30B9\u306E\u8A2D\u5B9A\u304C\u3042\u308A\u307E\u305B\u3093\u3002",
+      ko: "EmbeddingGemma: \uACA9\uB9AC\uB41C \uD504\uB85C\uC138\uC2A4 \uC124\uC815\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."
+    },
+    "EmbeddingGemma: operaci\xF3n de proceso desconocida.": {
+      en: "EmbeddingGemma: unknown process operation.",
+      fr: "EmbeddingGemma : op\xE9ration de processus inconnue.",
+      de: "EmbeddingGemma: Unbekannter Prozessvorgang.",
+      pt: "EmbeddingGemma: opera\xE7\xE3o de processo desconhecida.",
+      "pt-BR": "EmbeddingGemma: opera\xE7\xE3o de processo desconhecida.",
+      it: "EmbeddingGemma: operazione di processo sconosciuta.",
+      tr: "EmbeddingGemma: bilinmeyen s\xFCre\xE7 i\u015Flemi.",
+      "zh-CN": "EmbeddingGemma\uFF1A\u672A\u77E5\u7684\u8FDB\u7A0B\u64CD\u4F5C\u3002",
+      "zh-TW": "EmbeddingGemma\uFF1A\u672A\u77E5\u7684\u7A0B\u5E8F\u64CD\u4F5C\u3002",
+      ja: "EmbeddingGemma: \u4E0D\u660E\u306A\u30D7\u30ED\u30BB\u30B9\u64CD\u4F5C\u3067\u3059\u3002",
+      ko: "EmbeddingGemma: \uC54C \uC218 \uC5C6\uB294 \uD504\uB85C\uC138\uC2A4 \uC791\uC5C5\uC785\uB2C8\uB2E4."
+    },
+    "EmbeddingGemma: solicitud de proceso inv\xE1lida.": {
+      en: "EmbeddingGemma: invalid process request.",
+      fr: "EmbeddingGemma : requ\xEAte de processus non valide.",
+      de: "EmbeddingGemma: Ung\xFCltige Prozessanfrage.",
+      pt: "EmbeddingGemma: pedido de processo inv\xE1lido.",
+      "pt-BR": "EmbeddingGemma: solicita\xE7\xE3o de processo inv\xE1lida.",
+      it: "EmbeddingGemma: richiesta di processo non valida.",
+      tr: "EmbeddingGemma: ge\xE7ersiz s\xFCre\xE7 iste\u011Fi.",
+      "zh-CN": "EmbeddingGemma\uFF1A\u65E0\u6548\u7684\u8FDB\u7A0B\u8BF7\u6C42\u3002",
+      "zh-TW": "EmbeddingGemma\uFF1A\u7121\u6548\u7684\u7A0B\u5E8F\u8ACB\u6C42\u3002",
+      ja: "EmbeddingGemma: \u30D7\u30ED\u30BB\u30B9\u8981\u6C42\u304C\u7121\u52B9\u3067\u3059\u3002",
+      ko: "EmbeddingGemma: \uD504\uB85C\uC138\uC2A4 \uC694\uCCAD\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4."
+    },
+    "EmbeddingGemma: configuraci\xF3n de proceso inv\xE1lida.": {
+      en: "EmbeddingGemma: invalid process configuration.",
+      fr: "EmbeddingGemma : configuration de processus non valide.",
+      de: "EmbeddingGemma: Ung\xFCltige Prozesskonfiguration.",
+      pt: "EmbeddingGemma: configura\xE7\xE3o de processo inv\xE1lida.",
+      "pt-BR": "EmbeddingGemma: configura\xE7\xE3o de processo inv\xE1lida.",
+      it: "EmbeddingGemma: configurazione di processo non valida.",
+      tr: "EmbeddingGemma: ge\xE7ersiz s\xFCre\xE7 yap\u0131land\u0131rmas\u0131.",
+      "zh-CN": "EmbeddingGemma\uFF1A\u65E0\u6548\u7684\u8FDB\u7A0B\u914D\u7F6E\u3002",
+      "zh-TW": "EmbeddingGemma\uFF1A\u7121\u6548\u7684\u7A0B\u5E8F\u8A2D\u5B9A\u3002",
+      ja: "EmbeddingGemma: \u30D7\u30ED\u30BB\u30B9\u8A2D\u5B9A\u304C\u7121\u52B9\u3067\u3059\u3002",
+      ko: "EmbeddingGemma: \uD504\uB85C\uC138\uC2A4 \uAD6C\uC131\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4."
+    },
+    "No se pudo verificar la respuesta contra sus fuentes. Int\xE9ntalo de nuevo.": {
+      en: "The answer could not be verified against its sources. Please try again.",
+      fr: "La r\xE9ponse n\u2019a pas pu \xEAtre v\xE9rifi\xE9e par rapport \xE0 ses sources. R\xE9essayez.",
+      de: "Die Antwort konnte nicht anhand ihrer Quellen \xFCberpr\xFCft werden. Bitte versuche es erneut.",
+      pt: "N\xE3o foi poss\xEDvel verificar a resposta com as suas fontes. Tenta novamente.",
+      "pt-BR": "N\xE3o foi poss\xEDvel verificar a resposta com suas fontes. Tente novamente.",
+      it: "Non \xE8 stato possibile verificare la risposta rispetto alle sue fonti. Riprova.",
+      tr: "Yan\u0131t kaynaklar\u0131yla do\u011Frulanamad\u0131. L\xFCtfen yeniden deneyin.",
+      "zh-CN": "\u65E0\u6CD5\u6839\u636E\u6765\u6E90\u6838\u5B9E\u56DE\u7B54\u3002\u8BF7\u91CD\u8BD5\u3002",
+      "zh-TW": "\u7121\u6CD5\u6839\u64DA\u4F86\u6E90\u6838\u5BE6\u56DE\u7B54\u3002\u8ACB\u91CD\u8A66\u3002",
+      ja: "\u56DE\u7B54\u3092\u51FA\u5178\u306B\u7167\u3089\u3057\u3066\u691C\u8A3C\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002",
+      ko: "\uB2F5\uBCC0\uC744 \uCD9C\uCC98\uC640 \uB300\uC870\uD558\uC5EC \uAC80\uC99D\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694."
+    },
     ...CLOUDFLARE_SYNC_ERRORS,
     ...STT_RUNTIME_ERRORS,
     ...BACKUPS_RUNTIME_ERRORS,
@@ -17815,7 +18247,8 @@ ${conversation}`;
   }
   var MAIN_PROCESS_ERROR_PATTERNS = [
     ...COMPANION_RUNTIME_ERROR_PATTERNS,
-    { pattern: /^La copia publicada no incluye la tabla (.+)\. Descarga una publicación compatible\.$/, translate: (table) => ({ "en": "The published copy lacks table {table}. Download a compatible publication.".replace("{table}", table), "fr": "La copie publi\xE9e ne contient pas la table {table}. T\xE9l\xE9chargez une publication compatible.".replace("{table}", table), "de": "Die ver\xF6ffentlichte Kopie enth\xE4lt die Tabelle {table} nicht. Laden Sie eine kompatible Ver\xF6ffentlichung herunter.".replace("{table}", table), "pt": "A c\xF3pia publicada n\xE3o inclui a tabela {table}. Descarregue uma publica\xE7\xE3o compat\xEDvel.".replace("{table}", table), "pt-BR": "A c\xF3pia publicada n\xE3o inclui a tabela {table}. Baixe uma publica\xE7\xE3o compat\xEDvel.".replace("{table}", table), "it": "La copia pubblicata non include la tabella {table}. Scarica una pubblicazione compatibile.".replace("{table}", table), "tr": "Yay\u0131mlanan kopyada {table} tablosu yok. Uyumlu bir yay\u0131n indirin.".replace("{table}", table), "zh-CN": "\u5DF2\u53D1\u5E03\u7684\u526F\u672C\u4E0D\u5305\u542B\u8868 {table}\uFF0C\u8BF7\u4E0B\u8F7D\u517C\u5BB9\u7684\u53D1\u5E03\u5185\u5BB9\u3002".replace("{table}", table), "zh-TW": "\u5DF2\u767C\u4F48\u7684\u526F\u672C\u4E0D\u5305\u542B\u8CC7\u6599\u8868 {table}\uFF0C\u8ACB\u4E0B\u8F09\u76F8\u5BB9\u7684\u767C\u4F48\u5167\u5BB9\u3002".replace("{table}", table), "ja": "\u516C\u958B\u6E08\u307F\u306E\u30B3\u30D4\u30FC\u306B\u30C6\u30FC\u30D6\u30EB {table} \u304C\u3042\u308A\u307E\u305B\u3093\u3002\u4E92\u63DB\u6027\u306E\u3042\u308B\u516C\u958B\u5185\u5BB9\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002".replace("{table}", table), "ko": "\uAC8C\uC2DC\uB41C \uC0AC\uBCF8\uC5D0 {table} \uD14C\uC774\uBE14\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uD638\uD658\uB418\uB294 \uAC8C\uC2DC \uB0B4\uC6A9\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694.".replace("{table}", table) }) },
+    { pattern: /^La copia publicada no incluye la tabla (.+)\. Descarga una publicación compatible\.$/, translate: (table2) => ({ "en": "The published copy lacks table {table}. Download a compatible publication.".replace("{table}", table2), "fr": "La copie publi\xE9e ne contient pas la table {table}. T\xE9l\xE9chargez une publication compatible.".replace("{table}", table2), "de": "Die ver\xF6ffentlichte Kopie enth\xE4lt die Tabelle {table} nicht. Laden Sie eine kompatible Ver\xF6ffentlichung herunter.".replace("{table}", table2), "pt": "A c\xF3pia publicada n\xE3o inclui a tabela {table}. Descarregue uma publica\xE7\xE3o compat\xEDvel.".replace("{table}", table2), "pt-BR": "A c\xF3pia publicada n\xE3o inclui a tabela {table}. Baixe uma publica\xE7\xE3o compat\xEDvel.".replace("{table}", table2), "it": "La copia pubblicata non include la tabella {table}. Scarica una pubblicazione compatibile.".replace("{table}", table2), "tr": "Yay\u0131mlanan kopyada {table} tablosu yok. Uyumlu bir yay\u0131n indirin.".replace("{table}", table2), "zh-CN": "\u5DF2\u53D1\u5E03\u7684\u526F\u672C\u4E0D\u5305\u542B\u8868 {table}\uFF0C\u8BF7\u4E0B\u8F7D\u517C\u5BB9\u7684\u53D1\u5E03\u5185\u5BB9\u3002".replace("{table}", table2), "zh-TW": "\u5DF2\u767C\u4F48\u7684\u526F\u672C\u4E0D\u5305\u542B\u8CC7\u6599\u8868 {table}\uFF0C\u8ACB\u4E0B\u8F09\u76F8\u5BB9\u7684\u767C\u4F48\u5167\u5BB9\u3002".replace("{table}", table2), "ja": "\u516C\u958B\u6E08\u307F\u306E\u30B3\u30D4\u30FC\u306B\u30C6\u30FC\u30D6\u30EB {table} \u304C\u3042\u308A\u307E\u305B\u3093\u3002\u4E92\u63DB\u6027\u306E\u3042\u308B\u516C\u958B\u5185\u5BB9\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002".replace("{table}", table2), "ko": "\uAC8C\uC2DC\uB41C \uC0AC\uBCF8\uC5D0 {table} \uD14C\uC774\uBE14\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uD638\uD658\uB418\uB294 \uAC8C\uC2DC \uB0B4\uC6A9\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694.".replace("{table}", table2) }) },
+    ...EMBEDDING_GEMMA2_ERROR_PATTERNS,
     ...STT_RUNTIME_ERROR_PATTERNS,
     ...BACKUPS_RUNTIME_ERROR_PATTERNS,
     ...SCRIPTOR_RUNTIME_ERROR_PATTERNS,
@@ -18212,16 +18645,16 @@ ${conversation}`;
       "zh-CN": `\u8FC1\u79FB\u524D\u8D44\u6599\u5E93\u672A\u901A\u8FC7quick_check\uFF1A${result}`,
       "zh-TW": `\u9077\u79FB\u524D\u8CC7\u6599\u5EAB\u672A\u901A\u904Equick_check\uFF1A${result}`
     }) },
-    { pattern: /^Tabla vectorial no permitida: (.+)$/, translate: (table) => ({
-      en: `Vector table not allowed: ${table}`,
-      fr: `Table vectorielle non autoris\xE9e : ${table}`,
-      de: `Vektortabelle nicht zul\xE4ssig: ${table}`,
-      pt: `Tabela vetorial n\xE3o permitida: ${table}`,
-      "pt-BR": `Tabela vetorial n\xE3o permitida: ${table}`,
-      it: `Tabella vettoriale non consentita: ${table}`,
-      tr: `\u0130zin verilmeyen vekt\xF6r tablosu: ${table}`,
-      "zh-CN": `\u4E0D\u5141\u8BB8\u4F7F\u7528\u5411\u91CF\u8868\uFF1A${table}`,
-      "zh-TW": `\u4E0D\u5141\u8A31\u4F7F\u7528\u5411\u91CF\u8868\uFF1A${table}`
+    { pattern: /^Tabla vectorial no permitida: (.+)$/, translate: (table2) => ({
+      en: `Vector table not allowed: ${table2}`,
+      fr: `Table vectorielle non autoris\xE9e : ${table2}`,
+      de: `Vektortabelle nicht zul\xE4ssig: ${table2}`,
+      pt: `Tabela vetorial n\xE3o permitida: ${table2}`,
+      "pt-BR": `Tabela vetorial n\xE3o permitida: ${table2}`,
+      it: `Tabella vettoriale non consentita: ${table2}`,
+      tr: `\u0130zin verilmeyen vekt\xF6r tablosu: ${table2}`,
+      "zh-CN": `\u4E0D\u5141\u8BB8\u4F7F\u7528\u5411\u91CF\u8868\uFF1A${table2}`,
+      "zh-TW": `\u4E0D\u5141\u8A31\u4F7F\u7528\u5411\u91CF\u8868\uFF1A${table2}`
     }) },
     { pattern: /^No se pudo restaurar: (.+)$/, translate: (detail) => ({
       en: `Could not restore: ${detail}`,
@@ -19122,27 +19555,27 @@ ${conversation}`;
       "zh-CN": `\u5B57\u6BB5${column}\u5305\u542B\u4E0D\u53EF\u79FB\u690D\u7684\u503C\u3002`,
       "zh-TW": `\u6B04\u4F4D${column}\u5305\u542B\u4E0D\u53EF\u79FB\u690D\u7684\u503C\u3002`
     }) },
-    { pattern: /^Paquete inválido: falta la tabla (.+)\.$/, translate: (table) => ({
-      en: `Invalid package: the table ${table} is missing.`,
-      fr: `Paquet non valide : la table ${table} est manquante.`,
-      de: `Ung\xFCltiges Paket: Die Tabelle ${table} fehlt.`,
-      pt: `Pacote inv\xE1lido: falta a tabela ${table}.`,
-      "pt-BR": `Pacote inv\xE1lido: falta a tabela ${table}.`,
-      it: `Pacchetto non valido: manca la tabella ${table}.`,
-      tr: `Ge\xE7ersiz paket: ${table} tablosu eksik.`,
-      "zh-CN": `\u65E0\u6548\u7684\u8F6F\u4EF6\u5305\uFF1A\u7F3A\u5C11\u8868${table}\u3002`,
-      "zh-TW": `\u7121\u6548\u7684\u8EDF\u9AD4\u5305\uFF1A\u7F3A\u5C11\u8868${table}\u3002`
+    { pattern: /^Paquete inválido: falta la tabla (.+)\.$/, translate: (table2) => ({
+      en: `Invalid package: the table ${table2} is missing.`,
+      fr: `Paquet non valide : la table ${table2} est manquante.`,
+      de: `Ung\xFCltiges Paket: Die Tabelle ${table2} fehlt.`,
+      pt: `Pacote inv\xE1lido: falta a tabela ${table2}.`,
+      "pt-BR": `Pacote inv\xE1lido: falta a tabela ${table2}.`,
+      it: `Pacchetto non valido: manca la tabella ${table2}.`,
+      tr: `Ge\xE7ersiz paket: ${table2} tablosu eksik.`,
+      "zh-CN": `\u65E0\u6548\u7684\u8F6F\u4EF6\u5305\uFF1A\u7F3A\u5C11\u8868${table2}\u3002`,
+      "zh-TW": `\u7121\u6548\u7684\u8EDF\u9AD4\u5305\uFF1A\u7F3A\u5C11\u8868${table2}\u3002`
     }) },
-    { pattern: /^Paquete inválido: el recuento de (.+) no coincide con su manifiesto\.$/, translate: (table) => ({
-      en: `Invalid package: the count of ${table} does not match its manifest.`,
-      fr: `Paquet non valide : le d\xE9compte de ${table} ne correspond pas \xE0 son manifeste.`,
-      de: `Ung\xFCltiges Paket: Die Anzahl von ${table} stimmt nicht mit dem Manifest \xFCberein.`,
-      pt: `Pacote inv\xE1lido: a contagem de ${table} n\xE3o coincide com o seu manifesto.`,
-      "pt-BR": `Pacote inv\xE1lido: a contagem de ${table} n\xE3o coincide com o seu manifesto.`,
-      it: `Pacchetto non valido: il conteggio di ${table} non corrisponde al suo manifest.`,
-      tr: `Ge\xE7ersiz paket: ${table} say\u0131m\u0131 manifestiyle e\u015Fle\u015Fmiyor.`,
-      "zh-CN": `\u65E0\u6548\u7684\u8F6F\u4EF6\u5305\uFF1A${table}\u7684\u6570\u91CF\u4E0E\u5176\u6E05\u5355\u4E0D\u5339\u914D\u3002`,
-      "zh-TW": `\u7121\u6548\u7684\u8EDF\u9AD4\u5305\uFF1A${table}\u7684\u6578\u91CF\u8207\u5176\u6E05\u55AE\u4E0D\u5339\u914D\u3002`
+    { pattern: /^Paquete inválido: el recuento de (.+) no coincide con su manifiesto\.$/, translate: (table2) => ({
+      en: `Invalid package: the count of ${table2} does not match its manifest.`,
+      fr: `Paquet non valide : le d\xE9compte de ${table2} ne correspond pas \xE0 son manifeste.`,
+      de: `Ung\xFCltiges Paket: Die Anzahl von ${table2} stimmt nicht mit dem Manifest \xFCberein.`,
+      pt: `Pacote inv\xE1lido: a contagem de ${table2} n\xE3o coincide com o seu manifesto.`,
+      "pt-BR": `Pacote inv\xE1lido: a contagem de ${table2} n\xE3o coincide com o seu manifesto.`,
+      it: `Pacchetto non valido: il conteggio di ${table2} non corrisponde al suo manifest.`,
+      tr: `Ge\xE7ersiz paket: ${table2} say\u0131m\u0131 manifestiyle e\u015Fle\u015Fmiyor.`,
+      "zh-CN": `\u65E0\u6548\u7684\u8F6F\u4EF6\u5305\uFF1A${table2}\u7684\u6570\u91CF\u4E0E\u5176\u6E05\u5355\u4E0D\u5339\u914D\u3002`,
+      "zh-TW": `\u7121\u6548\u7684\u8EDF\u9AD4\u5305\uFF1A${table2}\u7684\u6578\u91CF\u8207\u5176\u6E05\u55AE\u4E0D\u5339\u914D\u3002`
     }) },
     { pattern: /^Paquete incompleto: falta (.+)\.$/, translate: (what) => ({
       en: `Incomplete package: ${what} is missing.`,
@@ -19365,16 +19798,16 @@ ${conversation}`;
       "zh-CN": `${wanted}\u7684\u5927\u5C0F\u65E0\u6548\u3002`,
       "zh-TW": `${wanted}\u7684\u5927\u5C0F\u7121\u6548\u3002`
     }) },
-    { pattern: /^La tabla (.+) no tiene una identidad estable y no puede publicarse de forma segura\.$/, translate: (table) => ({
-      en: `The table ${table} has no stable identity and cannot be published safely.`,
-      fr: `La table ${table} n\u2019a pas d\u2019identit\xE9 stable et ne peut pas \xEAtre publi\xE9e en toute s\xE9curit\xE9.`,
-      de: `Die Tabelle ${table} hat keine stabile Identit\xE4t und kann nicht sicher ver\xF6ffentlicht werden.`,
-      pt: `A tabela ${table} n\xE3o tem uma identidade est\xE1vel e n\xE3o pode ser publicada com seguran\xE7a.`,
-      "pt-BR": `A tabela ${table} n\xE3o tem uma identidade est\xE1vel e n\xE3o pode ser publicada com seguran\xE7a.`,
-      it: `La tabella ${table} non ha un\u2019identit\xE0 stabile e non pu\xF2 essere pubblicata in sicurezza.`,
-      tr: `${table} tablosunun kararl\u0131 bir kimli\u011Fi yok ve g\xFCvenle yay\u0131mlanamaz.`,
-      "zh-CN": `\u8868${table}\u6CA1\u6709\u7A33\u5B9A\u6807\u8BC6\uFF0C\u65E0\u6CD5\u5B89\u5168\u53D1\u5E03\u3002`,
-      "zh-TW": `\u8868${table}\u6C92\u6709\u7A69\u5B9A\u6A19\u8B58\uFF0C\u7121\u6CD5\u5B89\u5168\u91CB\u51FA\u3002`
+    { pattern: /^La tabla (.+) no tiene una identidad estable y no puede publicarse de forma segura\.$/, translate: (table2) => ({
+      en: `The table ${table2} has no stable identity and cannot be published safely.`,
+      fr: `La table ${table2} n\u2019a pas d\u2019identit\xE9 stable et ne peut pas \xEAtre publi\xE9e en toute s\xE9curit\xE9.`,
+      de: `Die Tabelle ${table2} hat keine stabile Identit\xE4t und kann nicht sicher ver\xF6ffentlicht werden.`,
+      pt: `A tabela ${table2} n\xE3o tem uma identidade est\xE1vel e n\xE3o pode ser publicada com seguran\xE7a.`,
+      "pt-BR": `A tabela ${table2} n\xE3o tem uma identidade est\xE1vel e n\xE3o pode ser publicada com seguran\xE7a.`,
+      it: `La tabella ${table2} non ha un\u2019identit\xE0 stabile e non pu\xF2 essere pubblicata in sicurezza.`,
+      tr: `${table2} tablosunun kararl\u0131 bir kimli\u011Fi yok ve g\xFCvenle yay\u0131mlanamaz.`,
+      "zh-CN": `\u8868${table2}\u6CA1\u6709\u7A33\u5B9A\u6807\u8BC6\uFF0C\u65E0\u6CD5\u5B89\u5168\u53D1\u5E03\u3002`,
+      "zh-TW": `\u8868${table2}\u6C92\u6709\u7A69\u5B9A\u6A19\u8B58\uFF0C\u7121\u6CD5\u5B89\u5168\u91CB\u51FA\u3002`
     }) },
     { pattern: /^El índice (.+?) \((.+?) bytes\) supera el límite seguro de búsqueda exacta\. Añade en Cloudflare un índice Vectorize de (.+?) dimensiones o desactiva esta proyección\.$/, translate: (kind, bytes, dimensions) => ({
       en: `The ${kind} index (${bytes} bytes) exceeds the safe exact-search limit. Add a ${dimensions}-dimension Vectorize index in Cloudflare, or turn this projection off.`,
