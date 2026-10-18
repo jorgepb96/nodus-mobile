@@ -16,6 +16,21 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         try await verifyOwningMacUnavailable()
         try runCopy(phase:"offline")
     }
+    /// Recheck the actual prior save without issuing a second create after a driver failure.
+    @MainActor func testExistingOfflineAuthoredNoteReopensInBothOrientations() async throws {
+        try await verifyOwningMacUnavailable()
+        let id = try required("NODUS_ACCEPTANCE_STUDY_CREATED_NOTE_ID")
+        XCTAssertNotNil(UUID(uuidString: id))
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        app.launch(); defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
+        XCTAssertTrue(app.buttons["nodus-navigation-toggle"].waitForExistence(timeout:10))
+        let current = try notes(app, course: required("NODUS_ACCEPTANCE_STUDY_COURSE"), title: required("NODUS_ACCEPTANCE_STUDY_IDEA_LABEL"))
+        let rowID = "study-local-document-" + id
+        XCTAssertEqual(current, Set([rowID]))
+        let row = app.buttons[rowID]; reveal(row,app); row.tap()
+        try verifyAuthoredReader(app, statement: required("NODUS_ACCEPTANCE_STUDY_IDEA_STATEMENT"))
+    }
     @MainActor func testDeletingChosenSubjectCopyRetainsAuthoredNote() async throws {
         try await verifyOwningMacUnavailable()
         let enabled=try required("NODUS_ACCEPTANCE_STUDY_IDEAS_MUTATION");XCTAssertEqual(enabled,"1");guard enabled == "1" else { throw SetupError.missingConfiguration }
@@ -24,7 +39,7 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         try navigate(app,"settings");let remove=app.buttons["companion-download-remove-"+pack];XCTAssertTrue(remove.waitForExistence(timeout:20));reveal(remove,app);remove.tap();XCTAssertTrue(remove.waitForNonExistence(timeout:20))
         app.terminate();app.launch();try navigate(app,"studyCourses");let catalogue=app.buttons["workspace-catalogue-studyCourses"];XCTAssertTrue(catalogue.waitForExistence(timeout:20));reveal(catalogue,app);catalogue.tap()
         let own=app.buttons["study-local-document-"+note];XCTAssertTrue(own.waitForExistence(timeout:30));reveal(own,app);own.tap()
-        XCTAssertTrue(app.webViews.staticTexts.containing(NSPredicate(format:"label CONTAINS %@",statement)).firstMatch.waitForExistence(timeout:30))
+        try verifyAuthoredReader(app, statement: statement)
     }
     /// Run only after resuming the same owning Mac/profile/grant. No new pairing input.
     @MainActor func testReconnectedChosenNoteKeepsIdentityAndMacAcknowledgementAfterReopen() throws {
@@ -50,9 +65,9 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
             let row = app.buttons[rowID]; reveal(row, app); row.tap()
             let edit = app.buttons["study-document-edit"]
             XCTAssertTrue(edit.waitForExistence(timeout: 30)); edit.tap()
-            let web = app.webViews.firstMatch
+            let web = app.otherElements["shared-desktop-studyDocument"].webViews.firstMatch
             XCTAssertTrue(web.waitForExistence(timeout: 30))
-            XCTAssertTrue(web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", statement)).firstMatch.waitForExistence(timeout: 30))
+            XCTAssertTrue(web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", statement, statement)).firstMatch.waitForExistence(timeout: 30))
             let acknowledged = NSPredicate { _, _ in
                 web.staticTexts["Guardado"].exists &&
                 !web.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Guardado en este dispositivo")).firstMatch.exists
@@ -131,12 +146,22 @@ final class StudyIdeasAcceptanceUITests: XCTestCase {
         let receipt=XCTAttachment(string:created.sorted().joined(separator:"\n"));receipt.name="study-ideas-created-note-identifiers";receipt.lifetime = .keepAlways;add(receipt)
         XCTAssertEqual(created.count,1,"One explicit save creates exactly one discoverable document after restart.")
         let id = try XCTUnwrap(created.first); let note = app.buttons[id]; reveal(note,app); note.tap()
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout:30))
+        try verifyAuthoredReader(app, statement: statement)
+    }
+    @MainActor private func verifyAuthoredReader(_ app: XCUIApplication, statement: String) throws {
+        let reader = app.otherElements["study-evidence-reader"].firstMatch
+        XCTAssertTrue(reader.waitForExistence(timeout:30))
         for orientation in [UIDeviceOrientation.landscapeLeft,.portrait] {
             XCUIDevice.shared.orientation = orientation
             let turned = NSPredicate { _,_ in let f=app.windows.firstMatch.frame;return orientation == .portrait ? f.height>f.width : f.width>f.height }
             XCTAssertEqual(XCTWaiter.wait(for:[XCTNSPredicateExpectation(predicate:turned,object:nil)],timeout:15),.completed)
-            XCTAssertTrue(app.webViews.staticTexts.containing(NSPredicate(format:"label CONTAINS %@",statement)).firstMatch.waitForExistence(timeout:20),"The real source statement must remain readable in the structured editor.")
+            // CorpusProse renders native UITextViews; a retained WebView from
+            // the Ideas route must never stand in for the opened note reader.
+            let paragraph = reader.textViews.matching(NSPredicate(format:"label == %@ OR value == %@",statement,statement)).firstMatch
+            XCTAssertTrue(paragraph.waitForExistence(timeout:20),"The actual native reader must retain the saved source statement.")
+            XCTAssertTrue(paragraph.isHittable)
+            XCTAssertGreaterThanOrEqual(paragraph.frame.minX, reader.frame.minX - 1)
+            XCTAssertLessThanOrEqual(paragraph.frame.maxX, reader.frame.maxX + 1)
             let attachment=XCTAttachment(screenshot:app.screenshot());attachment.name="study-idea-offline-note-\(orientation.rawValue)";attachment.lifetime = .keepAlways;add(attachment)
         }
     }
