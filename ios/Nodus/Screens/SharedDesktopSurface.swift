@@ -874,7 +874,7 @@ private struct DesktopWebView: UIViewRepresentable {
         func sendDatabaseReadingUpdate() {
             guard surfaceReady,routeActive,databaseReadingRevision != session.companionDatabaseReadingRevision else { return }
             databaseReadingRevision = session.companionDatabaseReadingRevision
-            webView?.evaluateJavaScript("window.nodusMobileEvent({channel:'mobile:databaseReading:changed',args:[]});",completionHandler:nil)
+            try? MobileJavaScriptDelivery.events(webView, payload: [["channel": "mobile:databaseReading:changed", "args": []]], optional: false)
         }
         lazy var images = MobileCorpusImageScheme(session:session,onError:onError)
         var tasks: [Task<Void, Never>] = []
@@ -888,14 +888,15 @@ private struct DesktopWebView: UIViewRepresentable {
             guard surfaceReady, routeActive, session.connection.desktopPairingId != nil,
                   corpusRevision != session.publishedRevision else { return }
             corpusRevision = session.publishedRevision
-            webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:corpus:changed',args:[]});", completionHandler: nil)
+            try? MobileJavaScriptDelivery.events(webView, payload: [["channel": "mobile:corpus:changed", "args": []]], optional: true)
         }
         func sendPublicationUpdates() {
             guard surfaceReady, routeActive, publicationRevision != session.companionPublicationRevision,
                   let data = try? JSONEncoder.nodus.encode(session.companionPublicationUpdates) else { return }
             publicationRevision = session.companionPublicationRevision
-            let payload = String(decoding: data, as: UTF8.self)
-            webView?.evaluateJavaScript("window.nodusMobileEvent?.({channel:'mobile:publication:changed',args:[\(payload)]});", completionHandler: nil)
+            if let payload = try? JSONSerialization.jsonObject(with: data) {
+                try? MobileJavaScriptDelivery.events(webView, payload: [["channel": "mobile:publication:changed", "args": [payload]]], optional: true)
+            }
             if session.companionPublicationUpdates.contains(where: { $0.objectValue?["id"]?.stringValue == autonomousGenerationId && $0.objectValue?["state"] == .string("available") }) { onAutonomousStatus(nil) }
         }
         init(session: SpaceSession, ai: AISettings, surface: DesktopSurface, downloadedOnly:Bool, onReady: @escaping () -> Void, onError: @escaping (String) -> Void, onExport: @escaping (PrivateBridgeFileLease) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; self.surface = surface; self.downloadedOnly=downloadedOnly; autonomous = AutonomousSurfaceProvider(settings: ai); self.onReady = onReady; self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
@@ -1381,7 +1382,9 @@ private struct DesktopWebView: UIViewRepresentable {
                                         if !events.isEmpty, let data = try? JSONEncoder.nodus.encode(events) {
                                             // Deliver the ordered batch in one WebKit call.
                                             // A live turn can contain thousands of deltas.
-                                            self.webView?.evaluateJavaScript("\(String(decoding: data, as: UTF8.self)).forEach(event => window.nodusMobileEvent(event));", completionHandler: nil)
+                                            if let payload = try? JSONSerialization.jsonObject(with: data) {
+                                                try? MobileJavaScriptDelivery.events(self.webView, payload: payload, optional: false)
+                                            }
                                         }
                                     }
                                 }
@@ -1496,8 +1499,7 @@ private struct DesktopWebView: UIViewRepresentable {
                 errorCode.map { .object(["code": .string($0), "message": .string(message)]) } ?? .string(message)
             } ?? .null
             let envelope: JSONValue = .array([.string(id), value, issue])
-            let text = String(decoding: try JSONEncoder.nodus.encode(envelope), as: UTF8.self)
-            webView?.evaluateJavaScript("window.nodusMobileReply(...\(text));", completionHandler: nil)
+            try MobileJavaScriptDelivery.reply(webView, envelope: envelope)
         }
         func finishJavaScriptPanel() {
             let cancel = cancelJavaScriptPanel

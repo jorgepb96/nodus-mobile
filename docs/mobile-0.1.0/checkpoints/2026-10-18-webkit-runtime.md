@@ -1,0 +1,11 @@
+# WebKit y consulta interactiva — 18 de octubre de 2026
+
+En el simulador nuevo iPhone 16 Pro Max con iOS 26.2 estable (23C54), `native-sdk26-2-fresh-phone-code-workspace-01` pasa: código real, vinculación del workspace y reapertura sin otro código. Usa el Bridge aislado de Desktop `b8a3b9c9`, sin modificar el Nodus instalado.
+
+Sobre Mobile `7fe9f09`, `native-sdk26-2-interactive-consultation-01` registra **tres casos aprobados, tres fallidos y cero omitidos**. Pasan mapa de argumentos, teclado/borrador/historial del chat e insignias compactas del diccionario en ambas orientaciones. Fallan grafo tras zoom, búsqueda en la galería de Deep Research y búsqueda de entradas del diccionario. Las capturas muestran pérdida del contenido WebKit y el aviso de vista interrumpida; el fallo de localización posterior no constituye un diagnóstico de accesibilidad ni una aprobación del producto.
+
+Dos informes `.ips` de las 14:49:14 y 14:49:15 registran `EXC_BAD_ACCESS / SIGBUS`, `KERN_PROTECTION_FAILURE`, dentro de `JIT Worklist Helper Thread`: `JSC::CodeOrigin::approximateHash`, `ICStatusContext` y compilación DFG. No prueban agotamiento de memoria ni identifican una corrección concreta de Apple. El resumen privado está en `artifacts/interface-2026-10-18/sdk26-2-webcontent-crash-reports-01.json`; se conservan `.xcresult`, capturas y los intentos anteriores.
+
+Se prepara una entrega del puente mediante `WKWebView.callAsyncJavaScript`, API pública: cuerpos de programa constantes y argumentos Foundation, conservando IDs, nulls, errores y orden de eventos. Reduce la construcción de programas con JSON interpolado; **no se presenta como solución demostrada del SIGBUS**. Sus pruebas WebKit y la repetición de consulta están pendientes en este checkpoint. No se deshabilita JIT, no se añaden flags privados ni se sustituyen fallos por reintentos de operaciones de escritura.
+
+Se ha descargado y verificado el runtime estable iOS 26.5 (23F77, arm64) para contrastar el comportamiento. Descargarlo no acredita una prueba ejecutada. La revisión visual de Desktop firmado y el archivo Release móvil siguen pendientes; TestFlight continúa en 0.1.0 (1003). No se ejecutan Actions ni se modifican workflows.
