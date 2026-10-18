@@ -734,7 +734,9 @@ private struct DesktopWebView: UIViewRepresentable {
               if(method.startsWith('on'))return listener=>{const s=window.nodusMobileSubscriptions.get(method)||new Set();s.add(listener);window.nodusMobileSubscriptions.set(method,s);return()=>s.delete(listener)};
               return (...args)=>window.nodusMobileCall(method,...args);
             }});
-            window.addEventListener('error',e=>window.webkit.messageHandlers.nodus.postMessage({id:'error',method:'surfaceError',args:[String(e.message)]}));
+            window.addEventListener('error',e=>{
+              if(e.message || e.target instanceof HTMLScriptElement)window.webkit.messageHandlers.nodus.postMessage({id:'error',method:'surfaceError',args:[String(e.message || 'No se pudo cargar la interfaz de Nodus. Reintenta para recuperar el contenido guardado.') ]});
+            },true);
             window.addEventListener('unhandledrejection',e=>window.webkit.messageHandlers.nodus.postMessage({id:'error',method:'surfaceError',args:[String(e.reason)]}));
             """
             config.userContentController.addUserScript(WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -756,14 +758,10 @@ private struct DesktopWebView: UIViewRepresentable {
             } catch { return false }
         }
         context.coordinator.setRouteActive(routeActive)
-        if let resource = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "SharedDesktop") {
-            let script = resource.deletingLastPathComponent().appendingPathComponent("surface.iife.js")
-            do {
-                let javascript = try String(contentsOf: script, encoding: .utf8)
-                let guarded = "try {\n" + javascript + "\n} catch(e) { window.webkit.messageHandlers.nodus.postMessage({id:'error',method:'surfaceError',args:[String(e.message || e)]}); }"
-                config.userContentController.addUserScript(WKUserScript(source: guarded, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-
-            } catch { context.coordinator.onError(error.localizedDescription) }
+        if Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "SharedDesktop") != nil {
+            // Load the immutable bundle as a normal same-origin script. Keeping
+            // the whole shared renderer in WKUserScript duplicates it per view
+            // and exercises a different JavaScriptCore compilation context.
             context.coordinator.tasks.append(Task {
                 do {
                     let stored = try await context.coordinator.surfaceStorage()

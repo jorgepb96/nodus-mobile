@@ -61,9 +61,16 @@ final class LocalSurfaceHost {
         let components = line.split(separator: " ")
         let method = components.first.map(String.init) ?? ""
         let file = components.count == 3 ? String(components[1]) : ""
-        let allowed: [String: String] = ["/index.html": "text/html; charset=utf-8", "/surface.css": "text/css; charset=utf-8"]
+        let allowed: [String: String] = ["/index.html": "text/html; charset=utf-8", "/surface.css": "text/css; charset=utf-8",
+            "/surface.iife.js": "text/javascript; charset=utf-8"]
         let resource = Bundle.main.resourceURL?.appendingPathComponent("SharedDesktop").appendingPathComponent(String(file.dropFirst()))
-        let bytes = ["GET", "HEAD"].contains(method) && allowed[file] != nil ? resource.flatMap { try? Data(contentsOf: $0) } : nil
+        var bytes = ["GET", "HEAD"].contains(method) && allowed[file] != nil ? resource.flatMap { try? Data(contentsOf: $0) } : nil
+        if file == "/index.html", let raw = bytes {
+            if var html = String(data: raw, encoding: .utf8), let end = html.range(of: "</body>", options: [.backwards, .caseInsensitive]) {
+                html.insert(contentsOf: "<script src=\"./surface.iife.js\"></script>", at: end.lowerBound)
+                bytes = Data(html.utf8)
+            } else { bytes = nil }
+        }
         let data = bytes ?? Data()
         let headers = "HTTP/1.1 \(bytes == nil ? "404 Not Found" : "200 OK")\r\nContent-Type: \(allowed[file] ?? "text/plain")\r\nContent-Length: \(data.count)\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n"
         var response = Data(headers.utf8); if method != "HEAD" { response.append(data) }

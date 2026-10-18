@@ -3,6 +3,43 @@ import NodusKit
 import Testing
 @testable import Nodus
 
+@Suite("Bundled presentation server")
+@MainActor
+struct LocalSurfaceHostTests {
+    @Test("the real loopback document loads one byte-exact packaged script and rejects other resources")
+    func onlyBundledPresentationAssets() async throws {
+        let document = try await LocalSurfaceHost.shared.documentURL()
+        let transport = URLSession(configuration: .ephemeral)
+        defer { transport.invalidateAndCancel() }
+        let (body, response) = try await transport.data(from: document)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        let html = try #require(String(data: body, encoding: .utf8))
+        #expect(html.components(separatedBy: "<script src=\"./surface.iife.js\"></script>").count == 2)
+        #expect(html.contains("connect-src 'none'"))
+        #expect(html.contains("script-src 'self' blob:"))
+        let script = document.deletingLastPathComponent().appendingPathComponent("surface.iife.js")
+        let (javascript, scriptResponse) = try await transport.data(from: script)
+        #expect((scriptResponse as? HTTPURLResponse)?.statusCode == 200)
+        #expect((scriptResponse as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") == "text/javascript; charset=utf-8")
+        let packaged = try #require(Bundle.main.url(forResource: "surface.iife", withExtension: "js", subdirectory: "SharedDesktop"))
+        let packagedBytes = try Data(contentsOf: packaged)
+        #expect(!javascript.isEmpty)
+        #expect(javascript == packagedBytes)
+        var head = URLRequest(url: script); head.httpMethod = "HEAD"
+        let (empty, headResponse) = try await transport.data(for: head)
+        #expect(empty.isEmpty)
+        #expect((headResponse as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Length") == String(javascript.count))
+        for path in ["Info.plist", "operations.json", "surface.iife.js?file=secrets", "%2e%2e/Info.plist"] {
+            let denied = try #require(URL(string: path, relativeTo: document))
+            let (_, response) = try await transport.data(from: denied)
+            #expect((response as? HTTPURLResponse)?.statusCode == 404)
+        }
+        var post = URLRequest(url: script); post.httpMethod = "POST"
+        let (_, postResponse) = try await transport.data(for: post)
+        #expect((postResponse as? HTTPURLResponse)?.statusCode == 404)
+    }
+}
+
 @Suite("Local surface draft isolation")
 @MainActor
 struct MobileSurfaceStorageTests {
