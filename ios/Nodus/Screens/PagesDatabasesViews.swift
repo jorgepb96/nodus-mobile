@@ -583,11 +583,27 @@ struct DatabaseDetailWorkspace: View {
     @State private var activeViewId: String?
     @State private var adHocLayout = "table"
     @State private var selectedRowId: String?
-    @State private var showInspector = false
+    /// One sheet slot for the row inspector, the linked-row reader and both column editors.
+    /// Four `.sheet` modifiers on the same view mean SwiftUI presents only one of them, which
+    /// is why tapping a row on iPhone used to leave the inspector closed.
+    @State private var presented: Presented?
+    private enum Presented: Identifiable {
+        case inspector
+        case newColumn
+        case editColumn(PagesDatabasesParity.Column)
+        case foreignRow(DatabaseForeignRow)
+        var id: String {
+            switch self {
+            case .inspector: return "inspector"
+            case .newColumn: return "new-column"
+            case .editColumn(let column): return "edit-" + column.id
+            case .foreignRow(let row): return "foreign-row-" + row.id
+            }
+        }
+    }
     @State private var sortColumnId: String?
     @State private var sortDirection: PagesDatabasesParity.SortDirection = .ascending
-    @State private var creatingColumn = false
-    @State private var editingColumn: PagesDatabasesParity.Column?
+
     @State private var importingCSV = false
     @State private var importMessage: String?
     @State private var phoneTable = false
@@ -596,7 +612,6 @@ struct DatabaseDetailWorkspace: View {
     @State private var viewIssue:String?
     @State private var loadingView=false
     @State private var viewAttempt=0
-    @State private var foreignRow:DatabaseForeignRow?
     @State private var presentationRevision = 0
 
     private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
@@ -651,10 +666,18 @@ struct DatabaseDetailWorkspace: View {
         .onChange(of: database.id) { _, _ in activeViewId = views.first?.id; selectedRowId = nil }
         .onChange(of: tables) { _, _ in presentationRevision += 1 }
         .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(presentationRevision)|\(viewAttempt)") {await loadSavedView()}
-        .nodusSheet(item:$foreignRow){target in NavigationStack{DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:downloadedOnly || usingDownloadedView).nodusModalClose(accent:session.accent)}}
-        .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly || usingDownloadedView).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } } }
-        .nodusSheet(isPresented: $creatingColumn) { NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox) }
-        .nodusSheet(item: $editingColumn) { column in NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox, existingColumn: column) }
+        .nodusSheet(item: $presented) { target in
+            switch target {
+            case .inspector:
+                if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly || usingDownloadedView).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } }
+            case .newColumn:
+                NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox)
+            case .editColumn(let column):
+                NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox, existingColumn: column)
+            case .foreignRow(let row):
+                NavigationStack { DatabaseLinkedRowReader(session: session, id: row.id, downloadedOnly: downloadedOnly || usingDownloadedView).nodusModalClose(accent: session.accent) }
+            }
+        }
         .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             guard case .success(let url) = result else { return }
             Task { await requestDesktopImport(url) }
@@ -667,8 +690,8 @@ struct DatabaseDetailWorkspace: View {
         DesktopPageHeader(title: LocalizedStringKey(database.name), subtitle: loadingView ? "Cargando vista…":"\(database.shortId) · \(rows.count) filas", systemImage: database.icon ?? "tablecells", accent: session.accent, trailing: {
             HStack(spacing: 7) {
                 Menu {
-                    Button { creatingColumn = true } label: { Label("New property", systemImage: "rectangle.split.1x2") }
-                    Menu("Configurar propiedades") { ForEach(columns) { column in Button(column.name) { editingColumn = column } } }
+                    Button { presented = .newColumn } label: { Label("New property", systemImage: "rectangle.split.1x2") }
+                    Menu("Configurar propiedades") { ForEach(columns) { column in Button(column.name) { presented = .editColumn(column) } } }
                     Button { importingCSV = true } label: { Label("Import CSV", systemImage: "tablecells.badge.ellipsis") }.disabled(session.isDemo)
                     ShareLink(item: csv) { Label("Export CSV", systemImage: "square.and.arrow.up") }
                 } label: { Label("Manage", systemImage: "ellipsis.circle") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
@@ -711,7 +734,7 @@ struct DatabaseDetailWorkspace: View {
                         initialDatabasePresentation: .object(["databaseId": .string(database.id), "viewId": activeViewId.map(JSONValue.string) ?? .null, "layout": .string(layout)]),
                         onOpenDatabaseRow: { id in
                             if let row = (viewRows + allRows).first(where: { $0.id == id }) { select(row) }
-                            else { foreignRow = DatabaseForeignRow(id: id) }
+                            else { presented = .foreignRow(DatabaseForeignRow(id: id)) }
                         }, downloadedOnly: downloadedOnly)
                         .id("\(database.id):\(activeViewId ?? layout):\(session.companionPublicationRevision):\(presentationRevision)")
                 }
@@ -992,8 +1015,8 @@ struct DatabaseDetailWorkspace: View {
     }
 
     private func select(_ row: PagesDatabasesParity.DataRow) {
-        if row.databaseId != database.id {foreignRow=DatabaseForeignRow(id:row.id);return}
-        selectedRowId=row.id;if compactPresentation {showInspector=true}
+        if row.databaseId != database.id {presented = .foreignRow(DatabaseForeignRow(id:row.id));return}
+        selectedRowId=row.id;if compactPresentation {presented = .inspector}
     }
     private func loadSavedView() async {
         canonicalRows=nil;usingDownloadedView=false;viewIssue=nil;selectedRowId=nil
@@ -1037,7 +1060,7 @@ struct DatabaseDetailWorkspace: View {
         guard await outbox.syncMutation(kind:.upsert,table:.databaseRows,key:[id],row:row,title:"Crear fila") else {return}
         var staged=row;staged["mobileSyncState"] = .string(outbox.pending > 0 ? "pending":"available")
         tables["db_rows",default:[]].append(Row(staged));selectedRowId=id
-        if compactPresentation { showInspector = true }
+        if compactPresentation { presented = .inspector }
     }
 
     private func requestDesktopImport(_ url: URL) async {

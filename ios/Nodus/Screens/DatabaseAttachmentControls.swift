@@ -29,6 +29,9 @@ struct DatabaseAttachmentControls: View {
                 .disabled(busy || rowRevision == nil || columnRevision == nil).accessibilityIdentifier("database-file-import-\(column.id)")
             ForEach(existing, id: \.columns) { file in
                 HStack {
+                    // The button only opens the attachment; without its stored name the row
+                    // could not tell one attached file from another.
+                    Text(file.text("file_name") ?? "Archivo").font(.callout).lineLimit(2)
                     if let id = file.string("id") { PrivateFileButton(session: session, kind: .databaseAttachment, id: id) }
                     Spacer(minLength: 8)
                     Button(role: .destructive) { deleting = file } label: { Image(systemName: "trash").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("Eliminar archivo").disabled(outbox == nil || busy)

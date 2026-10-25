@@ -282,21 +282,21 @@ struct DatabasePropertyCellEditor: View {
     @ViewBuilder var body: some View {
         switch column.type {
         case "select", "status":
-            Picker(column.name, selection: $value) { Text("Sin valor").tag(""); ForEach(column.options) { Text($0.label).tag($0.id) } }.pickerStyle(.menu)
+            Picker(column.name, selection: $value) { Text("Sin valor").tag(""); ForEach(column.options) { Text($0.label).tag($0.id) } }.pickerStyle(.menu).frame(minHeight: 44)
         case "multi_select":
             ForEach(column.options) { option in Toggle(option.label, isOn: Binding(get: { CompanionDatabaseProperty.strings(value).contains(option.id) }, set: { enabled in
                 var ids = CompanionDatabaseProperty.strings(value); ids.removeAll { $0 == option.id }; if enabled { ids.append(option.id) }; value = (try? CompanionDatabaseProperty.encodeStrings(ids)) ?? value
-            })) }
-        case "checkbox": Toggle("Marcada", isOn: Binding(get: { ["1","true"].contains(value.lowercased()) }, set: { value = $0 ? "1" : "0" }))
+            })).frame(minHeight: 44) }
+        case "checkbox": Toggle("Marcada", isOn: Binding(get: { ["1","true"].contains(value.lowercased()) }, set: { value = $0 ? "1" : "0" })).frame(minHeight: 44)
         case "date": DatabaseDatePropertyEditor(column: column, value: $value)
         case "time":
-            DatePicker("Hora", selection: Binding(get: { let formatter = DateFormatter(); formatter.dateFormat = "HH:mm"; return formatter.date(from: value) ?? Date() }, set: { date in let formatter = DateFormatter(); formatter.dateFormat = "HH:mm"; value = formatter.string(from: date) }), displayedComponents: .hourAndMinute)
+            DatePicker("Hora", selection: Binding(get: { let formatter = DateFormatter(); formatter.dateFormat = "HH:mm"; return formatter.date(from: value) ?? Date() }, set: { date in let formatter = DateFormatter(); formatter.dateFormat = "HH:mm"; value = formatter.string(from: date) }), displayedComponents: .hourAndMinute).frame(minHeight: 44)
             if value.isEmpty { Text("Sin valor").font(.caption).foregroundStyle(.secondary) }
             Button("Quitar hora") { value = "" }
         case "person": peopleFields
         case "location":
-            TextField("Lugar", text: objectText("name", legacy: "name"), axis: .vertical).textFieldStyle(.roundedBorder)
-            TextField("Dirección", text: objectText("address", legacy: "name"), axis: .vertical).textFieldStyle(.roundedBorder)
+            TextField("Lugar", text: objectText("name", legacy: "name"), axis: .vertical).textFieldStyle(.roundedBorder).accessibilityLabel("Lugar")
+            TextField("Dirección", text: objectText("address", legacy: "name"), axis: .vertical).textFieldStyle(.roundedBorder).accessibilityLabel("Dirección")
             coordinate("Latitud", key: "latitude", range: -90...90)
             coordinate("Longitud", key: "longitude", range: -180...180)
         default:
@@ -304,6 +304,9 @@ struct DatabasePropertyCellEditor: View {
                 .keyboardType(column.type == "number" ? .numbersAndPunctuation : column.type == "email" ? .emailAddress : column.type == "url" ? .URL : column.type == "phone" ? .phonePad : .default)
                 .autocorrectionDisabled(["email","url","phone","number"].contains(column.type))
                 .textInputAutocapitalization(["email","url"].contains(column.type) ? .never : .sentences)
+                // The visible column name sits beside the field, so VoiceOver had only the
+                // stored value to announce. Name the control itself for the property it edits.
+                .accessibilityLabel(column.name)
         }
     }
     private var people: [JSONValue] {
@@ -317,8 +320,8 @@ struct DatabasePropertyCellEditor: View {
                 Label(person["label"]?.stringValue ?? "", systemImage: person["kind"] == .string("group") ? "person.2" : "person")
                 Button("Quitar", role: .destructive) { var entries = people; entries.remove(at: index); writePeople(entries) }
             }
-            TextField("Nombre", text: $newPerson)
-            Picker("Tipo", selection: $newKind) { Text("Persona").tag("person"); Text("Grupo").tag("group") }.pickerStyle(.segmented)
+            TextField("Nombre", text: $newPerson).accessibilityLabel("Nombre")
+            Picker("Tipo", selection: $newKind) { Text("Persona").tag("person"); Text("Grupo").tag("group") }.pickerStyle(.segmented).accessibilityLabel("Tipo")
             Button("Añadir") {
                 let label = newPerson.trimmingCharacters(in: .whitespacesAndNewlines), id = newKind + ":" + newPerson.lowercased()
                 var entries = people; entries.removeAll { $0.objectValue?["id"] == .string(id) && $0.objectValue?["kind"] == .string(newKind) }
@@ -331,7 +334,7 @@ struct DatabasePropertyCellEditor: View {
         TextField(title, text: Binding(get: { CompanionDatabaseProperty.object(value)[key]?.doubleValue.map { String($0) } ?? "" }, set: { text in
             let number = Double(text); let scalar: JSONValue = number.map { $0.isFinite && range.contains($0) ? .double($0) : .null } ?? .null
             if let encoded = try? CompanionDatabaseProperty.patchObject(value, legacyKey: "name", fields: [key: scalar]) { value = encoded }
-        })).keyboardType(.numbersAndPunctuation).textFieldStyle(.roundedBorder)
+        })).keyboardType(.numbersAndPunctuation).textFieldStyle(.roundedBorder).accessibilityLabel(title)
     }
 }
 
@@ -351,11 +354,11 @@ private struct DatabaseDatePropertyEditor: View {
     }
     var body: some View {
         Group {
-            DatePicker("Inicio", selection: date("start"), displayedComponents: includeTime ? [.date,.hourAndMinute] : [.date])
+            DatePicker("Inicio", selection: date("start"), displayedComponents: includeTime ? [.date,.hourAndMinute] : [.date]).frame(minHeight: 44)
             if value.isEmpty { Button("Establecer fecha") { date("start").wrappedValue = Date() } }
             Toggle("Incluir hora", isOn: Binding(get: { includeTime }, set: { patch(["includeTime": .bool($0)]) }))
             Toggle("Fecha final", isOn: Binding(get: { object["end"]?.stringValue?.isEmpty == false }, set: { enabled in if enabled { date("end").wrappedValue = date("start").wrappedValue } else { patch(["end": .null]) } }))
-            if object["end"]?.stringValue?.isEmpty == false { DatePicker("Fin", selection: date("end"), displayedComponents: includeTime ? [.date,.hourAndMinute] : [.date]) }
+            if object["end"]?.stringValue?.isEmpty == false { DatePicker("Fin", selection: date("end"), displayedComponents: includeTime ? [.date,.hourAndMinute] : [.date]).frame(minHeight: 44) }
             TextField("Zona horaria", text: Binding(get: { object["timeZone"]?.stringValue ?? column.config["dateTimeZone"]?.stringValue ?? "" }, set: { patch(["timeZone": $0.isEmpty ? .null : .string($0)]) })).autocorrectionDisabled()
             TextField("Recordatorio (minutos)", text: Binding(get: { object["reminderMinutes"]?.doubleValue.map { String(Int($0)) } ?? "" }, set: { text in patch(["reminderMinutes": Int64(text).map { $0 >= 0 ? .int($0) : .null } ?? .null]) })).keyboardType(.numberPad)
             Picker("Repetir", selection: Binding(get: { object["recurrence"]?.stringValue ?? "" }, set: { patch(["recurrence": $0.isEmpty ? .null : .string($0)]) })) { Text("No repetir").tag(""); Text("Diariamente").tag("daily"); Text("Semanalmente").tag("weekly"); Text("Mensualmente").tag("monthly"); Text("Anualmente").tag("yearly") }

@@ -219,14 +219,26 @@ struct GenealogyTimelineView: View {
     @State private var tables: [String: [Row]] = [:]
     @State private var selectedPeople = Set<String>()
     @State private var selectedTypes = Set<String>()
-    @State private var filter: Filter?
-    @State private var selectedEvent: GenealogyConsultation.Event?
+    /// One presentation slot for both the filters and the event dossier. Two `.sheet`
+    /// modifiers on the same view are not two sheets: SwiftUI keeps only one of them, which
+    /// is how tapping an event used to do nothing at all.
+    @State private var sheet: Sheet?
     @State private var loading = false
     @State private var issue: String?
     @State private var offline = false
     @State private var downloadedOnly = false
     @State private var retry = 0
     private enum Filter: String, Identifiable { case people, types; var id: String { rawValue } }
+    private enum Sheet: Identifiable {
+        case filter(Filter)
+        case event(GenealogyConsultation.Event)
+        var id: String {
+            switch self {
+            case .filter(let filter): return "filter-" + filter.rawValue
+            case .event(let event): return "event-" + event.id
+            }
+        }
+    }
     private var events: [GenealogyConsultation.Event] { GenealogyConsultation.events(tables: tables, people: selectedPeople, types: selectedTypes) }
     private var people: [(id: String, name: String)] { (tables["persons"] ?? []).compactMap { row in row.string("person_id").map { (id: $0, name: row.text("display_name") ?? $0) } }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
     private var types: [(id: String, name: String)] {
@@ -236,9 +248,9 @@ struct GenealogyTimelineView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Button { filter = .people } label: { Label(selectedPeople.isEmpty ? "All people" : "\(selectedPeople.count) people", systemImage: "person.2") }.accessibilityIdentifier("genealogy-timeline-person-filter")
+                    Button { sheet = .filter(.people) } label: { Label(selectedPeople.isEmpty ? "All people" : "\(selectedPeople.count) people", systemImage: "person.2") }.accessibilityIdentifier("genealogy-timeline-person-filter")
                     Spacer()
-                    Button { filter = .types } label: { Label(selectedTypes.isEmpty ? "All event types" : "\(selectedTypes.count) types", systemImage: "line.3.horizontal.decrease.circle") }.accessibilityIdentifier("genealogy-timeline-type-filter")
+                    Button { sheet = .filter(.types) } label: { Label(selectedTypes.isEmpty ? "All event types" : "\(selectedTypes.count) types", systemImage: "line.3.horizontal.decrease.circle") }.accessibilityIdentifier("genealogy-timeline-type-filter")
                 }
                 if session.connection.desktopPairingId != nil {
                     Toggle("Downloaded dossiers only", isOn: $downloadedOnly).font(.caption).accessibilityIdentifier("genealogy-timeline-downloads")
@@ -252,7 +264,7 @@ struct GenealogyTimelineView: View {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(spacing: 0) { Circle().fill(session.accent).frame(width: 12, height: 12); Rectangle().fill(session.accent.opacity(0.25)).frame(width: 2) }.padding(.top, 16)
                         VStack(alignment: .leading, spacing: 10) {
-                            Button { selectedEvent = event } label: {
+                            Button { sheet = .event(event) } label: {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(event.date ?? "Undated").font(.caption.monospacedDigit()).foregroundStyle(session.accent)
                                     Text(event.type.capitalized).font(.headline)
@@ -260,18 +272,24 @@ struct GenealogyTimelineView: View {
                                     if let place = event.placeName { Label(place, systemImage: "mappin").font(.caption).foregroundStyle(.secondary) }
                                     if let notes = event.row.text("notes") { Text(notes).font(.caption).lineLimit(3).foregroundStyle(.secondary) }
                                 }.frame(maxWidth: .infinity, alignment: .leading)
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(.plain).accessibilityIdentifier("genealogy-timeline-event-\(event.id)")
                             ForEach(event.participants) { person in
                                 HStack { GenealogyPersonLink(session: session, tables: tables, id: person.personId, name: person.name, downloadedOnly: downloadedOnly); Text(person.role).font(.caption2).foregroundStyle(.secondary) }
                             }
                         }.desktopContentRow(accent: session.accent)
-                    }.accessibilityIdentifier("genealogy-timeline-event-\(event.id)")
+                    }
                 }
             }.padding(NodusSpace.page).frame(maxWidth: 960).frame(maxWidth: .infinity)
         }.navigationTitle("Timeline").nodusPageBackdrop(accent: session.accent).nodusHidesBottomBar()
             .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision):\(downloadedOnly):\(retry)") { await load() }
-            .sheet(item: $filter) { selected in GenealogyFilterSheet(title: selected == .people ? "People" : "Event types", options: selected == .people ? people : types, selection: selected == .people ? $selectedPeople : $selectedTypes) }
-            .sheet(item: $selectedEvent) { event in eventSheet(event) }
+            .sheet(item: $sheet) { presented in
+                switch presented {
+                case .filter(let selected):
+                    GenealogyFilterSheet(title: selected == .people ? "People" : "Event types", options: selected == .people ? people : types, selection: selected == .people ? $selectedPeople : $selectedTypes)
+                case .event(let event):
+                    eventSheet(event)
+                }
+            }
     }
     private func eventSheet(_ event: GenealogyConsultation.Event) -> some View {
         NavigationStack {
@@ -284,7 +302,7 @@ struct GenealogyTimelineView: View {
                     ForEach(evidence, id: \.columns) { item in VStack(alignment: .leading, spacing: 6) { if let quote = item.text("quote") { Text(quote).italic().textSelection(.enabled) }; Text([item.text("source_kind"), item.text("location")].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) } }
                 }
             }.navigationTitle(event.row.text("label") ?? event.type.capitalized)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { selectedEvent = nil } } }
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { sheet = nil } } }
         }
     }
     private func load() async {

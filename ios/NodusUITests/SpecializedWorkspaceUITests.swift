@@ -17,8 +17,11 @@ final class SpecializedWorkspaceUITests: XCTestCase {
             defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
             let search = app.descendants(matching: .any)["family-tree-search"].firstMatch
             XCTAssertTrue(search.waitForExistence(timeout: 45))
-            let field = search.elementType == .textField ? search : (search.textFields.firstMatch.exists ? search.textFields.firstMatch : app.textFields["nodus-search-field"])
-            XCTAssertTrue(field.exists); field.tap(); field.typeText(name + "\n")
+            // The shared field puts its identifier on the capsule, so the magnifier icon and
+            // the text field both inherit it. Type in the text field itself, after it exists.
+            let field = app.textFields["family-tree-search"].firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 20))
+            field.tap(); field.typeText(name + "\n")
             let result = app.buttons["family-tree-search-result-" + personId]
             XCTAssertTrue(result.waitForExistence(timeout: 15)); reveal(result, app: app); result.tap()
             XCTAssertTrue(app.staticTexts[name].firstMatch.waitForExistence(timeout: 15))
@@ -83,11 +86,20 @@ final class SpecializedWorkspaceUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(row.frame.width + 0.01, 44)
             XCTAssertTrue(app.windows.firstMatch.frame.contains(row.frame))
             row.tap()
-            for key in ["date", "placeName", "evidenceQuote", "evidenceLocation"] {
-                let text = containsText(try string(event, key), app: app)
-                XCTAssertTrue(text.waitForExistence(timeout: 20)); reveal(text, app: app)
+            // The timeline behind the sheet repeats the date and the title, so those values
+            // must now appear twice; the quote and its location exist only in the dossier.
+            let dossierTitle = try string(event, "label")
+            XCTAssertTrue(app.navigationBars[dossierTitle].waitForExistence(timeout: 15), app.debugDescription)
+            for key in ["evidenceQuote", "evidenceLocation"] {
+                let value = try string(event, key)
+                // The quote and its source/location are rendered as attributed prose lines,
+                // so the saved value can be a substring of the announced label.
+                let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", value, value)).firstMatch
+                XCTAssertTrue(text.waitForExistence(timeout: 20), "Missing " + key + " in the event dossier")
             }
-            XCTAssertTrue(app.buttons[try string(event, "personName")].exists)
+            XCTAssertGreaterThanOrEqual(app.staticTexts.matching(identifier: try string(event, "date")).count, 2, "The dossier must show the saved event date")
+            XCTAssertGreaterThanOrEqual(app.staticTexts.matching(identifier: try string(event, "placeName")).count, 2, "The dossier must show the saved event place")
+            XCTAssertTrue(app.buttons[try string(event, "personName")].firstMatch.exists)
             capture(app, "genealogy-owned-event-evidence-\(attempt)")
             app.terminate()
         }
@@ -142,33 +154,44 @@ final class SpecializedWorkspaceUITests: XCTestCase {
         func valueField(_ label: String, _ value: String) {
             let field = container.textFields[label].exists ? container.textFields[label] : container.textViews[label]
             XCTAssertTrue(field.exists, "Missing typed field " + label + " for " + type)
-            reveal(field, app: app); XCTAssertEqual(field.value as? String, value)
+            reveal(field, app: app)
+            // An empty TextField reports its placeholder as its value.
+            let actual = (field.value as? String) == label ? "" : field.value as? String
+            XCTAssertEqual(actual, value)
         }
-        func touch(_ element: XCUIElement) throws {
+        func touch(_ element: XCUIElement, systemControlRow: Bool = false) throws {
             reveal(element, app: app); XCTAssertTrue(element.exists && element.isHittable)
             XCTAssertTrue(app.windows.firstMatch.frame.contains(element.frame))
             let minimum = try XCTUnwrap(property["minimumTouchHeight"] as? Double)
-            XCTAssertGreaterThanOrEqual(element.frame.height + 0.01, minimum, "Touch control too short for " + type)
-            XCTAssertGreaterThanOrEqual(element.frame.width + 0.01, 44)
+            // A system DatePicker/Toggle/Picker keeps its intrinsic size even inside a taller
+            // row; measure the labelled row those controls fill, while custom buttons are
+            // measured exactly.
+            let measured = systemControlRow ? container.frame : element.frame
+            XCTAssertGreaterThanOrEqual(measured.height + 0.01, minimum, "Touch control too short for " + type)
+            XCTAssertGreaterThanOrEqual(measured.width + 0.01, 44)
         }
         func shows(_ value: String) { XCTAssertTrue(container.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR value == %@", value, value)).firstMatch.exists, "Missing saved value for " + type) }
         switch type {
         case "date", "time":
             let label = type == "date" ? "Inicio" : "Hora"
             let picker = container.datePickers[label].exists ? container.datePickers[label] : container.datePickers.firstMatch
-            try touch(picker)
+            try touch(picker, systemControlRow: true)
             let raw = try string(property, "raw")
-            let actual = try XCTUnwrap(picker.value as? String)
+            // The compact DatePicker exposes its displayed date on the inner button, not on
+            // the container element and not in `value` alone.
+            let display = picker.buttons.firstMatch.exists ? picker.buttons.firstMatch : picker
+            let value = display.value as? String ?? ""
+            let actual = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? display.label : value
             let alternatives = try localizedDateValues(raw, timeOnly: type == "time")
-            XCTAssertTrue(alternatives.contains(actual), "Saved " + raw + " must be displayed, not a fallback current date; got " + actual)
+            XCTAssertTrue(alternatives.contains { actual.contains($0) }, "Saved " + raw + " must be displayed, not a fallback current date; got " + actual)
             if type == "date" { XCTAssertEqual(container.switches["Incluir hora"].value as? String, "0"); XCTAssertEqual(container.switches["Fecha final"].value as? String, "0") }
         case "select", "status":
             let picker = container.buttons.matching(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
-            try touch(picker); XCTAssertTrue(picker.label.contains(expected) || (picker.value as? String) == expected)
+            try touch(picker, systemControlRow: true); XCTAssertTrue(picker.label.contains(expected) || (picker.value as? String) == expected)
         case "multi_select":
             let options = try XCTUnwrap(property["options"] as? [[String: Any]])
-            for option in options { let toggle = container.switches[try string(option, "label")]; try touch(toggle); XCTAssertEqual(toggle.value as? String, "1") }
-        case "checkbox": let toggle = container.switches["Marcada"]; try touch(toggle); XCTAssertEqual(toggle.value as? String, expected)
+            for option in options { let toggle = container.switches[try string(option, "label")]; try touch(toggle, systemControlRow: true); XCTAssertEqual(toggle.value as? String, "1") }
+        case "checkbox": let toggle = container.switches["Marcada"]; try touch(toggle, systemControlRow: true); XCTAssertEqual(toggle.value as? String, expected)
         case "person":
             valueField("Nombre", ""); XCTAssertTrue(container.segmentedControls["Tipo"].exists)
             XCTAssertFalse(container.buttons["Añadir"].isEnabled, "An empty saved people list must not become a new person.")
@@ -230,10 +253,16 @@ final class SpecializedWorkspaceUITests: XCTestCase {
     @MainActor private func containsText(_ value: String, app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", value, value)).firstMatch }
     @MainActor private func exactText(_ value: String, app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR value == %@", value, value)).firstMatch }
     @MainActor private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        for _ in 0..<24 {
+        for _ in 0..<28 {
             if element.exists && element.isHittable { break }
             let scroll = app.scrollViews.allElementsBoundByIndex.last ?? app.scrollViews.firstMatch
-            if element.frame.isEmpty || element.frame.maxY > app.windows.firstMatch.frame.maxY - 30 { scroll.swipeUp() } else { scroll.swipeDown() }
+            let window = app.windows.firstMatch.frame, frame = element.frame
+            // The pedigree is a two-axis canvas: a focused node can sit to the right of the
+            // viewport, where a vertical swipe alone can never reach it.
+            if !frame.isEmpty, frame.maxX > window.maxX - 24 { scroll.swipeLeft() }
+            else if !frame.isEmpty, frame.minX < 24 { scroll.swipeRight() }
+            else if frame.isEmpty || frame.maxY > window.maxY - 30 { scroll.swipeUp() }
+            else { scroll.swipeDown() }
         }
         XCTAssertTrue(element.exists && element.isHittable)
     }
