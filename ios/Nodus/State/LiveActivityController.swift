@@ -14,12 +14,15 @@ import ActivityKit
 @MainActor
 final class LiveActivityController {
     #if canImport(ActivityKit)
+    /// ActivityKit hands back an opaque, non-Sendable handle whose mutators run off the main
+    /// actor. Only the Sendable identifier is kept here; each mutation resolves a fresh handle
+    /// inside the task that performs it, so no main-actor reference is sent to those methods.
     @available(iOS 16.2, *)
-    private var activity: Activity<NodusActivityAttributes>? {
-        get { _activity as? Activity<NodusActivityAttributes> }
-        set { _activity = newValue }
-    }
-    private var _activity: Any?
+    private var activityId: String?
+    /// Updates and the final dismissal share one chain, so the island can never be ended
+    /// before the progress that was reported just before it.
+    private var pending: Task<Void, Never>?
+    private var finished = false
     #endif
 
     private let kindRawValue: String
@@ -51,10 +54,14 @@ final class LiveActivityController {
             spaceName: spaceName
         )
         let state = NodusActivityAttributes.ContentState(phase: .queued)
-        activity = try? Activity.request(
+        let requested = try? Activity.request(
             attributes: attributes,
             content: .init(state: state, staleDate: nil)
         )
+        guard let requested else { return }
+        activityId = requested.id
+        pending = nil
+        finished = false
         #endif
     }
 
@@ -66,7 +73,7 @@ final class LiveActivityController {
         stepCount: Int? = nil
     ) {
         #if canImport(ActivityKit) && os(iOS)
-        guard #available(iOS 16.2, *), let activity else { return }
+        guard #available(iOS 16.2, *), !finished, let activityId else { return }
         guard let phase = NodusActivityAttributes.Phase(rawValue: phase) else { return }
         let state = NodusActivityAttributes.ContentState(
             phase: phase,
@@ -75,7 +82,12 @@ final class LiveActivityController {
             step: step,
             stepCount: stepCount
         )
-        Task { await activity.update(.init(state: state, staleDate: nil)) }
+        let previous = pending
+        pending = Task.detached {
+            await previous?.value
+            guard let activity = Activity<NodusActivityAttributes>.activities.first(where: { $0.id == activityId }) else { return }
+            await activity.update(.init(state: state, staleDate: nil))
+        }
         #endif
     }
 
@@ -83,20 +95,22 @@ final class LiveActivityController {
     /// that cost real money and then failed deserves to say so where the user is looking.
     func finish(failure: String? = nil) {
         #if canImport(ActivityKit) && os(iOS)
-        guard #available(iOS 16.2, *), let activity else { return }
+        guard #available(iOS 16.2, *), !finished, let activityId else { return }
+        finished = true
+        self.activityId = nil
         let state = NodusActivityAttributes.ContentState(
             phase: .done,
             fraction: failure == nil ? 1 : nil,
             detail: failure == nil ? "Finished" : nil,
             failure: failure
         )
-        Task {
-            await activity.end(
-                .init(state: state, staleDate: nil),
-                dismissalPolicy: failure == nil ? .after(.now + 4) : .after(.now + 30)
-            )
+        let dismissal: ActivityUIDismissalPolicy = failure == nil ? .after(.now + 4) : .after(.now + 30)
+        let previous = pending
+        pending = Task.detached {
+            await previous?.value
+            guard let activity = Activity<NodusActivityAttributes>.activities.first(where: { $0.id == activityId }) else { return }
+            await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: dismissal)
         }
-        self.activity = nil
         #endif
     }
 }

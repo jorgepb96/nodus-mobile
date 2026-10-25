@@ -4327,6 +4327,18 @@
       ]
     },
     {
+      "id": "AcademicApi.cancelResearchRun",
+      "interface": "AcademicApi",
+      "method": "cancelResearchRun",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.cancelStudyAssistant",
       "interface": "AcademicApi",
       "method": "cancelStudyAssistant",
@@ -6547,6 +6559,18 @@
       ]
     },
     {
+      "id": "AcademicApi.getResearchRun",
+      "interface": "AcademicApi",
+      "method": "getResearchRun",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.getResearchSystemPrompts",
       "interface": "AcademicApi",
       "method": "getResearchSystemPrompts",
@@ -7663,6 +7687,18 @@
       ]
     },
     {
+      "id": "AcademicApi.listResearchRuns",
+      "interface": "AcademicApi",
+      "method": "listResearchRuns",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.listSavedCompanionArgumentMaps",
       "interface": "AcademicApi",
       "method": "listSavedCompanionArgumentMaps",
@@ -8347,6 +8383,18 @@
       ]
     },
     {
+      "id": "AcademicApi.onResearchRun",
+      "interface": "AcademicApi",
+      "method": "onResearchRun",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "AcademicApi.onSemanticBridgeProgress",
       "interface": "AcademicApi",
       "method": "onSemanticBridgeProgress",
@@ -8518,6 +8566,18 @@
       "id": "AcademicApi.pauseQueue",
       "interface": "AcademicApi",
       "method": "pauseQueue",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.pauseResearchRun",
+      "interface": "AcademicApi",
+      "method": "pauseResearchRun",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "catalogued",
@@ -9094,6 +9154,18 @@
       "id": "AcademicApi.resumeQueue",
       "interface": "AcademicApi",
       "method": "resumeQueue",
+      "source": "shared/api/academic.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "AcademicApi.resumeResearchRun",
+      "interface": "AcademicApi",
+      "method": "resumeResearchRun",
       "source": "shared/api/academic.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "catalogued",
@@ -15766,6 +15838,18 @@
       ]
     },
     {
+      "id": "NodusApi.getZoteroSyncStatus",
+      "interface": "NodusApi",
+      "method": "getZoteroSyncStatus",
+      "source": "shared/types.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
       "id": "NodusApi.hasBackupPassword",
       "interface": "NodusApi",
       "method": "hasBackupPassword",
@@ -16345,6 +16429,18 @@
       "id": "NodusApi.onVaultChanged",
       "interface": "NodusApi",
       "method": "onVaultChanged",
+      "source": "shared/types.ts",
+      "delivery": "typedDesktopCommand",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/Packages/NodusKit/Tests/NodusKitTests/ParityTransportTests.swift#remoteWork",
+        "../nodus/scripts/test-mobile-parity-transport.mjs"
+      ]
+    },
+    {
+      "id": "NodusApi.onZoteroSyncStatus",
+      "interface": "NodusApi",
+      "method": "onZoteroSyncStatus",
       "source": "shared/types.ts",
       "delivery": "typedDesktopCommand",
       "mobileState": "catalogued",
@@ -17633,6 +17729,34 @@
       ]
     },
     {
+      "id": "PlatformApi.cancelSupportDownload",
+      "interface": "PlatformApi",
+      "method": "cancelSupportDownload",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "PlatformApi.checkSupportDownload",
+      "interface": "PlatformApi",
+      "method": "checkSupportDownload",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "PlatformApi.clearApiKey",
       "interface": "PlatformApi",
       "method": "clearApiKey",
@@ -18039,9 +18163,9 @@
       ]
     },
     {
-      "id": "PlatformApi.getAudioClipDataUrl",
+      "id": "PlatformApi.getAudioClipSync",
       "interface": "PlatformApi",
-      "method": "getAudioClipDataUrl",
+      "method": "getAudioClipSync",
       "source": "shared/api/platform.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
@@ -18375,76 +18499,6 @@
       ]
     },
     {
-      "id": "PlatformApi.humeClearKey",
-      "interface": "PlatformApi",
-      "method": "humeClearKey",
-      "source": "shared/api/platform.ts",
-      "delivery": "platformEquivalent",
-      "mobileState": "catalogued",
-      "evidence": [
-        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
-        "../nodus/scripts/test-browser-security.mjs",
-        "../nodus/scripts/test-toolkit-ui.mjs"
-      ]
-    },
-    {
-      "id": "PlatformApi.humeSetKey",
-      "interface": "PlatformApi",
-      "method": "humeSetKey",
-      "source": "shared/api/platform.ts",
-      "delivery": "platformEquivalent",
-      "mobileState": "catalogued",
-      "evidence": [
-        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
-        "../nodus/scripts/test-browser-security.mjs",
-        "../nodus/scripts/test-toolkit-ui.mjs"
-      ]
-    },
-    {
-      "id": "PlatformApi.humeStatus",
-      "interface": "PlatformApi",
-      "method": "humeStatus",
-      "source": "shared/api/platform.ts",
-      "delivery": "platformEquivalent",
-      "mobileState": "catalogued",
-      "evidence": [
-        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
-        "../nodus/scripts/test-browser-security.mjs",
-        "../nodus/scripts/test-toolkit-ui.mjs"
-      ]
-    },
-    {
-      "id": "PlatformApi.humeSynthesize",
-      "interface": "PlatformApi",
-      "method": "humeSynthesize",
-      "source": "shared/api/platform.ts",
-      "delivery": "platformEquivalent",
-      "mobileState": "catalogued",
-      "evidence": [
-        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
-        "../nodus/scripts/test-browser-security.mjs",
-        "../nodus/scripts/test-toolkit-ui.mjs"
-      ]
-    },
-    {
-      "id": "PlatformApi.humeVoices",
-      "interface": "PlatformApi",
-      "method": "humeVoices",
-      "source": "shared/api/platform.ts",
-      "delivery": "platformEquivalent",
-      "mobileState": "catalogued",
-      "evidence": [
-        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
-        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
-        "../nodus/scripts/test-browser-security.mjs",
-        "../nodus/scripts/test-toolkit-ui.mjs"
-      ]
-    },
-    {
       "id": "PlatformApi.installChatGptSubscriptionRuntime",
       "interface": "PlatformApi",
       "method": "installChatGptSubscriptionRuntime",
@@ -18518,6 +18572,20 @@
       "id": "PlatformApi.installNodusLocalRuntime",
       "interface": "PlatformApi",
       "method": "installNodusLocalRuntime",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "PlatformApi.installSupportDownload",
+      "interface": "PlatformApi",
+      "method": "installSupportDownload",
       "source": "shared/api/platform.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
@@ -18865,6 +18933,20 @@
       ]
     },
     {
+      "id": "PlatformApi.openNodusSupport",
+      "interface": "PlatformApi",
+      "method": "openNodusSupport",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "PlatformApi.openPrivacyPolicy",
       "interface": "PlatformApi",
       "method": "openPrivacyPolicy",
@@ -19061,6 +19143,20 @@
       ]
     },
     {
+      "id": "PlatformApi.revealSupportInstallation",
+      "interface": "PlatformApi",
+      "method": "revealSupportInstallation",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
       "id": "PlatformApi.revertDecorativeImage",
       "interface": "PlatformApi",
       "method": "revertDecorativeImage",
@@ -19092,6 +19188,20 @@
       "id": "PlatformApi.saveAudioClip",
       "interface": "PlatformApi",
       "method": "saveAudioClip",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "PlatformApi.saveSupportInstaller",
+      "interface": "PlatformApi",
+      "method": "saveSupportInstaller",
       "source": "shared/api/platform.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",
@@ -19246,6 +19356,20 @@
       "id": "PlatformApi.suggestDecorativeImageContext",
       "interface": "PlatformApi",
       "method": "suggestDecorativeImageContext",
+      "source": "shared/api/platform.ts",
+      "delivery": "platformEquivalent",
+      "mobileState": "catalogued",
+      "evidence": [
+        "ios/NodusUITests/NodusParityUITests.swift#testBrowserRadarToolkitAndSettingsMatchDesktopTools",
+        "ios/Packages/NodusKit/Tests/NodusKitTests/PlatformToolsParityTests.swift",
+        "../nodus/scripts/test-browser-security.mjs",
+        "../nodus/scripts/test-toolkit-ui.mjs"
+      ]
+    },
+    {
+      "id": "PlatformApi.supportDistributionState",
+      "interface": "PlatformApi",
+      "method": "supportDistributionState",
       "source": "shared/api/platform.ts",
       "delivery": "platformEquivalent",
       "mobileState": "catalogued",

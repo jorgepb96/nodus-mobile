@@ -2755,6 +2755,83 @@ ${conversation}`;
     )
   }];
 
+  // shared/modelNetworkErrors.ts
+  var TEXT = {
+    "es": [
+      "No se pudo conectar con {host}. Comprueba la conexi\xF3n y el proxy del sistema. ({code})",
+      "No se pudo instalar un runtime de llama.cpp utilizable. {details}",
+      "Descarga HTTP {status}: {host}"
+    ],
+    "en": [
+      "Could not connect to {host}. Check the connection and system proxy. ({code})",
+      "No usable llama.cpp runtime could be installed. {details}",
+      "Download from {host} failed (HTTP {status})."
+    ],
+    "fr": [
+      "Impossible de se connecter \xE0 {host}. V\xE9rifiez la connexion et le proxy syst\xE8me. ({code})",
+      "Aucun moteur llama.cpp utilisable n\u2019a pu \xEAtre install\xE9. {details}",
+      "Le t\xE9l\xE9chargement depuis {host} a \xE9chou\xE9 (HTTP {status})."
+    ],
+    "de": [
+      "Verbindung zu {host} fehlgeschlagen. Pr\xFCfe die Verbindung und den Systemproxy. ({code})",
+      "Es konnte keine verwendbare llama.cpp-Laufzeit installiert werden. {details}",
+      "Download von {host} fehlgeschlagen (HTTP {status})."
+    ],
+    "pt": [
+      "N\xE3o foi poss\xEDvel ligar a {host}. Verifica a liga\xE7\xE3o e o proxy do sistema. ({code})",
+      "N\xE3o foi poss\xEDvel instalar um motor llama.cpp utiliz\xE1vel. {details}",
+      "A transfer\xEAncia de {host} falhou (HTTP {status})."
+    ],
+    "pt-BR": [
+      "N\xE3o foi poss\xEDvel conectar a {host}. Verifique a conex\xE3o e o proxy do sistema. ({code})",
+      "N\xE3o foi poss\xEDvel instalar um motor llama.cpp utiliz\xE1vel. {details}",
+      "O download de {host} falhou (HTTP {status})."
+    ],
+    "it": [
+      "Impossibile connettersi a {host}. Controlla la connessione e il proxy di sistema. ({code})",
+      "Impossibile installare un runtime llama.cpp utilizzabile. {details}",
+      "Il download da {host} non \xE8 riuscito (HTTP {status})."
+    ],
+    "tr": [
+      "{host} ile ba\u011Flant\u0131 kurulamad\u0131. Ba\u011Flant\u0131y\u0131 ve sistem proxy ayarlar\u0131n\u0131 kontrol edin. ({code})",
+      "Kullan\u0131labilir bir llama.cpp \xE7al\u0131\u015Fma zaman\u0131 y\xFCklenemedi. {details}",
+      "{host} \xFCzerinden indirme ba\u015Far\u0131s\u0131z oldu (HTTP {status})."
+    ],
+    "zh-CN": [
+      "\u65E0\u6CD5\u8FDE\u63A5\u5230 {host}\u3002\u8BF7\u68C0\u67E5\u7F51\u7EDC\u8FDE\u63A5\u548C\u7CFB\u7EDF\u4EE3\u7406\u3002({code})",
+      "\u65E0\u6CD5\u5B89\u88C5\u53EF\u7528\u7684 llama.cpp \u8FD0\u884C\u73AF\u5883\u3002{details}",
+      "\u4ECE {host} \u4E0B\u8F7D\u5931\u8D25\uFF08HTTP {status}\uFF09\u3002"
+    ],
+    "zh-TW": [
+      "\u7121\u6CD5\u9023\u7DDA\u81F3 {host}\u3002\u8ACB\u6AA2\u67E5\u7DB2\u8DEF\u9023\u7DDA\u548C\u7CFB\u7D71\u4EE3\u7406\u3002({code})",
+      "\u7121\u6CD5\u5B89\u88DD\u53EF\u7528\u7684 llama.cpp \u57F7\u884C\u74B0\u5883\u3002{details}",
+      "\u5F9E {host} \u4E0B\u8F09\u5931\u6557\uFF08HTTP {status}\uFF09\u3002"
+    ],
+    "ja": [
+      "{host} \u306B\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u30CD\u30C3\u30C8\u30EF\u30FC\u30AF\u63A5\u7D9A\u3068\u30B7\u30B9\u30C6\u30E0\u30D7\u30ED\u30AD\u30B7\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002({code})",
+      "\u5229\u7528\u53EF\u80FD\u306A llama.cpp \u30E9\u30F3\u30BF\u30A4\u30E0\u3092\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002{details}",
+      "{host} \u304B\u3089\u306E\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08HTTP {status}\uFF09\u3002"
+    ],
+    "ko": [
+      "{host}\uC5D0 \uC5F0\uACB0\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB124\uD2B8\uC6CC\uD06C \uC5F0\uACB0\uACFC \uC2DC\uC2A4\uD15C \uD504\uB85D\uC2DC\uB97C \uD655\uC778\uD558\uC138\uC694. ({code})",
+      "\uC0AC\uC6A9 \uAC00\uB2A5\uD55C llama.cpp \uB7F0\uD0C0\uC784\uC744 \uC124\uCE58\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. {details}",
+      "{host}\uC5D0\uC11C \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 (HTTP {status})."
+    ]
+  };
+  var connection = /No se pudo conectar con ([^\s]+)\. Comprueba la conexión y el proxy del sistema\. \(([A-Z0-9_]+)\)/g;
+  var downloadHttp = /Descarga HTTP (\d+): ([^\s|]+)/g;
+  var interpolate = (template, values) => template.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
+  var translations = (index, values) => Object.fromEntries(
+    Object.entries(TEXT).map(([language, templates]) => [language, interpolate(templates[index], values)])
+  );
+  var MODEL_NETWORK_ERROR_PATTERNS = [
+    { pattern: /^No se pudo conectar con ([^\s]+)\. Comprueba la conexión y el proxy del sistema\. \(([A-Z0-9_]+)\)$/, translate: (host, code) => translations(0, { host, code }) },
+    { pattern: /^Descarga HTTP (\d+): ([^\s]+)$/, translate: (status, host) => translations(2, { host, status }) },
+    { pattern: /^No se pudo instalar un runtime de llama\.cpp utilizable\. (.+)$/, translate: (details) => Object.fromEntries(
+      Object.entries(TEXT).map(([language, templates]) => [language, interpolate(templates[1], { details: details.replace(connection, (_match, host, code) => interpolate(templates[0], { host, code })).replace(downloadHttp, (_match, status, host) => interpolate(templates[2], { status, host })) })])
+    ) }
+  ];
+
   // shared/backupsErrors.ts
   var BACKUPS_RUNTIME_ERRORS = {
     "Confirma la exportaci\xF3n de los materiales seleccionados.": {
@@ -2951,11 +3028,112 @@ ${conversation}`;
       ko: "\uB300\uC0C1 \uD3F4\uB354\uB97C \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
       ja: "\u4FDD\u5B58\u5148\u306E\u30D5\u30A9\u30EB\u30C0\u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002",
       "pt-BR": "A pasta de destino n\xE3o est\xE1 dispon\xEDvel."
+    },
+    // The backup scheduler writes its own outcome into `lastAutoBackupStatus`, and
+    // `getRecoveryStatus().health.detail` shows that sentence verbatim. These are not
+    // thrown errors, but they cross the same IPC and main-process boundary, so they
+    // live in this catalogue rather than in the renderer's translation tables.
+    "No hay carpeta de destino configurada.": {
+      en: "No destination folder is configured.",
+      fr: "Aucun dossier de destination n\u2019est configur\xE9.",
+      de: "Es ist kein Zielordner konfiguriert.",
+      pt: "N\xE3o h\xE1 nenhuma pasta de destino configurada.",
+      it: "Nessuna cartella di destinazione configurata.",
+      tr: "Hedef klas\xF6r yap\u0131land\u0131r\u0131lmam\u0131\u015F.",
+      "zh-CN": "\u672A\u914D\u7F6E\u76EE\u6807\u6587\u4EF6\u5939\u3002",
+      "zh-TW": "\u672A\u8A2D\u5B9A\u76EE\u6A19\u8CC7\u6599\u593E\u3002",
+      ko: "\uB300\uC0C1 \uD3F4\uB354\uAC00 \uC124\uC815\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      ja: "\u4FDD\u5B58\u5148\u306E\u30D5\u30A9\u30EB\u30C0\u304C\u8A2D\u5B9A\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002",
+      "pt-BR": "Nenhuma pasta de destino est\xE1 configurada."
+    },
+    "No hay contrase\xF1a maestra de copias configurada.": {
+      en: "No backup master password is configured.",
+      fr: "Aucun mot de passe ma\xEEtre de sauvegarde n\u2019est configur\xE9.",
+      de: "Es ist kein Master-Passwort f\xFCr Sicherungen konfiguriert.",
+      pt: "N\xE3o h\xE1 nenhuma palavra-passe mestra de c\xF3pias configurada.",
+      it: "Nessuna password principale di backup configurata.",
+      tr: "Yedekleme ana parolas\u0131 yap\u0131land\u0131r\u0131lmam\u0131\u015F.",
+      "zh-CN": "\u672A\u914D\u7F6E\u5907\u4EFD\u4E3B\u5BC6\u7801\u3002",
+      "zh-TW": "\u672A\u8A2D\u5B9A\u5099\u4EFD\u4E3B\u5BC6\u78BC\u3002",
+      ko: "\uBC31\uC5C5 \uB9C8\uC2A4\uD130 \uBE44\uBC00\uBC88\uD638\uAC00 \uC124\uC815\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      ja: "\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306E\u30DE\u30B9\u30BF\u30FC\u30D1\u30B9\u30EF\u30FC\u30C9\u304C\u8A2D\u5B9A\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002",
+      "pt-BR": "Nenhuma senha mestra de backup est\xE1 configurada."
+    },
+    "No se pudo leer la contrase\xF1a maestra del almac\xE9n seguro del sistema. Vuelve a introducirla en Ajustes para reanudar las copias.": {
+      en: "The master password could not be read from the system secure store. Re-enter it in Settings to resume backups.",
+      fr: "Impossible de lire le mot de passe ma\xEEtre depuis le stockage s\xE9curis\xE9 du syst\xE8me. Saisissez-le \xE0 nouveau dans les r\xE9glages pour reprendre les sauvegardes.",
+      de: "Das Master-Passwort konnte nicht aus dem sicheren Systemspeicher gelesen werden. Geben Sie es in den Einstellungen erneut ein, um die Sicherungen fortzusetzen.",
+      pt: "N\xE3o foi poss\xEDvel ler a palavra-passe mestra do armazenamento seguro do sistema. Introduza-a novamente nas defini\xE7\xF5es para retomar as c\xF3pias.",
+      it: "Impossibile leggere la password principale dall\u2019archivio sicuro di sistema. Reinseriscila nelle impostazioni per riprendere i backup.",
+      tr: "Ana parola sistemin g\xFCvenli deposundan okunamad\u0131. Yedeklemeleri s\xFCrd\xFCrmek i\xE7in Ayarlar\u2019da yeniden girin.",
+      "zh-CN": "\u65E0\u6CD5\u4ECE\u7CFB\u7EDF\u5B89\u5168\u5B58\u50A8\u4E2D\u8BFB\u53D6\u4E3B\u5BC6\u7801\u3002\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u91CD\u65B0\u8F93\u5165\u4EE5\u6062\u590D\u5907\u4EFD\u3002",
+      "zh-TW": "\u7121\u6CD5\u5F9E\u7CFB\u7D71\u5B89\u5168\u5132\u5B58\u5340\u8B80\u53D6\u4E3B\u5BC6\u78BC\u3002\u8ACB\u5728\u8A2D\u5B9A\u4E2D\u91CD\u65B0\u8F38\u5165\u4EE5\u6062\u5FA9\u5099\u4EFD\u3002",
+      ko: "\uC2DC\uC2A4\uD15C \uBCF4\uC548 \uC800\uC7A5\uC18C\uC5D0\uC11C \uB9C8\uC2A4\uD130 \uBE44\uBC00\uBC88\uD638\uB97C \uC77D\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uC124\uC815\uC5D0\uC11C \uB2E4\uC2DC \uC785\uB825\uD558\uC5EC \uBC31\uC5C5\uC744 \uC7AC\uAC1C\uD558\uC138\uC694.",
+      ja: "\u30B7\u30B9\u30C6\u30E0\u306E\u5B89\u5168\u306A\u4FDD\u7BA1\u5834\u6240\u304B\u3089\u30DE\u30B9\u30BF\u30FC\u30D1\u30B9\u30EF\u30FC\u30C9\u3092\u8AAD\u307F\u53D6\u308C\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u3092\u518D\u958B\u3059\u308B\u306B\u306F\u3001\u8A2D\u5B9A\u3067\u518D\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      "pt-BR": "N\xE3o foi poss\xEDvel ler a senha mestra do armazenamento seguro do sistema. Digite-a novamente nas configura\xE7\xF5es para retomar os backups."
     }
   };
   function withValue(messages, value) {
     return Object.fromEntries(
       Object.entries(messages).map(([language, message]) => [language, message.replace("{value}", value)])
+    );
+  }
+  function withValues(messages, values) {
+    return Object.fromEntries(
+      Object.entries(messages).map(([language, message]) => [
+        language,
+        message.replace(/\{(\w+)\}/g, (placeholder, name) => values[name] ?? placeholder)
+      ])
+    );
+  }
+  var BACKUP_OPERATION_LABELS = {
+    "copia de seguridad": {
+      en: "backup",
+      fr: "sauvegarde",
+      de: "Sicherung",
+      pt: "c\xF3pia de seguran\xE7a",
+      it: "backup",
+      tr: "yedekleme",
+      "zh-CN": "\u5907\u4EFD",
+      "zh-TW": "\u5099\u4EFD",
+      ko: "\uBC31\uC5C5",
+      ja: "\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7",
+      "pt-BR": "backup"
+    },
+    "snapshot previo a la actualizaci\xF3n": {
+      en: "pre-update snapshot",
+      fr: "instantan\xE9 pr\xE9alable \xE0 la mise \xE0 jour",
+      de: "Momentaufnahme vor dem Update",
+      pt: "c\xF3pia instant\xE2nea anterior \xE0 atualiza\xE7\xE3o",
+      it: "istantanea precedente all\u2019aggiornamento",
+      tr: "g\xFCncelleme \xF6ncesi anl\u0131k g\xF6r\xFCnt\xFC",
+      "zh-CN": "\u66F4\u65B0\u524D\u5FEB\u7167",
+      "zh-TW": "\u66F4\u65B0\u524D\u5FEB\u7167",
+      ko: "\uC5C5\uB370\uC774\uD2B8 \uC804 \uC2A4\uB0C5\uC0F7",
+      ja: "\u66F4\u65B0\u524D\u306E\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8",
+      "pt-BR": "snapshot anterior \xE0 atualiza\xE7\xE3o"
+    },
+    "limpieza de copias": {
+      en: "backup cleanup",
+      fr: "nettoyage des sauvegardes",
+      de: "Bereinigung der Sicherungen",
+      pt: "limpeza das c\xF3pias",
+      it: "pulizia dei backup",
+      tr: "yedek temizli\u011Fi",
+      "zh-CN": "\u5907\u4EFD\u6E05\u7406",
+      "zh-TW": "\u5099\u4EFD\u6E05\u7406",
+      ko: "\uBC31\uC5C5 \uC815\uB9AC",
+      ja: "\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306E\u30AF\u30EA\u30FC\u30F3\u30A2\u30C3\u30D7",
+      "pt-BR": "limpeza dos backups"
+    }
+  };
+  function withOperationLabel(messages, operation) {
+    const labels = BACKUP_OPERATION_LABELS[operation];
+    return Object.fromEntries(
+      Object.entries(messages).map(([language, message]) => [
+        language,
+        message.replace("{operation}", labels?.[language] ?? labels?.en ?? operation)
+      ])
     );
   }
   var BACKUPS_RUNTIME_ERROR_PATTERNS = [
@@ -3015,6 +3193,98 @@ ${conversation}`;
         },
         value
       )
+    },
+    {
+      // The success line stored as `lastAutoBackupStatus`, with the optional warning
+      // appended when provider keys could not be read from the system secure store.
+      pattern: /^Copia verificada y guardada en (.+?)\.(?: Aviso: las claves de (.+) no se pudieron leer del almacén seguro y no viajan en esta copia\.)?$/,
+      translate: (target, providers) => withValues(
+        providers ? {
+          en: "Backup verified and saved to {target}. Note: the keys for {providers} could not be read from the secure store and are not included in this backup.",
+          fr: "Sauvegarde v\xE9rifi\xE9e et enregistr\xE9e dans {target}. Remarque : les cl\xE9s de {providers} n\u2019ont pas pu \xEAtre lues dans le stockage s\xE9curis\xE9 et ne sont pas incluses dans cette sauvegarde.",
+          de: "Sicherung \xFCberpr\xFCft und unter {target} gespeichert. Hinweis: Die Schl\xFCssel f\xFCr {providers} konnten nicht aus dem sicheren Speicher gelesen werden und sind in dieser Sicherung nicht enthalten.",
+          pt: "C\xF3pia verificada e guardada em {target}. Aviso: n\xE3o foi poss\xEDvel ler as chaves de {providers} do armazenamento seguro e n\xE3o viajam nesta c\xF3pia.",
+          it: "Backup verificato e salvato in {target}. Avviso: le chiavi di {providers} non sono state lette dall\u2019archivio sicuro e non sono incluse in questo backup.",
+          tr: "Yedek do\u011Fruland\u0131 ve {target} konumuna kaydedildi. Uyar\u0131: {providers} anahtarlar\u0131 g\xFCvenli depodan okunamad\u0131 ve bu yede\u011Fe dahil edilmedi.",
+          "zh-CN": "\u5907\u4EFD\u5DF2\u9A8C\u8BC1\u5E76\u4FDD\u5B58\u81F3 {target}\u3002\u6CE8\u610F\uFF1A\u65E0\u6CD5\u4ECE\u5B89\u5168\u5B58\u50A8\u4E2D\u8BFB\u53D6 {providers} \u7684\u5BC6\u94A5\uFF0C\u56E0\u6B64\u672A\u5305\u542B\u5728\u6B64\u5907\u4EFD\u4E2D\u3002",
+          "zh-TW": "\u5099\u4EFD\u5DF2\u9A57\u8B49\u4E26\u5132\u5B58\u81F3 {target}\u3002\u6CE8\u610F\uFF1A\u7121\u6CD5\u5F9E\u5B89\u5168\u5132\u5B58\u5340\u8B80\u53D6 {providers} \u7684\u91D1\u9470\uFF0C\u56E0\u6B64\u672A\u5305\u542B\u5728\u6B64\u5099\u4EFD\u4E2D\u3002",
+          ko: "\uBC31\uC5C5\uC774 \uAC80\uC99D\uB418\uC5B4 {target}\uC5D0 \uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uCC38\uACE0: {providers}\uC758 \uD0A4\uB97C \uBCF4\uC548 \uC800\uC7A5\uC18C\uC5D0\uC11C \uC77D\uC744 \uC218 \uC5C6\uC5B4 \uC774 \uBC31\uC5C5\uC5D0 \uD3EC\uD568\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.",
+          ja: "\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306F\u691C\u8A3C\u3055\u308C\u3001{target} \u306B\u4FDD\u5B58\u3055\u308C\u307E\u3057\u305F\u3002\u6CE8\u610F: {providers} \u306E\u30AD\u30FC\u306F\u5B89\u5168\u306A\u4FDD\u7BA1\u5834\u6240\u304B\u3089\u8AAD\u307F\u53D6\u308C\u306A\u304B\u3063\u305F\u305F\u3081\u3001\u3053\u306E\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306B\u306F\u542B\u307E\u308C\u3066\u3044\u307E\u305B\u3093\u3002",
+          "pt-BR": "Backup verificado e salvo em {target}. Aviso: n\xE3o foi poss\xEDvel ler as chaves de {providers} do armazenamento seguro e elas n\xE3o est\xE3o inclu\xEDdas neste backup."
+        } : {
+          en: "Backup verified and saved to {target}.",
+          fr: "Sauvegarde v\xE9rifi\xE9e et enregistr\xE9e dans {target}.",
+          de: "Sicherung \xFCberpr\xFCft und unter {target} gespeichert.",
+          pt: "C\xF3pia verificada e guardada em {target}.",
+          it: "Backup verificato e salvato in {target}.",
+          tr: "Yedek do\u011Fruland\u0131 ve {target} konumuna kaydedildi.",
+          "zh-CN": "\u5907\u4EFD\u5DF2\u9A8C\u8BC1\u5E76\u4FDD\u5B58\u81F3 {target}\u3002",
+          "zh-TW": "\u5099\u4EFD\u5DF2\u9A57\u8B49\u4E26\u5132\u5B58\u81F3 {target}\u3002",
+          ko: "\uBC31\uC5C5\uC774 \uAC80\uC99D\uB418\uC5B4 {target}\uC5D0 \uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+          ja: "\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306F\u691C\u8A3C\u3055\u308C\u3001{target} \u306B\u4FDD\u5B58\u3055\u308C\u307E\u3057\u305F\u3002",
+          "pt-BR": "Backup verificado e salvo em {target}."
+        },
+        { target, providers: providers ?? "" }
+      )
+    },
+    {
+      // The verification reason is diagnostic prose from the utility process; the
+      // sentence around it is ours and follows the interface language.
+      pattern: /^La copia se escribió pero no se pudo verificar, así que se descartó y no se ha podado ninguna anterior: (.+)$/,
+      translate: (reason) => withValues(
+        {
+          en: "The backup was written but could not be verified, so it was discarded and no earlier backup was pruned: {reason}",
+          fr: "La sauvegarde a \xE9t\xE9 \xE9crite mais n\u2019a pas pu \xEAtre v\xE9rifi\xE9e ; elle a donc \xE9t\xE9 supprim\xE9e et aucune sauvegarde ant\xE9rieure n\u2019a \xE9t\xE9 purg\xE9e : {reason}",
+          de: "Die Sicherung wurde geschrieben, konnte aber nicht \xFCberpr\xFCft werden. Sie wurde daher verworfen und keine \xE4ltere Sicherung gel\xF6scht: {reason}",
+          pt: "A c\xF3pia foi escrita mas n\xE3o p\xF4de ser verificada, pelo que foi descartada e nenhuma c\xF3pia anterior foi removida: {reason}",
+          it: "Il backup \xE8 stato scritto ma non \xE8 stato possibile verificarlo, quindi \xE8 stato scartato e nessun backup precedente \xE8 stato eliminato: {reason}",
+          tr: "Yedek yaz\u0131ld\u0131 ancak do\u011Frulanamad\u0131; bu nedenle at\u0131ld\u0131 ve \xF6nceki yedeklerden hi\xE7biri silinmedi: {reason}",
+          "zh-CN": "\u5907\u4EFD\u5DF2\u5199\u5165\uFF0C\u4F46\u65E0\u6CD5\u9A8C\u8BC1\uFF0C\u56E0\u6B64\u5DF2\u88AB\u4E22\u5F03\uFF0C\u4E14\u672A\u6E05\u7406\u4EFB\u4F55\u8F83\u65E9\u7684\u5907\u4EFD\uFF1A{reason}",
+          "zh-TW": "\u5099\u4EFD\u5DF2\u5BEB\u5165\uFF0C\u4F46\u7121\u6CD5\u9A57\u8B49\uFF0C\u56E0\u6B64\u5DF2\u88AB\u4E1F\u68C4\uFF0C\u4E14\u672A\u6E05\u7406\u4EFB\u4F55\u8F03\u65E9\u7684\u5099\u4EFD\uFF1A{reason}",
+          ko: "\uBC31\uC5C5\uC774 \uC791\uC131\uB418\uC5C8\uC9C0\uB9CC \uAC80\uC99D\uD560 \uC218 \uC5C6\uC5B4 \uD3D0\uAE30\uB418\uC5C8\uC73C\uBA70 \uC774\uC804 \uBC31\uC5C5\uC740 \uC815\uB9AC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4: {reason}",
+          ja: "\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306F\u66F8\u304D\u8FBC\u307E\u308C\u307E\u3057\u305F\u304C\u691C\u8A3C\u3067\u304D\u306A\u304B\u3063\u305F\u305F\u3081\u3001\u7834\u68C4\u3055\u308C\u3001\u53E4\u3044\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306F\u524A\u9664\u3055\u308C\u3066\u3044\u307E\u305B\u3093: {reason}",
+          "pt-BR": "O backup foi gravado, mas n\xE3o p\xF4de ser verificado; por isso foi descartado e nenhum backup anterior foi removido: {reason}"
+        },
+        { reason }
+      )
+    },
+    {
+      pattern: /^Hay otra operación de copias en curso \((.+)\)\. Vuelve a intentarlo cuando termine\.$/,
+      translate: (operation) => withOperationLabel(
+        {
+          en: "Another backup operation is running ({operation}). Try again when it finishes.",
+          fr: "Une autre op\xE9ration de sauvegarde est en cours ({operation}). R\xE9essayez lorsqu\u2019elle sera termin\xE9e.",
+          de: "Eine andere Sicherungsoperation l\xE4uft ({operation}). Versuchen Sie es erneut, wenn sie beendet ist.",
+          pt: "H\xE1 outra opera\xE7\xE3o de c\xF3pias em curso ({operation}). Tente novamente quando terminar.",
+          it: "\xC8 in corso un\u2019altra operazione di backup ({operation}). Riprova quando sar\xE0 terminata.",
+          tr: "Ba\u015Fka bir yedekleme i\u015Flemi s\xFCr\xFCyor ({operation}). Bitti\u011Finde yeniden deneyin.",
+          "zh-CN": "\u53E6\u4E00\u9879\u5907\u4EFD\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF08{operation}\uFF09\u3002\u8BF7\u5728\u5176\u5B8C\u6210\u540E\u91CD\u8BD5\u3002",
+          "zh-TW": "\u53E6\u4E00\u9805\u5099\u4EFD\u64CD\u4F5C\u6B63\u5728\u9032\u884C\uFF08{operation}\uFF09\u3002\u8ACB\u5728\u5176\u5B8C\u6210\u5F8C\u91CD\u8A66\u3002",
+          ko: "\uB2E4\uB978 \uBC31\uC5C5 \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4({operation}). \uC644\uB8CC\uB41C \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.",
+          ja: "\u5225\u306E\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u64CD\u4F5C\u304C\u5B9F\u884C\u4E2D\u3067\u3059\uFF08{operation}\uFF09\u3002\u5B8C\u4E86\u3057\u3066\u304B\u3089\u518D\u8A66\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+          "pt-BR": "H\xE1 outra opera\xE7\xE3o de backup em andamento ({operation}). Tente novamente quando ela terminar."
+        },
+        operation
+      )
+    },
+    {
+      pattern: /^Hay otra operación de copias en curso \((.+)\)\. No se ha modificado nada\.$/,
+      translate: (operation) => withOperationLabel(
+        {
+          en: "Another backup operation is running ({operation}). Nothing has been changed.",
+          fr: "Une autre op\xE9ration de sauvegarde est en cours ({operation}). Rien n\u2019a \xE9t\xE9 modifi\xE9.",
+          de: "Eine andere Sicherungsoperation l\xE4uft ({operation}). Es wurde nichts ge\xE4ndert.",
+          pt: "H\xE1 outra opera\xE7\xE3o de c\xF3pias em curso ({operation}). Nada foi alterado.",
+          it: "\xC8 in corso un\u2019altra operazione di backup ({operation}). Non \xE8 stato modificato nulla.",
+          tr: "Ba\u015Fka bir yedekleme i\u015Flemi s\xFCr\xFCyor ({operation}). Hi\xE7bir \u015Fey de\u011Fi\u015Ftirilmedi.",
+          "zh-CN": "\u53E6\u4E00\u9879\u5907\u4EFD\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF08{operation}\uFF09\u3002\u672A\u505A\u4EFB\u4F55\u66F4\u6539\u3002",
+          "zh-TW": "\u53E6\u4E00\u9805\u5099\u4EFD\u64CD\u4F5C\u6B63\u5728\u9032\u884C\uFF08{operation}\uFF09\u3002\u672A\u505A\u4EFB\u4F55\u8B8A\u66F4\u3002",
+          ko: "\uB2E4\uB978 \uBC31\uC5C5 \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4({operation}). \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.",
+          ja: "\u5225\u306E\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u64CD\u4F5C\u304C\u5B9F\u884C\u4E2D\u3067\u3059\uFF08{operation}\uFF09\u3002\u4F55\u3082\u5909\u66F4\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002",
+          "pt-BR": "H\xE1 outra opera\xE7\xE3o de backup em andamento ({operation}). Nada foi alterado."
+        },
+        operation
+      )
     }
   ];
 
@@ -3061,9 +3331,9 @@ ${conversation}`;
   ];
   var SCRIPTOR_RUNTIME_ERRORS = {
     ...Object.fromEntries(rows.map(([source, ...values]) => {
-      const translations3 = Object.fromEntries(languages.map((language, index) => [language, values[index]]));
-      translations3["pt-BR"] = translations3.pt;
-      return [source, translations3];
+      const translations4 = Object.fromEntries(languages.map((language, index) => [language, values[index]]));
+      translations4["pt-BR"] = translations4.pt;
+      return [source, translations4];
     })),
     "Solicitud de imagen inv\xE1lida.": {
       en: "Invalid image request.",
@@ -3507,21 +3777,21 @@ ${conversation}`;
     /^Descarga y verifica «(.+)» desde Ajustes → Modelos IA\.$/
   ];
   var staticCount = KEYS.length - dynamic.length;
-  var translations = (index, value) => Object.fromEntries(
+  var translations2 = (index, value) => Object.fromEntries(
     Object.entries(TABLES).map(([lang, strings]) => [lang, strings[index].replace("{value}", () => value ?? "")])
   );
   var EMBEDDING_GEMMA2_ERRORS = {
-    ...Object.fromEntries(KEYS.slice(0, staticCount).map((key, index) => [key, translations(index)])),
+    ...Object.fromEntries(KEYS.slice(0, staticCount).map((key, index) => [key, translations2(index)])),
     [EMBEDDING_GEMMA2_INTEL_UNAVAILABLE]: EMBEDDING_GEMMA2_INTEL_COPY
   };
   var EMBEDDING_GEMMA2_ERROR_PATTERNS = dynamic.map((pattern, index) => ({
     pattern,
     translate: (value) => {
-      const result = translations(staticCount + index, value);
+      const result = translations2(staticCount + index, value);
       if (index === 1) {
         const fixed = EMBEDDING_GEMMA2_ERRORS[value];
         const nested = dynamic.findIndex((candidate) => candidate !== pattern && candidate.test(value));
-        const cause = fixed ?? (nested >= 0 ? translations(staticCount + nested, dynamic[nested].exec(value)[1]) : void 0);
+        const cause = fixed ?? (nested >= 0 ? translations2(staticCount + nested, dynamic[nested].exec(value)[1]) : void 0);
         if (cause) for (const lang of Object.keys(TABLES)) result[lang] = TABLES[lang][staticCount + index].replace("{value}", () => cause[lang] ?? cause.en);
       }
       return result;
@@ -3570,7 +3840,7 @@ ${conversation}`;
     ["La sincronizaci\xF3n autom\xE1tica se ha detenido para evitar llamadas repetidas. Vuelve a conectar o sincroniza manualmente tras resolver el error.", "Automatic synchronization has stopped to prevent repeated requests. Reconnect or synchronize manually after resolving the error.", "La synchronisation automatique a \xE9t\xE9 arr\xEAt\xE9e pour \xE9viter les requ\xEAtes r\xE9p\xE9t\xE9es. Reconnectez-vous ou synchronisez manuellement apr\xE8s avoir r\xE9solu l\u2019erreur.", "Die automatische Synchronisierung wurde gestoppt, um wiederholte Anfragen zu vermeiden. Verbinden Sie sich erneut oder synchronisieren Sie nach Behebung des Fehlers manuell.", "A sincroniza\xE7\xE3o autom\xE1tica foi interrompida para evitar pedidos repetidos. Volte a ligar ou sincronize manualmente ap\xF3s resolver o erro.", "La sincronizzazione automatica \xE8 stata interrotta per evitare richieste ripetute. Riconnettiti o sincronizza manualmente dopo aver risolto l\u2019errore.", "Tekrarlanan istekleri \xF6nlemek i\xE7in otomatik e\u015Fitleme durduruldu. Hatay\u0131 giderdikten sonra yeniden ba\u011Flan\u0131n veya elle e\u015Fitleyin.", "\u81EA\u52A8\u540C\u6B65\u5DF2\u505C\u6B62\uFF0C\u4EE5\u9632\u6B62\u91CD\u590D\u8BF7\u6C42\u3002\u89E3\u51B3\u9519\u8BEF\u540E\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u6216\u624B\u52A8\u540C\u6B65\u3002", "\u81EA\u52D5\u540C\u6B65\u5DF2\u505C\u6B62\uFF0C\u4EE5\u9632\u6B62\u91CD\u8907\u8ACB\u6C42\u3002\u89E3\u6C7A\u932F\u8AA4\u5F8C\uFF0C\u8ACB\u91CD\u65B0\u9023\u7DDA\u6216\u624B\u52D5\u540C\u6B65\u3002", "\u30EA\u30AF\u30A8\u30B9\u30C8\u306E\u7E70\u308A\u8FD4\u3057\u3092\u9632\u3050\u305F\u3081\u3001\u81EA\u52D5\u540C\u671F\u3092\u505C\u6B62\u3057\u307E\u3057\u305F\u3002\u30A8\u30E9\u30FC\u3092\u89E3\u6C7A\u3057\u3066\u304B\u3089\u518D\u63A5\u7D9A\u3059\u308B\u304B\u3001\u624B\u52D5\u3067\u540C\u671F\u3057\u3066\u304F\u3060\u3055\u3044\u3002", "\uBC18\uBCF5 \uC694\uCCAD\uC744 \uBC29\uC9C0\uD558\uAE30 \uC704\uD574 \uC790\uB3D9 \uB3D9\uAE30\uD654\uAC00 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC624\uB958\uB97C \uD574\uACB0\uD55C \uD6C4 \uB2E4\uC2DC \uC5F0\uACB0\uD558\uAC70\uB098 \uC218\uB3D9\uC73C\uB85C \uB3D9\uAE30\uD654\uD558\uC138\uC694."],
     [CLOUDFLARE_SAFETY_UPGRADE_MESSAGE, "Update the Nodus Cloud Worker and apply its migrations before synchronizing: this installation does not yet advertise cumulative limits and persistent cleanup.", "Mettez \xE0 jour le Worker Nodus Cloud et appliquez ses migrations avant de synchroniser : cette installation n\u2019annonce pas encore de limites cumul\xE9es ni de nettoyage persistant.", "Aktualisieren Sie den Nodus Cloud Worker und wenden Sie seine Migrationen vor der Synchronisierung an: Diese Installation meldet noch keine kumulierten Limits und keine dauerhafte Bereinigung.", "Atualize o Worker do Nodus Cloud e aplique as suas migra\xE7\xF5es antes de sincronizar: esta instala\xE7\xE3o ainda n\xE3o anuncia limites acumulados e limpeza persistente.", "Aggiorna il Worker di Nodus Cloud e applica le sue migrazioni prima di sincronizzare: questa installazione non dichiara ancora limiti cumulativi e pulizia persistente.", "E\u015Fitlemeden \xF6nce Nodus Cloud Worker\u2019\u0131 g\xFCncelleyin ve ge\xE7i\u015Flerini uygulay\u0131n: bu kurulum hen\xFCz birikimli s\u0131n\u0131rlar\u0131 ve kal\u0131c\u0131 temizlemeyi bildirmiyor.", "\u540C\u6B65\u524D\u8BF7\u66F4\u65B0 Nodus Cloud Worker \u5E76\u5E94\u7528\u8FC1\u79FB\uFF1A\u6B64\u5B89\u88C5\u5C1A\u672A\u58F0\u660E\u7D2F\u8BA1\u9650\u989D\u548C\u6301\u4E45\u5316\u6E05\u7406\u3002", "\u540C\u6B65\u524D\u8ACB\u66F4\u65B0 Nodus Cloud Worker \u4E26\u5957\u7528\u79FB\u8F49\uFF1A\u6B64\u5B89\u88DD\u5C1A\u672A\u5BA3\u544A\u7D2F\u8A08\u9650\u984D\u548C\u6301\u7E8C\u6027\u6E05\u7406\u3002", "\u540C\u671F\u524D\u306B Nodus Cloud Worker \u3092\u66F4\u65B0\u3057\u3001\u30DE\u30A4\u30B0\u30EC\u30FC\u30B7\u30E7\u30F3\u3092\u9069\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u3053\u306E\u74B0\u5883\u3067\u306F\u7D2F\u7A4D\u4E0A\u9650\u3068\u6C38\u7D9A\u7684\u306A\u30AF\u30EA\u30FC\u30F3\u30A2\u30C3\u30D7\u3078\u306E\u5BFE\u5FDC\u304C\u307E\u3060\u901A\u77E5\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002", "\uB3D9\uAE30\uD654 \uC804\uC5D0 Nodus Cloud Worker\uB97C \uC5C5\uB370\uC774\uD2B8\uD558\uACE0 \uB9C8\uC774\uADF8\uB808\uC774\uC158\uC744 \uC801\uC6A9\uD558\uC138\uC694. \uC774 \uC124\uCE58\uB294 \uC544\uC9C1 \uB204\uC801 \uD55C\uB3C4\uC640 \uC601\uAD6C \uC815\uB9AC\uB97C \uC9C0\uC6D0\uD55C\uB2E4\uACE0 \uC54C\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."]
   ];
-  function translations2(row, value) {
+  function translations3(row, value) {
     const result = Object.fromEntries(languages2.map((language, index) => [
       language,
       value === void 0 ? row[index + 1] : row[index + 1].replaceAll("{value}", value)
@@ -3578,7 +3848,7 @@ ${conversation}`;
     result["pt-BR"] = result.pt;
     return result;
   }
-  var CLOUDFLARE_SYNC_ERRORS = Object.fromEntries(rows2.map((row) => [row[0], translations2(row)]));
+  var CLOUDFLARE_SYNC_ERRORS = Object.fromEntries(rows2.map((row) => [row[0], translations3(row)]));
   var patterns = [
     [/^El índice (.+) supera el límite seguro de búsqueda exacta de Cloudflare\.$/, ["El \xEDndice {value} supera el l\xEDmite seguro de b\xFAsqueda exacta de Cloudflare.", "The {value} index exceeds Cloudflare\u2019s safe exact-search limit.", "L\u2019index {value} d\xE9passe la limite s\xFBre de recherche exacte de Cloudflare.", "Der {value}-Index \xFCberschreitet das sichere Limit f\xFCr die exakte Suche von Cloudflare.", "O \xEDndice {value} excede o limite seguro de pesquisa exata da Cloudflare.", "L\u2019indice {value} supera il limite sicuro di ricerca esatta di Cloudflare.", "{value} dizini Cloudflare\u2019in g\xFCvenli tam arama s\u0131n\u0131r\u0131n\u0131 a\u015F\u0131yor.", "{value} \u7D22\u5F15\u8D85\u8FC7 Cloudflare \u7684\u7CBE\u786E\u641C\u7D22\u5B89\u5168\u4E0A\u9650\u3002", "{value} \u7D22\u5F15\u8D85\u904E Cloudflare \u7684\u7CBE\u78BA\u641C\u5C0B\u5B89\u5168\u4E0A\u9650\u3002", "{value} \u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u304C Cloudflare \u306E\u5B8C\u5168\u4E00\u81F4\u691C\u7D22\u306E\u5B89\u5168\u4E0A\u9650\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\u3002", "{value} \uC778\uB371\uC2A4\uAC00 Cloudflare\uC758 \uC815\uD655 \uAC80\uC0C9 \uC548\uC804 \uD55C\uB3C4\uB97C \uCD08\uACFC\uD569\uB2C8\uB2E4."]],
     [/^El proceso auxiliar de réplica terminó sin completar la importación \((.+)\)\.$/, ["El proceso auxiliar de r\xE9plica termin\xF3 sin completar la importaci\xF3n ({value}).", "The replica utility process exited without completing the import ({value}).", "Le processus auxiliaire de r\xE9plique s\u2019est termin\xE9 sans achever l\u2019importation ({value}).", "Der Replikat-Hilfsprozess wurde beendet, ohne den Import abzuschlie\xDFen ({value}).", "O processo auxiliar de r\xE9plica terminou sem concluir a importa\xE7\xE3o ({value}).", "Il processo ausiliario della replica \xE8 terminato senza completare l\u2019importazione ({value}).", "Kopya yard\u0131mc\u0131 i\u015Flemi i\xE7e aktar\u0131m\u0131 tamamlamadan sonland\u0131 ({value}).", "\u526F\u672C\u8F85\u52A9\u8FDB\u7A0B\u5728\u5B8C\u6210\u5BFC\u5165\u524D\u9000\u51FA\uFF08{value}\uFF09\u3002", "\u526F\u672C\u8F14\u52A9\u7A0B\u5E8F\u5728\u5B8C\u6210\u532F\u5165\u524D\u7D50\u675F\uFF08{value}\uFF09\u3002", "\u30EC\u30D7\u30EA\u30AB\u306E\u88DC\u52A9\u30D7\u30ED\u30BB\u30B9\u304C\u30A4\u30F3\u30DD\u30FC\u30C8\u3092\u5B8C\u4E86\u305B\u305A\u306B\u7D42\u4E86\u3057\u307E\u3057\u305F\uFF08{value}\uFF09\u3002", "\uBCF5\uC81C\uBCF8 \uBCF4\uC870 \uD504\uB85C\uC138\uC2A4\uAC00 \uAC00\uC838\uC624\uAE30\uB97C \uC644\uB8CC\uD558\uC9C0 \uC54A\uACE0 \uC885\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4({value})."]],
@@ -3587,7 +3857,7 @@ ${conversation}`;
   ];
   var CLOUDFLARE_SYNC_ERROR_PATTERNS = patterns.map(([pattern, row]) => ({
     pattern,
-    translate: (value) => translations2(row, value)
+    translate: (value) => translations3(row, value)
   }));
 
   // shared/sttErrors.ts
@@ -3696,6 +3966,33 @@ ${conversation}`;
   // shared/mainProcessErrors.ts
   var MAIN_PROCESS_ERRORS = {
     ...COMPANION_RUNTIME_ERRORS,
+    "Espera a que finalice la preparaci\xF3n documental antes de restaurar la copia.": { "en": "Wait for documentary preparation to finish before restoring the backup.", "fr": "Attendez la fin de la pr\xE9paration documentaire avant de restaurer la sauvegarde.", "de": "Warten Sie vor dem Wiederherstellen der Sicherung, bis die Dokumentvorbereitung abgeschlossen ist.", "pt": "Aguarde o fim da prepara\xE7\xE3o documental antes de restaurar a c\xF3pia.", "it": "Attendi il completamento della preparazione documentaria prima di ripristinare il backup.", "tr": "Yede\u011Fi geri y\xFCklemeden \xF6nce belge haz\u0131rl\u0131\u011F\u0131n\u0131n bitmesini bekleyin.", "zh-CN": "\u8BF7\u7B49\u5F85\u6587\u732E\u51C6\u5907\u5B8C\u6210\u540E\u518D\u6062\u590D\u5907\u4EFD\u3002", "pt-BR": "Aguarde o fim da prepara\xE7\xE3o documental antes de restaurar a c\xF3pia." },
+    "Comparaci\xF3n de embeddings no v\xE1lida.": { "en": "Invalid embedding comparison.", "fr": "Comparaison d\u2019embeddings non valide.", "de": "Ung\xFCltiger Embedding-Vergleich.", "pt": "Compara\xE7\xE3o de embeddings inv\xE1lida.", "it": "Confronto degli embedding non valido.", "tr": "Ge\xE7ersiz g\xF6mme kar\u015F\u0131la\u015Ft\u0131rmas\u0131.", "zh-CN": "\u5D4C\u5165\u6BD4\u8F83\u65E0\u6548\u3002", "pt-BR": "Compara\xE7\xE3o de embeddings inv\xE1lida." },
+    "La b\xF3veda cambi\xF3 antes de comparar los \xEDndices.": { "en": "The vault changed before comparing the indexes.", "fr": "Le coffre a chang\xE9 avant la comparaison des index.", "de": "Der Tresor wurde vor dem Indexvergleich gewechselt.", "pt": "O cofre mudou antes da compara\xE7\xE3o dos \xEDndices.", "it": "La cassaforte \xE8 cambiata prima del confronto degli indici.", "tr": "Dizinler kar\u015F\u0131la\u015Ft\u0131r\u0131lmadan \xF6nce kasa de\u011Fi\u015Fti.", "zh-CN": "\u6BD4\u8F83\u7D22\u5F15\u524D\u4FDD\u9669\u5E93\u5DF2\u66F4\u6539\u3002", "pt-BR": "O cofre mudou antes da compara\xE7\xE3o dos \xEDndices." },
+    "Selecciona \xEDndices con embeddings verificados para compararlos.": { "en": "Select indexes with verified embeddings to compare them.", "fr": "S\xE9lectionnez des index avec des embeddings v\xE9rifi\xE9s pour les comparer.", "de": "W\xE4hlen Sie zum Vergleichen Indizes mit gepr\xFCften Embeddings.", "pt": "Selecione \xEDndices com embeddings verificados para os comparar.", "it": "Seleziona indici con embedding verificati per confrontarli.", "tr": "Kar\u015F\u0131la\u015Ft\u0131rmak i\xE7in do\u011Frulanm\u0131\u015F g\xF6mmeleri olan dizinleri se\xE7in.", "zh-CN": "\u8BF7\u9009\u62E9\u5177\u6709\u5DF2\u9A8C\u8BC1\u5D4C\u5165\u7684\u7D22\u5F15\u8FDB\u884C\u6BD4\u8F83\u3002", "pt-BR": "Selecione \xEDndices com embeddings verificados para os comparar." },
+    "El contenido o los vectores cambiaron durante la comparaci\xF3n. Rep\xEDtela para obtener una instant\xE1nea coherente.": { "en": "Content or vectors changed during the comparison. Repeat it to obtain a consistent snapshot.", "fr": "Le contenu ou les vecteurs ont chang\xE9 pendant la comparaison. Recommencez pour obtenir un instantan\xE9 coh\xE9rent.", "de": "Inhalte oder Vektoren wurden w\xE4hrend des Vergleichs ge\xE4ndert. Wiederholen Sie ihn f\xFCr eine konsistente Momentaufnahme.", "pt": "O conte\xFAdo ou os vetores mudaram durante a compara\xE7\xE3o. Repita-a para obter uma captura consistente.", "it": "Il contenuto o i vettori sono cambiati durante il confronto. Ripetilo per ottenere un\u2019istantanea coerente.", "tr": "Kar\u015F\u0131la\u015Ft\u0131rma s\u0131ras\u0131nda i\xE7erik veya vekt\xF6rler de\u011Fi\u015Fti. Tutarl\u0131 bir anl\u0131k g\xF6r\xFCnt\xFC i\xE7in kar\u015F\u0131la\u015Ft\u0131rmay\u0131 yineleyin.", "zh-CN": "\u6BD4\u8F83\u671F\u95F4\u5185\u5BB9\u6216\u5411\u91CF\u5DF2\u66F4\u6539\u3002\u8BF7\u91CD\u65B0\u6BD4\u8F83\u4EE5\u83B7\u5F97\u4E00\u81F4\u7684\u5FEB\u7167\u3002", "pt-BR": "O conte\xFAdo ou os vetores mudaram durante a compara\xE7\xE3o. Repita-a para obter uma captura consistente." },
+    "Las fuentes cambiaron durante la comparaci\xF3n.": { "en": "Sources changed during the comparison.", "fr": "Les sources ont chang\xE9 pendant la comparaison.", "de": "Die Quellen wurden w\xE4hrend des Vergleichs ge\xE4ndert.", "pt": "As fontes mudaram durante a compara\xE7\xE3o.", "it": "Le fonti sono cambiate durante il confronto.", "tr": "Kar\u015F\u0131la\u015Ft\u0131rma s\u0131ras\u0131nda kaynaklar de\u011Fi\u015Fti.", "zh-CN": "\u6BD4\u8F83\u671F\u95F4\u6765\u6E90\u5DF2\u66F4\u6539\u3002", "pt-BR": "As fontes mudaram durante a compara\xE7\xE3o." },
+    "La b\xF3veda cambi\xF3. Vuelve a abrir la gesti\xF3n de \xEDndices.": { "en": "The vault changed. Reopen index management.", "fr": "Le coffre a chang\xE9. Rouvrez la gestion des index.", "de": "Der Tresor wurde gewechselt. \xD6ffnen Sie die Indexverwaltung erneut.", "pt": "O cofre mudou. Volte a abrir a gest\xE3o de \xEDndices.", "it": "La cassaforte \xE8 cambiata. Riapri la gestione degli indici.", "tr": "Kasa de\u011Fi\u015Fti. Dizin y\xF6netimini yeniden a\xE7\u0131n.", "zh-CN": "\u4FDD\u9669\u5E93\u5DF2\u66F4\u6539\u3002\u8BF7\u91CD\u65B0\u6253\u5F00\u7D22\u5F15\u7BA1\u7406\u3002", "pt-BR": "O cofre mudou. Volte a abrir a gest\xE3o de \xEDndices." },
+    "La b\xF3veda cambi\xF3 durante la preparaci\xF3n del \xEDndice.": { "en": "The vault changed during index preparation.", "fr": "Le coffre a chang\xE9 pendant la pr\xE9paration de l\u2019index.", "de": "Der Tresor wurde w\xE4hrend der Indexvorbereitung gewechselt.", "pt": "O cofre mudou durante a prepara\xE7\xE3o do \xEDndice.", "it": "La cassaforte \xE8 cambiata durante la preparazione dell\u2019indice.", "tr": "Dizin haz\u0131rlan\u0131rken kasa de\u011Fi\u015Fti.", "zh-CN": "\u51C6\u5907\u7D22\u5F15\u671F\u95F4\u4FDD\u9669\u5E93\u5DF2\u66F4\u6539\u3002", "pt-BR": "O cofre mudou durante a prepara\xE7\xE3o do \xEDndice." },
+    "Selecciona un proveedor y un modelo de embeddings v\xE1lidos.": { "en": "Select a valid embedding provider and model.", "fr": "S\xE9lectionnez un fournisseur et un mod\xE8le d\u2019embeddings valides.", "de": "W\xE4hlen Sie einen g\xFCltigen Embedding-Anbieter und ein g\xFCltiges Modell.", "pt": "Selecione um fornecedor e um modelo de embeddings v\xE1lidos.", "it": "Seleziona un fornitore e un modello di embedding validi.", "tr": "Ge\xE7erli bir g\xF6mme sa\u011Flay\u0131c\u0131s\u0131 ve modeli se\xE7in.", "zh-CN": "\u8BF7\u9009\u62E9\u6709\u6548\u7684\u5D4C\u5165\u63D0\u4F9B\u5546\u548C\u6A21\u578B\u3002", "pt-BR": "Selecione um fornecedor e um modelo de embeddings v\xE1lidos." },
+    "No se encontr\xF3 la b\xF3veda del \xEDndice.": { "en": "The index\u2019s vault was not found.", "fr": "Le coffre de l\u2019index est introuvable.", "de": "Der Tresor des Index wurde nicht gefunden.", "pt": "O cofre do \xEDndice n\xE3o foi encontrado.", "it": "La cassaforte dell\u2019indice non \xE8 stata trovata.", "tr": "Dizinin kasas\u0131 bulunamad\u0131.", "zh-CN": "\u672A\u627E\u5230\u7D22\u5F15\u6240\u5C5E\u7684\u4FDD\u9669\u5E93\u3002", "pt-BR": "O cofre do \xEDndice n\xE3o foi encontrado." },
+    "Reconstruye el \xEDndice heredado antes de activarlo.": { "en": "Rebuild the legacy index before activating it.", "fr": "Reconstruisez l\u2019index h\xE9rit\xE9 avant de l\u2019activer.", "de": "Erstellen Sie den alten Index vor der Aktivierung neu.", "pt": "Reconstrua o \xEDndice antigo antes de o ativar.", "it": "Ricostruisci l\u2019indice precedente prima di attivarlo.", "tr": "Eski dizini etkinle\u015Ftirmeden \xF6nce yeniden olu\u015Fturun.", "zh-CN": "\u8BF7\u5148\u91CD\u5EFA\u65E7\u7D22\u5F15\u518D\u6FC0\u6D3B\u3002", "pt-BR": "Reconstrua o \xEDndice antigo antes de o ativar." },
+    "Actualiza los pendientes antes de activar este \xEDndice.": { "en": "Update pending items before activating this index.", "fr": "Mettez \xE0 jour les \xE9l\xE9ments en attente avant d\u2019activer cet index.", "de": "Aktualisieren Sie ausstehende Elemente, bevor Sie diesen Index aktivieren.", "pt": "Atualize os itens pendentes antes de ativar este \xEDndice.", "it": "Aggiorna gli elementi in sospeso prima di attivare questo indice.", "tr": "Bu dizini etkinle\u015Ftirmeden \xF6nce bekleyen \xF6\u011Feleri g\xFCncelleyin.", "zh-CN": "\u8BF7\u5148\u66F4\u65B0\u5F85\u5904\u7406\u9879\u76EE\u518D\u6FC0\u6D3B\u6B64\u7D22\u5F15\u3002", "pt-BR": "Atualize os itens pendentes antes de ativar este \xEDndice." },
+    "Acci\xF3n de preparaci\xF3n no v\xE1lida.": { "en": "Invalid preparation action.", "fr": "Action de pr\xE9paration non valide.", "de": "Ung\xFCltige Vorbereitungsaktion.", "pt": "A\xE7\xE3o de prepara\xE7\xE3o inv\xE1lida.", "it": "Azione di preparazione non valida.", "tr": "Ge\xE7ersiz haz\u0131rl\u0131k i\u015Flemi.", "zh-CN": "\u51C6\u5907\u64CD\u4F5C\u65E0\u6548\u3002", "pt-BR": "A\xE7\xE3o de prepara\xE7\xE3o inv\xE1lida." },
+    "La b\xF3veda cambi\xF3 antes de eliminar el \xEDndice.": { "en": "The vault changed before deleting the index.", "fr": "Le coffre a chang\xE9 avant la suppression de l\u2019index.", "de": "Der Tresor wurde vor dem L\xF6schen des Index gewechselt.", "pt": "O cofre mudou antes da elimina\xE7\xE3o do \xEDndice.", "it": "La cassaforte \xE8 cambiata prima dell\u2019eliminazione dell\u2019indice.", "tr": "Dizin silinmeden \xF6nce kasa de\u011Fi\u015Fti.", "zh-CN": "\u5220\u9664\u7D22\u5F15\u524D\u4FDD\u9669\u5E93\u5DF2\u66F4\u6539\u3002", "pt-BR": "O cofre mudou antes da elimina\xE7\xE3o do \xEDndice." },
+    "El proveedor de embeddings necesita un endpoint HTTP o HTTPS.": { "en": "The embedding provider requires an HTTP or HTTPS endpoint.", "fr": "Le fournisseur d\u2019embeddings n\xE9cessite un point d\u2019acc\xE8s HTTP ou HTTPS.", "de": "Der Embedding-Anbieter ben\xF6tigt einen HTTP- oder HTTPS-Endpunkt.", "pt": "O fornecedor de embeddings precisa de um endpoint HTTP ou HTTPS.", "it": "Il fornitore di embedding richiede un endpoint HTTP o HTTPS.", "tr": "G\xF6mme sa\u011Flay\u0131c\u0131s\u0131 bir HTTP veya HTTPS u\xE7 noktas\u0131 gerektirir.", "zh-CN": "\u5D4C\u5165\u63D0\u4F9B\u5546\u9700\u8981 HTTP \u6216 HTTPS \u7AEF\u70B9\u3002", "pt-BR": "O fornecedor de embeddings precisa de um endpoint HTTP ou HTTPS." },
+    "No hay un \xEDndice de embeddings activo.": { "en": "There is no active embedding index.", "fr": "Aucun index d\u2019embeddings n\u2019est actif.", "de": "Es gibt keinen aktiven Embedding-Index.", "pt": "N\xE3o h\xE1 nenhum \xEDndice de embeddings ativo.", "it": "Non c\u2019\xE8 alcun indice di embedding attivo.", "tr": "Etkin bir g\xF6mme dizini yok.", "zh-CN": "\u6CA1\u6709\u6D3B\u52A8\u7684\u5D4C\u5165\u7D22\u5F15\u3002", "pt-BR": "N\xE3o h\xE1 nenhum \xEDndice de embeddings ativo." },
+    "Reranker local desconocido.": { "en": "Unknown local reranker.", "fr": "Mod\xE8le de reclassement local inconnu.", "de": "Unbekannter lokaler Reranker.", "pt": "Modelo de reordena\xE7\xE3o local desconhecido.", "it": "Modello di riordinamento locale sconosciuto.", "tr": "Bilinmeyen yerel yeniden s\u0131ralama modeli.", "zh-CN": "\u672A\u77E5\u7684\u672C\u5730\u91CD\u6392\u5E8F\u6A21\u578B\u3002", "pt-BR": "Modelo de reordena\xE7\xE3o local desconhecido." },
+    "Acci\xF3n del reranker no v\xE1lida.": { "en": "Invalid reranker action.", "fr": "Action de reclassement non valide.", "de": "Ung\xFCltige Reranker-Aktion.", "pt": "A\xE7\xE3o de reordena\xE7\xE3o inv\xE1lida.", "it": "Azione di riordinamento non valida.", "tr": "Ge\xE7ersiz yeniden s\u0131ralama i\u015Flemi.", "zh-CN": "\u91CD\u6392\u5E8F\u64CD\u4F5C\u65E0\u6548\u3002", "pt-BR": "A\xE7\xE3o de reordena\xE7\xE3o inv\xE1lida." },
+    "No se encontr\xF3 el \xEDndice de embeddings.": { "en": "The embedding index was not found.", "fr": "L\u2019index d\u2019embeddings est introuvable.", "de": "Der Embedding-Index wurde nicht gefunden.", "pt": "O \xEDndice de embeddings n\xE3o foi encontrado.", "it": "L\u2019indice di embedding non \xE8 stato trovato.", "tr": "G\xF6mme dizini bulunamad\u0131.", "zh-CN": "\u672A\u627E\u5230\u5D4C\u5165\u7D22\u5F15\u3002", "pt-BR": "O \xEDndice de embeddings n\xE3o foi encontrado." },
+    "La b\xF3veda cambi\xF3 durante la operaci\xF3n de embeddings.": { "en": "The vault changed during the embedding operation.", "fr": "Le coffre a chang\xE9 pendant l\u2019op\xE9ration d\u2019embeddings.", "de": "Der Tresor wurde w\xE4hrend des Embedding-Vorgangs gewechselt.", "pt": "O cofre mudou durante a opera\xE7\xE3o de embeddings.", "it": "La cassaforte \xE8 cambiata durante l\u2019operazione di embedding.", "tr": "G\xF6mme i\u015Flemi s\u0131ras\u0131nda kasa de\u011Fi\u015Fti.", "zh-CN": "\u5D4C\u5165\u64CD\u4F5C\u671F\u95F4\u4FDD\u9669\u5E93\u5DF2\u66F4\u6539\u3002", "pt-BR": "O cofre mudou durante a opera\xE7\xE3o de embeddings." },
+    "El modelo ha cambiado de revisi\xF3n. Reconstruye su \xEDndice desde Ajustes.": { "en": "The model revision changed. Rebuild its index in Settings.", "fr": "La r\xE9vision du mod\xE8le a chang\xE9. Reconstruisez son index dans les param\xE8tres.", "de": "Die Modellrevision wurde ge\xE4ndert. Erstellen Sie den Index in den Einstellungen neu.", "pt": "A revis\xE3o do modelo mudou. Reconstrua o \xEDndice nas Defini\xE7\xF5es.", "it": "La revisione del modello \xE8 cambiata. Ricostruisci il suo indice nelle impostazioni.", "tr": "Modelin revizyonu de\u011Fi\u015Fti. Ayarlar\u2019dan dizinini yeniden olu\u015Fturun.", "zh-CN": "\u6A21\u578B\u4FEE\u8BA2\u7248\u672C\u5DF2\u66F4\u6539\u3002\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u91CD\u5EFA\u5176\u7D22\u5F15\u3002", "pt-BR": "A revis\xE3o do modelo mudou. Reconstrua o \xEDndice nas Defini\xE7\xF5es." },
+    "Prepara y activa el nuevo \xEDndice antes de cambiar el modelo de embeddings.": { "en": "Prepare and activate the new index before changing the embedding model.", "fr": "Pr\xE9parez et activez le nouvel index avant de changer de mod\xE8le d\u2019embeddings.", "de": "Bereiten Sie den neuen Index vor und aktivieren Sie ihn, bevor Sie das Embedding-Modell wechseln.", "pt": "Prepare e ative o novo \xEDndice antes de mudar o modelo de embeddings.", "it": "Prepara e attiva il nuovo indice prima di cambiare il modello di embedding.", "tr": "G\xF6mme modelini de\u011Fi\u015Ftirmeden \xF6nce yeni dizini haz\u0131rlay\u0131p etkinle\u015Ftirin.", "zh-CN": "\u8BF7\u5148\u51C6\u5907\u5E76\u6FC0\u6D3B\u65B0\u7D22\u5F15\u518D\u66F4\u6539\u5D4C\u5165\u6A21\u578B\u3002", "pt-BR": "Prepare e ative o novo \xEDndice antes de mudar o modelo de embeddings." },
+    "Ya hay una comparaci\xF3n en curso.": { "en": "A comparison is already in progress.", "fr": "Une comparaison est d\xE9j\xE0 en cours.", "de": "Es l\xE4uft bereits ein Vergleich.", "pt": "J\xE1 existe uma compara\xE7\xE3o em curso.", "it": "Un confronto \xE8 gi\xE0 in corso.", "tr": "Bir kar\u015F\u0131la\u015Ft\u0131rma zaten s\xFCr\xFCyor.", "zh-CN": "\u5DF2\u6709\u6BD4\u8F83\u6B63\u5728\u8FDB\u884C\u3002", "pt-BR": "J\xE1 existe uma compara\xE7\xE3o em curso." },
+    "Actualiza Nodus Server para publicar el \xEDndice activo de forma compatible. La publicaci\xF3n remota anterior se ha conservado.": { "en": "Update Nodus Server to publish the active index compatibly. The previous remote publication has been preserved.", "fr": "Mettez \xE0 jour Nodus Server pour publier l\u2019index actif de mani\xE8re compatible. La publication distante pr\xE9c\xE9dente a \xE9t\xE9 conserv\xE9e.", "de": "Aktualisieren Sie Nodus Server, um den aktiven Index kompatibel zu ver\xF6ffentlichen. Die bisherige Remote-Ver\xF6ffentlichung wurde beibehalten.", "pt": "Atualize o Nodus Server para publicar o \xEDndice ativo de forma compat\xEDvel. A publica\xE7\xE3o remota anterior foi preservada.", "it": "Aggiorna Nodus Server per pubblicare l\u2019indice attivo in modo compatibile. La pubblicazione remota precedente \xE8 stata conservata.", "tr": "Etkin dizini uyumlu bi\xE7imde yay\u0131mlamak i\xE7in Nodus Server\u2019\u0131 g\xFCncelleyin. \xD6nceki uzak yay\u0131n korundu.", "zh-CN": "\u8BF7\u66F4\u65B0 Nodus Server \u4EE5\u517C\u5BB9\u65B9\u5F0F\u53D1\u5E03\u6D3B\u52A8\u7D22\u5F15\u3002\u4E4B\u524D\u7684\u8FDC\u7A0B\u53D1\u5E03\u5DF2\u4FDD\u7559\u3002", "pt-BR": "Atualize o Nodus Server para publicar o \xEDndice ativo de forma compat\xEDvel. A publica\xE7\xE3o remota anterior foi preservada." },
+    "El servidor devolvi\xF3 una sesi\xF3n de publicaci\xF3n no v\xE1lida.": { "en": "The server returned an invalid publication session.", "fr": "Le serveur a renvoy\xE9 une session de publication non valide.", "de": "Der Server hat eine ung\xFCltige Ver\xF6ffentlichungssitzung zur\xFCckgegeben.", "pt": "O servidor devolveu uma sess\xE3o de publica\xE7\xE3o inv\xE1lida.", "it": "Il server ha restituito una sessione di pubblicazione non valida.", "tr": "Sunucu ge\xE7ersiz bir yay\u0131n oturumu d\xF6nd\xFCrd\xFC.", "zh-CN": "\u670D\u52A1\u5668\u8FD4\u56DE\u4E86\u65E0\u6548\u7684\u53D1\u5E03\u4F1A\u8BDD\u3002", "pt-BR": "O servidor devolveu uma sess\xE3o de publica\xE7\xE3o inv\xE1lida." },
+    "El perfil de entrada no es compatible con este modelo.": { "en": "The input profile is incompatible with this model.", "fr": "Le profil d\u2019entr\xE9e est incompatible avec ce mod\xE8le.", "de": "Das Eingabeprofil ist mit diesem Modell nicht kompatibel.", "pt": "O perfil de entrada \xE9 incompat\xEDvel com este modelo.", "it": "Il profilo di ingresso non \xE8 compatibile con questo modello.", "tr": "Giri\u015F profili bu modelle uyumsuz.", "zh-CN": "\u8F93\u5165\u914D\u7F6E\u4E0E\u6B64\u6A21\u578B\u4E0D\u517C\u5BB9\u3002", "pt-BR": "O perfil de entrada \xE9 incompat\xEDvel com este modelo." },
+    "Los prefijos no coinciden con el perfil seleccionado.": { "en": "The prefixes do not match the selected profile.", "fr": "Les pr\xE9fixes ne correspondent pas au profil s\xE9lectionn\xE9.", "de": "Die Pr\xE4fixe stimmen nicht mit dem gew\xE4hlten Profil \xFCberein.", "pt": "Os prefixos n\xE3o correspondem ao perfil selecionado.", "it": "I prefissi non corrispondono al profilo selezionato.", "tr": "\xD6nekler se\xE7ilen profille e\u015Fle\u015Fmiyor.", "zh-CN": "\u524D\u7F00\u4E0E\u6240\u9009\u914D\u7F6E\u4E0D\u5339\u914D\u3002", "pt-BR": "Os prefixos n\xE3o correspondem ao perfil selecionado." },
     "Directorio ZIP64 da\xF1ado.": {
       en: "The ZIP64 directory is damaged.",
       fr: "Le r\xE9pertoire ZIP64 est endommag\xE9.",
@@ -18248,6 +18545,7 @@ ${conversation}`;
   var MAIN_PROCESS_ERROR_PATTERNS = [
     ...COMPANION_RUNTIME_ERROR_PATTERNS,
     { pattern: /^La copia publicada no incluye la tabla (.+)\. Descarga una publicación compatible\.$/, translate: (table2) => ({ "en": "The published copy lacks table {table}. Download a compatible publication.".replace("{table}", table2), "fr": "La copie publi\xE9e ne contient pas la table {table}. T\xE9l\xE9chargez une publication compatible.".replace("{table}", table2), "de": "Die ver\xF6ffentlichte Kopie enth\xE4lt die Tabelle {table} nicht. Laden Sie eine kompatible Ver\xF6ffentlichung herunter.".replace("{table}", table2), "pt": "A c\xF3pia publicada n\xE3o inclui a tabela {table}. Descarregue uma publica\xE7\xE3o compat\xEDvel.".replace("{table}", table2), "pt-BR": "A c\xF3pia publicada n\xE3o inclui a tabela {table}. Baixe uma publica\xE7\xE3o compat\xEDvel.".replace("{table}", table2), "it": "La copia pubblicata non include la tabella {table}. Scarica una pubblicazione compatibile.".replace("{table}", table2), "tr": "Yay\u0131mlanan kopyada {table} tablosu yok. Uyumlu bir yay\u0131n indirin.".replace("{table}", table2), "zh-CN": "\u5DF2\u53D1\u5E03\u7684\u526F\u672C\u4E0D\u5305\u542B\u8868 {table}\uFF0C\u8BF7\u4E0B\u8F7D\u517C\u5BB9\u7684\u53D1\u5E03\u5185\u5BB9\u3002".replace("{table}", table2), "zh-TW": "\u5DF2\u767C\u4F48\u7684\u526F\u672C\u4E0D\u5305\u542B\u8CC7\u6599\u8868 {table}\uFF0C\u8ACB\u4E0B\u8F09\u76F8\u5BB9\u7684\u767C\u4F48\u5167\u5BB9\u3002".replace("{table}", table2), "ja": "\u516C\u958B\u6E08\u307F\u306E\u30B3\u30D4\u30FC\u306B\u30C6\u30FC\u30D6\u30EB {table} \u304C\u3042\u308A\u307E\u305B\u3093\u3002\u4E92\u63DB\u6027\u306E\u3042\u308B\u516C\u958B\u5185\u5BB9\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002".replace("{table}", table2), "ko": "\uAC8C\uC2DC\uB41C \uC0AC\uBCF8\uC5D0 {table} \uD14C\uC774\uBE14\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uD638\uD658\uB418\uB294 \uAC8C\uC2DC \uB0B4\uC6A9\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC138\uC694.".replace("{table}", table2) }) },
+    ...MODEL_NETWORK_ERROR_PATTERNS,
     ...EMBEDDING_GEMMA2_ERROR_PATTERNS,
     ...STT_RUNTIME_ERROR_PATTERNS,
     ...BACKUPS_RUNTIME_ERROR_PATTERNS,
@@ -20419,17 +20717,6 @@ ${conversation}`;
       tr: `${command} zaman a\u015F\u0131m\u0131na u\u011Frad\u0131.`,
       "zh-CN": `${command} \u8D85\u65F6\u3002`,
       "zh-TW": `${command} \u8D85\u6642\u3002`
-    }) },
-    { pattern: /^No se pudo instalar un runtime de llama\.cpp utilizable\. (.+)$/, translate: (details) => ({
-      en: `No usable llama.cpp runtime could be installed. ${details}`,
-      fr: `Aucun moteur llama.cpp utilisable n\u2019a pu \xEAtre install\xE9. ${details}`,
-      de: `Es konnte keine nutzbare llama.cpp-Laufzeit installiert werden. ${details}`,
-      pt: `N\xE3o foi poss\xEDvel instalar um motor llama.cpp utiliz\xE1vel. ${details}`,
-      "pt-BR": `N\xE3o foi poss\xEDvel instalar um runtime llama.cpp utiliz\xE1vel. ${details}`,
-      it: `Non \xE8 stato possibile installare un runtime llama.cpp utilizzabile. ${details}`,
-      tr: `Kullan\u0131labilir bir llama.cpp \xE7al\u0131\u015Fma zaman\u0131 kurulamad\u0131. ${details}`,
-      "zh-CN": `\u65E0\u6CD5\u5B89\u88C5\u53EF\u7528\u7684 llama.cpp \u8FD0\u884C\u65F6\u3002${details}`,
-      "zh-TW": `\u7121\u6CD5\u5B89\u88DD\u53EF\u7528\u7684 llama.cpp \u57F7\u884C\u6642\u3002${details}`
     }) },
     // The complete study guide fails a job whose extraction could not read more than a tenth
     // of the source windows, and says how many. The counts are the whole point of the
