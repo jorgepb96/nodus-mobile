@@ -48,7 +48,7 @@ acompaña al PR móvil #30 y al PR Desktop #1089.
 
 ## Pendiente y no aprobado
 
-- Siete flujos reales de generación desde el móvil (diccionario, inmersión, mejora de
+- Cinco flujos reales de generación desde el móvil (diccionario, inmersión, mejora de
   nota QA, taller y Deep Research) **no se ejecutaron** en este relevo.
 - Cuerpo de página de una fila tipada (superficie compartida) sigue sin cargar.
 - Árbol en iPhone y presentación del inspector compacto siguen fallando.
