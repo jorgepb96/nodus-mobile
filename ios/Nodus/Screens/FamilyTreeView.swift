@@ -18,6 +18,8 @@ struct FamilyTreeView: View {
     @State private var people: [String: Row] = [:]
     @State private var relationships: [Row] = []
     @State private var isLoading = true
+    @State private var hasLoadedCatalogue = false
+    @State private var loadGeneration = UUID()
     @State private var error: String?
     @State private var history: [String] = []
     @State private var query = ""
@@ -36,7 +38,7 @@ struct FamilyTreeView: View {
     /// REST rows become available as soon as the publication changes; portrait assets become
     /// available after the optional mirror has finished importing that same revision.
     private var loadID: String {
-        "\(session.publishedRevision ?? "unpublished"):\(session.mirrorSummary?.revision ?? "no-mirror")"
+        "\(session.connection.id):\(session.publishedRevision ?? "unpublished"):\(session.mirrorSummary?.revision ?? "no-mirror")"
     }
 
     var body: some View {
@@ -71,7 +73,7 @@ struct FamilyTreeView: View {
                                 .padding(.top, 12)
                         }
                     }
-                } else if !isLoading {
+                } else if !isLoading, hasLoadedCatalogue {
                     ContentUnavailableView(
                         "No people",
                         systemImage: "person.2",
@@ -352,53 +354,65 @@ struct FamilyTreeView: View {
 
     private func load() async {
         let currentFocusId = focus?.string("person_id")
+        let generation = UUID()
+        loadGeneration = generation
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            // A cancelled revision must not dismiss the replacement load's spinner
+            // and describe its still-unread catalogue as an empty publication.
+            if loadGeneration == generation, !Task.isCancelled { isLoading = false }
+        }
         do {
             guard let persons = Collections["persons"], let links = Collections["relationships"] else {
                 throw DesktopBridgeError.malformedResponse
             }
             let allPeople = try await session.client.allItems(persons, in: session.connection.spaceId)
             let allRelationships = try await session.client.allItems(links, in: session.connection.spaceId)
-            people = Dictionary(allPeople.compactMap { row in
-                row.string("person_id").map { ($0, row) }
-            }, uniquingKeysWith: { first, _ in first })
+            try Task.checkCancellation()
+            guard loadGeneration == generation else { return }
+            let source = FamilyTreeProjection(people: allPeople, relationships: allRelationships)
+            people = source.people
             relationships = allRelationships
 
+            let preferred = currentFocusId ?? rootPersonId
+            let start = preferred.flatMap { source.people[$0] == nil ? nil : $0 } ?? source.defaultFocus
+            history.removeAll { source.people[$0] == nil }
+            if let start { refocus(on: start, remember: false, source: source) }
+            else { focus = nil; parents = []; children = []; partners = []; siblings = [] }
+            hasLoadedCatalogue = true
+            isLoading = false
+            error = nil
+
+            // Portraits enhance an already-readable tree. Their optional mirror
+            // must not hold the first focus behind an unrelated import or read.
             portraitHashes = [:]
             if let mirror = session.mirror {
-                let portraits = try await mirror.allRows(table: "person_portraits")
+                let portraits = (try? await mirror.allRows(table: "person_portraits")) ?? []
+                var hashes: [String: String] = [:]
                 for row in portraits {
                     guard let id = row.string("person_id"), let asset = try? await mirror.portrait(personId: id) else { continue }
-                    portraitHashes[id] = asset.hash
+                    hashes[id] = asset.hash
                 }
+                try Task.checkCancellation()
+                guard loadGeneration == generation else { return }
+                portraitHashes = hashes
             }
-
-            let preferred = currentFocusId ?? rootPersonId
-            let start = preferred.flatMap { people[$0] == nil ? nil : $0 } ?? mostConnectedPerson()
-            history.removeAll { people[$0] == nil }
-            if let start { refocus(on: start, remember: false) }
-            else { focus = nil; parents = []; children = []; partners = []; siblings = [] }
-            error = nil
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
+            guard loadGeneration == generation else { return }
             self.error = error.localizedDescription
         }
     }
 
-    private func mostConnectedPerson() -> String? { projection.defaultFocus }
-
-    private func refocus(on personId: String, remember: Bool) {
-        guard let selected = people[personId] else { return }
+    private func refocus(on personId: String, remember: Bool, source: FamilyTreeProjection? = nil) {
+        let source = source ?? projection
+        guard let selected = source.people[personId] else { return }
         if remember, let current = focus?.string("person_id"), current != personId { history.append(current) }
         focus = selected
-        let source = projection
-        parents = resolve(source.parents(of: personId))
-        children = resolve(source.children(of: personId))
-        partners = resolve(source.partners(of: personId))
-        siblings = resolve(source.siblings(of: personId))
+        parents = source.parents(of: personId).compactMap { source.people[$0] }
+        children = source.children(of: personId).compactMap { source.people[$0] }
+        partners = source.partners(of: personId).compactMap { source.people[$0] }
+        siblings = source.siblings(of: personId).compactMap { source.people[$0] }
     }
-
-    private func resolve(_ ids: [String]) -> [Row] { ids.compactMap { people[$0] } }
 }

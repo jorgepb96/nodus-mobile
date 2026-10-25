@@ -71,12 +71,18 @@ final class SpecializedWorkspaceUITests: XCTestCase {
         for attempt in 0..<2 {
             let app = try open(vault: string(fixture, "vaultId"), route: "timeline")
             defer { XCUIDevice.shared.orientation = .portrait; app.terminate() }
-            let row = app.descendants(matching: .any)["genealogy-timeline-event-" + (try string(event, "eventId"))].firstMatch
+            let row = app.buttons["genealogy-timeline-event-" + (try string(event, "eventId"))].firstMatch
             XCTAssertTrue(row.waitForExistence(timeout: 45)); reveal(row, app: app)
             XCTAssertTrue(containsText(try string(event, "date"), app: app).exists)
             XCTAssertTrue(containsText(try string(event, "label"), app: app).exists)
             try rotateAndCapture(app, required: app.buttons["genealogy-timeline-person-filter"], name: "genealogy-timeline-\(attempt)")
-            reveal(row, app: app); row.buttons.firstMatch.tap()
+            reveal(row, app: app)
+            XCTAssertTrue(row.label.contains(try string(event, "date")))
+            XCTAssertTrue(row.label.contains(try string(event, "label")))
+            XCTAssertGreaterThanOrEqual(row.frame.height + 0.01, 44)
+            XCTAssertGreaterThanOrEqual(row.frame.width + 0.01, 44)
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(row.frame))
+            row.tap()
             for key in ["date", "placeName", "evidenceQuote", "evidenceLocation"] {
                 let text = containsText(try string(event, key), app: app)
                 XCTAssertTrue(text.waitForExistence(timeout: 20)); reveal(text, app: app)

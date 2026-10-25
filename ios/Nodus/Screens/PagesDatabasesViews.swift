@@ -1115,7 +1115,9 @@ private struct DatabaseRowInspector: View {
             Label(column.name, systemImage: propertyIcon(column.type))
                 .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             propertyValue(column)
-        }.accessibilityIdentifier("database-property-value-\(column.id)")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("database-property-value-\(column.id)")
     }
 
     @ViewBuilder private func propertyValue(_ column: PagesDatabasesParity.Column) -> some View {
