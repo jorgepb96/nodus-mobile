@@ -230,13 +230,13 @@ extension CompanionCompleteGuideSource {
     }
 }
 
-private final class CommonsRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+final class CommonsRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     nonisolated static func allowed(_ url: URL) -> Bool {
         url.scheme == "https" && url.user == nil && url.password == nil && (url.port == nil || url.port == 443) && ["commons.wikimedia.org", "upload.wikimedia.org"].contains(url.host?.lowercased() ?? "")
     }
-    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest) async -> URLRequest? {
-        guard let url = request.url, Self.allowed(url) else { return nil }
-        return request
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let url = request.url, Self.allowed(url) else { completionHandler(nil); return }
+        completionHandler(request)
     }
 }
 
