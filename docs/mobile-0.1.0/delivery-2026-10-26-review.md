@@ -8,7 +8,7 @@ separados y las pruebas fallidas conservan su `.xcresult`, log y capturas.
 | Repo | Rama | Commit de código | PR |
 | --- | --- | --- | --- |
 | `nodus` Desktop | `codex/mobile-0.1.0-parity` | `6fec24dcc60a4833ca9df7805f3fbbd2009634d2` | https://github.com/jorgepb96/nodus/pull/1089 |
-| `nodus-mobile` | `codex/mobile-0.1.0-parity` | `a00046c` | https://github.com/jorgepb96/nodus-mobile/pull/30 |
+| `nodus-mobile` | `codex/mobile-0.1.0-parity` | head del PR (ver GitHub) | https://github.com/jorgepb96/nodus-mobile/pull/30 |
 
 Desktop parte de `121b46de` (merge con main `03fa249b` y empaquetado de workers).
 Ningún PR se fusionó. Los checks automáticos creados por los pushes de este head

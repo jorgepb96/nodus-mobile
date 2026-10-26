@@ -350,9 +350,17 @@ final class SpecializedWorkspaceUITests: XCTestCase {
     /// Scrolling settles asynchronously; a control that is already hittable can still report
     /// the transient frame from before the final bounce.
     @MainActor private func settleInsideWindow(_ element: XCUIElement, app: XCUIApplication) {
-        let window = app.windows.firstMatch.frame
-        let inside = NSPredicate { _, _ in element.exists && window.contains(element.frame) }
-        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inside, object: nil)], timeout: 5)
+        let inspector = app.scrollViews["database-row-inspector"].firstMatch
+        let scroll = inspector.exists ? inspector : app.scrollViews.allElementsBoundByIndex.last ?? app.scrollViews.firstMatch
+        for _ in 0..<5 {
+            let window = app.windows.firstMatch.frame
+            if element.exists && window.contains(element.frame) { return }
+            // A control reported hittable at the very bottom can still be clipped by a few
+            // points; nudge the hosting scroll view instead of accepting a partial target.
+            if element.frame.isEmpty || element.frame.maxY > window.maxY { scroll.swipeUp() } else { scroll.swipeDown() }
+            let inside = NSPredicate { _, _ in element.exists && app.windows.firstMatch.frame.contains(element.frame) }
+            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inside, object: nil)], timeout: 2)
+        }
     }
 
     @MainActor private func drag(_ scroll: XCUIElement, viewport: CGRect, dx: CGFloat, dy: CGFloat, gutterX: CGFloat? = nil) {
