@@ -8,7 +8,7 @@ separados y las pruebas fallidas conservan su `.xcresult`, log y capturas.
 | Repo | Rama | Commit de código | PR |
 | --- | --- | --- | --- |
 | `nodus` Desktop | `codex/mobile-0.1.0-parity` | `6fec24dcc60a4833ca9df7805f3fbbd2009634d2` | https://github.com/jorgepb96/nodus/pull/1089 |
-| `nodus-mobile` | `codex/mobile-0.1.0-parity` | `8c13a1b` | https://github.com/jorgepb96/nodus-mobile/pull/30 |
+| `nodus-mobile` | `codex/mobile-0.1.0-parity` | `a00046c` | https://github.com/jorgepb96/nodus-mobile/pull/30 |
 
 Desktop parte de `121b46de` (merge con main `03fa249b` y empaquetado de workers).
 Ningún PR se fusionó. Los checks automáticos creados por los pushes de este head
@@ -93,7 +93,7 @@ se cancelaron; no se lanzó CI completa.
   `*-summary.json`, capturas y configuraciones privadas 0600).
 - Desktop: `artifacts/review-20261026/` (typecheck, ESLint, pruebas de acciones,
   smoke de workers, build del laboratorio).
-- Build final: `review-fixes-final-build-02`; el recibo
+- Build final: `review-fixes-final-build-03` (head `a00046c`, fuente `a5110565…`); el recibo
   `Nodus.app.acceptance-build.json` liga commit, digest de fuentes y artefactos.
 - Los logs que pueden contener códigos se leen con
   `artifacts/interface-2026-10-18/read-log-tail.py`; no se copiaron credenciales.
