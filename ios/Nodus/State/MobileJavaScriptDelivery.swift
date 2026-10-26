@@ -13,9 +13,11 @@ import WebKit
         let data = try JSONEncoder.nodus.encode(envelope)
         return ["envelope": try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])]
     }
-    static func reply(_ view: WKWebView?, envelope: JSONValue) throws {
+    static func reply(_ view: WKWebView?, envelope: JSONValue, onFailure: (@MainActor (any Error) -> Void)? = nil) throws {
         let arguments = try replyArguments(envelope)
-        view?.callAsyncJavaScript(replyBody, arguments: arguments, in: nil, in: .page, completionHandler: nil)
+        view?.callAsyncJavaScript(replyBody, arguments: arguments, in: nil, in: .page) { result in
+            if case .failure(let error) = result { onFailure?(error) }
+        }
     }
     static func events(_ view: WKWebView?, payload: Any, optional: Bool) throws {
         // Public WebKit supports NSDictionary/NSArray/NSString/NSNumber/NSNull.

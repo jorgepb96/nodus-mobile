@@ -1499,7 +1499,9 @@ private struct DesktopWebView: UIViewRepresentable {
                 errorCode.map { .object(["code": .string($0), "message": .string(message)]) } ?? .string(message)
             } ?? .null
             let envelope: JSONValue = .array([.string(id), value, issue])
-            try MobileJavaScriptDelivery.reply(webView, envelope: envelope)
+            try MobileJavaScriptDelivery.reply(webView, envelope: envelope) { [weak self] error in
+                self?.onError("No se pudo entregar el contenido de esta vista: \(error.localizedDescription)")
+            }
         }
         func finishJavaScriptPanel() {
             let cancel = cancelJavaScriptPanel

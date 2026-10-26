@@ -583,18 +583,17 @@ struct DatabaseDetailWorkspace: View {
     @State private var activeViewId: String?
     @State private var adHocLayout = "table"
     @State private var selectedRowId: String?
-    /// One sheet slot for the row inspector, the linked-row reader and both column editors.
-    /// Four `.sheet` modifiers on the same view mean SwiftUI presents only one of them, which
-    /// is why tapping a row on iPhone used to leave the inspector closed.
+    /// The presentation owns its row, including on the first tap when the compact
+    /// list has not read selectedRowId. Refreshing a saved view cannot empty the sheet.
     @State private var presented: Presented?
     private enum Presented: Identifiable {
-        case inspector
+        case inspector(PagesDatabasesParity.DataRow)
         case newColumn
         case editColumn(PagesDatabasesParity.Column)
         case foreignRow(DatabaseForeignRow)
         var id: String {
             switch self {
-            case .inspector: return "inspector"
+            case .inspector(let row): return "inspector-" + row.id
             case .newColumn: return "new-column"
             case .editColumn(let column): return "edit-" + column.id
             case .foreignRow(let row): return "foreign-row-" + row.id
@@ -664,12 +663,18 @@ struct DatabaseDetailWorkspace: View {
         }
         .onAppear { if activeViewId == nil { activeViewId = views.first?.id; adHocLayout = views.first?.layout ?? "table" } }
         .onChange(of: database.id) { _, _ in activeViewId = views.first?.id; selectedRowId = nil }
+        .onChange(of: activeViewId) { _, _ in
+            canonicalRows = nil
+            selectedRowId = nil
+            if case .inspector = presented { presented = nil }
+        }
         .onChange(of: tables) { _, _ in presentationRevision += 1 }
         .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(presentationRevision)|\(viewAttempt)") {await loadSavedView()}
         .nodusSheet(item: $presented) { target in
             switch target {
-            case .inspector:
-                if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly || usingDownloadedView).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) } }
+            case .inspector(let openingRow):
+                let row = viewRows.first { $0.id == openingRow.id } ?? allRows.first { $0.id == openingRow.id } ?? openingRow
+                NavigationStack { DatabaseRowInspector(session: session, database: database, row: row, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly || usingDownloadedView).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) }
             case .newColumn:
                 NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox)
             case .editColumn(let column):
@@ -895,7 +900,7 @@ struct DatabaseDetailWorkspace: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Picker(groupColumn?.name ?? "Grupo", selection: Binding(get: { selected?.id ?? "" }, set: { selectedBoardGroup = $0 })) {
                             ForEach(lanes) { lane in Text("\(lane.label) · \(lane.rows.count)").tag(lane.id) }
-                        }.pickerStyle(.menu).frame(minHeight: 44)
+                        }.pickerStyle(.menu).frame(minHeight: 44).accessibilityIdentifier("database-board-lane-picker")
                         if let selected { boardLaneHeader(selected);boardLaneRows(selected,groupColumn:groupColumn) }
                         else { ContentUnavailableView("Sin filas", systemImage: "rectangle.split.3x1") }
                     }.padding(12)
@@ -968,7 +973,7 @@ struct DatabaseDetailWorkspace: View {
                     }
                 }
             }.frame(maxWidth: .infinity, minHeight: minimum, alignment: .topLeading).desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary)
-        }.buttonStyle(NodusCardButtonStyle()).frame(minHeight: 44)
+        }.buttonStyle(NodusCardButtonStyle()).frame(minHeight: 44).accessibilityIdentifier("database-row-\(row.id)")
     }
 
     private var calendar: some View {
@@ -1016,10 +1021,10 @@ struct DatabaseDetailWorkspace: View {
 
     private func select(_ row: PagesDatabasesParity.DataRow) {
         if row.databaseId != database.id {presented = .foreignRow(DatabaseForeignRow(id:row.id));return}
-        selectedRowId=row.id;if compactPresentation {presented = .inspector}
+        selectedRowId=row.id;if compactPresentation {presented = .inspector(row)}
     }
     private func loadSavedView() async {
-        canonicalRows=nil;usingDownloadedView=false;viewIssue=nil;selectedRowId=nil
+        viewIssue=nil
         if sharedPresentation { loadingView = false; return }
         guard session.connection.desktopPairingId != nil,let view=activeViewId else {loadingView=false;return}
         loadingView=true;defer{loadingView=false}
@@ -1060,7 +1065,7 @@ struct DatabaseDetailWorkspace: View {
         guard await outbox.syncMutation(kind:.upsert,table:.databaseRows,key:[id],row:row,title:"Crear fila") else {return}
         var staged=row;staged["mobileSyncState"] = .string(outbox.pending > 0 ? "pending":"available")
         tables["db_rows",default:[]].append(Row(staged));selectedRowId=id
-        if compactPresentation { presented = .inspector }
+        if compactPresentation, let row = allRows.first(where: { $0.id == id }) { presented = .inspector(row) }
     }
 
     private func requestDesktopImport(_ url: URL) async {

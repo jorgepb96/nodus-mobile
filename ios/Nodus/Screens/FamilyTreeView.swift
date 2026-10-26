@@ -30,6 +30,7 @@ struct FamilyTreeView: View {
     @State private var paternalColor = Color.blue
     @State private var maternalColor = Color.pink
     @State private var zoom = 1.0
+    @State private var viewportSize = CGSize.zero
 
     private var projection: FamilyTreeProjection {
         FamilyTreeProjection(people: Array(people.values), relationships: relationships)
@@ -83,6 +84,12 @@ struct FamilyTreeView: View {
             }
             .padding(16)
         }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: FamilyTreeViewportSizeKey.self, value: geometry.size)
+            }
+        }
+        .onPreferenceChange(FamilyTreeViewportSizeKey.self) { viewportSize = $0 }
         .nodusHidesBottomBar()
         .navigationTitle("Family tree")
         .navigationBarTitleDisplayMode(.inline)
@@ -181,19 +188,9 @@ struct FamilyTreeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Button("Center on focus person") {
                     if let id = focus?.string("person_id") { withAnimation { reader.scrollTo(id, anchor: .center) } }
-                }.font(.caption).accessibilityIdentifier("family-tree-center")
+                }.font(.caption).frame(minHeight: 44).accessibilityIdentifier("family-tree-center")
                 ScrollView([.horizontal, .vertical]) {
-                    ZStack(alignment: .topLeading) {
-                        Canvas { context, _ in
-                            for edge in source.edges {
-                                guard let from = points[edge.from], let to = points[edge.to] else { continue }
-                                var line = Path()
-                                line.move(to: CGPoint(x: from.x + cardWidth / 2, y: from.y + cardHeight / 2))
-                                line.addLine(to: CGPoint(x: to.x + cardWidth / 2, y: to.y + cardHeight / 2))
-                                let color: Color = edge.kind == .spouse ? .pink : edge.kind == .sibling ? .orange : .secondary
-                                context.stroke(line, with: .color(color), style: StrokeStyle(lineWidth: 2, dash: edge.adoptive ? [6, 4] : []))
-                            }
-                        }.frame(width: width, height: height).accessibilityHidden(true)
+                    FamilyTreeNodeLayout(size: CGSize(width: width, height: height)) {
                         ForEach(nodes) { node in
                             if let person = people[node.id], let point = points[node.id] {
                                 Button { refocus(on: node.id, remember: true) } label: {
@@ -212,20 +209,44 @@ struct FamilyTreeView: View {
                                     .scaleEffect(zoom, anchor: .topLeading)
                                     .frame(width: cardWidth, height: cardHeight, alignment: .topLeading)
                                 }
-                                .buttonStyle(.plain).id(node.id)
+                                .buttonStyle(.plain)
+                                .frame(width: cardWidth, height: cardHeight)
+                                .contentShape(Rectangle())
+                                .id(node.id)
                                 .accessibilityIdentifier("family-tree-person-\(node.id)")
-                                .position(x: point.x + cardWidth / 2, y: point.y + cardHeight / 2)
+                                .layoutValue(key: FamilyTreeNodePointKey.self, value: point)
                             }
                         }
-                    }.frame(width: width, height: height)
+                    }
+                    .background(alignment: .topLeading) {
+                        Canvas { context, _ in
+                            for edge in source.edges {
+                                guard let from = points[edge.from], let to = points[edge.to] else { continue }
+                                var line = Path()
+                                line.move(to: CGPoint(x: from.x + cardWidth / 2, y: from.y + cardHeight / 2))
+                                line.addLine(to: CGPoint(x: to.x + cardWidth / 2, y: to.y + cardHeight / 2))
+                                let color: Color = edge.kind == .spouse ? .pink : edge.kind == .sibling ? .orange : .secondary
+                                context.stroke(line, with: .color(color), style: StrokeStyle(lineWidth: 2, dash: edge.adoptive ? [6, 4] : []))
+                            }
+                        }.frame(width: width, height: height).accessibilityHidden(true)
+                    }
                 }
-                .frame(height: min(480, height))
+                .frame(height: min(height, max(cardHeight + 16, min(480, viewportSize.height * 0.65))))
                 .accessibilityIdentifier("family-tree-pedigree")
-                .onAppear {
-                    if let id = focus?.string("person_id") { reader.scrollTo(id, anchor: .center) }
-                }
-                .onChange(of: focus?.string("person_id")) { _, id in
-                    if let id { reader.scrollTo(id, anchor: .center) }
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.task(id: FamilyTreeCenterRequest(
+                            focusID: focus?.string("person_id"), viewportSize: geometry.size,
+                            contentSize: CGSize(width: width, height: height),
+                            focusPoint: points[focus?.string("person_id") ?? ""]
+                        )) {
+                            // Wait until the measured viewport and positioned cards have
+                            // completed layout, including rotation and zoom changes.
+                            await Task.yield()
+                            guard !Task.isCancelled, let id = focus?.string("person_id") else { return }
+                            reader.scrollTo(id, anchor: .center)
+                        }
+                    }
                 }
             }
         }
@@ -414,5 +435,37 @@ struct FamilyTreeView: View {
         children = source.children(of: personId).compactMap { source.people[$0] }
         partners = source.partners(of: personId).compactMap { source.people[$0] }
         siblings = source.siblings(of: personId).compactMap { source.people[$0] }
+    }
+}
+
+private struct FamilyTreeViewportSizeKey: PreferenceKey {
+    static var defaultValue: CGSize { .zero }
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
+
+private struct FamilyTreeCenterRequest: Equatable {
+    let focusID: String?
+    let viewportSize: CGSize
+    let contentSize: CGSize
+    let focusPoint: CGPoint?
+}
+
+private nonisolated struct FamilyTreeNodePointKey: LayoutValueKey {
+    static var defaultValue: CGPoint { .zero }
+}
+
+/// Place actual card bounds at their pedigree coordinates. Unlike a position
+/// wrapper, each scroll target and accessible button retains its card-sized frame.
+private struct FamilyTreeNodeLayout: Layout {
+    let size: CGSize
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize { size }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for subview in subviews {
+            let point = subview[FamilyTreeNodePointKey.self]
+            subview.place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y),
+                          anchor: .topLeading, proposal: .unspecified)
+        }
     }
 }

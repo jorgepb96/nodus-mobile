@@ -33,6 +33,7 @@ final class SpecializedWorkspaceUITests: XCTestCase {
             let node = app.buttons["family-tree-person-" + personId]
             XCTAssertTrue(node.waitForExistence(timeout: 15))
             try rotateAndCapture(app, required: node, name: "genealogy-tree-\(attempt)")
+            node.tap()
             let record = app.buttons["Ver la ficha completa"].firstMatch
             reveal(record, app: app); record.tap()
             let content = containsText(try string(tree, "dossierSnippet"), app: app)
@@ -106,6 +107,25 @@ final class SpecializedWorkspaceUITests: XCTestCase {
     }
 
     @MainActor
+    func testTypedDatabaseRichPageOpensAndReopens() throws {
+        let fixture = try input("NODUS_ACCEPTANCE_TYPED_DATABASES")
+        for attempt in 0..<2 {
+            let app = try open(vault: string(fixture, "vaultId"), route: "databases")
+            defer { capture(app, "rich-page-diagnostic-\(attempt)"); app.terminate() }
+            let database = app.buttons["database-open-" + (try string(fixture, "databaseId"))]
+            XCTAssertTrue(database.waitForExistence(timeout: 45)); reveal(database, app: app); database.tap()
+            let row = app.buttons["database-row-" + (try string(fixture, "rowId"))]
+            XCTAssertTrue(row.waitForExistence(timeout: 25)); reveal(row, app: app); row.tap()
+            XCTAssertTrue(app.descendants(matching: .any)["database-row-inspector"].firstMatch.waitForExistence(timeout: 20))
+            app.segmentedControls.buttons["Página"].firstMatch.tap()
+            let page = app.buttons["database-row-page-open"]
+            XCTAssertTrue(page.waitForExistence(timeout: 15)); reveal(page, app: app); page.tap()
+            let body = containsText(try string(fixture, "pageBodySnippet"), app: app)
+            XCTAssertTrue(body.waitForExistence(timeout: 30)); reveal(body, app: app)
+        }
+    }
+
+    @MainActor
     func testTypedDatabaseAll29StoredPropertiesRelationsFilesAndRichPageAfterRestart() throws {
         let fixture = try input("NODUS_ACCEPTANCE_TYPED_DATABASES")
         let properties = try XCTUnwrap(fixture["properties"] as? [[String: Any]])
@@ -161,7 +181,9 @@ final class SpecializedWorkspaceUITests: XCTestCase {
         }
         func touch(_ element: XCUIElement, systemControlRow: Bool = false) throws {
             reveal(element, app: app); XCTAssertTrue(element.exists && element.isHittable)
-            XCTAssertTrue(app.windows.firstMatch.frame.contains(element.frame))
+            settleInsideWindow(element, app: app)
+            let window = app.windows.firstMatch.frame
+            XCTAssertTrue(window.contains(element.frame), "\(type) control \(element.frame) must be inside \(window)")
             let minimum = try XCTUnwrap(property["minimumTouchHeight"] as? Double)
             // A system DatePicker/Toggle/Picker keeps its intrinsic size even inside a taller
             // row; measure the labelled row those controls fill, while custom buttons are
@@ -253,26 +275,106 @@ final class SpecializedWorkspaceUITests: XCTestCase {
     @MainActor private func containsText(_ value: String, app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", value, value)).firstMatch }
     @MainActor private func exactText(_ value: String, app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR value == %@", value, value)).firstMatch }
     @MainActor private func reveal(_ element: XCUIElement, app: XCUIApplication) {
+        if element.exists, element.identifier.hasPrefix("family-tree-person-") {
+            revealTreeNode(element, app: app)
+            return
+        }
         for _ in 0..<28 {
-            if element.exists && element.isHittable { break }
-            let scroll = app.scrollViews.allElementsBoundByIndex.last ?? app.scrollViews.firstMatch
+            if !element.exists { app.swipeUp(); continue }
+            if element.isHittable { return }
             let window = app.windows.firstMatch.frame, frame = element.frame
-            // The pedigree is a two-axis canvas: a focused node can sit to the right of the
-            // viewport, where a vertical swipe alone can never reach it.
-            if !frame.isEmpty, frame.maxX > window.maxX - 24 { scroll.swipeLeft() }
-            else if !frame.isEmpty, frame.minX < 24 { scroll.swipeRight() }
-            else if frame.isEmpty || frame.maxY > window.maxY - 30 { scroll.swipeUp() }
+            let tree = app.scrollViews["genealogy-family-tree"].firstMatch
+            // The inspector contains small horizontal text-field scrollers; the last of them
+            // cannot move the sheet. Use the tallest vertical scroll view instead.
+            let vertical = app.scrollViews.allElementsBoundByIndex
+                .filter { $0.exists && $0.frame.height > 200 && $0.frame.height >= $0.frame.width }
+            // Prefer the innermost scroll view that actually hosts the control; the iPad
+            // sidebar is taller than the inspector and would otherwise swallow the gesture.
+            let hosting = vertical.filter { $0.frame.intersects(element.frame) }
+            let inspector = app.scrollViews["database-row-inspector"].firstMatch
+            let scroll = tree.exists ? tree
+                : inspector.exists ? inspector
+                : (hosting.min { $0.frame.height < $1.frame.height }
+                   ?? vertical.max { $0.frame.height < $1.frame.height }
+                   ?? app.scrollViews.firstMatch)
+            let viewport = scroll.frame.intersection(window.insetBy(dx: 0, dy: 12))
+            if tree.exists, !viewport.isEmpty {
+                // Use the outside gutter so a vertical page gesture does not
+                // accidentally pan the nested pedigree instead of its parent.
+                let canvas = app.scrollViews["family-tree-pedigree"].firstMatch
+                drag(scroll, viewport: viewport, dx: 0,
+                     dy: frame.isEmpty || frame.maxY > viewport.maxY ? -viewport.height * 0.4 : viewport.height * 0.4,
+                     gutterX: canvas.exists ? canvas.frame.maxX + 8 : nil)
+            } else if frame.isEmpty || frame.maxY > viewport.maxY { scroll.swipeUp() }
             else { scroll.swipeDown() }
         }
         XCTAssertTrue(element.exists && element.isHittable)
+    }
+
+    @MainActor private func revealTreeNode(_ element: XCUIElement, app: XCUIApplication) {
+        let tree = app.scrollViews["genealogy-family-tree"].firstMatch
+        let canvas = app.scrollViews["family-tree-pedigree"].firstMatch
+        for _ in 0..<28 {
+            guard element.exists, tree.exists, canvas.exists else { break }
+            let outerViewport = tree.frame.intersection(app.windows.firstMatch.frame.insetBy(dx: 0, dy: 12))
+            let canvasFrame = canvas.frame
+            guard !outerViewport.isEmpty, !canvasFrame.isEmpty else { continue }
+            // First reveal the entire canvas with the outer scroll. A gesture
+            // on a partly clipped canvas cannot reach a card below the window.
+            if canvasFrame.minY < outerViewport.minY || canvasFrame.maxY > outerViewport.maxY {
+                drag(tree, viewport: outerViewport, dx: 0,
+                     dy: outerViewport.midY - canvasFrame.midY, gutterX: canvasFrame.maxX + 8)
+                continue
+            }
+            let viewport = canvasFrame.intersection(outerViewport).insetBy(dx: 4, dy: 4)
+            let frame = element.frame
+            guard !frame.isEmpty else { continue }
+            if viewport.contains(frame) {
+                // AX can throw for clipped nodes, so only ask after checking
+                // both the canvas and its parent scroll's visible bounds.
+                if element.isHittable { return }
+                continue
+            }
+            let dx = frame.minX < viewport.minX ? viewport.minX - frame.minX
+                : frame.maxX > viewport.maxX ? viewport.maxX - frame.maxX : 0
+            let dy = frame.minY < viewport.minY ? viewport.minY - frame.minY
+                : frame.maxY > viewport.maxY ? viewport.maxY - frame.maxY : 0
+            // Move only the measured distance, capped to keep the gesture inside
+            // the canvas. Full swipes can jump over a card and oscillate forever.
+            drag(canvas, viewport: viewport, dx: dx, dy: dy)
+        }
+        capture(app, "genealogy-tree-unreachable-node")
+        XCTFail("The pedigree card must be fully visible and hittable: " + element.identifier)
+    }
+
+    /// Scrolling settles asynchronously; a control that is already hittable can still report
+    /// the transient frame from before the final bounce.
+    @MainActor private func settleInsideWindow(_ element: XCUIElement, app: XCUIApplication) {
+        let window = app.windows.firstMatch.frame
+        let inside = NSPredicate { _, _ in element.exists && window.contains(element.frame) }
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inside, object: nil)], timeout: 5)
+    }
+
+    @MainActor private func drag(_ scroll: XCUIElement, viewport: CGRect, dx: CGFloat, dy: CGFloat, gutterX: CGFloat? = nil) {
+        let frame = scroll.frame
+        let origin = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        let start = CGPoint(x: min(viewport.maxX - 4, max(viewport.minX + 4, gutterX ?? viewport.midX)), y: viewport.midY)
+        let end = CGPoint(x: start.x + max(-viewport.width * 0.4, min(viewport.width * 0.4, dx)),
+                          y: start.y + max(-viewport.height * 0.4, min(viewport.height * 0.4, dy)))
+        origin.withOffset(CGVector(dx: start.x - frame.minX, dy: start.y - frame.minY))
+            .press(forDuration: 0.05,
+                   thenDragTo: origin.withOffset(CGVector(dx: end.x - frame.minX, dy: end.y - frame.minY)),
+                   withVelocity: .slow, thenHoldForDuration: 0.1)
     }
     @MainActor private func rotateAndCapture(_ app: XCUIApplication, required: XCUIElement, name: String) throws {
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
             XCUIDevice.shared.orientation = orientation
             let turned = NSPredicate { _, _ in let frame = app.windows.firstMatch.frame; return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height }
-            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15), .completed)
+            let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 15)
+            if result != .completed { capture(app, name + "-rotation-failed") }
+            XCTAssertEqual(result, .completed)
             reveal(required, app: app)
-            XCTAssertTrue(app.windows.firstMatch.frame.contains(required.frame))
+            settleInsideWindow(required, app: app)
             capture(app, name + "-" + String(orientation.rawValue))
         }
     }

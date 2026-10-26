@@ -715,7 +715,19 @@ final class NodusParityUITests: XCTestCase {
         attachScreenshot(named: "database-full-table-formula")
         let board = databases.buttons["Review board"].firstMatch
         XCTAssertTrue(board.waitForExistence(timeout: 5)); board.tap()
-        XCTAssertTrue(databases.staticTexts["In review"].waitForExistence(timeout: 5))
+        let lanePicker = databases.buttons["database-board-lane-picker"].firstMatch
+        if lanePicker.exists {
+            lanePicker.tap()
+            let review = databases.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "In review")).firstMatch
+            XCTAssertTrue(review.waitForExistence(timeout: 5)); review.tap()
+            // The compact board renders the selected lane as one labelled group, not as a
+            // static lane title, so assert that group and its card content.
+            XCTAssertTrue(databases.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", "In review")).firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(databases.staticTexts["Letter from the eastern archive"].firstMatch.waitForExistence(timeout: 5))
+        } else {
+            XCTAssertTrue(databases.staticTexts["In review"].waitForExistence(timeout: 5))
+        }
         databases.buttons["workspace-catalogue-databases"].tap()
         let reading = databases.buttons["database-open-db-reading"].firstMatch
         XCTAssertTrue(reading.waitForExistence(timeout: 5)); reading.tap()

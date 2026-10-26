@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "desktopCommit": "de3866f2c02943dc810b8560dbc817b55e47f4df",
-  "sourceDigest": "72e99789f55a60aca1191817d194c922f000c5b7a1eec7243490f2af663152f3",
+  "desktopCommit": "6fec24dcc60a4833ca9df7805f3fbbd2009634d2",
+  "sourceDigest": "08e8e1b387e8a11d46f00dc1b0323859da2f120a4af7672342be579e0a893e66",
   "files": {
     "chat-read.css": "b6c7fd8c1fe52988cf09cb286f6cb1db5937026f89104708943b4520a8a32287",
     "chat-read.html": "f11bc0e21820903b7539c97d81a490ef1871ad6ddfadbd50c8032297b59b5118",
@@ -22,6 +22,6 @@
     "prose-read.iife.js": "31b7e5a7b502c989ea97c75c06f3f3a528e9b1b7d99721c712a15a17b0ca40c3",
     "report-renderer.js": "212fdf10ac91c21a535f739e9c5e359eabb482e2b66e521a275e0354550fb082",
     "surface.css": "f56877473f50dc605c468e82cdcf62afcd4f7f520e36f96aef68638bd05d2a4d",
-    "surface.iife.js": "f33b0d7d926986bbc646611f9568869a2b464795d7d61ce156a58128d85dd12f"
+    "surface.iife.js": "1ce3c939019e3dd5d3dd9bbaa5596b6613d3068b1b31de8a6bc2b8b4752b81b8"
   }
 }
