@@ -119,3 +119,20 @@ se cancelaron; no se lanzó CI completa.
 - Revisar el código y contrastar esta evidencia.
 - Decidir si el fallo de escritura y la procedencia del taller bloquean la beta.
 - Distribución por el propietario desde el navegador integrado; nunca Chrome.
+
+## Candidato final exacto (26 de octubre, tarde)
+
+Sobre el código `1366c75` se repitieron los cuatro casos básicos con el recibo del
+build final y el simulador ya reiniciado:
+
+- `phone-tree-final-02`: **PASS** (iPhone).
+- `ipad-tree-final-01`: **PASS** (iPad).
+- `phone-db29-final-02`: **PASS** (iPhone, 29 propiedades, relaciones, adjunto,
+  rotaciones, página y reapertura).
+- `ipad-db29-final-03`: **PASS** (iPad).
+
+Antes de esos pases, `ipad-db29-final-01` falló por un control `ai_image` recortado
+1,5 pt y `ipad-db29-final-02` por la rotación del simulador atascada. El primer caso
+se corrigió haciendo que el helper desplace el scroll anfitrión antes de exigir el
+marco completo (la aserción no se relajó); el segundo se resolvió reiniciando sólo el
+iPad propio y repitiendo la prueba. Ambos fallos y sus `.xcresult` se conservan.
