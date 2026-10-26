@@ -28,7 +28,7 @@ Estado: **listo para revisión de Codex**, no aprobado ni distribuido.
 - Portada de demostración de bases de datos: pase en iPhone con el selector compacto
   de carriles.
 - Generación real: diccionario, inmersión y Deep Research completaron sus trabajos y
-  se recuperaron sin volver a comprarlos; sus lecturas/reapeerturas pasan con pruebas
+  se recuperaron sin volver a comprarlos; sus lecturas/reaperturas pasan con pruebas
   de sólo lectura. Taller guardó el borrador y su reapertura pasa; el oráculo no puede
   acreditar `model_json` porque esa ejecución se guardó antes del arreglo de
   procedencia.
