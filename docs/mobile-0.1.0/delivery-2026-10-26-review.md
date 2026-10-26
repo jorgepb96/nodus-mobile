@@ -93,8 +93,9 @@ se cancelaron; no se lanzó CI completa.
   `*-summary.json`, capturas y configuraciones privadas 0600).
 - Desktop: `artifacts/review-20261026/` (typecheck, ESLint, pruebas de acciones,
   smoke de workers, build del laboratorio).
-- Build final: `review-fixes-final-build-03` (head `a00046c`, fuente `a5110565…`); el recibo
-  `Nodus.app.acceptance-build.json` liga commit, digest de fuentes y artefactos.
+- Build final: el recibo `Nodus.app.acceptance-build.json` del head del PR liga commit,
+  digest de fuentes y artefactos; el `.xcresult` final está en
+  `artifacts/acceptance-0.1.0/local-2026-10-26/`.
 - Los logs que pueden contener códigos se leen con
   `artifacts/interface-2026-10-18/read-log-tail.py`; no se copiaron credenciales.
 
