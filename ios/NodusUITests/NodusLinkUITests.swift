@@ -76,8 +76,17 @@ final class NodusLinkUITests: XCTestCase {
         sourceClose.tap()
         XCTAssertTrue(sourceClose.waitForNonExistence(timeout: 10))
         web.buttons["Versiones"].tap()
-        let versions = web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "applied"))
-        XCTAssertEqual(versions.count, 2)
+        let versions = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Versión "))
+        let versionLabels = Set(versions.allElementsBoundByIndex.map(\.label))
+        XCTAssertEqual(versionLabels.count, 2, "Two distinct stored version headings must be available")
+        for label in versionLabels.sorted() {
+            let heading = versions.matching(NSPredicate(format: "label == %@", label)).firstMatch
+            heading.tap()
+            let versionNumber = label.hasPrefix("Versión 1:") ? "2" : "1"
+            let content = web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Definición manual de prueba, versión \(versionNumber).")).firstMatch
+            XCTAssertTrue(content.waitForExistence(timeout: 10))
+            heading.tap()
+        }
         capture(app, "link-dictionary-versions")
         web.buttons["Relaciones"].tap()
         XCTAssertTrue(web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recuperación · Nodus Link")).firstMatch.waitForExistence(timeout: 10))
