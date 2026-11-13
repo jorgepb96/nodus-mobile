@@ -18,7 +18,15 @@ enum NodusLinkPolicy {
             "snapshot", "dictionarySnapshotTables", "sourceConsultationTables", "mobileSettings",
             "mobileArgumentMaps", "getPageDocument", "getPageAsset", "getSyncedBlockSource",
             "getDatabaseContainer", "queryDatabaseContainerRows", "openSavedAudioClip",
-            "persistSurfaceStorage", "loadSurfaceStorage", "openExternal"]
+            "persistSurfaceStorage", "loadSurfaceStorage", "openExternal", "navigate"]
         guard domain == "corpus" || readerMethods.contains(method) else { try requireAuthoring(); return }
+    }
+    static func requireReaderNavigation(_ kind: String, record: String) throws {
+        guard readOnly else { return }
+        let readers: Set<String> = ["citation", "idea", "author", "work", "deepResearchReport",
+            "legacyResearchReports", "pageAsset", "embeddedResource", "databaseRow", "page",
+            "studyMaterial", "studyDocument", "closeStudyDocument"]
+        if kind == "section", let route = NodusRoute(rawValue: record), routes.contains(route) { return }
+        guard readers.contains(kind) else { try requireAuthoring(); return }
     }
 }

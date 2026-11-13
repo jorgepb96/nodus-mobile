@@ -1101,6 +1101,7 @@ private struct DesktopWebView: UIViewRepresentable {
                                 "attachments": attachments])
                         } else { throw DesktopBridgeError.permissionDenied }
                     } else if method == "navigate", (2...3).contains(input.count), let kind = input[0] as? String, let record = input[1] as? String {
+                        try NodusLinkPolicy.requireReaderNavigation(kind, record: record)
                         let position = input.count == 3 ? input[2] as? [String: Any] : nil
                         onNavigate(kind, record, position?["location"] as? String, position?["quote"] as? String); value = .null
                     } else if method == "mobileLiveVisualJobs", let target = args.first?.stringValue {

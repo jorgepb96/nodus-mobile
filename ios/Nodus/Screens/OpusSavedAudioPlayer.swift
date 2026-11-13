@@ -18,7 +18,10 @@ struct OpusSavedAudioPlayer: View {
                 if target.copy.offline { Label("Downloaded copy", systemImage: "wifi.slash") }
                 if let issue { Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("saved-audio-error") }
                 if !playback.prepared && issue == nil { ProgressView("Preparando audio…") }
-                Slider(value: $position, in: 0...max(playback.duration, 0.001)) { editing in
+                Slider(value: Binding(get: { position }, set: { value in
+                    position = value
+                    if !seeking { Task { await playback.seek(value) } }
+                }), in: 0...max(playback.duration, 0.001)) { editing in
                     seeking = editing
                     if !editing { Task { await playback.seek(position) } }
                 }.disabled(!playback.prepared).accessibilityIdentifier("saved-audio-seek").accessibilityLabel("Playback position")

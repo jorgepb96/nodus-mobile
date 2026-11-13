@@ -155,7 +155,10 @@ private struct SavedAudioTimeline: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Slider(value: $position, in: 0...max(duration, 0.001)) { editing in
+            Slider(value: Binding(get: { position }, set: { value in
+                position = value
+                player?.currentTime = value
+            }), in: 0...max(duration, 0.001)) { editing in
                 seeking = editing
                 if !editing { player?.currentTime = position }
             }.disabled(player == nil).accessibilityLabel("Playback position")
