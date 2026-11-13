@@ -230,7 +230,7 @@ private struct ArgumentMapDocumentView: View {
             }.reportActionSurface(accent: session.accent)
             Button { Task { await generateAI() } } label: { Label("AI trace", systemImage: "wand.and.stars") }
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                .disabled(session.isDemo || !session.connection.role.canSendChanges)
+                .disabled(session.isDemo || !session.canAuthor)
             Spacer(minLength: 0)
         }
     }

@@ -280,7 +280,7 @@ final class PageChatStore {
         guard !isThinking else {return}
         let session=subject.session,asked=question.trimmingCharacters(in:.whitespacesAndNewlines)
         guard pendingMac != nil || !asked.isEmpty else {return}
-        guard session.connection.desktopPairingId != nil,session.connection.role.canSendChanges else {failure=BetaAIFeatures.macRequiredMessage;return}
+        guard session.connection.desktopPairingId != nil,session.canAuthor else {failure=BetaAIFeatures.macRequiredMessage;return}
         macSession=session;isThinking=true;failure=nil
         let observation=UUID();macObservation=observation
         running=Task { @MainActor in

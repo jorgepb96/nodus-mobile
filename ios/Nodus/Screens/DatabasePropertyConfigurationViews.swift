@@ -387,7 +387,7 @@ struct DatabasePropertyActionControls: View {
                     Text(kind == "button" ? column.config["buttonLabel"]?.stringValue ?? "Ejecutar botón" : session.aiExecutionMode == .live ? "Generar en Nodus" : "Generar en este dispositivo")
                         .fixedSize(horizontal: false, vertical: true)
                 }.frame(minHeight: 44)
-            }.buttonStyle(.bordered).disabled(busy || !session.connection.role.canSendChanges)
+            }.buttonStyle(.bordered).disabled(busy || !session.canAuthor)
                 .accessibilityIdentifier("database-property-action-\(column.id)")
             Menu {
                 Button("Guardar durante 7 días") { Task { await download(days: 7) } }

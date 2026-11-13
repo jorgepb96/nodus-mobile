@@ -31,7 +31,7 @@ struct DeepResearchSaveToNotesButton: View {
             .reportActionSurface(accent: session.accent)
         }
         .buttonStyle(.plain)
-        .disabled(sending || !session.connection.role.canSendChanges || queued)
+        .disabled(sending || !session.canAuthor || queued)
         .accessibilityHint("The owner desktop creates the vault note through a typed action.")
         .alert("Guardar en notas", isPresented: Binding(
             get: { failure != nil || receipt != nil },
@@ -122,7 +122,7 @@ struct DeepResearchImageEditorSheet: View {
                         else { Label("Generate new image", systemImage: "photo.badge.plus").frame(maxWidth: .infinity) }
                     }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                    .disabled(generating || recovering || (session.aiExecutionMode == .live ? saved.vaultRowId == nil || session.connection.desktopPairingId == nil || !session.connection.role.canSendChanges : ai.model(for: .image) == nil || ai.model(for: .deepResearch) == nil))
+                    .disabled(generating || recovering || (session.aiExecutionMode == .live ? saved.vaultRowId == nil || session.connection.desktopPairingId == nil || !session.canAuthor : ai.model(for: .image) == nil || ai.model(for: .deepResearch) == nil))
                     .accessibilityIdentifier("report-image-generate")
                 }
                 .padding(NodusSpace.page)
@@ -529,10 +529,10 @@ struct DeepResearchTranslationSheet: View {
                             Text("Saved \((selected.updatedAt ?? selected.createdAt).formatted(date: .abbreviated, time: .shortened))")
                                 .font(.caption).foregroundStyle(.secondary)
                             Spacer()
-                            Button(role: .destructive) { deleteTranslation() } label: {
+                            if session.canAuthor { Button(role: .destructive) { deleteTranslation() } label: {
                                 Label("Delete", systemImage: "trash")
                             }
-                            .frame(minHeight: 44).disabled(translating || recovering)
+                            .frame(minHeight: 44).disabled(translating || recovering) }
                         }
                         CorpusProse(selected.markdown, accent: session.accent, session: session)
                             .padding(16)
@@ -543,7 +543,7 @@ struct DeepResearchTranslationSheet: View {
                             .frame(maxWidth: .infinity, minHeight: 240)
                     }
 
-                    Text(session.aiExecutionMode == .live
+                    if session.canAuthor { Text(session.aiExecutionMode == .live
                          ? "Translate with your Mac’s research model. Your Mac must be connected."
                          : "Translate with the provider and translation model configured on this device.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -558,6 +558,7 @@ struct DeepResearchTranslationSheet: View {
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
                     .disabled(translating || recovering || (session.aiExecutionMode == .autonomous ? ai.model(for: .translation) == nil : !syncEnabled || session.connection.desktopPairingId == nil))
                     .accessibilityIdentifier("report-translation-generate")
+                    }
                 }
                 .padding(NodusSpace.page)
                 .frame(maxWidth: 760)

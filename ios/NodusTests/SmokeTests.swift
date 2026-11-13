@@ -287,14 +287,14 @@ struct AppWiringTests {
         #expect(NodusNavigationContract.items.count == NodusRoute.allCases.count)
     }
 
-    @Test("every vault has the universal pinned and tools routes")
+    @Test("every vault exposes Link readers without authoring or tools")
     func navigationHasUniversalRoutes() {
         for vaultType in VaultType.allCases {
             let visible = NodusNavigationContract.visibleItems(for: vaultType)
             #expect(visible.first?.route == .home)
             #expect(visible.last?.route == .settings)
             #expect(visible.allSatisfy { $0.support.isVisible })
-            #expect([.library, .browser, .radar, .toolkit].allSatisfy { route in
+            #expect([.library, .dictionary, .podcast].allSatisfy { route in
                 visible.contains { $0.route == route }
             })
         }
@@ -306,12 +306,10 @@ struct AppWiringTests {
         #expect(visible == [
             .home, .library,
             .search, .graph, .ideas, .authors, .argument,
-            .research, .immersion, .deepResearch, .dictionary, .researchChat,
-            .workspace,
-            .browser, .radar, .compass, .studyFocus, .toolkit,
+            .deepResearch, .dictionary, .podcast,
             .settings,
         ])
-        #expect(NodusNavigationContract.groupedItems(for: .academic).map(\.0) == [.explore, .analyze, .create, .tools])
+        #expect(NodusNavigationContract.groupedItems(for: .academic).map(\.0) == [.explore, .analyze])
         #expect(NodusNavigationContract.items.first(where: { $0.route == .deepResearch })?.systemImage == "telescope")
     }
 
@@ -328,7 +326,7 @@ struct AppWiringTests {
         ]
         let pinned: Set<NodusRoute> = [.home, .library, .settings, .dictionary, .compass, .studyFocus]
         for (vaultType, routes) in expected {
-            #expect(Set(NodusNavigationContract.visibleItems(for: vaultType).map(\.route)) == routes.union(pinned))
+            #expect(NodusNavigationContract.sidebarAllowedRoutes(for: vaultType) == routes.union(pinned))
         }
     }
 
@@ -355,7 +353,7 @@ struct AppWiringTests {
 
     @Test("Worldbuilding exposes its complete current Desktop workspace")
     func worldbuildingContract() {
-        let visible = Set(NodusNavigationContract.visibleItems(for: .worldbuilding).map(\.route))
+        let visible = Set(NodusNavigationContract.items.filter { $0.vaultTypes.contains(.worldbuilding) }.map(\.route))
         #expect(visible.isSuperset(of: [
             .encyclopedia, .characters, .places, .factions, .cultures, .dynasties,
             .rules, .conflicts, .arcs, .continuity, .questions, .worldChat,

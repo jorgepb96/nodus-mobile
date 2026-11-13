@@ -38,7 +38,7 @@ struct ReportActions: View {
         FlowLayout(spacing: NodusSpace.card) {
             // First, because it is the act this screen is now about and the first chip is the
             // one that never ends up on the second line.
-            if let send {
+            if !NodusLinkPolicy.readOnly, let send {
                 ReportSendButton(context: send)
             }
             ReportCopyButtons(markdown: markdown, title: title, accent: accent)
@@ -51,7 +51,7 @@ struct ReportActions: View {
                     local: localPDF
                 )
             }
-            if let saveToNotes {
+            if !NodusLinkPolicy.readOnly, let saveToNotes {
                 DeepResearchSaveToNotesButton(
                     reportId: saveToNotes.reportId,
                     title: saveToNotes.title,

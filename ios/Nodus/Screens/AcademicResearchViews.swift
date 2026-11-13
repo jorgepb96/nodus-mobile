@@ -87,7 +87,7 @@ struct HypothesisLabMobileView: View {
                 Spacer()
                 Button { Task { await saveToNotes(candidate) } } label: { Label("Save to Notes", systemImage: "note.text.badge.plus") }
                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                    .disabled(session.isDemo || !session.connection.role.canSendChanges)
+                    .disabled(session.isDemo || !session.canAuthor)
             }
             Text(candidate.hypothesis).font(.headline)
             Text(candidate.rationale).font(.subheadline).foregroundStyle(.secondary)

@@ -109,6 +109,7 @@ final class CompanionAcademicGeneration {
     }
 
     func run(session: SpaceSession, request: JSONValue, onStatus: @escaping (String) -> Void) async throws -> JSONValue {
+        try NodusLinkPolicy.requireAuthoring()
         let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
         let model = try settings.model(for: .synthesis).map { try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode($0)) } ?? .null
         let identity = try Self.entity(.object(["request": request, "model": model]))

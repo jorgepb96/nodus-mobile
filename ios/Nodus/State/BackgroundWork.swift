@@ -146,6 +146,7 @@ enum BackgroundJobs {
     // MARK: - Mutations
 
     static func hasAuthorisedMutations() async -> Bool {
+        guard !NodusLinkPolicy.readOnly else { return false }
         for connection in AppModel.syncableConnections() {
             for kind in CompanionDocumentOutbox.Kind.allCases {
                 if let (_, documents) = try? await ConnectionClient.companionDocuments(for: connection, kind: kind), await documents.pendingCount() > 0 { return true }
@@ -164,6 +165,7 @@ enum BackgroundJobs {
     /// travels when the user says so, and a background task that sent unauthorised changes
     /// would quietly turn that promise into a lie.
     static func flushAuthorisedMutations() async -> Bool {
+        guard !NodusLinkPolicy.readOnly else { return true }
         var everythingLanded = true
         for connection in AppModel.syncableConnections() where connection.role.canSendChanges {
             if Task.isCancelled { return false }

@@ -10,6 +10,7 @@ enum CompanionLiveGenerationAction {
 
     static func run(session: SpaceSession, kind: SpaceActionKind, payload initialPayload: [String: JSONValue],
                     onStatus: @escaping (String) -> Void) async throws -> SpaceAction {
+        try NodusLinkPolicy.requireAuthoring()
         guard session.aiExecutionMode == .live else { throw DesktopBridgeError.permissionDenied }
         var payload = initialPayload
         var ledger: DesktopJobLedger?

@@ -21,13 +21,13 @@ struct WorldMapDeviceResultView: View {
                     if let bytes = checkpoint.publication?.objectValue?["bytes"]?.stringValue.flatMap({ Data(base64Encoded: $0) }), let image = UIImage(data: bytes) {
                         Image(uiImage: image).resizable().scaledToFit().accessibilityLabel("Imagen generada y guardada en este dispositivo").accessibilityIdentifier("world-paid-image-\(checkpoint.id)")
                         if checkpoint.state != .cancelled, checkpoint.value.objectValue?["recoveryReviewRequired"] != .bool(true) {
-                            Button("Publicar resultado guardado") { publish(checkpoint) }.frame(minHeight: 44).disabled(busy || !session.connection.role.canSendChanges)
+                            Button("Publicar resultado guardado") { publish(checkpoint) }.frame(minHeight: 44).disabled(busy || !session.canAuthor)
                         }
                     }
                     if CompanionWorldMapGeneration.isActive(session: session, mapId: checkpoint.mapId) {
                         Button("Cancelar generación", role: .destructive) { CompanionWorldMapGeneration.cancelDevice(session: session, mapId: checkpoint.mapId) }.frame(minHeight: 44)
                     }
-                    Button("Controles de generación del dispositivo") { showGeneration = true }.accessibilityIdentifier("world-device-generation-controls").frame(minHeight: 44).disabled(!session.connection.role.canSendChanges)
+                    Button("Controles de generación del dispositivo") { showGeneration = true }.accessibilityIdentifier("world-device-generation-controls").frame(minHeight: 44).disabled(!session.canAuthor)
                     NavigationLink("Abrir mapa") { WorldMapView(session: session, initialMapId: checkpoint.mapId) }.frame(minHeight: 44)
                 }
                 if busy { ProgressView() }

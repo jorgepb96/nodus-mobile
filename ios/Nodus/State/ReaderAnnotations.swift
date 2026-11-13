@@ -331,7 +331,7 @@ final class ReaderAnnotations {
     init(draftId: String, scope: String = "source", isWritable: Bool, idPrefix: String = "") {
         self.draftId = draftId
         self.scope = scope
-        self.isWritable = isWritable
+        self.isWritable = isWritable && !NodusLinkPolicy.readOnly
         self.idPrefix = idPrefix
     }
 

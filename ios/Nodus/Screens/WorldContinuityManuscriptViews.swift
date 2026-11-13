@@ -27,7 +27,7 @@ struct WorldContinuityView: View {
                             if runningDesktop { ProgressView() } else { Label("Full audit", systemImage: "desktopcomputer") }
                         }
                         .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                        .disabled(runningDesktop || session.isDemo || !session.connection.role.canSendChanges)
+                        .disabled(runningDesktop || session.isDemo || !session.canAuthor)
                     }
                 )
                 if let message { NodusNotice(tone: .info, title: "Continuity audit", message: LocalizedStringKey(message)) }
@@ -685,7 +685,7 @@ private struct WorldManuscriptInspector: View {
                     if reviewing { ProgressView() } else { Label("On the page?", systemImage: "sparkles") }
                 }
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                .disabled(reviewing || session.isDemo || !session.connection.role.canSendChanges)
+                .disabled(reviewing || session.isDemo || !session.canAuthor)
             }
             if reviewing { Button("Cancelar revisión") { cancelReview() }.font(.caption) }
             if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: proseBaseRequest) }

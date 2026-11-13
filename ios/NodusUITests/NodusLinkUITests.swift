@@ -1,0 +1,133 @@
+import XCTest
+
+final class NodusLinkUITests: XCTestCase {
+    override func setUpWithError() throws { continueAfterFailure = false }
+    @MainActor
+    func testLinkHasReadersAndRestoresOldAuthoringRouteToHome() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "writing"
+        app.launchEnvironment["NODUS_VAULT_TYPE_OVERRIDE"] = "academic"
+        app.launch()
+        defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
+        XCTAssertTrue(app.descendants(matching: .any)["link-home"].firstMatch.waitForExistence(timeout: 30))
+        for route in ["ideas", "graph", "argument", "dictionary", "deepResearch", "podcast"] {
+            XCTAssertTrue(app.buttons["link-home-\(route)"].exists, "Missing primary reader \(route)")
+        }
+        XCTAssertFalse(app.buttons["nodus-top-sparkles"].exists)
+        app.buttons["nodus-navigation-toggle"].tap()
+        for route in ["ideas", "graph", "argument", "dictionary", "deepResearch", "podcast"] {
+            XCTAssertTrue(app.buttons["nodus-nav-\(route)"].exists)
+        }
+        for route in ["writing", "workspace", "researchChat", "browser", "radar", "immersion"] {
+            XCTAssertFalse(app.buttons["nodus-nav-\(route)"].exists)
+        }
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "nodus-link-reader-navigation"; shot.lifetime = .keepAlways; add(shot)
+    }
+
+    @MainActor
+    func testTypedCodeLinksAndReopensWorkspace() throws {
+        let code = try XCTUnwrap(ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_PAIRING_CODE"], "A fresh isolated Desktop code is required")
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        app.launchEnvironment["NODUS_START_ROUTE"] = "home"
+        app.launch()
+        defer { app.terminate() }
+        let add = app.buttons["nodus-add-server"]
+        let switcher = app.buttons["nodus-workspace-switch"]
+        let ready = expectation(for: NSPredicate { _, _ in add.exists || switcher.exists }, evaluatedWith: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+        if switcher.exists { switcher.tap() }
+        XCTAssertTrue(add.waitForExistence(timeout: 15)); add.tap()
+        let input = app.textFields["pairing-code"]
+        XCTAssertTrue(input.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.textFields["nodus-server-address"].exists)
+        XCTAssertFalse(app.textFields["SHA-256 certificate fingerprint"].exists)
+        input.tap(); input.typeText(code + "\n")
+        XCTAssertTrue(input.waitForNonExistence(timeout: 45))
+        XCTAssertTrue(app.buttons["nodus-navigation-toggle"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["link-home-podcast"].exists)
+        capture(app, "link-code-connected-home")
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["nodus-navigation-toggle"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.textFields["pairing-code"].exists)
+        capture(app, "link-code-restored-home")
+    }
+
+    @MainActor
+    func testLinkedDictionaryAndReportReadStoredContent() throws {
+        let app = try existing(route: "dictionary")
+        defer { app.terminate() }
+        let web = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 35))
+        let entry = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Aprendizaje · Nodus Link")).firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 45)); entry.tap()
+        let definition = web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Definición manual de prueba, versión 2.")).firstMatch
+        XCTAssertTrue(definition.waitForExistence(timeout: 30))
+        XCTAssertFalse(web.buttons["Nueva entrada"].exists)
+        XCTAssertFalse(web.buttons["Generar"].exists)
+        web.buttons["Evidencia"].tap()
+        XCTAssertTrue(web.buttons["Ver fuente"].waitForExistence(timeout: 20))
+        capture(app, "link-dictionary-evidence")
+        web.buttons["Versiones"].tap()
+        let versions = web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "applied"))
+        XCTAssertEqual(versions.count, 2)
+        capture(app, "link-dictionary-versions")
+        web.buttons["Relaciones"].tap()
+        XCTAssertTrue(web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recuperación · Nodus Link")).firstMatch.waitForExistence(timeout: 10))
+        select("deepResearch", in: app)
+        let reports = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
+        let report = reports.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Informe profundo · ciencia del aprendizaje")).firstMatch
+        XCTAssertTrue(report.waitForExistence(timeout: 45)); report.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["report-native-reader"].firstMatch.waitForExistence(timeout: 30))
+        let body = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "El corpus respalda la recuperación", "El corpus respalda la recuperación")).firstMatch
+        XCTAssertTrue(body.waitForExistence(timeout: 30))
+        capture(app, "link-deep-research-native-content")
+    }
+
+    @MainActor
+    func testLinkedPodcastPlaysSeeksAndReopens() throws {
+        let app = try existing(route: "podcast")
+        defer { app.terminate() }
+        let episode = app.buttons["podcast-link-podcast-fixture"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 35)); episode.tap()
+        let listen = app.buttons["podcast-listen"]
+        XCTAssertTrue(listen.waitForExistence(timeout: 20)); listen.tap()
+        let play = app.buttons["saved-audio-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 30)); XCTAssertTrue(play.isEnabled)
+        let stoppedLabel = play.label
+        play.tap()
+        let playing = expectation(for: NSPredicate { _, _ in play.label != stoppedLabel }, evaluatedWith: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [playing], timeout: 10), .completed)
+        let elapsed = app.staticTexts["saved-audio-elapsed"]
+        let advancing = expectation(for: NSPredicate { _, _ in elapsed.label != "0:00" }, evaluatedWith: elapsed)
+        XCTAssertEqual(XCTWaiter.wait(for: [advancing], timeout: 10), .completed)
+        play.tap()
+        app.sliders["saved-audio-seek"].adjust(toNormalizedSliderPosition: 0.6)
+        let seeked = expectation(for: NSPredicate { _, _ in ["0:17", "0:18", "0:19"].contains(elapsed.label) }, evaluatedWith: elapsed)
+        XCTAssertEqual(XCTWaiter.wait(for: [seeked], timeout: 10), .completed)
+        capture(app, "link-podcast-playback-seek")
+        app.buttons["Cerrar"].firstMatch.tap()
+        XCTAssertTrue(listen.waitForExistence(timeout: 10)); listen.tap()
+        XCTAssertTrue(elapsed.waitForExistence(timeout: 20))
+        XCTAssertNotEqual(elapsed.label, "0:00", "Reopening keeps this device's position")
+        capture(app, "link-podcast-restored-position")
+    }
+
+    @MainActor private func existing(route: String) throws -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
+        app.launchEnvironment["NODUS_START_ROUTE"] = route
+        app.launch()
+        XCTAssertTrue(app.buttons["nodus-navigation-toggle"].waitForExistence(timeout: 30), "Pair the isolated workspace first")
+        return app
+    }
+    @MainActor private func select(_ route: String, in app: XCUIApplication) {
+        let destination = app.buttons["nodus-nav-\(route)"]
+        if !destination.isHittable { app.buttons["nodus-navigation-toggle"].tap() }
+        XCTAssertTrue(destination.waitForExistence(timeout: 10)); destination.tap()
+    }
+    @MainActor private func capture(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+    }
+}

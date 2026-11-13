@@ -1,4 +1,5 @@
 import AVFoundation
+@preconcurrency import MediaPlayer
 import NodusUI
 import SwiftUI
 
@@ -7,6 +8,8 @@ struct SavedAudioTarget: Identifiable {
     let label: String
     let copy: PrivateBridgeFileCopy
     var initialTimestamp: Double? = nil
+    var resumeKey: String? = nil
+    var backgroundPlayback = false
 }
 
 /// The player receives only the verified, protected local copy; no Mac URL or credential.
@@ -19,8 +22,14 @@ struct SavedAudioPlayer: View {
     @State private var playing = false
     @State private var rate: Float = 1
     @State private var issue: String?
+    @State private var remote = SavedAudioRemoteControls()
 
     var body: some View {
+        if ["audio/ogg", "audio/opus"].contains(target.copy.descriptor.mime) {
+            OpusSavedAudioPlayer(target: target, accent: accent)
+        } else { nativeBody }
+    }
+    private var nativeBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 Label(target.label, systemImage: "waveform").font(.title2).bold()
@@ -70,42 +79,56 @@ struct SavedAudioPlayer: View {
         .onChange(of: rate) { _, value in player?.rate = value; trace("rate") }
         .onChange(of: scenePhase) { _, phase in
             trace("scene:\(phase)")
-            if phase != .active { player?.pause(); playing = false }
+            if phase != .active {
+                savePosition()
+                if !target.backgroundPlayback { player?.pause(); playing = false }
+            }
         }
         .task {
             do {
-                let audio = try AVAudioPlayer(contentsOf: target.copy.url)
+                let audio = try target.backgroundPlayback
+                    ? AVAudioPlayer(data: Data(contentsOf: target.copy.url))
+                    : AVAudioPlayer(contentsOf: target.copy.url)
                 audio.enableRate = true; audio.rate = rate
                 guard audio.prepareToPlay(), audio.duration.isFinite, audio.duration > 0 else { throw CocoaError(.fileReadCorruptFile) }
                 player = audio; duration = audio.duration
-                if let timestamp = target.initialTimestamp, timestamp.isFinite, timestamp >= 0 {
+                if let timestamp = target.initialTimestamp ?? target.resumeKey.map({ UserDefaults.standard.double(forKey: $0) }), timestamp.isFinite, timestamp >= 0 {
                     audio.currentTime = min(audio.duration, timestamp)
                 }
+                if target.backgroundPlayback { remote.bind(audio, title: target.label) }
                 trace("prepared")
+                var ticks = 0
                 while !Task.isCancelled {
                     playing = audio.isPlaying
+                    ticks += 1
+                    if ticks % 25 == 0 { savePosition(); remote.update() }
                     try await Task.sleep(for: .milliseconds(200))
                 }
             } catch is CancellationError { }
             catch { issue = String(localized: "The saved audio could not be opened.") }
         }
         .onDisappear {
+            savePosition(); remote.unbind()
             player?.stop(); player = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             // The protected file lease owns deletion. Another open control may
             // still need the same verified copy to save its chosen download.
         }
     }
+    private func savePosition() {
+        guard let key = target.resumeKey, let player else { return }
+        UserDefaults.standard.set(player.currentTime >= player.duration - 1 ? 0 : player.currentTime, forKey: key)
+    }
     private func toggle() {
         trace("toggle")
         guard let player else { return }
-        if player.isPlaying { player.pause(); playing = false; trace("paused"); return }
+        if player.isPlaying { player.pause(); playing = false; remote.update(); trace("paused"); return }
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
             try AVAudioSession.sharedInstance().setActive(true)
             player.rate = rate
             guard player.play() else { throw CocoaError(.fileReadCorruptFile) }
-            playing = true; issue = nil
+            playing = true; issue = nil; remote.update()
             trace("playing")
         } catch { issue = String(localized: "The saved audio could not be played. Try again.") }
     }
@@ -153,5 +176,50 @@ private struct SavedAudioTimeline: View {
     }
     private static func clock(_ seconds: Double) -> String {
         let value = Int(max(0, seconds)); return String(format: "%d:%02d", value / 60, value % 60)
+    }
+}
+
+
+/// Own only our command targets. Closing one player must never remove another app's targets.
+@MainActor
+private final class SavedAudioRemoteControls {
+    private weak var player: AVAudioPlayer?
+    private var title = ""
+    private var targets: [(MPRemoteCommand, Any)] = []
+    func bind(_ player: AVAudioPlayer, title: String) {
+        unbind(); self.player = player; self.title = title
+        let center = MPRemoteCommandCenter.shared()
+        targets.append((center.playCommand, center.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in
+                do {
+                    try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+                    try AVAudioSession.sharedInstance().setActive(true)
+                    self?.player?.play(); self?.update()
+                } catch { self?.player?.pause(); self?.update() }
+            }; return .success
+        }))
+        targets.append((center.pauseCommand, center.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in self?.player?.pause(); self?.update() }; return .success
+        }))
+        targets.append((center.changePlaybackPositionCommand, center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let position = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime, position.isFinite else { return .commandFailed }
+            Task { @MainActor [weak self] in
+                guard let player = self?.player else { return }
+                player.currentTime = min(player.duration, max(0, position)); self?.update()
+            }; return .success
+        }))
+        update()
+    }
+    func update() {
+        guard let player else { return }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: title,
+            MPMediaItemPropertyPlaybackDuration: player.duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: player.currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? player.rate : 0]
+    }
+    func unbind() {
+        guard !targets.isEmpty else { return }
+        for (command, target) in targets { command.removeTarget(target) }
+        targets.removeAll(); player = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 }

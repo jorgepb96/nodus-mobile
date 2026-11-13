@@ -495,7 +495,7 @@ struct SpecialListView: View {
 
     /// Only notes are writable here, and only for a role the server would accept a change from.
     private var canEditNotes: Bool {
-        resource == .notes && session.connection.role.canSendChanges && outbox != nil && outboxStorageID == session.connection.storageId
+        resource == .notes && session.canAuthor && outbox != nil && outboxStorageID == session.connection.storageId
     }
 
     private func deleteNote(_ row: Row) async {

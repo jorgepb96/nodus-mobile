@@ -1,6 +1,7 @@
 import NodusKit
 import NodusUI
 import SwiftUI
+import UIKit
 
 // MARK: - Ideas
 
@@ -58,15 +59,15 @@ struct IdeasWorkspaceView: View {
 
     private var catalogue: some View {
         ScrollView {
-            LazyVStack(spacing: sizeClass == .regular ? 1 : 9) {
-                if sizeClass == .regular, !(page?.items.isEmpty ?? true) { ideaTableHeader }
+            LazyVStack(spacing: (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular) ? 1 : 9) {
+                if (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular), !(page?.items.isEmpty ?? true) { ideaTableHeader }
                 if let error {
                     NodusNotice(tone: .blocked, title: "Could not load Ideas", message: LocalizedStringKey(error))
                     Button("Retry") { Task { await reload() } }.buttonStyle(.bordered).disabled(isLoading)
                 }
                 ForEach(page?.items ?? []) { item in
                     Button { open(row(for: item)) } label: {
-                        IdeaWorkspaceRow(item: item, dense: sizeClass == .regular, accent: session.accent)
+                        IdeaWorkspaceRow(item: item, dense: (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular), accent: session.accent)
                     }
                     .buttonStyle(NodusCardButtonStyle())
                     .accessibilityIdentifier("workspace-open-ideas-\(safeIdentifier(item.id))")
@@ -309,7 +310,7 @@ private struct IdeaWorkspaceDocument: View {
 
     private var id: String { row.string("global_id") ?? "" }
     private var label: String { row.text("label") ?? id }
-    private var canAct: Bool { !session.isDemo && session.connection.role.canSendChanges }
+    private var canAct: Bool { !session.isDemo && session.canAuthor }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -338,14 +339,14 @@ private struct IdeaWorkspaceDocument: View {
         VStack(spacing: 5) {
             HStack(spacing: 8) {
                 actionButton("Argument map", image: "arrow.triangle.branch") { onOpenArgument(ArgumentSeed(id: id, label: label)) }
-                actionButton("Assistant", image: "sparkles") { showingAssistant = true }
-                actionButton("Save to Notes", image: "note.text.badge.plus", disabled: !canAct || isActing) { Task { await run(.ideaSaveToNotes) } }
-                actionButton("Delete", image: "trash", tint: .red, disabled: !canAct || isActing) { confirmingDelete = true }
+                if !NodusLinkPolicy.readOnly { actionButton("Assistant", image: "sparkles") { showingAssistant = true } }
+                if !NodusLinkPolicy.readOnly { actionButton("Save to Notes", image: "note.text.badge.plus", disabled: !canAct || isActing) { Task { await run(.ideaSaveToNotes) } }
+                actionButton("Delete", image: "trash", tint: .red, disabled: !canAct || isActing) { confirmingDelete = true } }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, NodusSpace.page).padding(.vertical, 8)
             if let actionState { Text(actionState).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).frame(maxWidth: .infinity, alignment: .leading) }
-            else if !canAct { Text("Vault-changing actions require a writable space connected to Desktop.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).frame(maxWidth: .infinity, alignment: .leading) }
+            else if !canAct && !NodusLinkPolicy.readOnly { Text("Vault-changing actions require a writable space connected to Desktop.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).frame(maxWidth: .infinity, alignment: .leading) }
         }
         .background(Color(uiColor: .systemBackground).opacity(0.96))
         .overlay(alignment: .bottom) { Divider() }
@@ -436,8 +437,8 @@ struct AuthorsWorkspaceView: View {
 
     private var catalogue: some View {
         ScrollView {
-            LazyVStack(spacing: sizeClass == .regular ? 1 : 9) {
-                if sizeClass == .regular, !visible.isEmpty { authorTableHeader }
+            LazyVStack(spacing: (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular) ? 1 : 9) {
+                if (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular), !visible.isEmpty { authorTableHeader }
                 if let error {
                     NodusNotice(tone: .blocked, title: "Could not load Authors", message: LocalizedStringKey(error))
                     Button("Retry") { Task { await fetch(replacing: true) } }
@@ -445,7 +446,7 @@ struct AuthorsWorkspaceView: View {
                 }
                 ForEach(visible) { item in
                     AuthorWorkspaceRow(
-                        item: item, dense: sizeClass == .regular, accent: session.accent,
+                        item: item, dense: (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular), accent: session.accent,
                         saved: savedIds.contains(item.authorId), selected: selected.contains(item.authorId),
                         onSelect: { toggleSelection(item.authorId) }, onSave: { toggleSaved(item.authorId) },
                         onOpen: { open(item) }
@@ -705,7 +706,7 @@ private struct AuthorWorkspaceDocument: View {
 #if DEBUG
         if ProcessInfo.processInfo.environment["NODUS_UI_TEST_ACTIONS"] == "1" { return true }
 #endif
-        return !session.isDemo && session.connection.role.canSendChanges
+        return !session.isDemo && session.canAuthor
     }
 
     var body: some View {
@@ -731,11 +732,13 @@ private struct AuthorWorkspaceDocument: View {
 
                 FlowLayout(spacing: 8) {
                     Button(action: onToggleSaved) { Label(isSaved ? "Saved" : "Save", systemImage: isSaved ? "bookmark.fill" : "bookmark") }
-                    Button { showingAssistant = true } label: { Label("Assistant", systemImage: "sparkles") }
+                    if session.canAuthor { Button { showingAssistant = true } label: { Label("Assistant", systemImage: "sparkles") } }
                     if let idea = dossier.ideas.first { Button { onOpenArgument(ArgumentSeed(id: idea.globalId, label: idea.label)) } label: { Label("Argument map", systemImage: "point.3.connected.trianglepath.dotted") } }
+                    if session.canAuthor {
                     Button { generationTask = Task { defer { generationTask = nil }; await generateSynthesis() } } label: { Label(dossier.synthesis == nil && localSynthesis == nil ? "Generate synthesis" : "Regenerate synthesis", systemImage: "wand.and.stars") }.disabled(!canAct || generationTask != nil)
                     if generationTask != nil { Button("Cancelar") { generationTask?.cancel() } }
                     if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: sourceRequest) }
+                    }
                 }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                 if let actionState { Text(actionState).font(.caption).foregroundStyle(.secondary) }
 
@@ -946,7 +949,7 @@ private struct AuthorSynthesisMatrixView: View {
             if let cell {
                 HStack { NodusChip("\(cell.ideaCount) ideas", tint: session.accent.nodusReadable, capitalises: false); Spacer() }
                 if let stance = cell.stance { Text(stance).font(.caption).fixedSize(horizontal: false, vertical: true) }
-                Button(cell.stance == nil ? "Generate stance" : "Regenerate synthesis") { Task { await generate(author.authorId, theme.themeId, key: key) } }.font(.caption.weight(.semibold)).disabled(session.isDemo || !session.connection.role.canSendChanges || generating.contains(key))
+                Button(cell.stance == nil ? "Generate stance" : "Regenerate synthesis") { Task { await generate(author.authorId, theme.themeId, key: key) } }.font(.caption.weight(.semibold)).disabled(session.isDemo || !session.canAuthor || generating.contains(key))
                 ForEach(cell.ideas) { idea in Button(idea.label) { onOpenIdea(Row(["global_id": .string(idea.globalId), "label": .string(idea.label), "type": .string(idea.type)])) }.font(.caption).fixedSize(horizontal: false, vertical: true).frame(minHeight: 44, alignment: .leading) }
                 if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: sourceRequest(author.authorId, theme.themeId)) }
             } else { Text("—").foregroundStyle(.tertiary) }

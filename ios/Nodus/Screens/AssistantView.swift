@@ -158,7 +158,7 @@ struct ChatScreen: View {
             // very object the next question is built from.
             controls.openHistory = openHistory
             chrome?.chat = controls
-            if session.connection.desktopPairingId != nil,session.connection.role.canSendChanges {
+            if session.connection.desktopPairingId != nil,session.canAuthor {
                 do { try history.bind(kind:CompanionChatKind(vaultType:session.vaultType)) } catch { self.error = error.localizedDescription }
             }
             if session.aiExecutionMode == .live {
@@ -426,13 +426,13 @@ struct ChatScreen: View {
         }
     }
     private var canRegenerate: Bool {
-        !isThinking && session.connection.role.canSendChanges && turns.count >= 2 &&
+        !isThinking && session.canAuthor && turns.count >= 2 &&
         turns.last?.role == .assistant && turns[turns.count - 2].role == .user
     }
     private func askLive(regenerating: Bool = false) {
         guard !isThinking,session.aiExecutionMode == .live else { return }
         if regenerating && !canRegenerate { return }
-        guard let pairing=session.connection.desktopPairingId,session.connection.role.canSendChanges else { error="Vincula Nodus con tu Mac para generar en modo live.";return }
+        guard let pairing=session.connection.desktopPairingId,session.canAuthor else { error="Vincula Nodus con tu Mac para generar en modo live.";return }
         let question=(regenerating ? turns[turns.count - 2].text : draft).trimmingCharacters(in:.whitespacesAndNewlines);guard !question.isEmpty else { return }
         if session.vaultType == .databases,databaseIds.isEmpty { error="Elige al menos una base de datos.";showingDatabases=true;return }
         if isStudy {

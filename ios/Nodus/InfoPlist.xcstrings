@@ -8,13 +8,13 @@
         "en": {
           "stringUnit": {
             "state": "new",
-            "value": "Nodus"
+            "value": "Nodus Link"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nodus"
+            "value": "Nodus Link"
           }
         }
       }
@@ -26,13 +26,13 @@
         "en": {
           "stringUnit": {
             "state": "new",
-            "value": "Nodus"
+            "value": "Nodus Link"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nodus"
+            "value": "Nodus Link"
           }
         }
       }
@@ -56,7 +56,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nodus encuentra tu Mac para vincularlo mediante código o QR y consultar tus vaults en la red local."
+            "value": "Nodus encuentra tu ordenador para vincularlo mediante código o QR y consultar tus vaults en la red local."
           }
         }
       }

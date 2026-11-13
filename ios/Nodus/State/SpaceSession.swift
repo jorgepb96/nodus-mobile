@@ -6,7 +6,7 @@ import SwiftUI
 enum BetaAIFeatures {
     nonisolated static let autonomousGeneration = false
     nonisolated static let audioGeneration = false
-    nonisolated static let macRequiredMessage = "La IA de esta beta requiere un Mac conectado. Los documentos y cambios sin conexión siguen disponibles."
+    nonisolated static let macRequiredMessage = NodusLinkPolicy.message
     nonisolated static func requireAutonomousGeneration() throws {
         guard autonomousGeneration else { throw APIError(status: 409, code: "beta_mac_ai_required", message: macRequiredMessage) }
     }
@@ -27,6 +27,7 @@ final class SpaceSession {
     // No actor work is needed during teardown (swiftlang/swift#88036).
     nonisolated deinit {}
 
+    var canAuthor: Bool { !NodusLinkPolicy.readOnly && connection.role.canSendChanges }
     var isSurfaceFullscreen = false
     private(set) var connection: AppModel.Connection
     let client: NodusClient
@@ -397,7 +398,7 @@ final class SpaceSession {
     }
 
     func synchronizeCompanionChanges() async {
-        guard connection.desktopPairingId != nil, connection.role.canSendChanges,
+        guard canAuthor, connection.desktopPairingId != nil,
               !isSynchronizingCompanionChanges else { return }
         isSynchronizingCompanionChanges = true
         defer { isSynchronizingCompanionChanges = false }

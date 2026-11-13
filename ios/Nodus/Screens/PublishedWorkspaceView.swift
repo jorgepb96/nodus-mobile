@@ -250,7 +250,7 @@ private struct PublishedWorkspaceItemView: View {
     @State private var loadRequestID = UUID()
 
     private var canEdit: Bool {
-        session.connection.role.canSendChanges && item != nil && loadedStorageID == session.connection.storageId
+        session.canAuthor && item != nil && loadedStorageID == session.connection.storageId
             && item?.string("id") == summary.string("id")
     }
     private var hasChanges: Bool {

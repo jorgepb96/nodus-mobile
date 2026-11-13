@@ -358,7 +358,7 @@ private struct WritingComposer: View {
                         Label(autonomous ? "Generar en el móvil" : "Generar con Nodus", systemImage: autonomous ? "iphone" : "desktopcomputer")
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .disabled(objective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.isDemo || !session.connection.role.canSendChanges
+                    .disabled(objective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.isDemo || !session.canAuthor
                         || savingSources || selectionCount > 200
                         || (autonomous && (ai.model(for: .writing) == nil || selections.values.allSatisfy(\.isEmpty))))
                 }

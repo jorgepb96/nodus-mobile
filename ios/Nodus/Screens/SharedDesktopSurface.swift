@@ -182,7 +182,7 @@ struct SharedDesktopSurface: View {
                         .accessibilityLabel("Cerrar aviso")
                 }.padding(.leading, 12).padding(.vertical, 4).background(.thinMaterial)
             }
-            CompanionResultsButton(session: session, surface: surface, generationStatus: autonomousStatus)
+            if !NodusLinkPolicy.readOnly { CompanionResultsButton(session: session, surface: surface, generationStatus: autonomousStatus) }
             if surface == .databaseResearch { DatabaseReadingStatusButton(session:session) }
             if surface == .immersion, let controller = immersionController {
                 Button { showImmersionProgress = true } label: {
@@ -344,7 +344,7 @@ struct StudyEvidenceDocument: View {
             ToolbarItem(placement: .topBarTrailing) { ReadingSizeButtons(accent: session.accent) }
         }
         .overlay(alignment: .bottomTrailing) {
-            if session.connection.desktopPairingId != nil && session.connection.role.canSendChanges {
+            if session.connection.desktopPairingId != nil && session.canAuthor {
                 Button { editing = true } label: {
                     Image(systemName: "pencil").font(.system(size: 15, weight: .semibold)).nodusFloatingCircle(accent: session.accent)
                 }
@@ -441,12 +441,12 @@ private struct WorkspaceOrganizationReview: View {
                     Text(fields["state"] == .string("conflict") ? "Conflicto · revisa el cambio actual en Nodus" : fields["state"] == .string("blocked") ? "Bloqueado · conservado en este dispositivo" : "Guardado en el móvil · pendiente de sincronizar").font(.caption)
                     if let issue = fields["issue"]?.stringValue { Text(issue).font(.caption).foregroundStyle(.secondary) }
                     Button("Cancelar este cambio", role: .destructive) { Task { await cancel(fields["id"]?.stringValue) } }
-                        .frame(minHeight: 44).disabled(busy || !session.connection.role.canSendChanges)
+                        .frame(minHeight: 44).disabled(busy || !session.canAuthor)
                 }.padding(.vertical, 4)
             }
             Button("Actualizar estado") { Task { await load() } }.frame(minHeight: 44).disabled(busy)
             Button("Sincronizar cambios") { Task { busy = true; await session.synchronizeCompanionChanges(); busy = false; await load() } }
-                .frame(minHeight: 44).disabled(busy || !session.connection.role.canSendChanges)
+                .frame(minHeight: 44).disabled(busy || !session.canAuthor)
             Text("Cancelar conserva los documentos y comentarios. Si falta confirmar un recibo, sincroniza antes de cancelar. Tras resolver un conflicto puedes volver a ejecutar la acción sobre el estado actual.").font(.caption).foregroundStyle(.secondary)
         }.navigationTitle("Organización de Scriptor").task { await load() }
             .onChange(of: session.companionPublicationRevision) { _, _ in Task { await load() } }
@@ -464,7 +464,7 @@ private struct WorkspaceOrganizationReview: View {
         catch { self.error = error.localizedDescription }
     }
     @MainActor private func cancel(_ id: String?) async {
-        guard let id, session.connection.role.canSendChanges else { return }
+        guard let id, session.canAuthor else { return }
         busy = true; defer { busy = false }
         do {
             _ = try privateBridgeConnection(session, domain: .writing)
@@ -479,7 +479,7 @@ private struct WorkspaceOrganizationReview: View {
     static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
                         pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, onOffline: (Bool) -> Void) async throws -> JSONValue {
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
-        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
         let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
         let cache = try PrivateBridgeCache(pairingId: pairing.id)
         let variants: [[JSONValue]] = [[.bool(true)], [], [.bool(false)]]
@@ -514,7 +514,7 @@ private struct WorkspaceOrganizationReview: View {
             }
         }
         let (currentVault, currentPairing, _) = try privateBridgeConnection(session, domain: .writing)
-        guard !currentPairing.isExpired, currentVault == vaultId, currentPairing.id == pairing.id, currentPairing.domains.contains(.corpus), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+        guard !currentPairing.isExpired, currentVault == vaultId, currentPairing.id == pairing.id, currentPairing.domains.contains(.corpus), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
         try await queue.rememberTree(tree, authoritative: authoritative)
         func enqueue(_ type: String, _ id: String?, _ arguments: JSONValue = .object([:])) async throws -> JSONValue {
             let result = try await queue.enqueueWorkspaceOrganization(type: type, id: id, arguments: arguments, tree: tree, authoritative: authoritative)
@@ -597,7 +597,7 @@ private struct WorkspaceOrganizationReview: View {
             return value
         }
         if ["createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation", "createWorkspaceAnnotation", "updateWorkspaceAnnotation", "deleteWorkspaceAnnotation"].contains(method) {
-            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
             let documentId: String
             let creates = method == "createStudyAnnotation" || method == "createWorkspaceAnnotation"
             let updates = method == "updateStudyAnnotation" || method == "updateWorkspaceAnnotation"
@@ -617,20 +617,20 @@ private struct WorkspaceOrganizationReview: View {
         }
         if method == readMethod, args.count == 1 { return try await load() }
         if ["duplicateMobileWorkspaceNote", "trashMobileWorkspaceNote"].contains(method), args.count == 1, kind == .workspaceNote {
-            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
             _ = try await load()
             let result = try await queue.enqueueWorkspaceCommand(noteId: id, action: method == "duplicateMobileWorkspaceNote" ? "duplicate" : "trash")
             Task { await session.synchronizeCompanionChanges() }
             return result
         }
         if ["duplicateMobileStudyDocument", "trashMobileStudyDocument"].contains(method), args.count == 1 {
-            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
             _ = try await load()
             let result = try await queue.enqueueStudyCommand(noteId: id, action: method == "duplicateMobileStudyDocument" ? "duplicate" : "trash")
             Task { await session.synchronizeCompanionChanges() }
             return result
         }
-        guard pairing.domains.contains(.writing), session.connection.role.canSendChanges, args.count == 2 else { throw DesktopBridgeError.permissionDenied }
+        guard pairing.domains.contains(.writing), session.canAuthor, args.count == 2 else { throw DesktopBridgeError.permissionDenied }
         let result: JSONValue
         if method == "resolveMobileStudyConflict", let keep = args[1].boolValue {
             result = try await queue.resolve(noteId: id, keepMobile: keep)
@@ -710,11 +710,11 @@ private struct DesktopWebView: UIViewRepresentable {
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
         config.userContentController.add(context.coordinator, name: "nodus")
-        var data: [String: Any] = ["initialResearchVisualLocalOnly":initialResearchVisualLocalOnly, "initialResearchVisualReportId":initialResearchVisualReportId ?? "", "surface": surface.rawValue, "vaultId":session.connection.vaultId, "pageDownloadedOnly":downloadedOnly, "initialPageId":initialPageId ?? "", "initialStudyDocumentId":initialStudyDocumentId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+        var data: [String: Any] = ["initialResearchVisualLocalOnly":initialResearchVisualLocalOnly, "initialResearchVisualReportId":initialResearchVisualReportId ?? "", "surface": surface.rawValue, "vaultId":session.connection.vaultId, "pageDownloadedOnly":downloadedOnly, "initialPageId":initialPageId ?? "", "initialStudyDocumentId":initialStudyDocumentId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "linkReadOnly": NodusLinkPolicy.readOnly, "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
             "documentDraftScope": session.connection.storageId, "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
             "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
         let visualPairing = DesktopBridgePairingStore().pairings().first { $0.id == session.connection.desktopPairingId }
-        data["visualCanWrite"] = !downloadedOnly && session.connection.role.canSendChanges && visualPairing.map { !$0.isExpired && $0.vaultIds.contains(session.connection.vaultId ?? "") && $0.domains.contains(.corpus) && $0.domains.contains(.writing) } == true
+        data["visualCanWrite"] = session.canAuthor && !downloadedOnly && session.canAuthor && visualPairing.map { !$0.isExpired && $0.vaultIds.contains(session.connection.vaultId ?? "") && $0.domains.contains(.corpus) && $0.domains.contains(.writing) } == true
         data["visualCanGenerate"] = data["visualCanWrite"] as? Bool == true && visualPairing?.domains.contains(.researchGeneration) == true
         if let initialArgumentMap, let bytes = try? JSONEncoder.nodus.encode(initialArgumentMap), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialArgumentMap"] = value }
         if let initialArgumentSeed { data["initialArgumentSeed"] = initialArgumentSeed }
@@ -914,6 +914,7 @@ private struct DesktopWebView: UIViewRepresentable {
             }
             tasks.append(Task {
                 do {
+                    try NodusLinkPolicy.requireSurfaceMethod(method, domain: Self.operationDomains[method])
                     // A forged WebKit request must not reactivate retained device providers.
                     if ["beginAutonomousAuthoring", "mobileStructuredCompletion", "mobileEmbedding", "mobileImageConfiguration", "mobileEmbeddingConfiguration", "mobilePublicWebResource", "mobileGuideCommonsResource", "documentSvgEvaluate"].contains(method) {
                         try BetaAIFeatures.requireAutonomousGeneration()
@@ -955,10 +956,10 @@ private struct DesktopWebView: UIViewRepresentable {
                                 value = await pages.document(pageId:page) ?? value
                             }
                         } else if method == "savePageDocument", args.count == 1, let page = args[0].objectValue?["pageId"]?.stringValue {
-                            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+                            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
                             value = try await pages.save(pageId: page, input: args[0]); Task { await session.synchronizeCompanionChanges() }
                         } else if method == "resolveMobilePageConflict", args.count == 2, let page = args[0].stringValue, let keep = args[1].boolValue {
-                            guard pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+                            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
                             value = try await pages.resolve(pageId: page, keepMobile: keep); Task { await session.synchronizeCompanionChanges() }
                         } else if method == "getPageAsset", args.count == 1, let hash = args[0].stringValue, hash.count == 64, hash.allSatisfy(\.isHexDigit) {
                             let copy = try await loadPrivateBridgeFile(session, kind: .pageAsset, id: hash,downloadedOnly:selectedPageOnly)
@@ -1286,7 +1287,7 @@ private struct DesktopWebView: UIViewRepresentable {
                             value = try await immersionProgress.write(method: method, args: args, pairing: pairing, vaultId: vaultId)
                         } else if method == "createStudyDocument", args.count == 1 {
                             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
-                                  pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+                                  pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
                             let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: .studyDocument)
                             value = try await queue.createStudyDocument(input: args[0])
                             Task { await session.synchronizeCompanionChanges() }
@@ -1354,7 +1355,7 @@ private struct DesktopWebView: UIViewRepresentable {
                             }
                         } else if DesktopBridgeClient.jobMethods.contains(method) {
                             if ["enrichDocumentVisuals","undoDocumentVisuals","removeDocumentFigure"].contains(method) {
-                                guard !downloadedOnly, session.aiExecutionMode == .live, !pairing.isExpired, pairing.domains.contains(.corpus), pairing.domains.contains(.writing), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+                                guard !downloadedOnly, session.aiExecutionMode == .live, !pairing.isExpired, pairing.domains.contains(.corpus), pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
                                 if method == "enrichDocumentVisuals", !pairing.domains.contains(.researchGeneration) { throw DesktopBridgeError.permissionDenied }
                                 let support = try await client.liveCapabilities()
                                 guard support.operations.contains(method) else { throw APIError(status:426,code:"document_visual_live_upgrade_required",message:"Actualiza Nodus en el Mac para editar recursos visuales en modo LIVE. El informe conserva su contenido.") }

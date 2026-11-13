@@ -123,7 +123,7 @@ struct HomeView: View {
                 // somewhere to send to. Both tiles could only ever end in an error.
                 if !session.isDemo {
                     tileSection("Write") {
-                        if session.connection.role.canSendChanges {
+                        if session.canAuthor {
                             // A button rather than a link, because the queue is no longer a page
                             // inside this space: it is one sheet for the whole device, and it now
                             // carries a real count instead of the `nil` this tile used to pass.

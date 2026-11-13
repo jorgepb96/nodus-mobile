@@ -63,7 +63,7 @@ struct WorldMapGenerationSheet: View {
                     }
                     if let preview { Image(uiImage: preview).resizable().scaledToFit().accessibilityLabel("Resultado de generación conservado en este dispositivo") }
                     Button(record?.state == "available" ? "Generar de nuevo" : "Generar") { start(explicit: true) }
-                        .accessibilityIdentifier("world-generation-submit").frame(minHeight: 44).disabled(running || downloading || extra.utf16.count > 300 || !session.connection.role.canSendChanges)
+                        .accessibilityIdentifier("world-generation-submit").frame(minHeight: 44).disabled(running || downloading || extra.utf16.count > 300 || !session.canAuthor)
                     if running { Button("Cancelar trabajo", role: .destructive) { Task { await cancel() } }.frame(minHeight: 44) }
                     if let status { Text(status).fixedSize(horizontal: false, vertical: true) }
                     if let issue { Text(issue).foregroundStyle(Color.nodusDanger).fixedSize(horizontal: false, vertical: true); Button("Reintentar la misma solicitud") { start(explicit: false) }.frame(minHeight: 44).disabled(running) }

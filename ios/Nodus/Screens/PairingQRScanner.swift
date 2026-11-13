@@ -6,7 +6,7 @@ struct PairingQRScanner: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onCode: onCode) }
     func makeUIViewController(context: Context) -> UIViewController {
         guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
-            let controller = UIHostingController(rootView: ContentUnavailableView("Camera unavailable", systemImage: "qrcode", description: Text("Enter the code shown in Settings → Mobile connection on your Mac."))
+            let controller = UIHostingController(rootView: ContentUnavailableView("Camera unavailable", systemImage: "qrcode", description: Text("Introduce el código que aparece en Ajustes → Conexión móvil de Nodus Desktop."))
                 .environment(\.dynamicTypeSize, context.environment.dynamicTypeSize))
             return controller
         }

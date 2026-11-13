@@ -199,7 +199,7 @@ private struct ProjectCreateForm: View {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             Section {
                 Button { Task { await queue() } } label: { HStack { Spacer(); if sending { ProgressView() } else { Label("Create in Desktop", systemImage: "desktopcomputer") }; Spacer() } }
-                    .disabled(sending || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.isDemo || !session.connection.role.canSendChanges)
+                    .disabled(sending || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.isDemo || !session.canAuthor)
             }
         }.navigationTitle("New project").navigationBarTitleDisplayMode(.inline)
     }

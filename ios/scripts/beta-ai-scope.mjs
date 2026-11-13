@@ -1,9 +1,9 @@
 // Explicit user scope change, 2026-10-15. Keep implementation and historical
 // results; these operations are unavailable in the current beta, never passed.
 export const betaAIScope = Object.freeze({
-  decidedOn: '2026-10-15', execution: 'desktop-live',
+  decidedOn: '2026-11-13', execution: 'desktop-consultation', liveGeneration: false,
   autonomousGeneration: false, audioGeneration: false,
-  retainedImplementation: true, offlineReadingAndManualWriting: true,
+  retainedImplementation: true, offlineReadingAndManualWriting: false, offlineReading: true, manualWriting: false,
 });
 
 const deviceOnlyGeneration = new Set([
@@ -23,7 +23,7 @@ export function isDeferredBetaAI(id) {
 }
 
 export function applyBetaAIScope(operation) {
-  if (!isDeferredBetaAI(operation.id)) return operation;
+  if (!operation.id.startsWith('generation.') && operation.category !== 'generation' && !isDeferredBetaAI(operation.id)) return operation;
   return {...operation, result: 'deferredByUser', requiredInBeta: false, implementation: 'retained',
-    reason: 'Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada.'};
+    reason: 'Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas.'};
 }

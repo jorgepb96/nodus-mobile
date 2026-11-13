@@ -44,7 +44,7 @@ struct SpaceSettingsView: View {
                 List {
                 if session.connection.desktopPairingId != nil {
                     macConnectionSection
-                    RecoveredAuthoringSettings(session: session)
+                    if !NodusLinkPolicy.readOnly { RecoveredAuthoringSettings(session: session) }
                 }
 
                 Section("Space") {
@@ -63,7 +63,7 @@ struct SpaceSettingsView: View {
                     }
                 }
 
-                Section {
+                if !NodusLinkPolicy.readOnly { Section {
                     if BetaAIFeatures.autonomousGeneration { Picker("Execution mode", selection: Binding(get: { session.aiExecutionMode }, set: { session.aiExecutionMode = $0 })) {
                         Text("Live · Mac models").tag(AIExecutionMode.live)
                             .disabled(session.connection.desktopPairingId == nil)
@@ -76,7 +76,7 @@ struct SpaceSettingsView: View {
                             .accessibilityIdentifier("companion-jobs-results")
                     }
                     if session.aiExecutionMode == .live {
-                        labelled("Mac", session.connection.serverName)
+                        labelled("Ordenador", session.connection.serverName)
                         if let liveSettings {
                             ForEach(["chatModel", "deepResearchModel", "dictionaryModel", "immersionModel", "writingModel"], id: \.self) { key in
                                 let choice = liveSettings.objectValue?[key]?.objectValue
@@ -91,6 +91,7 @@ struct SpaceSettingsView: View {
                         : "Requests use the providers configured on this device. The execution mode changes only when you choose it.")
                 }
 
+                }
 
                 Section {
                     labelled("This app", NodusVersion.current)
@@ -184,11 +185,11 @@ struct SpaceSettingsView: View {
                     }
                     .tint(session.accent)
 
-                    NavigationLink {
+                    if !NodusLinkPolicy.readOnly { NavigationLink {
                         SidebarSettingsView(vaultType: session.vaultType, accent: session.accent)
                     } label: {
                         Label("Sidebar", systemImage: "sidebar.left")
-                    }
+                    } }
                 } header: {
                     Text("This device")
                 } footer: {
@@ -328,8 +329,8 @@ struct SpaceSettingsView: View {
         }
         .accessibilityIdentifier("settings-workspace")
         .sheet(isPresented: $showingCompanionDownload) { CompanionDownloadsView(session: session) }
-        .alert("Revoke Mac connection?", isPresented: $confirmingMacRevocation) {
-            Button("Revoke Mac connection", role: .destructive) {
+        .alert("Revocar conexión?", isPresented: $confirmingMacRevocation) {
+            Button("Revocar conexión", role: .destructive) {
                 changingMacConnection = true; macConnectionResult = nil
                 Task {
                     defer { changingMacConnection = false }
@@ -356,7 +357,7 @@ struct SpaceSettingsView: View {
 
     private var macConnectionSection: some View {
         Section {
-            labelled("Mac", session.connection.serverName)
+            labelled("Ordenador", session.connection.serverName)
             if let id = session.connection.desktopPairingId,
                let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == id }) {
                 Text("\(pairing.vaultIds.count) linked vaults")
@@ -378,16 +379,16 @@ struct SpaceSettingsView: View {
                     do { try await model.renewDesktop(session.connection); macConnectionResult = String(localized: "Connection renewed. Copies, drafts and requests are preserved.") }
                     catch { macConnectionResult = error.localizedDescription }
                 }
-            } label: { Label("Renew Mac connection", systemImage: "arrow.clockwise") }
+            } label: { Label("Renovar conexión", systemImage: "arrow.clockwise") }
                 .disabled(changingMacConnection).accessibilityIdentifier("renew-mac-connection")
             Button(role: .destructive) {
                 confirmingMacRevocation = true
-            } label: { Label("Revoke Mac connection", systemImage: "link") }
+            } label: { Label("Revocar conexión", systemImage: "link") }
                 .disabled(changingMacConnection).accessibilityIdentifier("revoke-mac-connection")
             if changingMacConnection { ProgressView() }
             if let macConnectionResult { Text(macConnectionResult).font(.caption).accessibilityIdentifier("mac-connection-result") }
-        } header: { Text("Linked Mac connection") } footer: {
-            Text("Renewal keeps the same vaults and permissions. Revocation requires a connection to the Mac and affects all its linked vaults.")
+        } header: { Text("Conexión con Nodus Desktop") } footer: {
+            Text("La renovación conserva todos los vaults vinculados. Para revocar el acceso, Nodus Desktop debe estar conectado.")
         }
     }
 
@@ -497,6 +498,7 @@ struct SpaceSettingsView: View {
     /// data — but unlike a model name or a revision hash it is a word this app chose, and a
     /// word this app chose is a word it should translate.
     private var roleLabel: String {
+        if NodusLinkPolicy.readOnly { return String(localized: "Read-only access") }
         switch session.connection.role {
         case .reader: return String(localized: "Read only")
         case .writer: return String(localized: "Can send changes")

@@ -19,7 +19,7 @@ final class PairingDiscovery: NSObject, @preconcurrency NetServiceBrowserDelegat
         timeout = Task {
             try? await Task.sleep(for: .seconds(12))
             guard !Task.isCancelled, searching else { return }
-            error = String(localized: "No Mac with this code was found. Check that both devices are on the same network, or scan the QR.")
+            error = String(localized: "No se ha encontrado Nodus con este código. Comprueba que ambos dispositivos estén en la misma red o escanea el QR.")
             stop()
         }
     }

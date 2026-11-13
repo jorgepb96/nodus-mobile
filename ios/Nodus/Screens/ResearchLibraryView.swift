@@ -605,7 +605,7 @@ private struct LocalReportReadingTools: ViewModifier {
     let rows: [Row]
 
     func body(content: Content) -> some View {
-        if session.connection.role.canSendChanges, let remoteId {
+        if session.canAuthor, let remoteId {
             content.modifier(SyncedReportReadingTools(
                 session: session,
                 id: remoteId,
@@ -679,7 +679,7 @@ struct SyncedReportReadingTools: ViewModifier {
         _annotations = State(initialValue: ReaderAnnotations(
             draftId: id,
             scope: scope,
-            isWritable: session.connection.role.canSendChanges,
+            isWritable: session.canAuthor,
             idPrefix: annotationPrefix
         ))
     }
@@ -1047,7 +1047,7 @@ struct LocalReportReader: View {
 
     /// What the send control needs, or nothing at all when this access cannot send.
     private var sendContext: ReportSendContext? {
-        guard session.connection.role.canSendChanges else { return nil }
+        guard session.canAuthor else { return nil }
         // Read back from the store rather than trusting the copy this view was handed: sending
         // rewrites the record, and the row that navigated here is a value from before that.
         let current = local.reports.first { $0.id == saved.id } ?? saved
@@ -1389,7 +1389,7 @@ struct PublishedReportReader: View {
             rows: detail?.annotations ?? []
         ))
         .toolbar {
-            if session.connection.desktopPairingId != nil {
+            if session.canAuthor {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { visualEditorOpen = true } label: { Image(systemName: "photo.badge.plus") }
                         .accessibilityLabel("Recursos visuales del informe")

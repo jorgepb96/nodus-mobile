@@ -6,7 +6,7 @@ extension Notification.Name { static let nodusMobileNavigate = Notification.Name
 /// The route vocabulary of the current desktop app.
 ///
 /// Keeping every Desktop route here makes drift measurable. Visibility is a presentation
-/// decision expressed by `NodusRouteSupport`; every route remains executable from a deep link.
+/// decision expressed by `NodusRouteSupport`; Link release routes are explicitly limited, including restored deep links.
 /// Adding a route on Desktop without classifying it here fails the parity audit.
 enum NodusRoute: String, CaseIterable, Codable, Hashable, Identifiable {
     case home, search, testimonyInterviews, testimonyParticipants, testimonyContrasts
@@ -19,7 +19,7 @@ enum NodusRoute: String, CaseIterable, Codable, Hashable, Identifiable {
     case studyChat, studyIdeas, studyQuestions, studyReview, studyDeepResearch
     case teachingGroups, teachingGrades, teachingExams, teachingRubrics, teachingUnits
     case immersion, gaps, debate, research, hypothesis, reading, writing, deepResearch, projects, notes, workspace
-    case researchChat, browser, radar, compass, studyFocus, toolkit, settings
+    case podcast, researchChat, browser, radar, compass, studyFocus, toolkit, settings
 
     var id: String { rawValue }
 }
@@ -111,6 +111,7 @@ enum NodusNavigationContract {
         .init(.immersion, "Immersion", "scope", group: .analyze, support: .native),
         .init(.deepResearch, "Deep Research", "telescope", group: .analyze, support: .native),
         .init(.dictionary, "Dictionary", "character.book.closed", group: .analyze, support: .native),
+        .init(.podcast, "Podcasts", "headphones", group: .explore, support: .native),
         .init(.researchChat, "Research chat", "bubble.left.and.text.bubble.right", group: .analyze, support: .native),
         .init(.hypothesis, "Hypothesis", "flask", group: .analyze, support: .native),
         .init(.reading, "Reading path", "point.topleft.down.to.point.bottomright.curvepath", group: .analyze, support: .native),
@@ -247,7 +248,12 @@ enum NodusNavigationContract {
 
     static func scopedItems(for vaultType: VaultType?) -> [NodusNavigationItem] {
         let type = vaultType ?? .academic
-        return items.filter { $0.vaultTypes.contains(type) }
+        let study = type == .estudio || type == .docencia
+        let replaced: Set<NodusRoute> = study ? [.ideas, .graph, .deepResearch] : [.studyIdeas, .studyGraph, .studyDeepResearch]
+        return items.filter {
+            $0.vaultTypes.contains(type) && (!NodusLinkPolicy.readOnly ||
+                (NodusLinkPolicy.routes.contains($0.route) && !replaced.contains($0.route)))
+        }
     }
 
     static func visibleItems(
@@ -255,8 +261,8 @@ enum NodusNavigationContract {
         order: [String] = [],
         hidden: Set<String>? = nil
     ) -> [NodusNavigationItem] {
-        let hidden = hidden ?? defaultHiddenRoutes(for: vaultType)
-        let allowed = sidebarAllowedRoutes(for: vaultType)
+        let hidden: Set<String> = NodusLinkPolicy.readOnly ? [] : (hidden ?? defaultHiddenRoutes(for: vaultType))
+        let allowed = NodusLinkPolicy.readOnly ? nil : sidebarAllowedRoutes(for: vaultType)
         let eligible = scopedItems(for: vaultType).filter {
             $0.support.isVisible
                 && !hidden.contains($0.route.rawValue)

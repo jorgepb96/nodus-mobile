@@ -1,0 +1,20 @@
+{
+  "product": "Nodus Link",
+  "version": "0.1.0",
+  "mode": "consultation",
+  "transport": "direct-https-lan-or-vpn",
+  "pairing": ["workspace-code", "qr", "link"],
+  "retainedButDisabled": ["content-editing", "ai-generation", "audio-generation", "autonomous-providers", "authoring-outbox-delivery"],
+  "operations": [
+    {"id": "pair-and-reconnect", "state": "pending-native-acceptance"},
+    {"id": "ideas-and-sources", "state": "pending-native-acceptance"},
+    {"id": "graph-selection-and-evidence", "state": "pending-native-acceptance"},
+    {"id": "argument-map-without-model", "state": "pending-native-acceptance"},
+    {"id": "deep-research-catalogue-and-reader", "state": "pending-native-acceptance"},
+    {"id": "dictionary-catalogue-evidence-versions-relations", "state": "pending-native-acceptance"},
+    {"id": "podcast-catalogue-transcript-chapters-audio", "state": "pending-native-acceptance"}
+  ],
+  "historicalFullParityInventory": "ios/Parity/parity-manifest.json",
+  "physicalDeviceValidation": "owner",
+  "githubActions": "do-not-run"
+}

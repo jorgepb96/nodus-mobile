@@ -21,12 +21,15 @@
     }
   },
   "betaAIScope": {
-    "decidedOn": "2026-10-15",
-    "execution": "desktop-live",
+    "decidedOn": "2026-11-13",
+    "execution": "desktop-consultation",
+    "liveGeneration": false,
     "autonomousGeneration": false,
     "audioGeneration": false,
     "retainedImplementation": true,
-    "offlineReadingAndManualWriting": true
+    "offlineReadingAndManualWriting": false,
+    "offlineReading": true,
+    "manualWriting": false
   },
   "operations": [
     {
@@ -520,6 +523,13 @@
       "evidence": []
     },
     {
+      "id": "consultation.podcast",
+      "route": "podcast",
+      "category": "consultation",
+      "result": "pending",
+      "evidence": []
+    },
+    {
       "id": "consultation.projects",
       "route": "projects",
       "category": "consultation",
@@ -982,14 +992,20 @@
     {
       "id": "generation.academic.explicitConflictRetry",
       "category": "consultation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.academic.paidResponseRecovery",
       "category": "consultation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.matrix.canonicalAcknowledgedCells",
@@ -1006,8 +1022,11 @@
     {
       "id": "generation.proseReview.currentLocalDraft.live",
       "category": "consultation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.proseReview.currentLocalDraft.autonomous",
@@ -1016,7 +1035,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.actions.savedResults",
@@ -1033,8 +1052,11 @@
     {
       "id": "generation.argumentMap.inlineCancellation",
       "category": "consultation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.generation.modeChangePreservesAuthorizedResult",
@@ -1043,7 +1065,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.databases.savedPresentationProperties",
@@ -1129,8 +1151,11 @@
     {
       "id": "generation.deepResearch.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.autonomous",
@@ -1139,13 +1164,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.immersion.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.immersion.autonomous",
@@ -1154,13 +1182,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.dictionary.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.dictionary.autonomous",
@@ -1169,13 +1200,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.chat.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.chat.autonomous",
@@ -1184,13 +1218,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.translation.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.translation.autonomous",
@@ -1199,13 +1236,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.synthesis.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.synthesis.autonomous",
@@ -1214,13 +1254,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.argumentMap.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.argumentMap.autonomous",
@@ -1229,13 +1272,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.writingAssistant.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.writingAssistant.autonomous",
@@ -1244,7 +1290,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "extractDocuments",
@@ -1393,14 +1439,20 @@
     {
       "id": "generation.synthesis.explicitRegenerationAndPendingRecovery",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.worldMap.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.worldMap.autonomous",
@@ -1409,7 +1461,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.worldMap.imageCoordinatesAtomicAndSourceConflicts",
@@ -1424,7 +1476,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.downloads.selectedFileVersionExactBytes",
@@ -1453,8 +1505,11 @@
     {
       "id": "generation.chat.providerSelectionDuringCatalogueLoading",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "visual.teaching.gradebookPhoneHeaderAndTable",
@@ -1465,8 +1520,11 @@
     {
       "id": "generation.writingWorkshop.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.writingWorkshop.autonomous",
@@ -1475,7 +1533,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.writingWorkshop.sourcePagination",
@@ -1516,8 +1574,11 @@
     {
       "id": "generation.specialisedSourceContext.linked",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.specialisedSourceContext.downloaded",
@@ -1526,7 +1587,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.selectedWorkshopSources",
@@ -1609,8 +1670,11 @@
     {
       "id": "generation.privateSourceContext.linked",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.privateSourceContext.downloaded",
@@ -1619,7 +1683,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.privateSourceContext.domainRevocation",
@@ -1684,8 +1748,11 @@
     {
       "id": "generation.databaseResearch.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databaseResearch.autonomous",
@@ -1694,7 +1761,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.selectedDatabaseResearch",
@@ -1729,26 +1796,38 @@
     {
       "id": "generation.worldChat.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.studyChat.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databaseChat.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.specialisedChat.cancellation",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.study.desktopOnlyIndex",
@@ -1795,14 +1874,20 @@
     {
       "id": "generation.databaseResearch.restartIdentity",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databaseResearch.persistedAvailability",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databaseResearch.offlineRequest",
@@ -1811,7 +1896,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.databaseResearch.evidenceSheet",
@@ -1840,14 +1925,20 @@
     {
       "id": "generation.databaseResearch.signedSources",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databaseResearch.exactSavedViews",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databaseResearch.deviceWorker",
@@ -1856,13 +1947,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databaseResearch.sharedPreflight",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.databaseResearch.verifiedPublication",
@@ -1897,8 +1991,11 @@
     {
       "id": "generation.databaseResearch.explicitResume",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.databaseResearch.offlineExportAllFormats",
@@ -1937,7 +2034,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.chat.autonomousPartialRecovery",
@@ -1946,13 +2043,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.chat.conversationIsolation",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.chat.storageFailures",
@@ -2045,7 +2145,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databaseChat.chosenOfflineSources",
@@ -2054,7 +2154,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.databaseChat.actualSourceSelection",
@@ -2075,19 +2175,25 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.studyChat.allTasksAndScopes",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.studyChat.nativeControls",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.studyChat.chosenOfflineSources",
@@ -2096,7 +2202,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.studyChat.extractiveCitations",
@@ -2135,25 +2241,34 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.worldChat.temporalRulesAndKnowledge",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.worldChat.nativeFocusControls",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.worldChat.chosenCoherentOfflineSnapshot",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.worldChat.nativeCalculatedFacts",
@@ -2242,8 +2357,11 @@
     {
       "id": "generation.chat.sharedProjectPreferences",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.chat.mobileRichAnswerReader",
@@ -2300,19 +2418,25 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.chat.nativeLiveMacProvidersAndModels",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.chat.questionAcknowledgedBeforeProvider",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.chat.durablePartialAndExactJobRecovery",
@@ -2341,8 +2465,11 @@
     {
       "id": "generation.chat.nativeMacContextPromptsEffortSkillsAndConcilium",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.chat.liveActivityAndOriginalMemberResults",
@@ -2359,8 +2486,11 @@
     {
       "id": "generation.chat.checkpointsPreservePendingRichAssets",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "consultation.reports.sharedTablesMathAndHTMLFigures",
@@ -2617,8 +2747,11 @@
     {
       "id": "generation.arguments.liveCanonicalSavedMapCatalogue",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.world.contentWritesRequireActualFamilyAndDomain",
@@ -2641,8 +2774,11 @@
     {
       "id": "generation.world.newOfflineSceneCanonicalProseTemplate",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.world.newScenePublicationRequiresSameDeviceCreationProof",
@@ -2707,8 +2843,11 @@
     {
       "id": "generation.deepResearch.academicApproaches.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.academicApproaches.autonomous",
@@ -2717,13 +2856,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.studyAndTeaching.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.studyAndTeaching.autonomous",
@@ -2732,13 +2874,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.genealogy.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.genealogy.autonomous",
@@ -2747,13 +2892,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.completeGuide.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.completeGuide.autonomous",
@@ -2762,7 +2910,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.chosenDownloadedSources",
@@ -2771,13 +2919,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.visualOptions.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.deepResearch.visualOptions.autonomous",
@@ -2786,7 +2937,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.deepResearch.paidStepRecoveryWithoutAutomaticRepurchase",
@@ -2839,8 +2990,11 @@
     {
       "id": "generation.databases.textCell.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databases.textCell.autonomous",
@@ -2849,13 +3003,16 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databases.imageCell.live",
       "category": "generation",
-      "result": "pending",
-      "evidence": []
+      "result": "deferredByUser",
+      "evidence": [],
+      "requiredInBeta": false,
+      "implementation": "retained",
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "generation.databases.imageCell.autonomous",
@@ -2864,7 +3021,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "writing.databases.buttonActions.live",
@@ -2879,7 +3036,7 @@
       "evidence": [],
       "requiredInBeta": false,
       "implementation": "retained",
-      "reason": "Por instrucción del usuario del 15-10-2026, esta beta sólo ejecuta IA en el Mac conectado. La implementación móvil permanece conservada y deshabilitada."
+      "reason": "Por instrucción del usuario del 13-11-2026, Nodus Link sólo consulta contenidos de Desktop. La generación y edición permanecen conservadas y deshabilitadas."
     },
     {
       "id": "sync.databases.buttonActionsWithoutRepeatedSideEffects",
@@ -3823,6 +3980,17 @@
       "mobileState": "available",
       "evidence": [
         "ios/NodusUITests/NodusParityUITests.swift#testDeepResearchGalleryQueueAndReaderToolsMatchDesktopWorkflow",
+        "ios/NodusUITests/NodusParityUITests.swift#testEveryVisibleDestinationUsesTheSharedShell"
+      ]
+    },
+    {
+      "id": "podcast",
+      "label": "Podcast",
+      "icon": "headphones",
+      "group": "analyze",
+      "delivery": "nativeShared",
+      "mobileState": "available",
+      "evidence": [
         "ios/NodusUITests/NodusParityUITests.swift#testEveryVisibleDestinationUsesTheSharedShell"
       ]
     },

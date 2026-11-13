@@ -169,6 +169,7 @@ final class GlobalOutbox {
 
     /// Send every space's queue, and report per space.
     func sendEverything() async {
+        guard !NodusLinkPolicy.readOnly else { return }
         guard !isSending else { return }
         isSending = true
         defer { isSending = false }
@@ -181,6 +182,7 @@ final class GlobalOutbox {
     }
 
     func send(connectionId: String) async {
+        guard !NodusLinkPolicy.readOnly else { return }
         guard !isSending, let connection = connectionsWithQueues.first(where: { $0.id == connectionId }) else { return }
         isSending = true
         defer { isSending = false }

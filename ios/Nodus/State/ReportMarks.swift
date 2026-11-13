@@ -132,6 +132,7 @@ final class ReportMarks {
         session: SpaceSession,
         at when: Date = Date()
     ) -> Mark {
+        if NodusLinkPolicy.readOnly { return setRead(localId, read, at: when) }
         let value = setReadAwaitingSync(
             localId: localId,
             remoteId: remoteId,

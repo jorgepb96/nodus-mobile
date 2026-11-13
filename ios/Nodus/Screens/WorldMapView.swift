@@ -124,7 +124,7 @@ struct WorldMapView: View {
     private var controls: some View {
         Menu {
             if let source {
-                if session.connection.role.canSendChanges { Button("Generar o ampliar mapa") { panel = .generation } }
+                if session.canAuthor { Button("Generar o ampliar mapa") { panel = .generation } }
                 Menu("Capas") {
                     ForEach(source.layers, id: \.columns) { layer in
                         if let id = layer.string("layerId") {

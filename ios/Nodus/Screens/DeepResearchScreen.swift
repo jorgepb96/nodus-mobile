@@ -845,7 +845,7 @@ struct DeepResearchScreen: View {
     /// Read from `runner.finished` rather than from a copy this screen holds: the run outlives
     /// the screen, and the record is where "already sent" and the vault row id live.
     private var sendContext: ReportSendContext? {
-        guard session.connection.role.canSendChanges, let saved = runner.finished else { return nil }
+        guard session.canAuthor, let saved = runner.finished else { return nil }
         return ReportSendContext(session: session, store: local, saved: saved)
     }
 

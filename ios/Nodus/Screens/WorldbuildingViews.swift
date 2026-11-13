@@ -285,7 +285,7 @@ struct WorldEntityWorkspaceView: View {
                     trailing: {
                         Button { isCreating = true } label: { Label("New", systemImage: "plus") }
                             .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                            .disabled(!session.connection.role.canSendChanges || session.isDemo)
+                            .disabled(!session.canAuthor || session.isDemo)
                     }
                 )
                 NodusSearchField(text: $query, prompt: "Search this section", accent: session.accent)
@@ -847,7 +847,7 @@ private struct WorldEntityDossier: View {
                             Button(role: .destructive) { confirmingDelete = true } label: { Image(systemName: "trash") }
                                 .buttonStyle(NodusGlassIconButtonStyle(accent: .red))
                         }
-                        .disabled(!session.connection.role.canSendChanges || session.isDemo)
+                        .disabled(!session.canAuthor || session.isDemo)
                     }
                 )
                 if onAttachImage != nil || !images.isEmpty {
@@ -858,7 +858,7 @@ private struct WorldEntityDossier: View {
                             if onAttachImage != nil {
                                 PhotosPicker(selection: $photo, matching: .images) { Label("Add image", systemImage: "photo.badge.plus") }
                                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                                    .disabled(!session.connection.role.canSendChanges || session.isDemo)
+                                    .disabled(!session.canAuthor || session.isDemo)
                             }
                         }
                         ScrollView(.horizontal) {

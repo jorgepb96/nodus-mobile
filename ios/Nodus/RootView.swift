@@ -288,7 +288,7 @@ struct SpacePickerView: View {
                     // Above the spaces rather than inside one of them: what is queued is a fact
                     // about this device, and the picker is the only screen that belongs to the
                     // device rather than to a vault.
-                    if tray.outbox.hasAnything { queueControl }
+                    if !NodusLinkPolicy.readOnly && tray.outbox.hasAnything { queueControl }
                     if !savedWork.isEmpty {
                         Button { showingSavedWork = true } label: {
                             Label("Trabajo guardado", systemImage: "doc.text")
@@ -691,6 +691,7 @@ private struct ConnectionCard: View {
     /// `String(localized:)`: interpolated into a line of data, so it reaches `Text` as a value
     /// and would otherwise stay English on a Spanish phone.
     private var roleLabel: String {
+        if NodusLinkPolicy.readOnly { return String(localized: "read") }
         switch connection.role {
         case .reader: return String(localized: "read")
         case .writer: return String(localized: "write")

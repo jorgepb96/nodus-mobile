@@ -176,7 +176,7 @@ private struct StudyCoursesWorkspace: View {
             VStack(alignment: .leading, spacing: 14) {
                 DesktopPageHeader(title: LocalizedStringKey(course.name), subtitle: "\(course.shortId) · \(subjects.count) subjects", systemImage: course.icon ?? "graduationcap", accent: session.accent)
                 Text(course.description).font(.callout).foregroundStyle(.secondary)
-                if session.connection.desktopPairingId != nil, session.connection.role.canSendChanges {
+                if session.connection.desktopPairingId != nil, session.canAuthor {
                     Button {
                         newDocumentTitle = ""; newDocumentKind = "apunte"; creationIssue = nil
                         newDocumentPresented = true
@@ -238,7 +238,7 @@ private struct StudyCoursesWorkspace: View {
         creating = true; defer { creating = false }
         do {
             let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
-            guard !pairing.isExpired, pairing.domains.contains(.corpus), session.connection.role.canSendChanges else { throw DesktopBridgeError.permissionDenied }
+            guard !pairing.isExpired, pairing.domains.contains(.corpus), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
             let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault, kind: .studyDocument)
             let document = try await queue.createStudyDocument(input: .object(["title": .string(newDocumentTitle), "kind": .string(newDocumentKind),
                 "placement": .object(["courseId": .string(course.id)])]))
@@ -672,7 +672,7 @@ struct DesktopBridgePairingSheet: View {
                     }
                 }
                 Section {
-                    Text("Open Settings → Mobile connection in Nodus on your Mac. Enter its code or scan its QR to connect your entire workspace.")
+                    Text("Abre Ajustes → Conexión móvil en Nodus Desktop. Introduce el código o escanea el QR para vincular todo tu workspace.")
                         .font(.callout).foregroundStyle(.secondary)
                     if resumingPending {
                         Text("A connection is pending. Tap Connect to continue without a new code.")
@@ -695,7 +695,7 @@ struct DesktopBridgePairingSheet: View {
                         .accessibilityIdentifier("pairing-find-mac")
                         .disabled(working || discovery.searching || code.filter { $0.isLetter || $0.isNumber }.count != 10)
                     if working { ProgressView("Connecting to Nodus…") }
-                    if discovery.searching { ProgressView("Looking for your Mac…") }
+                    if discovery.searching { ProgressView("Buscando tu ordenador…") }
                     if let discoveryError = discovery.error {
                         Text(discoveryError).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("pairing-discovery-error")
                     }
@@ -706,11 +706,11 @@ struct DesktopBridgePairingSheet: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .onChange(of: link) { _, value in readOffer(value) }
                     }.disabled(working || discovery.searching)
-                    Text("Keep Nodus open on your Mac and use the same network or a VPN such as Tailscale. Live uses the models configured on your Mac.")
+                    Text("Mantén Nodus abierto en tu ordenador y conecta ambos dispositivos a la misma red o VPN, como Tailscale. Si la VPN no permite descubrir equipos, escanea el QR o abre el enlace. Tus datos permanecen privados.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let offer {
-                    Section("Mac and vaults") {
+                    Section("Ordenador y vaults") {
                         Label(offer.deviceName ?? "Nodus", systemImage: "desktopcomputer")
                         if offer.renewalPairingId != nil {
                             Text("Renewing the existing connection preserves its vaults, permissions and local data.")

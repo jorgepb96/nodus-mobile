@@ -44,7 +44,7 @@ final class OutboxController {
     /// initialiser meant doing it on the main actor — the screen that asked for a controller
     /// stopped drawing until the disk answered.
     static func open(session: SpaceSession) async -> OutboxController? {
-        guard session.connection.role.canSendChanges else { return nil }
+        guard session.canAuthor else { return nil }
         guard (try? ConnectionStorage.prepare(for: session.connection)) != nil else { return nil }
         let directory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
         guard let outbox = try? await MutationOutbox.open(

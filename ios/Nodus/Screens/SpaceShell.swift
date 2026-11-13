@@ -73,6 +73,7 @@ struct SpaceShell: View {
             initial = requested
         }
 #endif
+        if !NodusLinkPolicy.routes.contains(initial) { initial = .home }
         _route = State(initialValue: initial)
         _residentRoutes = State(initialValue: [initial])
     }
@@ -259,6 +260,7 @@ struct SpaceShell: View {
     }
 
     private func select(_ selected: NodusRoute) {
+        guard NodusLinkPolicy.routes.contains(selected) else { return }
         session.isSurfaceFullscreen = false
         guard selected != route else {
             showingDrawer = false
@@ -292,7 +294,9 @@ struct SpaceShell: View {
     private func routeView(_ route: NodusRoute) -> some View {
         switch route {
         case .home:
-            HomeView(session: session, openResearch: { select(.deepResearch) })
+            LinkHomeView(session: session, onSelect: select)
+        case .podcast:
+            PodcastsView(session: session)
         case .search, .studySearch:
             SearchScreen(session: session)
         case .library:
@@ -484,7 +488,9 @@ private struct LibraryRouteView: View {
     var body: some View {
         Group {
             if session.isDemo {
-                AccountLibraryView(session: session)
+                if NodusLinkPolicy.readOnly, let works = Collections.byPath["works"] {
+                    CollectionListView(session: session, collection: works, workspaceRoute: .library)
+                } else { AccountLibraryView(session: session) }
             } else if session.connection.desktopPairingId != nil {
                 VStack(spacing: 0) {
                     Picker("Library", selection: $showDocuments) {
@@ -503,7 +509,9 @@ private struct LibraryRouteView: View {
                     supportsAccountSync: supportsAccountSync
                 ) {
                 case .account:
-                    AccountLibraryView(session: session)
+                    if NodusLinkPolicy.readOnly, let works = Collections.byPath["works"] {
+                        CollectionListView(session: session, collection: works, workspaceRoute: .library)
+                    } else { AccountLibraryView(session: session) }
                 case .publishedWorks:
                     if let works = Collections.byPath["works"] {
                         CollectionListView(session: session, collection: works, workspaceRoute: .library)
@@ -669,17 +677,17 @@ private struct DesktopTopBar: View {
         HStack(spacing: 0) {
             if expandedActions {
                 topButton("command", label: "Commands", action: onCommands)
-                topButton("sparkles", label: "Nodi", action: onAssistant)
+                if !NodusLinkPolicy.readOnly { topButton("sparkles", label: "Nodi", action: onAssistant) }
                 topButton("arrow.clockwise", label: "Refresh", action: onRefresh)
-                if queueCount > 0 { topButton("tray.and.arrow.up", label: "Send queue", badge: queueCount, action: onQueue) }
+                if !NodusLinkPolicy.readOnly && queueCount > 0 { topButton("tray.and.arrow.up", label: "Send queue", badge: queueCount, action: onQueue) }
                 topButton(colorScheme == .dark ? "sun.max" : "moon", label: "Theme", action: onTheme)
                 topButton("gearshape", label: "Settings", action: onSettings)
             } else {
-                topButton("sparkles", label: "Nodi", action: onAssistant)
+                if !NodusLinkPolicy.readOnly { topButton("sparkles", label: "Nodi", action: onAssistant) }
                 Menu {
                     Button("Commands", systemImage: "command", action: onCommands)
                     Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    if queueCount > 0 { Button("Send queue", systemImage: "tray.and.arrow.up", action: onQueue) }
+                    if !NodusLinkPolicy.readOnly && queueCount > 0 { Button("Send queue", systemImage: "tray.and.arrow.up", action: onQueue) }
                     Button("Theme", systemImage: colorScheme == .dark ? "sun.max" : "moon", action: onTheme)
                     Button("Settings", systemImage: "gearshape", action: onSettings)
                 } label: {

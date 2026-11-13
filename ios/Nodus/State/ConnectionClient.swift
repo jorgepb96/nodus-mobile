@@ -19,7 +19,7 @@ enum ConnectionClient {
     }
 
     static func companionDocuments(for connection: AppModel.Connection, kind: CompanionDocumentOutbox.Kind = .workspaceNote) async throws -> (DesktopBridgeClient, CompanionDocumentOutbox)? {
-        guard connection.role.canSendChanges, let id = connection.desktopPairingId, let vaultId = connection.vaultId else { return nil }
+        guard !NodusLinkPolicy.readOnly, connection.role.canSendChanges, let id = connection.desktopPairingId, let vaultId = connection.vaultId else { return nil }
         let store = DesktopBridgePairingStore()
         guard let pairing = store.pairings().first(where: { $0.id == id }), !pairing.isExpired,
               pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing),

@@ -245,7 +245,7 @@ private struct PageFunctionsModifier: ViewModifier {
         var functions: [PageFunction] = []
         if preferences.showsScrollToTop { functions.append(.top) }
         if search.hasContent, !search.isOpen { functions.append(.find) }
-        functions.append(.chat)
+        if !NodusLinkPolicy.readOnly { functions.append(.chat) }
         return functions
     }
 
