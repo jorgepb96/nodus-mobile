@@ -69,6 +69,12 @@ final class NodusLinkUITests: XCTestCase {
         web.buttons["Evidencia"].tap()
         XCTAssertTrue(web.buttons["Ver fuente"].waitForExistence(timeout: 20))
         capture(app, "link-dictionary-evidence")
+        web.buttons["Ver fuente"].tap()
+        let sourceClose = app.buttons["nodus-modal-close"].firstMatch
+        XCTAssertTrue(sourceClose.waitForExistence(timeout: 25))
+        capture(app, "link-dictionary-native-source")
+        sourceClose.tap()
+        XCTAssertTrue(sourceClose.waitForNonExistence(timeout: 10))
         web.buttons["Versiones"].tap()
         let versions = web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "applied"))
         XCTAssertEqual(versions.count, 2)
@@ -94,13 +100,16 @@ final class NodusLinkUITests: XCTestCase {
         let listen = app.buttons["podcast-listen"]
         XCTAssertTrue(listen.waitForExistence(timeout: 20)); listen.tap()
         let play = app.buttons["saved-audio-play"]
-        XCTAssertTrue(play.waitForExistence(timeout: 30)); XCTAssertTrue(play.isEnabled)
+        XCTAssertTrue(play.waitForExistence(timeout: 30))
+        let prepared = expectation(for: NSPredicate { _, _ in play.isEnabled }, evaluatedWith: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [prepared], timeout: 25), .completed)
+        let initialElapsed = app.staticTexts["saved-audio-elapsed"].label
         let stoppedLabel = play.label
         play.tap()
         let playing = expectation(for: NSPredicate { _, _ in play.label != stoppedLabel }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [playing], timeout: 10), .completed)
         let elapsed = app.staticTexts["saved-audio-elapsed"]
-        let advancing = expectation(for: NSPredicate { _, _ in elapsed.label != "0:00" }, evaluatedWith: elapsed)
+        let advancing = expectation(for: NSPredicate { _, _ in elapsed.label != initialElapsed }, evaluatedWith: elapsed)
         XCTAssertEqual(XCTWaiter.wait(for: [advancing], timeout: 10), .completed)
         play.tap()
         app.sliders["saved-audio-seek"].adjust(toNormalizedSliderPosition: 0.6)
@@ -112,6 +121,26 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertTrue(elapsed.waitForExistence(timeout: 20))
         XCTAssertNotEqual(elapsed.label, "0:00", "Reopening keeps this device's position")
         capture(app, "link-podcast-restored-position")
+    }
+
+    @MainActor
+    func testDesktopRestartRecoversWithoutAnotherCode() throws {
+        executionTimeAllowance = 240
+        let app = try existing(route: "podcast")
+        defer { app.terminate() }
+        let episode = app.buttons["podcast-link-podcast-fixture"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 35))
+        print("NODUS_LINK_RECONNECT_READY")
+        let issue = app.staticTexts["podcasts-error"]
+        XCTAssertTrue(issue.waitForExistence(timeout: 65), "The isolated host must stop after the ready milestone")
+        capture(app, "link-desktop-offline-visible")
+        print("NODUS_LINK_RECONNECT_OFFLINE")
+        XCTAssertTrue(issue.waitForNonExistence(timeout: 65), "Restarting the same Desktop must recover the actual catalogue")
+        XCTAssertTrue(episode.isHittable)
+        XCTAssertFalse(app.textFields["pairing-code"].exists)
+        episode.tap()
+        XCTAssertTrue(app.buttons["podcast-listen"].waitForExistence(timeout: 20))
+        capture(app, "link-desktop-reconnected-without-code")
     }
 
     @MainActor private func existing(route: String) throws -> XCUIApplication {

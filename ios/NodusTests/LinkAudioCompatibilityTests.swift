@@ -20,7 +20,7 @@ nonisolated final class LinkAudioCompatibilityTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.rootViewController = UIViewController()
         window.rootViewController?.view.addSubview(playback.webView)
-        playback.webView.frame = CGRect(x: 0, y: 0, width: 320, height: 100)
+        playback.webView.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
         window.makeKeyAndVisible()
         defer { window.isHidden = true; playback.webView.removeFromSuperview() }
         do {
