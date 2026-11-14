@@ -198,9 +198,11 @@ final class SavedAudioRemoteControls {
         unbind(); self.player = player; self.title = title
         artwork = SavedAudioNowPlayingInfo.artwork(artworkData)
         let center = MPRemoteCommandCenter.shared()
+        center.playCommand.isEnabled = true; center.pauseCommand.isEnabled = true
+        center.changePlaybackPositionCommand.isEnabled = true
         center.skipBackwardCommand.isEnabled = true; center.skipBackwardCommand.preferredIntervals = [15]
         center.skipForwardCommand.isEnabled = true; center.skipForwardCommand.preferredIntervals = [15]
-        targets.append((center.playCommand, center.playCommand.addTarget { [weak self] _ in
+        targets.append((center.playCommand, center.playCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor [weak self] in
                 do {
                     try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
@@ -209,10 +211,10 @@ final class SavedAudioRemoteControls {
                 } catch { self?.player?.pause(); self?.update() }
             }; return .success
         }))
-        targets.append((center.pauseCommand, center.pauseCommand.addTarget { [weak self] _ in
+        targets.append((center.pauseCommand, center.pauseCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor [weak self] in self?.player?.pause(); self?.update() }; return .success
         }))
-        targets.append((center.changePlaybackPositionCommand, center.changePlaybackPositionCommand.addTarget { [weak self] event in
+        targets.append((center.changePlaybackPositionCommand, center.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in
             guard let position = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime, position.isFinite else { return .commandFailed }
             Task { @MainActor [weak self] in
                 guard let player = self?.player else { return }
@@ -220,7 +222,7 @@ final class SavedAudioRemoteControls {
             }; return .success
         }))
         for (command, delta) in [(center.skipBackwardCommand, -15.0), (center.skipForwardCommand, 15.0)] {
-            targets.append((command, command.addTarget { [weak self] _ in
+            targets.append((command, command.addTarget { @Sendable [weak self] _ in
                 Task { @MainActor [weak self] in
                     guard let player = self?.player else { return }
                     player.currentTime = min(player.duration, max(0, player.currentTime + delta)); self?.update()
@@ -253,7 +255,7 @@ enum SavedAudioNowPlayingInfo {
     }
     static func artwork(_ data: Data?) -> MPMediaItemArtwork? {
         guard let thumbnail = image(data) else { return nil }
-        return MPMediaItemArtwork(boundsSize: thumbnail.size) { _ in thumbnail }
+        return MPMediaItemArtwork(boundsSize: thumbnail.size) { @Sendable _ in thumbnail }
     }
     static func metadata(title: String, duration: Double, position: Double, playing: Bool, rate: Float,
                          artwork: MPMediaItemArtwork?) -> [String: Any] {
