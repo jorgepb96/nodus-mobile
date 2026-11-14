@@ -162,7 +162,7 @@ private struct SavedAudioTimeline: View {
                 seeking = editing
                 if !editing { player?.currentTime = position }
             }.disabled(player == nil).accessibilityLabel("Playback position")
-                .accessibilityValue(Self.clock(position)).accessibilityIdentifier("saved-audio-seek")
+                .accessibilityHint(Self.clock(position)).accessibilityIdentifier("saved-audio-seek")
             HStack {
                 Text(Self.clock(position)).accessibilityIdentifier("saved-audio-elapsed")
                 Spacer()
