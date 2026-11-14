@@ -8,11 +8,11 @@
 
 iPhone and iPad companion for [Nodus](https://github.com/jorgepb96/nodus), one directory per platform.
 
-The delivered internal beta is **0.1.0 (1003)**. The current branch contains later changes
-that are still being integrated and locally verified; they are not in that TestFlight build.
-See the [delivery record](docs/mobile-0.1.0/TESTFLIGHT-2026-10-15.md) and the
-[current implementation and validation record](docs/mobile-0.1.0/IMPLEMENTATION-2026-10-15.md).
-The sections below also retain earlier implementation notes and their original pending checks.
+The delivered Nodus Link internal beta is **0.1.0 (1005)**, verified as available in
+TestFlight on 14 November 2026. Use Nodus Desktop **5.18.0** or later.
+See the [current delivery and connection notes](docs/mobile-0.1.0/delivery-2026-11-14.md).
+The earlier [delivery record](docs/mobile-0.1.0/TESTFLIGHT-2026-10-15.md) and
+[implementation record](docs/mobile-0.1.0/IMPLEMENTATION-2026-10-15.md) are historical.
 
 ```
 ios/          iOS and iPadOS app (SwiftUI), its Swift packages and its tools
@@ -23,9 +23,22 @@ should have to change for it.
 
 ## Companion connection
 
-Open Desktop Settings → Mobile connection and link the complete workspace with a temporary QR,
-code or link. Direct HTTPS on the same LAN or local VPN is the enabled connection in 0.1.0.
-Server/Cloud onboarding and iCloud content synchronization are hidden in this beta.
+Open Desktop **Settings → Application → Mobile connection** and link the complete workspace
+with a temporary QR, code or link. Direct HTTPS on the same LAN or local VPN is the enabled
+connection in 0.1.0. Server/Cloud onboarding and iCloud content synchronization are hidden.
+
+**Desktop 5.18.0 workaround:** the Mobile connection section was omitted from the grouped
+settings menu. Search settings for **Mobile connection** (or **Conexión móvil**) to open it.
+[Desktop PR #1355](https://github.com/jorgepb96/nodus/pull/1355) restores its Application tab
+and adds **Nodus Link**, **iOS**, **iPad**, **iPadOS**, and **Android** search aliases.
+Those additional aliases require a desktop build containing that fix; Android is a search
+alias, not a supported mobile platform.
+
+## Historical implementation notes
+
+The remaining implementation notes describe the earlier, broader parity project. In the
+0.1.0 Link release, editing, AI/audio generation, autonomous providers and edit synchronization
+remain in code but are disabled. They are not features of the delivered consultation beta.
 
 Live mode uses the Mac's effective models and providers; their credentials remain on the Mac.
 Autonomous mode uses providers explicitly configured on the device. The app never switches modes
