@@ -7,6 +7,7 @@ import NodusKit
 enum NativeLiveChat {
     private static var inFlight:[String:(token:UUID,task:Task<Bool,any Error>)]=[:]
     static func step(id:String,session:SpaceSession,cancel:Bool = false) async throws -> Bool {
+        try NodusLinkPolicy.requireAuthoring()
         let key=session.connection.storageId+"|"+id
         if cancel {
             let store=ChatHistoryStore.shared(spaceId:session.connection.storageId)
@@ -80,6 +81,7 @@ enum NativeLiveChat {
         catch { recordIssue(id:id,session:session,error:error);refresh() }
     }
     static func reconcile(session:SpaceSession) async {
+        guard !NodusLinkPolicy.readOnly else { return }
         let store=ChatHistoryStore.shared(spaceId:session.connection.storageId)
         for conversation in store.conversations where conversation.pendingLive != nil {
             if Task.isCancelled { return }

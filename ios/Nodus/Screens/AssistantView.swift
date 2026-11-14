@@ -533,7 +533,7 @@ struct ChatScreen: View {
     }
 
     private func ask(regenerating: Bool = false) {
-        do { try NodusLinkPolicy.requireAuthoring() } catch { error = error.localizedDescription; return }
+        do { try NodusLinkPolicy.requireAuthoring() } catch { self.error = error.localizedDescription; return }
         if session.aiExecutionMode == .live { askLive(regenerating: regenerating);return }
         guard !isThinking,session.aiExecutionMode == .autonomous else { return }
         if regenerating && !canRegenerate { return }
