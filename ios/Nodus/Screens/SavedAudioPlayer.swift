@@ -141,7 +141,9 @@ struct SavedAudioPlayer: View {
     }
     private func seek(_ delta: Double) {
         guard let player else { return }
+        trace("seek:\(delta)")
         player.currentTime = min(duration, max(0, player.currentTime + delta))
+        remote.update(); trace("seeked")
     }
 }
 
@@ -151,17 +153,14 @@ private struct SavedAudioTimeline: View {
     let player: AVAudioPlayer?
     let duration: Double
     @State private var position = 0.0
-    @State private var seeking = false
 
     var body: some View {
         VStack(spacing: 24) {
             Slider(value: Binding(get: { position }, set: { value in
                 position = value
                 player?.currentTime = value
-            }), in: 0...max(duration, 0.001)) { editing in
-                seeking = editing
-                if !editing { player?.currentTime = position }
-            }.disabled(player == nil).accessibilityLabel("Playback position")
+            }), in: 0...max(duration, 0.001))
+                .disabled(player == nil).accessibilityLabel("Playback position")
                 .accessibilityHint(Self.clock(position)).accessibilityIdentifier("saved-audio-seek")
             HStack {
                 Text(Self.clock(position)).accessibilityIdentifier("saved-audio-elapsed")
@@ -171,7 +170,7 @@ private struct SavedAudioTimeline: View {
         }
         .task(id: player.map(ObjectIdentifier.init)) {
             while !Task.isCancelled {
-                if !seeking { position = player?.currentTime ?? 0 }
+                position = player?.currentTime ?? 0
                 do { try await Task.sleep(for: .milliseconds(200)) }
                 catch { return }
             }
