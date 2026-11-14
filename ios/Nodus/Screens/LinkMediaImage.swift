@@ -65,15 +65,18 @@ struct LinkReportHero: View {
     let id: String
     let height: CGFloat
     @State private var image: UIImage?
+    @State private var loading = true
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
             if let image {
                 Image(uiImage: image).resizable().scaledToFill().frame(height: height).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .accessibilityLabel("Report image").accessibilityIdentifier("link-report-cover")
-            }
+            } else if loading { ProgressView().frame(height: 44).tint(session.accent) }
+            else { Color.clear.frame(height: 0) }
         }.task(id: "\(session.connection.id):\(id)") {
-            image = nil
+            image = nil; loading = true
+            defer { loading = false }
             do { if let data = try await LinkMediaImages.load(session: session, kind: .report, id: id, thumbnail: false) { image = SavedAudioNowPlayingInfo.image(data) } }
             catch { /* Text remains readable when optional cover artwork is unavailable. */ }
         }

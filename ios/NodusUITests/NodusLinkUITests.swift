@@ -96,9 +96,11 @@ final class NodusLinkUITests: XCTestCase {
         let report = reports.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Informe profundo · ciencia del aprendizaje")).firstMatch
         XCTAssertTrue(report.waitForExistence(timeout: 45)); report.tap()
         XCTAssertTrue(app.descendants(matching: .any)["report-native-reader"].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.images["link-report-cover"].waitForExistence(timeout: 20), "The isolated report's real stored cover must appear, not a placeholder")
         let body = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "El corpus respalda la recuperación", "El corpus respalda la recuperación")).firstMatch
         XCTAssertTrue(body.waitForExistence(timeout: 30))
         capture(app, "link-deep-research-native-content")
+        for _ in 0..<6 { if body.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(body.isHittable)
         body.press(forDuration: 1.2)
         XCTAssertTrue(app.descendants(matching: .any)["nodus-selection-copy"].firstMatch.waitForExistence(timeout: 10))
