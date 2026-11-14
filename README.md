@@ -9,9 +9,11 @@
 
 iPhone and iPad companion for [Nodus](https://github.com/jorgepb96/nodus), one directory per platform.
 
-The delivered Nodus Link internal beta is **0.1.0 (1005)**, verified as available in
-TestFlight on 14 November 2026. Use Nodus Desktop **5.18.0** or later.
-The open PR also contains a later mobile-interface revision; those changes are not yet in build 1005.
+The initial Nodus Link internal beta was **0.1.0 (1005)**, verified as available in
+TestFlight on 14 November 2026. The interface candidate in this PR is **0.1.0 (1006)**.
+Use Nodus Desktop **5.18.0** or later.
+The interface revision is described in the [mobile design record](docs/mobile-0.1.0/interface-2026-11-14.md).
+Check PR #30 for the candidate’s current validation and TestFlight status.
 See the [current delivery and connection notes](docs/mobile-0.1.0/delivery-2026-11-14.md).
 The earlier [delivery record](docs/mobile-0.1.0/TESTFLIGHT-2026-10-15.md) and
 [implementation record](docs/mobile-0.1.0/IMPLEMENTATION-2026-10-15.md) are historical.
