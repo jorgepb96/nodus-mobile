@@ -5,16 +5,17 @@ import WebKit
 struct LinkPodcastPlayer: View {
     let playback: LinkPodcastPlayback
     let accent: Color
+    @State private var availableHeight: CGFloat = 700
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: availableHeight < 420 ? 10 : 20) {
                     if let target = playback.target {
-                        if let image = SavedAudioNowPlayingInfo.image(target.artworkData) {
-                            Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 320)
+                        if availableHeight >= 420, let image = SavedAudioNowPlayingInfo.image(target.artworkData) {
+                            Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: min(260, availableHeight * 0.3))
                                 .clipShape(RoundedRectangle(cornerRadius: 20)).frame(maxWidth: .infinity)
                         }
-                        Text(target.label).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
+                        Text(target.label).font(availableHeight < 420 ? .headline : .title2.bold()).fixedSize(horizontal: false, vertical: true)
                         if let issue = playback.issue { Text(issue).foregroundStyle(Color.nodusDanger) }
                         Slider(value: Binding(get: { playback.position }, set: { value in Task { await playback.seek(value) } }), in: 0...max(playback.duration, 0.001))
                             .accessibilityIdentifier("saved-audio-seek").accessibilityLabel("Playback position")
@@ -29,6 +30,7 @@ struct LinkPodcastPlayer: View {
                             Button { Task { await playback.toggle() } } label: {
                                 Image(systemName: playback.playing ? "pause.fill" : "play.fill").font(.title).frame(width: 72, height: 72)
                             }.buttonStyle(.borderedProminent).buttonBorderShape(.circle)
+                                .foregroundStyle(accent.relativeLuminance > 0.179 ? Color.black : Color.white)
                                 .accessibilityLabel(playback.playing ? "Pause" : "Play")
                                 .accessibilityValue(Text(verbatim: playback.playing ? "playing" : "paused")).accessibilityIdentifier("saved-audio-play")
                             Spacer()
@@ -44,8 +46,9 @@ struct LinkPodcastPlayer: View {
                         ShareLink(item: target.copy.url) { Label("Export audio", systemImage: "square.and.arrow.up").frame(minHeight: 44) }
                             .accessibilityIdentifier("saved-audio-export")
                     }
-                }.padding(24).frame(maxWidth: 600).frame(maxWidth: .infinity)
-            }.accessibilityIdentifier("saved-audio-player-scroll")
+                }.padding(availableHeight < 420 ? 16 : 24).frame(maxWidth: 600).frame(maxWidth: .infinity)
+            }.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { availableHeight = $0 }
+                .accessibilityIdentifier("saved-audio-player-scroll")
                 .navigationTitle("Podcasts").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { playback.showingPlayer = false } } }
         }.tint(accent.nodusReadable)

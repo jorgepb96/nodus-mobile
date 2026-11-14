@@ -255,6 +255,25 @@ final class NodusLinkUITests: XCTestCase {
     }
 
     @MainActor
+    func testPhoneBottomNavigationOpensReadersWithoutTheDrawer() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "home"
+        app.launch()
+        defer { app.terminate() }
+        let ideas = app.buttons["nodus-bottom-ideas"]
+        XCTAssertTrue(ideas.waitForExistence(timeout: 30) && ideas.isHittable)
+        ideas.tap()
+        let search = app.buttons["nodus-bottom-search"]
+        XCTAssertTrue(search.isHittable); search.tap()
+        XCTAssertTrue(app.textFields["nodus-search-field"].waitForExistence(timeout: 10))
+        let home = app.buttons["nodus-bottom-home"]
+        XCTAssertTrue(home.isHittable); home.tap()
+        XCTAssertTrue(app.buttons["link-home-ideas"].waitForExistence(timeout: 10))
+        capture(app, "phone-native-bottom-navigation")
+    }
+
+    @MainActor
     func testDemoRoutesDoNotReportAComputerConnectionFailure() throws {
         let app = XCUIApplication()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
@@ -296,6 +315,9 @@ final class NodusLinkUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launchEnvironment["NODUS_START_ROUTE"] = route
+        if let style = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_INTERFACE_STYLE"] {
+            app.launchEnvironment["NODUS_INTERFACE_STYLE"] = style
+        }
         if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUDIO_TRACE"] == "1" {
             app.launchEnvironment["NODUS_ACCEPTANCE_AUDIO_TRACE"] = "1"
         }
