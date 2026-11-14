@@ -121,14 +121,29 @@ final class NodusLinkUITests: XCTestCase {
         let advancing = expectation(for: NSPredicate { _, _ in elapsed.label != initialElapsed }, evaluatedWith: elapsed)
         XCTAssertEqual(XCTWaiter.wait(for: [advancing], timeout: 10), .completed)
         play.tap()
-        app.sliders["saved-audio-seek"].adjust(toNormalizedSliderPosition: 0.6)
-        let seeked = expectation(for: NSPredicate { _, _ in ["0:17", "0:18", "0:19"].contains(elapsed.label) }, evaluatedWith: elapsed)
+        let paused = expectation(for: NSPredicate { _, _ in play.label == stoppedLabel }, evaluatedWith: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [paused], timeout: 10), .completed)
+        let slider = app.sliders["saved-audio-seek"]
+        slider.adjust(toNormalizedSliderPosition: 0.6)
+        // XCTest documents this gesture as best effort. Check its actual position
+        // against the playback clock, rather than assuming pixel-perfect dragging.
+        let actual = slider.normalizedSliderPosition
+        XCTAssertEqual(actual, 0.6, accuracy: 0.11)
+        let seeked = expectation(for: NSPredicate { [self] _, _ in abs(seconds(elapsed.label) - Double(actual) * 30) <= 1 }, evaluatedWith: elapsed)
         XCTAssertEqual(XCTWaiter.wait(for: [seeked], timeout: 10), .completed)
+        let seekPosition = seconds(elapsed.label)
+        app.buttons["saved-audio-back"].tap()
+        let back = expectation(for: NSPredicate { [self] _, _ in abs(seconds(elapsed.label) - max(0, seekPosition - 15)) <= 1 }, evaluatedWith: elapsed)
+        XCTAssertEqual(XCTWaiter.wait(for: [back], timeout: 10), .completed)
+        app.buttons["saved-audio-forward"].tap()
+        let forward = expectation(for: NSPredicate { [self] _, _ in abs(seconds(elapsed.label) - seekPosition) <= 1 }, evaluatedWith: elapsed)
+        XCTAssertEqual(XCTWaiter.wait(for: [forward], timeout: 10), .completed)
         capture(app, "link-podcast-playback-seek")
         app.buttons["Cerrar"].firstMatch.tap()
         XCTAssertTrue(listen.waitForExistence(timeout: 10)); listen.tap()
         XCTAssertTrue(elapsed.waitForExistence(timeout: 20))
-        XCTAssertNotEqual(elapsed.label, "0:00", "Reopening keeps this device's position")
+        let restored = expectation(for: NSPredicate { [self] _, _ in abs(seconds(elapsed.label) - seekPosition) <= 1 }, evaluatedWith: elapsed)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 10), .completed, "Reopening keeps this device's actual position")
         capture(app, "link-podcast-restored-position")
     }
 
@@ -167,5 +182,10 @@ final class NodusLinkUITests: XCTestCase {
     }
     @MainActor private func capture(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+    }
+    @MainActor private func seconds(_ clock: String) -> Double {
+        let parts = clock.split(separator: ":").compactMap { Double($0) }
+        guard parts.count == 2 else { return -.infinity }
+        return parts[0] * 60 + parts[1]
     }
 }
