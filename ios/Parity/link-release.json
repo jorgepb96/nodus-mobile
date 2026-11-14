@@ -81,7 +81,7 @@
       "MobileReleaseUITests/testExistingMacPhoneArgumentDetailAndPinch()",
       "NodusLinkUITests/testDesktopRestartRecoversWithoutAnotherCode()",
       "LinkAudioCompatibilityTests/testSavedDesktopPodcastFormatsPrepareForPlayback()",
-      "NodusLinkUITests/testPodcastNowPlayingAndBackgroundPlayback()",
+      "NodusLinkUITests/testPodcastContinuesPlayingInBackground()",
       "LinkAudioCompatibilityTests/testSystemNowPlayingHasArtworkAndSeekControls()"
     ],
     "ipadSimulator": [
@@ -92,7 +92,7 @@
       "NodusLinkUITests/testLinkHasReadersAndRestoresOldAuthoringRouteToHome()",
       "MobileReleaseUITests/testExistingMacIPadGraphKeepsCanvasBesideDossier()",
       "MobileReleaseUITests/testExistingMacIPadArgumentKeepsCanvasBesideDossier()",
-      "NodusLinkUITests/testPodcastNowPlayingAndBackgroundPlayback()"
+      "NodusLinkUITests/testPodcastContinuesPlayingInBackground()"
     ]
   },
   "unverifiedOutsideSimulatorCampaign": [
@@ -100,7 +100,8 @@
     "camera-QR",
     "physical-VPN",
     "Windows-and-Linux-OS",
-    "background-audio-on-physical-device"
+    "background-audio-on-physical-device",
+    "system-control-center-and-lock-screen-appearance-owner-physical-device"
   ],
   "requiredDesktopChecks": [
     "typecheck",

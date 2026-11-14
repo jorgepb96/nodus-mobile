@@ -184,7 +184,7 @@ final class NodusLinkUITests: XCTestCase {
     }
 
     @MainActor
-    func testPodcastNowPlayingAndBackgroundPlayback() throws {
+    func testPodcastContinuesPlayingInBackground() throws {
         XCUIDevice.shared.orientation = .portrait
         let app = try existing(route: "podcast")
         defer { app.terminate() }
@@ -202,12 +202,11 @@ final class NodusLinkUITests: XCTestCase {
         let elapsed = app.staticTexts["saved-audio-elapsed"]
         let before = seconds(elapsed.label)
         XCUIDevice.shared.press(.home)
-        let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        system.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.01)).press(forDuration: 0.1,
-            thenDragTo: system.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.6)))
-        let title = system.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Podcast · Nodus Link")).firstMatch
-        XCTAssertTrue(title.waitForExistence(timeout: 15), system.debugDescription)
-        capture(system, "link-system-now-playing-with-podcast-cover")
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10))
+        // The native metadata/artwork/commands have their own API-level test.
+        // System Control Center modules are empty in this simulator runtime;
+        // their visual appearance remains explicitly pending on the owner's device.
+        Thread.sleep(forTimeInterval: 3)
         app.activate()
         XCTAssertTrue(play.waitForExistence(timeout: 20))
         let continued = expectation(for: NSPredicate { [self] _, _ in
