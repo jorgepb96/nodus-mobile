@@ -148,6 +148,30 @@ final class NodusLinkUITests: XCTestCase {
     }
 
     @MainActor
+    func testLinkedPodcastTranscriptSourcesAndChapter() throws {
+        let app = try existing(route: "podcast")
+        defer { app.terminate() }
+        let episode = app.buttons["podcast-link-podcast-fixture"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 35)); episode.tap()
+        let transcript = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Transcripción")).firstMatch
+        XCTAssertTrue(transcript.waitForExistence(timeout: 20)); transcript.tap()
+        XCTAssertTrue(app.staticTexts["Transcripción ficticia para verificar la consulta desde Nodus Link."].waitForExistence(timeout: 10))
+        let sources = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Fuentes")).firstMatch
+        XCTAssertTrue(sources.exists); sources.tap()
+        XCTAssertTrue(app.staticTexts["El efecto de prueba refuerza la retención"].waitForExistence(timeout: 10))
+        capture(app, "link-podcast-transcript-and-sources")
+        let chapter = app.buttons["Segunda parte"]
+        XCTAssertTrue(chapter.isHittable); chapter.tap()
+        let play = app.buttons["saved-audio-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 30))
+        let positioned = expectation(for: NSPredicate { _, _ in
+            play.isEnabled && app.staticTexts["saved-audio-elapsed"].label == "0:15"
+        }, evaluatedWith: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [positioned], timeout: 25), .completed)
+        capture(app, "link-podcast-chapter-at-fifteen-seconds")
+    }
+
+    @MainActor
     func testDesktopRestartRecoversWithoutAnotherCode() throws {
         executionTimeAllowance = 240
         let app = try existing(route: "podcast")
