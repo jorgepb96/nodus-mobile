@@ -95,6 +95,7 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         updateNowPlaying()
     }
     func stop() async {
+        seekRevision += 1
         navigationTimeout?.cancel(); finishNavigation(CancellationError())
         for (command, target) in targets { command.removeTarget(target) }; targets.removeAll()
         await pause()

@@ -164,6 +164,20 @@ struct SpaceShell: View {
                 .accessibilityIdentifier("nodus-space-shell")
                 .allowsHitTesting(false)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                LinkMiniPlayer(playback: session.podcastPlayback, accent: session.accent)
+                if UIDevice.current.userInterfaceIdiom == .phone, !session.isSurfaceFullscreen { phoneNavigation }
+            }
+        }
+        .background {
+            if let view = session.podcastPlayback.opusWebView {
+                LinkPodcastAudioHost(view: view).frame(width: 1, height: 1).accessibilityHidden(true).allowsHitTesting(false)
+            }
+        }
+        .sheet(isPresented: Binding(get: { session.podcastPlayback.showingPlayer }, set: { session.podcastPlayback.showingPlayer = $0 })) {
+            LinkPodcastPlayer(playback: session.podcastPlayback, accent: session.accent)
+        }
         .task {
             await session.load()
             await session.loadMirror()
@@ -186,6 +200,32 @@ struct SpaceShell: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    private var phoneNavigation: some View {
+        HStack(spacing: 0) {
+            phoneDestination(.home, title: "Home", image: "house")
+            phoneDestination(.ideas, title: "Ideas", image: "lightbulb")
+            Menu {
+                ForEach(NodusNavigationContract.visibleItems(for: .academic).filter {
+                    [.library, .authors, .graph, .argument, .dictionary, .deepResearch, .podcast].contains($0.route)
+                }) { item in Button { select(item.route) } label: { Label(item.label, systemImage: item.systemImage) } }
+            } label: {
+                VStack(spacing: 3) { Image(systemName: "square.grid.2x2").font(.system(size: 20)); Text("Explorar").font(.caption2) }
+                    .frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
+            }.foregroundStyle([.home, .ideas, .search].contains(route) ? Color.secondary : session.accent.nodusReadable)
+                .accessibilityIdentifier("nodus-bottom-explore")
+            phoneDestination(.search, title: "Search", image: "magnifyingglass")
+        }.padding(.top, 4).background(Color(uiColor: .systemBackground))
+            .overlay(alignment: .top) { Divider() }.accessibilityIdentifier("nodus-bottom-navigation")
+    }
+    private func phoneDestination(_ target: NodusRoute, title: LocalizedStringKey, image: String) -> some View {
+        Button { select(target) } label: {
+            VStack(spacing: 3) { Image(systemName: image).font(.system(size: 20)); Text(title).font(.caption2) }
+                .frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(route == target ? session.accent.nodusReadable : Color.secondary)
+            .accessibilityAddTraits(route == target ? .isSelected : [])
+            .accessibilityIdentifier("nodus-bottom-\(target.rawValue)")
     }
 
     private func sidebar(collapsed: Bool) -> some View {
@@ -283,7 +323,7 @@ struct SpaceShell: View {
     /// an expensive operation that the user left behind.
     private func retainsRouteState(_ route: NodusRoute) -> Bool {
         switch route {
-        case .argument, .map, .tree:
+        case .argument, .map, .tree, .graph, .dictionary, .deepResearch:
             return false
         default:
             return true
@@ -313,9 +353,7 @@ struct SpaceShell: View {
         case .authors:
             AuthorsWorkspaceView(session: session, onOpenIdea: openIdea, onOpenArgument: openArgument)
         case .deepResearch, .studyDeepResearch:
-            if session.connection.desktopPairingId != nil {
-                SharedDesktopSurface(session: session, surface: .deepResearch)
-            } else { DeepResearchRouteView(session: session) }
+            DeepResearchRouteView(session: session)
         case .dbDeepResearch:
             if session.connection.desktopPairingId != nil { SharedDesktopSurface(session:session,surface:.databaseResearch) }
             else { ContentUnavailableView("Informes de datos",systemImage:"chart.bar.doc.horizontal",description:Text("Vincula Nodus para consultar los informes de tus bases de datos.")) }

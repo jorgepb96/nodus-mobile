@@ -78,7 +78,7 @@ public struct NodusSearchField: View {
                         .foregroundStyle(Color.nodusTertiaryText)
                         // A 17-point glyph is not a target. The same lesson the header
                         // buttons taught, applied before anybody has to report it.
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -87,10 +87,11 @@ public struct NodusSearchField: View {
         }
         .padding(.leading, 13)
         .padding(.trailing, text.isEmpty ? 13 : 5)
-        .padding(.vertical, 10)
+        .font(.subheadline)
+        .frame(minHeight: 44)
         // Not `interactive`, deliberately. The field is a place to type, not a control that
         // lights up: with the lit edge on it, its bright accent outline was the strongest line
         // on a screen whose subject is the list underneath.
-        .nodusGlass(NodusGlass(.regular, tint: accent), in: Capsule())
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

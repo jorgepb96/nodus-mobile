@@ -109,5 +109,9 @@
     "contracts",
     "discovery",
     "i18n"
-  ]
+  ],
+  "supportedVaultTypes": [
+    "academic"
+  ],
+  "otherVaultTypes": "retained-in-code-hidden-in-link"
 }

@@ -1297,7 +1297,10 @@ struct PublishedReportReader: View {
                     Label("Sin conexión · informe descargado en este dispositivo", systemImage: "wifi.slash")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                if !phoneHeader {
+                if session.connection.desktopPairingId != nil, let id = currentRow.string("id"), !id.hasPrefix("mobile-dr-") {
+                    LinkMediaImage(session: session, kind: .report, id: id, thumbnail: false)
+                        .frame(height: phoneHeader ? 190 : 280)
+                } else {
                     if let id = localCoverID {
                         ReportHeroLayout { CompanionReportCoverImage(session: session, id: id) }
                             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -1312,13 +1315,6 @@ struct PublishedReportReader: View {
                         .font(.title3.weight(.semibold))
                     if phoneHeader {
                         DisclosureGroup("Detalles y opciones", isExpanded: $metadataExpanded) {
-                            if let id = localCoverID {
-                                ReportHeroLayout { CompanionReportCoverImage(session: session, id: id) }
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            } else if let hash = imageHash {
-                                ReportHeroLayout { AssetImage(session: session, hash: hash) }
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            }
                             reportMetadata
                         }
                         .frame(minHeight: 44)

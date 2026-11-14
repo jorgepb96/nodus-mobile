@@ -31,10 +31,12 @@ struct NodusLinkPolicyTests {
             let routes = Set(NodusNavigationContract.visibleItems(for: type).map(\.route))
             #expect(routes.isSubset(of: NodusLinkPolicy.routes))
             #expect(routes.isDisjoint(with: [.workspace, .writing, .researchChat, .browser, .radar, .toolkit]))
-            #expect(routes.contains(.podcast))
-            if type == .estudio || type == .docencia {
-                #expect(routes.contains(.studyIdeas) && routes.contains(.studyGraph))
-                #expect(!routes.contains(.ideas) && !routes.contains(.graph))
+            if type == .academic {
+                #expect(routes.contains(.podcast))
+                #expect(routes.contains(.ideas) && routes.contains(.graph))
+            } else {
+                #expect(routes.isEmpty)
+                #expect(!NodusLinkPolicy.supports(type))
             }
         }
     }

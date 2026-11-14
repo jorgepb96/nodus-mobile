@@ -4,8 +4,9 @@ import NodusKit
 /// stores and providers are deliberately kept for a later release, never migrated away.
 enum NodusLinkPolicy {
     nonisolated static let readOnly = true
-    static let routes: Set<NodusRoute> = [.home, .search, .library, .graph, .studyGraph,
-        .ideas, .studyIdeas, .authors, .argument, .deepResearch, .studyDeepResearch,
+    nonisolated static func supports(_ type: VaultType?) -> Bool { type == .academic }
+    static let routes: Set<NodusRoute> = [.home, .search, .library, .graph,
+        .ideas, .authors, .argument, .deepResearch,
         .dictionary, .podcast, .settings]
     nonisolated static let message = "Nodus Link permite consultar y escuchar. Crea y edita los contenidos desde Nodus en tu ordenador."
     nonisolated static func requireAuthoring() throws {

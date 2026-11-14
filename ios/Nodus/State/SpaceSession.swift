@@ -28,6 +28,7 @@ final class SpaceSession {
     nonisolated deinit {}
 
     var canAuthor: Bool { !NodusLinkPolicy.readOnly && connection.role.canSendChanges }
+    let podcastPlayback = LinkPodcastPlayback()
     var isSurfaceFullscreen = false
     private(set) var connection: AppModel.Connection
     let client: NodusClient

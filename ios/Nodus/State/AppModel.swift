@@ -51,7 +51,9 @@ final class AppModel {
     }
 
     private(set) var connections: [Connection] = []
-    private(set) var session: SpaceSession?
+    private(set) var session: SpaceSession? {
+        willSet { if session !== newValue { session?.podcastPlayback.stop() } }
+    }
     private(set) var isOpeningLocalCorpus = false
     var isConnecting = false
     private var closingDesktopGrants = Set<String>()
@@ -164,13 +166,14 @@ final class AppModel {
     /// mirror — would wake the device to discover there is nobody to talk to, and would report
     /// failure for a space that is perfectly healthy and permanently current.
     static func syncableConnections() -> [Connection] {
-        storedConnections().filter { !$0.isDemo && $0.desktopPairingId != nil }
+        storedConnections().filter { !$0.isDemo && $0.desktopPairingId != nil && NodusLinkPolicy.supports($0.vaultType) }
     }
 
-    var hasAnyConnection: Bool { !connections.isEmpty }
+    var linkConnections: [Connection] { connections.filter { NodusLinkPolicy.supports($0.vaultType) } }
+    var hasAnyConnection: Bool { !linkConnections.isEmpty }
 
     var mostRecent: Connection? {
-        connections.max { ($0.lastOpenedAt ?? .distantPast) < ($1.lastOpenedAt ?? .distantPast) }
+        linkConnections.max { ($0.lastOpenedAt ?? .distantPast) < ($1.lastOpenedAt ?? .distantPast) }
     }
 
     // MARK: - Connecting
@@ -373,6 +376,9 @@ final class AppModel {
         if let expectedMacId, capabilities.deviceId != expectedMacId { throw DesktopBridgeError.permissionDenied }
         pairing = try pairing.refreshedWorkspace(capabilities, trustedMacDeviceId: capabilities.deviceId)
         guard !capabilities.vaults.isEmpty || pairing.wholeWorkspace == true else { throw DesktopBridgeError.permissionDenied }
+        guard capabilities.vaults.contains(where: { NodusLinkPolicy.supports($0.type) }) else {
+            throw APIError(status: 409, code: "nodus_link_academic_only", message: "Esta versión de Nodus Link admite solo vaults académicos. Crea o abre uno en Nodus Desktop antes de vincularlo.")
+        }
         // Retire previous grants only after the new pinned handshake proves the same Mac.
         let pairingStore = DesktopBridgePairingStore()
         var retired = Set<String>()
@@ -416,7 +422,7 @@ final class AppModel {
 
     private func registerDesktopVaults(pairing: DesktopBridgePairing, token: String, capabilities: DesktopLiveCapabilities, recoveryNotice: String? = nil, finishingPairing: Bool = false) throws {
         if !finishingPairing, try DesktopBridgePairingStore().hasPendingWorkspaceRegistration(grantId: pairing.id) { throw DesktopBridgeError.permissionDenied }
-        for vault in capabilities.vaults {
+        for vault in capabilities.vaults where NodusLinkPolicy.supports(vault.type) {
             let spaceId = "live:\(capabilities.deviceId):\(vault.id)"
             let previous = connections.first { $0.desktopPairingId != nil && $0.spaceId == spaceId }
             try keychain.set(token, for: KeychainStore.deviceTokenKey(origin: pairing.origin, spaceId: spaceId))
@@ -436,7 +442,7 @@ final class AppModel {
     /// Enter the linked workspace immediately, preserving the last vault on renewal.
     @discardableResult
     func openLinkedDesktopWorkspace(pairingId: String) -> Bool {
-        let linked = connections.filter { $0.desktopPairingId == pairingId }
+        let linked = linkConnections.filter { $0.desktopPairingId == pairingId }
         let recent = linked.filter { $0.lastOpenedAt != nil }.max { ($0.lastOpenedAt ?? .distantPast) < ($1.lastOpenedAt ?? .distantPast) }
         guard let connection = recent ?? linked.first(where: { $0.vaultId == "default" }) ?? linked.first else { return false }
         return open(connection)
@@ -554,6 +560,7 @@ final class AppModel {
     /// there was no way to sign in again, and nothing ever suggested there was one.
     @discardableResult
     func open(_ connection: Connection) -> Bool {
+        guard NodusLinkPolicy.supports(connection.vaultType) else { return false }
         guard let token = ConnectionClient.credential(for: connection) else {
             session = nil
             needsSignIn = connection
@@ -581,7 +588,7 @@ final class AppModel {
         return true
     }
 
-    func closeSession() { session = nil }
+    func closeSession() { session?.podcastPlayback.stop(); session = nil }
 
     /// The connection whose credential is gone, set the moment that is discovered.
     ///

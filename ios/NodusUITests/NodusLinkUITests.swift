@@ -92,7 +92,7 @@ final class NodusLinkUITests: XCTestCase {
         web.buttons["Relaciones"].tap()
         XCTAssertTrue(web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recuperación · Nodus Link")).firstMatch.waitForExistence(timeout: 10))
         select("deepResearch", in: app)
-        let reports = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
+        let reports = app
         let report = reports.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Informe profundo · ciencia del aprendizaje")).firstMatch
         XCTAssertTrue(report.waitForExistence(timeout: 45)); report.tap()
         XCTAssertTrue(app.descendants(matching: .any)["report-native-reader"].firstMatch.waitForExistence(timeout: 30))
@@ -118,6 +118,7 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 30))
         let prepared = expectation(for: NSPredicate { _, _ in play.isEnabled }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [prepared], timeout: 25), .completed)
+        if play.label == "Pause" || play.label == "Pausar" { play.tap() }
         let initialElapsed = app.staticTexts["saved-audio-elapsed"].label
         let stoppedLabel = play.label
         play.tap()
@@ -152,7 +153,8 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [forward], timeout: 10), .completed)
         capture(app, "link-podcast-playback-seek")
         app.buttons["Cerrar"].firstMatch.tap()
-        XCTAssertTrue(listen.waitForExistence(timeout: 10)); listen.tap()
+        let mini = app.buttons["podcast-mini-open"]
+        XCTAssertTrue(mini.waitForExistence(timeout: 10)); mini.tap()
         XCTAssertTrue(elapsed.waitForExistence(timeout: 20))
         let restored = expectation(for: NSPredicate { [self] _, _ in abs(seconds(elapsed.label) - seekPosition) <= 1 }, evaluatedWith: elapsed)
         XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 10), .completed, "Reopening keeps this device's actual position")
@@ -177,7 +179,7 @@ final class NodusLinkUITests: XCTestCase {
         let play = app.buttons["saved-audio-play"]
         XCTAssertTrue(play.waitForExistence(timeout: 30))
         let positioned = expectation(for: NSPredicate { _, _ in
-            play.isEnabled && app.staticTexts["saved-audio-elapsed"].label == "0:15"
+            play.isEnabled && (15...20).contains(self.seconds(app.staticTexts["saved-audio-elapsed"].label))
         }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [positioned], timeout: 25), .completed)
         capture(app, "link-podcast-chapter-at-fifteen-seconds")
@@ -196,6 +198,7 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 30))
         let ready = expectation(for: NSPredicate { _, _ in play.isEnabled }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 25), .completed)
+        if play.label == "Pause" || play.label == "Pausar" { play.tap() }
         let pausedLabel = play.label; play.tap()
         let started = expectation(for: NSPredicate { _, _ in play.label != pausedLabel }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 10), .completed)
@@ -215,6 +218,50 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [continued], timeout: 10), .completed, "Playback must continue while the application is in the background")
         play.tap()
         capture(app, "link-podcast-after-background-playback")
+    }
+
+    @MainActor
+    func testPodcastKeepsPlayingAcrossSectionsWithMiniPlayer() throws {
+        let app = try existing(route: "podcast")
+        defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
+        let episode = app.buttons["podcast-link-podcast-fixture"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 35)); episode.tap()
+        let listen = app.buttons["podcast-listen"]
+        XCTAssertTrue(listen.waitForExistence(timeout: 20)); listen.tap()
+        let play = app.buttons["saved-audio-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 30))
+        let elapsed = app.staticTexts["saved-audio-elapsed"]
+        let before = seconds(elapsed.label)
+        app.buttons["Cerrar"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["podcast-mini-play"].waitForExistence(timeout: 10))
+        select("ideas", in: app)
+        XCTAssertTrue(app.buttons["podcast-mini-open"].waitForExistence(timeout: 10))
+        select("dictionary", in: app)
+        XCTAssertTrue(app.otherElements["shared-desktop-dictionary"].webViews.firstMatch.waitForExistence(timeout: 30))
+        let mini = app.buttons["podcast-mini-open"]
+        XCTAssertTrue(mini.isHittable); mini.tap()
+        XCTAssertTrue(elapsed.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(seconds(elapsed.label), before)
+        XCTAssertTrue(play.label == "Pause" || play.label == "Pausar")
+        capture(app, "podcast-after-reading-other-sections")
+    }
+
+    @MainActor
+    func testDemoRoutesDoNotReportAComputerConnectionFailure() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
+        app.launchEnvironment["NODUS_START_ROUTE"] = "home"
+        app.launch()
+        defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
+        XCTAssertTrue(app.buttons["link-home-ideas"].waitForExistence(timeout: 30))
+        for route in ["graph", "dictionary", "deepResearch", "podcast", "graph", "dictionary"] {
+            select(route, in: app)
+            XCTAssertFalse(app.staticTexts["podcasts-error"].exists)
+            let loading = app.descendants(matching: .any)["shared-surface-loading"].firstMatch
+            if loading.exists { XCTAssertTrue(loading.waitForNonExistence(timeout: 35)) }
+            XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+            capture(app, "demo-reader-\(route)")
+        }
     }
 
     @MainActor

@@ -362,7 +362,7 @@ struct SpaceSettingsView: View {
                let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == id }) {
                 Text("\(pairing.vaultIds.count) linked vaults")
                 DisclosureGroup("Workspace details") {
-                    ForEach(model.connections.filter { $0.desktopPairingId == id }) { connection in
+                    ForEach(model.linkConnections.filter { $0.desktopPairingId == id }) { connection in
                         Text(connection.vaultName ?? connection.spaceName)
                     }
                     Text("Permissions").font(.subheadline.weight(.medium))

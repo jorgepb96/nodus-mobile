@@ -676,7 +676,7 @@ struct CorpusProse: View {
                             source: block.source,
                             font: reading.uiFont(.callout, dynamicTypeSize: dynamicTypeSize),
                             accent: accent,
-                            justified: horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize,
+                            justified: !dynamicTypeSize.isAccessibilitySize,
                             linksLive: session != nil,
                             referencesLive: onReference != nil,
                             highlights: search?.highlights(for: path),

@@ -51,9 +51,9 @@ struct DeepResearchScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 workspaceHeader
-                queueStrip
+                if !NodusLinkPolicy.readOnly { queueStrip }
 
-                if let unfinished { resumeNotice(unfinished) }
+                if !NodusLinkPolicy.readOnly, let unfinished { resumeNotice(unfinished) }
                 if let publishedError {
                     NodusNotice(tone: .caution, title: "Published reports are unavailable", message: LocalizedStringKey(publishedError))
                         .accessibilityIdentifier("deep-research-catalog-error")
@@ -81,7 +81,7 @@ struct DeepResearchScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .task {
-            runner.attachPending(session: session, ai: ai)
+            if !NodusLinkPolicy.readOnly { runner.attachPending(session: session, ai: ai) }
             readCheckpoint()
             seedVisualFixtureIfNeeded()
         }
@@ -91,7 +91,7 @@ struct DeepResearchScreen: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingComposer = true } label: { Label("New research", systemImage: "plus") }
+                if session.canAuthor { Button { showingComposer = true } label: { Label("New research", systemImage: "plus") } }
             }
         }
         .sheet(isPresented: $showingComposer) {
@@ -135,11 +135,11 @@ struct DeepResearchScreen: View {
             systemImage: "telescope",
             accent: session.accent
         ) {
-            Button { showingComposer = true } label: {
-                Label("New research", systemImage: "sparkles")
+            if session.canAuthor {
+                Button { showingComposer = true } label: { Label("New research", systemImage: "sparkles") }
+                    .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
+                    .accessibilityIdentifier("deep-research-new")
             }
-            .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-            .accessibilityIdentifier("deep-research-new")
         }
     }
 
@@ -246,10 +246,10 @@ struct DeepResearchScreen: View {
                         }
                         .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                     }
-                    Button(role: .destructive) { deleteSelection() } label: {
-                        Label("Delete", systemImage: "trash")
+                    if session.canAuthor {
+                        Button(role: .destructive) { deleteSelection() } label: { Label("Delete", systemImage: "trash") }
+                            .buttonStyle(NodusGlassButtonStyle(accent: Color.nodusDanger))
                     }
-                    .buttonStyle(NodusGlassButtonStyle(accent: Color.nodusDanger))
                 }
             }
         }
@@ -1027,9 +1027,13 @@ private struct DeepResearchGalleryCard: View {
             case .local(let url):
                 LocalReportImage(url: url)
             case .published(let hash):
-                AssetImage(session: session, hash: hash)
+                if session.connection.desktopPairingId != nil, case .published(let row) = entry.origin {
+                    LinkMediaImage(session: session, kind: .report, id: row.string("id") ?? "")
+                } else { AssetImage(session: session, hash: hash) }
             case nil:
-                EmptyView()
+                if session.connection.desktopPairingId != nil, case .published(let row) = entry.origin {
+                    LinkMediaImage(session: session, kind: .report, id: row.string("id") ?? "")
+                }
             }
             if selected {
                 Image(systemName: "checkmark.circle.fill")

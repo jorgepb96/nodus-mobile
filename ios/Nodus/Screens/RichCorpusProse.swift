@@ -53,7 +53,7 @@ struct RichCorpusProse: View {
                     }.frame(minHeight: 44)
                 }
                 RichProseWebView(source: source, session: session, fontSize: reading.size(.callout, dynamicTypeSize: dynamicTypeSize), accent: accent,
-                    dark: colorScheme == .dark, justify: sizeClass == .regular && !dynamicTypeSize.isAccessibilitySize,
+                    dark: colorScheme == .dark, justify: !dynamicTypeSize.isAccessibilitySize,
                     annotations: annotations, bookmarks: bookmarks, chat: chat, search: search, path: path,
                     height: $height, issue: $issue, onOpen: onOpen, onImage: { image = $0 }, onFormula: { formula = $0 }, figureContext: figureContext)
                     .id(downloadedOnly)
@@ -145,6 +145,7 @@ private struct RichProseWebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> RichProseWKView {
         let config = WKWebViewConfiguration()
+        LinkReaderPresentation.install(in: config)
         config.websiteDataStore = .nonPersistent()
         config.userContentController.add(context.coordinator, name: "proseRead")
         let view = RichProseWKView(frame: .zero, configuration: config)

@@ -31,6 +31,42 @@ struct WorkspaceTabStrip: View {
     }
 
     var body: some View {
+        if usesTouchTabs {
+            if !tabs.isEmpty { compactNavigation }
+        } else { desktopStrip }
+    }
+
+    /// Phone documents use one navigation row, never a horizontally overflowing desktop strip.
+    private var compactNavigation: some View {
+        HStack(spacing: 4) {
+            Button { workspaceTabs.activateCatalog(in: section) } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: activeId == nil ? catalogueImage : "chevron.left")
+                    Text(localizedCatalogueTitle).lineLimit(1)
+                }.font(.subheadline.weight(.medium)).frame(minHeight: 44)
+            }.buttonStyle(.plain).accessibilityIdentifier("workspace-catalogue-\(section)")
+                .accessibilityAddTraits(activeId == nil ? .isSelected : [])
+            if let tab = tabs.first(where: { $0.id == activeId }) {
+                Button { workspaceTabs.activate(tab.id, in: section) } label: {
+                    Text(tab.title).font(.subheadline).lineLimit(1).truncationMode(.middle)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }.buttonStyle(.plain).accessibilityAddTraits(.isSelected)
+                    .accessibilityIdentifier("workspace-tab-\(section)-\(safeIdentifier(tab.id))")
+                Button { workspaceTabs.close(tab.id, in: section) } label: {
+                    Image(systemName: "xmark").font(.caption.weight(.semibold)).frame(width: 44, height: 44)
+                }.buttonStyle(.plain).accessibilityLabel("Close \(tab.title)")
+                    .accessibilityIdentifier("workspace-close-\(section)-\(safeIdentifier(tab.id))")
+            } else { Spacer(minLength: 0) }
+            tabChooser
+        }.padding(.horizontal, 12).frame(minHeight: height)
+            .foregroundStyle(accent.nodusReadable)
+            .background(Color(uiColor: .systemBackground))
+            .overlay(alignment: .bottom) { Divider() }
+            .accessibilityIdentifier("workspace-tab-strip-\(section)")
+            .background { if routeActive { keyboardCommands } }
+    }
+
+    private var desktopStrip: some View {
         GeometryReader { geometry in
             let documentWidth: CGFloat = usesTouchTabs && geometry.size.width <= 600
                 ? max(44, geometry.size.width - catalogueWidth - 1 - (showsTabChooser ? 44 : 0))

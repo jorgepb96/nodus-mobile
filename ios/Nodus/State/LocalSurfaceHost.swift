@@ -12,6 +12,14 @@ final class LocalSurfaceHost {
     private var origin: URL?
     private var waiters: [CheckedContinuation<URL, any Error>] = []
 
+    /// A suspended/failed listener must never leave a permanently cached dead origin.
+    func restart() {
+        let previous = listener
+        listener = nil; origin = nil
+        previous?.cancel()
+        finish(.failure(URLError(.cancelled)))
+    }
+
     func documentURL() async throws -> URL {
         if let origin { return origin.appendingPathComponent("index.html") }
         return try await withCheckedThrowingContinuation { continuation in
@@ -24,12 +32,14 @@ final class LocalSurfaceHost {
                 listener = server
                 server.stateUpdateHandler = { state in
                     Task { @MainActor in
+                        guard self.listener === server else { return }
                         switch state {
                         case .ready:
                             guard let port = server.port, let url = URL(string: "http://127.0.0.1:\(port.rawValue)") else { return }
                             self.origin = url
                             self.finish(.success(url.appendingPathComponent("index.html")))
-                        case .failed(let error): self.listener = nil; self.finish(.failure(error))
+                        case .failed(let error): self.origin = nil; self.listener = nil; self.finish(.failure(error))
+                        case .cancelled: self.origin = nil; self.listener = nil; self.finish(.failure(URLError(.cancelled)))
                         default: break
                         }
                     }

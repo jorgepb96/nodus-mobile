@@ -30,7 +30,7 @@ struct PodcastsView: View {
     @State private var loading = false
     @State private var issue: String?
     @State private var selected: LinkPodcast?
-    @State private var audio: SavedAudioTarget?
+    @State private var openPlayerAfterDismiss = false
     @State private var opening = false
     @State private var cover: Data?
     @State private var openingRevision = UUID()
@@ -42,6 +42,7 @@ struct PodcastsView: View {
         VStack(spacing: 0) {
             DesktopPageHeader(title: "Podcasts", subtitle: "Escucha los episodios guardados en tu ordenador", systemImage: "headphones", accent: session.accent)
                 .padding(16)
+            NodusSearchField(text: $query, prompt: "Buscar podcast", accent: session.accent).padding(.horizontal, 16).padding(.bottom, 12)
             if let issue {
                 Text(issue).foregroundStyle(Color.nodusDanger).padding().accessibilityIdentifier("podcasts-error")
                 Button("Reintentar") { Task { await load() } }.disabled(loading).frame(minHeight: 44)
@@ -51,9 +52,9 @@ struct PodcastsView: View {
                 ForEach(filtered) { episode in
                     Button { Task { await open(episode) } } label: {
                         HStack(spacing: 14) {
-                            Image(systemName: "play.circle.fill").font(.title).foregroundStyle(session.accent)
+                            LinkMediaImage(session: session, kind: .podcast, id: episode.id).frame(width: 76, height: 76)
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(episode.title).font(.headline).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+                                Text(episode.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(3)
                                 Text(episode.objective).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 Text("\(Int(max(0, episode.durationS) / 60)) min").font(.caption).foregroundStyle(.secondary)
                             }
@@ -63,7 +64,7 @@ struct PodcastsView: View {
                 if !loading && issue == nil && filtered.isEmpty {
                     ContentUnavailableView(query.isEmpty ? "No hay podcasts guardados" : "Sin resultados", systemImage: "headphones", description: Text("Los episodios que crees en Nodus Desktop aparecerán aquí."))
                 }
-            }.listStyle(.plain).searchable(text: $query, prompt: "Buscar podcast")
+            }.listStyle(.plain)
                 .refreshable { await load() }
         }
         .task(id: routeActive && phase == .active) {
@@ -73,7 +74,9 @@ struct PodcastsView: View {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
             }
         }
-        .sheet(item: $selected) { episode in
+        .sheet(item: $selected, onDismiss: {
+            if openPlayerAfterDismiss { openPlayerAfterDismiss = false; session.podcastPlayback.showingPlayer = true }
+        }) { episode in
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
@@ -109,10 +112,7 @@ struct PodcastsView: View {
                     }.padding(20).frame(maxWidth: 760).frame(maxWidth: .infinity)
                 }.navigationTitle("Podcast").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { selected = nil } } }
-                    .sheet(item: $audio) { target in
-                        NavigationStack { SavedAudioPlayer(target: target, accent: session.accent)
-                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { audio = nil } } } }
-                    }
+
             }
         }
     }
@@ -127,6 +127,7 @@ struct PodcastsView: View {
         return try JSONDecoder.nodus.decode(T.self, from: JSONEncoder.nodus.encode(value))
     }
     private func load() async {
+        guard !session.isDemo else { episodes = []; issue = nil; return }
         guard !loading else { return }; loading = true; defer { loading = false }
         do { episodes = try await read("podcastEpisodes"); issue = nil }
         catch { issue = error.localizedDescription }
@@ -147,7 +148,9 @@ struct PodcastsView: View {
         do {
             let copy = try await loadPrivateBridgeFile(session, kind: .podcastAudio, id: episode.id)
             if cover == nil { cover = await loadCover(episode.id) }
-            audio = SavedAudioTarget(id: episode.id, label: episode.title, copy: copy, initialTimestamp: timestamp, resumeKey: "podcast-position:\(session.connection.storageId):\(episode.id)", backgroundPlayback: true, artworkData: cover)
+            let target = SavedAudioTarget(id: episode.id, label: episode.title, copy: copy, initialTimestamp: timestamp, resumeKey: "podcast-position:\(session.connection.storageId):\(episode.id)", backgroundPlayback: true, artworkData: cover)
+            try await session.podcastPlayback.start(target)
+            openPlayerAfterDismiss = true; selected = nil
             issue = nil
         } catch { issue = error.localizedDescription }
     }

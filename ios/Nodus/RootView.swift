@@ -242,12 +242,12 @@ struct SpacePickerView: View {
     ///
     /// One space needs no searching and no ordering, and a filter over a list of one is a
     /// control that can only ever hide the single thing on screen.
-    private var offersFinding: Bool { model.connections.count > 1 }
+    private var offersFinding: Bool { model.linkConnections.count > 1 }
 
     /// The vault types actually present. Offering the nine the app knows about, when this
     /// device holds two academic spaces, is offering seven ways to empty the list.
     private var availableTypes: [VaultType] {
-        let present = Set(model.connections.compactMap(\.vaultType))
+        let present = Set(model.linkConnections.compactMap(\.vaultType))
         return VaultType.allCases.filter { present.contains($0) }
     }
 
@@ -255,7 +255,7 @@ struct SpacePickerView: View {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         // Ordered by the *stored* position first, because that is the order they were added in
         // and it is the fallback for a connection made before `addedAt` existed.
-        let ordered = model.connections.enumerated().sorted { left, right in
+        let ordered = model.linkConnections.enumerated().sorted { left, right in
             switch preferences.spaceOrder {
             case .recentlyUsed:
                 return (left.element.lastOpenedAt ?? .distantPast) > (right.element.lastOpenedAt ?? .distantPast)

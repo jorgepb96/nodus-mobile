@@ -247,6 +247,7 @@ enum NodusNavigationContract {
     }
 
     static func scopedItems(for vaultType: VaultType?) -> [NodusNavigationItem] {
+        guard !NodusLinkPolicy.readOnly || NodusLinkPolicy.supports(vaultType) else { return [] }
         let type = vaultType ?? .academic
         let study = type == .estudio || type == .docencia
         let replaced: Set<NodusRoute> = study ? [.ideas, .graph, .deepResearch] : [.studyIdeas, .studyGraph, .studyDeepResearch]

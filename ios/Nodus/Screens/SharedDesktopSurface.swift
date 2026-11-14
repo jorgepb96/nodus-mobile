@@ -98,7 +98,7 @@ struct SharedDesktopSurface: View {
     @State private var showStudyIdeaAssistant = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialResearchVisualLocalOnly:initialResearchVisualLocalOnly, initialResearchVisualReportId:initialResearchVisualReportId, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialResearchVisualLocalOnly:initialResearchVisualLocalOnly, initialResearchVisualReportId:initialResearchVisualReportId, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true; issue = nil }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -706,6 +706,7 @@ private struct DesktopWebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, surface: surface, downloadedOnly:downloadedOnly, onReady: onReady, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onImmersionSource: onImmersionSource, onNavigate: onNavigate) }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        LinkReaderPresentation.install(in: config)
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-image")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
         config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
@@ -827,8 +828,28 @@ private struct DesktopWebView: UIViewRepresentable {
         }()
         weak var webView: WKWebView?
         private var routeActive = true
+        private var recoveryAttempts = 0
+        private var recoveryPending = false
+        private var recovering = false
+        private func recoverLocalPresentation(restartHost: Bool) {
+            guard !recovering, recoveryAttempts < 2 else { return }
+            guard routeActive else { recoveryPending = true; return }
+            recovering = true; recoveryPending = false; recoveryAttempts += 1
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { self.recovering = false }
+                do {
+                    if restartHost { LocalSurfaceHost.shared.restart() }
+                    let url = try await LocalSurfaceHost.shared.documentURL()
+                    guard self.routeActive else { self.recoveryPending = true; return }
+                    self.webView?.load(URLRequest(url: url))
+                } catch is CancellationError { }
+                catch { self.onError("No se ha podido abrir el lector local. Reintenta para recuperarlo.") }
+            }
+        }
         func setRouteActive(_ active: Bool) {
             routeActive = active
+            if active, recoveryPending { recoverLocalPresentation(restartHost: false) }
             // The remote WebKit accessibility process can outlive UIKit's hidden
             // container. Inert removes its HTML controls from focus and VoiceOver
             // without destroying the canvas, draft or scroll position.
@@ -846,11 +867,13 @@ private struct DesktopWebView: UIViewRepresentable {
         private func navigationFailed(_ error: any Error) {
             guard (error as NSError).code != NSURLErrorCancelled else { return }
             surfaceReady = false
-            onError("No se pudo cargar esta vista: \(error.localizedDescription)")
+            if recoveryAttempts < 2 { recoverLocalPresentation(restartHost: true) }
+            else { onError("No se ha podido abrir el lector local. Reintenta para recuperarlo.") }
         }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             surfaceReady = false
-            onError("La vista se ha interrumpido. Reintenta para recuperar el contenido guardado.")
+            if recoveryAttempts < 2 { recoverLocalPresentation(restartHost: false) }
+            else { onError("El lector necesita recargarse. Tu contenido guardado no se ha modificado.") }
         }
         let session: SpaceSession
         let surface: DesktopSurface

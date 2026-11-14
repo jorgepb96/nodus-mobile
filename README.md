@@ -1,5 +1,6 @@
 > **Nodus Link 0.1.0:** the first iOS/iPadOS release now focuses on reading your
-> linked Desktop research and listening to saved podcasts. Creation, editing and
+> linked academic Desktop research and listening to saved podcasts. Other vault types
+> are retained in code but hidden in this version. Creation, editing and
 > generation are retained in code but disabled for this release. The earlier full
 > parity notes below are historical scope, not a release certification. See
 > [the current scope](docs/mobile-0.1.0/nodus-link-2026-11-13.md).

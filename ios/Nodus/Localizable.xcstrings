@@ -27580,6 +27580,295 @@
           }
         }
       }
+    },
+    "Tu investigación": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your research"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu investigación"
+          }
+        }
+      }
+    },
+    "Ideas y fuentes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ideas and sources"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ideas y fuentes"
+          }
+        }
+      }
+    },
+    "Relaciones entre ideas": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connections between ideas"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relaciones entre ideas"
+          }
+        }
+      }
+    },
+    "Argumentos y evidencias": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arguments and evidence"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Argumentos y evidencias"
+          }
+        }
+      }
+    },
+    "Informes guardados": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved reports"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Informes guardados"
+          }
+        }
+      }
+    },
+    "Conceptos y definiciones": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Concepts and definitions"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conceptos y definiciones"
+          }
+        }
+      }
+    },
+    "Episodios para escuchar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved episodes"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Episodios para escuchar"
+          }
+        }
+      }
+    },
+    "Explorar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explore"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explorar"
+          }
+        }
+      }
+    },
+    "Consulta las obras y sus fuentes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read works and their sources"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consulta las obras y sus fuentes"
+          }
+        }
+      }
+    },
+    "Buscar ideas, fuentes o conceptos": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search ideas, sources or concepts"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar ideas, fuentes o conceptos"
+          }
+        }
+      }
+    },
+    "Demostración local": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local demo"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demostración local"
+          }
+        }
+      }
+    },
+    "Explora los contenidos de ejemplo. No necesitas conectar un ordenador.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explore the sample content. No computer connection is needed."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explora los contenidos de ejemplo. No necesitas conectar un ordenador."
+          }
+        }
+      }
+    },
+    "Consulta los contenidos de tu ordenador. La creación y edición se realizan en Nodus Desktop.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read the content on your computer. Create and edit content in Nodus Desktop."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consulta los contenidos de tu ordenador. La creación y edición se realizan en Nodus Desktop."
+          }
+        }
+      }
+    },
+    "Detener podcast": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop podcast"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detener podcast"
+          }
+        }
+      }
+    },
+    "Esta versión de Nodus Link admite solo vaults académicos. Crea o abre uno en Nodus Desktop antes de vincularlo.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This version of Nodus Link supports academic vaults only. Create or open one in Nodus Desktop before pairing."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta versión de Nodus Link admite solo vaults académicos. Crea o abre uno en Nodus Desktop antes de vincularlo."
+          }
+        }
+      }
+    },
+    "No se ha podido abrir el lector local. Reintenta para recuperarlo.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local reader could not open. Retry to recover it."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido abrir el lector local. Reintenta para recuperarlo."
+          }
+        }
+      }
+    },
+    "El lector necesita recargarse. Tu contenido guardado no se ha modificado.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The reader needs to reload. Your saved content has not changed."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El lector necesita recargarse. Tu contenido guardado no se ha modificado."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
