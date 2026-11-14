@@ -848,7 +848,7 @@ private struct DesktopWebView: UIViewRepresentable {
                     guard self.routeActive else { self.recoveryPending = true; return }
                     self.webView?.load(URLRequest(url: url))
                 } catch is CancellationError { }
-                catch { self.onError("No se ha podido abrir el lector local. Reintenta para recuperarlo.") }
+                catch { self.onError(String(localized: "No se ha podido abrir el lector local. Reintenta para recuperarlo.")) }
             }
         }
         func setRouteActive(_ active: Bool) {
@@ -872,12 +872,12 @@ private struct DesktopWebView: UIViewRepresentable {
             guard (error as NSError).code != NSURLErrorCancelled else { return }
             surfaceReady = false
             if recoveryAttempts < 2 { recoverLocalPresentation(restartHost: true) }
-            else { onError("No se ha podido abrir el lector local. Reintenta para recuperarlo.") }
+            else { onError(String(localized: "No se ha podido abrir el lector local. Reintenta para recuperarlo.")) }
         }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             surfaceReady = false
             if recoveryAttempts < 2 { recoverLocalPresentation(restartHost: false) }
-            else { onError("El lector necesita recargarse. Tu contenido guardado no se ha modificado.") }
+            else { onError(String(localized: "El lector necesita recargarse. Tu contenido guardado no se ha modificado.")) }
         }
         let session: SpaceSession
         let surface: DesktopSurface

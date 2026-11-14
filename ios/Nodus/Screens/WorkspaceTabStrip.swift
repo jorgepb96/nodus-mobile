@@ -62,7 +62,7 @@ struct WorkspaceTabStrip: View {
             .foregroundStyle(accent.nodusReadable)
             .background(Color(uiColor: .systemBackground))
             .overlay(alignment: .bottom) { Divider() }
-            .accessibilityIdentifier("workspace-tab-strip-\(section)")
+            .accessibilityElement(children: .contain).accessibilityIdentifier("workspace-tab-strip-\(section)")
             .background { if routeActive { keyboardCommands } }
     }
 

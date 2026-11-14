@@ -60,7 +60,7 @@ struct DesktopPageHeader: View {
                 .frame(width: 36, height: 36)
                 .background(accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
+                Text(title).font(.title2.weight(.semibold))
                 Text(subtitle)
                     .font(.caption2)
                     .foregroundStyle(Color.nodusSecondaryText)

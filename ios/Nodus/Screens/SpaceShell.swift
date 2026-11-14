@@ -217,7 +217,7 @@ struct SpaceShell: View {
                 .accessibilityIdentifier("nodus-bottom-explore")
             phoneDestination(.search, title: "Search", image: "magnifyingglass")
         }.padding(.top, 4).background(Color(uiColor: .systemBackground))
-            .overlay(alignment: .top) { Divider() }.accessibilityIdentifier("nodus-bottom-navigation")
+            .overlay(alignment: .top) { Divider() }.accessibilityElement(children: .contain).accessibilityIdentifier("nodus-bottom-navigation")
     }
     private func phoneDestination(_ target: NodusRoute, title: LocalizedStringKey, image: String) -> some View {
         Button { select(target) } label: {

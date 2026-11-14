@@ -10,6 +10,7 @@ final class LocalSurfaceHost {
     private let queue = DispatchQueue(label: "nodus.local-surfaces")
     private var listener: NWListener?
     private var origin: URL?
+    private var startupTimeout: Task<Void, Never>?
     private var waiters: [CheckedContinuation<URL, any Error>] = []
 
     /// A suspended/failed listener must never leave a permanently cached dead origin.
@@ -30,9 +31,9 @@ final class LocalSurfaceHost {
                 parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
                 let server = try NWListener(using: parameters)
                 listener = server
-                server.stateUpdateHandler = { state in
+                server.stateUpdateHandler = { [weak self, weak server] state in
                     Task { @MainActor in
-                        guard self.listener === server else { return }
+                        guard let self, let server, self.listener === server else { return }
                         switch state {
                         case .ready:
                             guard let port = server.port, let url = URL(string: "http://127.0.0.1:\(port.rawValue)") else { return }
@@ -44,15 +45,25 @@ final class LocalSurfaceHost {
                         }
                     }
                 }
-                server.newConnectionHandler = { connection in
+                server.newConnectionHandler = { [weak self] connection in
+                    guard let self else { connection.cancel(); return }
                     connection.start(queue: self.queue)
                     self.receive(connection, buffer: Data())
                 }
                 server.start(queue: queue)
+                startupTimeout = Task { [weak self, weak server] in
+                    do {
+                        try await Task.sleep(for: .seconds(10))
+                        guard let self, let server, self.listener === server, self.origin == nil else { return }
+                        self.listener = nil; server.cancel()
+                        self.finish(.failure(URLError(.timedOut)))
+                    } catch { }
+                }
             } catch { listener = nil; finish(.failure(error)) }
         }
     }
     private func finish(_ result: Result<URL, any Error>) {
+        startupTimeout?.cancel(); startupTimeout = nil
         let pending = waiters; waiters.removeAll()
         for waiter in pending { waiter.resume(with: result) }
     }
