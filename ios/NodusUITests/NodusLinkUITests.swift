@@ -125,6 +125,14 @@ final class NodusLinkUITests: XCTestCase {
             let stopped = expectation(for: NSPredicate { _, _ in !play.isSelected }, evaluatedWith: play)
             XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 10), .completed)
         }
+        // Resume is persistent between launches. Establish enough audio ahead of
+        // this play/pause check; a previous test may have left this short fixture
+        // one second from its end. Reopening at the chosen position is checked below.
+        app.sliders["saved-audio-seek"].adjust(toNormalizedSliderPosition: 0)
+        let atStart = expectation(for: NSPredicate { [self] _, _ in
+            seconds(app.staticTexts["saved-audio-elapsed"].label) <= 1
+        }, evaluatedWith: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [atStart], timeout: 10), .completed)
         let initialElapsed = app.staticTexts["saved-audio-elapsed"].label
         let stoppedValue = play.isSelected
         play.tap()
@@ -283,6 +291,7 @@ final class NodusLinkUITests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(button.frame.width, 44)
                 XCTAssertGreaterThanOrEqual(button.frame.height, 44)
                 XCTAssertTrue(sheet.frame.insetBy(dx: -1, dy: -1).contains(button.frame), "The complete \(identifier) button must fit inside the actual player sheet")
+                XCTAssertTrue(app.windows.firstMatch.frame.insetBy(dx: -1, dy: -1).contains(button.frame), "The complete \(identifier) button must also fit inside the screen")
             }
             capture(app, "podcast-controls-accessible-\(orientation == .portrait ? "portrait" : "landscape")")
         }
