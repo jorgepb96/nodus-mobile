@@ -66,7 +66,17 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         seekRevision += 1
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try AVAudioSession.sharedInstance().setActive(true)
-        let value = try await webView.callAsyncJavaScript("const a=document.getElementById('audio');if(a.ended || a.currentTime >= a.duration - 0.05)a.currentTime=0;await a.play();return a.currentTime;", arguments: [:], in: nil, contentWorld: .page)
+        let value = try await webView.callAsyncJavaScript("""
+            const a=document.getElementById('audio');
+            if(a.ended || a.currentTime >= a.duration - 0.05) {
+              await new Promise((resolve,reject)=>{
+                const done=()=>{clearTimeout(timer);a.removeEventListener('seeked',done);resolve();};
+                const timer=setTimeout(()=>{a.removeEventListener('seeked',done);reject(new Error('No se pudo reiniciar el episodio.'));},5000);
+                a.addEventListener('seeked',done);a.currentTime=0;if(!a.seeking)done();
+              });
+            }
+            await a.play();return a.currentTime;
+            """, arguments: [:], in: nil, contentWorld: .page)
         if let value = value as? Double { position = value }
         playing = true; updateNowPlaying()
     }
@@ -80,7 +90,16 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         seekRevision += 1
         trace("seek:\(value)")
         position = min(duration, max(0, value))
-        _ = try? await webView.callAsyncJavaScript("document.getElementById('audio').currentTime=position;", arguments: ["position": position], in: nil, contentWorld: .page)
+        _ = try? await webView.callAsyncJavaScript("""
+            const a=document.getElementById('audio');
+            if(Math.abs(a.currentTime-position)>0.001 || a.seeking) {
+              await new Promise((resolve,reject)=>{
+                const done=()=>{clearTimeout(timer);a.removeEventListener('seeked',done);resolve();};
+                const timer=setTimeout(()=>{a.removeEventListener('seeked',done);reject(new Error('No se pudo cambiar la posición del episodio.'));},5000);
+                a.addEventListener('seeked',done);a.currentTime=position;if(!a.seeking)done();
+              });
+            }
+            """, arguments: ["position": position], in: nil, contentWorld: .page)
         updateNowPlaying()
     }
     func changeRate(_ value: Float) async {
