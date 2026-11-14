@@ -32,7 +32,9 @@ Deep Research, diccionario y podcasts guardados, con biblioteca, autores y búsq
 - Podcasts: miniaturas en el catálogo, portada del episodio y reproductor de la sesión.
   Cerrar su ventana permite seguir consultando otras secciones. Un minirreproductor
   permite reabrir, pausar o detener. Se conservan posición, capítulos, transcripción,
-  fuentes, velocidad y controles del sistema, con soporte de AAC y Ogg/Opus.
+  fuentes, velocidad y controles del sistema, con soporte de AAC y Ogg/Opus. Pausa
+  y avance permanecen fuera del scroll de la portada para evitar recortes en las
+  ventanas de iPad, en horizontal y con tamaños de texto accesibles.
 - Imágenes: lectura por el Bridge privado y caché de memoria limitada a 20 MiB y 80 objetos.
   No se crea una copia completa del workspace ni se usan URLs públicas para las portadas.
 

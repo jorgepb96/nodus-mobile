@@ -257,6 +257,38 @@ final class NodusLinkUITests: XCTestCase {
     }
 
     @MainActor
+    func testPodcastControlsFitTheSheetWithLargeTextInBothOrientations() throws {
+        let app = try existing(route: "podcast", dynamicType: "accessibility3")
+        defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
+        let episode = app.buttons["podcast-link-podcast-fixture"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 35)); episode.tap()
+        let chapter = app.buttons["Primera parte"]
+        if !chapter.isHittable { app.swipeUp() }
+        XCTAssertTrue(chapter.waitForExistence(timeout: 20) && chapter.isHittable); chapter.tap()
+        let play = app.buttons["saved-audio-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 30))
+        if play.isSelected { play.tap() }
+        let sheet = app.descendants(matching: .any)["podcast-player-sheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10))
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let turned = expectation(for: NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
+            }, evaluatedWith: app)
+            XCTAssertEqual(XCTWaiter.wait(for: [turned], timeout: 15), .completed)
+            for identifier in ["saved-audio-play", "saved-audio-back", "saved-audio-forward"] {
+                let button = app.buttons[identifier]
+                XCTAssertTrue(button.isHittable)
+                XCTAssertGreaterThanOrEqual(button.frame.width, 44)
+                XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+                XCTAssertTrue(sheet.frame.insetBy(dx: -1, dy: -1).contains(button.frame), "The complete \(identifier) button must fit inside the actual player sheet")
+            }
+            capture(app, "podcast-controls-accessible-\(orientation == .portrait ? "portrait" : "landscape")")
+        }
+    }
+
+    @MainActor
     func testPhoneBottomNavigationOpensReadersWithoutTheDrawer() throws {
         let app = XCUIApplication()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
@@ -313,10 +345,11 @@ final class NodusLinkUITests: XCTestCase {
         capture(app, "link-desktop-reconnected-without-code")
     }
 
-    @MainActor private func existing(route: String) throws -> XCUIApplication {
+    @MainActor private func existing(route: String, dynamicType: String? = nil) throws -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launchEnvironment["NODUS_START_ROUTE"] = route
+        if let dynamicType { app.launchEnvironment["NODUS_ACCEPTANCE_DYNAMIC_TYPE"] = dynamicType }
         if let style = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_INTERFACE_STYLE"] {
             app.launchEnvironment["NODUS_INTERFACE_STYLE"] = style
         }

@@ -27960,6 +27960,23 @@
           }
         }
       }
+    },
+    "Playback options": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback options"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opciones de reproducción"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
