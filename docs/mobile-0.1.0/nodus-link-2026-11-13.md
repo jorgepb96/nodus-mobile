@@ -67,3 +67,23 @@ Para cerrar la beta se requiere una lectura real con Desktop del catálogo y
 contenido de las seis secciones, desconexión/reconexión, reproducción y búsqueda
 por capítulos, revisión iPhone/iPad vertical/horizontal, firma y subida posterior.
 No se presenta este documento como certificación del 100% de esos recorridos.
+
+## Cierre del candidato Link
+
+`node ios/scripts/verify-release-acceptance.mjs <campaña.json> --link` comprueba
+el alcance reducido de `ios/Parity/link-release.json`. El verificador histórico
+sin `--link` conserva los requisitos de la paridad anterior. No se relajan sus
+controles para publicar Link ni se presentan como aprobadas funciones aplazadas.
+
+La campaña Link exige casos XCTest concretos de código/reapertura, consulta,
+grafo y mapa, diccionario/informe, reproducción/transcripción/capítulos y
+reconexión. Puede reunir varias ejecuciones completas, todas sin fallos ni skips,
+con recibos de compilación previos y la misma revisión exacta de fuentes y Bridge.
+También exige contratos y comprobaciones de Desktop, logs con hash y la entrega
+explícitamente pendiente de las pruebas del iPhone físico al propietario. Los
+datos ficticios se comparan antes y después para detectar escrituras inesperadas.
+
+Los resultados finales, capturas y fallos históricos se conservan en la carpeta
+privada de evidencias; los resultados públicos actualizados se registran en los
+dos PR. La disponibilidad en TestFlight requiere verificar por separado firma,
+subida, procesamiento de Apple y asignación a las pruebas internas.
