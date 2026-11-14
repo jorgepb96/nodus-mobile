@@ -73,6 +73,7 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
     func seek(_ value: Double) async {
         guard prepared, value.isFinite else { return }
         seekRevision += 1
+        trace("seek:\(value)")
         position = min(duration, max(0, value))
         _ = try? await webView.callAsyncJavaScript("document.getElementById('audio').currentTime=position;", arguments: ["position": position], in: nil, contentWorld: .page)
         updateNowPlaying()
@@ -87,6 +88,7 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         guard prepared, let result = try? await webView.callAsyncJavaScript("const a=document.getElementById('audio');return {position:a.currentTime,playing:!a.paused&&!a.ended};", arguments: [:], in: nil, contentWorld: .page) as? [String: Any] else { return }
         guard revision == seekRevision else { return }
         position = result["position"] as? Double ?? position
+        trace("clock:\(position)")
         playing = result["playing"] as? Bool ?? false
         updateNowPlaying()
     }
@@ -124,5 +126,12 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
             MPNowPlayingInfoPropertyPlaybackRate: playing ? rate : 0]
+    }
+    private func trace(_ event: String) {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUDIO_TRACE"] == "1" {
+            print("[acceptance-opus] \(event)")
+        }
+        #endif
     }
 }

@@ -128,6 +128,7 @@ final class NodusLinkUITests: XCTestCase {
         // XCTest documents this gesture as best effort. Check its actual position
         // against the playback clock, rather than assuming pixel-perfect dragging.
         let actual = slider.normalizedSliderPosition
+        print("[link-audio-seek] normalized:\(actual) value:\(String(describing: slider.value)) clock:\(elapsed.label)")
         XCTAssertEqual(actual, 0.6, accuracy: 0.11)
         let seeked = expectation(for: NSPredicate { [self] _, _ in abs(seconds(elapsed.label) - Double(actual) * 30) <= 1 }, evaluatedWith: elapsed)
         XCTAssertEqual(XCTWaiter.wait(for: [seeked], timeout: 10), .completed)

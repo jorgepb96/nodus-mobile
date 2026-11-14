@@ -19,10 +19,12 @@ struct OpusSavedAudioPlayer: View {
                 if let issue { Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("saved-audio-error") }
                 if !playback.prepared && issue == nil { ProgressView("Preparando audio…") }
                 Slider(value: Binding(get: { position }, set: { value in
+                    trace("slider:\(value) seeking:\(seeking)")
                     position = value
                     if !seeking { Task { await playback.seek(value) } }
                 }), in: 0...max(playback.duration, 0.001)) { editing in
                     let targetPosition = position
+                    trace("editing:\(editing) target:\(targetPosition)")
                     seeking = editing
                     if !editing { Task { await playback.seek(targetPosition) } }
                 }.disabled(!playback.prepared).accessibilityIdentifier("saved-audio-seek").accessibilityLabel("Playback position")
@@ -75,6 +77,13 @@ struct OpusSavedAudioPlayer: View {
     }
     private func clock(_ seconds: Double) -> String {
         let value = Int(max(0, seconds)); return String(format: "%d:%02d", value / 60, value % 60)
+    }
+    private func trace(_ event: String) {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUDIO_TRACE"] == "1" {
+            print("[acceptance-opus-ui] \(event)")
+        }
+        #endif
     }
 }
 private struct OpusAudioHost: UIViewRepresentable {
