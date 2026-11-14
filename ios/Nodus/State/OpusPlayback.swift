@@ -63,12 +63,15 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         bindRemote(); updateNowPlaying()
     }
     func play() async throws {
+        seekRevision += 1
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try AVAudioSession.sharedInstance().setActive(true)
-        _ = try await webView.callAsyncJavaScript("await document.getElementById('audio').play();", arguments: [:], in: nil, contentWorld: .page)
+        let value = try await webView.callAsyncJavaScript("const a=document.getElementById('audio');if(a.ended || a.currentTime >= a.duration - 0.05)a.currentTime=0;await a.play();return a.currentTime;", arguments: [:], in: nil, contentWorld: .page)
+        if let value = value as? Double { position = value }
         playing = true; updateNowPlaying()
     }
     func pause() async {
+        seekRevision += 1
         _ = try? await webView.callAsyncJavaScript("document.getElementById('audio')?.pause();", arguments: [:], in: nil, contentWorld: .page)
         playing = false; updateNowPlaying()
     }
@@ -81,6 +84,7 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         updateNowPlaying()
     }
     func changeRate(_ value: Float) async {
+        seekRevision += 1
         rate = value
         _ = try? await webView.callAsyncJavaScript("document.getElementById('audio').playbackRate=rate;", arguments: ["rate": value], in: nil, contentWorld: .page)
         updateNowPlaying()

@@ -66,28 +66,36 @@ import SwiftUI
     }
     private func poll() async {
         let current = revision
+        let clockRevision = seekRevision
         if let opus {
             await opus.poll()
-            guard revision == current else { return }
+            guard revision == current, seekRevision == clockRevision else { return }
             position = opus.position; duration = opus.duration; playing = opus.playing; rate = opus.rate
         }
         else if let native { position = native.currentTime; playing = native.isPlaying; remote.update() }
         savePosition()
     }
     func toggle() async {
+        seekRevision += 1
+        let command = seekRevision, current = revision
         do {
-            if let opus { if opus.playing { await opus.pause() } else { try await opus.play() }; playing = opus.playing }
+            if let opus {
+                if opus.playing { await opus.pause() } else { try await opus.play() }
+                guard revision == current, seekRevision == command else { return }
+                playing = opus.playing; position = opus.position
+            }
             else if let native {
                 if native.isPlaying { native.pause() }
                 else {
                     try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
                     try AVAudioSession.sharedInstance().setActive(true)
+                    if native.currentTime >= native.duration - 0.05 { native.currentTime = 0 }
                     guard native.play() else { throw CocoaError(.fileReadCorruptFile) }
                 }
-                playing = native.isPlaying; remote.update()
+                playing = native.isPlaying; position = native.currentTime; remote.update()
             }
             issue = nil; savePosition()
-        } catch { issue = error.localizedDescription }
+        } catch { if revision == current, seekRevision == command { issue = error.localizedDescription } }
     }
     func seek(_ seconds: Double) async {
         let value = min(duration, max(0, seconds.isFinite ? seconds : 0))

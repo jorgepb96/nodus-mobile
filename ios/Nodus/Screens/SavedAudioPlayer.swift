@@ -207,6 +207,7 @@ final class SavedAudioRemoteControls {
                 do {
                     try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
                     try AVAudioSession.sharedInstance().setActive(true)
+                    if let player = self?.player, player.currentTime >= player.duration - 0.05 { player.currentTime = 0 }
                     self?.player?.play(); self?.update()
                 } catch { self?.player?.pause(); self?.update() }
             }; return .success

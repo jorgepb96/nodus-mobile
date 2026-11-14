@@ -71,6 +71,16 @@ nonisolated final class LinkAudioCompatibilityTests: XCTestCase {
                 await playback.poll()
                 XCTAssertEqual(playback.position, target, accuracy: 0.03, "A previous clock read cannot undo the chosen seek")
             }
+            await playback.seek(playback.duration)
+            try await playback.play()
+            await playback.poll()
+            XCTAssertTrue(playback.playing, "An ended Opus episode must replay when Play is pressed")
+            XCTAssertLessThan(playback.position, playback.duration / 2)
+            async let oldClock: Void = playback.poll()
+            await playback.pause()
+            await oldClock
+            await playback.poll()
+            XCTAssertFalse(playback.playing, "A clock read cannot undo an explicit pause")
             await playback.stop()
         } catch {
             let state = try? await playback.webView.callAsyncJavaScript("const a=document.getElementById('audio');return {ready:a?.readyState,network:a?.networkState,error:a?.error?.code,hidden:document.hidden};", arguments: [:], in: nil, contentWorld: .page)

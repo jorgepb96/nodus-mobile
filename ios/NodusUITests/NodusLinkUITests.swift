@@ -366,7 +366,7 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertTrue(destination.waitForExistence(timeout: 10)); destination.tap()
     }
     @MainActor private func capture(_ app: XCUIApplication, _ name: String) {
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
     }
     @MainActor private func seconds(_ clock: String) -> Double {
         let parts = clock.split(separator: ":").compactMap { Double($0) }
