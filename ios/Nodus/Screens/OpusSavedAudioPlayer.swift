@@ -9,8 +9,6 @@ struct OpusSavedAudioPlayer: View {
     @Environment(\.scenePhase) private var phase
     @State private var playback = OpusPlayback()
     @State private var issue: String?
-    @State private var position = 0.0
-    @State private var seeking = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -18,18 +16,12 @@ struct OpusSavedAudioPlayer: View {
                 if target.copy.offline { Label("Downloaded copy", systemImage: "wifi.slash") }
                 if let issue { Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("saved-audio-error") }
                 if !playback.prepared && issue == nil { ProgressView("Preparando audio…") }
-                Slider(value: Binding(get: { position }, set: { value in
-                    trace("slider:\(value) seeking:\(seeking)")
-                    position = value
-                    if !seeking { Task { await playback.seek(value) } }
-                }), in: 0...max(playback.duration, 0.001)) { editing in
-                    let targetPosition = position
-                    trace("editing:\(editing) target:\(targetPosition)")
-                    seeking = editing
-                    if !editing { Task { await playback.seek(targetPosition) } }
-                }.disabled(!playback.prepared).accessibilityIdentifier("saved-audio-seek").accessibilityLabel("Playback position")
+                Slider(value: Binding(get: { playback.position }, set: { value in
+                    Task { await playback.seek(value) }
+                }), in: 0...max(playback.duration, 0.001))
+                    .disabled(!playback.prepared).accessibilityIdentifier("saved-audio-seek").accessibilityLabel("Playback position")
                 HStack {
-                    Text(clock(position)).accessibilityIdentifier("saved-audio-elapsed")
+                    Text(clock(playback.position)).accessibilityIdentifier("saved-audio-elapsed")
                     Spacer(); Text(clock(playback.duration))
                 }.monospacedDigit()
                 HStack {
@@ -58,7 +50,7 @@ struct OpusSavedAudioPlayer: View {
                     let start = target.initialTimestamp ?? target.resumeKey.map { UserDefaults.standard.double(forKey: $0) } ?? 0
                     try await playback.prepare(Data(contentsOf: target.copy.url), title: target.label, position: start)
                     while !Task.isCancelled {
-                        await playback.poll(); if !seeking { position = playback.position }; savePosition()
+                        await playback.poll(); savePosition()
                         try await Task.sleep(for: .milliseconds(500))
                     }
                 } catch is CancellationError { }
@@ -77,13 +69,6 @@ struct OpusSavedAudioPlayer: View {
     }
     private func clock(_ seconds: Double) -> String {
         let value = Int(max(0, seconds)); return String(format: "%d:%02d", value / 60, value % 60)
-    }
-    private func trace(_ event: String) {
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUDIO_TRACE"] == "1" {
-            print("[acceptance-opus-ui] \(event)")
-        }
-        #endif
     }
 }
 private struct OpusAudioHost: UIViewRepresentable {
