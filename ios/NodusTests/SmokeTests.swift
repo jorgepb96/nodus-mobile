@@ -287,10 +287,11 @@ struct AppWiringTests {
         #expect(NodusNavigationContract.items.count == NodusRoute.allCases.count)
     }
 
-    @Test("every vault exposes Link readers without authoring or tools")
+    @Test("only academic vaults expose Link readers without authoring or tools")
     func navigationHasUniversalRoutes() {
         for vaultType in VaultType.allCases {
             let visible = NodusNavigationContract.visibleItems(for: vaultType)
+            if vaultType != .academic { #expect(visible.isEmpty); continue }
             #expect(visible.first?.route == .home)
             #expect(visible.last?.route == .settings)
             #expect(visible.allSatisfy { $0.support.isVisible })

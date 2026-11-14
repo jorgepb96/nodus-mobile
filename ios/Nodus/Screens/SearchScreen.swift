@@ -106,7 +106,7 @@ struct SearchScreen: View {
             VStack(spacing: 8) {
                 DesktopPageHeader(
                     title: "Search",
-                    subtitle: hits.isEmpty ? "Search every published surface" : "\(visibleHits.count) results",
+                    subtitle: hits.isEmpty ? "Find ideas, works and concepts" : "\(visibleHits.count) results",
                     systemImage: "magnifyingglass",
                     accent: session.accent
                 )
@@ -212,7 +212,7 @@ struct SearchScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).padding(.horizontal, 40)
             case .noVectors:
-                Text("No published vectors. Search will be lexical.")
+                Text("Semantic search is unavailable. You can search by text.")
                     .font(.caption).foregroundStyle(.secondary)
             default:
                 EmptyView()

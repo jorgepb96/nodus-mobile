@@ -16,9 +16,9 @@ struct LinkHomeView: View {
     ]
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Tu investigación").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                    Text("Tu investigación").font(.title.bold()).accessibilityAddTraits(.isHeader)
                     Text(session.connection.spaceName).font(.title3).foregroundStyle(.secondary)
                 }
                 connectionStatus
@@ -34,16 +34,16 @@ struct LinkHomeView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
                         ForEach(destinations, id: \.0) { item in
                             Button { onSelect(item.0) } label: {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    NodusIcon(name: item.2, size: 23).foregroundStyle(session.accent.nodusReadable)
-                                        .frame(width: 44, height: 44)
+                                VStack(alignment: .leading, spacing: 10) {
+                                    NodusIcon(name: item.2, size: 21).foregroundStyle(session.accent.nodusReadable)
+                                        .frame(width: 36, height: 36)
                                         .background(session.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(LocalizedStringKey(item.1)).font(.headline).foregroundStyle(.primary)
+                                        Text(LocalizedStringKey(item.1)).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                                         Text(LocalizedStringKey(item.3)).font(.caption).foregroundStyle(.secondary)
                                     }
-                                }.frame(maxWidth: .infinity, minHeight: 116, alignment: .topLeading)
-                                    .padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+                                }.frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
+                                    .padding(14).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
                             }.buttonStyle(.plain).multilineTextAlignment(.leading)
                                 .accessibilityIdentifier("link-home-\(item.0.rawValue)")
                         }
@@ -72,8 +72,8 @@ struct LinkHomeView: View {
             if let failure = session.loadFailure, !session.isDemo {
                 Text(failure.sentence).font(.caption).foregroundStyle(.secondary)
                 Button("Reintentar conexión") { Task { await session.refreshPublishedContent() } }.frame(minHeight: 44)
-            } else {
-                Text(session.isDemo ? "Explora los contenidos de ejemplo. No necesitas conectar un ordenador." : "Consulta los contenidos de tu ordenador. La creación y edición se realizan en Nodus Desktop.")
+            } else if session.isDemo {
+                Text("Explora los contenidos de ejemplo. No necesitas conectar un ordenador.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(16)

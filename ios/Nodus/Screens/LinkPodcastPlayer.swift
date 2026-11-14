@@ -32,7 +32,8 @@ struct LinkPodcastPlayer: View {
                             }.buttonStyle(.borderedProminent).buttonBorderShape(.circle)
                                 .foregroundStyle(accent.relativeLuminance > 0.179 ? Color.black : Color.white)
                                 .accessibilityLabel(playback.playing ? "Pause" : "Play")
-                                .accessibilityValue(Text(verbatim: playback.playing ? "playing" : "paused")).accessibilityIdentifier("saved-audio-play")
+                                .accessibilityValue(Text(LocalizedStringKey(playback.playing ? "Playing" : "Paused")))
+                                .accessibilityAddTraits(playback.playing ? .isSelected : []).accessibilityIdentifier("saved-audio-play")
                             Spacer()
                             Button { Task { await playback.seek(playback.position + 15) } } label: { Image(systemName: "goforward.15").frame(width: 56, height: 56) }
                                 .accessibilityLabel("Forward 15 seconds").accessibilityIdentifier("saved-audio-forward")
@@ -75,7 +76,8 @@ struct LinkMiniPlayer: View {
                 }.buttonStyle(.plain).accessibilityIdentifier("podcast-mini-open")
                 Button { Task { await playback.toggle() } } label: { Image(systemName: playback.playing ? "pause.fill" : "play.fill").frame(width: 44, height: 52) }
                     .accessibilityLabel(playback.playing ? "Pause" : "Play")
-                    .accessibilityValue(Text(verbatim: playback.playing ? "playing" : "paused")).accessibilityIdentifier("podcast-mini-play")
+                    .accessibilityValue(Text(LocalizedStringKey(playback.playing ? "Playing" : "Paused")))
+                                .accessibilityAddTraits(playback.playing ? .isSelected : []).accessibilityIdentifier("podcast-mini-play")
                 Button { playback.stop() } label: { Image(systemName: "xmark").font(.caption).frame(width: 44, height: 52) }
                     .accessibilityLabel("Detener podcast").accessibilityIdentifier("podcast-mini-stop")
             }.padding(.leading, 16).padding(.trailing, 4).background(.regularMaterial)

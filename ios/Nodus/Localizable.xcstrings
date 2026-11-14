@@ -775,6 +775,12 @@
     "%@ records": {
       "extractionState": "manual",
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ records"
+          }
+        },
         "es": {
           "stringUnit": {
             "state": "translated",
@@ -27883,6 +27889,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se ha podido abrir el contenido"
+          }
+        }
+      }
+    },
+    "Playing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playing"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reproduciendo"
+          }
+        }
+      }
+    },
+    "Find ideas, works and concepts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find ideas, works and concepts"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encuentra ideas, obras y conceptos"
+          }
+        }
+      }
+    },
+    "Semantic search is unavailable. You can search by text.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semantic search is unavailable. You can search by text."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La búsqueda semántica no está disponible. Puedes buscar por texto."
+          }
+        }
+      }
+    },
+    "Loading library…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading library…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargando biblioteca…"
           }
         }
       }

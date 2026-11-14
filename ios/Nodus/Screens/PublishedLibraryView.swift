@@ -96,7 +96,7 @@ struct PublishedLibraryView: View {
                 DesktopPageHeader(
                     title: "Library",
                     subtitle: loading && documents.isEmpty
-                        ? "Loading published catalogue…"
+                        ? "Loading library…"
                         : "\(visible.count) documents · \(collectionName)",
                     systemImage: "books.vertical",
                     accent: session.accent

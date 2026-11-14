@@ -46,10 +46,12 @@ nonisolated final class LinkPresentationTests: XCTestCase {
                 const cite=document.querySelector('.citation-link'),style=getComputedStyle(cite);
                 const panel=document.querySelector('article').getBoundingClientRect();
                 return {display:style.display,background:style.backgroundColor,border:style.borderTopWidth,
-                  width:cite.getBoundingClientRect().width,panel:panel.width,color:style.color,font:style.fontSize};
+                  width:cite.getBoundingClientRect().width,panel:panel.width,color:style.color,font:style.fontSize,padding:style.paddingTop};
                 """, arguments: ["dark": dark], in: nil, contentWorld: .page) as? [String: Any]
             let values = try XCTUnwrap(result)
-            XCTAssertEqual(values["display"] as? String, "inline")
+            // WebKit normalizes an HTML button's inline display to inline-block.
+            XCTAssertTrue(["inline", "inline-block"].contains(values["display"] as? String ?? ""))
+            XCTAssertEqual(values["padding"] as? String, "0px")
             XCTAssertEqual(values["background"] as? String, "rgba(0, 0, 0, 0)")
             XCTAssertEqual(values["border"] as? String, "0px")
             XCTAssertEqual(values["font"] as? String, "16px")

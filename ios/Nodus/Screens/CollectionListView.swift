@@ -117,8 +117,8 @@ struct CollectionListView: View {
                 DesktopPageHeader(
                     title: LocalizedStringKey(collection.label),
                     subtitle: isLoading && rows.isEmpty
-                        ? "Loading publication…"
-                        : "\(total.formatted()) published records",
+                        ? "Loading library…"
+                        : "\(total.formatted()) records",
                     systemImage: collection.icon,
                     accent: session.accent
                 )

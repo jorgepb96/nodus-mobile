@@ -43,17 +43,17 @@ struct WorkspaceTabStrip: View {
                 HStack(spacing: 5) {
                     Image(systemName: activeId == nil ? catalogueImage : "chevron.left")
                     Text(localizedCatalogueTitle).lineLimit(1)
-                }.font(.subheadline.weight(.medium)).frame(minHeight: 44)
+                }.font(.subheadline.weight(.medium)).frame(minHeight: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("workspace-catalogue-\(section)")
                 .accessibilityAddTraits(activeId == nil ? .isSelected : [])
             if let tab = tabs.first(where: { $0.id == activeId }) {
                 Button { workspaceTabs.activate(tab.id, in: section) } label: {
                     Text(tab.title).font(.subheadline).lineLimit(1).truncationMode(.middle)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityAddTraits(.isSelected)
                     .accessibilityIdentifier("workspace-tab-\(section)-\(safeIdentifier(tab.id))")
                 Button { workspaceTabs.close(tab.id, in: section) } label: {
-                    Image(systemName: "xmark").font(.caption.weight(.semibold)).frame(width: 44, height: 44)
+                    Image(systemName: "xmark").font(.caption.weight(.semibold)).frame(width: 44, height: 44).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("Close \(tab.title)")
                     .accessibilityIdentifier("workspace-close-\(section)-\(safeIdentifier(tab.id))")
             } else { Spacer(minLength: 0) }
