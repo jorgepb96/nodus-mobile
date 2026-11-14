@@ -184,6 +184,41 @@ final class NodusLinkUITests: XCTestCase {
     }
 
     @MainActor
+    func testPodcastNowPlayingAndBackgroundPlayback() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let app = try existing(route: "podcast")
+        defer { app.terminate() }
+        let episode = app.buttons["podcast-link-podcast-fixture"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 35)); episode.tap()
+        let firstChapter = app.buttons["Primera parte"]
+        XCTAssertTrue(firstChapter.waitForExistence(timeout: 20)); firstChapter.tap()
+        let play = app.buttons["saved-audio-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 30))
+        let ready = expectation(for: NSPredicate { _, _ in play.isEnabled }, evaluatedWith: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 25), .completed)
+        let pausedLabel = play.label; play.tap()
+        let started = expectation(for: NSPredicate { _, _ in play.label != pausedLabel }, evaluatedWith: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 10), .completed)
+        let elapsed = app.staticTexts["saved-audio-elapsed"]
+        let before = seconds(elapsed.label)
+        XCUIDevice.shared.press(.home)
+        let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        system.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.01)).press(forDuration: 0.1,
+            thenDragTo: system.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.6)))
+        let title = system.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Podcast · Nodus Link")).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 15), system.debugDescription)
+        capture(system, "link-system-now-playing-with-podcast-cover")
+        app.activate()
+        XCTAssertTrue(play.waitForExistence(timeout: 20))
+        let continued = expectation(for: NSPredicate { [self] _, _ in
+            play.label != pausedLabel && seconds(elapsed.label) >= before + 2
+        }, evaluatedWith: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [continued], timeout: 10), .completed, "Playback must continue while the application is in the background")
+        play.tap()
+        capture(app, "link-podcast-after-background-playback")
+    }
+
+    @MainActor
     func testDesktopRestartRecoversWithoutAnotherCode() throws {
         executionTimeAllowance = 240
         let app = try existing(route: "podcast")

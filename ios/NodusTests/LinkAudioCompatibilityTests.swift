@@ -1,9 +1,36 @@
 import AVFoundation
+@preconcurrency import MediaPlayer
 import UIKit
 import XCTest
 @testable import Nodus
 
 nonisolated final class LinkAudioCompatibilityTests: XCTestCase {
+    @MainActor
+    func testSystemNowPlayingHasArtworkAndSeekControls() throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 900))
+        let cover = renderer.pngData { context in
+            UIColor.systemIndigo.setFill(); context.fill(CGRect(x: 0, y: 0, width: 900, height: 900))
+        }
+        let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "podcast", withExtension: "m4a"))
+        let player = try AVAudioPlayer(data: Data(contentsOf: file)); XCTAssertTrue(player.prepareToPlay())
+        let remote = SavedAudioRemoteControls(); defer { remote.unbind() }
+        remote.bind(player, title: "Episode with cover", artworkData: cover)
+        player.currentTime = 0.4; remote.update()
+        let info = try XCTUnwrap(MPNowPlayingInfoCenter.default().nowPlayingInfo)
+        XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, "Episode with cover")
+        XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "Nodus Link")
+        XCTAssertEqual(try XCTUnwrap(info[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double), player.currentTime, accuracy: 0.01)
+        let artwork = try XCTUnwrap(info[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)
+        let image = try XCTUnwrap(artwork.image(at: CGSize(width: 300, height: 300)))
+        XCTAssertGreaterThan(image.size.width, 0); XCTAssertLessThanOrEqual(image.size.width, 512)
+        XCTAssertEqual(MPRemoteCommandCenter.shared().skipBackwardCommand.preferredIntervals, [15])
+        XCTAssertEqual(MPRemoteCommandCenter.shared().skipForwardCommand.preferredIntervals, [15])
+        XCTAssertTrue(MPRemoteCommandCenter.shared().skipBackwardCommand.isEnabled)
+        XCTAssertTrue(MPRemoteCommandCenter.shared().skipForwardCommand.isEnabled)
+        remote.bind(player, title: "Episode without cover")
+        XCTAssertNil(MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork], "The previous episode's cover must not leak to one without an image")
+        XCTAssertNil(SavedAudioNowPlayingInfo.artwork(Data("invalid image".utf8)))
+    }
     /// AAC (Mac/Windows) and the encoder's Opus fallback (Linux) must both decode.
     @MainActor
     func testSavedDesktopPodcastFormatsPrepareForPlayback() async throws {
@@ -24,7 +51,12 @@ nonisolated final class LinkAudioCompatibilityTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true; playback.webView.removeFromSuperview() }
         do {
-            try await playback.prepare(Data(contentsOf: opus), title: "Opus fixture")
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).pngData { context in
+                UIColor.systemIndigo.setFill(); context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+            }
+            try await playback.prepare(Data(contentsOf: opus), title: "Opus fixture", artworkData: image)
+            XCTAssertEqual(MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String, "Opus fixture")
+            XCTAssertNotNil(MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork])
             XCTAssertGreaterThan(playback.duration, 0.9)
             XCTAssertLessThan(playback.duration, 1.2)
             try await playback.play()

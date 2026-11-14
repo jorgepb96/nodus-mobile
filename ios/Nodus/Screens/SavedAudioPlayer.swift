@@ -1,7 +1,9 @@
 import AVFoundation
+import ImageIO
 @preconcurrency import MediaPlayer
 import NodusUI
 import SwiftUI
+import UIKit
 
 struct SavedAudioTarget: Identifiable {
     let id: String
@@ -10,6 +12,7 @@ struct SavedAudioTarget: Identifiable {
     var initialTimestamp: Double? = nil
     var resumeKey: String? = nil
     var backgroundPlayback = false
+    var artworkData: Data? = nil
 }
 
 /// The player receives only the verified, protected local copy; no Mac URL or credential.
@@ -38,7 +41,7 @@ struct SavedAudioPlayer: View {
                         .accessibilityIdentifier("saved-audio-offline")
                 }
                 if let issue { Text(issue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("saved-audio-error") }
-                SavedAudioTimeline(player: player, duration: duration)
+                SavedAudioTimeline(player: player, duration: duration, onSeek: { remote.update() })
                 HStack(spacing: 24) {
                     Button { seek(-15) } label: { Image(systemName: "gobackward.15").frame(minWidth: 44, minHeight: 44) }
                         .accessibilityLabel("Back 15 seconds").disabled(player == nil)
@@ -76,7 +79,7 @@ struct SavedAudioPlayer: View {
         .accessibilityIdentifier("saved-audio-player-scroll")
         .tint(accent.nodusReadable)
         .navigationTitle("Saved narration").navigationBarTitleDisplayMode(.inline)
-        .onChange(of: rate) { _, value in player?.rate = value; trace("rate") }
+        .onChange(of: rate) { _, value in player?.rate = value; remote.update(); trace("rate") }
         .onChange(of: scenePhase) { _, phase in
             trace("scene:\(phase)")
             if phase != .active {
@@ -95,7 +98,7 @@ struct SavedAudioPlayer: View {
                 if let timestamp = target.initialTimestamp ?? target.resumeKey.map({ UserDefaults.standard.double(forKey: $0) }), timestamp.isFinite, timestamp >= 0 {
                     audio.currentTime = min(audio.duration, timestamp)
                 }
-                if target.backgroundPlayback { remote.bind(audio, title: target.label) }
+                if target.backgroundPlayback { remote.bind(audio, title: target.label, artworkData: target.artworkData) }
                 trace("prepared")
                 var ticks = 0
                 while !Task.isCancelled {
@@ -152,6 +155,7 @@ struct SavedAudioPlayer: View {
 private struct SavedAudioTimeline: View {
     let player: AVAudioPlayer?
     let duration: Double
+    let onSeek: () -> Void
     @State private var position = 0.0
 
     var body: some View {
@@ -159,6 +163,7 @@ private struct SavedAudioTimeline: View {
             Slider(value: Binding(get: { position }, set: { value in
                 position = value
                 player?.currentTime = value
+                onSeek()
             }), in: 0...max(duration, 0.001))
                 .disabled(player == nil).accessibilityLabel("Playback position")
                 .accessibilityHint(Self.clock(position)).accessibilityIdentifier("saved-audio-seek")
@@ -184,13 +189,17 @@ private struct SavedAudioTimeline: View {
 
 /// Own only our command targets. Closing one player must never remove another app's targets.
 @MainActor
-private final class SavedAudioRemoteControls {
+final class SavedAudioRemoteControls {
     private weak var player: AVAudioPlayer?
     private var title = ""
+    private var artwork: MPMediaItemArtwork?
     private var targets: [(MPRemoteCommand, Any)] = []
-    func bind(_ player: AVAudioPlayer, title: String) {
+    func bind(_ player: AVAudioPlayer, title: String, artworkData: Data? = nil) {
         unbind(); self.player = player; self.title = title
+        artwork = SavedAudioNowPlayingInfo.artwork(artworkData)
         let center = MPRemoteCommandCenter.shared()
+        center.skipBackwardCommand.isEnabled = true; center.skipBackwardCommand.preferredIntervals = [15]
+        center.skipForwardCommand.isEnabled = true; center.skipForwardCommand.preferredIntervals = [15]
         targets.append((center.playCommand, center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor [weak self] in
                 do {
@@ -210,18 +219,49 @@ private final class SavedAudioRemoteControls {
                 player.currentTime = min(player.duration, max(0, position)); self?.update()
             }; return .success
         }))
+        for (command, delta) in [(center.skipBackwardCommand, -15.0), (center.skipForwardCommand, 15.0)] {
+            targets.append((command, command.addTarget { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let player = self?.player else { return }
+                    player.currentTime = min(player.duration, max(0, player.currentTime + delta)); self?.update()
+                }; return .success
+            }))
+        }
         update()
     }
     func update() {
         guard let player else { return }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: title,
-            MPMediaItemPropertyPlaybackDuration: player.duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: player.currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? player.rate : 0]
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = SavedAudioNowPlayingInfo.metadata(title: title,
+            duration: player.duration, position: player.currentTime, playing: player.isPlaying, rate: player.rate, artwork: artwork)
     }
     func unbind() {
         guard !targets.isEmpty else { return }
         for (command, target) in targets { command.removeTarget(target) }
-        targets.removeAll(); player = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        targets.removeAll(); player = nil; artwork = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+}
+
+@MainActor
+enum SavedAudioNowPlayingInfo {
+    static func image(_ data: Data?) -> UIImage? {
+        guard let data, data.count <= 8 * 1024 * 1024,
+              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0,
+                [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 512,
+                 kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { return nil }
+        return UIImage(cgImage: image)
+    }
+    static func artwork(_ data: Data?) -> MPMediaItemArtwork? {
+        guard let thumbnail = image(data) else { return nil }
+        return MPMediaItemArtwork(boundsSize: thumbnail.size) { _ in thumbnail }
+    }
+    static func metadata(title: String, duration: Double, position: Double, playing: Bool, rate: Float,
+                         artwork: MPMediaItemArtwork?) -> [String: Any] {
+        var info: [String: Any] = [MPMediaItemPropertyTitle: title, MPMediaItemPropertyAlbumTitle: "Nodus Link",
+            MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
+            MPNowPlayingInfoPropertyPlaybackRate: playing ? rate : 0, MPNowPlayingInfoPropertyDefaultPlaybackRate: rate,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue, MPNowPlayingInfoPropertyIsLiveStream: false]
+        if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
+        return info
     }
 }

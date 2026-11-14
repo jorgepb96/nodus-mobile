@@ -80,7 +80,9 @@
       "MobileReleaseUITests/testExistingMacPhoneGraphDetailReturnsToTheSameCanvas()",
       "MobileReleaseUITests/testExistingMacPhoneArgumentDetailAndPinch()",
       "NodusLinkUITests/testDesktopRestartRecoversWithoutAnotherCode()",
-      "LinkAudioCompatibilityTests/testSavedDesktopPodcastFormatsPrepareForPlayback()"
+      "LinkAudioCompatibilityTests/testSavedDesktopPodcastFormatsPrepareForPlayback()",
+      "NodusLinkUITests/testPodcastNowPlayingAndBackgroundPlayback()",
+      "LinkAudioCompatibilityTests/testSystemNowPlayingHasArtworkAndSeekControls()"
     ],
     "ipadSimulator": [
       "NodusLinkUITests/testLinkedDictionaryAndReportReadStoredContent()",
@@ -89,7 +91,8 @@
       "NodusLinkUITests/testTypedCodeLinksAndReopensWorkspace()",
       "NodusLinkUITests/testLinkHasReadersAndRestoresOldAuthoringRouteToHome()",
       "MobileReleaseUITests/testExistingMacIPadGraphKeepsCanvasBesideDossier()",
-      "MobileReleaseUITests/testExistingMacIPadArgumentKeepsCanvasBesideDossier()"
+      "MobileReleaseUITests/testExistingMacIPadArgumentKeepsCanvasBesideDossier()",
+      "NodusLinkUITests/testPodcastNowPlayingAndBackgroundPlayback()"
     ]
   },
   "unverifiedOutsideSimulatorCampaign": [

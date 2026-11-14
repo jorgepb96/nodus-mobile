@@ -77,7 +77,7 @@ struct PodcastsView: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        if let cover, let image = UIImage(data: cover) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 260).clipShape(RoundedRectangle(cornerRadius: 16)) }
+                        if let image = SavedAudioNowPlayingInfo.image(cover) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 260).clipShape(RoundedRectangle(cornerRadius: 16)) }
                         Text(episode.title).font(.title2.bold())
                         Text(episode.objective).foregroundStyle(.secondary)
                         Button { Task { await play(episode, at: nil) } } label: {
@@ -138,16 +138,25 @@ struct PodcastsView: View {
             guard revision == openingRevision else { return }
             guard let detail else { throw APIError(status: 404, code: "podcast_not_found", message: "Este episodio ya no está disponible.") }
             issue = nil; cover = nil; selected = detail
-            let image: String? = try? await read("podcastImageData", args: [.string(episode.id), .int(0), .string("thumbnail")])
-            if selected?.id == episode.id, let image, let encoded = image.split(separator: ",", maxSplits: 1).last { cover = Data(base64Encoded: String(encoded)) }
+            let image = await loadCover(episode.id)
+            if selected?.id == episode.id { cover = image }
         } catch { if revision == openingRevision { issue = error.localizedDescription } }
     }
     private func play(_ episode: LinkPodcast, at timestamp: Double?) async {
         guard !opening else { return }; opening = true; defer { opening = false }
         do {
             let copy = try await loadPrivateBridgeFile(session, kind: .podcastAudio, id: episode.id)
-            audio = SavedAudioTarget(id: episode.id, label: episode.title, copy: copy, initialTimestamp: timestamp, resumeKey: "podcast-position:\(session.connection.storageId):\(episode.id)", backgroundPlayback: true)
+            if cover == nil { cover = await loadCover(episode.id) }
+            audio = SavedAudioTarget(id: episode.id, label: episode.title, copy: copy, initialTimestamp: timestamp, resumeKey: "podcast-position:\(session.connection.storageId):\(episode.id)", backgroundPlayback: true, artworkData: cover)
             issue = nil
         } catch { issue = error.localizedDescription }
+    }
+    private func loadCover(_ episodeId: String) async -> Data? {
+        for variant in ["thumbnail", "image"] {
+            let image: String? = try? await read("podcastImageData", args: [.string(episodeId), .int(0), .string(variant)])
+            if let image, let encoded = image.split(separator: ",", maxSplits: 1).last,
+               let data = Data(base64Encoded: String(encoded)), SavedAudioNowPlayingInfo.image(data) != nil { return data }
+        }
+        return nil
     }
 }

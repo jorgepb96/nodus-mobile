@@ -48,7 +48,7 @@ struct OpusSavedAudioPlayer: View {
             .task {
                 do {
                     let start = target.initialTimestamp ?? target.resumeKey.map { UserDefaults.standard.double(forKey: $0) } ?? 0
-                    try await playback.prepare(Data(contentsOf: target.copy.url), title: target.label, position: start)
+                    try await playback.prepare(Data(contentsOf: target.copy.url), title: target.label, position: start, artworkData: target.artworkData)
                     while !Task.isCancelled {
                         await playback.poll(); savePosition()
                         try await Task.sleep(for: .milliseconds(500))

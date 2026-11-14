@@ -19,6 +19,7 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
     @ObservationIgnored private var navigationTimeout: Task<Void, Never>?
     @ObservationIgnored private var targets: [(MPRemoteCommand, Any)] = []
     @ObservationIgnored private var title = ""
+    @ObservationIgnored private var artwork: MPMediaItemArtwork?
     @ObservationIgnored private var seekRevision = 0
 
     override init() {
@@ -30,9 +31,10 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         super.init()
         webView.navigationDelegate = self
     }
-    func prepare(_ bytes: Data, title: String, position: Double = 0) async throws {
+    func prepare(_ bytes: Data, title: String, position: Double = 0, artworkData: Data? = nil) async throws {
         guard bytes.count <= PrivateBridgeCache.defaultReadLimitBytes else { throw PrivateBridgeCache.ReadPackError.tooLarge }
         prepared = false; self.title = title
+        artwork = SavedAudioNowPlayingInfo.artwork(artworkData)
         let html = "<meta name='viewport' content='width=device-width'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; media-src blob:; connect-src 'none'; object-src 'none'; base-uri 'none'\"><audio id='audio' preload='auto' playsinline></audio>"
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             navigation = continuation
@@ -111,6 +113,8 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
     private func bindRemote() {
         guard targets.isEmpty else { return }
         let center = MPRemoteCommandCenter.shared()
+        center.skipBackwardCommand.isEnabled = true; center.skipBackwardCommand.preferredIntervals = [15]
+        center.skipForwardCommand.isEnabled = true; center.skipForwardCommand.preferredIntervals = [15]
         targets.append((center.playCommand, center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor [weak self] in try? await self?.play() }; return .success
         }))
@@ -121,11 +125,15 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
             guard let position = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime else { return .commandFailed }
             Task { @MainActor [weak self] in await self?.seek(position) }; return .success
         }))
+        for (command, delta) in [(center.skipBackwardCommand, -15.0), (center.skipForwardCommand, 15.0)] {
+            targets.append((command, command.addTarget { [weak self] _ in
+                Task { @MainActor [weak self] in guard let self else { return }; await self.seek(self.position + delta) }; return .success
+            }))
+        }
     }
     private func updateNowPlaying() {
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: title,
-            MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
-            MPNowPlayingInfoPropertyPlaybackRate: playing ? rate : 0]
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = SavedAudioNowPlayingInfo.metadata(title: title,
+            duration: duration, position: position, playing: playing, rate: rate, artwork: artwork)
     }
     private func trace(_ event: String) {
         #if DEBUG
