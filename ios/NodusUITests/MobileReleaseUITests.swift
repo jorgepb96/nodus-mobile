@@ -89,8 +89,8 @@ final class MobileReleaseUITests: XCTestCase {
         }
         XCTAssertTrue(principal.isHittable, app.debugDescription); principal.tap()
         XCTAssertTrue(navigation.waitForExistence(timeout: 45))
-        if app.windows.firstMatch.frame.width < 600 { navigation.tap() }
         let route = app.buttons["nodus-nav-" + destination]
+        if app.windows.firstMatch.frame.width < 600 && !route.isHittable { navigation.tap() }
         XCTAssertTrue(route.waitForExistence(timeout: 10))
         for _ in 0..<8 { if route.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(route.isHittable); route.tap()
