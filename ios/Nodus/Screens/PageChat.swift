@@ -53,6 +53,7 @@ final class PageChatInvite {
 
     /// Ask about a passage the reader selected.
     func ask(about selection: String) {
+        guard !NodusLinkPolicy.readOnly else { return }
         guard let reportId else { return }
         PageChatStore.shared(for: reportId).quote(selection)
         isOpen = true
@@ -173,6 +174,7 @@ final class PageChatStore {
         subject: PageChatSubject,
         ai: AISettings
     ) {
+        do { try NodusLinkPolicy.requireAuthoring() } catch { failure = error.localizedDescription; return }
         if subject.session.aiExecutionMode == .live { askMac(question,passages:passages,subject:subject,ai:ai);return }
         do {try BetaAIFeatures.requireAutonomousGeneration()} catch {failure=error.localizedDescription;return}
         guard let model = ai.model(for: .chat) else {

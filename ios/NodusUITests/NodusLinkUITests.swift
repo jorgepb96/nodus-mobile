@@ -98,6 +98,11 @@ final class NodusLinkUITests: XCTestCase {
         let body = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "El corpus respalda la recuperación", "El corpus respalda la recuperación")).firstMatch
         XCTAssertTrue(body.waitForExistence(timeout: 30))
         capture(app, "link-deep-research-native-content")
+        XCTAssertTrue(body.isHittable)
+        body.press(forDuration: 1.2)
+        XCTAssertTrue(app.descendants(matching: .any)["nodus-selection-copy"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["nodus-selection-ask"].firstMatch.exists, "Link's reader must not offer an unavailable AI conversation")
+        capture(app, "link-native-reading-selection-without-generation")
     }
 
     @MainActor

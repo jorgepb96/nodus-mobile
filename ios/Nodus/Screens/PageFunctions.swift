@@ -128,14 +128,14 @@ private struct PageFunctionsModifier: ViewModifier {
         // would depend on `isOpen` and neither the wheel's chat seat nor a selection in the
         // prose would open the modal. `@State` never showed this because SwiftUI's own storage
         // invalidates the view whether or not anybody read it.
-        let isChatOpen = invite.isOpen
+        let isChatOpen = !NodusLinkPolicy.readOnly && invite.isOpen
 
         return ScrollViewReader { proxy in
             measured(content)
                 .environment(search)
                 // Only where there is a conversation to invite anybody into. Absent, the prose
                 // shows no "ask about this" in its selection menu rather than an inert one.
-                .environment(chat == nil ? nil : invite)
+                .environment(NodusLinkPolicy.readOnly || chat == nil ? nil : invite)
                 .onChange(of: chat?.storeKey, initial: true) { previous, key in
                     if previous != nil, previous != key { invite.isOpen = false }
                     invite.reportId = key
@@ -191,7 +191,7 @@ private struct PageFunctionsModifier: ViewModifier {
                     scroll(proxy, to: PageSearchAnchor(path: target.path), anchor: .center)
                 }
                 .nodusSheet(isPresented: Binding(get: { isChatOpen }, set: { invite.isOpen = $0 })) {
-                    if let chat {
+                    if !NodusLinkPolicy.readOnly, let chat {
                         PageChatSheet(
                             subject: chat,
                             passages: chatPassages,

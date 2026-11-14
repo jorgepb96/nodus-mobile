@@ -23,6 +23,10 @@ struct NodusLinkPolicyTests {
             #expect(throws: APIError.self) { try NodusLinkPolicy.requireReaderNavigation(kind, record: "fixture") }
         }
         #expect(throws: APIError.self) { try NodusLinkPolicy.requireReaderNavigation("section", record: "writing") }
+        let invite = PageChatInvite()
+        invite.reportId = "link-read-only-fixture"
+        invite.ask(about: "Selected text")
+        #expect(!invite.isOpen)
         for type in VaultType.allCases {
             let routes = Set(NodusNavigationContract.visibleItems(for: type).map(\.route))
             #expect(routes.isSubset(of: NodusLinkPolicy.routes))
