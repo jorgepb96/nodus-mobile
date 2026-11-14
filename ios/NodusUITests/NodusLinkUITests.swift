@@ -4,6 +4,7 @@ final class NodusLinkUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     @MainActor
     func testLinkHasReadersAndRestoresOldAuthoringRouteToHome() throws {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "writing"
@@ -17,7 +18,7 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertFalse(app.buttons["nodus-top-sparkles"].exists)
         app.buttons["nodus-navigation-toggle"].tap()
         for route in ["ideas", "graph", "argument", "dictionary", "deepResearch", "podcast"] {
-            XCTAssertTrue(app.buttons["nodus-nav-\(route)"].exists)
+            XCTAssertTrue(app.buttons["nodus-nav-\(route)"].waitForExistence(timeout: 10), "The drawer must expose reader \(route) after opening")
         }
         for route in ["writing", "workspace", "researchChat", "browser", "radar", "immersion"] {
             XCTAssertFalse(app.buttons["nodus-nav-\(route)"].exists)
