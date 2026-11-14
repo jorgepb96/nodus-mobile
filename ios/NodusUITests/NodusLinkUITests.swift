@@ -130,7 +130,12 @@ final class NodusLinkUITests: XCTestCase {
         let actual = slider.normalizedSliderPosition
         print("[link-audio-seek] normalized:\(actual) value:\(String(describing: slider.value)) clock:\(elapsed.label)")
         XCTAssertEqual(actual, 0.6, accuracy: 0.11)
-        let seeked = expectation(for: NSPredicate { [self] _, _ in abs(seconds(elapsed.label) - Double(actual) * 30) <= 1 }, evaluatedWith: elapsed)
+        // SwiftUI exposes the range value in seconds (localized in this run).
+        // normalizedSliderPosition is geometric and is not that range value.
+        let seeked = expectation(for: NSPredicate { [self] _, _ in
+            guard let value = sliderSeconds(slider) else { return false }
+            return abs(seconds(elapsed.label) - value) <= 1
+        }, evaluatedWith: elapsed)
         XCTAssertEqual(XCTWaiter.wait(for: [seeked], timeout: 10), .completed)
         let seekPosition = seconds(elapsed.label)
         app.buttons["saved-audio-back"].tap()
@@ -196,6 +201,9 @@ final class NodusLinkUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launchEnvironment["NODUS_START_ROUTE"] = route
+        if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUDIO_TRACE"] == "1" {
+            app.launchEnvironment["NODUS_ACCEPTANCE_AUDIO_TRACE"] = "1"
+        }
         app.launch()
         XCTAssertTrue(app.buttons["nodus-navigation-toggle"].waitForExistence(timeout: 30), "Pair the isolated workspace first")
         return app
@@ -212,5 +220,14 @@ final class NodusLinkUITests: XCTestCase {
         let parts = clock.split(separator: ":").compactMap { Double($0) }
         guard parts.count == 2 else { return -.infinity }
         return parts[0] * 60 + parts[1]
+    }
+    @MainActor private func sliderSeconds(_ slider: XCUIElement) -> Double? {
+        if let value = slider.value as? NSNumber { return value.doubleValue }
+        guard let text = slider.value as? String else { return nil }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "es_ES"); formatter.numberStyle = .decimal
+        let percent = text.contains("%")
+        guard let value = formatter.number(from: text.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces))?.doubleValue else { return nil }
+        return percent ? value * 30 / 100 : value
     }
 }
