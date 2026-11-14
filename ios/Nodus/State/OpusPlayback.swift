@@ -19,6 +19,7 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
     @ObservationIgnored private var navigationTimeout: Task<Void, Never>?
     @ObservationIgnored private var targets: [(MPRemoteCommand, Any)] = []
     @ObservationIgnored private var title = ""
+    @ObservationIgnored private var seekRevision = 0
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -71,6 +72,7 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
     }
     func seek(_ value: Double) async {
         guard prepared, value.isFinite else { return }
+        seekRevision += 1
         position = min(duration, max(0, value))
         _ = try? await webView.callAsyncJavaScript("document.getElementById('audio').currentTime=position;", arguments: ["position": position], in: nil, contentWorld: .page)
         updateNowPlaying()
@@ -81,7 +83,9 @@ final class OpusPlayback: NSObject, WKNavigationDelegate {
         updateNowPlaying()
     }
     func poll() async {
+        let revision = seekRevision
         guard prepared, let result = try? await webView.callAsyncJavaScript("const a=document.getElementById('audio');return {position:a.currentTime,playing:!a.paused&&!a.ended};", arguments: [:], in: nil, contentWorld: .page) as? [String: Any] else { return }
+        guard revision == seekRevision else { return }
         position = result["position"] as? Double ?? position
         playing = result["playing"] as? Bool ?? false
         updateNowPlaying()

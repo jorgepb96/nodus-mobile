@@ -31,6 +31,14 @@ nonisolated final class LinkAudioCompatibilityTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(500))
             await playback.poll()
             XCTAssertGreaterThan(playback.position, 0.1, "The actual Opus decoder must advance")
+            await playback.pause()
+            for target in [0.25, 0.75] {
+                async let oldClock: Void = playback.poll()
+                await playback.seek(target)
+                await oldClock
+                await playback.poll()
+                XCTAssertEqual(playback.position, target, accuracy: 0.03, "A previous clock read cannot undo the chosen seek")
+            }
             await playback.stop()
         } catch {
             let state = try? await playback.webView.callAsyncJavaScript("const a=document.getElementById('audio');return {ready:a?.readyState,network:a?.networkState,error:a?.error?.code,hidden:document.hidden};", arguments: [:], in: nil, contentWorld: .page)

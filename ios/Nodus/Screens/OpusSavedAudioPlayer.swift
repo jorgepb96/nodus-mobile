@@ -22,8 +22,9 @@ struct OpusSavedAudioPlayer: View {
                     position = value
                     if !seeking { Task { await playback.seek(value) } }
                 }), in: 0...max(playback.duration, 0.001)) { editing in
+                    let targetPosition = position
                     seeking = editing
-                    if !editing { Task { await playback.seek(position) } }
+                    if !editing { Task { await playback.seek(targetPosition) } }
                 }.disabled(!playback.prepared).accessibilityIdentifier("saved-audio-seek").accessibilityLabel("Playback position")
                 HStack {
                     Text(clock(position)).accessibilityIdentifier("saved-audio-elapsed")
