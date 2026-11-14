@@ -731,7 +731,7 @@ private struct DesktopTopBar: View {
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 44, height: 44)
                 }
-                .accessibilityLabel("More actions")
+                .accessibilityLabel("More actions").accessibilityIdentifier("nodus-top-more")
             }
         }
         .padding(.trailing, 4)

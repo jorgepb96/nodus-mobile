@@ -1298,8 +1298,7 @@ struct PublishedReportReader: View {
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if session.connection.desktopPairingId != nil, let id = currentRow.string("id"), !id.hasPrefix("mobile-dr-") {
-                    LinkMediaImage(session: session, kind: .report, id: id, thumbnail: false)
-                        .frame(height: phoneHeader ? 190 : 280)
+                    LinkReportHero(session: session, id: id, height: phoneHeader ? 190 : 280)
                 } else {
                     if let id = localCoverID {
                         ReportHeroLayout { CompanionReportCoverImage(session: session, id: id) }
@@ -1322,8 +1321,7 @@ struct PublishedReportReader: View {
                     } else { reportMetadata }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(NodusSpace.cardPadding)
-                .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                .padding(.vertical, 8)
                 .nodusSearchOrder(0)
 
                 if let error {
@@ -1349,8 +1347,8 @@ struct PublishedReportReader: View {
                                 .nodusSearchOrder(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(ReportLayout.sectionPadding)
-                        .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, phoneHeader ? 0 : ReportLayout.sectionPadding)
                         .nodusSearchOrder(index + 1)
                     }
                 } else if detail == nil, error == nil {

@@ -118,17 +118,21 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 30))
         let prepared = expectation(for: NSPredicate { _, _ in play.isEnabled }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [prepared], timeout: 25), .completed)
-        if play.label == "Pause" || play.label == "Pausar" { play.tap() }
+        if play.value as? String == "playing" {
+            play.tap()
+            let stopped = expectation(for: NSPredicate { _, _ in play.value as? String == "paused" }, evaluatedWith: play)
+            XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 10), .completed)
+        }
         let initialElapsed = app.staticTexts["saved-audio-elapsed"].label
-        let stoppedLabel = play.label
+        let stoppedValue = play.value as? String
         play.tap()
-        let playing = expectation(for: NSPredicate { _, _ in play.label != stoppedLabel }, evaluatedWith: play)
+        let playing = expectation(for: NSPredicate { _, _ in play.value as? String != stoppedValue }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [playing], timeout: 10), .completed)
         let elapsed = app.staticTexts["saved-audio-elapsed"]
         let advancing = expectation(for: NSPredicate { _, _ in elapsed.label != initialElapsed }, evaluatedWith: elapsed)
         XCTAssertEqual(XCTWaiter.wait(for: [advancing], timeout: 10), .completed)
         play.tap()
-        let paused = expectation(for: NSPredicate { _, _ in play.label == stoppedLabel }, evaluatedWith: play)
+        let paused = expectation(for: NSPredicate { _, _ in play.value as? String == stoppedValue }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [paused], timeout: 10), .completed)
         let slider = app.sliders["saved-audio-seek"]
         slider.adjust(toNormalizedSliderPosition: 0.6)
@@ -198,9 +202,13 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 30))
         let ready = expectation(for: NSPredicate { _, _ in play.isEnabled }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 25), .completed)
-        if play.label == "Pause" || play.label == "Pausar" { play.tap() }
-        let pausedLabel = play.label; play.tap()
-        let started = expectation(for: NSPredicate { _, _ in play.label != pausedLabel }, evaluatedWith: play)
+        if play.value as? String == "playing" {
+            play.tap()
+            let stopped = expectation(for: NSPredicate { _, _ in play.value as? String == "paused" }, evaluatedWith: play)
+            XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 10), .completed)
+        }
+        let pausedValue = play.value as? String; play.tap()
+        let started = expectation(for: NSPredicate { _, _ in play.value as? String != pausedValue }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 10), .completed)
         let elapsed = app.staticTexts["saved-audio-elapsed"]
         let before = seconds(elapsed.label)
@@ -213,7 +221,7 @@ final class NodusLinkUITests: XCTestCase {
         app.activate()
         XCTAssertTrue(play.waitForExistence(timeout: 20))
         let continued = expectation(for: NSPredicate { [self] _, _ in
-            play.label != pausedLabel && seconds(elapsed.label) >= before + 2
+            play.value as? String != pausedValue && seconds(elapsed.label) >= before + 2
         }, evaluatedWith: play)
         XCTAssertEqual(XCTWaiter.wait(for: [continued], timeout: 10), .completed, "Playback must continue while the application is in the background")
         play.tap()
@@ -226,8 +234,8 @@ final class NodusLinkUITests: XCTestCase {
         defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
         let episode = app.buttons["podcast-link-podcast-fixture"]
         XCTAssertTrue(episode.waitForExistence(timeout: 35)); episode.tap()
-        let listen = app.buttons["podcast-listen"]
-        XCTAssertTrue(listen.waitForExistence(timeout: 20)); listen.tap()
+        let firstChapter = app.buttons["Primera parte"]
+        XCTAssertTrue(firstChapter.waitForExistence(timeout: 20)); firstChapter.tap()
         let play = app.buttons["saved-audio-play"]
         XCTAssertTrue(play.waitForExistence(timeout: 30))
         let elapsed = app.staticTexts["saved-audio-elapsed"]
@@ -242,7 +250,7 @@ final class NodusLinkUITests: XCTestCase {
         XCTAssertTrue(mini.isHittable); mini.tap()
         XCTAssertTrue(elapsed.waitForExistence(timeout: 10))
         XCTAssertGreaterThan(seconds(elapsed.label), before)
-        XCTAssertTrue(play.label == "Pause" || play.label == "Pausar")
+        XCTAssertEqual(play.value as? String, "playing")
         capture(app, "podcast-after-reading-other-sections")
     }
 

@@ -29,7 +29,8 @@ struct LinkPodcastPlayer: View {
                             Button { Task { await playback.toggle() } } label: {
                                 Image(systemName: playback.playing ? "pause.fill" : "play.fill").font(.title).frame(width: 72, height: 72)
                             }.buttonStyle(.borderedProminent).buttonBorderShape(.circle)
-                                .accessibilityLabel(playback.playing ? "Pause" : "Play").accessibilityIdentifier("saved-audio-play")
+                                .accessibilityLabel(playback.playing ? "Pause" : "Play")
+                                .accessibilityValue(Text(verbatim: playback.playing ? "playing" : "paused")).accessibilityIdentifier("saved-audio-play")
                             Spacer()
                             Button { Task { await playback.seek(playback.position + 15) } } label: { Image(systemName: "goforward.15").frame(width: 56, height: 56) }
                                 .accessibilityLabel("Forward 15 seconds").accessibilityIdentifier("saved-audio-forward")
@@ -70,11 +71,12 @@ struct LinkMiniPlayer: View {
                     }.frame(maxWidth: .infinity, minHeight: 52, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("podcast-mini-open")
                 Button { Task { await playback.toggle() } } label: { Image(systemName: playback.playing ? "pause.fill" : "play.fill").frame(width: 44, height: 52) }
-                    .accessibilityLabel(playback.playing ? "Pause" : "Play").accessibilityIdentifier("podcast-mini-play")
+                    .accessibilityLabel(playback.playing ? "Pause" : "Play")
+                    .accessibilityValue(Text(verbatim: playback.playing ? "playing" : "paused")).accessibilityIdentifier("podcast-mini-play")
                 Button { playback.stop() } label: { Image(systemName: "xmark").font(.caption).frame(width: 44, height: 52) }
                     .accessibilityLabel("Detener podcast").accessibilityIdentifier("podcast-mini-stop")
             }.padding(.leading, 16).padding(.trailing, 4).background(.regularMaterial)
-                .overlay(alignment: .top) { Divider() }.accessibilityIdentifier("podcast-mini-player")
+                .overlay(alignment: .top) { Divider() }.accessibilityElement(children: .contain).accessibilityIdentifier("podcast-mini-player")
         }
     }
 }

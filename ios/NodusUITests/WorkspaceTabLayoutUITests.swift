@@ -21,7 +21,10 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
                 let catalogue = app.buttons["workspace-catalogue-\(route)"]
                 catalogue.tap()
                 XCTAssertTrue(catalogue.isSelected)
-                XCTAssertGreaterThanOrEqual(catalogue.frame.width + 0.01, 150, "The selected catalogue shows its title again.")
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    XCTAssertGreaterThanOrEqual(catalogue.frame.width + 0.01, 44)
+                    XCTAssertLessThan(catalogue.frame.width, 200, "The phone catalogue is a compact back control.")
+                } else { XCTAssertGreaterThanOrEqual(catalogue.frame.width + 0.01, 150) }
                 app.terminate()
             }
         }
@@ -42,17 +45,16 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
         let app = launch(route: "ideas", style: "light")
         defer { app.terminate() }
         let initialID = try activeTab(app, section: "ideas").identifier
-        let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workspace-tab-ideas-"))
-        let destination = try XCTUnwrap(tabs.allElementsBoundByIndex.first { $0.identifier != initialID })
-        let destinationID = destination.identifier
         let picker = app.buttons["workspace-tab-chooser-ideas"]
         XCTAssertTrue(picker.waitForExistence(timeout: 10) && picker.isHittable)
         XCTAssertGreaterThanOrEqual(picker.frame.width + 0.01, 44)
         XCTAssertGreaterThanOrEqual(picker.frame.height + 0.01, 44)
         XCTAssertTrue(app.windows.firstMatch.frame.contains(picker.frame))
         picker.tap()
-        let actionID = destinationID.replacingOccurrences(of: "workspace-tab-", with: "workspace-switch-tab-")
-        let action = app.buttons[actionID]
+        let actions = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workspace-switch-tab-ideas-"))
+        let initialActionID = initialID.replacingOccurrences(of: "workspace-tab-", with: "workspace-switch-tab-")
+        let action = try XCTUnwrap(actions.allElementsBoundByIndex.first { $0.identifier != initialActionID })
+        let destinationID = action.identifier.replacingOccurrences(of: "workspace-switch-tab-", with: "workspace-tab-")
         XCTAssertTrue(action.waitForExistence(timeout: 5) && action.isHittable, app.debugDescription)
         action.tap()
         XCTAssertEqual(try activeTab(app, section: "ideas").identifier, destinationID)
@@ -60,7 +62,7 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
         XCTAssertTrue(app.buttons[closeID].isHittable)
         app.buttons[closeID].tap()
         XCTAssertFalse(app.buttons[destinationID].exists)
-        XCTAssertFalse(picker.exists, "One remaining document does not need an overflow picker.")
+        XCTAssertTrue(picker.exists, "The document chooser can reopen the remaining reader from its catalogue.")
         XCTAssertEqual(try activeTab(app, section: "ideas").identifier, initialID)
     }
 
@@ -215,7 +217,7 @@ final class WorkspaceTabLayoutUITests: XCTestCase {
             let active = try activeTab(app, section: route)
             let chooser = app.buttons["nodus-workspace-switch"]
             let navigation = app.buttons["nodus-navigation-toggle"]
-            let firstAction = app.buttons["nodus-top-command"].exists ? app.buttons["nodus-top-command"] : app.buttons["nodus-top-sparkles"]
+            let firstAction = app.buttons["nodus-top-command"].exists ? app.buttons["nodus-top-command"] : app.buttons["nodus-top-more"]
             XCTAssertTrue(chooser.isHittable && firstAction.isHittable)
             XCTAssertGreaterThanOrEqual(chooser.frame.minX, navigation.frame.maxX - 1)
             XCTAssertLessThanOrEqual(chooser.frame.maxX, firstAction.frame.minX + 1, "The workspace name cannot cover the action rail.")

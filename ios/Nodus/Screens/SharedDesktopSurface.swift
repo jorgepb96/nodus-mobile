@@ -172,15 +172,19 @@ struct SharedDesktopSurface: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
             if let issue {
-                HStack(alignment: .top, spacing: 8) {
-                    Text(issue).font(.caption).foregroundStyle(Color.nodusDanger)
-                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("shared-surface-error")
-                    Button("Reintentar") { self.issue = nil; surfaceMounted = false; reloadRevision += 1 }
-                        .frame(minHeight: 44).accessibilityIdentifier("shared-surface-retry")
-                    Button { self.issue = nil } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
-                        .accessibilityLabel("Cerrar aviso")
-                }.padding(.leading, 12).padding(.vertical, 4).background(.thinMaterial)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("No se ha podido abrir el contenido", systemImage: "exclamationmark.circle")
+                        .font(.subheadline.weight(.semibold))
+                    Text(issue).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("shared-surface-error")
+                    HStack {
+                        Button("Reintentar") { self.issue = nil; surfaceMounted = false; reloadRevision += 1 }
+                            .frame(minHeight: 44).accessibilityIdentifier("shared-surface-retry")
+                        Spacer()
+                        Button("Cerrar aviso") { self.issue = nil }.frame(minHeight: 44)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
             }
             if !NodusLinkPolicy.readOnly { CompanionResultsButton(session: session, surface: surface, generationStatus: autonomousStatus) }
             if surface == .databaseResearch { DatabaseReadingStatusButton(session:session) }

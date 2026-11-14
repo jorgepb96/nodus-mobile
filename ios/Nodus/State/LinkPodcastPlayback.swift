@@ -17,6 +17,7 @@ import SwiftUI
     @ObservationIgnored private var remote = SavedAudioRemoteControls()
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var pendingStop: Task<Void, Never>?
+    @ObservationIgnored private var seekRevision = 0
     @ObservationIgnored private var revision = UUID()
     var opusWebView: WKWebView? { opus?.webView }
 
@@ -90,7 +91,11 @@ import SwiftUI
     }
     func seek(_ seconds: Double) async {
         let value = min(duration, max(0, seconds.isFinite ? seconds : 0))
+        seekRevision += 1
+        let current = seekRevision
+        position = value; savePosition()
         if let opus { await opus.seek(value) } else { native?.currentTime = value; remote.update() }
+        guard seekRevision == current else { return }
         position = value; savePosition()
     }
     func changeRate(_ value: Float) async {
@@ -102,7 +107,7 @@ import SwiftUI
         UserDefaults.standard.set(position >= duration - 1 ? 0 : position, forKey: key)
     }
     func stop() {
-        savePosition(); revision = UUID(); ticker?.cancel(); ticker = nil
+        savePosition(); seekRevision += 1; revision = UUID(); ticker?.cancel(); ticker = nil
         remote.unbind(); native?.stop(); native = nil
         if let decoder = opus {
             let previous = pendingStop

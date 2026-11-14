@@ -27869,6 +27869,23 @@
           }
         }
       }
+    },
+    "No se ha podido abrir el contenido": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The content could not be opened"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido abrir el contenido"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

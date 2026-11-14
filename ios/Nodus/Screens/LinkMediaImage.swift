@@ -58,3 +58,24 @@ struct LinkMediaImage: View {
             }
     }
 }
+
+/// A report without a saved cover starts with its title, without an empty image block.
+struct LinkReportHero: View {
+    let session: SpaceSession
+    let id: String
+    let height: CGFloat
+    @State private var image: UIImage?
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill().frame(height: height).clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .accessibilityLabel("Report image").accessibilityIdentifier("link-report-cover")
+            }
+        }.task(id: "\(session.connection.id):\(id)") {
+            image = nil
+            do { if let data = try await LinkMediaImages.load(session: session, kind: .report, id: id, thumbnail: false) { image = SavedAudioNowPlayingInfo.image(data) } }
+            catch { /* Text remains readable when optional cover artwork is unavailable. */ }
+        }
+    }
+}
