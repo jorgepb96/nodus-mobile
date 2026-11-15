@@ -448,6 +448,26 @@ final class NodusLinkUITests: XCTestCase {
         print("NODUS_LINK_SELECTED_COPIES_PASSED")
     }
 
+
+    @MainActor
+    func testLinkedReportSelectionCanCreateAComment() throws {
+        let app = try existing(route: "deepResearch")
+        defer { app.terminate() }
+        let report = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Informe profundo · ciencia del aprendizaje")).firstMatch
+        XCTAssertTrue(report.waitForExistence(timeout: 40)); report.tap()
+        let text = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "El corpus respalda la recuperación", "El corpus respalda la recuperación")).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 30))
+        for _ in 0..<6 { if text.isHittable { break }; app.swipeUp() }
+        text.press(forDuration: 1.2)
+        let comment = app.descendants(matching: .any)["nodus-selection-comment"].firstMatch
+        XCTAssertTrue(comment.waitForExistence(timeout: 10), app.debugDescription); comment.tap()
+        let editor = app.textViews["report-comment-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.tap(); editor.typeText("Nodus Link annotation acceptance")
+        app.buttons["report-comment-save"].tap()
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 10))
+        capture(app, "report-comment-created-from-selection")
+    }
+
     @MainActor private func existing(route: String, dynamicType: String? = nil) throws -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
