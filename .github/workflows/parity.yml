@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   contract-and-swift:
-    runs-on: macos-15
+    # The app uses Swift 6.2 default main-actor isolation and isolated deinit.
+    # macos-15 ships an older toolchain; latest carries the Swift 6.2+ Xcode.
+    runs-on: macos-latest
     timeout-minutes: 45
     steps:
       - name: Check out mobile
@@ -35,6 +37,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Show the Swift toolchain
+        run: |
+          xcodebuild -version
+          swift --version
 
       - name: Reject unclassified Desktop drift
         working-directory: nodus-mobile
