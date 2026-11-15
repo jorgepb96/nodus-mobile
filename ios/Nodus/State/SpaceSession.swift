@@ -25,7 +25,9 @@ enum AIExecutionMode: String, CaseIterable, Identifiable { case live, autonomous
 final class SpaceSession {
     // Releasing a document's WebKit scheme also releases its owning session.
     // No actor work is needed during teardown (swiftlang/swift#88036).
+#if compiler(>=6.2)
     nonisolated deinit {}
+#endif
 
     var canAuthor: Bool { !NodusLinkPolicy.readOnly && connection.role.canSendChanges }
     var canAnnotateReports: Bool {

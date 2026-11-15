@@ -17,7 +17,9 @@ import Observation
 final class CorpusNames {
     // WebKit can release the last reader session from a synchronous task-local
     // scope. Avoid Swift's inferred isolated-deinit back-deployment path (#88036).
+#if compiler(>=6.2)
     nonisolated deinit {}
+#endif
 
     private var ideaLabels: [String: String] = [:]
     private var workTitles: [String: String] = [:]

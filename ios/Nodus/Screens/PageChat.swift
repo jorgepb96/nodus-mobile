@@ -43,7 +43,9 @@ struct PageChatSubject: Identifiable, Equatable {
 final class PageChatInvite {
     // This page-local @State has the same synchronous SwiftUI lifetime as
     // PageSearch. Avoid the inferred isolated-deinit runtime path (#88036).
+#if compiler(>=6.2)
     nonisolated deinit {}
+#endif
 
     /// The storage-scoped conversation key for this page (not the raw report ID).
     var reportId: String?

@@ -24,7 +24,11 @@ final class PageSearch {
     // Releasing an inferred isolated deinit during a synchronous SwiftUI update
     // can hit Swift's TaskLocal StopLookupScope invalid-free on older runtimes
     // (swiftlang/swift#88036). Task cancellation is safe without actor hopping.
+#if compiler(>=6.2)
     nonisolated deinit { fading?.cancel() }
+#else
+    deinit { fading?.cancel() }
+#endif
 
     /// Whether the find bar is on screen. Closing it clears the query, so coming back to search
     /// starts from nothing rather than from whatever was found an hour ago.
