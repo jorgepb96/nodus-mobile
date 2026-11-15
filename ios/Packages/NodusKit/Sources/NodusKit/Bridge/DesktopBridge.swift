@@ -558,11 +558,23 @@ public actor DesktopBridgeClient {
         guard let vault = vaultId.addingPercentEncoding(withAllowedCharacters: allowed), let url = URL(string: pairing.origin + "/bridge/v2/vaults/\(vault)/operations") else { throw DesktopBridgeError.invalidOrigin }
         var request = URLRequest(url: url)
         if let timeout { request.timeoutInterval = timeout }
+        else if LinkSectionCopies.operationMethods.contains(method), pairing.domains.contains(.corpus) {
+            let cache = try store.offlineCache(for: pairing)
+            if try await cache.readPacks(vaultId: vaultId).isEmpty == false { request.timeoutInterval = 4 }
+        }
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder.nodus.encode(JSONValue.object(["method": .string(method), "args": .array(args)]))
-        let (data, response) = try await perform(request)
+        let data: Data, response: URLResponse
+        do { (data, response) = try await perform(request) }
+        catch {
+            guard DesktopCompanionActions.isOffline(error) else { throw error }
+            try validateCompanionScope(vaultId: vaultId, domains: [.corpus])
+            let cache = try store.offlineCache(for: pairing)
+            if let value = try await LinkSectionCopies.shared.operation(cache: cache, vaultId: vaultId, method: method, args: args) { return value }
+            throw error
+        }
         guard let http = response as? HTTPURLResponse else { throw DesktopBridgeError.malformedResponse }
         guard (200..<300).contains(http.statusCode) else { throw APIError.decode(status: http.statusCode, data: data, headers: http.allHeaderFields) }
         let envelope = try JSONDecoder.nodus.decode([String: JSONValue].self, from: data)
@@ -621,7 +633,7 @@ public actor DesktopBridgeClient {
                 return (try selected.response(body: body), true)
             }
         }
-        if method == "POST", path == "search/semantic" {
+        if method == "POST", ["search/semantic", "search/related"].contains(path) {
             guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
             let cache = try suppliedCache ?? store.offlineCache(for: pairing)
             let selected = try await CompanionSelectedContext.hasSource(cache: cache, vaultId: vaultId, domains: Array(pairing.domains))
@@ -648,8 +660,9 @@ public actor DesktopBridgeClient {
         } else { selectedCollection = false }
         let selectedResearch = ["deep-research", "assets"].contains(collectionPath ?? "")
             ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionResearchCorpusCopy.recordId) : false
+        let selectedSection = try await LinkSectionCopies.shared.hasCopy(cache: cache, vaultId: vaultId)
         do {
-            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas || localIdeas != nil || selectedCollection || selectedResearch ? 4 : nil)
+            let response = try await corpus(vaultId: vaultId, path: path, query: query, method: method, body: body, percentEncoded: percentEncoded, timeout: retained != nil || selectedIdeas || localIdeas != nil || selectedCollection || selectedResearch || selectedSection ? 4 : nil)
             if response.status == 200 { try await cache.store(JSONEncoder.nodus.encode(response), vaultId: vaultId, domain: .corpus, recordId: identity) }
             return (response, false)
         } catch {
@@ -664,6 +677,9 @@ public actor DesktopBridgeClient {
             }
             guard let offline = error as? URLError,
                   [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut].contains(offline.code) else { throw error }
+            if selectedSection, let response = try await LinkSectionCopies.shared.response(cache: cache, vaultId: vaultId, path: path, query: query, percentEncoded: percentEncoded) {
+                return (response, true)
+            }
             if selectedIdeas || localIdeas != nil, let copy = try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId),
                let response = try copy.nativeResponse(path: path, query: query, percentEncoded: percentEncoded) { return (response, true) }
             if selectedCollection, let collectionPath,
@@ -679,7 +695,7 @@ public actor DesktopBridgeClient {
     public func corpus(vaultId: String, path: String = "", query: [URLQueryItem] = [], method: String = "GET", body: JSONValue? = nil, percentEncoded: Bool = false, timeout: TimeInterval? = nil) async throws -> DesktopBridgeResponse {
         try refreshPairing()
         guard !pairing.isExpired else { throw DesktopBridgeError.expired }
-        let readQuery = method == "POST" && ["search/semantic", "context"].contains(path)
+        let readQuery = method == "POST" && ["search/semantic", "search/related", "context"].contains(path)
         guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
         let actionWrite = method == "POST" && !readQuery
             ? try DesktopCompanionActions.validateWrite(path: path, query: query, body: body, domains: pairing.domains) : false
@@ -1273,6 +1289,7 @@ public actor PrivateBridgeCache {
     nonisolated(unsafe) private static var authoringActivities: [String: Int] = [:]
     nonisolated(unsafe) private static var figureAssetReservations: [UUID: (folder: String, scope: String, bytes: Int64)] = [:]
     private let folder: URL
+    public nonisolated var storageIdentity: String { folder.lastPathComponent }
     private let key: SymmetricKey
     private let readLimitBytes: Int
     private var initialScopeEpochs: [String: String] = [:]

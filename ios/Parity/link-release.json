@@ -113,5 +113,16 @@
   "supportedVaultTypes": [
     "academic"
   ],
-  "otherVaultTypes": "retained-in-code-hidden-in-link"
+  "otherVaultTypes": "retained-in-code-hidden-in-link",
+  "readerAnnotationException": {
+    "kinds": [
+      "highlight",
+      "comment",
+      "bookmark"
+    ],
+    "table": "writing_draft_annotations",
+    "requires": "academic-vault-desktop-pairing-with-writing-grant",
+    "retry": "authorised-annotations-only",
+    "generalAuthoringEnabled": false
+  }
 }

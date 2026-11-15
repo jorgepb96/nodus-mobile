@@ -181,8 +181,15 @@ public actor MutationOutbox {
     /// difference between finishing a journey the user started and starting one for them. A
     /// note written on a plane and never sent stays on the device until they press the button,
     /// exactly as the Writing screen promises.
-    public func authorisedPending(limit: Int) throws -> [Mutation] {
-        try mutations(sql: """
+    public func authorisedPending(limit: Int, table: String? = nil) throws -> [Mutation] {
+        if let table {
+            return try mutations(sql: """
+                SELECT payload FROM outbox
+                WHERE state = ? AND authorised = 1 AND tbl = ?
+                ORDER BY created_at, rowid LIMIT ?
+                """, arguments: [State.pending.rawValue, table, limit])
+        }
+        return try mutations(sql: """
             SELECT payload FROM outbox
             WHERE state = ? AND authorised = 1
             ORDER BY created_at, rowid LIMIT ?

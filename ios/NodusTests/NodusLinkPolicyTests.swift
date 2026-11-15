@@ -1,3 +1,4 @@
+import Foundation
 import NodusKit
 import Testing
 @testable import Nodus
@@ -40,4 +41,23 @@ struct NodusLinkPolicyTests {
             }
         }
     }
+    @Test("phone shortcuts preserve three slots, reject unsupported tools and restore the same choices")
+    func phoneShortcuts() throws {
+        let suite = "nodus.tests.pins.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = SyncedDefaults(defaults: defaults, cloud: nil)
+        let preferences = AppPreferences(store: store)
+        #expect(preferences.phonePinnedRoutes == [.ideas, .graph, .deepResearch])
+        preferences.pinPhoneRoute(.podcast)
+        #expect(preferences.phonePinnedRoutes.count == 3)
+        preferences.pinPhoneRoute(.podcast, replacing: .graph)
+        #expect(preferences.phonePinnedRoutes == [.ideas, .podcast, .deepResearch])
+        preferences.pinPhoneRoute(.browser, replacing: .ideas)
+        #expect(preferences.phonePinnedRoutes == [.ideas, .podcast, .deepResearch])
+        preferences.unpinPhoneRoute(.ideas)
+        preferences.pinPhoneRoute(.library)
+        #expect(AppPreferences(store: store).phonePinnedRoutes == [.podcast, .deepResearch, .library])
+    }
+
 }

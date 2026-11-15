@@ -327,11 +327,12 @@ final class ReaderAnnotations {
         let title: String
     }
     private var waiting: [WaitingMutation] = []
+    @ObservationIgnored private var transmissionTask: Task<Void, Never>?
 
     init(draftId: String, scope: String = "source", isWritable: Bool, idPrefix: String = "") {
         self.draftId = draftId
         self.scope = scope
-        self.isWritable = isWritable && !NodusLinkPolicy.readOnly
+        self.isWritable = isWritable
         self.idPrefix = idPrefix
     }
 
@@ -350,14 +351,16 @@ final class ReaderAnnotations {
     func load(rows: [Row], session: SpaceSession) async {
         remote = rows.compactMap(ReaderAnnotation.init(row:)).filter { $0.draftId == draftId && $0.scope == scope }
         if isWritable, outbox == nil {
-            if let opened = await OutboxController.open(session: session) {
+            if let opened = await OutboxController.open(session: session, readerAnnotationsOnly: true) {
                 outbox = opened
                 let queued = waiting
                 waiting = []
                 // Persist selections made while the queue was opening before rebuilding the
                 // optimistic layer. Otherwise a fast legacy-bookmark migration can disappear
                 // for one render between the in-memory edit and the SQLite write.
-                for mutation in queued { await transmitNow(mutation) }
+                for mutation in queued { transmit(mutation) }
+                await transmissionTask?.value
+                await opened.flush()
             }
         }
         await rebuild()
@@ -527,8 +530,10 @@ final class ReaderAnnotations {
     }
 
     private func transmit(_ mutation: WaitingMutation) {
-        Task { [weak self] in
-            await self?.transmitNow(mutation)
+        let previous = transmissionTask
+        transmissionTask = Task { [self] in
+            await previous?.value
+            await transmitNow(mutation)
         }
     }
 

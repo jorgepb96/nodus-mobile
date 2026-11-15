@@ -373,12 +373,14 @@ public struct NodusNotice: View {
     /// entry and renders the text as it is.
     public var message: LocalizedStringKey?
     public var systemImage: String?
+    public var onDismiss: (() -> Void)?
 
-    public init(tone: Tone = .info, title: LocalizedStringKey, message: LocalizedStringKey? = nil, systemImage: String? = nil) {
+    public init(tone: Tone = .info, title: LocalizedStringKey, message: LocalizedStringKey? = nil, systemImage: String? = nil, onDismiss: (() -> Void)? = nil) {
         self.tone = tone
         self.title = title
         self.message = message
         self.systemImage = systemImage
+        self.onDismiss = onDismiss
     }
 
     public var body: some View {
@@ -393,6 +395,15 @@ public struct NodusNotice: View {
                 }
             }
             Spacer(minLength: 0)
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.nodusSecondaryText)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss notice")
+            }
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)

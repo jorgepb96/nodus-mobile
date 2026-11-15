@@ -1,7 +1,8 @@
 import NodusKit
 
-/// First release: the linked computer owns creation and editing. Retained authoring
-/// stores and providers are deliberately kept for a later release, never migrated away.
+/// First release: the linked computer owns content creation and editing. Personal report
+/// highlights, comments and reading bookmarks use a separate, narrowly scoped permission.
+/// Retained authoring stores and providers stay disabled for a later release.
 enum NodusLinkPolicy {
     nonisolated static let readOnly = true
     nonisolated static func supports(_ type: VaultType?) -> Bool { type == .academic }

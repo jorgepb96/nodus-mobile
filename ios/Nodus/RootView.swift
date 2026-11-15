@@ -297,7 +297,8 @@ struct SpacePickerView: View {
                     }
 
                     if let issue = model.desktopRecoveryIssue {
-                        NodusNotice(tone: .blocked, title: "Trabajo local conservado", message: LocalizedStringKey(issue), systemImage: "doc.text")
+                        NodusNotice(tone: .blocked, title: "Trabajo local conservado", message: LocalizedStringKey(issue), systemImage: "doc.text",
+                            onDismiss: { model.dismissDesktopRecoveryIssue() })
                     }
                     if let stranded = model.needsSignIn {
                         signInAgainNotice(stranded)
@@ -470,7 +471,8 @@ struct SpacePickerView: View {
                 showingConnect = true
             }
         } label: {
-            ConnectionCard(connection: connection, needsSignIn: !usable)
+            ConnectionCard(connection: connection, needsSignIn: !usable,
+                computerUnavailable: connection.desktopPairingId.map { model.unavailableDesktopPairings.contains($0) } ?? false)
         }
         .buttonStyle(NodusCardButtonStyle())
         .accessibilityIdentifier("space-\(connection.vaultId ?? connection.spaceId)")
@@ -643,6 +645,7 @@ private struct ConnectionCard: View {
     /// list — the server address is worth keeping — but it opens the sign-in flow, not a vault,
     /// and it has to look like it.
     var needsSignIn = false
+    var computerUnavailable = false
 
     var body: some View {
         HStack(spacing: 13) {
@@ -675,6 +678,10 @@ private struct ConnectionCard: View {
                         // the third of the three that the reader asked to see.
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
+                    if computerUnavailable {
+                        Label("Computer unavailable", systemImage: "wifi.slash")
+                            .font(.caption).foregroundStyle(Color.nodusSecondaryText)
+                    }
                 }
             }
             Spacer()

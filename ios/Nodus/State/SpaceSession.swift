@@ -28,6 +28,9 @@ final class SpaceSession {
     nonisolated deinit {}
 
     var canAuthor: Bool { !NodusLinkPolicy.readOnly && connection.role.canSendChanges }
+    var canAnnotateReports: Bool {
+        canAuthor || (connection.desktopPairingId != nil && NodusLinkPolicy.supports(vaultType) && connection.role.canSendChanges)
+    }
     let podcastPlayback = LinkPodcastPlayback()
     var isSurfaceFullscreen = false
     private(set) var connection: AppModel.Connection
@@ -399,10 +402,16 @@ final class SpaceSession {
     }
 
     func synchronizeCompanionChanges() async {
-        guard canAuthor, connection.desktopPairingId != nil,
+        guard canAuthor || canAnnotateReports, connection.desktopPairingId != nil,
               !isSynchronizingCompanionChanges else { return }
         isSynchronizingCompanionChanges = true
         defer { isSynchronizingCompanionChanges = false }
+        if !canAuthor {
+            if let annotations = await OutboxController.open(session: self, readerAnnotationsOnly: true) {
+                await annotations.flush()
+            }
+            return
+        }
         // Canonical parent rows must arrive before their document edits and jobs.
         // This drains only saves the user already authorised, never unsent drafts.
         let mutationQueue = try? MutationOutbox(spaceId: connection.storageId, directory: mirrorDirectory)

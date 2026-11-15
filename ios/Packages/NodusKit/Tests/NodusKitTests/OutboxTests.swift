@@ -55,6 +55,18 @@ struct MutationOutboxAuthorisationTests {
         #expect(preserved.first(where: { $0.id == accepted.id })?.state == .accepted)
     }
 
+
+    @Test("reader-only delivery cannot release an authorised general edit or an unsent annotation")
+    func readerOnlyDelivery() async throws {
+        let (queue, directory) = try makeOutbox()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let general = note("general"), selected = annotation("selected", rowId: "h1"), unsent = annotation("unsent", rowId: "h2")
+        for value in [general, selected, unsent] { try await queue.enqueue(value, title: value.id) }
+        try await queue.authorise(ids: [general.id, selected.id])
+        #expect(try await queue.authorisedPending(limit: 100, table: "writing_draft_annotations").map(\.id) == [selected.id])
+        #expect(try await queue.authorisedPending(limit: 100).count == 2)
+    }
+
     private func note(_ id: String, title: String = "Una nota") -> Mutation {
         Mutation(
             id: id,

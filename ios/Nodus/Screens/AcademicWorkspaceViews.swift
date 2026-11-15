@@ -780,8 +780,8 @@ private struct AuthorWorkspaceDocument: View {
                                         Text(work.title).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading)
                                         FlowLayout(spacing: 6) {
                                             if let year = work.year { Text(String(year)) }
-                                            NodusChip(work.role, tint: session.accent.nodusReadable)
-                                            if !work.attributed { NodusChip("Not attributed", tint: .nodusCaution) }
+                                            NodusChip(authorRoleLabel(work.role), tint: session.accent.nodusReadable)
+                                            if !work.attributed { NodusChip(key: "Not attributed", tint: .nodusCaution) }
                                         }.font(.caption).foregroundStyle(.secondary)
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
@@ -797,6 +797,16 @@ private struct AuthorWorkspaceDocument: View {
                     .nodusGlass(NodusGlass(.thin, tint: session.accent))
                 }
             }
+        }
+    }
+
+    /// Roles are schema identifiers, not display strings. Translate only that vocabulary;
+    /// names, work titles and any unfamiliar role from a newer Desktop stay intact.
+    private func authorRoleLabel(_ role: String) -> String {
+        switch role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "author": String(localized: "Author")
+        case "editor": String(localized: "Editor")
+        default: role
         }
     }
 

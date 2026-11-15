@@ -15707,7 +15707,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Destacar"
+            "value": "Fijar"
           }
         }
       }
@@ -28018,6 +28018,407 @@
           "stringUnit": {
             "state": "translated",
             "value": "Detalles técnicos"
+          }
+        }
+      }
+    },
+    "Pastel colors": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Colores pastel"
+          }
+        }
+      }
+    },
+    "Remove highlight": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar resaltado"
+          }
+        }
+      }
+    },
+    "More": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más"
+          }
+        }
+      }
+    },
+    "Choose a pinned section": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir una sección para fijar"
+          }
+        }
+      }
+    },
+    "Pin to bottom bar": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fijar en la barra inferior"
+          }
+        }
+      }
+    },
+    "Unpin from bottom bar": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar de la barra inferior"
+          }
+        }
+      }
+    },
+    "Replace a pinned section": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sustituir un acceso fijado"
+          }
+        }
+      }
+    },
+    "You can pin three sections. Choose which one to replace.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puedes fijar tres secciones. Elige cuál quieres sustituir."
+          }
+        }
+      }
+    },
+    "Autores y sus obras": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autores y sus obras"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authors and their works"
+          }
+        }
+      }
+    },
+    "Search ideas, works or concepts": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar ideas, obras o conceptos"
+          }
+        }
+      }
+    },
+    "Find text matches and related ideas with one search.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encuentra coincidencias de texto e ideas relacionadas con una sola búsqueda."
+          }
+        }
+      }
+    },
+    "Text and related results": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coincidencias de texto y resultados relacionados"
+          }
+        }
+      }
+    },
+    "Search by meaning is unavailable. Showing text matches.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La búsqueda por significado no está disponible. Se muestran las coincidencias por texto."
+          }
+        }
+      }
+    },
+    "Text search is unavailable. Showing related results.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La búsqueda por texto no está disponible. Se muestran los resultados relacionados."
+          }
+        }
+      }
+    },
+    "Try different words or a shorter query.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prueba con otras palabras o una consulta más breve."
+          }
+        }
+      }
+    },
+    "Computer unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordenador sin conexión"
+          }
+        }
+      }
+    },
+    "Dismiss notice": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar aviso"
+          }
+        }
+      }
+    },
+    "Live · not downloaded": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En directo · sin descargar"
+          }
+        }
+      }
+    },
+    "Downloaded · up to date": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargado · actualizado"
+          }
+        }
+      }
+    },
+    "Changes available · tap to download": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambios disponibles · toca para descargar"
+          }
+        }
+      }
+    },
+    "Offline · not downloaded": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin conexión · sin descargar"
+          }
+        }
+      }
+    },
+    "Offline · downloaded copy available": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin conexión · copia descargada disponible"
+          }
+        }
+      }
+    },
+    "Checking downloaded copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobando la copia descargada"
+          }
+        }
+      }
+    },
+    "Downloading": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargando"
+          }
+        }
+      }
+    },
+    "Downloaded %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargado: %@"
+          }
+        }
+      }
+    },
+    "Downloads the catalogue. Download audio separately for each episode.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descarga el catálogo. Descarga el audio de cada episodio por separado."
+          }
+        }
+      }
+    },
+    "Keeps a local reading copy for 30 days. Original documents and audio are downloaded separately.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conserva una copia local de lectura durante 30 días. Los documentos originales y el audio se descargan por separado."
+          }
+        }
+      }
+    },
+    "Cancel download": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar descarga"
+          }
+        }
+      }
+    },
+    "Download section": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargar sección"
+          }
+        }
+      }
+    },
+    "Download changes": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargar cambios"
+          }
+        }
+      }
+    },
+    "Remove local download": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar descarga local"
+          }
+        }
+      }
+    },
+    "Removing a download only affects this device. Your data in Nodus stays intact.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar una descarga solo afecta a este dispositivo. Tus datos en Nodus se conservan."
+          }
+        }
+      }
+    },
+    "Download podcast": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargar podcast"
+          }
+        }
+      }
+    },
+    "Section download": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descarga de sección"
+          }
+        }
+      }
+    },
+    "The section changed during download. Try again; your previous copy is preserved.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sección ha cambiado durante la descarga. Reinténtalo; tu copia anterior se conserva."
+          }
+        }
+      }
+    },
+    "Download unavailable": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descarga no disponible"
           }
         }
       }

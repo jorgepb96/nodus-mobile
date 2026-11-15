@@ -93,11 +93,12 @@ enum OutboxDelivery {
         from outbox: MutationOutbox,
         using client: NodusClient,
         in spaceId: String,
-        limits: MutationLimits = .unstated
+        limits: MutationLimits = .unstated,
+        onlyTable: String? = nil
     ) async throws {
         let maximumBatch = min(limits.maxBatch, await client.maximumMutationBatch)
         while true {
-            let queued = try await outbox.authorisedPending(limit: maximumBatch)
+            let queued = try await outbox.authorisedPending(limit: maximumBatch, table: onlyTable)
             guard !queued.isEmpty else { return }
 
             // Cut by bytes, not by count. One Deep Research report is a quarter of a megabyte,

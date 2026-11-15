@@ -348,20 +348,30 @@ private struct RichProseWebView: UIViewRepresentable {
         func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]) -> UIMenu? {
             guard let anchor = selection else { return nil }
             var actions: [UIMenuElement] = []
-            func action(_ title: String, symbol: String, identifier: String, perform: @escaping @MainActor () -> Void) -> UIAction {
-                let item = UIAction(title: "", image: UIImage(systemName: symbol)) { [weak self] _ in MainActor.assumeIsolated { perform(); self?.clearSelection() } }
+            func action(_ title: String, symbol: String, identifier: String, showTitle: Bool = false, perform: @escaping @MainActor () -> Void) -> UIAction {
+                let item = UIAction(title: showTitle ? title : "", image: UIImage(systemName: symbol)) { [weak self] _ in MainActor.assumeIsolated { perform(); self?.clearSelection() } }
                 item.accessibilityLabel = title; item.accessibilityIdentifier = identifier; return item
             }
             actions.append(action(String(localized: "Copy"), symbol: "doc.on.doc", identifier: "nodus-selection-copy") { UIPasteboard.general.string = anchor.selectedText })
             if let annotations = parent.annotations, annotations.isWritable {
                 if let selectedHighlight {
-                    for color in ReaderAnnotationColor.allCases {
-                        let item = UIAction(title: "", image: ReaderHighlightMenuSwatch.image(for: color, selected: selectedHighlight.color == color)) { [weak self] _ in MainActor.assumeIsolated { annotations.updateHighlightColor(selectedHighlight, color: color); self?.clearSelection() } }
-                        item.accessibilityLabel = color.localizedLabel; actions.append(item)
-                    }
-                    actions.append(action(String(localized: "Delete"), symbol: "trash", identifier: "nodus-selection-delete") { annotations.delete(selectedHighlight) })
-                } else { actions.append(action(String(localized: "Highlight"), symbol: "highlighter", identifier: "nodus-selection-highlight") { annotations.addHighlight(anchor, color: annotations.selectedColor) }) }
-                actions.append(action(String(localized: "Add comment"), symbol: "text.bubble", identifier: "nodus-selection-comment") { annotations.beginComment(anchor) })
+                    let remove = action(String(localized: "Remove highlight"), symbol: "trash", identifier: "nodus-selection-delete", showTitle: true) { annotations.delete(selectedHighlight) }
+                    remove.attributes = .destructive
+                    actions.insert(remove, at: 0)
+                    actions.append(ReaderHighlightMenuSwatch.palette(selected: selectedHighlight.color) { [weak self] color in
+                        annotations.selectedColor = color
+                        annotations.updateHighlightColor(selectedHighlight, color: color)
+                        self?.clearSelection()
+                    })
+                } else {
+                    actions.append(action(String(localized: "Highlight"), symbol: "highlighter", identifier: "nodus-selection-highlight") { annotations.addHighlight(anchor, color: annotations.selectedColor) })
+                    actions.append(ReaderHighlightMenuSwatch.palette(selected: annotations.selectedColor) { [weak self] color in
+                        annotations.selectedColor = color
+                        annotations.addHighlight(anchor, color: color)
+                        self?.clearSelection()
+                    })
+                }
+                actions.append(action(String(localized: "Add comment"), symbol: "text.bubble", identifier: "nodus-selection-comment", showTitle: true) { annotations.beginComment(anchor) })
                 actions.append(action(String(localized: "Reading bookmark"), symbol: annotations.bookmark == nil ? "bookmark" : "bookmark.fill", identifier: "nodus-selection-bookmark") { annotations.setBookmark(anchor) })
             } else if let bookmarks = parent.bookmarks {
                 actions.append(action(String(localized: "Reading bookmark"), symbol: "bookmark", identifier: "nodus-selection-bookmark") { [parent] in bookmarks.set(path: parent.path, range: NSRange(location: anchor.startOffset, length: anchor.endOffset - anchor.startOffset), snippet: anchor.selectedText) })

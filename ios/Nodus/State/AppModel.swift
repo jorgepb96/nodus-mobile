@@ -60,7 +60,51 @@ final class AppModel {
     private var connectingDesktopGrants = Set<String>()
     private var refreshingDesktopCatalogues = false
     var isClosingDesktopGrant: Bool { !closingDesktopGrants.isEmpty }
-    private(set) var desktopRecoveryIssue: String?
+    private enum DesktopRecoverySource: String { case catalogue, revocation, credentials }
+    private var desktopRecoveryIssues: [String: String] = [:]
+    private var dismissedDesktopRecoveryIssues: [String: String] = [:]
+    private(set) var unavailableDesktopPairings = Set<String>()
+    private var visibleDesktopRecoveryIssue: (key: String, message: String)? {
+        desktopRecoveryIssues.keys.sorted().compactMap { key -> (key: String, message: String)? in
+            guard let message = desktopRecoveryIssues[key], dismissedDesktopRecoveryIssues[key] != message else { return nil }
+            return (key: key, message: message)
+        }.first
+    }
+    var desktopRecoveryIssue: String? { visibleDesktopRecoveryIssue?.message }
+
+    func dismissDesktopRecoveryIssue() {
+        guard let issue = visibleDesktopRecoveryIssue else { return }
+        // Dismiss the presentation only. Recovery records, keys and pending work stay intact.
+        dismissedDesktopRecoveryIssues[issue.key] = issue.message
+    }
+
+    private func recordDesktopRecoveryIssue(_ error: any Error, pairingId: String, source: DesktopRecoverySource) {
+        guard !error.isCancellation else { return }
+        desktopRecoveryIssues["\(source.rawValue):\(pairingId)"] = error.localizedDescription
+    }
+
+    private func clearDesktopRecoveryIssue(pairingId: String, source: DesktopRecoverySource) {
+        let key = "\(source.rawValue):\(pairingId)"
+        desktopRecoveryIssues[key] = nil
+        dismissedDesktopRecoveryIssues[key] = nil
+    }
+
+    private static func isDesktopTransportLoss(_ error: any Error) -> Bool {
+        if let error = error as? TransportError {
+            switch error {
+            case .offline, .timedOut, .hostNotFound, .cannotConnect: return true
+            default: return false
+            }
+        }
+        guard let error = error as? URLError else { return false }
+        return [.timedOut, .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost,
+                .cannotFindHost, .dnsLookupFailed].contains(error.code)
+    }
+
+    private func desktopConnectionRecovered(pairingId: String) {
+        unavailableDesktopPairings.remove(pairingId)
+        if lastFailure?.connection.desktopPairingId == pairingId { lastFailure = nil }
+    }
 
     private let keychain = KeychainStore()
     private static let defaultsKey = "nodus.connections.v1"
@@ -109,6 +153,7 @@ final class AppModel {
                               (try? store.hasPendingWorkspaceRegistration(grantId: pairing.id)) == false,
                               let credential = store.credential(for: updated) else { return }
                         verifiedPrimary = true
+                        self.desktopConnectionRecovered(pairingId: pairing.id)
                         // Keep connection/storage/preference identities and mounted editors.
                         // Only the transport address and its corresponding credential alias change.
                         var obsoleteAliases: [(String, String)] = []
@@ -123,7 +168,7 @@ final class AppModel {
                         self.persist()
                         for (oldOrigin, spaceId) in obsoleteAliases {
                             do { try self.keychain.remove(KeychainStore.deviceTokenKey(origin: oldOrigin, spaceId: spaceId)) }
-                            catch { self.desktopRecoveryIssue = error.localizedDescription }
+                            catch { self.recordDesktopRecoveryIssue(error, pairingId: updated.id, source: .credentials) }
                         }
                     } catch where Task.isCancelled { return }
                     catch { /* An untrusted or unreachable hint leaves the approved origin intact. */ }
@@ -611,6 +656,12 @@ final class AppModel {
         // A credential the server has stopped accepting already has a notice of its own, raised
         // from the 401 handler. Two notices about one fact is one notice too many.
         if case .credentialRejected = failure { return }
+        if let pairingId = connection.desktopPairingId {
+            switch failure {
+            case .noNetwork, .unknownHost, .noAnswer: unavailableDesktopPairings.insert(pairingId)
+            default: break
+            }
+        }
         lastFailure = (connection, failure)
     }
 
@@ -755,11 +806,16 @@ final class AppModel {
                 role: .reader, addedAt: grant.pairedAt, desktopPairingId: grant.id, macDeviceId: grant.macDeviceId)
         }
         guard let connection else { return }
-        do { try await revokeDesktop(connection, knownRemoteRevocation: true); desktopRecoveryIssue = nil }
+        do {
+            try await revokeDesktop(connection, knownRemoteRevocation: true)
+            clearDesktopRecoveryIssue(pairingId: pairingId, source: .revocation)
+            clearDesktopRecoveryIssue(pairingId: pairingId, source: .catalogue)
+            unavailableDesktopPairings.remove(pairingId)
+        }
         catch {
             // After a known remote close, authorization stays blocked even if the
             // encrypted archive cannot yet be finalized. Original work/key remain.
-            desktopRecoveryIssue = error.localizedDescription
+            recordDesktopRecoveryIssue(error, pairingId: pairingId, source: .revocation)
             if let cache = try? PrivateBridgeCache(pairingId: pairingId) {
                 try? await cache.purgeReadingCopies()
             }
@@ -802,6 +858,7 @@ final class AppModel {
                 // Re-read current grant under the renewal lock; never restore the token
                 // captured before awaiting the authenticated capability response.
                 var refreshed = try store.updateWorkspaceMetadata(capabilities, expectedPairing: pairing, trustedMacDeviceId: trustedMac)
+                desktopConnectionRecovered(pairingId: pairing.id)
                 let removed = (refreshed.retainedAuthoringVaultIds ?? []).subtracting(refreshed.vaultIds)
                 if !removed.isEmpty {
                     let cache = try PrivateBridgeCache(pairingId: pairing.id)
@@ -841,12 +898,22 @@ final class AppModel {
                 guard let currentToken = store.credential(for: refreshed) else { throw DesktopBridgeError.locked }
                 guard connectingDesktopGrants.isEmpty else { continue }
                 try registerDesktopVaults(pairing: refreshed, token: currentToken, capabilities: capabilities)
+                clearDesktopRecoveryIssue(pairingId: pairing.id, source: .catalogue)
                 if let session, session.connection.desktopPairingId == pairing.id,
                    !refreshed.vaultIds.contains(session.vaultId ?? "") { self.session = nil }
             } catch DesktopBridgeError.credentialRevoked {
                 await handleDesktopAuthorizationRevocation(pairingId: pairing.id)
+            } catch where error.isCancellation {
+                // Suspension or a superseded refresh is not a recovery failure.
+                continue
             } catch {
-                desktopRecoveryIssue = error.localizedDescription
+                if Self.isDesktopTransportLoss(error) {
+                    // A sleeping/unreachable computer does not imply a local recovery problem.
+                    // Keep its pairing and downloaded work available for automatic reconnection.
+                    unavailableDesktopPairings.insert(pairing.id)
+                    continue
+                }
+                recordDesktopRecoveryIssue(error, pairingId: pairing.id, source: .catalogue)
                 if let current = store.pairings().first(where: { $0.id == pairing.id }) {
                     for old in connections.filter({ $0.desktopPairingId == pairing.id && !current.vaultIds.contains($0.vaultId ?? "") }) { forget(old) }
                 }

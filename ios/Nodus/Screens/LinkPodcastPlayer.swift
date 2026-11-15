@@ -5,28 +5,47 @@ import WebKit
 struct LinkPodcastPlayer: View {
     let playback: LinkPodcastPlayback
     let accent: Color
+    @Environment(\.dynamicTypeSize) private var textSize
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
                 let compact = geometry.size.height < 420
-                VStack(spacing: 0) {
-                    ScrollView {
-                        if !compact, let image = SavedAudioNowPlayingInfo.image(playback.target?.artworkData) {
-                            Image(uiImage: image).resizable().scaledToFit()
-                                .frame(maxWidth: 360, maxHeight: min(280, geometry.size.height * 0.45))
-                                .clipShape(RoundedRectangle(cornerRadius: 20))
-                                .padding(24).frame(maxWidth: .infinity)
+                let horizontal = geometry.size.width >= 600 && geometry.size.width > geometry.size.height && !textSize.isAccessibilitySize
+                // Artwork and transport share one measured flow. A flexible artwork scroll
+                // used to take all spare height and leave a large gap before the controls.
+                // Scrolling the complete layout also keeps the last button reachable in a
+                // short sheet or at accessibility text sizes, rather than clipping it.
+                ScrollView {
+                    Group {
+                        if horizontal {
+                            HStack(alignment: .center, spacing: 24) {
+                                artwork(side: max(80, min(280, min(geometry.size.height - 32, geometry.size.width * 0.35))))
+                                VStack(spacing: 16) {
+                                    playbackIssue
+                                    if let target = playback.target { playbackControls(target, compact: true) }
+                                }
+                            }
+                        } else {
+                            VStack(spacing: compact ? 16 : 24) {
+                                if !compact {
+                                    artwork(side: max(80, min(360, min(geometry.size.width - 48, geometry.size.height * 0.46))))
+                                }
+                                playbackIssue
+                                if let target = playback.target { playbackControls(target, compact: compact) }
+                            }
                         }
-                        if let issue = playback.issue { Text(issue).foregroundStyle(Color.nodusDanger).padding() }
-                    }.scrollIndicators(.hidden).accessibilityIdentifier("saved-audio-player-scroll")
-                    if let target = playback.target {
-                        playbackControls(target, compact: compact)
                     }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: horizontal ? 960 : 600)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, compact ? 16 : 24)
+                    .padding(.vertical, compact ? 16 : 24)
+                }
+                .scrollIndicators(.hidden)
+                .accessibilityIdentifier("saved-audio-player-scroll")
             }
             .navigationTitle("Podcasts").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { playback.showingPlayer = false } }
+                ToolbarItem(placement: .confirmationAction) { Button("Close") { playback.showingPlayer = false } }
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Section("Playback speed") {
@@ -35,10 +54,18 @@ struct LinkPodcastPlayer: View {
                             }
                         }
                         if let target = playback.target {
-                            ShareLink(item: target.copy.url) { Label("Export audio", systemImage: "square.and.arrow.up") }
+                            ShareLink(item: target.copy.url) { NodusMenuLabel(title: "Export audio", image: "square.and.arrow.up") }
                                 .accessibilityIdentifier("saved-audio-export")
                         }
-                    } label: { Label("Playback options", systemImage: "ellipsis.circle") }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                    }
+                        .tint(.primary)
+                        .accessibilityLabel("Playback options")
                         .accessibilityIdentifier("saved-audio-speed")
                 }
             }
@@ -46,11 +73,33 @@ struct LinkPodcastPlayer: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("podcast-player-sheet")
     }
 
-    /// Primary transport is outside the artwork scroll, so no image/title can push it below a sheet.
+    private func artwork(side: CGFloat) -> some View {
+        Group {
+            if let image = SavedAudioNowPlayingInfo.image(playback.target?.artworkData) {
+                Image(uiImage: image).resizable().scaledToFit()
+            } else {
+                NodusMark(style: .accent(accent)).padding(side * 0.2)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var playbackIssue: some View {
+        if let issue = playback.issue {
+            Text(issue).font(.callout).foregroundStyle(Color.nodusDanger)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Transport stays adjacent to the artwork and can always be scrolled into view.
     private func playbackControls(_ target: SavedAudioTarget, compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: compact ? 4 : 12) {
             Text(target.label).font(compact ? .callout.weight(.semibold) : .title3.weight(.semibold))
-                .lineLimit(compact ? 1 : 2).frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(textSize.isAccessibilitySize ? nil : compact ? 2 : 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Slider(value: Binding(get: { playback.position }, set: { value in Task { await playback.seek(value) } }), in: 0...max(playback.duration, 0.001))
                 .accessibilityIdentifier("saved-audio-seek").accessibilityLabel("Playback position")
             HStack {
@@ -75,9 +124,7 @@ struct LinkPodcastPlayer: View {
                     Image(systemName: "goforward.15").font(.system(size: 23)).frame(width: 56, height: 56).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("Forward 15 seconds").accessibilityIdentifier("saved-audio-forward")
             }
-        }.padding(compact ? 8 : 20).frame(maxWidth: 600).frame(maxWidth: .infinity)
-            .background(Color(uiColor: .systemBackground))
-            .overlay(alignment: .top) { Divider() }
+        }.frame(maxWidth: 600).frame(maxWidth: .infinity)
             .accessibilityElement(children: .contain).accessibilityIdentifier("saved-audio-player-controls")
     }
     private func clock(_ seconds: Double) -> String {

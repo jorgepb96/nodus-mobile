@@ -14,7 +14,7 @@ if(fs.existsSync(output))throw new Error('An acceptance source receipt cannot be
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const manifest=JSON.parse(fs.readFileSync(path.join(mobileRoot,'ios/Parity/parity-manifest.json'),'utf8'));
 const bundle=path.join(mobileRoot,'ios/Nodus/Resources/SharedDesktop');
-execFileSync(process.execPath,[path.join(mobileRoot,'ios/scripts/build-shared-desktop.mjs'),'--verify'],{stdio:'pipe'});
+execFileSync(process.execPath,[path.join(mobileRoot,'ios/scripts/build-shared-desktop.mjs'),nodusRepo(),'--verify'],{stdio:'pipe'});
 const builtApp=process.env.NODUS_ACCEPTANCE_BUILT_APP;
 const buildFiles={};
 const nativeBuild={};

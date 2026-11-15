@@ -6,6 +6,19 @@ import SwiftUI
 /// even when they arrive with a palette configuration. Flatten the swatch into an original-mode
 /// bitmap first so every highlight colour survives the menu's own rendering pass.
 enum ReaderHighlightMenuSwatch {
+    static func palette(selected: ReaderAnnotationColor?, onSelect: @escaping @MainActor (ReaderAnnotationColor) -> Void) -> UIMenu {
+        let colors = ReaderAnnotationColor.allCases.map { color in
+            let item = UIAction(title: color.localizedLabel, image: image(for: color, selected: selected == color),
+                state: selected == color ? .on : .off) { _ in
+                MainActor.assumeIsolated { onSelect(color) }
+            }
+            item.accessibilityIdentifier = "nodus-selection-color-\(color.rawValue)"
+            return item
+        }
+        return UIMenu(title: String(localized: "Pastel colors"), image: UIImage(systemName: "paintpalette"),
+            preferredElementSize: .small, children: colors)
+    }
+
     static func image(for colour: ReaderAnnotationColor, selected: Bool) -> UIImage? {
         let side: CGFloat = 20
         guard let symbol = UIImage(
@@ -699,6 +712,7 @@ struct CorpusProse: View {
                                     let anchors = ranges.compactMap {
                                         annotationDocument.anchor(block: block.id, range: $0)
                                     }
+                                    annotations.selectedColor = color
                                     annotations.addHighlights(anchors, color: color)
                                 }
                             },
@@ -1760,10 +1774,15 @@ private struct DocumentProse: UIViewRepresentable {
                     + ": " + colour.localizedLabel
                 highlight.accessibilityIdentifier = "nodus-selection-highlight"
                 ours.append(highlight)
+                ours.append(ReaderHighlightMenuSwatch.palette(selected: colour) { [weak self] color in
+                    self?.selectedHighlightColor = color
+                    onHighlight(highlightable, color)
+                    textView.clearSelection()
+                })
             }
 
             if let onComment {
-                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
+                let comment = UIAction(title: String(localized: "Add comment"), image: UIImage(systemName: "text.bubble")) { _ in
                     MainActor.assumeIsolated {
                         onComment(range)
                         textView.clearSelection()
@@ -2134,26 +2153,19 @@ private struct DocumentProse: UIViewRepresentable {
             let annotation = placement.annotation
             var actions: [UIMenuElement] = []
 
-            if let onChangeHighlightColor {
-                let colors = ReaderAnnotationColor.allCases.map { colour in
-                    let image = ReaderHighlightMenuSwatch.image(
-                        for: colour,
-                        selected: annotation.color == colour
-                    )
-                    let action = UIAction(title: colour.localizedLabel, image: image) { _ in
-                        MainActor.assumeIsolated { onChangeHighlightColor(annotation, colour) }
-                    }
-                    action.accessibilityLabel = String(localized: "Change highlight color")
-                        + ": " + colour.localizedLabel
-                    return action
+            if let onDeleteHighlight {
+                let remove = UIAction(title: String(localized: "Remove highlight"), image: UIImage(systemName: "trash"),
+                    attributes: .destructive) { _ in
+                    MainActor.assumeIsolated { onDeleteHighlight(annotation) }
                 }
-                let colorMenu = UIMenu(
-                    title: "",
-                    image: UIImage(systemName: "paintpalette"),
-                    children: colors
-                )
-                colorMenu.accessibilityLabel = String(localized: "Change highlight color")
-                actions.append(colorMenu)
+                remove.accessibilityIdentifier = "nodus-selection-delete"
+                actions.append(remove)
+            }
+
+            if let onChangeHighlightColor {
+                actions.append(ReaderHighlightMenuSwatch.palette(selected: annotation.color) { color in
+                    onChangeHighlightColor(annotation, color)
+                })
             }
 
             let copy = UIAction(title: "", image: UIImage(systemName: "doc.on.doc")) { _ in
@@ -2171,23 +2183,12 @@ private struct DocumentProse: UIViewRepresentable {
             }
 
             if let onComment {
-                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
+                let comment = UIAction(title: String(localized: "Add comment"), image: UIImage(systemName: "text.bubble")) { _ in
                     MainActor.assumeIsolated { onComment(placement.range) }
                 }
                 comment.accessibilityLabel = String(localized: "Add comment")
+                comment.accessibilityIdentifier = "nodus-selection-comment"
                 actions.append(comment)
-            }
-
-            if let onDeleteHighlight {
-                let delete = UIAction(
-                    title: "",
-                    image: UIImage(systemName: "trash"),
-                    attributes: .destructive
-                ) { _ in
-                    MainActor.assumeIsolated { onDeleteHighlight(annotation) }
-                }
-                delete.accessibilityLabel = String(localized: "Delete highlight")
-                actions.append(delete)
             }
 
             return UIMenu(

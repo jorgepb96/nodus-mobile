@@ -679,7 +679,7 @@ struct SyncedReportReadingTools: ViewModifier {
         _annotations = State(initialValue: ReaderAnnotations(
             draftId: id,
             scope: scope,
-            isWritable: session.canAuthor,
+            isWritable: session.canAnnotateReports,
             idPrefix: annotationPrefix
         ))
     }
@@ -731,7 +731,7 @@ struct SyncedReportReadingTools: ViewModifier {
                 )
             ) { presentation in
                 ReaderAnnotationSheet(annotations: annotations, presentation: presentation)
-                    .presentationDetents([.height(230), .medium])
+                    .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
             .alert(
@@ -918,6 +918,8 @@ private struct ReaderCommentEditor: View {
                     .frame(minHeight: 82)
                     .padding(8)
                     .nodusFieldSurface(accent: .secondary)
+                    .accessibilityLabel("Comment")
+                    .accessibilityIdentifier("report-comment-editor")
             } else {
                 Text(annotation?.comment ?? "")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -932,13 +934,11 @@ private struct ReaderCommentEditor: View {
                         }
                         .accessibilityLabel("Delete")
                     }
-                    Button {
+                    Button("Save") {
                         if let annotation { annotations.updateComment(annotation, body: bodyText) }
                         else { annotations.saveNewComment(anchor, body: bodyText) }
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
                     }
-                    .accessibilityLabel("Save")
+                    .accessibilityIdentifier("report-comment-save")
                     .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }

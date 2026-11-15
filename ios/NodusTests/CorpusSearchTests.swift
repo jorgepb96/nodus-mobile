@@ -259,4 +259,20 @@ struct CorpusSearchTests {
         #expect(outcome.mode == .lexical)
         #expect(outcome.hits.count == 1)
     }
+    @Test("one linked search deduplicates a canonical result and retains literal matches when meaning search fails")
+    func unifiedLinkedSearch() async throws {
+        var subject = search(identity: nil,
+            semantic: { _, _, _, _, _ in Issue.record("An iOS provider must not run for a linked search"); return .notIndexed(fallback: [], warning: "") },
+            lexical: { _, _ in [tableHit(type: "ideas", id: "same", title: "Literal"), tableHit(type: "works", id: "work", title: "Source")] })
+        let duplicate = CorpusSearch.Hit(id: "idea/same", type: "idea", title: "Related", excerpt: nil, score: 0.9)
+        let related = CorpusSearch.Hit(id: "idea/other", type: "idea", title: "Synonym", excerpt: nil, score: 0.7)
+        subject.linkedSemantic = { _, _ in [duplicate, related] }
+        let outcome = try await subject.runUnified("concept")
+        #expect(Set(outcome.hits.map(\.id)) == ["idea/same", "idea/other", "work/work"])
+        #expect(outcome.hits.count == 3)
+        subject.linkedSemantic = { _, _ in throw URLError(.notConnectedToInternet) }
+        let offline = try await subject.runUnified("concept")
+        #expect(offline.hits.count == 2); #expect(offline.warning != nil)
+    }
+
 }

@@ -38,7 +38,11 @@ final class NodusLinkUITests: XCTestCase {
         let switcher = app.buttons["nodus-workspace-switch"]
         let ready = expectation(for: NSPredicate { _, _ in add.exists || switcher.exists }, evaluatedWith: app)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
-        if switcher.exists { switcher.tap() }
+        if switcher.exists {
+            switcher.tap()
+            let manage = app.buttons["nodus-manage-connections"]
+            XCTAssertTrue(manage.waitForExistence(timeout: 10)); manage.tap()
+        }
         XCTAssertTrue(add.waitForExistence(timeout: 15)); add.tap()
         let input = app.textFields["pairing-code"]
         XCTAssertTrue(input.waitForExistence(timeout: 15))
@@ -300,6 +304,7 @@ final class NodusLinkUITests: XCTestCase {
     @MainActor
     func testPhoneBottomNavigationOpensReadersWithoutTheDrawer() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(es)", "-AppleLocale", "es_ES"]
         app.launchEnvironment["NODUS_UI_TEST_DEMO"] = "1"
         app.launchEnvironment["NODUS_START_ROUTE"] = "home"
         app.launch()
@@ -307,7 +312,11 @@ final class NodusLinkUITests: XCTestCase {
         let ideas = app.buttons["nodus-bottom-ideas"]
         XCTAssertTrue(ideas.waitForExistence(timeout: 30) && ideas.isHittable)
         ideas.tap()
-        let search = app.buttons["nodus-bottom-search"]
+        let more = app.buttons["nodus-bottom-more"]
+        XCTAssertTrue(more.isHittable); more.tap()
+        XCTAssertTrue(app.buttons["Biblioteca"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Ajustes"].exists)
+        let search = app.buttons["Buscar"].firstMatch
         XCTAssertTrue(search.isHittable); search.tap()
         XCTAssertTrue(app.textFields["nodus-search-field"].waitForExistence(timeout: 10))
         let home = app.buttons["nodus-bottom-home"]
@@ -352,6 +361,91 @@ final class NodusLinkUITests: XCTestCase {
         episode.tap()
         XCTAssertTrue(app.buttons["podcast-listen"].waitForExistence(timeout: 20))
         capture(app, "link-desktop-reconnected-without-code")
+    }
+
+
+    @MainActor
+    func testWorkspaceChooserIsAPopoverAndKeepsBottomNavigation() throws {
+        let app = try existing(route: "home")
+        defer { app.terminate() }
+        app.buttons["nodus-workspace-switch"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["vault-switcher-popover"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["nodus-bottom-home"].exists || app.buttons["nodus-nav-home"].exists)
+        XCTAssertFalse(app.buttons["nodus-add-server"].exists)
+        capture(app, "workspace-popover-keeps-navigation")
+    }
+
+    @MainActor
+    func testLinkedSectionsDownloadAndRemoveLocally() throws {
+        let app = try existing(route: "home")
+        defer { app.terminate() }
+        for route in ["ideas", "authors", "dictionary", "deepResearch", "graph", "argument", "library", "podcast"] {
+            select(route, in: app)
+            let indicator = app.buttons["section-download-\(route)"].firstMatch
+            XCTAssertTrue(indicator.waitForExistence(timeout: 40) && indicator.isHittable)
+            indicator.tap()
+            let download = app.buttons["section-download-start"]
+            XCTAssertTrue(download.waitForExistence(timeout: 10)); download.tap()
+            let saved = expectation(for: NSPredicate(format: "value CONTAINS %@", "Descargado"), evaluatedWith: indicator)
+            XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 60), .completed, route)
+            capture(app, "downloaded-section-\(route)")
+            indicator.tap()
+            let remove = app.buttons["section-download-remove"]
+            XCTAssertTrue(remove.waitForExistence(timeout: 10)); remove.tap()
+            let removed = expectation(for: NSPredicate(format: "NOT value CONTAINS %@", "Descargado"), evaluatedWith: indicator)
+            XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 15), .completed)
+        }
+    }
+
+
+    @MainActor
+    func testSelectedReadersAndPodcastReopenAfterMacDisconnects() throws {
+        executionTimeAllowance = 360
+        let app = try existing(route: "home")
+        defer { app.terminate() }
+        for route in ["deepResearch", "dictionary", "graph", "podcast"] {
+            select(route, in: app)
+            let indicator = app.buttons["section-download-\(route)"].firstMatch
+            XCTAssertTrue(indicator.waitForExistence(timeout: 40)); indicator.tap()
+            let start = app.buttons["section-download-start"]
+            XCTAssertTrue(start.waitForExistence(timeout: 10)); start.tap()
+            let saved = expectation(for: NSPredicate(format: "value CONTAINS %@", "Descargado"), evaluatedWith: indicator)
+            XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 60), .completed)
+        }
+        let audio = app.buttons["podcast-download-link-podcast-fixture"].firstMatch
+        XCTAssertTrue(audio.waitForExistence(timeout: 30)); audio.tap()
+        app.buttons["Descargar podcast"].tap()
+        let savedAudio = expectation(for: NSPredicate(format: "value CONTAINS %@", "Descargado"), evaluatedWith: audio)
+        XCTAssertEqual(XCTWaiter.wait(for: [savedAudio], timeout: 60), .completed)
+        print("NODUS_LINK_SELECTED_COPIES_READY")
+        // The harness stops only its own marked laboratory process at this milestone.
+        let gone = expectation(for: NSPredicate(format: "value CONTAINS %@", "Sin conexión"), evaluatedWith: app.buttons["section-download-podcast"].firstMatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 70), .completed)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["nodus-navigation-toggle"].waitForExistence(timeout: 30))
+        select("dictionary", in: app)
+        let dictionary = app.otherElements["shared-desktop-dictionary"].webViews.firstMatch
+        XCTAssertTrue(dictionary.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Aprendizaje · Nodus Link")).firstMatch.waitForExistence(timeout: 45))
+        capture(app, "selected-dictionary-offline-after-relaunch")
+        select("deepResearch", in: app)
+        let report = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Informe profundo · ciencia del aprendizaje")).firstMatch
+        XCTAssertTrue(report.waitForExistence(timeout: 35)); report.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["report-native-reader"].firstMatch.waitForExistence(timeout: 30))
+        capture(app, "selected-report-offline-after-relaunch")
+        select("graph", in: app)
+        let graph = app.otherElements["shared-desktop-graph"].webViews.firstMatch
+        XCTAssertTrue(graph.waitForExistence(timeout: 30))
+        XCTAssertTrue(graph.textFields.firstMatch.waitForExistence(timeout: 45))
+        XCTAssertFalse(app.staticTexts["shared-surface-error"].exists)
+        capture(app, "selected-graph-offline-after-relaunch")
+        select("podcast", in: app)
+        let episode = app.buttons["podcast-link-podcast-fixture"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 35)); episode.tap()
+        let listen = app.buttons["podcast-listen"]
+        XCTAssertTrue(listen.waitForExistence(timeout: 20)); listen.tap()
+        XCTAssertTrue(app.buttons["saved-audio-play"].waitForExistence(timeout: 40))
+        capture(app, "selected-podcast-playing-offline")
+        print("NODUS_LINK_SELECTED_COPIES_PASSED")
     }
 
     @MainActor private func existing(route: String, dynamicType: String? = nil) throws -> XCUIApplication {

@@ -50,6 +50,7 @@ struct PodcastsView: View {
             if loading { ProgressView().accessibilityIdentifier("podcasts-loading") }
             List {
                 ForEach(filtered) { episode in
+                    HStack(spacing: 4) {
                     Button { Task { await open(episode) } } label: {
                         HStack(spacing: 14) {
                             LinkMediaImage(session: session, kind: .podcast, id: episode.id).frame(width: 76, height: 76)
@@ -60,6 +61,8 @@ struct PodcastsView: View {
                             }
                         }.frame(minHeight: 64)
                     }.accessibilityIdentifier("podcast-\(episode.id)")
+                    LinkEpisodeDownloadButton(id: episode.id, title: episode.title)
+                    }
                 }
                 if !loading && issue == nil && filtered.isEmpty {
                     ContentUnavailableView(query.isEmpty ? "No hay podcasts guardados" : "Sin resultados", systemImage: "headphones", description: Text("Los episodios que crees en Nodus Desktop aparecerán aquí."))
@@ -86,6 +89,10 @@ struct PodcastsView: View {
                         Button { Task { await play(episode, at: nil) } } label: {
                             Label(opening ? "Preparando audio…" : "Escuchar", systemImage: "play.fill").frame(maxWidth: .infinity, minHeight: 44)
                         }.buttonStyle(.borderedProminent).disabled(opening || episode.audioBytes <= 0).accessibilityIdentifier("podcast-listen")
+                        HStack {
+                            LinkEpisodeDownloadButton(id: episode.id, title: episode.title)
+                            Text("Download or remove this episode on this device").font(.caption).foregroundStyle(.secondary)
+                        }
                         if let issue { Text(issue).foregroundStyle(Color.nodusDanger) }
                         ForEach(episode.timeline?.chapters ?? [], id: \.index) { chapter in
                             Button { Task { await play(episode, at: chapter.startS) } } label: {
@@ -119,10 +126,6 @@ struct PodcastsView: View {
     private func read<T: Decodable>(_ method: String, args: [JSONValue] = []) async throws -> T {
         let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
         let bridge = DesktopBridgeClient(pairing: pairing, token: token)
-        let capabilities = try await bridge.liveCapabilities()
-        guard capabilities.operations.contains(method) else {
-            throw APIError(status: 426, code: "nodus_link_upgrade_required", message: "Actualiza Nodus Desktop con una versión compatible con Nodus Link para consultar los podcasts.")
-        }
         let value = try await bridge.operation(vaultId: vault, method: method, args: args)
         return try JSONDecoder.nodus.decode(T.self, from: JSONEncoder.nodus.encode(value))
     }
@@ -130,18 +133,20 @@ struct PodcastsView: View {
         guard !session.isDemo else { episodes = []; issue = nil; return }
         guard !loading else { return }; loading = true; defer { loading = false }
         do { episodes = try await read("podcastEpisodes"); issue = nil }
+        catch where error.isCancellation { }
         catch { issue = error.localizedDescription }
     }
     private func open(_ episode: LinkPodcast) async {
         let revision = UUID(); openingRevision = revision
         do {
             let detail: LinkPodcast? = try await read("podcastEpisode", args: [.string(episode.id)])
-            guard revision == openingRevision else { return }
+            guard revision == openingRevision, routeActive, phase == .active else { return }
             guard let detail else { throw APIError(status: 404, code: "podcast_not_found", message: "Este episodio ya no está disponible.") }
             issue = nil; cover = nil; selected = detail
             let image = await loadCover(episode.id)
             if selected?.id == episode.id { cover = image }
-        } catch { if revision == openingRevision { issue = error.localizedDescription } }
+        } catch where error.isCancellation { }
+        catch { if revision == openingRevision, routeActive { issue = error.localizedDescription } }
     }
     private func play(_ episode: LinkPodcast, at timestamp: Double?) async {
         guard !opening else { return }; opening = true; defer { opening = false }
@@ -152,7 +157,8 @@ struct PodcastsView: View {
             try await session.podcastPlayback.start(target)
             openPlayerAfterDismiss = true; selected = nil
             issue = nil
-        } catch { issue = error.localizedDescription }
+        } catch where error.isCancellation { }
+        catch { issue = error.localizedDescription }
     }
     private func loadCover(_ episodeId: String) async -> Data? {
         for variant in ["thumbnail", "image"] {

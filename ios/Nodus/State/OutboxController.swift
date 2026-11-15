@@ -37,14 +37,15 @@ final class OutboxController {
     private let schemaVersion: Int
     private let pairingId: String?
     private let vaultId: String?
+    private let readerAnnotationsOnly: Bool
 
     /// Opens the queue for a space, or answers nil when this access cannot send anything.
     ///
     /// Asynchronous because opening the queue means opening SQLite, and doing that in an
     /// initialiser meant doing it on the main actor — the screen that asked for a controller
     /// stopped drawing until the disk answered.
-    static func open(session: SpaceSession) async -> OutboxController? {
-        guard session.canAuthor else { return nil }
+    static func open(session: SpaceSession, readerAnnotationsOnly: Bool = false) async -> OutboxController? {
+        guard (readerAnnotationsOnly ? session.canAnnotateReports : session.canAuthor) else { return nil }
         guard (try? ConnectionStorage.prepare(for: session.connection)) != nil else { return nil }
         let directory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
         guard let outbox = try? await MutationOutbox.open(
@@ -55,10 +56,11 @@ final class OutboxController {
         // that does not answer leaves `.unstated`, which sends smaller batches and never
         // refuses anything locally — the two things that are safe to do while guessing.
         let limits = await (try? session.client.capabilities()).map(MutationLimits.init) ?? .unstated
-        return OutboxController(session: session, outbox: outbox, limits: limits)
+        return OutboxController(session: session, outbox: outbox, limits: limits, readerAnnotationsOnly: readerAnnotationsOnly)
     }
 
-    private init(session: SpaceSession, outbox: MutationOutbox, limits: MutationLimits) {
+    private init(session: SpaceSession, outbox: MutationOutbox, limits: MutationLimits, readerAnnotationsOnly: Bool) {
+        self.readerAnnotationsOnly = readerAnnotationsOnly
         self.outbox = outbox
         pairingId = session.connection.desktopPairingId
         vaultId = session.connection.vaultId
@@ -71,7 +73,8 @@ final class OutboxController {
         schemaVersion = session.overview?.schemaVersion ?? 0
     }
 
-    private func beginAuthoringActivity() throws -> PrivateBridgeCache? {
+    private func beginAuthoringActivity(readerAnnotation: Bool = false) throws -> PrivateBridgeCache? {
+        if readerAnnotationsOnly && !readerAnnotation { try NodusLinkPolicy.requireAuthoring() }
         guard let pairingId else { return nil }
         guard let vaultId, let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == pairingId }),
               !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
@@ -191,7 +194,7 @@ final class OutboxController {
         title: String
     ) async -> String? {
         let activity: PrivateBridgeCache?
-        do { activity = try beginAuthoringActivity() }
+        do { activity = try beginAuthoringActivity(readerAnnotation: true) }
         catch { lastError = error.localizedDescription; return nil }
         defer { activity?.endAuthoringActivity() }
 
@@ -408,7 +411,7 @@ final class OutboxController {
 
     func flush() async {
         let activity: PrivateBridgeCache?
-        do { activity = try beginAuthoringActivity() }
+        do { activity = try beginAuthoringActivity(readerAnnotation: readerAnnotationsOnly) }
         catch { lastError = error.localizedDescription; return }
         defer { activity?.endAuthoringActivity() }
 
@@ -422,9 +425,10 @@ final class OutboxController {
             // rather than after the last: a flush cut off by a dead lift or an aeroplane leaves
             // behind changes the background task is then allowed to finish. Nothing the user
             // has not pressed send on ever travels on its own.
-            try await outbox.authorisePending()
+            if !readerAnnotationsOnly { try await outbox.authorisePending() }
 
-            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, limits: limits)
+            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, limits: limits,
+                onlyTable: readerAnnotationsOnly ? "writing_draft_annotations" : nil)
         } catch let error as APIError where error.isForbidden {
             lastError = error.requiredNeed == .write
                 ? "Your access to this space is read only."

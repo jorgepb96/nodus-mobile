@@ -95,7 +95,7 @@ if args.mac_unavailable:
     # The test independently probes this address and rejects TLS/auth failures.
     values["NODUS_ACCEPTANCE_OFFLINE_ORIGIN"] = offer["origins"][-1]
 if args.bridge_pid:
-    repository = Path(__file__).resolve().parents[3] / "nodus"
+    repository = Path(os.environ.get("NODUS_REPO", str(Path(__file__).resolve().parents[3] / "nodus"))).resolve()
     executable = "node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
     host = "node_modules/.cache/nodus-mobile-acceptance"
     # Electron's launcher may use an absolute executable or host argument.

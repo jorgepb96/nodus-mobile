@@ -30,6 +30,15 @@ public actor MirrorStore {
     public let spaceId: String
     public let fileURL: URL
 
+    /// Decrypted private downloads may be queried in memory, never written as a second,
+    /// unencrypted persistent mirror outside their encrypted read pack.
+    public init(inMemorySpaceId: String) throws {
+        spaceId = inMemorySpaceId
+        fileURL = URL(fileURLWithPath: "/dev/null")
+        dbQueue = try DatabaseQueue()
+        try migrate()
+    }
+
     /// Opens (or creates) the mirror for one space.
     ///
     /// One file per space rather than one shared database: spaces are independent
