@@ -642,7 +642,7 @@ final class MobileReleaseUITests: XCTestCase {
         let web = app.otherElements["shared-desktop-graph"].webViews.firstMatch
         let back = web.buttons["Volver a los temas"].firstMatch
         if back.waitForExistence(timeout: 2) { back.tap() }
-        let filter = web.searchFields["Filtrar temas"]
+        let filter = web.descendants(matching: .any)["Buscar ideas y temas"].firstMatch
         XCTAssertTrue(filter.waitForExistence(timeout: 60), app.debugDescription)
         try focusResearchSearch(filter, in: web, app: app)
         filter.typeText(name)
@@ -1039,7 +1039,7 @@ final class MobileReleaseUITests: XCTestCase {
     }
     @MainActor private func verifyLargeGraph(app: XCUIApplication, name: String, count: Int) throws {
         let web = app.otherElements["shared-desktop-graph"].webViews.firstMatch
-        let filter = web.searchFields["Filtrar temas"]
+        let filter = web.descendants(matching: .any)["Buscar ideas y temas"].firstMatch
         XCTAssertTrue(filter.waitForExistence(timeout: 60), app.debugDescription)
         filter.tap(); filter.typeText(name + "\n")
         // A theme caption can remain visible while its dot is above the clipped
@@ -1763,7 +1763,7 @@ final class MobileReleaseUITests: XCTestCase {
                 for _ in 0..<6 { if graph.isHittable { break }; app.swipeDown() }
                 XCTAssertTrue(graph.isHittable, app.debugDescription); graph.tap()
                 let graphWeb = app.otherElements["shared-desktop-graph"].webViews.firstMatch
-                XCTAssertTrue(graphWeb.searchFields["Filtrar temas"].waitForExistence(timeout: 60),
+                XCTAssertTrue(graphWeb.descendants(matching: .any)["Buscar ideas y temas"].firstMatch.waitForExistence(timeout: 60),
                     "Load the real graph before leaving it, so hidden HTML input regression coverage cannot pass vacuously.\n\(app.debugDescription)")
                 capture(app, "normal-linked-workspace-active-graph")
             }
@@ -1795,7 +1795,7 @@ final class MobileReleaseUITests: XCTestCase {
             XCTAssertTrue(research.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(research.isHittable, app.debugDescription); research.tap()
             let inactiveGraph = app.otherElements["shared-desktop-graph"].webViews.firstMatch
-            XCTAssertFalse(inactiveGraph.searchFields["Filtrar temas"].exists,
+            XCTAssertFalse(inactiveGraph.descendants(matching: .any)["Buscar ideas y temas"].firstMatch.exists,
                 "An inactive graph must not leave its HTML search controls in the accessibility tree.")
             XCTAssertFalse(inactiveGraph.isHittable, "A retained invisible view cannot receive touches.")
             let web = app.otherElements["shared-desktop-deepResearch"].webViews.firstMatch
