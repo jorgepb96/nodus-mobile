@@ -2,6 +2,18 @@ import NodusKit
 import Observation
 import SwiftUI
 
+/// Beta scope: retain device journals and credentials, but execute new AI only on the Mac.
+enum BetaAIFeatures {
+    nonisolated static let autonomousGeneration = false
+    nonisolated static let audioGeneration = false
+    nonisolated static let macRequiredMessage = NodusLinkPolicy.message
+    nonisolated static func requireAutonomousGeneration() throws {
+        guard autonomousGeneration else { throw APIError(status: 409, code: "beta_mac_ai_required", message: macRequiredMessage) }
+    }
+}
+
+enum AIExecutionMode: String, CaseIterable, Identifiable { case live, autonomous; var id: String { rawValue } }
+
 /// One open space: its client, what it published, and the menu that follows from that.
 ///
 /// The menu is not a fixed list per vault type. It is derived from `counts` on the space
@@ -11,8 +23,28 @@ import SwiftUI
 @Observable
 @MainActor
 final class SpaceSession {
-    let connection: AppModel.Connection
+    // Releasing a document's WebKit scheme also releases its owning session.
+    // No actor work is needed during teardown (swiftlang/swift#88036).
+#if compiler(>=6.2)
+    nonisolated deinit {}
+#endif
+
+    var canAuthor: Bool { !NodusLinkPolicy.readOnly && connection.role.canSendChanges }
+    var canAnnotateReports: Bool {
+        canAuthor || (connection.desktopPairingId != nil && NodusLinkPolicy.supports(vaultType) && connection.role.canSendChanges)
+    }
+    let podcastPlayback = LinkPodcastPlayback()
+    var isSurfaceFullscreen = false
+    private(set) var connection: AppModel.Connection
     let client: NodusClient
+    private var preferredAIExecutionMode: AIExecutionMode
+    var aiExecutionMode: AIExecutionMode {
+        get { BetaAIFeatures.autonomousGeneration ? preferredAIExecutionMode : .live }
+        set {
+            preferredAIExecutionMode = newValue
+            UserDefaults.standard.set(newValue.rawValue, forKey: "ai-execution-mode:\(connection.id)")
+        }
+    }
 
     private(set) var overview: SpaceOverview?
     /// Why the space could not be read, classified rather than described.
@@ -33,6 +65,20 @@ final class SpaceSession {
     /// Serialises the cheap HEAD probes from the foreground loop and the scene activation
     /// hook. Returning to the app commonly fires both at once; asking twice adds no freshness.
     private var isCheckingPublishedContent = false
+    private var isSynchronizingCompanionChanges = false
+    private(set) var companionPublicationRevision = 0
+    private(set) var companionResultRevision = 0
+    private(set) var companionDownloadRevision = 0
+    private(set) var companionImmersionProgressRevision = 0
+    private(set) var companionDatabaseReadingRevision = 0
+    private(set) var companionPublicationUpdates: [JSONValue] = []
+
+    /// A durable device result refreshes native readers without reporting an
+    /// acknowledgement or invalidating the mounted editor/canvas.
+    func didSaveCompanionResult() { companionResultRevision += 1 }
+    func didChangeCompanionDownloads() { companionDownloadRevision += 1 }
+    func didChangeImmersionProgress() { companionImmersionProgressRevision += 1 }
+    func didChangeDatabaseReading() { companionDatabaseReadingRevision += 1 }
 
     /// Told to `AppModel` so the space picker can say the same thing this screen says.
     private let onFailure: (ConnectionFailure) -> Void
@@ -40,6 +86,8 @@ final class SpaceSession {
     /// The vault's embedding identity, read once by probing the semantic endpoint. Nil until
     /// probed, `.none` when the vault has no published vectors.
     private(set) var embedding: EmbeddingProbeResult = .unknown
+    private var embeddingProbeGeneration = UUID()
+    private var embeddingProbeTask: Task<Void, Never>?
 
     /// The offline copy, when one has been downloaded.
     private(set) var mirror: MirrorStore?
@@ -48,39 +96,60 @@ final class SpaceSession {
     private let mirrorDirectory: URL
 
     var accent: Color { connection.accent }
-    var vaultType: VaultType? { overview?.vault?.type ?? connection.vaultType }
+    // A live grant is bound to this vault, regardless of the Mac's active vault
+    // or an overview retained during a workspace switch.
+    /// Names and grant role can change without replacing editor/session state.
+    func refreshConnectionMetadata(_ updated: AppModel.Connection) {
+        guard updated.id == connection.id, updated.desktopPairingId == connection.desktopPairingId,
+              updated.vaultId == connection.vaultId else { return }
+        let changedOrigin = connection.origin != updated.origin
+        connection = updated
+        if changedOrigin {
+            embeddingProbeGeneration = UUID()
+            embeddingProbeTask?.cancel()
+            embedding = .unknown
+            embeddingProbeTask = Task { [weak self] in await self?.probeEmbedding() }
+        }
+    }
 
-    private init(
+    var vaultId: String? { connection.desktopPairingId != nil ? connection.vaultId : overview?.vault?.id ?? connection.vaultId }
+    var vaultType: VaultType? {
+        if connection.desktopPairingId != nil && overview?.vault?.id != connection.vaultId { return connection.vaultType }
+        return overview?.vault?.type ?? connection.vaultType
+    }
+
+    init(
         connection: AppModel.Connection,
         client: NodusClient,
+        mirrorDirectory: URL = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true),
         // Defaulted because a corpus held on this device has no connection to fail: the example
         // vault opens or the build is broken, and neither is something the space picker can
         // offer a way out of.
         onFailure: @escaping (ConnectionFailure) -> Void = { _ in }
     ) {
         self.connection = connection
+        self.preferredAIExecutionMode = UserDefaults.standard.string(forKey: "ai-execution-mode:\(connection.id)").flatMap(AIExecutionMode.init(rawValue:))
+            ?? (connection.desktopPairingId == nil ? .autonomous : .live)
         self.client = client
         self.onFailure = onFailure
         // Application Support, not Caches: the mirror is what the app falls back to on a plane,
         // and the system is free to delete Caches whenever it likes.
-        mirrorDirectory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
+        self.mirrorDirectory = mirrorDirectory
         names = CorpusNames(client: client, spaceId: connection.spaceId)
     }
 
-    convenience init(
+    convenience init?(
         connection: AppModel.Connection,
         token: String,
         cacheDirectory: URL,
         onUnauthorized: @escaping @Sendable () async -> Void,
         onFailure: @escaping (ConnectionFailure) -> Void = { _ in }
     ) {
+        guard let client = ConnectionClient.make(for: connection, token: token,
+            pairings: DesktopBridgePairingStore().pairings(), cacheDirectory: cacheDirectory) else { return nil }
         self.init(
             connection: connection,
-            client: NodusClient(
-                address: ServerAddress(trusted: connection.origin),
-                token: token,
-                cache: ResponseCache(directory: cacheDirectory)
-            ),
+            client: client,
             onFailure: onFailure
         )
         Task { [client] in await client.setUnauthorizedHandler(onUnauthorized) }
@@ -114,6 +183,7 @@ final class SpaceSession {
         case absent
         case downloading
         case importing
+        case downloadingAssets(done: Int, total: Int)
         /// Held locally and matching the server's current revision.
         case current(rows: Int, tables: Int)
         /// Held locally, but the owner has republished since.
@@ -125,7 +195,8 @@ final class SpaceSession {
     func loadMirror() async {
         guard mirror == nil else { return }
         do {
-            let store = try await MirrorStore.open(spaceId: connection.spaceId, directory: mirrorDirectory)
+            try ConnectionStorage.prepare(for: connection)
+            let store = try await MirrorStore.open(spaceId: connection.storageId, directory: mirrorDirectory)
             guard let summary = try await store.summary() else { return }
             mirror = store
             mirrorSummary = summary
@@ -142,7 +213,17 @@ final class SpaceSession {
     func refreshMirrorFreshness() async {
         guard let mirror, let summary = mirrorSummary else { return }
         do {
+            guard try await client.hasDownloadedPublishedAssets(mirror.assetRefs(), in: connection.spaceId) else {
+                mirrorProgress = .failed(String(localized: "The offline images are incomplete. Download the copy again."))
+                return
+            }
+        } catch {
+            mirrorProgress = .failed(error.localizedDescription)
+            return
+        }
+        do {
             let revision = try await client.snapshotRevision(in: connection.spaceId)
+            await synchronizeCompanionChanges()
             let current = try await mirror.isCurrent(with: revision ?? "")
             let counts = try await mirror.tableCounts()
             mirrorProgress = current
@@ -161,6 +242,7 @@ final class SpaceSession {
     func downloadMirror() async {
         mirrorProgress = .downloading
         do {
+            try ConnectionStorage.prepare(for: connection)
             let snapshot = try await client.snapshot(in: connection.spaceId)
             let revision = try await client.snapshotRevision(in: connection.spaceId)
                 ?? snapshot.revision
@@ -171,13 +253,16 @@ final class SpaceSession {
             if let mirror {
                 store = mirror
             } else {
-                store = try await MirrorStore.open(spaceId: connection.spaceId, directory: mirrorDirectory)
+                store = try await MirrorStore.open(spaceId: connection.storageId, directory: mirrorDirectory)
             }
             let summary = try await store.replace(with: snapshot, revision: revision)
             mirror = store
             mirrorSummary = summary
             await refreshBrowsableTables()
             await names.preload(from: store)
+            try await client.downloadPublishedAssets(snapshot, in: connection.spaceId) { [weak self] done, total in
+                await MainActor.run { self?.mirrorProgress = .downloadingAssets(done: done, total: total) }
+            }
             mirrorProgress = .current(rows: summary.totalRows, tables: summary.counts.count)
         } catch let error as APIError where error.isNotPublished {
             mirrorProgress = .failed("This space has no publication to download yet.")
@@ -189,6 +274,7 @@ final class SpaceSession {
     func removeMirror() async {
         guard let mirror else { return }
         try? await mirror.drop()
+        try? await client.removeDownloadedAssets(in: connection.spaceId)
         self.mirror = nil
         mirrorSummary = nil
         mirrorOnlyTables = []
@@ -276,6 +362,9 @@ final class SpaceSession {
 
         do {
             let revision = try await client.snapshotRevision(in: connection.spaceId)
+            // Pending local work does not change the Mac's publication revision.
+            // Flush after a real successful probe, before the unchanged-revision exit.
+            await synchronizeCompanionChanges()
             let publicationChanged = revision != publishedRevision
             let mirrorNeedsRefresh = mirror != nil && mirrorSummary?.revision != revision
             guard publicationChanged || mirrorNeedsRefresh else { return }
@@ -305,6 +394,117 @@ final class SpaceSession {
         }
     }
 
+    /// A successful direct probe is the reconnection signal. Finish only work
+    /// already authorised by its save/send action, preserving stable mutation IDs.
+    func prepareCompanionContentSubmission() async throws -> Bool {
+        guard connection.desktopPairingId != nil else { return true }
+        await synchronizeCompanionChanges()
+        let queue = try MutationOutbox(spaceId:connection.storageId, directory:mirrorDirectory)
+        return try await queue.companionParentsReady()
+    }
+
+    func synchronizeCompanionChanges() async {
+        guard canAuthor || canAnnotateReports, connection.desktopPairingId != nil,
+              !isSynchronizingCompanionChanges else { return }
+        isSynchronizingCompanionChanges = true
+        defer { isSynchronizingCompanionChanges = false }
+        if !canAuthor {
+            if let annotations = await OutboxController.open(session: self, readerAnnotationsOnly: true) {
+                await annotations.flush()
+            }
+            return
+        }
+        // Canonical parent rows must arrive before their document edits and jobs.
+        // This drains only saves the user already authorised, never unsent drafts.
+        let mutationQueue = try? MutationOutbox(spaceId: connection.storageId, directory: mirrorDirectory)
+        if let mutationQueue { try? await OutboxDelivery.send(from: mutationQueue, using: client, in: connection.spaceId) }
+        let parentsReady: Bool
+        if let mutationQueue { parentsReady = (try? await mutationQueue.companionParentsReady()) == true }
+        else { parentsReady = false }
+        if let vaultId, let (bridge, documents) = try? await ConnectionClient.companionDocuments(for: connection) {
+            let chats = ChatHistoryStore.shared(spaceId:connection.storageId)
+            do {
+                try chats.bind(kind:CompanionChatKind(vaultType:vaultType))
+                await chats.synchronize { kind,request in try await bridge.saveChatEdit(vaultId:vaultId,kind:kind,request:request) }
+            } catch { /* The store retains its actual write issue and pending drafts. */ }
+            if parentsReady { try? await documents.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request) } }
+            if parentsReady, let (_, studyDocuments) = try? await ConnectionClient.companionDocuments(for: connection, kind: .studyDocument) {
+                try? await studyDocuments.synchronize { request in try await bridge.saveWorkspaceEdit(vaultId: vaultId, request: request, kind: .studyDocument) }
+            }
+            if parentsReady, let pairingId = connection.desktopPairingId,
+               let pages = try? await CompanionPageDocumentStores.shared.store(pairingId: pairingId, vaultId: vaultId) {
+                let before = await pages.revision
+                try? await pages.synchronize { request in try await bridge.savePageDocument(vaultId: vaultId, request: request) }
+                if await pages.revision != before { companionPublicationRevision += 1 }
+            }
+            if let pairingId = connection.desktopPairingId,
+               let progress = try? await CompanionImmersionProgressOutboxes.shared.outbox(pairingId: pairingId, vaultId: vaultId) {
+                let before = await progress.revision
+                try? await progress.synchronize { sessionId, request in
+                    try await bridge.saveImmersionProgress(vaultId: vaultId, sessionId: sessionId, request: request)
+                }
+                if await progress.revision != before { companionImmersionProgressRevision += 1 }
+            }
+            if let pairingId = connection.desktopPairingId,
+               let reading = try? await CompanionDatabaseReadingOutboxes.shared.outbox(pairingId:pairingId,vaultId:vaultId) {
+                let before = await reading.revision
+                let dependencies = try? await DesktopJobLedgers.shared.ledger(pairingId:pairingId,vaultId:vaultId)
+                try? await reading.synchronize { id,request in
+                    if let dependencies,await dependencies.all().contains(where:{ $0.method == "saveMobileDatabaseResearchReport" && $0.state != "available" && $0.checkpoint?.objectValue?["detail"]?.objectValue?["report"]?.objectValue?["id"] == .string(id) }) { throw CompanionDatabaseResearch.Dependency.waitingForReportPublication }
+                    return try await bridge.saveDatabaseResearchReading(vaultId:vaultId,reportId:id,request:request)
+                }
+                if await reading.revision != before { companionDatabaseReadingRevision += 1 }
+            }
+            // Portable results synchronize in either mode. New Mac generation
+            // resumes only while live remains explicitly selected, including
+            // when the user changes modes during the preceding network probe.
+            if let pairingId = connection.desktopPairingId,
+               let ledger = try? await DesktopJobLedgers.shared.ledger(pairingId: pairingId, vaultId: vaultId) {
+                let before = Dictionary(uniqueKeysWithValues: await ledger.all().map { ($0.id, $0.state) })
+                try? await bridge.reconcileDurableCancellations(vaultId: vaultId)
+                try? await ledger.synchronize(list: { try await bridge.listJobs(vaultId: vaultId) }, canSubmit: { request in
+                    if let mutationQueue {
+                        guard (try? await mutationQueue.companionParentsReady()) == true else { return false }
+                    }
+                    // Native chat serializes submit/cancel/recovery with its
+                    // durable conversation; this ledger only observes its jobs.
+                    if request.method == "streamMobileCompanionChat" { return false }
+                    if DesktopBridgeClient.isProviderFreeJob(method: request.method, args: request.args) { return true }
+                    return await MainActor.run { self.aiExecutionMode == .live }
+                }, submit: { request in
+                    try await bridge.submitJob(vaultId: vaultId, method: request.method, args: request.args, idempotencyKey: request.id)
+                })
+                let changed = await ledger.all().filter { before[$0.id] != $0.state }
+                await NativeLiveChat.reconcile(session:self)
+                if let progress = try? await CompanionImmersionProgressOutboxes.shared.outbox(pairingId: pairingId, vaultId: vaultId) {
+                    let beforeProgress = await progress.revision
+                    for result in await ledger.all() where result.method == "saveImmersionGeneratedSession" && result.state == "available" {
+                        if let value = result.result?.objectValue, let id = value["id"]?.stringValue, let plan = value["plan"],
+                           let sourceRevision = try? CompanionImmersionProgress.sourceRevision(plan: plan) {
+                            try? await progress.associate(publicationId: result.id, sessionId: id, sourceRevision: sourceRevision)
+                        }
+                    }
+                    if await progress.revision != beforeProgress {
+                        try? await progress.synchronize { sessionId, request in try await bridge.saveImmersionProgress(vaultId: vaultId, sessionId: sessionId, request: request) }
+                        companionImmersionProgressRevision += 1
+                    }
+                }
+                if !changed.isEmpty {
+                    companionPublicationUpdates = changed.map { job in
+                        let checkpoint = job.checkpoint?.objectValue
+                        let original = checkpoint?["request"]?.objectValue ?? [:]
+                        return .object(["id": .string(job.id), "method": .string(job.method), "state": .string(job.state),
+                            "error": job.issue.map(JSONValue.string) ?? .null,
+                            "entryId": original["entryId"] ?? .null, "mode": original["mode"] ?? .null,
+                            "entityKind": original["entityKind"] ?? .null, "entityId": original["entityId"] ?? .null,
+                            "degraded": checkpoint?["definition"]?.objectValue?["outcome"] == .string("degraded") ? .bool(true) : .bool(false)])
+                    }
+                    companionPublicationRevision += 1
+                }
+            }
+        }
+    }
+
     /// Keeps an open space close to the desktop without moving snapshot bytes on every tick.
     /// SwiftUI cancels this task when the shell closes; iOS suspends it with the app.
     func monitorPublishedContent(every interval: Duration = .seconds(2)) async {
@@ -320,15 +520,20 @@ final class SpaceSession {
 
     /// Ask the space which embedding it was indexed with, so the search screen can say what it
     /// needs instead of silently returning nothing.
-    func probeEmbedding() async {
-        guard case .unknown = embedding else { return }
+    func probeEmbedding(retryUnavailable: Bool = false) async {
+        switch embedding {
+        case .unknown: break
+        case .unavailable where retryUnavailable: break
+        default: return
+        }
+        let generation = UUID()
+        embeddingProbeGeneration = generation
         do {
-            if let identity = try await client.publishedEmbeddingIdentity(in: connection.spaceId) {
-                embedding = .published(identity)
-            } else {
-                embedding = .noVectors
-            }
+            let identity = try await client.publishedEmbeddingIdentity(in: connection.spaceId)
+            guard !Task.isCancelled, generation == embeddingProbeGeneration else { return }
+            embedding = identity.map(EmbeddingProbeResult.published) ?? .noVectors
         } catch {
+            guard !Task.isCancelled, generation == embeddingProbeGeneration else { return }
             embedding = .unavailable(error.localizedDescription)
         }
     }

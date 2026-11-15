@@ -10,7 +10,7 @@ import Testing
 struct CollectionDescriptorTests {
     @Test("every collection the server declares is present, and no more")
     func coversTheServerTable() {
-        #expect(Collections.all.count == 23)
+        #expect(Collections.all.count == 49)
         #expect(Collections.byPath.count == Collections.all.count, "two descriptors share a path")
         #expect(Collections.byTable.count == Collections.all.count, "two descriptors share a table")
     }
@@ -29,6 +29,10 @@ struct CollectionDescriptorTests {
         #expect(Collections["works"]?.idField == "nodus_id")
         #expect(Collections["ideas"]?.idField == "global_id")
         #expect(Collections["persons"]?.idField == "person_id")
+        #expect(Collections["relationships"]?.idField == "rel_id")
+        #expect(Collections["archive-items"]?.idField == "item_id")
+        #expect(Collections["archive-units"]?.idField == "unit_id")
+        #expect(Collections["source-analyses"]?.idField == "analysis_id")
     }
 
     @Test("the array key differs from the path exactly where the server says it does")
@@ -63,6 +67,14 @@ struct CollectionDescriptorTests {
         // Except where an enriched handler answers under its own name.
         #expect(Collections["teaching-exams"]?.detailKey == "exam")
         #expect(Collections["study-plans"]?.detailKey == "plan")
+        #expect(Collections["study-courses"]?.detailKey == "course")
+        #expect(Collections["study-materials"]?.detailKey == "material")
+        #expect(Collections["teaching-rubrics"]?.detailKey == "rubric")
+        #expect(Collections["world-scenes"]?.detailKey == "scene")
+        #expect(Collections["dictionary"]?.detailKey == "entry")
+        #expect(Collections["archive-items"]?.detailKey == "item")
+        #expect(Collections["database-pages"]?.detailKey == "page")
+        #expect(Collections["prosopography-public-population"]?.detailKey == "population")
     }
 
     @Test("special resources answer under their own keys")

@@ -12,6 +12,35 @@ import Testing
 /// the same answer every time.
 @Suite("Corpus prose")
 struct CorpusProseTests {
+    @Test("private citations retain their addressed source and never use a public person dossier")
+    func privateReferences() throws {
+        let person = try #require(CorpusReference(URL(string: "nodus://prosop/person/private-person")!))
+        #expect(person.destination == .privateSource); #expect(person.privateSource?.kind == .person)
+        #expect(person.collection == nil)
+        let recording = try #require(CorpusReference(URL(string: "nodus://study/recording/recording?t=37.4")!))
+        #expect(recording.destination == .privateSource); #expect(recording.privateSource?.timestamp == 37.4)
+        #expect(recording.id != CorpusReference(URL(string: "nodus://study/recording/recording?t=12")!)?.id)
+        let participant = try #require(CorpusReference(URL(string: "nodus://testimonios/participant/participant")!))
+        #expect(participant.privateSource?.kind == .participant)
+        #expect(participant.privateSource?.kind.domain == .testimonies)
+        let fragment = try #require(CorpusReference(URL(string: "nodus://testimonios/interview/interview?transcript=literal&session=session&annotation=annotation&t=37.4")!))
+        #expect(fragment.destination == .privateSource); #expect(fragment.privateSource?.annotationId == "annotation")
+        #expect(fragment.privateSource?.sessionId == "session"); #expect(fragment.privateSource?.transcriptId == "literal")
+        #expect(fragment.privateSource?.publishedCollectionPath == "testimony-interviews")
+        #expect(fragment.id != CorpusReference(URL(string: "nodus://testimonios/interview/interview?annotation=another")!)?.id)
+    }
+    @Test("specialised references use their Desktop route and retain an excerpt's owner")
+    func specialisedReferences() throws {
+        let world = try #require(CorpusReference(URL(string: "nodus://world/character/person-a")!))
+        #expect(world.collection?.path == "persons"); #expect(world.recordId == "person-a"); #expect(world.destination == .collection)
+        let excerpt = try #require(CorpusReference(URL(string: "nodus://primary-source/source-a/excerpt/excerpt-a")!))
+        #expect(excerpt.collection?.path == "archive-excerpts"); #expect(excerpt.specialised?.expectedParentId == "source-a")
+        let study = try #require(CorpusReference(URL(string: "nodus://study/doc/doc-a?from=4")!))
+        #expect(study.collection?.path == "study-docs"); #expect(study.specialised?.from == 4)
+        let literal = try #require(CorpusReference(URL(string: "nodus://idea/a%252Fb")!))
+        #expect(literal.recordId == "a%2Fb")
+        #expect(CorpusReference(URL(string: "nodus://user@idea/id")!) == nil)
+    }
     private let labels = [
         "nodus://idea/g-8969": "Arco Blanco (2020)",
         "nodus://work/w-1": "Mill (1859)",

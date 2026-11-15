@@ -4,12 +4,19 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var systemTextSize
     @State private var model = AppModel()
     @State private var ai = AISettings()
     @State private var lock = AppLock()
     @State private var preferences = AppPreferences()
     @State private var tilt = DeviceTiltProvider()
     @State private var showingConnect = false
+    @State private var didRestoreSession = false
+    @State private var pairingLink: String?
+#if DEBUG
+    @State private var recoveryFixtureReady = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] == nil
+    @State private var recoveryFixtureIssue: String?
+#endif
     /// The queue belongs to the device rather than to a space, so it lives above the branch
     /// that decides whether a space is open at all.
     @State private var tray = OutboxTrayModel()
@@ -18,19 +25,55 @@ struct RootView: View {
     /// way it reads everything else.
     private let cloud = CloudBackup.shared
 
+    private var effectiveTextSize: DynamicTypeSize {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_DYNAMIC_TYPE"] == "accessibility3" { return .accessibility3 }
+#endif
+        return systemTextSize
+    }
+
+    @ViewBuilder private var rootContent: some View {
+        if let session = model.session {
+            SpaceShell(session: session)
+        } else if model.isOpeningLocalCorpus {
+            ProgressView("Abriendo el vault…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("nodus-opening-corpus")
+        } else {
+            SpacePickerView(showingConnect: $showingConnect)
+        }
+    }
+
     var body: some View {
         Group {
-            if let session = model.session {
-                SpaceShell(session: session)
+#if DEBUG
+            if let issue = recoveryFixtureIssue {
+                Text(issue).accessibilityIdentifier("recovery-fixture-error")
+            } else if !recoveryFixtureReady {
+                ProgressView("Preparing isolated recovery fixture")
             } else {
-                SpacePickerView(showingConnect: $showingConnect)
+                rootContent
             }
+#else
+            rootContent
+#endif
         }
+
+        .allowsHitTesting(!model.isClosingDesktopGrant)
         // Over everything, including any sheet: a settings screen presented before the app went
         // away must not be readable through the lock.
         .overlay {
             if lock.isLocked {
                 LockScreen(lock: lock)
+            } else if model.isClosingDesktopGrant {
+                ZStack {
+                    NodusBackdrop(accent: Color(hex: VaultType.academic.accentHex))
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Conservando tu trabajo local…")
+                        Text("El Mac ha cerrado el enlace. Esperamos a que el trabajo iniciado termine de guardarse.").font(.footnote).multilineTextAlignment(.center)
+                    }.padding(NodusSpace.page)
+                }
             } else if lock.isEnabled, scenePhase == .inactive {
                 // The multitasking snapshot is taken here. Without this it would show the
                 // corpus, which makes the lock decorative.
@@ -43,13 +86,18 @@ struct RootView: View {
         .environment(preferences)
         .environment(tray)
         .environment(cloud)
+        .nodusTextHierarchy()
         .preferredColorScheme(preferences.interfaceStyle.colorScheme)
         .detectingScreenCutout()
         .nodusTiltDriven(tilt)
         // Once, here, for every field in the app — including the ones inside sheets, which are
         // presented into this same window.
         .nodusDismissesKeyboardOnTap()
-        .nodusSheet(isPresented: $showingConnect) { ConnectView().environment(model) }
+        .nodusSheet(isPresented: $showingConnect) { ConnectView().environment(model).dynamicTypeSize(effectiveTextSize) }
+        .sheet(isPresented: Binding(get: { pairingLink != nil }, set: { if !$0 { pairingLink = nil } })) {
+            DesktopBridgePairingSheet(accent: model.session?.accent ?? Color(hex: VaultType.academic.accentHex), initialLink: pairingLink ?? "") { pairingLink = nil }.environment(model).dynamicTypeSize(effectiveTextSize)
+        }
+        .onOpenURL { url in if url.scheme == "nodus", url.host == "pair" { pairingLink = url.absoluteString } }
         // Attached here, above the branch, so one sheet serves both the picker and whatever
         // space happens to be open. Presenting it from inside `SpaceShell` would put it behind
         // that shell's own sheets, and iOS fails a second presentation silently.
@@ -57,12 +105,32 @@ struct RootView: View {
             OutboxTraySheet()
                 .environment(tray)
                 .environment(model)
+                .dynamicTypeSize(effectiveTextSize)
                 // The open space's colour when there is one; the queue is also reachable from
                 // the picker, where no vault is open to lend one.
                 .nodusModalClose(accent: model.session?.accent ?? Color(hex: VaultType.academic.accentHex))
         }
+        .dynamicTypeSize(effectiveTextSize)
         .task {
+            // Changing the root branch can start this task again. Restoration belongs
+            // to launch; closing a workspace must leave its chooser open, also offline.
+            guard !didRestoreSession else { return }
+            didRestoreSession = true
 #if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] != nil {
+                do { try await model.prepareAuthoringRecoveryAcceptance(); recoveryFixtureReady = true }
+                catch { recoveryFixtureIssue = error.localizedDescription }
+                return
+            }
+            if let filename = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_SNAPSHOT_FILENAME"] {
+                do { try await model.openAcceptanceSnapshot(filename) }
+                catch { model.reportAcceptanceFailure(error) }
+                return
+            }
+            if let link = ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_PAIRING_LINK"] {
+                pairingLink = link
+                return
+            }
             // UI and visual-parity tests always start from the bundled public-domain fixture.
             // This bypasses persisted connections without adding any test credential or
             // production-data path to the app.
@@ -95,6 +163,10 @@ struct RootView: View {
                     model.open(recent)
                 }
             }
+            // A sleeping Mac must not hold downloaded reading and authored work
+            // behind the catalogue request's network timeout. Opening checks the
+            // saved grant locally; the refresh still handles remote revocation.
+            await model.refreshDesktopWorkspaceCatalogues()
             // Which of this device's files a backup carries, decided in one place and applied
             // to whatever is already on disk. Detached because it is `setxattr` per file and
             // this is the launch path; nothing on screen waits for the answer.
@@ -103,14 +175,31 @@ struct RootView: View {
                     .appendingPathComponent("spaces", isDirectory: true))
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: DesktopBridgePairingStore.authorizationRevokedNotification)) { event in
+            if let pairingId = event.object as? String { Task { await model.handleDesktopAuthorizationRevocation(pairingId: pairingId) } }
+        }
+        .task {
+#if DEBUG
+            guard ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] == nil else { return }
+#endif
+            while !Task.isCancelled {
+                if scenePhase == .active { await model.refreshDesktopWorkspaceCatalogues() }
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
+        }
         .onChange(of: scenePhase, initial: true) { _, phase in
+#if DEBUG
+            guard ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_AUTHORING_RECOVERY"] == nil else { return }
+#endif
             // Coming back is when the answer may have changed: the background flush may have
             // finished a send while the app was away, and — the other half of the same
             // question — somebody may have opened their desktop and collected it. It is a
             // handful of SQLite opens and, only for spaces actually holding changes in a
             // ledger, one request each.
+            if phase != .active { model.stopLinkedMacDiscovery() }
             if phase == .active {
                 Task { await tray.confirmDeliveries() }
+                Task { await model.refreshDesktopWorkspaceCatalogues() }
                 // Coming back is also when another device may have written a report or a chat.
                 // Returns on the first line unless the user switched the iCloud copy on.
                 Task { await cloud.refresh() }
@@ -144,6 +233,8 @@ struct SpacePickerView: View {
     @State private var vaultFilter: VaultType?
     /// The connection whose diagnostics are open, presented from the notice above the list.
     @State private var diagnosing: AppModel.Connection?
+    @State private var savedWork: [PrivateBridgeAuthoringRecovery.ArchiveInfo] = []
+    @State private var showingSavedWork = false
 
     private let accent = Color(hex: VaultType.academic.accentHex)
 
@@ -151,12 +242,12 @@ struct SpacePickerView: View {
     ///
     /// One space needs no searching and no ordering, and a filter over a list of one is a
     /// control that can only ever hide the single thing on screen.
-    private var offersFinding: Bool { model.connections.count > 1 }
+    private var offersFinding: Bool { model.linkConnections.count > 1 }
 
     /// The vault types actually present. Offering the nine the app knows about, when this
     /// device holds two academic spaces, is offering seven ways to empty the list.
     private var availableTypes: [VaultType] {
-        let present = Set(model.connections.compactMap(\.vaultType))
+        let present = Set(model.linkConnections.compactMap(\.vaultType))
         return VaultType.allCases.filter { present.contains($0) }
     }
 
@@ -164,7 +255,7 @@ struct SpacePickerView: View {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         // Ordered by the *stored* position first, because that is the order they were added in
         // and it is the fallback for a connection made before `addedAt` existed.
-        let ordered = model.connections.enumerated().sorted { left, right in
+        let ordered = model.linkConnections.enumerated().sorted { left, right in
             switch preferences.spaceOrder {
             case .recentlyUsed:
                 return (left.element.lastOpenedAt ?? .distantPast) > (right.element.lastOpenedAt ?? .distantPast)
@@ -197,8 +288,18 @@ struct SpacePickerView: View {
                     // Above the spaces rather than inside one of them: what is queued is a fact
                     // about this device, and the picker is the only screen that belongs to the
                     // device rather than to a vault.
-                    if tray.outbox.hasAnything { queueControl }
+                    if !NodusLinkPolicy.readOnly && tray.outbox.hasAnything { queueControl }
+                    if !savedWork.isEmpty {
+                        Button { showingSavedWork = true } label: {
+                            Label("Trabajo guardado", systemImage: "doc.text")
+                                .frame(minHeight: 44).contentShape(Rectangle())
+                        }.accessibilityIdentifier("saved-local-work")
+                    }
 
+                    if let issue = model.desktopRecoveryIssue {
+                        NodusNotice(tone: .blocked, title: "Trabajo local conservado", message: LocalizedStringKey(issue), systemImage: "doc.text",
+                            onDismiss: { model.dismissDesktopRecoveryIssue() })
+                    }
                     if let stranded = model.needsSignIn {
                         signInAgainNotice(stranded)
                     }
@@ -242,18 +343,12 @@ struct SpacePickerView: View {
                         NodusNotice(
                             tone: .info,
                             title: "No spaces yet",
-                            message: "Connect to the Nodus Server where your vault is published.",
+                            message: "Link your desktop Nodus with a code or QR to access your workspace in real time.",
                             systemImage: "antenna.radiowaves.left.and.right"
                         )
                     }
 
-                    Button {
-                        showingConnect = true
-                    } label: {
-                        Label("Add a server", systemImage: "plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
+                    if !model.hasAnyConnection { linkControl }
 
                     if !hasDemo { exampleVaultButton }
                 }
@@ -269,6 +364,28 @@ struct SpacePickerView: View {
                 .frame(maxWidth: .infinity)
             }
             .nodusDismissesKeyboard()
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if model.hasAnyConnection {
+                linkControl
+                    .frame(maxWidth: 560)
+                    .padding(.horizontal, NodusSpace.page)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background { NodusBackdrop(accent: accent) }
+            }
+        }
+        .task { savedWork = (try? await PrivateBridgeAuthoringRecovery.shared.allSummaries()) ?? [] }
+        .nodusSheet(isPresented: $showingSavedWork) {
+            NavigationStack {
+                List {
+                    Section {
+                        ForEach(savedWork) { archive in RecoveredAuthoringArchiveRow(archive: archive) }
+                    } footer: { Text("Puedes exportar tu trabajo sin conexión. Enlaza el mismo Mac para recuperarlo y revisar los cambios antes de enviarlos.") }
+                }
+                .navigationTitle("Trabajo guardado")
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingSavedWork = false } } }
+            }
         }
         .nodusSheet(item: $diagnosing) { connection in
             // Its own stack: the picker has no navigation bar of its own, and the screen needs
@@ -286,6 +403,15 @@ struct SpacePickerView: View {
         }
     }
 
+    /// Linking is the primary companion action, even when the workspace contains many vaults.
+    private var linkControl: some View {
+        Button { showingConnect = true } label: {
+            Label("Link Nodus", systemImage: "qrcode").frame(maxWidth: .infinity)
+        }
+        .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
+        .accessibilityIdentifier("nodus-add-server")
+    }
+
     /// The mark, the name and the line under it.
     ///
     /// It used to open with 50 points of padding under a navigation bar that is not there, and
@@ -297,7 +423,7 @@ struct SpacePickerView: View {
         VStack(spacing: model.hasAnyConnection ? 6 : 12) {
             NodusMark(style: .brand)
                 .frame(width: model.hasAnyConnection ? 54 : 84, height: model.hasAnyConnection ? 54 : 84)
-            Text("Nodus Research")
+            Text("Nodus")
                 .font(model.hasAnyConnection ? .title2.weight(.semibold) : .largeTitle.weight(.semibold))
             Text("Your vaults, wherever you are.")
                 .font(model.hasAnyConnection ? .caption : .subheadline)
@@ -345,9 +471,11 @@ struct SpacePickerView: View {
                 showingConnect = true
             }
         } label: {
-            ConnectionCard(connection: connection, needsSignIn: !usable)
+            ConnectionCard(connection: connection, needsSignIn: !usable,
+                computerUnavailable: connection.desktopPairingId.map { model.unavailableDesktopPairings.contains($0) } ?? false)
         }
         .buttonStyle(NodusCardButtonStyle())
+        .accessibilityIdentifier("space-\(connection.vaultId ?? connection.spaceId)")
         .contextMenu {
             Button(role: .destructive) {
                 model.forget(connection)
@@ -517,6 +645,7 @@ private struct ConnectionCard: View {
     /// list — the server address is worth keeping — but it opens the sign-in flow, not a vault,
     /// and it has to look like it.
     var needsSignIn = false
+    var computerUnavailable = false
 
     var body: some View {
         HStack(spacing: 13) {
@@ -549,6 +678,10 @@ private struct ConnectionCard: View {
                         // the third of the three that the reader asked to see.
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
+                    if computerUnavailable {
+                        Label("Computer unavailable", systemImage: "wifi.slash")
+                            .font(.caption).foregroundStyle(Color.nodusSecondaryText)
+                    }
                 }
             }
             Spacer()
@@ -565,6 +698,7 @@ private struct ConnectionCard: View {
     /// `String(localized:)`: interpolated into a line of data, so it reaches `Text` as a value
     /// and would otherwise stay English on a Spanish phone.
     private var roleLabel: String {
+        if NodusLinkPolicy.readOnly { return String(localized: "read") }
         switch connection.role {
         case .reader: return String(localized: "read")
         case .writer: return String(localized: "write")

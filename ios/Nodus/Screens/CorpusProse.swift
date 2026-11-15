@@ -6,6 +6,23 @@ import SwiftUI
 /// even when they arrive with a palette configuration. Flatten the swatch into an original-mode
 /// bitmap first so every highlight colour survives the menu's own rendering pass.
 enum ReaderHighlightMenuSwatch {
+    static func palette(selected: ReaderAnnotationColor?, onSelect: @escaping @MainActor (ReaderAnnotationColor) -> Void) -> UIMenu {
+        let colors = ReaderAnnotationColor.allCases.map { color in
+            let item = UIAction(title: "", image: image(for: color, selected: selected == color),
+                state: selected == color ? .on : .off) { _ in
+                MainActor.assumeIsolated { onSelect(color) }
+            }
+            item.accessibilityLabel = color.localizedLabel
+            item.accessibilityIdentifier = "nodus-selection-color-\(color.rawValue)"
+            return item
+        }
+        let menu = UIMenu(title: "", image: UIImage(systemName: "paintpalette"),
+            preferredElementSize: .small, children: colors)
+        menu.accessibilityLabel = String(localized: "Pastel colors")
+        menu.accessibilityIdentifier = "nodus-selection-palette"
+        return menu
+    }
+
     static func image(for colour: ReaderAnnotationColor, selected: Bool) -> UIImage? {
         let side: CGFloat = 20
         guard let symbol = UIImage(
@@ -125,6 +142,7 @@ struct CorpusReference: Identifiable, Hashable {
         case passage
         case debate
         case collection
+        case privateSource
         case unsupported
     }
 
@@ -132,8 +150,10 @@ struct CorpusReference: Identifiable, Hashable {
     let kind: String
     /// The record's own identifier: a `global_id`, a `nodus_id`, a `passage_id`.
     let recordId: String
+    var specialised: SpecialisedCorpusReference? = nil
+    var privateSource: PrivateCorpusReference? = nil
 
-    var id: String { "\(kind)/\(recordId)" }
+    var id: String { "\(kind)/\(recordId)" + (specialised.map { ":\($0.collectionPath):\($0.expectedParentId ?? "")" } ?? "") + (privateSource.map { ":\($0.kind.rawValue):\($0.timestamp ?? 0):\($0.transcriptId ?? ""):\($0.sessionId ?? ""):\($0.annotationId ?? "")" } ?? "") }
 
     init(kind: String, recordId: String) {
         self.kind = Self.canonical(kind)
@@ -172,19 +192,30 @@ struct CorpusReference: Identifiable, Hashable {
 
     init?(_ url: URL) {
         guard url.scheme?.lowercased() == "nodus" else { return nil }
+        if let target = PrivateCorpusReference(url) {
+            self.init(kind: url.host?.lowercased() ?? "", recordId: target.id); privateSource = target
+            specialised = SpecialisedCorpusReference(url)
+            return
+        }
+        if let target = SpecialisedCorpusReference(url) {
+            self.init(kind: url.host?.lowercased() ?? "", recordId: target.recordId); specialised = target
+            return
+        }
         // `nodus://idea/g-8969` parses as host = "idea", path = "/g-8969". A vault-scoped form
         // like `nodus://world/character/prs_7` puts the kind in the first path component, so
         // both shapes are read the same way: everything after the scheme, split on "/".
-        let parts = ([url.host] + url.pathComponents)
-            .compactMap { $0 }
-            .filter { $0 != "/" && !$0.isEmpty }
-        guard parts.count >= 2 else { return nil }
-        let tail = parts.dropFirst().joined(separator: "/")
-        self.init(kind: parts[0], recordId: tail.removingPercentEncoding ?? tail)
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.user == nil, components.password == nil, components.port == nil,
+              let host = components.host, !host.isEmpty else { return nil }
+        let encoded = components.percentEncodedPath.split(separator: "/", omittingEmptySubsequences: true)
+        let parts = encoded.compactMap { String($0).removingPercentEncoding }
+        guard !parts.isEmpty, parts.count == encoded.count else { return nil }
+        self.init(kind: host, recordId: parts.joined(separator: "/"))
     }
 
     /// The collection that can serve it, when there is one.
     var collection: CollectionDescriptor? {
+        if let specialised { return Collections[specialised.collectionPath] }
         switch kind {
         case "idea": return Collections["ideas"]
         case "work": return Collections["works"]
@@ -205,6 +236,7 @@ struct CorpusReference: Identifiable, Hashable {
     /// prevents a valid citation from falling through the collection lookup and being described
     /// as outside the corpus merely because no `contradictions` table exists.
     var destination: Destination {
+        if privateSource != nil { return .privateSource }
         switch kind {
         case "idea": return .idea
         case "work": return .work
@@ -255,11 +287,20 @@ enum CorpusReferenceTone: Equatable {
 /// library reaches; everything else is fetched as a row and rendered by the generic detail view.
 /// A kind this build does not know about says so rather than showing an empty page.
 struct CorpusReferenceView: View {
+    @Environment(\.authoredResearchReaderID) private var authoredReportID
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     let session: SpaceSession
     let reference: CorpusReference
 
     var body: some View {
         Group {
+            if let authoredReportID {
+                CompanionDeepResearchCitationView(session: session, reportId: authoredReportID, reference: reference)
+            } else if downloadedOnly, reference.destination != .privateSource, reference.destination != .unsupported {
+                if let path = reference.collection?.path ?? ["idea": "ideas", "work": "works", "note": "notes", "passage": "passages", "contradiction": "debates"][reference.kind] {
+                    DownloadedReaderReferenceView(session: session, path: path, id: reference.recordId, specialised: reference.specialised)
+                } else { ContentUnavailableView("Source not downloaded", systemImage: "arrow.down.circle") }
+            } else {
             switch reference.destination {
             case .idea:
                 IdeaByIdView(session: session, globalId: reference.recordId)
@@ -274,6 +315,14 @@ struct CorpusReferenceView: View {
             case .collection:
                 if let collection = reference.collection {
                     RowByIdView(session: session, collection: collection, id: reference.recordId)
+                        .sourceCitationTarget(reference.specialised)
+                }
+            case .privateSource:
+                if let source = reference.privateSource {
+                    if session.connection.desktopPairingId == nil, let path = source.publishedCollectionPath, let collection = Collections[path] {
+                        RowByIdView(session: session, collection: collection, id: source.publishedRecordId)
+                            .sourceCitationTarget(reference.specialised)
+                    } else { PrivateCorpusSourceView(session: session, reference: source, downloadedOnly: downloadedOnly) }
                 }
             case .unsupported:
                 ContentUnavailableView(
@@ -282,10 +331,26 @@ struct CorpusReferenceView: View {
                     description: Text("It refers to a “\(reference.kind)”, which this space does not publish.")
                 )
             }
+            }
         }
         // The detail screens carry their own; this covers the loading and the dead end, which
         // otherwise sat on the navigation container's black.
         .nodusPageBackdrop(accent: session.accent)
+    }
+}
+
+/// Keep a failed link actionable and preserve its actual transport/domain error.
+struct CorpusOpenFailure: View {
+    let message: String
+    let retry: () -> Void
+    var body: some View {
+        ContentUnavailableView {
+            Label("Could not open", systemImage: "questionmark.circle")
+        } description: {
+            Text(message)
+        } actions: {
+            Button("Retry", action: retry).frame(minHeight: 44)
+        }
     }
 }
 
@@ -295,49 +360,74 @@ struct NoteByIdView: View {
     let noteId: String
 
     @State private var row: Row?
-    @State private var failed = false
-
+    @State private var failure: String?
+    @State private var attempt = 0
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: nil, row: row, title: "Notes")
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.note(noteId, in: session.connection.spaceId) }
-            catch { failed = true }
+        .task(id: "\(noteId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.note(noteId, in: session.connection.spaceId)
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }
 
 /// Any collection row, fetched by its id alone.
 struct RowByIdView: View {
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     let session: SpaceSession
     let collection: CollectionDescriptor
     let id: String
+    var sourceReference: SpecialisedCorpusReference? = nil
+
+    func sourceCitationTarget(_ value: SpecialisedCorpusReference?) -> RowByIdView {
+        var copy = self; copy.sourceReference = value; return copy
+    }
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
+    private var privateReference: PrivateCorpusReference? {
+        guard session.connection.desktopPairingId != nil,
+              let target = try? PrivateCorpusReference.collectionReference(path: collection.path, id: id) else { return nil }
+        return try? PrivateCorpusReference(kind: target.kind, id: target.id, timestamp: sourceReference?.timestamp, transcriptId: sourceReference?.transcriptId)
+    }
 
     var body: some View {
         Group {
-            if let row {
+            if let privateReference {
+                PrivateCorpusSourceView(session: session, reference: privateReference, downloadedOnly: downloadedOnly)
+            } else if downloadedOnly {
+                DownloadedReaderReferenceView(session: session, path: collection.path, id: id, specialised: sourceReference)
+            } else if let row {
                 RowDetailView(session: session, collection: collection, row: row)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.item(collection, id: id, in: session.connection.spaceId) }
-            catch { failed = true }
+        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(session.companionDownloadRevision)|\(downloadedOnly)|\(attempt)") {
+            guard privateReference == nil, !downloadedOnly else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.item(collection, id: id, in: session.connection.spaceId)
+                guard sourceReference?.accepts(loaded) != false else { throw SpecialisedCorpusReference.ReadError.sourceMismatch }
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { row = nil; failure = error.localizedDescription }
         }
     }
 }
@@ -359,7 +449,8 @@ struct PassageByIdView: View {
 
     @State private var row: Row?
     @State private var asWork: String?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
@@ -367,21 +458,27 @@ struct PassageByIdView: View {
                 RowDetailView(session: session, collection: Collections["passages"], row: row)
             } else if let asWork {
                 WorkByIdView(session: session, nodusId: asWork)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, asWork == nil, !failed else { return }
-            guard let passages = Collections["passages"] else { failed = true; return }
+        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil, asWork == nil else { return }
+            failure = nil
+            guard let passages = Collections["passages"] else {
+                failure = String(localized: "Passages are not available in this vault."); return
+            }
             do {
-                row = try await session.client.item(passages, id: id, in: session.connection.spaceId)
+                let loaded = try await session.client.item(passages, id: id, in: session.connection.spaceId)
+                try Task.checkCancellation(); row = loaded
             } catch let error as APIError where error.isNotFound {
+                guard !Task.isCancelled else { return }
                 asWork = id
+            } catch where error.isCancellation {
             } catch {
-                failed = true
+                failure = error.localizedDescription
             }
         }
     }
@@ -400,6 +497,7 @@ struct CorpusProse: View {
     /// A tap on a numbered reference — `[3]` — in an answer about a page. Only the report chat
     /// passes one; everywhere else a bracketed number is a bracketed number.
     private let onReference: ((Int) -> Void)?
+    private let onCitation: ((URL) -> Bool)?
 
     /// What this prose has asked to show, and the question it has asked.
     ///
@@ -410,7 +508,9 @@ struct CorpusProse: View {
     /// still covered the screen. Swiping the sheet down did not, because then the same work lands
     /// in the middle of the dismissal, which is exactly the pause a reader saw.
     @State private var presenting = Presentation()
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
     @Environment(\.nodusReadingStyle) private var reading
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// The page's find bar, when there is one. Prose is the thing a reader searches, so this is
     /// where the words of a page are declared — after the Markdown and the citations have been
@@ -435,6 +535,7 @@ struct CorpusProse: View {
         /// Whether the reader has pressed on their own bookmark and is being asked about
         /// removing it.
         var isRemovingBookmark = false
+        var scopeIssue: String?
     }
 
     init(
@@ -442,14 +543,23 @@ struct CorpusProse: View {
         accent: Color,
         session: SpaceSession? = nil,
         labels: [String: String] = [:],
-        onReference: ((Int) -> Void)? = nil
+        renderRichText: Bool = true,
+        onReference: ((Int) -> Void)? = nil,
+        onCitation: ((URL) -> Bool)? = nil,
+        figureContext: JSONValue? = nil
     ) {
         self.accent = accent
         self.session = session
         self.onReference = onReference
+        self.onCitation = onCitation
+        self.figureContext = figureContext
         // The text and the labels are not kept: everything that reads them is done here. What
         // survives is `blocks`, which is what they were for.
-        blocks = Self.prepare(text, labels: labels)
+        let prepared = Self.prepare(text, labels: labels)
+        blocks = prepared
+        richSource = renderRichText && (RichCorpusProse.isRequired(text) || figureContext != nil)
+            ? Self.linkifyRichText(text, labels: labels)
+            : nil
     }
 
     /// The prose, split into blocks and linkified, once.
@@ -469,6 +579,18 @@ struct CorpusProse: View {
     /// handed to it is now the same instance each pass, so the identity check that decides whether
     /// to reparse the Markdown short-circuits instead of walking two copies of a paragraph.
     private let blocks: [Block]
+    private let figureContext: JSONValue?
+    private let richSource: String?
+
+    /// Uses the same block identities as the rendered reader, so an evidence
+    /// jump opens the cited paragraph rather than the start of a long document.
+    func anchor(containing text: String, path: [Int] = []) -> PageSearchAnchor? {
+        let needle = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !needle.isEmpty, let block = blocks.first(where: {
+            $0.text.split(whereSeparator: \.isWhitespace).joined(separator: " ").range(of: needle, options: .caseInsensitive) != nil
+        }) else { return nil }
+        return PageSearchAnchor(path: path + [richSource == nil ? block.id : 0])
+    }
 
     /// One paragraph or heading. Identified by its position rather than by a fresh `UUID`: an
     /// identity that changed with each pass would throw away every `UITextView` on the page — and
@@ -480,6 +602,7 @@ struct CorpusProse: View {
         /// The same text with every bare `nodus://` token already turned into a Markdown link.
         /// For a heading, which carries no citations, this is the text itself.
         let source: String
+        let images: [ReaderImageSource.Reference]
     }
 
     /// Split into headings and paragraphs, then linkify each. See `blocks` for why this runs
@@ -494,7 +617,8 @@ struct CorpusProse: View {
                     id: result.count,
                     level: level,
                     text: text,
-                    source: level == 0 ? linkify(text, labels: labels) : text
+                    source: level == 0 ? linkify(text, labels: labels) : text,
+                    images: ReaderImageSource.references(in:text)
                 )
             )
         }
@@ -523,6 +647,20 @@ struct CorpusProse: View {
     }
 
     var body: some View {
+        if reading.document, let richSource {
+            RichCorpusProse(source: richSource, accent: accent, session: session, onOpen: { [presenting] url in
+                if onCitation?(url) == true { return true }
+                if let number = PageChatReference.number(in: url) { onReference?(number); return true }
+                guard session != nil, let reference = CorpusReference(url) else {
+                    if downloadedOnly, ["https", "http"].contains(url.scheme) { presenting.scopeIssue = "This external source is not included in this download."; return true }
+                    return false
+                }
+                presenting.reference = reference; return true
+            }, figureContext: figureContext).background { ProseSheets(session: session, presenting: presenting, removeBookmark: { [bookmarks] in bookmarks?.clear() }) }
+        } else { nativeProse }
+    }
+
+    @ViewBuilder private var nativeProse: some View {
         let displayedBlocks = blocks.map(displayed)
         let annotationDocument = ReaderAnnotationDocument(blocks: displayedBlocks)
         // On iPad the report is deliberately wider than its prose. Those otherwise empty
@@ -547,15 +685,15 @@ struct CorpusProse: View {
                         bookmarkAim: $0.bookmarkAim
                     )
                 } ?? []
-                Group {
+                VStack(alignment:.leading,spacing:12) {
                     if block.level > 0 {
                         heading(block, path: path)
                     } else if reading.document {
                         DocumentProse(
                             source: block.source,
-                            font: reading.uiFont(.callout),
+                            font: reading.uiFont(.callout, dynamicTypeSize: dynamicTypeSize),
                             accent: accent,
-                            justified: true,
+                            justified: !dynamicTypeSize.isAccessibilitySize,
                             linksLive: session != nil,
                             referencesLive: onReference != nil,
                             highlights: search?.highlights(for: path),
@@ -578,6 +716,7 @@ struct CorpusProse: View {
                                     let anchors = ranges.compactMap {
                                         annotationDocument.anchor(block: block.id, range: $0)
                                     }
+                                    annotations.selectedColor = color
                                     annotations.addHighlights(anchors, color: color)
                                 }
                             },
@@ -620,20 +759,25 @@ struct CorpusProse: View {
                                 { id in annotations.open(id) }
                             },
                             onOpen: { [presenting] url in
+                                if onCitation?(url) == true { return true }
                                 if let number = PageChatReference.number(in: url) {
                                     onReference?(number)
                                     return true
                                 }
-                                guard let reference = CorpusReference(url) else { return false }
+                                guard let reference = CorpusReference(url) else {
+                                    if downloadedOnly, ["https", "http"].contains(url.scheme) { presenting.scopeIssue = "This external source is not included in this download."; return true }
+                                    return false
+                                }
                                 presenting.reference = reference
                                 return true
                             }
                         )
                     } else {
                         Text(attributed(block.source, path: path))
-                            .font(reading.font(.callout))
+                            .font(reading.font(.callout, dynamicTypeSize: dynamicTypeSize))
                             .textSelection(.enabled)
                     }
+                    ForEach(block.images) { reference in ReaderInlineImage(reference:reference,session:session,accent:accent,downloadedOnly:downloadedOnly) }
                 }
                 .nodusRevealed(search?.revealed == path)
                 .id(PageSearchAnchor(path: path))
@@ -670,11 +814,16 @@ struct CorpusProse: View {
         // The link is handled here rather than by the system: `nodus://` has no handler, so
         // letting it through opens nothing at all.
         .environment(\.openURL, OpenURLAction { [presenting] url in
+            if onCitation?(url) == true { return .handled }
             if let number = PageChatReference.number(in: url) {
                 onReference?(number)
                 return .handled
             }
-            guard session != nil, let reference = CorpusReference(url) else { return .systemAction }
+            guard url.scheme?.lowercased() == "nodus" else {
+                if downloadedOnly, ["https", "http"].contains(url.scheme) { presenting.scopeIssue = "This external source is not included in this download."; return .handled }
+                return .systemAction
+            }
+            guard session != nil, let reference = CorpusReference(url) else { return .discarded }
             presenting.reference = reference
             return .handled
         })
@@ -714,7 +863,7 @@ struct CorpusProse: View {
             attributed.nodusHighlight(highlights, in: shown)
         }
         return Text(attributed)
-            .font(reading.font(isPart ? .title3 : .headline, weight: .bold))
+            .font(reading.font(isPart ? .title3 : .headline, weight: .bold, dynamicTypeSize: dynamicTypeSize))
             .tracking(isPart ? 0.7 : 0)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -767,7 +916,7 @@ struct CorpusProse: View {
             let live = isReference ? onReference != nil : session != nil
             if !live { parsed[run.range].link = nil }
             parsed[run.range].foregroundColor = CorpusReferenceTone(link).color(accent: accent)
-            parsed[run.range].font = reading.font(.callout, weight: .medium)
+            parsed[run.range].font = reading.font(.callout, weight: .medium, dynamicTypeSize: dynamicTypeSize)
             parsed[run.range].underlineStyle = live ? .single : nil
         }
         if let highlights = search?.highlights(for: path) {
@@ -822,6 +971,36 @@ struct CorpusProse: View {
         }
         return output
     }
+
+    /// Preserve the original block syntax and literal code in the shared renderer.
+    /// Reconstructing it from TextKit paragraphs would turn headings inside a code
+    /// example into document headings and alter table or fenced-code boundaries.
+    static func linkifyRichText(_ source: String, labels: [String: String]) -> String {
+        var fence: Character?
+        var fenceLength = 0
+        let inlineCode = try? NSRegularExpression(pattern: #"(`+).*?\1"#)
+        return source.components(separatedBy: .newlines).map { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let first = trimmed.first, first == "`" || first == "~" {
+                let count = trimmed.prefix { $0 == first }.count
+                if count >= 3 {
+                    if fence == first, count >= fenceLength { fence = nil }
+                    else if fence == nil { fence = first; fenceLength = count }
+                    return line
+                }
+            }
+            guard fence == nil, !line.hasPrefix("    "), !line.hasPrefix("\t") else { return line }
+            var start = line.startIndex
+            var result = ""
+            for match in inlineCode?.matches(in: line, range: NSRange(line.startIndex..., in: line)) ?? [] {
+                guard let range = Range(match.range, in: line) else { continue }
+                result += linkify(String(line[start..<range.lowerBound]), labels: labels)
+                result += line[range]; start = range.upperBound
+            }
+            result += linkify(String(line[start...]), labels: labels)
+            return result
+        }.joined(separator: "\n")
+    }
 }
 
 /// Everything the prose can put over the page, and nothing that the prose itself has to redraw.
@@ -846,8 +1025,12 @@ private struct ProseSheets: View {
         // storage invalidates the view whether or not anybody read it.
         let reference = presenting.reference
         let isRemovingBookmark = presenting.isRemovingBookmark
+        let scopeIssue = presenting.scopeIssue
 
         return Color.clear
+            .alert("Source not downloaded", isPresented: Binding(get: { scopeIssue != nil }, set: { if !$0 { presenting.scopeIssue = nil } })) {
+                Button("OK") { presenting.scopeIssue = nil }
+            } message: { Text(scopeIssue ?? "") }
             .nodusSheet(
                 item: Binding(get: { reference }, set: { presenting.reference = $0 })
             ) { reference in
@@ -1035,6 +1218,7 @@ extension UIView {
 /// - The find bar's highlights are painted on top rather than parsed in: the Markdown is the
 ///   expensive half and it does not change while somebody types in the search field.
 private struct DocumentProse: UIViewRepresentable {
+    @Environment(\.nodusResidentRouteActive) private var routeActive
     /// Markdown, already linkified.
     let source: String
     let font: UIFont
@@ -1081,6 +1265,7 @@ private struct DocumentProse: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
+        view.accessibilityElementsHidden = !routeActive
         view.isEditable = false
         view.isScrollEnabled = false
         view.isSelectable = true
@@ -1155,6 +1340,7 @@ private struct DocumentProse: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
+        view.accessibilityElementsHidden = !routeActive
         context.coordinator.onOpen = onOpen
         context.coordinator.linksLive = linksLive
         context.coordinator.onMark = onMark
@@ -1498,6 +1684,7 @@ private struct DocumentProse: UIViewRepresentable {
         private var strokeAnchor: Int?
         private var strokeBaseline: NSAttributedString?
         private var activeHighlight: ReaderAnnotationDocument.Placement?
+        private var selectionUsesPointer = false
         private var expandsNextPointerSelectionMenu = false
         private var marginButtons: [UIButton] = []
         /// Whether this paragraph has already gone looking for its scroll view to hang the
@@ -1509,20 +1696,19 @@ private struct DocumentProse: UIViewRepresentable {
             self.linksLive = linksLive
         }
 
-        /// What a reader can do with the words they have selected: keep this passage, or ask
-        /// about it.
+        /// What a reader can do with the words they have selected: copy them, keep the reading
+        /// mark, comment on them, or paint one of the six pastel highlights.
+        ///
+        /// The ribbon is entirely glyphs, in that order, and the palette comes last. Text labels
+        /// are what made "Pastel colors" and "Añadir comentario" compete for one row: the old
+        /// labelled palette pushed Add comment onto another page, so neither the palette nor the
+        /// other actions show a title. Every action keeps its full spoken name for VoiceOver.
         ///
         /// Added to the system's own items rather than replacing them: copy, look up, share and
         /// translate are what a reader expects of selected text, and a report is a document
-        /// people quote from as much as they navigate.
-        ///
-        /// Second, straight after Copy, and as glyphs alone. Both of those are about the one row
-        /// the reader actually sees: the edit menu opens collapsed, with room for three or four
-        /// items and a chevron for the rest, and appending these to the end put them behind that
-        /// chevron — two taps for the actions this screen adds, which is exactly the navigation
-        /// they exist to remove. A `.small` palette renders each action as its icon, so two of
-        /// them cost less width than one labelled item and Look Up and Translate stay where a
-        /// reader expects to find them.
+        /// people quote from as much as they navigate. A `.small` palette renders each action as
+        /// its icon, so the four actions this screen adds fit on the one visible row instead of
+        /// hiding behind the edit menu's chevron.
         ///
         /// Each appears only where the page can honestly do it, so prose outside a report — a
         /// chat bubble, an immersion station — keeps the plain menu it always had. Returning
@@ -1570,48 +1756,13 @@ private struct DocumentProse: UIViewRepresentable {
                 in: range,
                 excludingReferencesIn: textView.attributedText
             )
-            if let onHighlight, let colour = selectedHighlightColor, !highlightable.isEmpty {
-                // Pastel ink is right on the page and almost invisible as a tiny glyph over the
-                // light edit-menu material. Keep the pen itself in the dynamic label colour and
-                // retain the chosen pastel as the symbol's secondary layer where SF Symbols
-                // provides one.
-                let symbol = UIImage.SymbolConfiguration(paletteColors: [
-                    UIColor.label,
-                    UIColor(colour.color),
-                ])
-                let image = UIImage(systemName: "highlighter", withConfiguration: symbol)?
-                    .withRenderingMode(.alwaysOriginal)
-                let highlight = UIAction(title: "", image: image) { _ in
-                    MainActor.assumeIsolated {
-                        onHighlight(highlightable, colour)
-                        textView.clearSelection()
-                    }
-                }
-                highlight.accessibilityLabel = String(localized: "Highlight")
-                    + ": " + colour.localizedLabel
-                highlight.accessibilityIdentifier = "nodus-selection-highlight"
-                ours.append(highlight)
-            }
-
-            if let onComment {
-                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
-                    MainActor.assumeIsolated {
-                        onComment(range)
-                        textView.clearSelection()
-                    }
-                }
-                comment.accessibilityLabel = String(localized: "Add comment")
-                comment.accessibilityIdentifier = "nodus-selection-comment"
-                ours.append(comment)
-            }
 
             if let onMark {
                 // "Move" rather than "Add" when there is already one, because there is only ever
                 // one bookmark and a reader who is not told that will look for the old one. Asked
                 // of the report and not of this paragraph: the mark being moved is usually in a
-                // different section from the words being selected. The title is still set even
-                // though the palette hides it: it is what VoiceOver reads, and what the item
-                // falls back to if the system ever lays this menu out fully.
+                // different section from the words being selected. The title stays empty in the
+                // ribbon; the spoken label carries the whole meaning.
                 let title = reportHasBookmark
                     ? String(localized: "Move the bookmark here")
                     : String(localized: "Reading bookmark")
@@ -1626,58 +1777,93 @@ private struct DocumentProse: UIViewRepresentable {
                         textView.clearSelection()
                     }
                 }
-                // Spoken rather than shown. The title is empty on purpose — see above — and this
-                // is the only thing left for VoiceOver to read, so it carries the whole meaning.
                 mark.accessibilityLabel = title
                 mark.accessibilityIdentifier = "nodus-selection-bookmark"
                 ours.append(mark)
             }
 
-            if let onAsk {
-                // The passage goes into the report's conversation as a quotation, so the question
-                // the reader then types is already about something. Asking about a paragraph used
-                // to mean opening the chat from the wheel and describing the paragraph — from a
-                // document that was right there.
-                let ask = UIAction(title: "", image: UIImage(systemName: "bubble.left.and.bubble.right")) { _ in
+            if let onComment {
+                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
                     MainActor.assumeIsolated {
-                        onAsk(text)
+                        onComment(range)
                         textView.clearSelection()
                     }
                 }
-                ask.accessibilityLabel = String(localized: "Ask about this")
-                ask.accessibilityIdentifier = "nodus-selection-ask"
-                ours.append(ask)
+                comment.accessibilityLabel = String(localized: "Add comment")
+                comment.accessibilityIdentifier = "nodus-selection-comment"
+                ours.append(comment)
+            }
 
-                // Keep the system dictionary one tap away too. It follows the report-chat icon
-                // in the visible palette, matching the order in which a reader decides whether
-                // to ask the corpus or simply look up the selected words.
-                let lookUp = UIAction(title: "", image: UIImage(systemName: "book.pages")) { _ in
-                    MainActor.assumeIsolated {
-                        let term = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !term.isEmpty, let presenter = textView.enclosingViewController else { return }
-                        textView.clearSelection()
-                        presenter.present(UIReferenceLibraryViewController(term: term), animated: true)
-                    }
-                }
-                lookUp.accessibilityLabel = String(localized: "Look Up")
-                lookUp.accessibilityIdentifier = "nodus-selection-lookup"
-                ours.append(lookUp)
+            if let onHighlight, let colour = selectedHighlightColor, !highlightable.isEmpty {
+                ours.append(ReaderHighlightMenuSwatch.palette(selected: colour) { [weak self] color in
+                    self?.selectedHighlightColor = color
+                    onHighlight(highlightable, color)
+                    textView.clearSelection()
+                })
             }
 
             let palette = UIMenu(title: "", options: .displayInline, preferredElementSize: .small, children: ours)
 
-            // The non-editable text view's standard edit group contains Copy. Its icon above is
-            // the replacement, not an additional way to copy, so remove the labelled group and
-            // leave Look Up, Translate, Share and the rest of the system's suggestions intact.
-            var children = suggestedActions.filter { element in
-                (element as? UIMenu)?.identifier != .standardEdit
+            // One ribbon for the report. UIKit selection handles and keyboard commands stay
+            // native, while duplicate Copy/Look Up/Translate/Share groups are excluded.
+            let selectionMenu = UIMenu(children: [palette])
+
+            // UIKit can present a secondary click through either its own text-selection
+            // interaction or our installed edit interaction. Both must use the same ribbon.
+            guard selectionUsesPointer, let interaction = highlightMenu else { return selectionMenu }
+            if expandsNextPointerSelectionMenu {
+                expandsNextPointerSelectionMenu = false
+                return selectionMenu
             }
-            children.insert(palette, at: 0)
-            return UIMenu(children: children)
+            let rect = textView.selectedTextRange.map { textView.firstRect(for: $0) } ?? .zero
+            return compactPointerSelectionMenu(
+                selectionMenu, in: textView, interaction: interaction,
+                sourcePoint: CGPoint(x: rect.midX, y: rect.midY)
+            )
+        }
+
+        private func compactPointerSelectionMenu(
+            _ selectionMenu: UIMenu,
+            in textView: UITextView,
+            interaction: UIEditMenuInteraction,
+            sourcePoint: CGPoint
+        ) -> UIMenu {
+            guard let palette = selectionMenu.children.first as? UIMenu else { return selectionMenu }
+            // An explicit action keeps system suggestions out of the initial context popover.
+            // Re-presenting through our interaction makes them reachable from either UIKit path.
+            let more = UIAction(title: "", image: UIImage(systemName: "ellipsis")) { [weak self, weak interaction, weak textView] _ in
+                guard let self, let interaction, let textView else { return }
+                expandsNextPointerSelectionMenu = true
+                interaction.dismissMenu()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self, weak interaction, weak textView] in
+                    guard let interaction, let textView, textView.selectedRange.length > 0 else {
+                        self?.expandsNextPointerSelectionMenu = false
+                        return
+                    }
+                    interaction.presentEditMenu(with: UIEditMenuConfiguration(
+                        identifier: "pointer-selection-more" as NSString,
+                        sourcePoint: sourcePoint
+                    ))
+                }
+            }
+            more.accessibilityLabel = String(localized: "More actions")
+            more.accessibilityIdentifier = "nodus-selection-more"
+            let primary = palette.children.filter {
+                ($0 as? UIAction)?.accessibilityIdentifier != "nodus-selection-lookup"
+            }
+            return UIMenu(children: [UIMenu(
+                title: "", options: .displayInline, preferredElementSize: .small,
+                children: primary + [more]
+            )])
         }
 
         /// Which paragraph is holding a selection, so any other one can let go of its own.
         func textViewDidChangeSelection(_ textView: UITextView) {
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_READER_INPUT"] == "1" {
+                NSLog("NodusReaderInput selection length=%ld firstResponder=%d", textView.selectedRange.length, textView.isFirstResponder ? 1 : 0)
+            }
+#endif
             if let range = textView.selectedTextRange, !range.isEmpty {
                 ProseSelection.began(in: textView)
             } else {
@@ -1896,91 +2082,40 @@ private struct DocumentProse: UIViewRepresentable {
             menuFor configuration: UIEditMenuConfiguration,
             suggestedActions: [UIMenuElement]
         ) -> UIMenu? {
-            // A trackpad secondary click presents the edit menu through the interaction we
-            // install for saved highlights, rather than through UITextViewDelegate's
-            // `textView(_:editMenuForTextIn:suggestedActions:)`. Reuse the selection ribbon
-            // here so mouse selection and touch/Pencil selection expose the same Nodus actions.
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_READER_INPUT"] == "1", let view = interaction.view as? UITextView {
+                NSLog("NodusReaderInput custom-menu length=%ld firstResponder=%d", view.selectedRange.length, view.isFirstResponder ? 1 : 0)
+            }
+#endif
+            // The installed highlight interaction also receives some secondary clicks on
+            // selected prose. Delegate to the same builder used by UIKit's text interaction.
             if activeHighlight == nil,
                let textView = interaction.view as? UITextView,
                textView.selectedRange.length > 0 {
-                guard let selectionMenu = self.textView(
+                return self.textView(
                     textView,
                     editMenuForTextIn: textView.selectedRange,
                     suggestedActions: suggestedActions
-                ) else { return nil }
-
-                // A secondary click asks UIKit for a context menu, whose default layout expands
-                // every system suggestion into the tall popover used for files and links. Text
-                // selection is different: finger and Pencil expose one compact edit ribbon.
-                // Preserve that same one-row surface for a mouse, while keeping Look Up,
-                // Translate, Share and the remaining system actions one press away.
-                guard let nodusPalette = selectionMenu.children.first as? UIMenu else {
-                    return selectionMenu
-                }
-                if expandsNextPointerSelectionMenu {
-                    expandsNextPointerSelectionMenu = false
-                    return selectionMenu
-                }
-
-                // UIKit flattens a submenu placed inside an edit palette, so a nested `UIMenu`
-                // still expands the whole context menu. Use one explicit ellipsis action and
-                // re-present the complete menu only when the reader asks for it.
-                let sourcePoint = configuration.sourcePoint
-                let more = UIAction(title: "", image: UIImage(systemName: "ellipsis")) { [weak self, weak interaction, weak textView] _ in
-                    guard let self, let interaction, let textView else { return }
-                    expandsNextPointerSelectionMenu = true
-                    interaction.dismissMenu()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self, weak interaction, weak textView] in
-                        guard let interaction, let textView,
-                              textView.selectedRange.length > 0
-                        else {
-                            self?.expandsNextPointerSelectionMenu = false
-                            return
-                        }
-                        interaction.presentEditMenu(with: UIEditMenuConfiguration(
-                            identifier: "pointer-selection-more" as NSString,
-                            sourcePoint: sourcePoint
-                        ))
-                    }
-                }
-                more.accessibilityLabel = String(localized: "More actions")
-                more.accessibilityIdentifier = "nodus-selection-more"
-                let primaryActions = nodusPalette.children.filter {
-                    ($0 as? UIAction)?.accessibilityIdentifier != "nodus-selection-lookup"
-                }
-                let compact = UIMenu(
-                    title: "",
-                    options: .displayInline,
-                    preferredElementSize: .small,
-                    children: primaryActions + [more]
                 )
-                return UIMenu(children: [compact])
             }
 
             guard let placement = activeHighlight else { return nil }
             let annotation = placement.annotation
             var actions: [UIMenuElement] = []
 
-            if let onChangeHighlightColor {
-                let colors = ReaderAnnotationColor.allCases.map { colour in
-                    let image = ReaderHighlightMenuSwatch.image(
-                        for: colour,
-                        selected: annotation.color == colour
-                    )
-                    let action = UIAction(title: colour.localizedLabel, image: image) { _ in
-                        MainActor.assumeIsolated { onChangeHighlightColor(annotation, colour) }
-                    }
-                    action.accessibilityLabel = String(localized: "Change highlight color")
-                        + ": " + colour.localizedLabel
-                    return action
+            if let onDeleteHighlight {
+                let remove = UIAction(title: String(localized: "Remove highlight"), image: UIImage(systemName: "trash"),
+                    attributes: .destructive) { _ in
+                    MainActor.assumeIsolated { onDeleteHighlight(annotation) }
                 }
-                let colorMenu = UIMenu(
-                    title: "",
-                    image: UIImage(systemName: "paintpalette"),
-                    children: colors
-                )
-                colorMenu.accessibilityLabel = String(localized: "Change highlight color")
-                actions.append(colorMenu)
+                remove.accessibilityIdentifier = "nodus-selection-delete"
+                actions.append(remove)
+            }
+
+            if let onChangeHighlightColor {
+                actions.append(ReaderHighlightMenuSwatch.palette(selected: annotation.color) { color in
+                    onChangeHighlightColor(annotation, color)
+                })
             }
 
             let copy = UIAction(title: "", image: UIImage(systemName: "doc.on.doc")) { _ in
@@ -1998,23 +2133,12 @@ private struct DocumentProse: UIViewRepresentable {
             }
 
             if let onComment {
-                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
+                let comment = UIAction(title: String(localized: "Add comment"), image: UIImage(systemName: "text.bubble")) { _ in
                     MainActor.assumeIsolated { onComment(placement.range) }
                 }
                 comment.accessibilityLabel = String(localized: "Add comment")
+                comment.accessibilityIdentifier = "nodus-selection-comment"
                 actions.append(comment)
-            }
-
-            if let onDeleteHighlight {
-                let delete = UIAction(
-                    title: "",
-                    image: UIImage(systemName: "trash"),
-                    attributes: .destructive
-                ) { _ in
-                    MainActor.assumeIsolated { onDeleteHighlight(annotation) }
-                }
-                delete.accessibilityLabel = String(localized: "Delete highlight")
-                actions.append(delete)
             }
 
             return UIMenu(
@@ -2152,6 +2276,13 @@ private struct DocumentProse: UIViewRepresentable {
         /// arbitration — and on the two things it does claim, the mark and a citation, it is the
         /// only one that wants them.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            selectionUsesPointer = touch.type == .indirectPointer
+#if DEBUG
+            if ProcessInfo.processInfo.environment["NODUS_ACCEPTANCE_READER_INPUT"] == "1", let view = recognizer.view {
+                let point = touch.location(in: view)
+                NSLog("NodusReaderInput touch type=%ld x=%.1f y=%.1f", touch.type.rawValue, point.x, point.y)
+            }
+#endif
             if recognizer === strokeHighlighter {
                 return (touch.type == .direct || touch.type == .pencil)
                     && fixedHighlighter != nil

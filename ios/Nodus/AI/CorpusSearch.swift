@@ -25,6 +25,8 @@ struct CorpusSearch: Sendable {
     var embed: @Sendable (String, EmbeddingIdentity) async throws -> [Float]
     var semantic: @Sendable (_ query: String, _ vector: [Float], _ identity: EmbeddingIdentity, _ kind: VectorKind, _ limit: Int) async throws -> SemanticSearchOutcome
     var lexical: @Sendable (_ query: String, _ limit: Int) async throws -> [LexicalSearchResults.Hit]
+    /// Nil for standalone/public connections. Linked reads execute query embeddings on Desktop.
+    var linkedSemantic: (@Sendable (_ query: String, _ limit: Int) async throws -> [Hit]?)? = nil
 
     enum Mode: String, Sendable, Equatable {
         case semantic
@@ -129,6 +131,69 @@ struct CorpusSearch: Sendable {
             return Outcome(hits: try await lexicalHits(query, limit), mode: .lexical, warning: warning)
         }
         return Outcome(hits: Array(Self.ordered(hits).prefix(limit)), mode: .semantic, warning: warning)
+    }
+
+    /// One field searches both sources. Literal matches arrive first; semantic enrichment
+    /// cannot hide a text result, duplicate a record, or turn a partial failure into emptiness.
+    func runUnified(_ query: String, limit: Int = 50,
+                    onTextResults: (@MainActor @Sendable ([Hit]) -> Void)? = nil) async throws -> Outcome {
+        var literal: [Hit] = []
+        var literalError: (any Error)?
+        do { literal = try await lexicalHits(query, limit) }
+        catch is CancellationError { throw CancellationError() }
+        catch { literalError = error }
+        try Task.checkCancellation()
+        await onTextResults?(literal)
+
+        var related: [Hit] = []
+        var warning: String?
+        var unavailable: EmbeddingService.Unavailability?
+        do {
+            if let linkedSemantic {
+                if let found = try await linkedSemantic(query, limit) { related = found }
+                else { warning = String(localized: "Search by meaning is unavailable. Showing text matches.") }
+            } else if let identity {
+                switch availability(identity) {
+                case .failure(let reason):
+                    unavailable = reason
+                    warning = String(localized: "Search by meaning is unavailable. Showing text matches.")
+                case .success:
+                    let semanticResult = try await run(query, limit: limit, preference: .semantic)
+                    if semanticResult.mode == .semantic { related = semanticResult.hits }
+                    if semanticResult.warning != nil { warning = String(localized: "Search by meaning is unavailable. Showing text matches.") }
+                    unavailable = semanticResult.unavailability
+                }
+            }
+        } catch is CancellationError { throw CancellationError() }
+        catch { warning = String(localized: "Search by meaning is unavailable. Showing text matches.") }
+        try Task.checkCancellation()
+        if let literalError, related.isEmpty { throw literalError }
+        if literalError != nil { warning = String(localized: "Text search is unavailable. Showing related results.") }
+        return Outcome(hits: Array(Self.fused(literal: literal, related: related).prefix(limit)),
+            mode: related.isEmpty ? .lexical : .semantic, warning: warning, unavailability: unavailable)
+    }
+
+    /// Reciprocal ranks combine relevance without comparing cosine scores with text ranks.
+    /// One canonical reference per record; a semantic copy supplies score/source metadata.
+    static func fused(literal: [Hit], related: [Hit]) -> [Hit] {
+        var rows: [String: Hit] = [:]
+        var relevance: [String: Double] = [:]
+        var insertion: [String: Int] = [:]
+        for list in [literal, related] {
+            var seen = Set<String>()
+            for (offset, hit) in list.enumerated() where seen.insert(hit.id).inserted {
+                if insertion[hit.id] == nil { insertion[hit.id] = insertion.count }
+                rows[hit.id] = hit
+                relevance[hit.id, default: 0] += 1 / Double(61 + offset)
+            }
+        }
+        return rows.values.sorted {
+            let left = rank($0.type), right = rank($1.type)
+            if left != right { return left < right }
+            let lhs = relevance[$0.id, default: 0], rhs = relevance[$1.id, default: 0]
+            if lhs != rhs { return lhs > rhs }
+            return insertion[$0.id, default: 0] < insertion[$1.id, default: 0]
+        }
     }
 
     private func lexicalHits(_ query: String, _ limit: Int) async throws -> [Hit] {
@@ -245,9 +310,24 @@ extension CorpusSearch {
         client: NodusClient,
         spaceId: String,
         embeddings: EmbeddingService,
-        identity: EmbeddingIdentity?
+        identity: EmbeddingIdentity?,
+        linked: Bool = false
     ) -> CorpusSearch {
-        CorpusSearch(
+        let linkedQuery: (@Sendable (String, Int) async throws -> [Hit]?)?
+        if linked {
+            linkedQuery = { query, limit in
+                let response = try await client.linkedSemanticSearch(query, in: spaceId, limit: limit)
+                guard response.available else { return nil }
+                return await MainActor.run { response.results.compactMap { row -> Hit? in
+                    guard let kind = row.text("kind"), let id = row.text("id") else { return nil }
+                    let reference = CorpusReference(kind: kind, recordId: id)
+                    return Hit(id: reference.id, type: reference.kind, title: row.text("title"),
+                        excerpt: row.text("snippet") ?? row.text("subtitle"), workId: row.text("nodusId"),
+                        page: row.text("pageLabel"), score: row.double("similarity"))
+                } }
+            }
+        } else { linkedQuery = nil }
+        return CorpusSearch(
             identity: identity,
             availability: { embeddings.availability(for: $0) },
             embed: { query, identity in try await embeddings.embed(query, as: identity) },
@@ -263,7 +343,8 @@ extension CorpusSearch {
             },
             lexical: { query, limit in
                 try await client.search(query, in: spaceId, limit: limit).results
-            }
+            },
+            linkedSemantic: linkedQuery
         )
     }
 }

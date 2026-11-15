@@ -27,6 +27,7 @@ struct DeepResearchScreen: View {
     @Environment(AppPreferences.self) private var preferences
     @State private var published: [Row] = []
     @State private var publishedError: String?
+    @State private var publishedFromDevice = false
     @State private var query = ""
     @State private var showingComposer = false
     @State private var selecting = false
@@ -40,21 +41,30 @@ struct DeepResearchScreen: View {
 
     /// The run itself, which belongs to the space rather than to this screen: leaving here does
     /// not stop it, and coming back finds it exactly where it got to.
-    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
+    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.storageId) }
 
     private var report: DeepResearchReport? { nil }
     private var queue: DeepResearchQueue { .shared }
-    private var marks: ReportMarks { .shared(for: session.connection.spaceId) }
+    private var marks: ReportMarks { .shared(for: session.connection.storageId) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 workspaceHeader
-                queueStrip
+                if !NodusLinkPolicy.readOnly { queueStrip }
 
-                if let unfinished { resumeNotice(unfinished) }
+                if !NodusLinkPolicy.readOnly, let unfinished { resumeNotice(unfinished) }
                 if let publishedError {
                     NodusNotice(tone: .caution, title: "Published reports are unavailable", message: LocalizedStringKey(publishedError))
+                        .accessibilityIdentifier("deep-research-catalog-error")
+                    Button { Task { await loadPublished() } } label: { Label("Try again", systemImage: "arrow.clockwise") }
+                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                        .accessibilityIdentifier("deep-research-catalog-retry")
+                }
+                if publishedFromDevice {
+                    Label("Sin conexión · se muestran tus informes descargados", systemImage: "wifi.slash")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("deep-research-downloaded-catalogue")
                 }
                 galleryControls
                 gallery
@@ -64,23 +74,25 @@ struct DeepResearchScreen: View {
             .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
+        .accessibilityIdentifier("deep-research-gallery-scroll")
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: false))
         .nodusDismissesKeyboard()
         .navigationTitle("Deep Research")
         .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await loadPublished() }
         .nodusPageBackdrop(accent: session.accent)
         .task {
-            runner.attachPending(session: session, ai: ai)
+            if !NodusLinkPolicy.readOnly { runner.attachPending(session: session, ai: ai) }
             readCheckpoint()
             seedVisualFixtureIfNeeded()
         }
-        .task(id: session.publishedRevision) { await loadPublished() }
+        .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision)") { await loadPublished() }
         .onChange(of: runner.isRunning) { _, running in
             if !running, runner.finished == nil { readCheckpoint() }
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingComposer = true } label: { Label("New research", systemImage: "plus") }
+                if session.canAuthor { Button { showingComposer = true } label: { Label("New research", systemImage: "plus") } }
             }
         }
         .sheet(isPresented: $showingComposer) {
@@ -124,17 +136,17 @@ struct DeepResearchScreen: View {
             systemImage: "telescope",
             accent: session.accent
         ) {
-            Button { showingComposer = true } label: {
-                Label("New research", systemImage: "sparkles")
+            if session.canAuthor {
+                Button { showingComposer = true } label: { Label("New research", systemImage: "sparkles") }
+                    .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
+                    .accessibilityIdentifier("deep-research-new")
             }
-            .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-            .accessibilityIdentifier("deep-research-new")
         }
     }
 
     @ViewBuilder
     private var queueStrip: some View {
-        let jobs = queue.jobs(in: session.connection.spaceId)
+        let jobs = queue.jobs(in: session.connection.storageId)
         if !jobs.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -235,10 +247,10 @@ struct DeepResearchScreen: View {
                         }
                         .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                     }
-                    Button(role: .destructive) { deleteSelection() } label: {
-                        Label("Delete", systemImage: "trash")
+                    if session.canAuthor {
+                        Button(role: .destructive) { deleteSelection() } label: { Label("Delete", systemImage: "trash") }
+                            .buttonStyle(NodusGlassButtonStyle(accent: Color.nodusDanger))
                     }
-                    .buttonStyle(NodusGlassButtonStyle(accent: Color.nodusDanger))
                 }
             }
         }
@@ -247,13 +259,18 @@ struct DeepResearchScreen: View {
     @ViewBuilder
     private var gallery: some View {
         let entries = galleryEntries
-        if entries.isEmpty {
+        if entries.isEmpty, publishedError != nil {
+            EmptyView()
+        } else if entries.isEmpty {
             ContentUnavailableView(
-                query.isEmpty ? "No reports" : "No matches",
+                query.isEmpty && galleryRead == "all" ? "No reports" : "No matches",
                 systemImage: "doc.text.magnifyingglass",
-                description: Text(query.isEmpty ? "Start a research job to create the first report." : "Change the search or reading filter.")
+                description: Text(query.isEmpty && galleryRead == "all"
+                    ? (NodusLinkPolicy.readOnly ? "Saved reports from Nodus Research will appear here." : "Start a research job to create the first report.")
+                    : "Change the search or reading filter.")
             )
             .frame(maxWidth: .infinity, minHeight: 300)
+            .accessibilityIdentifier("deep-research-catalog-empty")
         } else if galleryView == "grid" {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12)], spacing: 12) {
                 ForEach(entries) { entry in galleryCell(entry, grid: true) }
@@ -357,11 +374,11 @@ struct DeepResearchScreen: View {
         switch entry.origin {
         case .local(let saved):
             let markdown = saved.report.markdown
-            return (markdown, printableHTML(title: saved.title, markdown: markdown))
+            return (markdown, try ReportDocument.html(saved: saved, store: local))
         case .published(let row):
             guard let id = row.string("id") else { throw DeepResearchExportFailure.missingReport }
             async let detail = session.client.deepResearchReport(id, in: session.connection.spaceId)
-            async let html = session.client.deepResearchDocument(id, in: session.connection.spaceId)
+            async let html = ReportDocument.html(session: session, reportId: id)
             let resolved = try await detail
             guard let markdown = publishedMarkdown(resolved.report) else { throw DeepResearchExportFailure.missingReport }
             let resolvedHTML = try await html
@@ -384,24 +401,16 @@ struct DeepResearchScreen: View {
         return row.text("content") ?? row.text("markdown")
     }
 
-    private func printableHTML(title: String, markdown: String) -> String {
-        let escapedTitle = title.htmlEscaped
-        let escapedBody = markdown.htmlEscaped
-        return """
-        <!doctype html><html><head><meta charset="utf-8"><style>
-        @page { size: A4; margin: 20mm; } body { color:#171717; font: 11pt -apple-system, sans-serif; line-height:1.55; }
-        h1 { font: 700 25pt Georgia, serif; margin-bottom:24pt; } pre { font: 11pt Georgia, serif; white-space:pre-wrap; }
-        </style></head><body><h1>\(escapedTitle)</h1><pre>\(escapedBody)</pre></body></html>
-        """
-    }
-
     private func exportFilename(_ title: String) -> String {
         title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
     }
 
     private func loadPublished() async {
         do {
-            published = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 100).items
+            let catalogue = try await session.client.deepResearchCatalogue(in: session.connection.spaceId)
+            try Task.checkCancellation()
+            published = catalogue.items
+            publishedFromDevice = catalogue.fromDevice
             for row in published {
                 guard let remoteId = row.string("id") else { continue }
                 let localId = local.reports.first(where: { $0.vaultRowId == remoteId })?.id ?? remoteId
@@ -410,6 +419,8 @@ struct DeepResearchScreen: View {
             publishedError = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             published = []
+            publishedFromDevice = false
+            publishedError = nil
         } catch where error.isCancellation {
         } catch {
             publishedError = error.localizedDescription
@@ -419,7 +430,7 @@ struct DeepResearchScreen: View {
     private func seedVisualFixtureIfNeeded() {
 #if DEBUG
         guard ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1" else { return }
-        if queue.jobs(in: session.connection.spaceId).isEmpty {
+        if queue.jobs(in: session.connection.storageId).isEmpty {
             let queuedRequest = DeepResearchRequest(
                 objective: "Contested meanings of sovereignty",
                 targetLength: .standard,
@@ -427,8 +438,8 @@ struct DeepResearchScreen: View {
                 model: ModelRef(provider: .openai, model: "gpt-5")
             )
             queue.enqueue(
-                id: "visual-deep-research-complete",
-                spaceId: session.connection.spaceId,
+                id: "visual-deep-research-complete-\(session.connection.storageId)",
+                spaceId: session.connection.storageId,
                 spaceName: session.connection.spaceName,
                 request: queuedRequest
             ) {
@@ -465,7 +476,7 @@ struct DeepResearchScreen: View {
 
     /// The sections a stopped run already paid for, if there are any.
     private func readCheckpoint() {
-        let saved = DeepResearchCheckpointStore.load(spaceId: session.connection.spaceId)
+        let saved = DeepResearchCheckpointStore.load(spaceId: session.connection.storageId)
         unfinished = (saved?.isComplete == false) ? saved : nil
     }
 
@@ -492,7 +503,7 @@ struct DeepResearchScreen: View {
                 .disabled(ai.model(for: .deepResearch) == nil)
 
                 Button(role: .destructive) {
-                    DeepResearchCheckpointStore.clear(spaceId: session.connection.spaceId)
+                    DeepResearchCheckpointStore.clear(spaceId: session.connection.storageId)
                     unfinished = nil
                 } label: {
                     Label("Discard", systemImage: "trash")
@@ -506,6 +517,10 @@ struct DeepResearchScreen: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if session.connection.desktopPairingId != nil, session.aiExecutionMode == .autonomous {
+                Text("Con el Mac disponible se consulta su corpus. Sin conexión, la investigación utiliza únicamente las ideas, pasajes y obras que hayas descargado, con el proveedor configurado en este móvil.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Text((mode ?? defaultMode) == .teachingUnit ? "Unit topic" : "Objective")
                 .font(.subheadline.weight(.medium))
             TextField(
@@ -833,7 +848,7 @@ struct DeepResearchScreen: View {
     /// Read from `runner.finished` rather than from a copy this screen holds: the run outlives
     /// the screen, and the record is where "already sent" and the vault row id live.
     private var sendContext: ReportSendContext? {
-        guard session.connection.role.canSendChanges, let saved = runner.finished else { return nil }
+        guard session.canAuthor, let saved = runner.finished else { return nil }
         return ReportSendContext(session: session, store: local, saved: saved)
     }
 
@@ -1015,9 +1030,13 @@ private struct DeepResearchGalleryCard: View {
             case .local(let url):
                 LocalReportImage(url: url)
             case .published(let hash):
-                AssetImage(session: session, hash: hash)
+                if session.connection.desktopPairingId != nil, case .published(let row) = entry.origin {
+                    LinkMediaImage(session: session, kind: .report, id: row.string("id") ?? "")
+                } else { AssetImage(session: session, hash: hash) }
             case nil:
-                EmptyView()
+                if session.connection.desktopPairingId != nil, case .published(let row) = entry.origin {
+                    LinkMediaImage(session: session, kind: .report, id: row.string("id") ?? "")
+                }
             }
             if selected {
                 Image(systemName: "checkmark.circle.fill")

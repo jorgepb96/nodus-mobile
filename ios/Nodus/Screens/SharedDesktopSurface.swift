@@ -1,0 +1,1588 @@
+import CryptoKit
+import NodusKit
+import NodusUI
+import SwiftUI
+import WebKit
+import QuickLook
+
+typealias MobileEditorFlush = @MainActor () async -> Bool
+
+enum DesktopSurface: String { case graph, dictionary, workspace, studyIdeas, studyDocument, page, databasePresentation, argument, deepResearch, databaseResearch, immersion, chat, writingWorkshop }
+
+private struct MobileWritingResultTarget: Identifiable {
+    let request: DesktopJobLedger.Request
+    let checkpoint: JSONValue
+    var id: String { request.id }
+}
+
+enum MobileSurfaceVaultContext {
+    static func descriptor(connection: AppModel.Connection, vault: VaultDescriptor?) -> VaultDescriptor {
+        if connection.desktopPairingId != nil {
+            let matchingVault = vault?.id == connection.vaultId ? vault : nil
+            return VaultDescriptor(id: connection.vaultId, name: matchingVault?.name ?? connection.vaultName,
+                type: matchingVault?.type ?? connection.vaultType)
+        }
+        return VaultDescriptor(id: vault?.id ?? connection.vaultId,
+            name: vault?.name ?? connection.vaultName, type: vault?.type ?? connection.vaultType)
+    }
+}
+
+/// A published space has its own local draft identity. It is never a substitute
+/// for a Mac pairing or a private-vault grant.
+struct MobileSurfaceStorageScope: Equatable {
+    let cacheId: String
+    let recordVaultId: String
+
+    init(connectionId: String, pairingId: String?, vaultId: String?) throws {
+        if let pairingId {
+            guard let vaultId, !vaultId.isEmpty else { throw DesktopBridgeError.permissionDenied }
+            cacheId = pairingId
+            recordVaultId = vaultId
+        } else {
+            guard !connectionId.isEmpty else { throw DesktopBridgeError.malformedResponse }
+            let identity = SHA256.hash(data: Data(connectionId.utf8)).map { String(format: "%02x", $0) }.joined()
+            cacheId = "local-surface-\(identity)"
+            recordVaultId = "published-space-\(identity)"
+        }
+    }
+}
+
+extension SpaceSession {
+    func surfaceStorageScope() throws -> MobileSurfaceStorageScope {
+        try MobileSurfaceStorageScope(connectionId: connection.id,
+            pairingId: connection.desktopPairingId, vaultId: vaultId)
+    }
+}
+
+/// Locally bundled Desktop components; credentials and network access stay in Swift.
+struct SharedDesktopSurface: View {
+    let session: SpaceSession
+    let surface: DesktopSurface
+    var initialResearchVisualLocalOnly = false
+    var initialResearchVisualReportId: String? = nil
+    var initialDatabaseReportId: String? = nil
+    var initialPageId: String? = nil
+    var initialStudyDocumentId: String? = nil
+    var onEditorFlushReady: ((@escaping MobileEditorFlush) -> Void)? = nil
+    var onStudyDocumentTrashed: ((String) -> Void)? = nil
+    var initialArgumentMap: JSONValue? = nil
+    var initialArgumentSeed: String? = nil
+    var initialDatabasePresentation: JSONValue? = nil
+    var onOpenDatabaseRow: ((String) -> Void)? = nil
+    var downloadedOnly = false
+    @Environment(AISettings.self) private var ai
+    @Environment(\.colorScheme) private var theme
+    @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.dismiss) private var surfaceDismiss
+    @State private var destination: SurfaceDestination?
+    @State private var citation: CorpusReference?
+    @State private var sourceDocument: SourceDocumentTarget?
+    @State private var nativeReport: SurfaceDestination?
+    @State private var legacyReports = false
+    @State private var issue: String?
+    @State private var surfaceMounted = false
+    @State private var reloadRevision = 0
+    @State private var exportedURL: URL?
+    @State private var exportedLease: PrivateBridgeFileLease?
+    @State private var embeddedPreview: URL?
+    @State private var embeddedLease: PrivateBridgeFileLease?
+    @State private var openingEmbeddedResource = false
+    @State private var savedAudio: SavedAudioTarget?
+    @State private var writingResult: MobileWritingResultTarget?
+    @State private var autonomousStatus: String?
+    @State private var offlineCopy = false
+    @State private var immersionController: ImmersionProgressController?
+    @State private var immersionPlan: ImmersionPlan?
+    @State private var showImmersionProgress = false
+    @State private var showWorkspaceOrganization = false
+    @State private var showStudyIdeaAssistant = false
+
+    var body: some View {
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialResearchVisualLocalOnly:initialResearchVisualLocalOnly, initialResearchVisualReportId:initialResearchVisualReportId, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true; issue = nil }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+            do {
+                guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
+                let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
+                immersionPlan = plan; immersionController = controller
+                Task { await controller.load(fetchMacProgress: false) }
+            } catch { issue = error.localizedDescription }
+        }) { kind, id, location, quote in
+            if kind == "closeStudyDocument", surface == .studyDocument { surfaceDismiss(); return }
+            if kind == "trashedStudyDocument", surface == .studyDocument { surfaceDismiss(); onStudyDocumentTrashed?(id); return }
+            if kind == "databaseRow", let onOpenDatabaseRow { onOpenDatabaseRow(id); return }
+            if kind == "pageAsset" {
+                guard id.count == 64, id.allSatisfy(\.isHexDigit), !openingEmbeddedResource else { return }
+                openingEmbeddedResource = true
+                Task { @MainActor in
+                    defer { openingEmbeddedResource = false }
+                    do { let copy = try await loadPrivateBridgeFile(session, kind: .pageAsset, id: id, downloadedOnly:downloadedOnly); embeddedLease = copy.lease; embeddedPreview = copy.url }
+                    catch { issue = error.localizedDescription }
+                }; return
+            }
+            if kind == "legacyResearchReports", surface == .deepResearch { legacyReports = true; return }
+            if kind == "deepResearchReport" {
+                guard surface == .deepResearch, !id.isEmpty, id.utf8.count <= 1024 else { issue = "El informe solicitado no tiene una identidad válida."; return }
+                nativeReport = SurfaceDestination(path: "deep-research", id: id, location: nil, quote: nil); return
+            }
+            if kind == "citation" {
+                guard let url = URL(string:id), let reference = CorpusReference(url) else { issue = "No se pudo abrir la fuente de esta cita."; return }
+                citation = reference; return
+            }
+            if kind == "studyAssistant", surface == .studyIdeas {
+                do {
+                    guard let data = id.data(using: .utf8), data.count <= 256_000,
+                          let target = try JSONDecoder.nodus.decode(JSONValue.self, from: data).objectValue,
+                          let prompt = target["prompt"]?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                    let history = ChatHistoryStore.shared(spaceId: session.connection.storageId)
+                    let existing = try history.loadComposerDraft()
+                    try history.saveComposerDraft(existing.isEmpty ? prompt : existing + "\n\n" + prompt)
+                    showStudyIdeaAssistant = true
+                } catch { issue = error.localizedDescription }
+                return
+            }
+            if kind == "section" {
+                guard NodusRoute(rawValue:id) != nil else { issue = "La sección solicitada no está disponible."; return }
+                NotificationCenter.default.post(name:.nodusMobileNavigate,object:nil,userInfo:["connectionId":session.connection.id,"route":id]); return
+            }
+            if kind == "embeddedResource" {
+                guard !openingEmbeddedResource else { return }
+                openingEmbeddedResource = true
+                Task { @MainActor in
+                    defer { openingEmbeddedResource = false }
+                    do {
+                        let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus)
+                        let resource = try await CompanionEmbeddedResource.load(client:DesktopBridgeClient(pairing:pairing,token:token),cache:PrivateBridgeCache(pairingId:pairing.id),vaultId:vault,source:id,domains:Array(pairing.domains))
+                        let lease = try PrivateBridgeFileLease.write(resource.data,filename:resource.descriptor.filename)
+                        embeddedLease = lease; embeddedPreview = lease.url
+                    } catch { issue = error.localizedDescription }
+                }
+                return
+            }
+            let path = kind == "databaseRow" ? "database-rows" : kind == "page" ? "pages" : kind == "studyMaterial" ? "study-materials" : kind == "studyDocument" ? "study-docs"
+                : kind == "idea" ? "ideas" : kind == "author" ? "authors" : "works"
+            destination = SurfaceDestination(path: path, id: id, location: location, quote: quote)
+        }
+        .nodusSheet(isPresented: $showStudyIdeaAssistant) { NavigationStack { ChatTab(session: session, showsModalDone: true) } }
+        .id("\(session.connection.id):\(surface.rawValue):\(session.aiExecutionMode.rawValue):\(reloadRevision)")
+        .overlay {
+            if !surfaceMounted, issue == nil {
+                ProgressView("Cargando Nodus…").tint(session.accent)
+                    .accessibilityIdentifier("shared-surface-loading")
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+            if let issue {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("No se ha podido abrir el contenido", systemImage: "exclamationmark.circle")
+                        .font(.subheadline.weight(.semibold))
+                    Text(issue).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("shared-surface-error")
+                    HStack {
+                        Button("Reintentar") { self.issue = nil; surfaceMounted = false; reloadRevision += 1 }
+                            .frame(minHeight: 44).accessibilityIdentifier("shared-surface-retry")
+                        Spacer()
+                        Button("Cerrar aviso") { self.issue = nil }.frame(minHeight: 44)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+            }
+            if !NodusLinkPolicy.readOnly { CompanionResultsButton(session: session, surface: surface, generationStatus: autonomousStatus) }
+            if surface == .databaseResearch { DatabaseReadingStatusButton(session:session) }
+            if surface == .immersion, let controller = immersionController {
+                Button { showImmersionProgress = true } label: {
+                    Label(controller.state == .conflict ? "Revisar progreso de inmersión" : controller.state == .pending ? "Progreso guardado · pendiente de sincronizar" : "Progreso de inmersión",
+                        systemImage: controller.state == .conflict || controller.state == .blocked ? "exclamationmark.arrow.triangle.2.circlepath" : "checkmark.circle")
+                        .font(.caption).fixedSize(horizontal: false, vertical: true).frame(minHeight: 44).frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(.horizontal, 12).background(.thinMaterial).accessibilityIdentifier("shared-immersion-private-progress")
+            }
+            if surface == .workspace, session.connection.desktopPairingId != nil {
+                Button { showWorkspaceOrganization = true } label: { Label("Cambios de organización", systemImage: "folder.badge.gearshape").font(.caption).frame(minHeight: 44).frame(maxWidth: .infinity, alignment: .leading) }
+                    .padding(.horizontal, 12).background(.thinMaterial).accessibilityIdentifier("workspace-organization-review")
+            }
+            if offlineCopy {
+                Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial)
+                    .accessibilityIdentifier("shared-surface-offline-copy")
+            }
+            if let autonomousStatus {
+                Text(autonomousStatus).font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 12).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.thinMaterial).accessibilityIdentifier("autonomous-job-status")
+            }
+            }
+        }
+        .sheet(item: $exportedURL,onDismiss:{ exportedLease = nil }) { ActivityShareSheet(items: [$0]) }
+        .quickLookPreview($embeddedPreview)
+        .onChange(of:embeddedPreview) { _, value in if value == nil { embeddedLease = nil } }
+        .sheet(isPresented: $showWorkspaceOrganization, onDismiss: { reloadRevision += 1 }) {
+            NavigationStack { WorkspaceOrganizationReview(session: session).nodusModalClose(accent: session.accent) }
+                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showImmersionProgress) {
+            NavigationStack {
+                if let controller = immersionController, let plan = immersionPlan {
+                    ScrollView { ImmersionProgressStatus(controller: controller, questions: plan.stations.flatMap(\.quiz) + plan.exam,
+                        totalSteps: plan.stations.count + 4, accent: session.accent).padding() }
+                        .navigationTitle(plan.title).navigationBarTitleDisplayMode(.inline).nodusModalClose(accent: session.accent)
+                }
+            }.presentationDetents([.large]).presentationDragIndicator(.visible)
+        }
+        .onChange(of: session.companionImmersionProgressRevision) { _, _ in Task { await immersionController?.reloadLocal() } }
+        .sheet(item: $writingResult) { target in
+            NavigationStack {
+                CompanionGeneratedResultView(session: session, request: target.request, checkpoint: target.checkpoint)
+                    .nodusModalClose(accent: session.accent)
+            }
+            .presentationDetents([.fraction(0.68), .large])
+            .presentationDragIndicator(.visible)
+            .environment(\.dynamicTypeSize, textSize)
+            .nodusTextHierarchy()
+        }
+        .sheet(item: $savedAudio) { target in
+            NavigationStack { SavedAudioPlayer(target: target, accent: session.accent).nodusModalClose(accent: session.accent) }
+                .environment(\.dynamicTypeSize, textSize)
+        }
+        .sheet(item: $sourceDocument) { target in
+            NavigationStack { SourceDocumentReader(session: session, target: target).nodusModalClose(accent: session.accent) }
+                .modifier(SourceReaderSheetSizing())
+                .environment(\.dynamicTypeSize, textSize)
+                .nodusTextHierarchy()
+        }
+        .nodusSheet(isPresented: $legacyReports) {
+            NavigationStack {
+                LegacyResearchReportsView(session: session, local: LocalReportStore.shared(for: session.connection.storageId))
+                    .nodusModalClose(accent: session.accent)
+            }.environment(\.dynamicTypeSize, textSize).nodusTextHierarchy()
+        }
+        .nodusSheet(item: $nativeReport) { target in
+            NavigationStack {
+                PublishedReportReader(session: session, row: Row(["id": .string(target.id)]))
+                    .nodusModalClose(accent: session.accent)
+            }
+            .environment(\.dynamicTypeSize, textSize)
+            .nodusTextHierarchy()
+        }
+        .sheet(item: $destination) { target in
+            NavigationStack {
+                Group {
+                    if target.path == "pages" {
+                        SharedDesktopSurface(session: session, surface: .page, initialPageId: target.id, downloadedOnly:downloadedOnly)
+                    } else if target.path == "database-rows" {
+                        DatabaseLinkedRowReader(session:session,id:target.id,downloadedOnly:downloadedOnly)
+                    } else if target.path == "study-docs" {
+                        StudyEvidenceDocument(session: session, id: target.id, location: target.location, quote: target.quote, downloadedOnly: downloadedOnly)
+                    } else {
+                        RowDetailView(session: session, collection: Collections.byPath[target.path],
+                            row: Row([Collections.byPath[target.path]?.idField ?? "id": .string(target.id)]))
+                    }
+                }.nodusModalClose(accent: session.accent)
+            }
+            .environment(\.dynamicTypeSize, textSize)
+            .nodusTextHierarchy()
+        }
+        .sheet(item:$citation) { reference in
+            NavigationStack { CorpusReferenceView(session:session,reference:reference).nodusModalClose(accent:session.accent) }
+                .environment(\.dynamicTypeSize,textSize).nodusTextHierarchy()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("shared-desktop-\(surface.rawValue)")
+    }
+}
+
+private struct SourceReaderSheetSizing: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) { content.presentationSizing(.page) }
+        else { content.presentationDetents([.large]) }
+    }
+}
+
+private struct SurfaceDestination: Identifiable { let path: String; let id: String; let location: String?; let quote: String? }
+
+struct StudyEvidenceDocument: View {
+    let session: SpaceSession
+    let id: String
+    var location: String? = nil
+    var quote: String? = nil
+    var downloadedOnly = false
+    var startEditing = false
+    var downloadedDossier: CollectionDossier? = nil
+    var onOpenRelated: ((CollectionDescriptor, Row) -> Void)? = nil
+    @State private var row: Row?
+    @State private var error: String?
+    @State private var editing = false
+    @State private var editorFlush: MobileEditorFlush?
+    @Environment(\.dismiss) private var readerDismiss
+    @Environment(AppPreferences.self) private var preferences
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let row {
+                        Text(row.text("title") ?? "").font(.title2.weight(.semibold)).textSelection(.enabled)
+                        if let location { Text(location).font(.caption).foregroundStyle(session.accent) }
+                        CorpusProse(row.text("content_markdown") ?? "", accent: session.accent, session: session)
+                        if let metadata = downloadedMetadata {
+                            DisclosureGroup {
+                                CollectionDossierBody(session: session, dossier: metadata, showConnectionState: false, onOpenRelated: onOpenRelated)
+                            } label: {
+                                Text("Metadatos y relaciones de la descarga").frame(minHeight: 44, alignment: .leading)
+                            }.font(.callout)
+                        }
+                    } else if let error { Text(error).foregroundStyle(.red) }
+                    else { ProgressView() }
+                }.padding(20).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
+            }
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 76) }
+            .task(id: row?.text("content_markdown")) {
+                guard let markdown = row?.text("content_markdown"), let quote,
+                    let anchor = CorpusProse(markdown, accent: session.accent, session: session).anchor(containing: quote) else { return }
+                await Task.yield()
+                proxy.scrollTo(anchor, anchor: .top)
+            }
+        }
+        .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
+        .navigationTitle(row?.text("title") ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { ReadingSizeButtons(accent: session.accent) }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if session.connection.desktopPairingId != nil && session.canAuthor {
+                Button { editing = true } label: {
+                    Image(systemName: "pencil").font(.system(size: 15, weight: .semibold)).nodusFloatingCircle(accent: session.accent)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Edit").accessibilityIdentifier("study-document-edit")
+                .padding(.trailing, 22).padding(.bottom, 22)
+            }
+        }
+        .fullScreenCover(isPresented: $editing) {
+            NavigationStack {
+                SharedDesktopSurface(session: session, surface: .studyDocument, initialStudyDocumentId: id, onEditorFlushReady: { editorFlush = $0 }, onStudyDocumentTrashed: { removed in
+                    editing = false
+                    if removed == id { readerDismiss() }
+                }, downloadedOnly: downloadedOnly)
+                    .navigationTitle(row?.text("title") ?? "")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                Task {
+                                    guard let editorFlush, await editorFlush() else { return }
+                                    editing = false
+                                }
+                            } label: {
+                                Text("Done").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain).accessibilityIdentifier("study-editor-close")
+                        }
+                    }
+            }.interactiveDismissDisabled(true)
+        }
+        .onChange(of: editing) { _, active in if !active { Task { await loadReader() } } }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("study-evidence-reader")
+        .task(id: id) { await loadReader(); if startEditing, row != nil { editing = true } }
+    }
+    private func loadReader() async {
+        error = nil
+        var confirmed: JSONValue?
+        do {
+            if session.connection.desktopPairingId != nil,
+               let (vault, pairing, _) = try? privateBridgeConnection(session, domain: .corpus) {
+                guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+                let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault, kind: .studyDocument)
+                if let pending = await queue.editorData(noteId: id) { showEditor(pending); return }
+                confirmed = await queue.confirmedEditorData(noteId: id)
+            }
+            guard let collection = Collections.byPath["study-docs"] else { throw DesktopBridgeError.malformedResponse }
+            let dossier: CollectionDossier
+            if downloadedOnly {
+                dossier = try await downloadedCollection(session, path: collection.path).dossier(id: id)
+            } else {
+                dossier = try await session.client.dossier(collection, id: id, in: session.connection.spaceId)
+            }
+            // An acknowledged mobile edit can be newer than a downloaded
+            // dossier. A live Mac response must still replace it when Desktop
+            // has changed the document since that acknowledgement.
+            if dossier.fromDevice, let confirmed { showEditor(confirmed) }
+            else { row = dossier.primary }
+        } catch {
+            if isPrivateBridgeOffline(error), let confirmed { showEditor(confirmed) }
+            else { self.error = error.localizedDescription }
+        }
+    }
+    private func showEditor(_ editor: JSONValue) {
+        var fields = row?.columns ?? ["id": .string(id)]
+        fields["title"] = editor.objectValue?["documentTitle"]
+        fields["content_markdown"] = editor.objectValue?["contentMarkdown"]
+        row = Row(fields)
+    }
+    private var downloadedMetadata: CollectionDossier? {
+        guard let dossier = downloadedDossier, var payload = dossier.payload.objectValue else { return nil }
+        var fields = dossier.primary.columns
+        for key in ["title", "content_markdown", "native_document_json"] { fields[key] = nil }
+        let primaryKey = payload[dossier.collection.detailKey]?.objectValue != nil ? dossier.collection.detailKey : "document"
+        payload[primaryKey] = .object(fields)
+        return try? CollectionDossier(collection: dossier.collection, id: id, payload: .object(payload), fromDevice: true)
+    }
+}
+
+private struct WorkspaceOrganizationReview: View {
+    let session: SpaceSession
+    @State private var operations: [JSONValue] = []
+    @State private var error: String?
+    @State private var busy = false
+    var body: some View {
+        List {
+            if let error { Text(error).foregroundStyle(.red) }
+            if operations.isEmpty { Text("No hay cambios de organización pendientes.").foregroundStyle(.secondary) }
+            ForEach(operations, id: \.self) { value in
+                let fields = value.objectValue ?? [:], op = fields["operation"]?.objectValue ?? [:]
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(label(op["type"]?.stringValue ?? "")).font(.headline)
+                    Text(op["name"]?.stringValue ?? op["id"]?.stringValue ?? "").font(.caption).foregroundStyle(.secondary)
+                    Text(fields["state"] == .string("conflict") ? "Conflicto · revisa el cambio actual en Nodus" : fields["state"] == .string("blocked") ? "Bloqueado · conservado en este dispositivo" : "Guardado en el móvil · pendiente de sincronizar").font(.caption)
+                    if let issue = fields["issue"]?.stringValue { Text(issue).font(.caption).foregroundStyle(.secondary) }
+                    Button("Cancelar este cambio", role: .destructive) { Task { await cancel(fields["id"]?.stringValue) } }
+                        .frame(minHeight: 44).disabled(busy || !session.canAuthor)
+                }.padding(.vertical, 4)
+            }
+            Button("Actualizar estado") { Task { await load() } }.frame(minHeight: 44).disabled(busy)
+            Button("Sincronizar cambios") { Task { busy = true; await session.synchronizeCompanionChanges(); busy = false; await load() } }
+                .frame(minHeight: 44).disabled(busy || !session.canAuthor)
+            Text("Cancelar conserva los documentos y comentarios. Si falta confirmar un recibo, sincroniza antes de cancelar. Tras resolver un conflicto puedes volver a ejecutar la acción sobre el estado actual.").font(.caption).foregroundStyle(.secondary)
+        }.navigationTitle("Organización de Scriptor").task { await load() }
+            .onChange(of: session.companionPublicationRevision) { _, _ in Task { await load() } }
+    }
+    private func label(_ type: String) -> String {
+        ["move": "Mover documento", "tags": "Cambiar etiquetas", "restore": "Restaurar documento", "folderCreate": "Crear carpeta", "folderRename": "Renombrar carpeta", "folderTrash": "Enviar carpeta a la papelera"][type] ?? "Cambio de organización"
+    }
+    @MainActor private func queue() async throws -> CompanionDocumentOutbox {
+        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        return try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vault)
+    }
+    @MainActor private func load() async {
+        do { operations = try await queue().workspaceOrganizationIssues().arrayValue ?? []; error = nil }
+        catch { self.error = error.localizedDescription }
+    }
+    @MainActor private func cancel(_ id: String?) async {
+        guard let id, session.canAuthor else { return }
+        busy = true; defer { busy = false }
+        do {
+            _ = try privateBridgeConnection(session, domain: .writing)
+            try await queue().cancelWorkspaceOrganization(id: id)
+            await load()
+        } catch { self.error = error.localizedDescription }
+    }
+}
+
+@MainActor private enum WorkspaceOrganizationSurfaceBridge {
+    static let methods: Set<String> = ["moveNote", "patchNoteTags", "restoreNotes", "createNoteFolder", "renameNoteFolder", "trashNoteFolder"]
+    static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
+                        pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, onOffline: (Bool) -> Void) async throws -> JSONValue {
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+        let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
+        let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        let variants: [[JSONValue]] = [[.bool(true)], [], [.bool(false)]]
+        var localTree: JSONValue?
+        for variant in variants {
+            let key = try CompanionDocumentOutbox.operationKey("getNotesTree", variant)
+            let bytes: Data?
+            if downloadedOnly { bytes = try await cache.downloadedData(vaultId: vaultId, domain: .corpus, recordId: key).first }
+            else { bytes = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key) }
+            if let bytes {
+                let value = try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+                let candidate = value.objectValue?["mobileOrganizationTree"] ?? value
+                if candidate.objectValue?["mobileOrganizationComplete"] == .bool(true) { localTree = candidate; break }
+                if localTree == nil { localTree = candidate }
+            }
+        }
+        if localTree == nil { localTree = await queue.workspaceOrganizationTree(includeConsulted: !downloadedOnly) }
+        var tree: JSONValue, authoritative = false
+        if downloadedOnly {
+            guard let localTree else { throw APIError(status: 409, code: "organization_not_downloaded", message: "Descarga la organización de Scriptor antes de modificarla sin conexión.") }
+            tree = localTree; onOffline(true)
+        } else {
+            do {
+                let value = try await client.operation(vaultId: vaultId, method: "getNotesTree", args: [.bool(true)], timeout: localTree == nil ? nil : 4)
+                tree = value.objectValue?["mobileOrganizationTree"] ?? value
+                let key = try CompanionDocumentOutbox.operationKey("getNotesTree", [.bool(true)])
+                try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
+                authoritative = true; onOffline(false)
+            } catch {
+                guard isPrivateBridgeOffline(error), let localTree else { throw error }
+                tree = localTree; onOffline(true)
+            }
+        }
+        let (currentVault, currentPairing, _) = try privateBridgeConnection(session, domain: .writing)
+        guard !currentPairing.isExpired, currentVault == vaultId, currentPairing.id == pairing.id, currentPairing.domains.contains(.corpus), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+        try await queue.rememberTree(tree, authoritative: authoritative)
+        func enqueue(_ type: String, _ id: String?, _ arguments: JSONValue = .object([:])) async throws -> JSONValue {
+            let result = try await queue.enqueueWorkspaceOrganization(type: type, id: id, arguments: arguments, tree: tree, authoritative: authoritative)
+            Task { await session.synchronizeCompanionChanges() }
+            return result
+        }
+        if method == "createNoteFolder", args.count == 1, args[0].objectValue != nil { return try await enqueue("folderCreate", nil, args[0]) }
+        if method == "patchNoteTags", args.count == 2, let ids = args[0].arrayValue, args[1].objectValue != nil {
+            var result: [JSONValue] = [], seen = Set<String>()
+            do {
+                for value in ids { guard let id = value.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.malformedResponse }; if seen.insert(id).inserted { result += try await enqueue("tags", id, args[1]).arrayValue ?? [] } }
+            } catch {
+                guard !result.isEmpty else { throw error }
+                throw APIError(status: 409, code: "organization_partial_success", message: "Se han guardado cambios de etiquetas para \(result.count) documentos. Revisa Cambios de organización; los restantes no se han modificado. \(error.localizedDescription)")
+            }
+            return .array(result)
+        }
+        if method == "restoreNotes", args.count == 1, let ids = args[0].arrayValue {
+            var count: Int64 = 0, seen = Set<String>()
+            do {
+                for value in ids { guard let id = value.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.malformedResponse }; if seen.insert(id).inserted { _ = try await enqueue("restore", id); count += 1 } }
+            } catch {
+                guard count > 0 else { throw error }
+                throw APIError(status: 409, code: "organization_partial_success", message: "Se han guardado \(count) restauraciones. Revisa Cambios de organización; los documentos restantes no se han modificado. \(error.localizedDescription)")
+            }
+            return .int(count)
+        }
+        guard let id = args.first?.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.malformedResponse }
+        if method == "moveNote", args.count == 2, args[1] == .null || args[1].stringValue != nil { return try await enqueue("move", id, .object(["folderId": args[1]])) }
+        if method == "renameNoteFolder", args.count == 2, let name = args[1].stringValue { return try await enqueue("folderRename", id, .object(["name": .string(name)])) }
+        if method == "trashNoteFolder", args.count == 1 { return try await enqueue("folderTrash", id) }
+        throw DesktopBridgeError.malformedResponse
+    }
+}
+
+@MainActor private enum CompanionDocumentSurfaceBridge {
+    static let methods: Set<String> = ["getStudyDocEditorData", "updateStudyDoc", "restoreStudyDocVersion", "resolveMobileStudyConflict", "duplicateMobileStudyDocument", "trashMobileStudyDocument", "createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation"]
+    static let workspaceMethods: Set<String> = ["getWorkspaceNoteEditorData", "restoreWorkspaceNoteVersion", "createWorkspaceAnnotation", "updateWorkspaceAnnotation", "deleteWorkspaceAnnotation", "duplicateMobileWorkspaceNote", "trashMobileWorkspaceNote"]
+    static func perform(_ method: String, args: [JSONValue], session: SpaceSession, client: DesktopBridgeClient,
+                        pairing: DesktopBridgePairing, vaultId: String, downloadedOnly: Bool, kind: CompanionDocumentOutbox.Kind = .studyDocument, onOffline: (Bool) -> Void) async throws -> JSONValue {
+        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+        guard pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
+              let id = args.first?.stringValue, !id.isEmpty, id.utf8.count <= 128 else { throw DesktopBridgeError.permissionDenied }
+        let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: kind)
+        let cache = try PrivateBridgeCache(pairingId: pairing.id)
+        let readMethod = kind == .studyDocument ? "getStudyDocEditorData" : "getWorkspaceNoteEditorData"
+        func load() async throws -> JSONValue {
+            if let local = await queue.editorData(noteId: id) { return local }
+            let key = try CompanionDocumentOutbox.operationKey(readMethod, [.string(id)])
+            let owned = await queue.confirmedEditorData(noteId: id)
+            if downloadedOnly {
+                let selected = try await cache.downloadedData(vaultId: vaultId, domain: .corpus, recordId: key).first
+                let selectedEditor = try selected.map { try JSONDecoder.nodus.decode(JSONValue.self, from: $0) }
+                let value: JSONValue
+                if let owned, (owned.objectValue?["revision"]?.intValue ?? 0) >= (selectedEditor?.objectValue?["revision"]?.intValue ?? -1) { value = owned }
+                else if let selectedEditor { value = selectedEditor }
+                else {
+                    throw APIError(status: 409, code: "study_editor_not_downloaded", message: "Esta descarga no incluye el editor completo. Actualízala con Nodus conectado antes de editar sin conexión.")
+                }
+                try await queue.seed(noteId: id, editorData: value)
+                onOffline(true)
+                return value
+            }
+            let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key)
+            var value: JSONValue
+            do {
+                value = try await client.operation(vaultId: vaultId, method: readMethod, args: [.string(id)], timeout: cached == nil && owned == nil ? nil : 4)
+                try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
+                onOffline(false)
+            } catch {
+                guard isPrivateBridgeOffline(error) else { throw error }
+                let cachedValue = cached.flatMap { try? JSONDecoder.nodus.decode(JSONValue.self, from: $0) }
+                if let owned, (owned.objectValue?["revision"]?.intValue ?? 0) >= (cachedValue?.objectValue?["revision"]?.intValue ?? -1) { value = owned }
+                else if let cachedValue { value = cachedValue }
+                else if cached != nil { throw DesktopBridgeError.malformedResponse }
+                else { throw error }
+                onOffline(true)
+            }
+            try await queue.seed(noteId: id, editorData: value)
+            return value
+        }
+        if ["createStudyAnnotation", "updateStudyAnnotation", "deleteStudyAnnotation", "createWorkspaceAnnotation", "updateWorkspaceAnnotation", "deleteWorkspaceAnnotation"].contains(method) {
+            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+            let documentId: String
+            let creates = method == "createStudyAnnotation" || method == "createWorkspaceAnnotation"
+            let updates = method == "updateStudyAnnotation" || method == "updateWorkspaceAnnotation"
+            let deletes = method == "deleteStudyAnnotation" || method == "deleteWorkspaceAnnotation"
+            if creates, args.count == 2 {
+                _ = try await load(); documentId = id
+            } else if (updates && args.count == 2) || (deletes && args.count == 1),
+                      let owner = await queue.studyAnnotationDocumentId(annotationId: id) {
+                documentId = owner
+            } else {
+                throw APIError(status: 409, code: "study_annotation_source_missing", message: "Abre el documento de esta anotación antes de modificarla.")
+            }
+            let result = try await queue.enqueueStudyAnnotation(documentId: documentId, method: method,
+                annotationId: creates ? nil : id, patch: args.count == 2 ? args[1] : nil)
+            Task { await session.synchronizeCompanionChanges() }
+            return result
+        }
+        if method == readMethod, args.count == 1 { return try await load() }
+        if ["duplicateMobileWorkspaceNote", "trashMobileWorkspaceNote"].contains(method), args.count == 1, kind == .workspaceNote {
+            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+            _ = try await load()
+            let result = try await queue.enqueueWorkspaceCommand(noteId: id, action: method == "duplicateMobileWorkspaceNote" ? "duplicate" : "trash")
+            Task { await session.synchronizeCompanionChanges() }
+            return result
+        }
+        if ["duplicateMobileStudyDocument", "trashMobileStudyDocument"].contains(method), args.count == 1 {
+            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+            _ = try await load()
+            let result = try await queue.enqueueStudyCommand(noteId: id, action: method == "duplicateMobileStudyDocument" ? "duplicate" : "trash")
+            Task { await session.synchronizeCompanionChanges() }
+            return result
+        }
+        guard pairing.domains.contains(.writing), session.canAuthor, args.count == 2 else { throw DesktopBridgeError.permissionDenied }
+        let result: JSONValue
+        if method == "resolveMobileStudyConflict", let keep = args[1].boolValue {
+            result = try await queue.resolve(noteId: id, keepMobile: keep)
+        } else if method == "updateStudyDoc" {
+            if await !queue.hasBaseline(noteId: id) { _ = try await load() }
+            result = try await queue.save(noteId: id, input: args[1])
+        } else if method == "restoreWorkspaceNoteVersion", let versionId = args[1].stringValue {
+            _ = try await load()
+            result = try await queue.restoreWorkspaceVersion(noteId: id, versionId: versionId)
+        } else if method == "restoreStudyDocVersion", let versionId = args[1].stringValue {
+            let current = try await load()
+            guard let version = current.objectValue?["versions"]?.arrayValue?.first(where: { $0.objectValue?["id"] == .string(versionId) })?.objectValue,
+                  let title = version["title"], let content = version["contentMarkdown"], let revision = current.objectValue?["revision"] else { throw DesktopBridgeError.malformedResponse }
+            var input: [String: JSONValue] = ["title": title, "contentMarkdown": content, "expectedRevision": revision, "reason": .string("restore")]
+            for key in ["style", "nativeDocument", "schemaVersion", "academicMetadata"] { if let value = version[key] { input[key] = value } }
+            result = try await queue.save(noteId: id, input: .object(input))
+        } else { throw DesktopBridgeError.malformedResponse }
+        Task { await session.synchronizeCompanionChanges() }
+        return result
+    }
+}
+
+/// Preserve native selection handles and the keyboard's editing commands. Only
+/// a selection handled by the document's Nodus ribbon replaces the system menu.
+private final class ReaderSurfaceWebView: WKWebView {
+    var readerSelectionManaged = false
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        if readerSelectionManaged { builder.replaceChildren(ofMenu: .root) { _ in [] } }
+    }
+    func dismissReaderEditMenu() {
+        func dismiss(in view: UIView) {
+            for interaction in view.interactions {
+                (interaction as? UIEditMenuInteraction)?.dismissMenu()
+            }
+            view.subviews.forEach { dismiss(in: $0) }
+        }
+        dismiss(in: self)
+    }
+}
+
+private struct DesktopWebView: UIViewRepresentable {
+    @Environment(\.nodusResidentRouteActive) private var routeActive
+    let session: SpaceSession
+    let ai: AISettings
+    let surface: DesktopSurface
+    let dark: Bool
+    let textScale: Double
+    let publicationRevision: Int
+    let corpusRevision: String?
+    let databaseReadingRevision:Int
+    let initialResearchVisualLocalOnly: Bool
+    let initialResearchVisualReportId: String?
+    let initialDatabaseReportId: String?
+    let initialPageId: String?
+    let initialStudyDocumentId: String?
+    let onEditorFlushReady: ((@escaping MobileEditorFlush) -> Void)?
+    let initialArgumentMap: JSONValue?
+    let initialArgumentSeed: String?
+    let initialDatabasePresentation: JSONValue?
+    let downloadedOnly: Bool
+    let onReady: () -> Void
+    let onError: (String) -> Void
+    let onExport: (PrivateBridgeFileLease) -> Void
+    let onAutonomousStatus: (String?) -> Void
+    let onOfflineCopy: (Bool) -> Void
+    let onOpenSource: (SourceDocumentTarget) -> Void
+    let onOpenAudio: (SavedAudioTarget) -> Void
+    let onOpenWritingResult: (MobileWritingResultTarget) -> Void
+    let onImmersionSource: (String, JSONValue) -> Void
+    let onNavigate: (String, String, String?, String?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(session: session, ai: ai, surface: surface, downloadedOnly:downloadedOnly, onReady: onReady, onError: onError, onExport: onExport, onAutonomousStatus: onAutonomousStatus, onOfflineCopy: onOfflineCopy, onOpenSource: onOpenSource, onOpenAudio: onOpenAudio, onOpenWritingResult: onOpenWritingResult, onImmersionSource: onImmersionSource, onNavigate: onNavigate) }
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        LinkReaderPresentation.install(in: config)
+        config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-image")
+        config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-library")
+        config.setURLSchemeHandler(context.coordinator.images,forURLScheme:"nodus-archive")
+        config.userContentController.add(context.coordinator, name: "nodus")
+        var data: [String: Any] = ["initialResearchVisualLocalOnly":initialResearchVisualLocalOnly, "initialResearchVisualReportId":initialResearchVisualReportId ?? "", "surface": surface.rawValue, "vaultId":session.connection.vaultId, "pageDownloadedOnly":downloadedOnly, "initialPageId":initialPageId ?? "", "initialStudyDocumentId":initialStudyDocumentId ?? "", "initialDatabaseReportId":initialDatabaseReportId ?? "", "linkReadOnly": NodusLinkPolicy.readOnly, "live": session.connection.desktopPairingId != nil, "executionMode": session.aiExecutionMode.rawValue,
+            "documentDraftScope": session.connection.storageId, "device": UIDevice.current.userInterfaceIdiom == .phone ? "phone" : "tablet",
+            "theme": dark ? "dark" : "light", "accent": session.vaultType?.accentHex ?? "#6366f1", "textScale": textScale, "vaultType": session.vaultType?.rawValue ?? "academic", "language": Locale.current.language.languageCode?.identifier ?? "es"]
+        let visualPairing = DesktopBridgePairingStore().pairings().first { $0.id == session.connection.desktopPairingId }
+        data["visualCanWrite"] = session.canAuthor && !downloadedOnly && session.canAuthor && visualPairing.map { !$0.isExpired && $0.vaultIds.contains(session.connection.vaultId ?? "") && $0.domains.contains(.corpus) && $0.domains.contains(.writing) } == true
+        data["visualCanGenerate"] = data["visualCanWrite"] as? Bool == true && visualPairing?.domains.contains(.researchGeneration) == true
+        if let initialArgumentMap, let bytes = try? JSONEncoder.nodus.encode(initialArgumentMap), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialArgumentMap"] = value }
+        if let initialArgumentSeed { data["initialArgumentSeed"] = initialArgumentSeed }
+        if let initialDatabasePresentation, let bytes = try? JSONEncoder.nodus.encode(initialDatabasePresentation), let value = try? JSONSerialization.jsonObject(with: bytes) { data["initialDatabasePresentation"] = value }
+        if let json = try? JSONSerialization.data(withJSONObject: data), let text = String(data: json, encoding: .utf8) {
+            let bootstrap = """
+            window.nodusMobileConfig=\(text);
+            window.nodusMobileSubscriptions=new Map();
+            window.nodusMobilePending=new Map();window.nodusMobileSequence=0;
+            window.nodusMobileCall=(method,...args)=>new Promise((resolve,reject)=>{
+              const id=String(++window.nodusMobileSequence);window.nodusMobilePending.set(id,{resolve,reject});
+              window.webkit.messageHandlers.nodus.postMessage({id,method,args});
+            });
+            window.nodusMobileReply=(id,result,error)=>{const p=window.nodusMobilePending.get(id);if(!p)return;window.nodusMobilePending.delete(id);if(error){const failure=new Error(typeof error==='string'?error:error.message);if(typeof error==='object')failure.code=error.code;if(error.code==='cancelled')failure.name='AbortError';p.reject(failure)}else p.resolve(result)};
+            window.nodusMobileEvent=()=>{};
+            window.nodus=new Proxy({}, {get:(_,method)=>{
+              if(method.startsWith('on'))return listener=>{const s=window.nodusMobileSubscriptions.get(method)||new Set();s.add(listener);window.nodusMobileSubscriptions.set(method,s);return()=>s.delete(listener)};
+              return (...args)=>window.nodusMobileCall(method,...args);
+            }});
+            window.addEventListener('error',e=>{
+              if(e.message || e.target instanceof HTMLScriptElement)window.webkit.messageHandlers.nodus.postMessage({id:'error',method:'surfaceError',args:[String(e.message || 'No se pudo cargar la interfaz de Nodus. Reintenta para recuperar el contenido guardado.') ]});
+            },true);
+            window.addEventListener('unhandledrejection',e=>window.webkit.messageHandlers.nodus.postMessage({id:'error',method:'surfaceError',args:[String(e.reason)]}));
+            """
+            config.userContentController.addUserScript(WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        let view = ReaderSurfaceWebView(frame: .zero, configuration: config)
+        view.accessibilityElementsHidden = !routeActive
+        view.isHidden = !routeActive
+        view.isOpaque = false
+        view.scrollView.keyboardDismissMode = .interactive
+        view.backgroundColor = .clear
+        view.navigationDelegate = context.coordinator
+        view.uiDelegate = context.coordinator
+        context.coordinator.webView = view
+        onEditorFlushReady? { [weak view] in
+            guard let view else { return false }
+            do {
+                let result = try await view.callAsyncJavaScript("const listeners=[...(window.nodusMobileSubscriptions?.get('onBeforeEditorLeave')??[])]; return (await Promise.all(listeners.map(listener=>listener()))).every(result=>result!==false);", arguments: [:], in: nil, contentWorld: .page)
+                return result as? Bool == true
+            } catch { return false }
+        }
+        context.coordinator.setRouteActive(routeActive)
+        if Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "SharedDesktop") != nil {
+            // Load the immutable bundle as a normal same-origin script. Keeping
+            // the whole shared renderer in WKUserScript duplicates it per view
+            // and exercises a different JavaScriptCore compilation context.
+            context.coordinator.tasks.append(Task {
+                do {
+                    let stored = try await context.coordinator.surfaceStorage()
+                    let seed = String(decoding: try JSONEncoder.nodus.encode(stored), as: UTF8.self)
+                    let storage = """
+                    (()=>{
+                      const values=new Map(Object.entries(\(seed)));
+                      let sequence=0;
+                      const persist=()=>window.webkit.messageHandlers.nodus.postMessage({id:'storage-'+(++sequence),method:'persistSurfaceStorage',args:[Object.fromEntries(values)]});
+                      const storage={getItem:key=>values.get(String(key))??null,
+                        setItem:(key,value)=>{values.set(String(key),String(value));persist()},
+                        removeItem:key=>{values.delete(String(key));persist()},
+                        clear:()=>{values.clear();persist()},key:index=>[...values.keys()][index]??null,
+                        get length(){return values.size}};
+                      Object.defineProperty(window,'localStorage',{get:()=>storage});
+                    })();
+                    """
+                    config.userContentController.addUserScript(WKUserScript(source: storage, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+                    let document = try await LocalSurfaceHost.shared.documentURL()
+                    try Task.checkCancellation()
+                    view.load(URLRequest(url: document))
+                }
+                catch is CancellationError { }
+                catch { context.coordinator.onError(error.localizedDescription) }
+            })
+        } else {
+            view.loadHTMLString("<main role='alert'>Nodus shared components are missing. Rebuild the application.</main>", baseURL: nil)
+        }
+        return view
+    }
+    func updateUIView(_ view: WKWebView, context: Context) {
+        view.accessibilityElementsHidden = !routeActive
+        // WebKit publishes its contents from a separate process. Hiding only
+        // the container's accessibility descendants leaves stale HTML controls
+        // reachable after switching workspaces.
+        view.isHidden = !routeActive
+        context.coordinator.setRouteActive(routeActive)
+        context.coordinator.sendPublicationUpdates()
+        context.coordinator.sendCorpusUpdate()
+        context.coordinator.sendDatabaseReadingUpdate()
+        view.evaluateJavaScript("document.documentElement.classList.toggle('dark',\(dark));document.documentElement.classList.toggle('light',\(!dark));document.documentElement.style.fontSize='\(16 * textScale)px';document.documentElement.style.setProperty('--nodus-mobile-text-scale','\(textScale)');", completionHandler: nil)
+    }
+    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "nodus")
+        coordinator.tasks.forEach { $0.cancel() }
+        let authoringTasks = coordinator.tasks
+        Task { @MainActor in
+            for task in authoringTasks { await task.value }
+            coordinator.autonomous.finishAbandonedAuthoringActivities()
+        }
+        coordinator.images.cancelAll()
+        coordinator.finishJavaScriptPanel()
+        coordinator.session.isSurfaceFullscreen = false
+    }
+    @MainActor final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+        private var javaScriptPanel: UIAlertController?
+        private var cancelJavaScriptPanel: (() -> Void)?
+        private static let operationDomains: [String: String] = {
+            guard let file = Bundle.main.url(forResource: "operations", withExtension: "json", subdirectory: "SharedDesktop"),
+                let data = try? Data(contentsOf: file), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let methods = object["operations"] as? [String: [String]] else { return [:] }
+            return methods.mapValues { $0.count == 2 ? $0[1] : "unavailable" }
+        }()
+        weak var webView: WKWebView?
+        private var routeActive = true
+        private var recoveryAttempts = 0
+        private var recoveryPending = false
+        private var recovering = false
+        private func recoverLocalPresentation(restartHost: Bool) {
+            guard !recovering, recoveryAttempts < 2 else { return }
+            guard routeActive else { recoveryPending = true; return }
+            recovering = true; recoveryPending = false; recoveryAttempts += 1
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { self.recovering = false }
+                do {
+                    if restartHost { LocalSurfaceHost.shared.restart() }
+                    let url = try await LocalSurfaceHost.shared.documentURL()
+                    guard self.routeActive else { self.recoveryPending = true; return }
+                    self.webView?.load(URLRequest(url: url))
+                } catch is CancellationError { }
+                catch { self.onError(String(localized: "No se ha podido abrir el lector local. Reintenta para recuperarlo.")) }
+            }
+        }
+        func setRouteActive(_ active: Bool) {
+            routeActive = active
+            if active, recoveryPending { recoverLocalPresentation(restartHost: false) }
+            // The remote WebKit accessibility process can outlive UIKit's hidden
+            // container. Inert removes its HTML controls from focus and VoiceOver
+            // without destroying the canvas, draft or scroll position.
+            webView?.evaluateJavaScript("if(document.documentElement){document.documentElement.inert=\(!active);if(\(!active))document.activeElement?.blur();}", completionHandler: nil)
+        }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            setRouteActive(routeActive)
+        }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+            navigationFailed(error)
+        }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+            navigationFailed(error)
+        }
+        private func navigationFailed(_ error: any Error) {
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
+            surfaceReady = false
+            if recoveryAttempts < 2 { recoverLocalPresentation(restartHost: true) }
+            else { onError(String(localized: "No se ha podido abrir el lector local. Reintenta para recuperarlo.")) }
+        }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            surfaceReady = false
+            if recoveryAttempts < 2 { recoverLocalPresentation(restartHost: false) }
+            else { onError(String(localized: "El lector necesita recargarse. Tu contenido guardado no se ha modificado.")) }
+        }
+        let session: SpaceSession
+        let surface: DesktopSurface
+        let downloadedOnly:Bool
+        let autonomous: AutonomousSurfaceProvider
+        let onNavigate: (String, String, String?, String?) -> Void
+        let onReady: () -> Void
+    let onError: (String) -> Void
+            let onExport: (PrivateBridgeFileLease) -> Void
+        let onAutonomousStatus: (String?) -> Void
+        let onOfflineCopy: (Bool) -> Void
+        let onOpenSource: (SourceDocumentTarget) -> Void
+        let onOpenAudio: (SavedAudioTarget) -> Void
+        let onOpenWritingResult: (MobileWritingResultTarget) -> Void
+        let onImmersionSource: (String, JSONValue) -> Void
+        private lazy var immersionProgress = ImmersionSurfaceProgressBridge(session: session)
+        private lazy var databaseReading = DatabaseResearchSurfaceBridge(session:session,localReader:{ [weak self] id in
+            guard let self else { return nil };return try await self.autonomous.databaseLocalReader(id,session:self.session)
+        })
+        private var databaseReadingRevision = 0
+        func sendDatabaseReadingUpdate() {
+            guard surfaceReady,routeActive,databaseReadingRevision != session.companionDatabaseReadingRevision else { return }
+            databaseReadingRevision = session.companionDatabaseReadingRevision
+            try? MobileJavaScriptDelivery.events(webView, payload: [["channel": "mobile:databaseReading:changed", "args": []]], optional: false)
+        }
+        lazy var images = MobileCorpusImageScheme(session:session,onError:onError)
+        var tasks: [Task<Void, Never>] = []
+        var runningJobs: [String: (DesktopBridgeClient, String, String)] = [:]
+        private var persistedSurfaceCache: PrivateBridgeCache?
+        private var publicationRevision = 0
+        private var surfaceReady = false
+        private var autonomousGenerationId: String?
+        private var corpusRevision: String?
+        func sendCorpusUpdate() {
+            guard surfaceReady, routeActive, session.connection.desktopPairingId != nil,
+                  corpusRevision != session.publishedRevision else { return }
+            corpusRevision = session.publishedRevision
+            try? MobileJavaScriptDelivery.events(webView, payload: [["channel": "mobile:corpus:changed", "args": []]], optional: true)
+        }
+        func sendPublicationUpdates() {
+            guard surfaceReady, routeActive, publicationRevision != session.companionPublicationRevision,
+                  let data = try? JSONEncoder.nodus.encode(session.companionPublicationUpdates) else { return }
+            publicationRevision = session.companionPublicationRevision
+            if let payload = try? JSONSerialization.jsonObject(with: data) {
+                try? MobileJavaScriptDelivery.events(webView, payload: [["channel": "mobile:publication:changed", "args": [payload]]], optional: true)
+            }
+            if session.companionPublicationUpdates.contains(where: { $0.objectValue?["id"]?.stringValue == autonomousGenerationId && $0.objectValue?["state"] == .string("available") }) { onAutonomousStatus(nil) }
+        }
+        init(session: SpaceSession, ai: AISettings, surface: DesktopSurface, downloadedOnly:Bool, onReady: @escaping () -> Void, onError: @escaping (String) -> Void, onExport: @escaping (PrivateBridgeFileLease) -> Void, onAutonomousStatus: @escaping (String?) -> Void, onOfflineCopy: @escaping (Bool) -> Void, onOpenSource: @escaping (SourceDocumentTarget) -> Void, onOpenAudio: @escaping (SavedAudioTarget) -> Void, onOpenWritingResult: @escaping (MobileWritingResultTarget) -> Void, onImmersionSource: @escaping (String, JSONValue) -> Void, onNavigate: @escaping (String, String, String?, String?) -> Void) { self.session = session; self.surface = surface; self.downloadedOnly=downloadedOnly; autonomous = AutonomousSurfaceProvider(settings: ai); self.onReady = onReady; self.onError = onError; self.onExport = onExport; self.onAutonomousStatus = onAutonomousStatus; self.onOfflineCopy = onOfflineCopy; self.onOpenSource = onOpenSource; self.onOpenAudio = onOpenAudio; self.onOpenWritingResult = onOpenWritingResult; self.onImmersionSource = onImmersionSource; self.onNavigate = onNavigate }
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
+                let id = body["id"] as? String, let method = body["method"] as? String,
+                let input = body["args"] as? [Any], JSONSerialization.isValidJSONObject(input) else { return }
+                        if method == "surfaceError", let error = input.first as? String { onError(error); return }
+            if method == "surfaceMounted" {
+                surfaceReady = true
+                onReady()
+                sendPublicationUpdates(); sendCorpusUpdate(); sendDatabaseReadingUpdate()
+                try? reply(id, value: .null, error: nil)
+                return
+            }
+            tasks.append(Task {
+                do {
+                    try NodusLinkPolicy.requireSurfaceMethod(method, domain: Self.operationDomains[method])
+                    // A forged WebKit request must not reactivate retained device providers.
+                    if ["beginAutonomousAuthoring", "mobileStructuredCompletion", "mobileEmbedding", "mobileImageConfiguration", "mobileEmbeddingConfiguration", "mobilePublicWebResource", "mobileGuideCommonsResource", "documentSvgEvaluate"].contains(method) {
+                        try BetaAIFeatures.requireAutonomousGeneration()
+                    }
+                    try MobileAudioBeta.requireAllowed(method: method)
+                    var args = try JSONDecoder.nodus.decode([JSONValue].self, from: JSONSerialization.data(withJSONObject: input))
+                    let pageReads=["getPageDocument","getPageAsset","getSyncedBlockSource","getDatabaseContainer","queryDatabaseContainerRows"]
+                    var selectedPageOnly=downloadedOnly
+                    if pageReads.contains(method),args.count == 2,let selected=args.last?.boolValue {selectedPageOnly=selectedPageOnly || selected;args.removeLast()}
+                    var value: JSONValue
+                    var immersionDefinitionFromDevice = false
+                    if ["getPageDocument", "savePageDocument", "resolveMobilePageConflict", "getPageAsset", "getSyncedBlockSource", "getDatabaseContainer", "queryDatabaseContainerRows"].contains(method) {
+                        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+                        guard !pairing.isExpired else { throw DesktopBridgeError.expired }
+                        let pages = try await CompanionPageDocumentStores.shared.store(pairingId: pairing.id, vaultId: vault)
+                        if method == "getPageDocument", args.count == 1, let page = args[0].stringValue {
+                            if await pages.hasDraft(pageId:page),let owned = await pages.document(pageId: page) { value = owned }
+                            else {
+                                let authored = await pages.authoredSource(pageId: page)
+                                let source: JSONValue
+                                if selectedPageOnly, let authored { source = authored; onOfflineCopy(true) }
+                                else {
+                                    do {
+                                        let consulted = try await loadPrivateBridgeValue(session, method: "getMobilePageDocument", args: [.string(page)],downloadedOnly:selectedPageOnly)
+                                        let ownRevision = authored?.objectValue?["document"]?.objectValue?["revision"]?.intValue ?? 0
+                                        let consultedRevision = consulted.objectValue?["document"]?.objectValue?["revision"]?.intValue ?? 0
+                                        let ownPageRevision = authored?.objectValue?["document"]?.objectValue?["page"]?.objectValue?["revision"]?.intValue ?? 0
+                                        let consultedPageRevision = consulted.objectValue?["document"]?.objectValue?["page"]?.objectValue?["revision"]?.intValue ?? 0
+                                        if let authored, ownRevision > consultedRevision || ownRevision == consultedRevision && ownPageRevision > consultedPageRevision { source = authored; onOfflineCopy(true) }
+                                        else { source = consulted }
+                                    } catch {
+                                        guard isPrivateBridgeOffline(error), let authored else { throw error }
+                                        source = authored; onOfflineCopy(true)
+                                    }
+                                }
+                                value = try CompanionPageDocuments.document(source, vaultId: vault, pageId: page)
+                                try await pages.refreshAuthoredSource(pageId: page, source: source)
+                                try await pages.seed(pageId: page, document: value)
+                                value = await pages.document(pageId:page) ?? value
+                            }
+                        } else if method == "savePageDocument", args.count == 1, let page = args[0].objectValue?["pageId"]?.stringValue {
+                            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+                            value = try await pages.save(pageId: page, input: args[0]); Task { await session.synchronizeCompanionChanges() }
+                        } else if method == "resolveMobilePageConflict", args.count == 2, let page = args[0].stringValue, let keep = args[1].boolValue {
+                            guard pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+                            value = try await pages.resolve(pageId: page, keepMobile: keep); Task { await session.synchronizeCompanionChanges() }
+                        } else if method == "getPageAsset", args.count == 1, let hash = args[0].stringValue, hash.count == 64, hash.allSatisfy(\.isHexDigit) {
+                            let copy = try await loadPrivateBridgeFile(session, kind: .pageAsset, id: hash,downloadedOnly:selectedPageOnly)
+                            let bytes = try Data(contentsOf: copy.url)
+                            value = .object(["base64": .string(bytes.base64EncodedString()), "mime": .string(copy.descriptor.mime)])
+                        } else if method == "getSyncedBlockSource",args.count == 1,let block=args[0].stringValue {
+                            let source=try await loadPrivateBridgeValue(session,method:"getMobileSyncedBlockSource",args:[.string(block)],downloadedOnly:selectedPageOnly)
+                            guard source.objectValue?["version"] == .int(1),source.objectValue?["vaultId"] == .string(vault),let original=source.objectValue?["source"] else {throw DesktopBridgeError.malformedResponse}
+                            guard original == .null || original.objectValue?["block"]?.objectValue?["id"] == .string(block) else {throw DesktopBridgeError.malformedResponse};value=original
+                        } else if ["getDatabaseContainer","queryDatabaseContainerRows"].contains(method),args.count == 1 {
+                            let action=method == "getDatabaseContainer" ? "definition":"rows"
+                            let source=try await CompanionDatabaseViewSource.linkedRead(session:session,action:action,input:args[0],downloadedOnly:selectedPageOnly)
+                            let view=action == "definition" ? args[0].stringValue:args[0].objectValue?["viewId"]?.stringValue
+                            guard source.objectValue?["version"] == .int(1),source.objectValue?["vaultId"] == .string(vault),source.objectValue?["action"] == .string(action),let data=source.objectValue?["data"],view != nil else {throw DesktopBridgeError.malformedResponse}
+                            if action == "definition" {guard data == .null || data.objectValue?["viewId"]?.stringValue == view else {throw DesktopBridgeError.malformedResponse}}
+                            else {guard data.objectValue?["rows"]?.arrayValue != nil,data.objectValue?["revision"]?.stringValue != nil else {throw DesktopBridgeError.malformedResponse}}
+                            value=data
+                        } else { throw DesktopBridgeError.malformedResponse }
+                    } else if method == "openMobileDatabaseRow",args.count == 1,let row=args[0].stringValue,!row.isEmpty,row.utf8.count <= 1024 {
+                        onNavigate("databaseRow",row,nil,nil);value = .null
+                    } else if method == "mobileDatabasePresentationRead", args.count == 1,
+                              let request = args[0].objectValue, let action = request["action"]?.stringValue,
+                              let database = request["input"]?.objectValue?["databaseId"]?.stringValue {
+                        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+                        let response = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDatabasePresentationRead", args: args)
+                        value = try CompanionDatabasePresentationSource.value(response, vault: vault, database: database, action: action)
+                    } else if method == "mobileDatabasePresentationSource", args.count == 1, let database = args[0].stringValue,
+                              !database.isEmpty, database.utf8.count <= 1024 {
+                        value = try await CompanionDatabasePresentationSource.downloaded(session: session, database: database)
+                        onOfflineCopy(true)
+                    } else if method == "mobileDatabaseChartExport", args.count == 1, let export = args[0].objectValue,
+                              let database = export["databaseId"]?.stringValue, !database.isEmpty, database.utf8.count <= 1024,
+                              let format = export["format"]?.stringValue, ["svg", "png"].contains(format),
+                              let encoded = export["base64"]?.stringValue, encoded.utf8.count <= 28_000_000,
+                              let expected = export["sha256"]?.stringValue, let bytes = Data(base64Encoded: encoded), bytes.count <= 20_000_000 {
+                        let (vault, pairing, token) = try privateBridgeConnection(session, domain: .corpus)
+                        if downloadedOnly { _ = try await CompanionDatabasePresentationSource.downloaded(session: session, database: database) }
+                        else {
+                            do { _ = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getMobileDatabasePresentationRead", args: [.object(["action": .string("metadata"), "input": .object(["databaseId": .string(database)])])]) }
+                            catch { guard isPrivateBridgeOffline(error) else { throw error }; _ = try await CompanionDatabasePresentationSource.downloaded(session: session, database: database) }
+                        }
+                        guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == expected,
+                              format != "png" || UIImage(data: bytes) != nil else { throw DesktopBridgeError.malformedResponse }
+                        if format == "svg" {
+                            guard let svg = String(data: bytes, encoding: .utf8), svg.contains("<svg"), !svg.contains("<script"), !svg.contains("<foreignObject") else { throw DesktopBridgeError.malformedResponse }
+                        }
+                        let filename = "Nodus-chart.\(format)"
+                        onExport(try PrivateBridgeFileLease.write(bytes, filename: filename))
+                        value = .object(["canceled": .bool(false), "path": .string(filename)])
+                    } else if method == "openPageResource", args.count == 1, let resource = args[0].objectValue, let source = resource["source"]?.stringValue, let url = URL(string: source) {
+                        if url.scheme == "nodus-blob", let hash = url.host, hash.count == 64, hash.allSatisfy(\.isHexDigit) { onNavigate("pageAsset", hash, nil, nil); value = .null }
+                        else if CorpusReference(url) != nil { onNavigate("citation", source, nil, nil); value = .null }
+                        else if ["https", "http"].contains(url.scheme ?? "") { _ = await UIApplication.shared.open(url); value = .null }
+                        else if url.scheme == "data", source.utf8.count <= 4_000_000, let comma = source.firstIndex(of: ",") {
+                            let header = String(source[source.startIndex..<comma]), encoded = String(source[source.index(after: comma)...])
+                            guard header.hasSuffix(";base64"), let bytes = Data(base64Encoded: encoded), bytes.count <= 2_000_000,
+                                  let filename = resource["name"]?.stringValue, !filename.isEmpty, filename.utf8.count <= 200, !filename.contains("/"), !filename.contains("\\"), ![".", ".."].contains(filename) else { throw DesktopBridgeError.malformedResponse }
+                            onExport(try PrivateBridgeFileLease.write(bytes, filename: filename)); value = .null
+                        } else { throw DesktopBridgeError.permissionDenied }
+                    } else if method == "persistSurfaceStorage" {
+                        try await persistSurfaceStorage(args.first ?? .null); value = .null
+                    } else if method == "openMobileWritingResult", args.count == 1 {
+                        guard let identity = args[0].stringValue, UUID(uuidString: identity) != nil,
+                              let pairing = session.connection.desktopPairingId, let vault = session.vaultId
+                        else { throw DesktopBridgeError.malformedResponse }
+                        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault)
+                        guard let request = await ledger.all().first(where: { $0.id == identity }),
+                              request.method == "saveStudyImprovementFromMobile",
+                              CompanionResultCatalogue.contains(request, in: "workspace"),
+                              let checkpoint = request.checkpoint,
+                              checkpoint.objectValue?["id"]?.stringValue == identity
+                        else { throw DesktopBridgeError.malformedResponse }
+                        onOpenWritingResult(MobileWritingResultTarget(request: request, checkpoint: checkpoint))
+                        value = .bool(true)
+                    } else if method == "companionDictionaryCopy", args.isEmpty {
+                        value = try await companionDictionaryCopy(session)
+                    } else if method == "surfaceOfflineCopy", args.isEmpty {
+                        onOfflineCopy(true); value = .null
+                    } else if ["surfaceExportFile","surfaceExportPDF"].contains(method),args.count == 1,
+                              let export = args[0].objectValue,let reportId = export["reportId"]?.stringValue,
+                              let filename = export["filename"]?.stringValue,!filename.isEmpty,filename.utf8.count <= 200,
+                              !filename.contains("/"),!filename.contains("\\"),![".",".."].contains(filename) {
+                        let (vault,pairing,token) = try privateBridgeConnection(session,domain:.corpus)
+                        let client = DesktopBridgeClient(pairing:pairing,token:token)
+                        _ = try await databaseReading.perform("getDatabaseDeepResearchReport",args:[.string(reportId)],client:client,pairing:pairing,vaultId:vault,onOffline:onOfflineCopy)
+                        let bytes:Data
+                        if method == "surfaceExportPDF",filename.hasSuffix(".pdf"),let html = export["html"]?.stringValue,html.utf8.count <= 20_000_000,html.contains("<head>") {
+                            let policy = "<head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;\">"
+                            bytes = try await ReportDocument.pdf(from:html.replacingOccurrences(of:"<head>",with:policy))
+                            guard bytes.count <= 20_000_000 else { throw PrivateBridgeCache.ReadPackError.tooLarge }
+                        } else if method == "surfaceExportFile",["md","docx","zip"].contains(URL(fileURLWithPath:filename).pathExtension),
+                                  let encoded = export["base64"]?.stringValue,encoded.utf8.count <= 28_000_000,
+                                  let expected = export["sha256"]?.stringValue,let data = Data(base64Encoded:encoded),data.count <= 20_000_000,
+                                  SHA256.hash(data:data).map({String(format:"%02x",$0)}).joined() == expected { bytes = data }
+                        else { throw DesktopBridgeError.malformedResponse }
+                        let lease = try PrivateBridgeFileLease.write(bytes,filename:filename)
+                        onExport(lease);value = .object(["canceled":.bool(false),"path":.string(filename)])
+                    } else if method == "readerSelectionState", args.count == 1, let selected = input.first as? Bool {
+                        (webView as? ReaderSurfaceWebView)?.readerSelectionManaged = selected
+                        value = .null
+                    } else if ["surfaceVaultContext", "getActiveVault"].contains(method), args.isEmpty {
+                        let vault = MobileSurfaceVaultContext.descriptor(connection: session.connection, vault: session.overview?.vault)
+                        value = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(vault))
+                    } else if method == "surfaceFullscreen", let enabled = input.first as? Bool {
+                        session.isSurfaceFullscreen = enabled; value = .null
+                    } else if method == "mobileSettings", (session.connection.desktopPairingId == nil || ((surface == .studyIdeas || surface == .graph || surface == .deepResearch) && session.aiExecutionMode == .autonomous)) {
+                        value = try autonomous.portableSettings(args.first ?? .null)
+                    } else if method == "studyKnowledgeCopy", (surface == .studyIdeas || (surface == .graph && (session.connection.vaultType == .estudio || session.connection.vaultType == .docencia))), let action = args.first?.stringValue {
+                        value = try await CompanionStudyKnowledgeSources.perform(session:session,action:action,input:args.count>1 ? args[1]:nil)
+                    } else if method == "snapshot" {
+                        value = .object(try await session.client.snapshot(in: session.connection.spaceId).document)
+                    } else if method == "dictionarySnapshotTables", input.isEmpty {
+                        value = .object(try await session.client.snapshot(in: session.connection.spaceId, consultation: .dictionary).dictionaryConsultationTables())
+                    } else if method == "sourceConsultationTables", input.isEmpty {
+                        value = .object(try await session.client.snapshot(in: session.connection.spaceId, consultation: .sources).sourceConsultationTables())
+                    } else if method == "openSourceDocument", args.count == 1 {
+                        let target = try JSONDecoder.nodus.decode(SourceDocumentTarget.self, from: JSONEncoder.nodus.encode(args[0]))
+                        try target.validate(); onOpenSource(target); value = .null
+                    } else if method == "openSavedAudioClip", args.count == 2,
+                              let clip = args[0].stringValue, !clip.isEmpty, clip.utf8.count <= 1024,
+                              let label = args[1].stringValue, label.utf8.count <= 2048 {
+                        let copy = try await loadPrivateBridgeFile(session, kind: .audioClip, id: clip)
+                        guard copy.descriptor.mime == "audio/wav", copy.descriptor.byteSize > 0 else { throw DesktopBridgeError.malformedResponse }
+                        onOpenAudio(SavedAudioTarget(id: clip, label: label, copy: copy)); value = .null
+                    } else if method == "publishedSourceDocument", session.connection.desktopPairingId == nil,
+                              let record = args.first?.stringValue, args.count == 2 {
+                        let document = try await publishedSourceLibraryDocument(session, id: record)
+                        let attachments: JSONValue = document.originalAvailable ? .array([.object([
+                            "id": .string("original"), "title": .string(document.originalFileName ?? document.title),
+                            "fileName": .string(document.originalFileName ?? "original"),
+                            "mimeType": .string(document.originalMimeType ?? "application/octet-stream"), "available": .bool(true)
+                        ])]) : .array([])
+                        if args[1].stringValue == "getGlobalLibraryItem" {
+                            value = .object(["id": .string(document.id), "metadata": .object(["title": .string(document.title)]),
+                                "attachments": attachments, "files": .object(document.cleanAvailable ? ["reader": .string("reader.md")] : [:])])
+                        } else if args[1].stringValue == "getLibraryReaderDocument" {
+                            value = .object(["workId": .string(document.id), "title": .string(document.title),
+                                "cleanAvailable": .bool(document.cleanAvailable), "originalAvailable": .bool(document.originalAvailable),
+                                "attachments": attachments])
+                        } else { throw DesktopBridgeError.permissionDenied }
+                    } else if method == "navigate", (2...3).contains(input.count), let kind = input[0] as? String, let record = input[1] as? String {
+                        try NodusLinkPolicy.requireReaderNavigation(kind, record: record)
+                        let position = input.count == 3 ? input[2] as? [String: Any] : nil
+                        onNavigate(kind, record, position?["location"] as? String, position?["quote"] as? String); value = .null
+                    } else if method == "mobileLiveVisualJobs", let target = args.first?.stringValue {
+                        let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+                        let ledger = try await DesktopJobLedgers.shared.ledger(pairingId:pairing.id,vaultId:vault)
+                        let jobs = await ledger.all().filter { ["enrichDocumentVisuals","undoDocumentVisuals","removeDocumentFigure"].contains($0.method) && $0.args.first?.objectValue?["target"]?.objectValue?["id"]?.stringValue == target }
+                        value = try JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(jobs))
+                    } else if method == "cancelLiveJob", let requestId = input.first as? String {
+                        let jobMethod = args.count == 3 ? args[1].stringValue : nil
+                        let jobArgs = args.count == 3 ? args[2].arrayValue : nil
+                        if let running = runningJobs[requestId] { try await running.0.cancelDurableJob(vaultId: running.1, requestId: requestId) }
+                        else {
+                            let (vault, pairing, token) = try privateBridgeConnection(session, domain: .writing)
+                            try await DesktopBridgeClient(pairing: pairing, token: token).cancelDurableJob(vaultId: vault, requestId: requestId, method: jobMethod, args: jobArgs)
+                        }
+                        value = .null
+                    } else if method == "mobileArgumentMaps", args.isEmpty {
+                        value = try await autonomous.argumentMaps(session: session)
+                    } else if method == "mobileAcademicSource", args.count == 1 {
+                        value = try await CompanionAcademicGeneration.source(session: session, request: args[0])
+                    } else if method == "mobileAcademicDownload", args.count == 2, case .int(let rawDays) = args[1], let days = Int(exactly: rawDays), [7, 30].contains(days) {
+                        try await CompanionAcademicGeneration.download(session: session, request: args[0], days: days); value = .null
+                    } else if ["mobileDictionaryCheckpoint", "mobileGenerationCheckpoint"].contains(method) {
+                        value = method == "mobileDictionaryCheckpoint" ? try await autonomous.dictionaryCheckpoint(args, session: session) : try await autonomous.generationCheckpoint(args, session: session)
+                        let checkpoint = value.objectValue ?? args.last?.objectValue
+                        if let state = checkpoint?["state"]?.stringValue {
+                            autonomousGenerationId = checkpoint?["id"]?.stringValue
+                            switch state {
+                            case "accepted": onAutonomousStatus(String(localized: "Request accepted"))
+                            case "running": onAutonomousStatus(String(localized: "Generating on this device"))
+                            case "saved": onAutonomousStatus(nil) // The native results row carries the pending state.
+                            case "available": onAutonomousStatus(nil)
+                            case "failed": onAutonomousStatus(checkpoint?["error"]?.stringValue ?? String(localized: "Generation failed"))
+                            default: break
+                            }
+                        }
+                    } else if method == "mobileDictionaryGenerationJobs", args.isEmpty {
+                        value = try await autonomous.dictionaryPublications(session: session)
+                    } else if method == "mobileDatabaseResearchCheckpoints",args.isEmpty {
+                        value = try await autonomous.databaseCheckpoints(session:session)
+                    } else if method == "getDatabaseResearchOfflineSource" {
+                        value = try await autonomous.databaseOfflineSource(args,session:session)
+                    } else if method == "getDatabaseResearchOfflineCatalogue",args.isEmpty {
+                        value = try await autonomous.databaseOfflineCatalogue(session:session)
+                    } else if method == "beginAutonomousAuthoring", let generation = args.first?.stringValue {
+                        try autonomous.beginAuthoring(generation, session: session); value = .null
+                    } else if method == "endAutonomousAuthoring", let generation = args.first?.stringValue {
+                        autonomous.endAuthoring(generation); value = .null
+                    } else if method == "mobileDeepResearchCheckpoints", args.isEmpty || args == [.string("summaries")] || args == [.string("reports")] {
+                        value = try await autonomous.deepResearchCheckpoints(session: session, summaries: args.first == .string("summaries"), includeArchived: args.first == .string("reports"))
+                    } else if method == "mobileAcademicResearchCatalog", args.isEmpty {
+                        value = try await CompanionCompleteGuideSource.academicCatalog(session: session)
+                    } else if method == "mobileAcademicResearchSource", args.count == 1 {
+                        value = try await CompanionCompleteGuideSource.academicSource(session: session, request: args[0])
+                    } else if method == "mobileAcademicResearchDownload", args.count == 2, case .int(let rawDays) = args[1], let days = Int(exactly: rawDays) {
+                        try await CompanionCompleteGuideSource.downloadAcademic(session: session, request: args[0], days: days); value = .null
+                    } else if method == "mobileGenealogyResearchSource", args.count == 1 {
+                        value = try await CompanionCompleteGuideSource.genealogySource(session: session, request: args[0])
+                    } else if method == "mobileGenealogyResearchDownload", args.count == 2, case .int(let rawDays) = args[1], let days = Int(exactly: rawDays) {
+                        try await CompanionCompleteGuideSource.downloadGenealogy(session: session, request: args[0], days: days); value = .null
+                    } else if method == "mobileStudyResearchSource", args.count == 1 {
+                        value = try await CompanionCompleteGuideSource.studySource(session: session, request: args[0])
+                    } else if method == "mobileCompleteGuideSource", args.count == 1 {
+                        value = try await CompanionCompleteGuideSource.source(session: session, request: args[0])
+                    } else if method == "mobileCompleteGuideDownload", args.count == 2, case .int(let rawDays) = args[1], let days = Int(exactly: rawDays) {
+                        try await CompanionCompleteGuideSource.download(session: session, request: args[0], days: days); value = .null
+                    } else if method == "mobileCompleteGuideCatalog", args.isEmpty {
+                        value = try await CompanionCompleteGuideSource.catalog(session: session)
+                    } else if method == "mobileGuideCommonsResource", args.count == 2, let url = args[0].stringValue, let kind = args[1].stringValue {
+                        value = try await CompanionCompleteGuideSource.commonsResource(session: session, url: url, kind: kind)
+                    } else if ["getDecorativeImage", "getDecorativeImageDataUrl"].contains(method), args.count >= 2, args[0] == .string("deep_research"), let id = args[1].stringValue, id.hasPrefix("mobile-dr-") {
+                        value = try await CompanionDeepResearchResult.cover(session: session, id: id, dataURL: method == "getDecorativeImageDataUrl")
+                    } else if method == "mobileImageConfiguration", args.isEmpty {
+                        value = try autonomous.imageConfiguration()
+                    } else if method == "mobileWebSearchConfiguration", args.isEmpty {
+                        value = autonomous.webSearchConfiguration()
+                    } else if method == "mobilePublicWebResource", args.count == 2, let url = args[0].stringValue, let kind = args[1].stringValue {
+                        value = try await CompanionCompleteGuideSource.publicWebResource(session: session, url: url, kind: kind)
+                    } else if method == "mobileEmbeddingConfiguration", args.isEmpty {
+                        value = try autonomous.embeddingConfiguration()
+                    } else if method == "mobileSavedStructuredCompletion" {
+                        value = try await autonomous.savedCompletion(args.first ?? .null, session: session)
+                    } else if method == "mobileDocumentVisualResolve", args.count == 1, let id = args[0].stringValue {
+                        value = try await CompanionDocumentVisualSession.resolve(reportID: id, session: session)
+                    } else if method == "mobileDocumentVisualCheckpoint", args.count >= 2, let action = args[0].stringValue, let id = args[1].stringValue {
+                        value = try await CompanionDocumentVisualSession.checkpoint(action, reportID: id, value: args.count == 3 ? args[2] : nil, session: session)
+                    } else if method == "mobileDocumentVisualSource", args.count == 1, let id = args[0].stringValue {
+                        guard !downloadedOnly else { throw APIError(status: 404, code: "document_visual_source_not_downloaded", message: "Esta copia no conserva la fuente necesaria para editar las figuras. Descárgala explícitamente desde el Mac.") }
+                        value = try await CompanionDocumentVisualSession.source(reportID: id, session: session)
+                    } else if method == "mobileDocumentVisualCaptureAssets", args.count == 1, let id = args[0].stringValue {
+                        value = try await CompanionDocumentVisualSession.captureAssets(reportID: id, session: session, downloadedOnly: downloadedOnly)
+                    } else if method == "mobileDocumentVisualCanPublish", args.isEmpty {
+                        guard !downloadedOnly else { throw APIError(status: 503, code: "offline", message: "La edición visual permanece guardada en este dispositivo; la copia seleccionada no establece una conexión de sincronización.") }
+                        try await CompanionDocumentVisualSession.requirePublishingSupport(session: session); value = .null
+                    } else if method == "mobileDocumentVisualPublicationReady", args.count == 1, let id = args[0].stringValue {
+                        value = .bool(try await CompanionDocumentVisualSession.publicationReady(reportID: id, session: session))
+                    } else if method == "mobileDocumentVisualArchives", let id = args.first?.stringValue {
+                        value = try await CompanionDocumentVisualSession.archives(reportID: id, session: session, id: args.count == 2 ? args[1].stringValue : nil)
+                    } else if method == "mobileDocumentVisualImage", args.count >= 2, let id = args[0].stringValue, let source = args[1].stringValue {
+                        guard let context = try await CompanionDocumentVisualSession.context(reportID: id, generationID: args.count == 3 ? args[2].stringValue : nil, session: session) else { throw DesktopBridgeError.permissionDenied }
+                        let content = try await CompanionResearchFigures.load(source, context: context, session: session)
+                        value = .object(["base64": .string(content.data.base64EncodedString()), "mimeType": .string(content.mime)])
+                    } else if method == "mobileLiveVisualExport", args.count == 1 {
+                        guard !downloadedOnly else { throw DesktopBridgeError.permissionDenied }
+                        onExport(try await CompanionLiveDocumentVisualExport.export(args[0],session:session));value = .null
+                    } else if method == "mobileDocumentVisualOpenSource", args.count == 1, let source = args[0].stringValue, let url = URL(string: source) {
+                        if url.scheme == "nodus" { onNavigate("citation", source, nil, nil) }
+                        else if url.scheme == "https" { guard await UIApplication.shared.open(url) else { throw DesktopBridgeError.malformedResponse } }
+                        else { throw DesktopBridgeError.permissionDenied }
+                        value = .null
+                    } else if method == "mobileDocumentVisualExport", args.count == 2, let id = args[0].stringValue, let input = args[1].objectValue {
+                        guard let context = try await CompanionDocumentVisualSession.context(reportID: id, generationID: input["generationId"]?.stringValue, session: session) else { throw DesktopBridgeError.permissionDenied }
+                        if let svg = input["svg"]?.stringValue, let figureID = input["figureId"]?.stringValue, CompanionResearchFigures.svg(svg, figureID: figureID, context: context) {
+                            onExport(try PrivateBridgeFileLease.write(Data(svg.utf8), filename: "Nodus-figure.svg"))
+                        } else if let source = input["source"]?.stringValue {
+                            let content = try await CompanionResearchFigures.load(source, context: context, session: session)
+                            let ext = content.mime == "image/png" ? "png" : content.mime == "image/webp" ? "webp" : "jpg"
+                            onExport(try PrivateBridgeFileLease.write(content.data, filename: "Nodus-figure.\(ext)"))
+                        } else { throw DesktopBridgeError.permissionDenied }
+                        value = .null
+                    } else if method == "documentFigureDerivedPoster", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.derivedPoster(args[0], session: session)
+                    } else if method == "documentFigureSnapshot", args.count == 1 {
+                        value = .string(try await CompanionDocumentFigureSnapshot.snapshot(args[0]))
+                    } else if method == "documentSvgEvaluate", args.count == 1 {
+                        value = try await CompanionDocumentSvgEvaluation.evaluate(args[0])
+                    } else if method == "documentFigureStoreAsset", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.store(args[0], session: session)
+                    } else if method == "documentFigureAssetReceipts", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.receipts(args[0], session: session)
+                    } else if method == "documentFigurePublishAssets", args.count == 1 {
+                        guard !downloadedOnly else { throw APIError(status: 503, code: "offline", message: "Las figuras están guardadas en este dispositivo y esperan una sincronización explícita con el Mac.") }; value = try await CompanionDocumentFigureStore.publish(args[0], session: session)
+                    } else if method == "documentFigureReadAsset", args.count == 1 {
+                        value = try await CompanionDocumentFigureStore.read(args[0], session: session)
+                    } else if method == "mobileReadStructuredImage" {
+                        value = try await autonomous.readImageCompletion(args.first ?? .null, session: session)
+                    } else if method == "mobileStructuredCompletion" {
+                        value = try await autonomous.complete(args.first ?? .null, session: session)
+                    } else if method == "cancelAutonomousGeneration", let generation = args.first?.stringValue {
+                        try autonomous.cancel(generation); value = .null
+                    } else if session.aiExecutionMode == .autonomous, method == "updateSettings" {
+                        try autonomous.updateSettings(args.first ?? .null); value = .null
+                    } else if session.aiExecutionMode == .autonomous, ["listModels", "getModelCatalog"].contains(method) {
+                        guard let provider = args.first?.stringValue else { throw DesktopBridgeError.malformedResponse }
+                        value = try await autonomous.models(provider, includeStatus: method == "getModelCatalog")
+                    } else {
+                        let localIdeaCreation = method == "createManualIdea"
+                        let localCreation = localIdeaCreation || method == "createNote"
+                        if Self.operationDomains[method] == "research-generation", session.aiExecutionMode != .live, !localCreation,
+                           !["cancelDatabaseDeepResearchJob","clearFinishedDatabaseDeepResearchJobs"].contains(method) {
+                            throw APIError(status: 409, code: "explicit_mode_required", message: String(localized: "Choose live mode to run this operation on the Mac. The app does not switch execution modes automatically."))
+                        }
+                        let store = DesktopBridgePairingStore()
+                        guard let vaultId = session.vaultId,
+                            let pairing = store.pairings().first(where: { $0.id == session.connection.desktopPairingId }),
+                            let token = store.credential(for: pairing) else { throw DesktopBridgeError.permissionDenied }
+                        let client = DesktopBridgeClient(pairing: pairing, token: token)
+                        if ["getContentTranslationOfflineSource", "getContentTranslationGenerationContext", "generateContentTranslation",
+                            "beginContentTranslationOnMobile", "saveContentTranslationFromMobile", "failContentTranslationOnMobile"].contains(method) {
+                            let target = method == "saveContentTranslationFromMobile" ? args.first?.objectValue?["request"]?.objectValue : args.first?.objectValue
+                            if target?["entityKind"] == .string("study_transcript"), !pairing.domains.contains(.studyRecordings) {
+                                throw DesktopBridgeError.permissionDenied
+                            }
+                        }
+                        if method == "enqueueDatabaseDeepResearch",args.count == 1,args[0].objectValue != nil {
+                            guard !pairing.isExpired,pairing.vaultIds.contains(vaultId),pairing.domains.contains(.researchGeneration),session.aiExecutionMode == .live else { throw DesktopBridgeError.permissionDenied }
+                            let requestId = UUID().uuidString
+                            let ledger = try await DesktopJobLedgers.shared.ledger(pairingId:pairing.id,vaultId:vaultId)
+                            _ = try await ledger.prepare(id:requestId,method:method,args:args)
+                            do {
+                                let job = try await client.submitJob(vaultId:vaultId,method:method,args:args,idempotencyKey:requestId)
+                                guard [DesktopBridgeJob.State.accepted,.running,.saved,.available].contains(job.state) else { throw APIError(status:409,code:"database_request_not_accepted",message:job.error ?? "La solicitud no se pudo aceptar.") }
+                                try await ledger.update(id:requestId,job:job)
+                                value = .object(["version":.int(1),"requestId":.string(requestId),"bridgeJobId":.string(job.id),"state":.string(job.state.rawValue)])
+                            } catch {
+                                try? await ledger.disconnected(id:requestId,issue:error.localizedDescription)
+                                guard isPrivateBridgeOffline(error) else { throw error }
+                                value = .object(["version":.int(1),"requestId":.string(requestId),"bridgeJobId":.null,"state":.string("pending")])
+                            }
+                            Task { await session.synchronizeCompanionChanges() }
+                        } else if DatabaseResearchSurfaceBridge.methods.contains(method) {
+                            value = try await databaseReading.perform(method,args:args,client:client,pairing:pairing,vaultId:vaultId,onOffline:onOfflineCopy)
+                        } else if ImmersionSurfaceProgressBridge.writeMethods.contains(method) {
+                            value = try await immersionProgress.write(method: method, args: args, pairing: pairing, vaultId: vaultId)
+                        } else if method == "createStudyDocument", args.count == 1 {
+                            guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus),
+                                  pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+                            let queue = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId, kind: .studyDocument)
+                            value = try await queue.createStudyDocument(input: args[0])
+                            Task { await session.synchronizeCompanionChanges() }
+                        } else if WorkspaceOrganizationSurfaceBridge.methods.contains(method) {
+                            value = try await WorkspaceOrganizationSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, onOffline: onOfflineCopy)
+                        } else if CompanionDocumentSurfaceBridge.methods.contains(method) {
+                            value = try await CompanionDocumentSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, onOffline: onOfflineCopy)
+                        } else if CompanionDocumentSurfaceBridge.workspaceMethods.contains(method) {
+                            value = try await CompanionDocumentSurfaceBridge.perform(method, args: args, session: session, client: client, pairing: pairing, vaultId: vaultId, downloadedOnly: downloadedOnly, kind: .workspaceNote, onOffline: onOfflineCopy)
+                        } else if localCreation || ["getWorkspaceNoteEditorData", "updateWorkspaceNote", "getNotesTree", "resolveMobileWorkspaceConflict", "getIdeaDetail", "getIdeaEdges"].contains(method) {
+                            guard !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus) else { throw DesktopBridgeError.permissionDenied }
+                            let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: pairing.id, vaultId: vaultId)
+                            if localCreation {
+                                guard args.count == 1 else { throw DesktopBridgeError.malformedResponse }
+                                guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+                                value = localIdeaCreation ? try await documents.createManualIdea(input: args[0]) : try await documents.create(input: args[0])
+                                Task { await session.synchronizeCompanionChanges() }
+                            } else if method == "updateWorkspaceNote", args.count == 2, let noteId = args[0].stringValue {
+                                guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+                                value = try await documents.save(noteId: noteId, input: args[1])
+                                Task { await session.synchronizeCompanionChanges() }
+                            } else if method == "resolveMobileWorkspaceConflict", args.count == 2,
+                                      let noteId = args[0].stringValue, let keepMobile = args[1].boolValue {
+                                guard pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+                                value = try await documents.resolve(noteId: noteId, keepMobile: keepMobile)
+                                Task { await session.synchronizeCompanionChanges() }
+                            } else if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue,
+                                      let local = await documents.editorData(noteId: noteId) {
+                                value = local
+                            } else if ["getIdeaDetail", "getIdeaEdges"].contains(method), let globalId = args.first?.stringValue,
+                                      let local = await documents.pendingIdeaDetail(globalId: globalId) {
+                                value = method == "getIdeaDetail" ? local : .array([])
+                            } else {
+                                let cache = try PrivateBridgeCache(pairingId: pairing.id)
+                                let key = try CompanionDocumentOutbox.operationKey(method, args)
+                                let cached = try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key)
+                                let ownedEditor = method == "getWorkspaceNoteEditorData" && args.count == 1 ? await documents.confirmedEditorData(noteId: args[0].stringValue ?? "") : nil
+                                let includeTrashed = args.first == .bool(true)
+                                let ownedTree = method == "getNotesTree" ? await documents.confirmedTree(includeTrashed: includeTrashed) : nil
+                                var privateReadFromDevice = false
+                                let hasDownloadedIdeas = CompanionIdeaCopy.operationMethods.contains(method)
+                                    ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
+                                let authoredIdeas = CompanionIdeaCopy.operationMethods.contains(method) ? await documents.pendingIdeaCopy(includeConfirmed: true) : nil
+                                let hasIdeas = hasDownloadedIdeas || authoredIdeas != nil
+                                do {
+                                    value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasIdeas && ownedEditor == nil && ownedTree == nil ? nil : 4)
+                                    onOfflineCopy(false)
+                                    try await cache.store(JSONEncoder.nodus.encode(value), vaultId: vaultId, domain: .corpus, recordId: key)
+                                } catch {
+                                    guard isPrivateBridgeOffline(error) else { throw error }
+                                    privateReadFromDevice = true
+                                    let ideaCopy = hasIdeas ? try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId) : nil
+                                    if let local = try ideaCopy?.operation(method, args: args) { value = local }
+                                    else if let ownedEditor, (ownedEditor.objectValue?["revision"]?.intValue ?? 0) >= (cached.flatMap { try? JSONDecoder.nodus.decode(JSONValue.self, from: $0) }.flatMap { $0.objectValue?["revision"]?.intValue } ?? -1) { value = ownedEditor }
+                                    else if let cached { value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached) }
+                                    else if let ownedTree { value = ownedTree }
+                                    else { throw error }
+                                    onOfflineCopy(true)
+                                }
+                                if method == "getWorkspaceNoteEditorData", let noteId = args.first?.stringValue { try await documents.seed(noteId: noteId, editorData: value) }
+                                if method == "getNotesTree" {
+                                    try await documents.rememberTree(value.objectValue?["mobileOrganizationTree"] ?? value, authoritative: !privateReadFromDevice)
+                                    value = await documents.overlayTree(value, includeConfirmedEdits: privateReadFromDevice, includeTrashed: includeTrashed)
+                                }
+                            }
+                        } else if DesktopBridgeClient.jobMethods.contains(method) {
+                            if ["enrichDocumentVisuals","undoDocumentVisuals","removeDocumentFigure"].contains(method) {
+                                guard !downloadedOnly, session.aiExecutionMode == .live, !pairing.isExpired, pairing.domains.contains(.corpus), pairing.domains.contains(.writing), session.canAuthor else { throw DesktopBridgeError.permissionDenied }
+                                if method == "enrichDocumentVisuals", !pairing.domains.contains(.researchGeneration) { throw DesktopBridgeError.permissionDenied }
+                                let support = try await client.liveCapabilities()
+                                guard support.operations.contains(method) else { throw APIError(status:426,code:"document_visual_live_upgrade_required",message:"Actualiza Nodus en el Mac para editar recursos visuales en modo LIVE. El informe conserva su contenido.") }
+                            }
+                            if method == "saveMobileDeepResearchVisuals" {
+                                guard !downloadedOnly else { throw APIError(status: 503, code: "offline", message: "La edición permanece guardada en este dispositivo y espera sincronización.") }
+                                try await CompanionDocumentVisualSession.requirePublishingSupport(session: session)
+                            }
+                            let first = input.first as? String
+                            if method == "buildArgumentMap", first.flatMap({ UUID(uuidString: $0) }) != nil { args.removeFirst() }
+                            let streamMethod = ["buildArgumentMap", "generateImmersionSession", "researchChatStream", "worldChatStream", "dbChatStream", "streamStudyAssistant", "improveStudyText", "exportDeepResearchArchive"].contains(method)
+                            let persistedId = ["saveDictionaryGeneratedVersion", "saveImmersionGeneratedSession", "saveContentTranslationFromMobile", "saveStudyImprovementFromMobile", "saveMobileAcademicResult", "saveMobileDeepResearchVisuals", "enrichDocumentVisuals", "undoDocumentVisuals", "removeDocumentFigure"].contains(method) ? args.first?.objectValue?["requestId"]?.stringValue : nil
+                            let requestId = (persistedId ?? (streamMethod ? first : nil)).flatMap { UUID(uuidString: $0) == nil ? nil : $0 } ?? UUID().uuidString
+                            let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing.id, vaultId: vaultId)
+                            _ = try await ledger.prepare(id: requestId, method: method, args: args)
+                            let job: DesktopBridgeJob
+                            do { job = try await client.submitJob(vaultId: vaultId, method: method, args: args, idempotencyKey: requestId) }
+                            catch { try? await ledger.disconnected(id: requestId, issue: error.localizedDescription); throw error }
+                            try await ledger.update(id: requestId, job: job)
+                            runningJobs[requestId] = (client, vaultId, job.id)
+                            defer { runningJobs[requestId] = nil }
+                            do {
+                                value = try await client.awaitJob(vaultId: vaultId, job: job, onState: { try await ledger.update(id: requestId, job: $0) }) { events in
+                                    await MainActor.run {
+                                        if !events.isEmpty, let data = try? JSONEncoder.nodus.encode(events) {
+                                            // Deliver the ordered batch in one WebKit call.
+                                            // A live turn can contain thousands of deltas.
+                                            if let payload = try? JSONSerialization.jsonObject(with: data) {
+                                                try? MobileJavaScriptDelivery.events(self.webView, payload: payload, optional: false)
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch {
+                                // Preserve the accepted request and its stable idempotency key.
+                                // Reopening Jobs reconnects to this job rather than generating twice.
+                                try? await ledger.disconnected(id: requestId, issue: error.localizedDescription)
+                                throw error
+                            }
+                        } else {
+                            let cache = try PrivateBridgeCache(pairingId: pairing.id)
+                            let key = "operation:\(method):" + SHA256.hash(data: try JSONEncoder.nodus.encode(args)).map { String(format: "%02x", $0) }.joined()
+                            let cached = Self.operationDomains[method] == "corpus" ? try await cache.data(vaultId: vaultId, domain: .corpus, recordId: key) : nil
+                            let hasCatalogue = args.isEmpty && ["listWritingWorkshopDrafts", "listImmersionSessions"].contains(method)
+                            let hasDictionary = ["listDictionaryEntries", "listDictionaryFacets", "listDictionaryEvidence"].contains(method)
+                                ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: "companion:dictionary:v1") : false
+                            let hasVerification = method == "verifyCitations" && args.count == 1
+                                ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: "companion:citations:v1") : false
+                            let hasDownloadedIdeas = CompanionIdeaCopy.operationMethods.contains(method)
+                                ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionIdeaCopy.recordId) : false
+                            let authoredIdeas = CompanionIdeaCopy.operationMethods.contains(method)
+                                ? try await CompanionIdeaCopy.authored(cache: cache, vaultId: vaultId) : nil
+                            let hasIdeas = hasDownloadedIdeas || authoredIdeas != nil
+                            let hasStudyCopy = ["getStudyWorkspace", "listStudyIdeas", "getStudyIdeaDetail", "getStudyKnowledgeGraph"].contains(method)
+                                && (surface == .studyIdeas || (surface == .graph && [.estudio, .docencia].contains(session.connection.vaultType)))
+                                ? try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus, recordId: CompanionStudyKnowledgeCopy.recordId) : false
+                            // A new autonomous request has no exact cached
+                            // context yet. Its selected source still gives it
+                            // the same short offline deadline as a cached read.
+                            let portableSource: (String, [JSONValue])?
+                            if let request = args.first?.objectValue, method == "getStudyImprovementGenerationContext",
+                               let id = request["noteId"]?.stringValue ?? request["documentId"]?.stringValue {
+                                portableSource = ("getStudyImprovementOfflineSource", [.object([request["noteId"]?.stringValue != nil ? "noteId" : "documentId": .string(id)])])
+                            } else if let request = args.first?.objectValue, method == "getContentTranslationGenerationContext",
+                                      let kind = request["entityKind"]?.stringValue, let id = request["entityId"]?.stringValue {
+                                portableSource = ("getContentTranslationOfflineSource", [.object(["entityKind": .string(kind), "entityId": .string(id)])])
+                            } else if let request = args.first?.objectValue, method == "getImmersionGenerationContext", let topic = request["topic"]?.stringValue {
+                                portableSource = ("getImmersionOfflineSource", [.object(["topic": .string(topic.trimmingCharacters(in: .whitespacesAndNewlines)),
+                                    "language": request["language"] ?? .string("es")])])
+                            } else { portableSource = nil }
+                            let hasPortableSource: Bool
+                            if let (sourceMethod, sourceArgs) = portableSource {
+                                hasPortableSource = try await cache.hasDownloadedData(vaultId: vaultId, domain: .corpus,
+                                    recordId: CompanionDocumentOutbox.operationKey(sourceMethod, sourceArgs))
+                            } else { hasPortableSource = false }
+                            do {
+                                value = try await client.operation(vaultId: vaultId, method: method, args: args, timeout: cached == nil && !hasDictionary && !hasVerification && !hasIdeas && !hasStudyCopy && !hasPortableSource ? nil : 4)
+                                onOfflineCopy(false)
+                                if Self.operationDomains[method] == "corpus" {
+                                    var reusable = value
+                                    if method == "getImmersionSession", var definition = value.objectValue {
+                                        definition["progress"] = nil; reusable = .object(definition)
+                                    }
+                                    try await cache.store(JSONEncoder.nodus.encode(reusable), vaultId: vaultId, domain: .corpus, recordId: key)
+                                }
+                            } catch {
+                                guard Self.operationDomains[method] == "corpus", isPrivateBridgeOffline(error) else { throw error }
+                                let catalogue = hasCatalogue ? try await companionDownloadedCatalogue(cache, vaultId: vaultId, method: method) : nil
+                                let verification = hasVerification ? try await companionCitationVerification(cache, vaultId: vaultId, refs: args[0]) : nil
+                                let ideaCopy = hasIdeas ? try await CompanionIdeaCopy.consultable(cache: cache, vaultId: vaultId) : nil
+                                let idea = try ideaCopy?.operation(method, args: args)
+                                if let catalogue { value = catalogue }
+                                else if let idea { value = idea }
+                                else if let cached { value = try JSONDecoder.nodus.decode(JSONValue.self, from: cached) }
+                                else if let verification { value = verification }
+                                else { throw error }
+                                if method == "getImmersionSession" { immersionDefinitionFromDevice = true }
+                                onOfflineCopy(true)
+                            }
+                            if method == "getSettings", session.aiExecutionMode == .autonomous { value = try autonomous.portableSettings(value) }
+                        }
+                        if method == "getImmersionSession", args.count == 1, let id = args[0].stringValue {
+                            value = try await immersionProgress.read(value, id: id, client: client, pairing: pairing, vaultId: vaultId, fetchMacProgress: !immersionDefinitionFromDevice)
+                            if pairing.domains.contains(.writing), let plan = value.objectValue?["plan"] { onImmersionSource(id, plan) }
+                        }
+                        if ["exportWritingWorkshopDraft", "exportDeepResearchArchive", "exportImmersionSessionPdf", "exportDatabaseDeepResearchReport"].contains(method), case .object(var file) = value,
+                           let exportId = file["exportId"]?.stringValue, let name = file["filename"]?.stringValue, let hash = file["sha256"]?.stringValue {
+                            let bytes = try await client.exportedFile(vaultId: vaultId, id: exportId, sha256: hash)
+                            let lease = try PrivateBridgeFileLease.write(bytes,filename:URL(fileURLWithPath:name).lastPathComponent)
+                            onExport(lease);file["path"] = .string(lease.url.lastPathComponent);value = .object(file)
+                        }
+                    }
+                    try reply(id, value: value, error: nil)
+                } catch is CancellationError {
+                    try? reply(id, value: .null, error: String(localized: "Generation cancelled"), errorCode: "cancelled")
+                } catch { try? reply(id, value: .null, error: "\(method): \(error.localizedDescription)", errorCode: isPrivateBridgeOffline(error) ? "offline" : nil) }
+            })
+        }
+        func surfaceStorage() async throws -> JSONValue {
+            let scope = try session.surfaceStorageScope()
+            let cache = try surfaceCache(scope.cacheId)
+            guard let bytes = try await cache.data(vaultId: scope.recordVaultId, domain: .writing, recordId: "surface-storage:v1") else { return .object([:]) }
+            return try JSONDecoder.nodus.decode(JSONValue.self, from: bytes)
+        }
+        private func persistSurfaceStorage(_ value: JSONValue) async throws {
+            guard let object = value.objectValue, object.count <= 1000,
+                object.allSatisfy({ $0.key.utf8.count <= 1024 && $0.value.stringValue != nil }) else { throw DesktopBridgeError.permissionDenied }
+            let bytes = try JSONEncoder.nodus.encode(value)
+            guard bytes.count <= 20_000_000 else { throw DesktopBridgeError.malformedResponse }
+            let scope = try session.surfaceStorageScope()
+            let cache = try surfaceCache(scope.cacheId)
+            try await cache.store(bytes, vaultId: scope.recordVaultId, domain: .writing, recordId: "surface-storage:v1")
+        }
+        private func surfaceCache(_ pairing: String) throws -> PrivateBridgeCache {
+            if let persistedSurfaceCache { return persistedSurfaceCache }
+            let cache = try PrivateBridgeCache(pairingId: pairing)
+            persistedSurfaceCache = cache
+            return cache
+        }
+        private func reply(_ id: String, value: JSONValue, error: String?, errorCode: String? = nil) throws {
+            let issue: JSONValue = error.map { message in
+                errorCode.map { .object(["code": .string($0), "message": .string(message)]) } ?? .string(message)
+            } ?? .null
+            let envelope: JSONValue = .array([.string(id), value, issue])
+            try MobileJavaScriptDelivery.reply(webView, envelope: envelope) { [weak self] error in
+                self?.onError("No se pudo entregar el contenido de esta vista: \(error.localizedDescription)")
+            }
+        }
+        func finishJavaScriptPanel() {
+            let cancel = cancelJavaScriptPanel
+            cancelJavaScriptPanel = nil
+            javaScriptPanel?.dismiss(animated: false)
+            javaScriptPanel = nil
+            cancel?()
+        }
+        func webView(_ view: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo) async -> Bool {
+            await withCheckedContinuation { continuation in
+                presentJavaScriptConfirm(view, message: message, frame: frame) { continuation.resume(returning: $0) }
+            }
+        }
+        private func presentJavaScriptConfirm(_ view: WKWebView, message: String,
+            frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            guard frame.isMainFrame, let url = frame.request.url, LocalSurfaceHost.shared.owns(url),
+                var presenter = view.window?.rootViewController, javaScriptPanel == nil else { completionHandler(false); return }
+            while let next = presenter.presentedViewController { presenter = next }
+            guard !(presenter is UIAlertController) else { completionHandler(false); return }
+            let panel = UIAlertController(title: "Nodus", message: message, preferredStyle: .alert)
+            let finish: (Bool) -> Void = { [weak self] accepted in
+                guard self?.cancelJavaScriptPanel != nil else { return }
+                self?.cancelJavaScriptPanel = nil; self?.javaScriptPanel = nil
+                completionHandler(accepted)
+            }
+            cancelJavaScriptPanel = { completionHandler(false) }
+            panel.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel) { _ in finish(false) })
+            panel.addAction(UIAlertAction(title: String(localized: "Accept"), style: .default) { _ in finish(true) })
+            javaScriptPanel = panel
+            presenter.present(panel, animated: true)
+        }
+        func webView(_ view: WKWebView, willPresentEditMenuWithAnimator animator: any UIEditMenuInteractionAnimating) {
+            // WebKit may present before the asynchronous selection-state message
+            // reaches Swift. Recheck the actual range and keep handles intact.
+            animator.addCompletion {
+                view.evaluateJavaScript("(()=>{const s=window.getSelection();if(!s||s.isCollapsed||!s.rangeCount)return false;const node=s.getRangeAt(0).commonAncestorContainer;const root=(node.nodeType===1?node:node.parentElement)?.closest('[data-reader-managed-selection]');if(!root)return false;document.dispatchEvent(new Event('nodus-reader-selection'));return true})()") { value, _ in
+                    if value as? Bool == true { (view as? ReaderSurfaceWebView)?.dismissReaderEditMenu() }
+                }
+            }
+        }
+        func webView(_ view: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+            guard let url = action.request.url else { return .cancel }
+            if LocalSurfaceHost.shared.owns(url) { return .allow }
+            if url.scheme == "about" { return .allow }
+            if ["nodus-library","nodus-archive"].contains(url.scheme ?? "") {
+                guard (try? CompanionEmbeddedResource.identity(url.absoluteString)) != nil else { return .cancel }
+                if action.targetFrame?.isMainFrame == false { return .allow }
+                onNavigate("embeddedResource",url.absoluteString,nil,nil); return .cancel
+            }
+            if ["https", "http"].contains(url.scheme ?? "") { _ = await UIApplication.shared.open(url) }
+            return .cancel
+        }
+    }
+}

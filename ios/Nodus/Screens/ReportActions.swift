@@ -21,6 +21,7 @@ struct ReportActions: View {
     /// Set for a published report, which the server can render as a PDF. A report generated on
     /// this device has no id in the vault and so no document to ask for.
     var pdf: (session: SpaceSession, reportId: String, filename: String)?
+    var localPDF: (saved: LocalReportStore.Saved, store: LocalReportStore)?
     /// Set for a report generated here, by an access that may send changes.
     ///
     /// Optional rather than a flag the caller flips, so "a report already in the vault has no
@@ -37,7 +38,7 @@ struct ReportActions: View {
         FlowLayout(spacing: NodusSpace.card) {
             // First, because it is the act this screen is now about and the first chip is the
             // one that never ends up on the second line.
-            if let send {
+            if !NodusLinkPolicy.readOnly, let send {
                 ReportSendButton(context: send)
             }
             ReportCopyButtons(markdown: markdown, title: title, accent: accent)
@@ -46,10 +47,11 @@ struct ReportActions: View {
                     session: pdf.session,
                     reportId: pdf.reportId,
                     title: pdf.filename,
-                    accent: accent
+                    accent: accent,
+                    local: localPDF
                 )
             }
-            if let saveToNotes {
+            if !NodusLinkPolicy.readOnly, let saveToNotes {
                 DeepResearchSaveToNotesButton(
                     reportId: saveToNotes.reportId,
                     title: saveToNotes.title,

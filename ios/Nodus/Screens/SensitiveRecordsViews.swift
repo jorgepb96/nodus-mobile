@@ -35,22 +35,22 @@ private struct PrivateDomainBanner: View {
             VStack(alignment: .leading, spacing: 9) {
                 NodusNotice(
                     tone: .info,
-                    title: "Pair the owner Mac",
+                    title: "Link your Mac",
                     message: LocalizedStringKey(issue),
                     systemImage: "lock.shield"
                 )
                 Button(action: pair) {
-                    Label("Pair Desktop Bridge", systemImage: "macbook.and.iphone")
+                    Label("Link your Mac", systemImage: "macbook.and.iphone")
                 }
                 .buttonStyle(NodusPrimaryButtonStyle(accent: accent))
             }
         } else {
             NodusNotice(
                 tone: cached ? .caution : .info,
-                title: cached ? "Encrypted offline copy" : "Private Desktop Bridge",
+                title: cached ? "Encrypted offline copy" : "Connected to your Mac",
                 message: cached
-                    ? "The Mac is unavailable. This read-only copy is AES-GCM encrypted, protected while the device is locked and removed when the pairing is revoked."
-                    : "These records came directly from the paired Mac. This domain has no Cloudflare route.",
+                    ? "This read-only copy stays encrypted on this device and is removed when you unlink your Mac. Reconnect to refresh it."
+                    : "These private records come from your linked Mac and are not published publicly.",
                 systemImage: cached ? "lock.doc" : "lock.shield.fill"
             )
         }
@@ -78,6 +78,8 @@ private struct PrimarySourcesArchiveWorkspace: View {
     @State private var pairing = false
     @State private var detailSection = "Description"
     private let section = "archive"
+    private let detailSections = ["Description", "Files", "Text", "Excerpts", "Analysis", "Audit"]
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var units: [SensitiveRecordsParity.ArchiveUnit] {
         SensitiveRecordsParity.archiveUnits(in: tables["archive_description_units"] ?? [])
@@ -95,7 +97,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Archive", catalogueImage: "archivebox", accent: session.accent)
-            if sizeClass == .regular {
+            if !compactPresentation {
                 HStack(spacing: 0) {
                     hierarchyRail.frame(width: 292)
                     Divider()
@@ -106,10 +108,11 @@ private struct PrimarySourcesArchiveWorkspace: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) {
             DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("primary-sources-archive-workspace")
     }
 
@@ -150,6 +153,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
             }
         }
         .background(Color(uiColor: .secondarySystemBackground).opacity(0.48))
+        .accessibilityIdentifier("archive-hierarchy-rail")
     }
 
     private var catalogue: some View {
@@ -162,7 +166,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
                     accent: session.accent
                 )
                 PrivateDomainBanner(cached: cached, issue: issue, accent: session.accent) { pairing = true }
-                if sizeClass == .compact {
+                if compactPresentation {
                     Menu {
                         Button("Entire archive") { selectedUnit = nil }
                         ForEach(units) { unit in Button(unit.title) { selectedUnit = unit.id } }
@@ -210,10 +214,32 @@ private struct PrimarySourcesArchiveWorkspace: View {
                     title: LocalizedStringKey(item.title), subtitle: "\(item.dateDisplay) · \(item.provenance)",
                     systemImage: "doc.richtext", accent: session.accent
                 )
-                Picker("Archive detail", selection: $detailSection) {
-                    ForEach(["Description", "Files", "Text", "Excerpts", "Analysis", "Audit"], id: \.self) { Text($0) }
+                if compactPresentation {
+                    Menu {
+                        ForEach(detailSections, id: \.self) { value in
+                            Button { detailSection = value } label: {
+                                if detailSection == value { Label(LocalizedStringKey(value), systemImage: "checkmark") }
+                                else { Text(LocalizedStringKey(value)) }
+                            }.accessibilityIdentifier("archive-detail-option-\(value)")
+                        }
+                    } label: {
+                        HStack {
+                            Text(LocalizedStringKey(detailSection))
+                            Spacer(minLength: 12)
+                            Image(systemName: "chevron.up.chevron.down")
+                        }.frame(minHeight: 44)
+                    }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .accessibilityLabel("Archive detail")
+                    .accessibilityValue(LocalizedStringKey(detailSection))
+                    .accessibilityIdentifier("archive-detail-menu")
+                } else {
+                    Picker("Archive detail", selection: $detailSection) {
+                        ForEach(detailSections, id: \.self) { Text(LocalizedStringKey($0)) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("archive-detail-picker")
                 }
-                .pickerStyle(.segmented)
                 detail(item)
             }
             .padding(NodusSpace.page).frame(maxWidth: 1050).frame(maxWidth: .infinity).nodusTopAnchor()
@@ -236,6 +262,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
                     Label(row.text("verification_status") ?? "pending", systemImage: row.text("verification_status") == "verified" ? "checkmark.seal.fill" : "clock")
                         .font(.caption).foregroundStyle(row.text("verification_status") == "verified" ? .green : .orange)
                 }.desktopContentRow(accent: session.accent)
+                PrivateFileButton(session: session, kind: .archiveFile, id: row.string("file_id") ?? "")
             }
         case "Text":
             ForEach(rows("archive_text_versions", owner: "item_id", id: item.id), id: \.columns) { row in
@@ -282,13 +309,15 @@ private struct PrimarySourcesArchiveWorkspace: View {
     private func load() async {
         do {
             let snapshot = try await loadPrivateBridgeTables(session, domain: .primarySourceFiles, names: archivePrivateTables, fixture: debugSensitiveFixture(for: ["primary_sources", "genealogy"]))
+            try Task.checkCancellation()
             tables = snapshot.tables; cached = snapshot.readFromEncryptedCache; issue = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", tabs.tabs(in: section).isEmpty {
                 SensitiveRecordsParity.archiveItems(in: tables).prefix(2).forEach(open)
             }
 #endif
-        } catch { tables = [:]; issue = error.localizedDescription }
+        } catch where error.isCancellation { }
+        catch { tables = [:]; issue = error.localizedDescription }
     }
 }
 
@@ -300,9 +329,12 @@ private struct ProsopographyWorkspace: View {
     let mode: SensitiveRecordsWorkspaceMode
     @State private var tables: [String: [Row]] = [:]
     @State private var query = ""
+    @State private var searchLimit = 100
     @State private var issue: String?
     @State private var cached = false
     @State private var pairing = false
+    @State private var personSource: PrivateCorpusReference?
+    @State private var personSourceIssue: String?
     private let section = "prosopPersons"
 
     private var people: [SensitiveRecordsParity.ProsopPerson] {
@@ -327,7 +359,10 @@ private struct ProsopographyWorkspace: View {
                     } else {
                         peopleCatalogue
                     }
-                case .prosopSources: sourcesView
+                case .prosopSources:
+                    if session.connection.desktopPairingId != nil {
+                        PrivateSourceCatalogueView(session: session, kind: .source, title: "Sources", icon: "doc.text.magnifyingglass")
+                    } else { sourcesView }
                 case .prosopAnalysis: analysisView
                 case .prosopNetworks: networksView
                 default: EmptyView()
@@ -335,13 +370,51 @@ private struct ProsopographyWorkspace: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task { await load() }
+        .task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
+        .nodusSheet(isPresented: Binding(
+            get: { personSource != nil },
+            set: { if !$0 { personSource = nil } }
+        )) {
+            if let reference = personSource {
+                PrivateCorpusSourceSheet(session: session, reference: reference)
+            }
+        }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("prosopography-\(mode.rawValue)-workspace")
     }
 
     private var privateBanner: some View { PrivateDomainBanner(cached: cached, issue: issue, accent: session.accent) { pairing = true } }
-    private var searchView: some View { page(title: "Prosopography search", subtitle: "People, literal attestations, sources and factoids", image: "magnifyingglass") { privateBanner; NodusSearchField(text: $query, prompt: "Search the private corpus", accent: session.accent); ForEach(people) { personCard($0) }; ForEach((tables["prosop_sources"] ?? []).filter { query.isEmpty || $0.searchableText.localizedCaseInsensitiveContains(query) }, id: \.columns) { sourceCard($0) } } }
+    private var searchView: some View {
+        page(title: "Prosopography search", subtitle: "People, literal attestations, sources and statements", image: "magnifyingglass") {
+            privateBanner
+            NodusSearchField(text: $query, prompt: "Search the private corpus", accent: session.accent)
+            let hits = ProsopographySearchProjection.search(query, in: tables)
+            Text("\(hits.count) results").font(.caption).foregroundStyle(.secondary)
+            if hits.isEmpty, issue == nil {
+                ContentUnavailableView("No matches", systemImage: "magnifyingglass", description: Text("Search names, literal mentions, source citations or statement values."))
+            }
+            ForEach(Array(hits.prefix(searchLimit))) { hit in
+                Button {
+                    do { personSource = try .init(kind: hit.kind, id: hit.targetId); personSourceIssue = nil }
+                    catch { personSourceIssue = error.localizedDescription }
+                } label: {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(hit.category).font(.caption.weight(.semibold)).foregroundStyle(session.accent)
+                        Text(hit.title).font(.headline).foregroundStyle(.primary)
+                        if !hit.detail.isEmpty { Text(hit.detail).font(.callout).foregroundStyle(.secondary).lineLimit(4) }
+                        Label("Open evidence", systemImage: "chevron.right").font(.caption).foregroundStyle(session.accent)
+                    }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .multilineTextAlignment(.leading).desktopContentRow(accent: session.accent)
+                }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("prosop-search-\(hit.id)")
+            }
+            if hits.count > searchLimit {
+                Button("Load more results") { searchLimit += 100 }
+                    .frame(minHeight: 44).buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+            }
+            if let personSourceIssue { Text(personSourceIssue).foregroundStyle(Color.nodusDanger) }
+        }.onChange(of: query) { _, _ in searchLimit = 100 }
+    }
     private var populationView: some View { page(title: "Population", subtitle: "Explicit criteria, membership decisions and missingness", image: "person.3") { privateBanner; ForEach(tables["prosop_studies"] ?? [], id: \.columns) { study in VStack(alignment: .leading, spacing: 8) { Text(study.text("title") ?? "Study").font(.title2.bold()); Text(study.text("research_question") ?? "").font(.headline); Text(study.text("population_definition") ?? "").font(.callout).foregroundStyle(.secondary); HStack { metric("Expected", study.int("expected_population") ?? 0); metric("Included", memberships("included")); metric("Uncertain", memberships("uncertain")) } }.desktopContentRow(accent: session.accent) }; ForEach(tables["prosop_population_criteria"] ?? [], id: \.columns) { row in HStack { Image(systemName: row.text("kind") == "include" ? "checkmark.circle" : "minus.circle").foregroundStyle(session.accent); VStack(alignment: .leading) { Text(row.text("label") ?? "Criterion").font(.callout.weight(.medium)); Text(row.text("description") ?? "").font(.caption).foregroundStyle(.secondary) }; Spacer(); if row.int("required") == 1 { NodusChip(key: "required", tint: session.accent) } }.desktopContentRow(accent: session.accent) } } }
     private var peopleCatalogue: some View { page(title: "People", subtitle: "Identity, evidence, authority and completeness", image: "person.2") { privateBanner; NodusSearchField(text: $query, prompt: "Search people", accent: session.accent); ForEach(people) { person in Button { open(person) } label: { personCard(person) }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("prosop-person-open-\(person.id)") } } }
     private var sourcesView: some View { page(title: "Sources", subtitle: "Provenance, literal segments and source assessment", image: "archivebox") { privateBanner; ForEach(tables["prosop_sources"] ?? [], id: \.columns) { sourceCard($0) } } }
@@ -351,22 +424,93 @@ private struct ProsopographyWorkspace: View {
             privateBanner
             networkCanvas
             ForEach(SensitiveRecordsParity.networkEdges(in: tables["prosop_network_edges"] ?? [])) { edge in
-                HStack {
-                    Text(name(edge.sourceId))
-                    Image(systemName: "arrow.left.and.right").foregroundStyle(session.accent)
-                    Text(name(edge.targetId))
-                    Spacer()
-                    NodusChip(key: edge.origin, tint: edge.origin == "explicit" ? session.accent : .orange)
-                    Text(String(format: "%.0f×", edge.weight)).font(.caption.monospacedDigit())
+                VStack(alignment: .leading, spacing: 9) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack { networkPerson(edge.sourceId); Image(systemName: "arrow.left.and.right").foregroundStyle(session.accent); networkPerson(edge.targetId) }
+                        VStack(alignment: .leading, spacing: 4) { networkPerson(edge.sourceId); networkPerson(edge.targetId) }
+                    }
+                    HStack {
+                        NodusChip(key: edge.origin, tint: edge.origin == "explicit" ? session.accent : .orange)
+                        Text(String(format: "%.0f×", edge.weight)).font(.caption.monospacedDigit())
+                    }
                 }
                 .desktopContentRow(accent: session.accent)
-                .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("prosop-network-edge-\(edge.id)-\(edge.origin)")
             }
         }
     }
 
-    private func personDossier(_ person: SensitiveRecordsParity.ProsopPerson) -> some View { page(title: LocalizedStringKey(person.displayName), subtitle: "\(person.identityStatus) · \(person.reviewStatus)", image: "person.crop.circle") { HStack { metric("Completeness", Int((person.completeness ?? 0) * 100), suffix: "%"); metric("Factoids", person.factoidCount); metric("Statements", person.statementCount); metric("Authorities", person.authorityCount) }; ForEach(statements(person.id), id: \.columns) { row in VStack(alignment: .leading, spacing: 5) { HStack { Text(row.text("statement_type") ?? "Statement").font(.caption.weight(.semibold)).foregroundStyle(session.accent); Spacer(); NodusChip(key: row.text("status") ?? "draft", tint: session.accent) }; Text(row.text("literal_value") ?? row.text("value_text") ?? "").font(.body); Text("Reading: \(row.text("reading_certainty") ?? "unknown")").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }; ForEach((tables["prosop_authority_ids"] ?? []).filter { $0.string("entity_id") == person.id }, id: \.columns) { row in LabeledContent(row.text("scheme") ?? "Authority", value: row.text("external_id") ?? "").desktopContentRow(accent: session.accent) }; ForEach((tables["prosop_audit_log"] ?? []).filter { $0.string("entity_id") == person.id }, id: \.columns) { row in VStack(alignment: .leading) { Label(row.text("action") ?? "Audit", systemImage: "clock.arrow.circlepath"); Text(row.text("reason") ?? "").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) } } }
+    private func networkPerson(_ id: String) -> some View {
+        Button {
+            do { personSource = try .init(kind: .person, id: id); personSourceIssue = nil }
+            catch { personSourceIssue = error.localizedDescription }
+        } label: {
+            Label(name(id), systemImage: "person.crop.circle")
+                .multilineTextAlignment(.leading).frame(minHeight: 44)
+        }.buttonStyle(.plain).foregroundStyle(session.accent)
+            .accessibilityLabel("Open person \(name(id))")
+    }
+
+    private struct PersonIdentityField: Identifiable {
+        let key: String
+        let title: LocalizedStringKey
+        let value: String
+        var id: String { key }
+    }
+    private func identityFields(_ row: Row) -> [PersonIdentityField] {
+        let fields: [(String, LocalizedStringKey)] = [
+            ("display_name", "Name"), ("sex", "Sex"), ("birth_date", "Birth date"),
+            ("death_date", "Death date"), ("national_id", "National ID")
+        ]
+        return fields.compactMap { key, title in
+            guard let value = row.text(key), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return PersonIdentityField(key: key, title: title, value: value)
+        }
+    }
+    @ViewBuilder private func personIdentity(_ person: SensitiveRecordsParity.ProsopPerson) -> some View {
+        if let row = (tables["persons"] ?? []).first(where: { $0.string("person_id") == person.id }) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Identity").font(.headline)
+                ForEach(identityFields(row)) { field in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(field.title).font(.caption).foregroundStyle(.secondary)
+                        if field.key == "sex" {
+                            Text(LocalizedStringKey(field.value)).font(.body)
+                        } else {
+                            Text(field.value).font(.body).textSelection(.enabled)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }.desktopContentRow(accent: session.accent)
+                .accessibilityIdentifier("prosop-person-identity")
+            if let biography = row.text("biography"), !biography.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Biography").font(.headline)
+                    CorpusProse(biography, accent: session.accent, session: session)
+                }.desktopContentRow(accent: session.accent)
+                    .accessibilityIdentifier("prosop-person-biography")
+            }
+            if let notes = row.text("notes"), !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Notes").font(.headline)
+                    CorpusProse(notes, accent: session.accent, session: session)
+                }.desktopContentRow(accent: session.accent)
+                    .accessibilityIdentifier("prosop-person-notes")
+            }
+        }
+    }
+    private func personDossier(_ person: SensitiveRecordsParity.ProsopPerson) -> some View { page(title: LocalizedStringKey(person.displayName), subtitle: "\(person.identityStatus) · \(person.reviewStatus)", image: "person.crop.circle") { personIdentity(person); if session.connection.desktopPairingId != nil {
+            Button {
+                do { personSource = try .init(kind: .person, id: person.id); personSourceIssue = nil }
+                catch { personSourceIssue = error.localizedDescription }
+            } label: {
+                Label("Sources and mentions", systemImage: "text.quote").frame(minHeight: 44)
+            }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                .accessibilityIdentifier("prosop-person-sources")
+            if let personSourceIssue {
+                Text(personSourceIssue).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("prosop-person-source-error")
+            }
+        }; HStack { metric("Completeness", Int((person.completeness ?? 0) * 100), suffix: "%"); metric("Factoids", person.factoidCount); metric("Statements", person.statementCount); metric("Authorities", person.authorityCount) }; ForEach(statements(person.id), id: \.columns) { row in VStack(alignment: .leading, spacing: 5) { HStack { Text(row.text("statement_type") ?? "Statement").font(.caption.weight(.semibold)).foregroundStyle(session.accent); Spacer(); NodusChip(key: row.text("status") ?? "draft", tint: session.accent) }; Text(row.text("literal_value") ?? row.text("value_text") ?? "").font(.body); Text("Reading: \(row.text("reading_certainty") ?? "unknown")").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }; ForEach((tables["prosop_authority_ids"] ?? []).filter { $0.string("entity_id") == person.id }, id: \.columns) { row in LabeledContent(row.text("scheme") ?? "Authority", value: row.text("external_id") ?? "").desktopContentRow(accent: session.accent) }; ForEach((tables["prosop_audit_log"] ?? []).filter { $0.string("entity_id") == person.id }, id: \.columns) { row in VStack(alignment: .leading) { Label(row.text("action") ?? "Audit", systemImage: "clock.arrow.circlepath"); Text(row.text("reason") ?? "").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) } } }
     private func personCard(_ person: SensitiveRecordsParity.ProsopPerson) -> some View { HStack { Circle().fill(session.accent.opacity(0.15)).frame(width: 40, height: 40).overlay { Text(person.displayName.prefix(1)).font(.headline).foregroundStyle(session.accent) }; VStack(alignment: .leading) { Text(person.displayName).font(.headline); Text("\(person.identityStatus) · \(person.factoidCount) factoids · \(person.statementCount) statements").font(.caption).foregroundStyle(.secondary) }; Spacer(); ProgressView(value: person.completeness ?? 0).frame(width: 75).tint(session.accent) }.desktopContentRow(accent: session.accent) }
     private func sourceCard(_ source: Row) -> some View { VStack(alignment: .leading, spacing: 5) { HStack { Image(systemName: "archivebox").foregroundStyle(session.accent); Text(source.text("title") ?? "Source").font(.headline); Spacer(); NodusChip(key: source.text("access_status") ?? "open", tint: session.accent) }; Text(source.text("citation") ?? "").font(.caption.monospaced()).foregroundStyle(.secondary); Text(source.text("description") ?? "").font(.callout) }.desktopContentRow(accent: session.accent) }
     private var networkCanvas: some View { Canvas { context, size in let nodes = SensitiveRecordsParity.prosopPersons(in: tables); let edges = SensitiveRecordsParity.networkEdges(in: tables["prosop_network_edges"] ?? []); let center = CGPoint(x: size.width / 2, y: size.height / 2); let radius = min(size.width, size.height) * 0.34; let points = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { index, node in (node.id, CGPoint(x: center.x + cos(Double(index) / Double(max(1, nodes.count)) * .pi * 2) * radius, y: center.y + sin(Double(index) / Double(max(1, nodes.count)) * .pi * 2) * radius)) }); for edge in edges { guard let a = points[edge.sourceId], let b = points[edge.targetId] else { continue }; var path = Path(); path.move(to: a); path.addLine(to: b); context.stroke(path, with: .color(edge.origin == "explicit" ? session.accent : .orange), lineWidth: max(1, min(5, edge.weight))) }; for node in nodes { guard let point = points[node.id] else { continue }; context.fill(Path(ellipseIn: CGRect(x: point.x - 11, y: point.y - 11, width: 22, height: 22)), with: .color(session.accent)); context.draw(Text(node.displayName).font(.caption2), at: CGPoint(x: point.x, y: point.y + 22)) } }.frame(height: 320).desktopContentRow(accent: session.accent).accessibilityHidden(true) }
@@ -381,13 +525,15 @@ private struct ProsopographyWorkspace: View {
     private func open(_ person: SensitiveRecordsParity.ProsopPerson) { tabs.open(.init(id: person.id, title: person.displayName, systemImage: "person.crop.circle", kind: .document, payload: .reference(kind: "prosop-person", id: person.id)), in: section) }
     private func load() async {
         do {
-            let names = ["persons", "prosop_studies", "prosop_population_criteria", "prosop_population_memberships", "prosop_person_profiles", "prosop_sources", "prosop_source_segments", "prosop_factoids", "prosop_statements", "prosop_statement_entities", "prosop_authority_ids", "prosop_analysis_definitions", "prosop_analysis_runs", "prosop_network_layers", "prosop_network_edges", "prosop_audit_log"]
+            let names = ["persons", "prosop_studies", "prosop_population_criteria", "prosop_population_memberships", "prosop_person_profiles", "prosop_sources", "prosop_source_segments", "prosop_factoids", "prosop_name_attestations", "prosop_variable_revisions", "prosop_statements", "prosop_statement_entities", "prosop_authority_ids", "prosop_analysis_definitions", "prosop_analysis_runs", "prosop_network_layers", "prosop_network_edges", "prosop_audit_log"]
             let snapshot = try await loadPrivateBridgeTables(session, domain: .prosopographyPrivate, names: names, fixture: debugSensitiveFixture(for: ["prosopography"]))
+            try Task.checkCancellation()
             tables = snapshot.tables; cached = snapshot.readFromEncryptedCache; issue = nil
 #if DEBUG
             if mode == .prosopPersons, ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", tabs.tabs(in: section).isEmpty { SensitiveRecordsParity.prosopPersons(in: tables).prefix(2).forEach(open) }
 #endif
-        } catch { tables = [:]; issue = error.localizedDescription }
+        } catch where error.isCancellation { }
+        catch { tables = [:]; issue = error.localizedDescription }
     }
 }
 
@@ -407,6 +553,14 @@ private struct TestimoniesWorkspace: View {
     private var active: SensitiveRecordsParity.TestimonyInterview? { SensitiveRecordsParity.testimonyInterviews(in: tables).first { $0.id == tabs.activeTabId(in: section) } }
 
     var body: some View {
+        if session.connection.desktopPairingId != nil {
+            switch mode {
+            case .testimonyInterviews: PrivateSourceCatalogueView(session: session, kind: .interview, title: "Entrevistas", icon: "mic")
+            case .testimonyParticipants: PrivateSourceCatalogueView(session: session, kind: .participant, title: "Participantes", icon: "person.2")
+            case .testimonyContrasts: PrivateSourceCatalogueView(session: session, kind: .contrast, title: "Contrastes", icon: "scale.3d")
+            default: EmptyView()
+            }
+        } else {
         VStack(spacing: 0) {
             if mode == .testimonyInterviews { WorkspaceTabStrip(section: section, catalogueTitle: "Interviews", catalogueImage: "mic", accent: session.accent) }
             switch mode {
@@ -416,9 +570,11 @@ private struct TestimoniesWorkspace: View {
             default: EmptyView()
             }
         }
-        .nodusPageBackdrop(accent: session.accent).task { await load() }
+        .nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("testimonies-\(mode.rawValue)-workspace")
+        }
     }
 
     private var banner: some View { PrivateDomainBanner(cached: cached, issue: issue, accent: session.accent) { pairing = true } }
@@ -466,6 +622,7 @@ private struct TestimoniesWorkspace: View {
                                 Label("Immutable", systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
                             }
                         }.padding(.vertical, 3)
+                        PrivateFileButton(session: session, kind: .testimonyMedia, id: medium.string("id") ?? "")
                         ForEach(transcripts(medium.string("id")), id: \.columns) { transcript in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {
@@ -497,11 +654,13 @@ private struct TestimoniesWorkspace: View {
         do {
             let names = ["persons", "testimony_interviews", "testimony_participant_profiles", "testimony_interview_participants", "testimony_sessions", "testimony_media", "testimony_transcripts", "testimony_transcript_segments", "testimony_codes", "testimony_annotations", "testimony_annotation_codes", "testimony_agreements", "testimony_contrasts", "testimony_contrast_items", "testimony_note_links"]
             let snapshot = try await loadPrivateBridgeTables(session, domain: .testimonies, names: names, fixture: debugSensitiveFixture(for: ["testimonios"]))
+            try Task.checkCancellation()
             tables = snapshot.tables; cached = snapshot.readFromEncryptedCache; issue = nil
 #if DEBUG
             if mode == .testimonyInterviews, ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", tabs.tabs(in: section).isEmpty { SensitiveRecordsParity.testimonyInterviews(in: tables).prefix(2).forEach(open) }
 #endif
-        } catch { tables = [:]; issue = error.localizedDescription }
+        } catch where error.isCancellation { }
+        catch { tables = [:]; issue = error.localizedDescription }
     }
 }
 

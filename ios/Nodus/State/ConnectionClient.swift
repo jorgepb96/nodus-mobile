@@ -18,6 +18,23 @@ enum ConnectionClient {
         URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
     }
 
+    static func companionDocuments(for connection: AppModel.Connection, kind: CompanionDocumentOutbox.Kind = .workspaceNote) async throws -> (DesktopBridgeClient, CompanionDocumentOutbox)? {
+        guard !NodusLinkPolicy.readOnly, connection.role.canSendChanges, let id = connection.desktopPairingId, let vaultId = connection.vaultId else { return nil }
+        let store = DesktopBridgePairingStore()
+        guard let pairing = store.pairings().first(where: { $0.id == id }), !pairing.isExpired,
+              pairing.vaultIds.contains(vaultId), pairing.domains.contains(.writing),
+              kind != .studyDocument || pairing.domains.contains(.corpus),
+              let token = store.credential(for: pairing) else { return nil }
+        let documents = try await CompanionDocumentOutboxes.shared.outbox(pairingId: id, vaultId: vaultId, kind: kind)
+        return (DesktopBridgeClient(pairing: pairing, token: token), documents)
+    }
+    static func companionChat(for connection: AppModel.Connection) throws -> DesktopBridgeClient {
+        guard let id = connection.desktopPairingId,let vaultId = connection.vaultId else { throw DesktopBridgeError.permissionDenied }
+        let store = DesktopBridgePairingStore()
+        guard let pairing = store.pairings().first(where:{$0.id == id}),!pairing.isExpired,pairing.vaultIds.contains(vaultId),pairing.domains.contains(.corpus),let token = store.credential(for:pairing) else { throw DesktopBridgeError.permissionDenied }
+        return DesktopBridgeClient(pairing:pairing,token:token)
+    }
+
     private static var cacheDirectory: URL {
         URL.cachesDirectory.appendingPathComponent("nodus-http", isDirectory: true)
     }
@@ -25,16 +42,37 @@ enum ConnectionClient {
     /// - Returns: nil when this device holds no token for the space, which on a locked phone
     ///   means "not right now" rather than "never" — the Keychain item is protected until first
     ///   unlock, and a background task can run before that.
+    /// Private grants own their credentials independently of a remembered network
+    /// address. A queued callback may still carry the old Connection after discovery.
+    static func credential(for connection: AppModel.Connection, store: DesktopBridgePairingStore = DesktopBridgePairingStore(),
+                           keychain: KeychainStore = KeychainStore()) -> String? {
+        if let id = connection.desktopPairingId {
+            guard let pairing = store.pairings().first(where: { $0.id == id }), !pairing.isExpired,
+                  let vault = connection.vaultId, pairing.vaultIds.contains(vault) else { return nil }
+            return store.credential(for: pairing)
+        }
+        return keychain.value(for: KeychainStore.deviceTokenKey(origin: connection.origin, spaceId: connection.spaceId))
+    }
     static func make(for connection: AppModel.Connection) -> NodusClient? {
-        guard let token = keychain.value(for: KeychainStore.deviceTokenKey(
-            origin: connection.origin,
-            spaceId: connection.spaceId
-        )) else { return nil }
-        return NodusClient(
-            address: ServerAddress(trusted: connection.origin),
-            token: token,
-            cache: ResponseCache(directory: cacheDirectory)
-        )
+        guard let token = credential(for: connection) else { return nil }
+        return make(for: connection, token: token, pairings: DesktopBridgePairingStore().pairings())
+    }
+
+    /// Foreground and background clients must use the same Mac/vault route.
+    /// Losing a private pairing must never fall through to a Server API on the
+    /// same address, or send queued content using a different connection mode.
+    static func make(for connection: AppModel.Connection, token: String,
+                     pairings: [DesktopBridgePairing], cacheDirectory directory: URL? = nil) -> NodusClient? {
+        guard !token.isEmpty else { return nil }
+        var bridge: DesktopBridgeClient?
+        if let pairingId = connection.desktopPairingId {
+            guard let pairing = pairings.first(where: { $0.id == pairingId }),
+                  let vaultId = connection.vaultId, pairing.vaultIds.contains(vaultId),
+                  !pairing.isExpired else { return nil }
+            bridge = DesktopBridgeClient(pairing: pairing, token: token)
+        }
+        return NodusClient(address: ServerAddress(trusted: connection.origin), token: token,
+            cache: ResponseCache(directory: directory ?? cacheDirectory), desktopBridge: bridge, vaultId: connection.vaultId)
     }
 }
 
@@ -55,10 +93,12 @@ enum OutboxDelivery {
         from outbox: MutationOutbox,
         using client: NodusClient,
         in spaceId: String,
-        limits: MutationLimits = .unstated
+        limits: MutationLimits = .unstated,
+        onlyTable: String? = nil
     ) async throws {
+        let maximumBatch = min(limits.maxBatch, await client.maximumMutationBatch)
         while true {
-            let queued = try await outbox.pending(limit: limits.maxBatch)
+            let queued = try await outbox.authorisedPending(limit: maximumBatch, table: onlyTable)
             guard !queued.isEmpty else { return }
 
             // Cut by bytes, not by count. One Deep Research report is a quarter of a megabyte,
@@ -82,14 +122,13 @@ enum OutboxDelivery {
             // The cursor is kept with them. It is where this batch came to rest in the ledger,
             // and the only number the space's own `mutationCursor` can later be measured
             // against to say the owner has collected it.
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
+            try await outbox.recordReceipt(receipt, for: batch)
 
             if receipt.accepted.isEmpty, receipt.duplicate.isEmpty, !receipt.rejected.isEmpty { return }
             // Drained only when a short read was also sent whole. Testing the batch alone would
             // stop early every time bytes ran out before rows did, leaving the rest queued with
             // nothing to start it again.
-            if batch.count == queued.count, queued.count < limits.maxBatch { return }
+            if batch.count == queued.count, queued.count < maximumBatch { return }
         }
     }
 }

@@ -1,0 +1,111 @@
+import CryptoKit
+import Foundation
+import Security
+
+/// User-authored bytes are independent of disposable reading copies. Each file
+/// has its own encryption key so an immutable recovery archive can retain it.
+public actor CompanionDatabaseAttachments {
+    public static let recordId = "companion-database-files-v1"
+    public static let chunkBytes = 512 * 1024
+    public struct Transfer: Codable, Sendable, Identifiable {
+        public let id: UUID
+        public let rowId: String
+        public let columnId: String
+        public let filename: String
+        public let mimeType: String
+        public let byteCount: Int64
+        public let sha256: String
+        public let expectedRowRevision: Int64
+        public let expectedColumnRevision: Int64
+        let encryptionKey: Data
+        let chunkHashes: [String]
+        public var state: String
+        public var received: Set<Int>
+        public var result: JSONValue?
+        public var issue: String?
+    }
+    struct State: Codable, Sendable {
+        var version = 1
+        var transfers: [String: Transfer] = [:]
+        var recoveryReviewRequired: Bool? = nil
+    }
+    private let cache: PrivateBridgeCache
+    private let vaultId: String
+    private var state: State
+    public init(cache: PrivateBridgeCache, vaultId: String) async throws {
+        self.cache = cache; self.vaultId = vaultId
+        if let data = try await cache.data(vaultId: vaultId, domain: .writing, recordId: Self.recordId) {
+            state = try JSONDecoder.nodus.decode(State.self, from: data)
+            guard state.version == 1 else { throw DesktopBridgeError.malformedResponse }
+        } else { state = State() }
+    }
+    public func all() -> [Transfer] { state.transfers.values.sorted { $0.filename < $1.filename } }
+    private func persist() async throws { try await cache.store(JSONEncoder.nodus.encode(state), vaultId: vaultId, domain: .writing, recordId: Self.recordId) }
+    private func requireReviewAllowed() throws {
+        guard state.recoveryReviewRequired != true else { throw APIError(status: 409, code: "database_file_recovery_review", message: "El archivo recuperado se conserva. Revisa su destino antes de enviarlo con este enlace.") }
+    }
+    private static func checksum(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    private func prepare(data: Data, filename: String, mimeType: String, rowId: String, columnId: String,
+        expectedRowRevision: Int64, expectedColumnRevision: Int64, uploadId: UUID) async throws -> Transfer {
+        guard !filename.isEmpty, URL(fileURLWithPath: filename).lastPathComponent == filename,
+              !filename.contains("\\"), ![".",".."].contains(filename), !mimeType.isEmpty else { throw DesktopBridgeError.malformedResponse }
+        let checksum = Self.checksum(data)
+        if let previous = state.transfers[uploadId.uuidString] {
+            guard previous.sha256 == checksum, previous.rowId == rowId, previous.columnId == columnId,
+                  previous.filename == filename, previous.mimeType == mimeType,
+                  previous.expectedRowRevision == expectedRowRevision, previous.expectedColumnRevision == expectedColumnRevision else { throw DesktopBridgeError.malformedResponse }
+            return previous
+        }
+        var random = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { throw DesktopBridgeError.locked }
+        let chunks = stride(from: 0, to: data.count, by: Self.chunkBytes).map { Data(data[$0..<min(data.count,$0 + Self.chunkBytes)]) }
+        let transfer = Transfer(id: uploadId, rowId: rowId, columnId: columnId, filename: filename, mimeType: mimeType,
+            byteCount: Int64(data.count), sha256: checksum, expectedRowRevision: expectedRowRevision,
+            expectedColumnRevision: expectedColumnRevision, encryptionKey: Data(random), chunkHashes: chunks.map(Self.checksum),
+            state: "preparing", received: [], result: nil, issue: nil)
+        state.transfers[uploadId.uuidString] = transfer
+        try await persist() // Ownership is durable before the first chunk appears.
+        let directory = try await cache.authoredFileDirectory(vaultId: vaultId, id: uploadId)
+        for (index, chunk) in chunks.enumerated() {
+            guard let encrypted = try AES.GCM.seal(chunk, using: SymmetricKey(data: transfer.encryptionKey)).combined else { throw DesktopBridgeError.malformedResponse }
+            try PrivateBridgeProtectedFile.write(encrypted, to: directory.appendingPathComponent(Self.chunkFilename(index)))
+        }
+        var ready = transfer; ready.state = "pending"; state.transfers[uploadId.uuidString] = ready; try await persist()
+        return ready
+    }
+    static func chunkFilename(_ index: Int) -> String { "chunk-\(index).encrypted" }
+    static func decryptedChunk(transfer: Transfer, index: Int, directory: URL) throws -> Data {
+        guard transfer.encryptionKey.count == 32, transfer.chunkHashes.indices.contains(index) else { throw DesktopBridgeError.malformedResponse }
+        let data = try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: directory.appendingPathComponent(chunkFilename(index)))), using: SymmetricKey(data: transfer.encryptionKey))
+        guard Self.checksum(data) == transfer.chunkHashes[index], data.count == min(chunkBytes, Int(transfer.byteCount) - index * chunkBytes) else { throw DesktopBridgeError.malformedResponse }
+        return data
+    }
+    public func uploadForPublication(data: Data, filename: String, mimeType: String, rowId: String, columnId: String,
+        expectedRowRevision: Int64, expectedColumnRevision: Int64, uploadId: UUID, bridge: DesktopBridgeClient) async throws -> JSONValue {
+        try requireReviewAllowed(); try cache.beginAuthoringActivity(); defer { cache.endAuthoringActivity() }
+        var transfer = try await prepare(data: data, filename: filename, mimeType: mimeType, rowId: rowId, columnId: columnId,
+            expectedRowRevision: expectedRowRevision, expectedColumnRevision: expectedColumnRevision, uploadId: uploadId)
+        let directory = try await cache.authoredFileDirectory(vaultId: vaultId, id: uploadId)
+        do {
+            let begin: JSONValue = .object(["rowId": .string(rowId), "columnId": .string(columnId), "fileName": .string(filename),
+                "mimeType": .string(mimeType), "size": .int(transfer.byteCount), "sha256": .string(transfer.sha256),
+                "expectedRowRevision": .int(expectedRowRevision), "expectedColumnRevision": .int(expectedColumnRevision)])
+            let response = try await bridge.databaseFileUpload(vaultId: vaultId, uploadId: uploadId, action: "begin", body: begin)
+            transfer.received = Set((response.objectValue?["received"]?.arrayValue ?? []).compactMap { value in
+                guard let index = value.objectValue?["index"]?.intValue, transfer.chunkHashes.indices.contains(Int(index)),
+                      value.objectValue?["sha256"]?.stringValue == transfer.chunkHashes[Int(index)] else { return nil }; return Int(index)
+            })
+            for index in transfer.chunkHashes.indices where !transfer.received.contains(index) {
+                try Task.checkCancellation()
+                let chunk = try Self.decryptedChunk(transfer: transfer, index: index, directory: directory)
+                _ = try await bridge.databaseFileUpload(vaultId: vaultId, uploadId: uploadId, action: "chunk", body: .object([
+                    "index": .int(Int64(index)), "bytes": .string(chunk.base64EncodedString()), "sha256": .string(transfer.chunkHashes[index])]))
+                transfer.received.insert(index); state.transfers[uploadId.uuidString] = transfer; try await persist()
+            }
+            transfer.state = "staged"; transfer.issue = nil; state.transfers[uploadId.uuidString] = transfer; try await persist()
+            return .object(["blobUploadId": .string(uploadId.uuidString), "sha256": .string(transfer.sha256), "mimeType": .string(mimeType)])
+        } catch {
+            transfer.issue = error.localizedDescription; state.transfers[uploadId.uuidString] = transfer; try await persist(); throw error
+        }
+    }
+}

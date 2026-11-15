@@ -132,6 +132,39 @@ final class AppPreferences {
         didSet { persist { store.set(sidebarCustomized, forKey: Key.sidebarCustomized) } }
     }
 
+    /// Personal shortcuts, shared across vaults. Home and More are never replaceable.
+    private(set) var phonePinnedRoutes: [NodusRoute] {
+        didSet { persist { store.set(Self.encode(phonePinnedRoutes.map(\.rawValue)), forKey: Key.phonePinnedRoutes) } }
+    }
+
+    static var phonePinCandidates: [NodusNavigationItem] {
+        NodusNavigationContract.visibleItems(for: .academic).filter { $0.route != .home }
+    }
+
+    func pinPhoneRoute(_ route: NodusRoute, replacing previous: NodusRoute? = nil) {
+        guard Self.phonePinCandidates.contains(where: { $0.route == route }),
+              !phonePinnedRoutes.contains(route) else { return }
+        if let previous, let index = phonePinnedRoutes.firstIndex(of: previous) {
+            var next = phonePinnedRoutes
+            next[index] = route
+            phonePinnedRoutes = next
+        } else if phonePinnedRoutes.count < 3 {
+            phonePinnedRoutes = phonePinnedRoutes + [route]
+        }
+    }
+
+    func unpinPhoneRoute(_ route: NodusRoute) {
+        phonePinnedRoutes = phonePinnedRoutes.filter { $0 != route }
+    }
+
+    private static func readPhonePins(_ data: Data?) -> [NodusRoute] {
+        guard let data else { return [.ideas, .graph, .deepResearch] }
+        let allowed = Set(phonePinCandidates.map(\.route))
+        var seen = Set<NodusRoute>()
+        return Array(decode(data).compactMap(NodusRoute.init(rawValue:))
+            .filter { allowed.contains($0) && seen.insert($0).inserted }.prefix(3))
+    }
+
     func toggleInterfaceStyle(current scheme: ColorScheme) {
         interfaceStyle = scheme == .dark ? .light : .dark
     }
@@ -162,10 +195,12 @@ final class AppPreferences {
         static let sidebarOrder = "nodus.prefs.sidebarOrder"
         static let sidebarHidden = "nodus.prefs.sidebarHidden"
         static let sidebarCustomized = "nodus.prefs.sidebarCustomized"
+        static let phonePinnedRoutes = "nodus.prefs.phonePinnedRoutes"
 
         static let all: Set<String> = [
             scrollToTop, homeLayout, spaceOrder, readingScale, interfaceStyle,
             sidebarCollapsed, sidebarWidth, sidebarOrder, sidebarHidden, sidebarCustomized,
+            phonePinnedRoutes,
         ]
     }
 
@@ -184,6 +219,7 @@ final class AppPreferences {
         sidebarOrder = Self.decode(store.data(forKey: Key.sidebarOrder))
         sidebarHidden = Set(Self.decode(store.data(forKey: Key.sidebarHidden)))
         sidebarCustomized = store.bool(forKey: Key.sidebarCustomized) ?? false
+        phonePinnedRoutes = Self.readPhonePins(store.data(forKey: Key.phonePinnedRoutes))
         store.onExternalChange(of: Key.all) { [weak self] in self?.adoptRemote() }
     }
 
@@ -213,6 +249,7 @@ final class AppPreferences {
         sidebarOrder = Self.decode(store.data(forKey: Key.sidebarOrder))
         sidebarHidden = Set(Self.decode(store.data(forKey: Key.sidebarHidden)))
         sidebarCustomized = store.bool(forKey: Key.sidebarCustomized) ?? false
+        phonePinnedRoutes = Self.readPhonePins(store.data(forKey: Key.phonePinnedRoutes))
     }
 
     private static func encode(_ values: [String]) -> Data {

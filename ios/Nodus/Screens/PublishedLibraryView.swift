@@ -21,6 +21,8 @@ struct PublishedLibraryView: View {
     @State private var selection: Set<String> = []
     @State private var loading = true
     @State private var error: String?
+    @State private var catalogueFromDevice = false
+    @State private var loadGeneration = UUID()
     @State private var pendingDeletion: Deletion?
     @State private var showingDeletionConfirmation = false
     @State private var metadataDocument: PublishedLibraryDocument?
@@ -33,7 +35,7 @@ struct PublishedLibraryView: View {
 
     init(session: SpaceSession) {
         self.session = session
-        _store = State(initialValue: PublishedLibraryStore(spaceId: session.connection.spaceId))
+        _store = State(initialValue: PublishedLibraryStore(spaceId: session.connection.spaceId, storageId: session.connection.storageId))
     }
 
     private var visible: [PublishedLibraryDocument] {
@@ -84,6 +86,7 @@ struct PublishedLibraryView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-library")
     }
 
@@ -93,7 +96,7 @@ struct PublishedLibraryView: View {
                 DesktopPageHeader(
                     title: "Library",
                     subtitle: loading && documents.isEmpty
-                        ? "Loading published catalogue…"
+                        ? "Loading library…"
                         : "\(visible.count) documents · \(collectionName)",
                     systemImage: "books.vertical",
                     accent: session.accent
@@ -101,11 +104,17 @@ struct PublishedLibraryView: View {
                 NodusSearchField(text: $query, prompt: "Search title, author or tag", accent: session.accent, isBusy: loading)
                 libraryControlBar
                 if loading, documents.isEmpty { ProgressView().tint(session.accent).frame(maxWidth: .infinity) }
-                if let error, documents.isEmpty {
+                if catalogueFromDevice {
+                    Label("Catálogo conservado en este dispositivo", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary)
+                }
+                if let error {
                     NodusNotice(tone: .caution, title: "Could not update the library", message: LocalizedStringKey(error))
+                    if !documents.isEmpty { Text("Last successfully loaded catalogue").font(.caption).foregroundStyle(.secondary) }
+                    Button("Retry library") { Task { await load(remoteOnly: true) } }.frame(minHeight: 44).disabled(loading)
+                        .accessibilityIdentifier("published-library-catalogue-retry")
                 }
                 ForEach(visible) { document in row(document) }
-                if !loading, visible.isEmpty {
+                if !loading, visible.isEmpty, error == nil {
                     ContentUnavailableView("No documents", systemImage: "books.vertical", description: Text("Try another search or collection."))
                 }
             }
@@ -317,23 +326,23 @@ struct PublishedLibraryView: View {
     }
 
     private func load(remoteOnly: Bool) async {
+        let generation = UUID(); loadGeneration = generation
         loading = true
+        defer { if loadGeneration == generation { loading = false } }
         if !remoteOnly, let cached = await store.catalog() {
-            collections = cached.collections; documents = cached.documents
+            guard loadGeneration == generation else { return }
+            collections = cached.collections; documents = cached.documents; catalogueFromDevice = true
         }
-        downloaded = Set(await store.allDownloads().map(\.id))
+        let copies = await store.allDownloads()
+        guard loadGeneration == generation else { return }
+        downloaded = Set(copies.map(\.id))
         do {
-            async let foundCollections = session.client.publishedLibraryCollections(in: session.connection.spaceId)
-            var all: [PublishedLibraryDocument] = []
-            var offset = 0
-            while true {
-                let page = try await session.client.publishedLibraryDocuments(in: session.connection.spaceId, limit: 200, offset: offset)
-                all.append(contentsOf: page.items)
-                if !page.hasMore { break }
-                offset += page.items.count
-            }
-            collections = try await foundCollections
-            documents = all
+            let catalogue = try await session.client.publishedLibraryCatalogue(in: session.connection.spaceId)
+            try Task.checkCancellation()
+            guard loadGeneration == generation else { return }
+            catalogueFromDevice = catalogue.fromDevice
+            collections = catalogue.collections
+            documents = catalogue.documents
             await store.saveCatalog(collections: collections, documents: documents)
             error = nil
 #if DEBUG
@@ -342,10 +351,11 @@ struct PublishedLibraryView: View {
                 for document in documents.prefix(2) { open(document) }
             }
 #endif
-        } catch {
+        } catch where error.isCancellation { }
+        catch {
+            guard loadGeneration == generation else { return }
             self.error = error.localizedDescription
         }
-        loading = false
     }
 }
 
@@ -433,10 +443,11 @@ private struct LibraryMetadataSheet: View {
     }
 }
 
-private struct PublishedLibraryReader: View {
+struct PublishedLibraryReader: View {
     let session: SpaceSession
     let store: PublishedLibraryStore
     let document: PublishedLibraryDocument
+    let initialPage: Int?
 
     @State private var markdown: String?
     @State private var figures: [URL] = []
@@ -451,9 +462,10 @@ private struct PublishedLibraryReader: View {
         var id: String { rawValue }
     }
 
-    init(session: SpaceSession, store: PublishedLibraryStore, document: PublishedLibraryDocument) {
+    init(session: SpaceSession, store: PublishedLibraryStore, document: PublishedLibraryDocument, initialPage: Int? = nil) {
         self.session = session; self.store = store; self.document = document
-        _source = State(initialValue: document.cleanAvailable ? .clean : .original)
+        self.initialPage = initialPage
+        _source = State(initialValue: initialPage != nil && document.originalAvailable ? .original : document.cleanAvailable ? .clean : .original)
     }
 
     var body: some View {
@@ -488,8 +500,12 @@ private struct PublishedLibraryReader: View {
                 ProgressView().tint(session.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if source == .clean, let markdown {
                 LibraryCleanReader(session: session, document: document, markdown: markdown, figures: figures)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("published-library-clean-reader")
             } else if source == .original, let originalURL {
-                LibraryOriginalReader(session: session, document: document, url: originalURL)
+                LibraryOriginalReader(session: session, document: document, url: originalURL, initialPage: initialPage)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("published-library-original-reader")
             } else {
                 ContentUnavailableView("Format unavailable", systemImage: "doc.badge.ellipsis")
             }
@@ -511,6 +527,11 @@ private struct PublishedLibraryReader: View {
             let prepared = try await store.prepare(document, using: session.client)
             markdown = prepared.markdown
             originalURL = prepared.original
+            if let initialPage {
+                guard let url = originalURL, let pdf = PDFDocument(url: url), initialPage > 0, initialPage <= pdf.pageCount else {
+                    throw APIError(status: 422, code: "citation_page_unavailable", message: String(localized: "The cited page is not available in this document."))
+                }
+            }
             figures = await store.figures(document.id)
             packageURL = prepared.package
             if source == .clean, markdown == nil { source = .original }
@@ -552,6 +573,7 @@ private struct LibraryOriginalReader: View {
     let session: SpaceSession
     let document: PublishedLibraryDocument
     let url: URL
+    var initialPage: Int? = nil
     @State private var text: String?
 
     private var extensionName: String { url.pathExtension.lowercased() }
@@ -560,7 +582,7 @@ private struct LibraryOriginalReader: View {
     var body: some View {
         Group {
             if extensionName == "pdf" {
-                LibraryPDFOriginalReader(session: session, document: document, url: url)
+                LibraryPDFOriginalReader(session: session, document: document, url: url, initialPage: initialPage)
             } else if isText {
                 ScrollView {
                     if let text {
@@ -596,6 +618,7 @@ private struct LibraryPDFOriginalReader: View {
     let session: SpaceSession
     let document: PublishedLibraryDocument
     let url: URL
+    var initialPage: Int? = nil
     @State private var hasSelection = false
     @State private var highlightRequest = 0
     @State private var syncMessage: String?
@@ -615,7 +638,8 @@ private struct LibraryPDFOriginalReader: View {
                 annotations: document.annotations.filter { $0.scope == "original" },
                 highlightRequest: highlightRequest,
                 onSelectionChanged: { hasSelection = $0 },
-                onHighlight: sync
+                onHighlight: sync,
+                initialPage: initialPage
             )
         }
         .alert("The highlight is waiting on this device", isPresented: Binding(
@@ -651,6 +675,7 @@ private struct LibraryPDFView: UIViewRepresentable {
     let highlightRequest: Int
     let onSelectionChanged: (Bool) -> Void
     let onHighlight: (PDFOriginalHighlight) -> Void
+    var initialPage: Int? = nil
 
     @MainActor
     final class Coordinator: NSObject {
@@ -712,6 +737,11 @@ private struct LibraryPDFView: UIViewRepresentable {
         let view = PDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical; view.displaysPageBreaks = true; view.backgroundColor = .secondarySystemBackground
         view.document = PDFDocument(url: url); context.coordinator.attach(view); context.coordinator.installPublished()
+        if let initialPage, let page = view.document?.page(at: initialPage - 1) {
+            Task { @MainActor [weak view] in
+                await Task.yield(); view?.layoutIfNeeded(); view?.go(to: page)
+            }
+        }
         return view
     }
     func updateUIView(_ view: PDFView, context: Context) {

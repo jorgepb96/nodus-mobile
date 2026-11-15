@@ -1,0 +1,3 @@
+# Generated shared components preserve upstream GLSL string whitespace verbatim.
+ios/Nodus/Resources/SharedDesktop/*.js linguist-generated=true -whitespace
+ios/Nodus/Resources/SharedDesktop/surface.css linguist-generated=true

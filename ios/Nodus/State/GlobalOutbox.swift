@@ -75,7 +75,7 @@ final class GlobalOutbox {
     }
 
     private var connectionsWithQueues: [AppModel.Connection] {
-        writableConnections.filter { MutationOutbox.exists(spaceId: $0.spaceId, directory: directory) }
+        writableConnections.filter { MutationOutbox.exists(spaceId: $0.storageId, directory: directory) }
     }
 
     func refresh() async {
@@ -114,7 +114,11 @@ final class GlobalOutbox {
         var nextActions: [ActionEntry] = []
         var nextCommands: [LibraryCommandEntry] = []
         var queriedLibraryOrigins = Set<String>()
-        for connection in AppModel.syncableConnections() {
+        // Linked Macs expose persistent typed jobs in Mac requests. The Server
+        // action and account-library queues are a different protocol; probing
+        // them for every linked vault rebuilt large corpus projections just to
+        // receive an unsupported-route response on ordinary app startup.
+        for connection in AppModel.syncableConnections() where connection.desktopPairingId == nil {
             guard let client = ConnectionClient.make(for: connection) else { continue }
             if let page = try? await client.spaceActions(in: connection.spaceId, limit: 100) {
                 nextActions.append(contentsOf: page.actions.map { ActionEntry(connection: connection, action: $0) })
@@ -165,6 +169,7 @@ final class GlobalOutbox {
 
     /// Send every space's queue, and report per space.
     func sendEverything() async {
+        guard !NodusLinkPolicy.readOnly else { return }
         guard !isSending else { return }
         isSending = true
         defer { isSending = false }
@@ -176,12 +181,13 @@ final class GlobalOutbox {
         await refresh()
     }
 
-    func send(spaceId: String) async {
-        guard !isSending, let connection = connectionsWithQueues.first(where: { $0.spaceId == spaceId }) else { return }
+    func send(connectionId: String) async {
+        guard !NodusLinkPolicy.readOnly else { return }
+        guard !isSending, let connection = connectionsWithQueues.first(where: { $0.id == connectionId }) else { return }
         isSending = true
         defer { isSending = false }
 
-        failures[spaceId] = nil
+        failures[connectionId] = nil
         await deliver(connection)
         await refresh()
     }
@@ -198,7 +204,7 @@ final class GlobalOutbox {
         // A locked phone cannot read the token. In the foreground that will not happen, but it
         // is a reason to try again rather than a reason to crash.
         guard let client = ConnectionClient.make(for: connection) else {
-            failures[connection.spaceId] = "This device could not read its key for this space."
+            failures[connection.id] = "This device could not read its key for this space."
             return
         }
         do {
@@ -207,20 +213,21 @@ final class GlobalOutbox {
             try await outbox.authorisePending()
             try await OutboxDelivery.send(from: outbox, using: client, in: connection.spaceId)
         } catch let error as APIError where error.isForbidden {
-            failures[connection.spaceId] = error.requiredNeed == .write
+            failures[connection.id] = error.requiredNeed == .write
                 ? "Your access to this space is read only."
                 : error.localizedDescription
         } catch {
-            failures[connection.spaceId] = error.localizedDescription
+            failures[connection.id] = error.localizedDescription
         }
     }
 
     private func outbox(for connection: AppModel.Connection) async -> MutationOutbox? {
-        if let existing = opened[connection.spaceId] { return existing }
+        guard (try? ConnectionStorage.prepare(for: connection)) != nil else { return nil }
+        if let existing = opened[connection.id] { return existing }
         // `open`, never `init`: the initialiser runs four synchronous disk operations on the
         // caller's thread, and every caller here is a view on the main actor.
-        guard let outbox = try? await MutationOutbox.open(spaceId: connection.spaceId, directory: directory) else { return nil }
-        opened[connection.spaceId] = outbox
+        guard let outbox = try? await MutationOutbox.open(spaceId: connection.storageId, directory: directory) else { return nil }
+        opened[connection.id] = outbox
         return outbox
     }
 }

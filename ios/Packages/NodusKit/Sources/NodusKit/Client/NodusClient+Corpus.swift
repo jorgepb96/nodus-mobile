@@ -20,7 +20,7 @@ public extension NodusClient {
         return try decode(SpaceOverview.self, from: response)
     }
 
-    /// A page of any of the twenty collections.
+    /// A page of any declared public collection.
     ///
     /// `q` is the server's only filter: a case-insensitive substring scanned across *every*
     /// string column of the row (`server/lib/core/search.mjs:54-61`), not a field search.
@@ -47,21 +47,35 @@ public extension NodusClient {
         return try page(from: response, key: collection.listKey)
     }
 
-    /// The generic detail: one row under the path with its trailing `s` removed.
+    /// Complete catalogues must not silently stop at the server's page bound.
+    /// A changing publication or broken offset is an error, never a shorter list.
+    func allItems(_ collection: CollectionDescriptor, in spaceId: String, query: String? = nil) async throws -> [Row] {
+        try await PageTraversal.complete(identity: { $0.string(collection.idField) }) { offset in
+            try await self.list(collection, in: spaceId, query: query, limit: PageBounds.maxLimit, offset: offset)
+        }.items
+    }
+
+    /// The primary row of a dossier, under its declared domain key.
     ///
-    /// Five collections have an enriched handler instead and have their own methods below —
-    /// `ideas`, `works`, `persons`, `authors`, `databases`. Calling this for one of those
-    /// would still work, but would throw away the relations that make the screen worth opening.
+    /// Use a dossier reader when relations, versions or evidence are needed; this
+    /// convenience method deliberately returns only the primary row.
     func item(_ collection: CollectionDescriptor, id: String, in spaceId: String) async throws -> Row {
         let response = try await perform(.init(
             path: address.spacePath(spaceId, "/\(collection.path)/\(escape(id))"),
             cacheable: true
         ))
         let object = try object(from: response)
-        guard let row = object[collection.detailKey]?.objectValue else {
+        guard let row = CompanionCollectionCopy.primaryRow(collection, detail: object) else {
             throw TransportError.malformedResponse(expected: "an object under \"\(collection.detailKey)\"")
         }
         return Row(row)
+    }
+
+    func dossier(_ collection: CollectionDescriptor, id: String, in spaceId: String, query: [URLQueryItem] = []) async throws -> CollectionDossier {
+        let response = try await perform(.init(
+            path: address.spacePath(spaceId, "/\(collection.path)/\(escape(id))"), query: query, cacheable: true
+        ))
+        return try CollectionDossier(collection: collection, id: id, payload: JSONDecoder.nodus.decode(JSONValue.self, from: response.data), fromDevice: response.fromCache)
     }
 
     // MARK: - Enriched details
@@ -274,7 +288,9 @@ public extension NodusClient {
             path: address.spacePath(spaceId, "/deep-research/\(escape(id))"),
             cacheable: true
         ))
-        return try decode(DeepResearchReportDetail.self, from: response)
+        var detail = try decode(DeepResearchReportDetail.self, from: response)
+        detail.fromDevice = response.fromCache
+        return detail
     }
 
     /// `GET .../immersion` — answers under `sessions`. `progress_json` is never served.
@@ -289,6 +305,28 @@ public extension NodusClient {
 
     func immersionSession(_ id: String, in spaceId: String) async throws -> Row {
         try await special(.immersion, id: id, in: spaceId)
+    }
+    /// Metadata only, with every page from the same current publication.
+    func allImmersionSessions(in spaceId: String) async throws -> [Row] {
+        var result: [Row] = [], ids = Set<String>()
+        var revision: String?, total: Int?
+        while true {
+            try Task.checkCancellation()
+            let page = try await immersionSessions(in: spaceId, limit: 100, offset: result.count)
+            guard page.offset == result.count, page.total >= result.count + page.items.count,
+                  revision == nil || revision == page.revision, total == nil || total == page.total,
+                  !page.hasMore || !page.items.isEmpty else {
+                throw APIError(status: 409, code: "immersion_catalogue_changed", message: "El catálogo de inmersión cambió durante la carga. Vuelve a intentarlo.")
+            }
+            revision = page.revision; total = page.total
+            for row in page.items {
+                guard let id = row.string("id"), !id.isEmpty, ids.insert(id).inserted else { throw DesktopBridgeError.malformedResponse }
+                result.append(row)
+            }
+            if !page.hasMore {
+                guard result.count == page.total else { throw DesktopBridgeError.malformedResponse }; return result
+            }
+        }
     }
 
     /// `GET .../search?q=&limit=` — lexical, across seventeen tables including the
@@ -323,7 +361,7 @@ public extension NodusClient {
 
 extension NodusClient {
     func escape(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))) ?? value
     }
 
     func pagingItems(limit: Int?, offset: Int?) -> [URLQueryItem] {
@@ -339,19 +377,22 @@ extension NodusClient {
 
     func page(from response: Response, key: String) throws -> Page<Row> {
         let object = try object(from: response)
-        guard let array = object[key]?.arrayValue else {
+        guard let array = object[key]?.arrayValue, array.allSatisfy({ $0.objectValue != nil }) else {
             // Reading the wrong key is the one mistake that produces an empty list and no
             // error at all, so it is named rather than allowed to look like an empty vault.
             throw TransportError.malformedResponse(expected: "an array under \"\(key)\"")
         }
-        return Page(
-            items: array.compactMap { $0.objectValue.map(Row.init) },
-            total: object["total"]?.intValue ?? array.count,
-            limit: object["limit"]?.intValue ?? PageBounds.defaultLimit,
-            offset: object["offset"]?.intValue ?? 0,
-            hasMore: object["hasMore"]?.boolValue ?? false,
-            revision: object["revision"]?.stringValue ?? ""
-        )
+        guard case .int(let rawTotal) = object["total"], let total = Int(exactly: rawTotal),
+              case .int(let rawLimit) = object["limit"], let limit = Int(exactly: rawLimit),
+              case .int(let rawOffset) = object["offset"], let offset = Int(exactly: rawOffset),
+              case .bool(let hasMore) = object["hasMore"],
+              case .string(let revision) = object["revision"] else {
+            throw TransportError.malformedResponse(expected: "a complete pagination envelope for \"\(key)\"")
+        }
+        let page = Page(items: array.compactMap { $0.objectValue.map(Row.init) }, total: total, limit: limit,
+            offset: offset, hasMore: hasMore, revision: revision, fromDevice: response.fromCache && hasDesktopBridge)
+        try CataloguePageIntegrity.validate(page)
+        return page
     }
 }
 
@@ -510,6 +551,7 @@ public struct StudyAgenda: Sendable, Decodable {
 }
 
 public struct DeepResearchReportDetail: Sendable, Decodable {
+    enum CodingKeys: String, CodingKey { case report, image, translations, annotations, revision }
     public let report: Row
     public let image: Row?
     public let translations: [Row]
@@ -517,6 +559,7 @@ public struct DeepResearchReportDetail: Sendable, Decodable {
     /// can still read reports from a server released before annotations existed.
     public let annotations: [Row]?
     public let revision: String?
+    public internal(set) var fromDevice = false
 }
 
 public struct NotesPage: Sendable {

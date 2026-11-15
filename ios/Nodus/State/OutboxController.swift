@@ -19,6 +19,15 @@ final class OutboxController {
     private(set) var delivered = 0
     private(set) var isFlushing = false
     private(set) var lastError: String?
+    private var lastSavedMutationID: String?
+    var lastSaveMessage: String {
+        switch items.first(where: { $0.id == lastSavedMutationID })?.state {
+        case .delivered: "Guardado y aplicado en Nodus."
+        case .accepted: "Aceptado · pendiente de que Nodus aplique el cambio."
+        case .rejected: "Nodus ha rechazado el cambio. Consulta Cambios para ver el motivo."
+        default: "Guardado en el móvil · pendiente de sincronizar con Nodus."
+        }
+    }
 
     private let outbox: MutationOutbox
     private let client: NodusClient
@@ -26,28 +35,35 @@ final class OutboxController {
     private let clientId: String
     private let limits: MutationLimits
     private let schemaVersion: Int
+    private let pairingId: String?
+    private let vaultId: String?
+    private let readerAnnotationsOnly: Bool
 
     /// Opens the queue for a space, or answers nil when this access cannot send anything.
     ///
     /// Asynchronous because opening the queue means opening SQLite, and doing that in an
     /// initialiser meant doing it on the main actor — the screen that asked for a controller
     /// stopped drawing until the disk answered.
-    static func open(session: SpaceSession) async -> OutboxController? {
-        guard session.connection.role.canSendChanges else { return nil }
+    static func open(session: SpaceSession, readerAnnotationsOnly: Bool = false) async -> OutboxController? {
+        guard (readerAnnotationsOnly ? session.canAnnotateReports : session.canAuthor) else { return nil }
+        guard (try? ConnectionStorage.prepare(for: session.connection)) != nil else { return nil }
         let directory = URL.applicationSupportDirectory.appendingPathComponent("spaces", isDirectory: true)
         guard let outbox = try? await MutationOutbox.open(
-            spaceId: session.connection.spaceId,
+            spaceId: session.connection.storageId,
             directory: directory
         ) else { return nil }
         // Asked once, here, because it is the one place that already waits on I/O. A server
         // that does not answer leaves `.unstated`, which sends smaller batches and never
         // refuses anything locally — the two things that are safe to do while guessing.
         let limits = await (try? session.client.capabilities()).map(MutationLimits.init) ?? .unstated
-        return OutboxController(session: session, outbox: outbox, limits: limits)
+        return OutboxController(session: session, outbox: outbox, limits: limits, readerAnnotationsOnly: readerAnnotationsOnly)
     }
 
-    private init(session: SpaceSession, outbox: MutationOutbox, limits: MutationLimits) {
+    private init(session: SpaceSession, outbox: MutationOutbox, limits: MutationLimits, readerAnnotationsOnly: Bool) {
+        self.readerAnnotationsOnly = readerAnnotationsOnly
         self.outbox = outbox
+        pairingId = session.connection.desktopPairingId
+        vaultId = session.connection.vaultId
         self.limits = limits
         client = session.client
         spaceId = session.connection.spaceId
@@ -55,6 +71,16 @@ final class OutboxController {
         // launch would make one device look like many.
         clientId = OutboxController.installationId
         schemaVersion = session.overview?.schemaVersion ?? 0
+    }
+
+    private func beginAuthoringActivity(readerAnnotation: Bool = false) throws -> PrivateBridgeCache? {
+        if readerAnnotationsOnly && !readerAnnotation { try NodusLinkPolicy.requireAuthoring() }
+        guard let pairingId else { return nil }
+        guard let vaultId, let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == pairingId }),
+              !pairing.isExpired, pairing.vaultIds.contains(vaultId), pairing.domains.contains(.corpus), pairing.domains.contains(.writing) else { throw DesktopBridgeError.permissionDenied }
+        let cache = try PrivateBridgeCache(pairingId: pairingId)
+        try cache.beginAuthoringActivity()
+        return cache
     }
 
     /// Why this change cannot be sent to this space, if it cannot.
@@ -91,7 +117,12 @@ final class OutboxController {
         body: String,
         folderId: String?,
         createdAt: String? = nil
-    ) async {
+    ) async throws {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; throw error }
+        defer { activity?.endAuthoringActivity() }
+
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         var row: [String: JSONValue] = [
             "id": .string(id),
@@ -110,7 +141,14 @@ final class OutboxController {
             row: row,
             schemaVersion: schemaVersion
         )
-        try? await outbox.enqueue(mutation, title: title.isEmpty ? String(localized: "Untitled note") : title)
+        do {
+            try await outbox.enqueue(mutation, title: title.isEmpty ? String(localized: "Untitled note") : title)
+            lastSavedMutationID = mutation.id
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
         await refresh()
     }
 
@@ -119,7 +157,12 @@ final class OutboxController {
     /// A delete carries no row — the server refuses one that does (`delete_has_row`) — and it
     /// is a tombstone, not an erasure: the owner's desktop applies it when it next drains the
     /// ledger, and until then the note is still in the vault everybody else reads.
-    func queueNoteDeletion(id: String, title: String) async {
+    func queueNoteDeletion(id: String, title: String) async throws {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; throw error }
+        defer { activity?.endAuthoringActivity() }
+
         let mutation = Mutation(
             clientId: clientId,
             kind: .delete,
@@ -127,7 +170,14 @@ final class OutboxController {
             key: [id],
             schemaVersion: schemaVersion
         )
-        try? await outbox.enqueue(mutation, title: String(localized: "Delete “\(title)”"))
+        do {
+            try await outbox.enqueue(mutation, title: String(localized: "Delete “\(title)”"))
+            lastSavedMutationID = mutation.id
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
         await refresh()
     }
 
@@ -143,6 +193,11 @@ final class OutboxController {
         row: [String: JSONValue]? = nil,
         title: String
     ) async -> String? {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity(readerAnnotation: true) }
+        catch { lastError = error.localizedDescription; return nil }
+        defer { activity?.endAuthoringActivity() }
+
         let mutation = Mutation(
             clientId: clientId,
             kind: kind,
@@ -151,6 +206,7 @@ final class OutboxController {
             row: row,
             schemaVersion: schemaVersion
         )
+        lastSavedMutationID = mutation.id
         do {
             try await outbox.enqueue(mutation, title: title)
             try await outbox.authorise(ids: [mutation.id])
@@ -162,8 +218,7 @@ final class OutboxController {
 
         do {
             let receipt = try await client.send(mutations: [mutation], in: spaceId)
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
+            try await outbox.recordReceipt(receipt, for: [mutation])
             if let rejection = receipt.rejected.first(where: { $0.id == mutation.id }) {
                 lastError = rejection.errorDescription ?? rejection.reason
             } else {
@@ -200,17 +255,27 @@ final class OutboxController {
         key: [String],
         row: [String: JSONValue]? = nil,
         assets: [Mutation.AssetReference] = [],
+        companionCreation: Bool = false,
         title: String
     ) async -> Bool {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return false }
+        defer { activity?.endAuthoringActivity() }
+
+        var canonicalRow = row
+        canonicalRow?["mobileSyncState"] = nil
         let mutation = Mutation(
             clientId: clientId,
             kind: kind,
             table: table,
             key: key,
-            row: row,
+            row: canonicalRow,
             assets: assets,
-            schemaVersion: schemaVersion
+            schemaVersion: schemaVersion,
+            companionCreation: companionCreation
         )
+        lastSavedMutationID = mutation.id
         if let refusal = refusal(for: mutation) {
             lastError = refusal
             await refresh()
@@ -227,13 +292,12 @@ final class OutboxController {
         }
 
         do {
-            let receipt = try await client.send(mutations: [mutation], in: spaceId)
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-            try await outbox.markRejected(receipt.rejected.map {
-                (id: $0.id, reason: $0.reason, detail: $0.errorDescription)
-            })
-            if let rejection = receipt.rejected.first(where: { $0.id == mutation.id }) {
-                lastError = rejection.errorDescription ?? rejection.reason
+            // A child saved as the network returns must follow its already-authorised
+            // parent. Sending only this new row could permanently reject the child.
+            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, limits: limits)
+            if let item = try await outbox.items().first(where: { $0.id == mutation.id && $0.state == .rejected }) {
+                lastError = item.detail
+                await refresh(); return false
             } else {
                 lastError = nil
             }
@@ -241,6 +305,7 @@ final class OutboxController {
             lastError = error.requiredNeed == .write
                 ? "Your access to this space is read only."
                 : error.localizedDescription
+            await refresh(); return false
         } catch {
             // A network failure is not data loss: this exact idempotent mutation stays
             // authorised in the device outbox and is retried by the normal sync path.
@@ -280,6 +345,11 @@ final class OutboxController {
         language: String,
         rowId: String = UUID().uuidString
     ) async -> (outboxId: String, rowId: String)? {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return nil }
+        defer { activity?.endAuthoringActivity() }
+
         let row = ReportDraft.row(
             id: rowId,
             report: report,
@@ -321,8 +391,7 @@ final class OutboxController {
 
         do {
             let receipt = try await client.send(mutations: [mutation], in: spaceId)
-            try await outbox.markAccepted(receipt.accepted + receipt.duplicate, cursor: receipt.cursor)
-            try await outbox.markRejected(receipt.rejected.map { (id: $0.id, reason: $0.reason, detail: $0.errorDescription) })
+            try await outbox.recordReceipt(receipt, for: [mutation])
         } catch let error as APIError where error.isForbidden {
             // Left as a bare key, the way `flush()` leaves it: the notice that renders this
             // wraps it in `LocalizedStringKey`, so the lookup happens at draw time.
@@ -341,6 +410,11 @@ final class OutboxController {
     }
 
     func flush() async {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity(readerAnnotation: readerAnnotationsOnly) }
+        catch { lastError = error.localizedDescription; return }
+        defer { activity?.endAuthoringActivity() }
+
         guard !isFlushing else { return }
         isFlushing = true
         lastError = nil
@@ -351,9 +425,10 @@ final class OutboxController {
             // rather than after the last: a flush cut off by a dead lift or an aeroplane leaves
             // behind changes the background task is then allowed to finish. Nothing the user
             // has not pressed send on ever travels on its own.
-            try await outbox.authorisePending()
+            if !readerAnnotationsOnly { try await outbox.authorisePending() }
 
-            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, limits: limits)
+            try await OutboxDelivery.send(from: outbox, using: client, in: spaceId, limits: limits,
+                onlyTable: readerAnnotationsOnly ? "writing_draft_annotations" : nil)
         } catch let error as APIError where error.isForbidden {
             lastError = error.requiredNeed == .write
                 ? "Your access to this space is read only."
@@ -365,6 +440,11 @@ final class OutboxController {
     }
 
     func discard(_ id: String) async {
+        let activity: PrivateBridgeCache?
+        do { activity = try beginAuthoringActivity() }
+        catch { lastError = error.localizedDescription; return }
+        defer { activity?.endAuthoringActivity() }
+
         try? await outbox.remove(id)
         await refresh()
     }

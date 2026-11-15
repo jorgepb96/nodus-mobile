@@ -5,6 +5,7 @@ import SwiftUI
 /// surface so the same hierarchy survives on iPhone instead of becoming a second iOS navbar.
 struct DesktopPageHeader: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
@@ -33,7 +34,7 @@ struct DesktopPageHeader: View {
 
     var body: some View {
         Group {
-            if horizontalSizeClass == .compact, trailing != nil {
+            if trailing != nil && (horizontalSizeClass == .compact || dynamicTypeSize.isAccessibilitySize) {
                 VStack(alignment: .leading, spacing: 12) {
                     titleBlock
                     trailing
@@ -59,15 +60,17 @@ struct DesktopPageHeader: View {
                 .frame(width: 36, height: 36)
                 .background(accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
+                Text(title).font(.title2.weight(.semibold))
                 Text(subtitle)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .foregroundStyle(Color.nodusSecondaryText)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .layoutPriority(1)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("nodus-page-heading")
     }
 }
 

@@ -1,4 +1,5 @@
 import NodusUI
+import NodusKit
 import SwiftUI
 
 /// Everything the vault has been asked, and what to do with it.
@@ -12,6 +13,7 @@ struct ChatHistoryView: View {
     let accent: Color
     /// The conversation on screen, so the list can mark it.
     let currentId: String?
+    var session: SpaceSession? = nil
     let onOpen: (ChatHistoryStore.Conversation) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +21,13 @@ struct ChatHistoryView: View {
     @State private var pendingDeletion: ChatHistoryStore.Conversation?
     @State private var pendingBulkDeletion: ChatHistoryStore.Scope?
     @State private var showsArchived = false
+    @State private var mutationIssue: String?
+    @State private var showingMac = false
+    @State private var organizing: ChatHistoryStore.Conversation?
+    @State private var placementFilter = "all"
+    private func mutate(_ action: () throws -> Void) {
+        do { try action();mutationIssue = nil } catch { mutationIssue = error.localizedDescription }
+    }
 
     /// The tab's conversations before the filter — what "all" means on this screen.
     private var listedSource: [ChatHistoryStore.Conversation] {
@@ -28,16 +37,20 @@ struct ChatHistoryView: View {
     private var listed: [ChatHistoryStore.Conversation] {
         let source = listedSource
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return source }
         return source.filter {
-            $0.title.lowercased().contains(needle)
-                || $0.messages.contains { $0.text.lowercased().contains(needle) }
+            let placement = $0.placement ?? CompanionChatPlacement()
+            let scope = placementFilter == "all" || placementFilter == "pinned" && placement.pinned || placementFilter.hasPrefix("project:") && placement.projectId == String(placementFilter.dropFirst(8)) || placementFilter.hasPrefix("folder:") && placement.folderId == String(placementFilter.dropFirst(7)) || placementFilter.hasPrefix("notebook:") && placement.notebookId == String(placementFilter.dropFirst(9))
+            return scope && (needle.isEmpty || $0.title.lowercased().contains(needle) || $0.messages.contains { $0.text.lowercased().contains(needle) })
         }
     }
 
     var body: some View {
         NavigationStack {
             List {
+                if let issue = mutationIssue ?? store.issue {
+                    NodusNotice(tone:.blocked,title:"History needs attention",message:LocalizedStringKey(issue))
+                        .listRowSeparator(.hidden).listRowBackground(Color.clear)
+                }
                 Picker("", selection: $showsArchived) {
                     Text("Conversations").tag(false)
                     Text("Archived").tag(true)
@@ -45,6 +58,22 @@ struct ChatHistoryView: View {
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+                ChatHistoryScopePicker(organisation:store.organisation,filter:$placementFilter)
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+
+                ForEach(store.conversations.filter { $0.desktop?.deleted == true && $0.desktop?.state != .saved }) { conversation in
+                    VStack(alignment:.leading,spacing:8) {
+                        Text("Deletion waiting to synchronize").font(.subheadline)
+                        Text(verbatim:conversation.title).font(.caption)
+                        if let issue = conversation.desktop?.issue { Text(verbatim:issue).font(.caption).foregroundStyle(.secondary) }
+                        if conversation.desktop?.state == .conflict {
+                            Button("Keep deletion") { mutate { try store.resolveConflict(id:conversation.id,keepMobile:true) } }
+                            if conversation.desktop?.remote != nil { Button("Use the Mac conversation") { mutate { try store.resolveConflict(id:conversation.id,keepMobile:false) } } }
+                        } else if conversation.desktop?.state == .blocked {
+                            Button("Retry synchronization") { mutate { try store.retrySynchronization(id:conversation.id) } }
+                        }
+                    }.listRowBackground(Color.clear)
+                }
 
                 ForEach(listed) { conversation in
                     Button {
@@ -54,6 +83,7 @@ struct ChatHistoryView: View {
                         row(conversation)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("nodus-chat-history-conversation-\(conversation.id)")
                     .listRowBackground(Color.clear)
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
@@ -62,7 +92,7 @@ struct ChatHistoryView: View {
                             Label("Delete", systemImage: "trash")
                         }
                         Button {
-                            store.setArchived(!conversation.isArchived, for: conversation.id)
+                            mutate { try store.setArchived(!conversation.isArchived,for:conversation.id) }
                         } label: {
                             Label(
                                 conversation.isArchived ? "Unarchive" : "Archive",
@@ -75,8 +105,23 @@ struct ChatHistoryView: View {
                     // them and it is also invisible: nothing on the row says it is there, and
                     // a list you only ever scroll never reveals it.
                     .contextMenu {
+                        Button { organizing = conversation } label: { Label("Organizar y renombrar",systemImage:"folder") }
                         Button {
-                            store.setArchived(!conversation.isArchived, for: conversation.id)
+                            var placement = conversation.placement ?? CompanionChatPlacement();placement.pinned.toggle()
+                            mutate { try store.organize(conversation.id,placement:placement) }
+                        } label: { Label(conversation.placement?.pinned == true ? "Desfijar":"Fijar",systemImage:conversation.placement?.pinned == true ? "pin.slash":"pin") }.disabled(conversation.isArchived)
+                        if conversation.desktop?.state == .blocked {
+                            Button("Retry synchronization") { mutate { try store.retrySynchronization(id:conversation.id) } }
+                        }
+                        if conversation.desktop?.state == .conflict {
+                            Button("Use the Mac conversation") { mutate { try store.resolveConflict(id:conversation.id,keepMobile:false) } }
+                            Button("Keep the mobile conversation") { mutate { try store.resolveConflict(id:conversation.id,keepMobile:true) } }
+                        }
+                        if conversation.downloadedUntil != nil {
+                            Button("Remove downloaded copy") { mutate { try store.removeDownloaded(conversation.id) } }
+                        }
+                        Button {
+                            mutate { try store.setArchived(!conversation.isArchived,for:conversation.id) }
                         } label: {
                             Label(
                                 conversation.isArchived ? "Unarchive" : "Archive",
@@ -100,6 +145,7 @@ struct ChatHistoryView: View {
                             : "Ask the vault something and the exchange is kept on this device.")
                     )
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -115,6 +161,11 @@ struct ChatHistoryView: View {
             .nodusPageBackdrop(accent: accent)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                if session?.connection.desktopPairingId != nil {
+                    ToolbarItem(placement:.topBarTrailing) {
+                        Button { showingMac = true } label: { Label("Mac conversations",systemImage:"desktopcomputer") }
+                    }
+                }
                 if !listedSource.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -147,34 +198,41 @@ struct ChatHistoryView: View {
                 isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } })
             ) {
                 Button("Delete", role: .destructive) {
-                    if let pendingDeletion { store.delete(pendingDeletion.id) }
+                    if let pendingDeletion { mutate { try store.delete(pendingDeletion.id) } }
                     pendingDeletion = nil
                 }
                 Button("Cancel", role: .cancel) { pendingDeletion = nil }
             } message: {
-                Text("“\(pendingDeletion?.title ?? "")” is removed from this device. This cannot be undone.")
+                Text(pendingDeletion?.desktop != nil ? "La conversación se eliminará de este dispositivo y del Mac al sincronizar. Esta acción no se puede deshacer.":"La conversación se eliminará de este dispositivo. Esta acción no se puede deshacer.")
             }
             .alert(
                 "Delete these conversations?",
                 isPresented: Binding(get: { pendingBulkDeletion != nil }, set: { if !$0 { pendingBulkDeletion = nil } })
             ) {
                 Button("Delete", role: .destructive) {
-                    if let pendingBulkDeletion { store.deleteAll(pendingBulkDeletion) }
+                    if let pendingBulkDeletion { mutate { try store.deleteAll(pendingBulkDeletion) } }
                     pendingBulkDeletion = nil
                 }
                 Button("Cancel", role: .cancel) { pendingBulkDeletion = nil }
             } message: {
                 // The count is the whole point of the sentence: "delete all" is a different
                 // decision at three conversations and at ninety.
-                Text("\(store.count(pendingBulkDeletion ?? .active)) conversations are removed from this device. This cannot be undone.")
+                Text("Se eliminarán \(store.count(pendingBulkDeletion ?? .active)) conversaciones. Las conversaciones vinculadas también se eliminarán del Mac al sincronizar. Esta acción no se puede deshacer.")
             }
         }
         .tint(accent)
+        .onAppear { store.reload() }
+        .nodusSheet(isPresented:$showingMac) {
+            if let session {
+                CompanionChatCatalogueView(session:session,store:store) { conversation in onOpen(conversation);dismiss() }
+            }
+        }
+        .nodusSheet(item:$organizing) { conversation in ChatConversationOrganizationView(conversation:conversation,store:store,accent:accent) }
     }
 
     private func row(_ conversation: ChatHistoryStore.Conversation) -> some View {
         HStack(alignment: .top, spacing: 11) {
-            Image(systemName: conversation.id == currentId ? "bubble.left.fill" : "bubble.left")
+            Image(systemName: conversation.placement?.pinned == true ? "pin.fill":conversation.id == currentId ? "bubble.left.fill" : "bubble.left")
                 .font(.footnote)
                 .foregroundStyle(accent)
                 .frame(width: 22, height: 22)
@@ -193,6 +251,18 @@ struct ChatHistoryView: View {
                 Text("\(conversation.messages.count / 2) · \(conversation.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                if let id = conversation.placement?.projectId,let project = store.organisation?.projects.first(where:{$0.id == id}) {
+                    Text(verbatim:project.name).font(.caption2).foregroundStyle(.secondary)
+                }
+                if let id = conversation.placement?.folderId,let name = store.organisation?.folderName(id) { Text(verbatim:name).font(.caption2).foregroundStyle(.secondary) }
+                if let id = conversation.placement?.notebookId,let name = store.organisation?.notebooks.first(where:{$0.id == id})?.name { Label(name,systemImage:"book.closed").font(.caption2).foregroundStyle(.secondary) }
+                if let sync = conversation.desktop,sync.state != .saved {
+                    Label(sync.state == .conflict ? "Conversation conflict":sync.state == .blocked ? "Synchronization needs attention":"Waiting to synchronize",systemImage:sync.state == .conflict ? "exclamationmark.arrow.triangle.2.circlepath":"arrow.triangle.2.circlepath")
+                        .font(.caption).foregroundStyle(sync.state == .pending ? .secondary:.primary)
+                    if let issue = sync.issue { Text(verbatim:issue).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+                }
+                if conversation.downloadedUntil != nil { Text("Downloaded for 14 days").font(.caption).foregroundStyle(.secondary) }
+                if conversation.isLocalRecovery == true { Text("Recovered copy").font(.caption).foregroundStyle(.secondary) }
             }
             Spacer(minLength: 0)
         }

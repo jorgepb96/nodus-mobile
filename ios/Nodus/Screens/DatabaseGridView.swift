@@ -16,6 +16,7 @@ import SwiftUI
 struct DatabaseGridView: View {
     let session: SpaceSession
     let database: Row
+    var downloadedOnly = false
 
     @State private var detail: DatabaseDetail?
     @State private var offset = 0
@@ -33,7 +34,10 @@ struct DatabaseGridView: View {
             } else if isLoading {
                 ProgressView().tint(session.accent)
             } else if let error {
-                NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(error)).padding(16)
+                VStack(alignment: .leading, spacing: 16) {
+                    NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(error))
+                    Button("Reintentar") { Task { await load(offset: offset) } }.frame(minHeight: 44)
+                }.padding(16)
             } else {
                 ContentUnavailableView("Empty database", systemImage: "tablecells")
             }
@@ -69,7 +73,8 @@ struct DatabaseGridView: View {
                                     session: session,
                                     databaseName: database.text("name"),
                                     columns: columns,
-                                    context: context
+                                    context: context,
+                                    downloadedOnly: downloadedOnly
                                 )
                             } label: {
                                 HStack(spacing: 0) {
@@ -215,15 +220,25 @@ struct DatabaseGridView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            detail = try await session.client.database(
-                databaseId,
-                in: session.connection.spaceId,
-                limit: pageSize,
-                offset: newOffset
-            )
+            let loaded: DatabaseDetail
+            if downloadedOnly {
+                let copy = try await downloadedCollection(session, path: "databases")
+                let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))
+                guard let escaped = databaseId.addingPercentEncoding(withAllowedCharacters: allowed),
+                      let response = try copy.nativeResponse(path: "databases/\(escaped)",
+                        query: [.init(name: "limit", value: String(pageSize)), .init(name: "offset", value: String(newOffset))], percentEncoded: true)
+                else { throw DesktopBridgeError.malformedResponse }
+                loaded = try JSONDecoder.nodus.decode(DatabaseDetail.self, from: response.data)
+            } else {
+                loaded = try await session.client.database(databaseId, in: session.connection.spaceId, limit: pageSize, offset: newOffset)
+            }
+            try Task.checkCancellation()
+            detail = loaded
             offset = newOffset
             error = nil
+        } catch where error.isCancellation {
         } catch {
+            detail = nil
             self.error = error.localizedDescription
         }
     }
@@ -239,6 +254,7 @@ struct DatabaseRowView: View {
     let databaseName: String?
     let columns: [Row]
     let context: DatabaseCell.Context
+    var downloadedOnly = false
 
     /// The title column is the row's name, and repeating it as a field below its own heading
     /// is the kind of thing a generic renderer does and a person notices.
@@ -267,7 +283,9 @@ struct DatabaseRowView: View {
                 .nodusGlass(NodusGlass(.regular, tint: session.accent))
 
                 ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
-                    if case .empty = DatabaseCell.value(of: column, in: context) {
+                    if let id = column.string("id"), context.cells[id]?.text("error")?.isEmpty == false {
+                        field(column)
+                    } else if case .empty = DatabaseCell.value(of: column, in: context) {
                         // A column with nothing in it says nothing. A dossier of forty
                         // headings over forty dashes is worse than a short one.
                         EmptyView()
@@ -296,7 +314,9 @@ struct DatabaseRowView: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
             }
-            value(column)
+            if let id = column.string("id"), let error = context.cells[id]?.text("error"), !error.isEmpty {
+                Label(error, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange).textSelection(.enabled)
+            } else { value(column) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -344,7 +364,9 @@ struct DatabaseRowView: View {
                                     .font(.caption2).foregroundStyle(.tertiary)
                             }
                         }
-                        if DatabaseCell.imageHash(file) == nil {
+                        if session.connection.desktopPairingId != nil, let id = file.string("id") {
+                            PrivateFileButton(session: session, kind: .databaseAttachment, id: id, downloadedOnly: downloadedOnly)
+                        } else if DatabaseCell.imageHash(file) == nil {
                             // Said once per file rather than as a footnote: the reason this is
                             // a name and not a picture is a rule, not a failure.
                             Text("Only images travel to the server. This file stays on the desktop.")
@@ -357,12 +379,12 @@ struct DatabaseRowView: View {
                 }
             }
 
-        case .relations(let count):
-            // The rows a relation points at are not in this page, and the desktop resolves
-            // their labels by opening whatever vault they live in. Saying how many there are
-            // is what this surface can say truthfully.
-            Label("\(count) linked records", systemImage: "link")
-                .font(.callout).foregroundStyle(.secondary)
+        case .relations:
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(context.relationRows[column.string("id") ?? ""] ?? [], id: \.columns) { relation in
+                    DatabaseRelationLink(session: session, relation: relation)
+                }
+            }
         }
     }
 }

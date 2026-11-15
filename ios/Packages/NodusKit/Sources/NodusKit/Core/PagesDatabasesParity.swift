@@ -79,6 +79,8 @@ public enum PagesDatabasesParity {
         public var cells: [String: String]
         public let revision: Int
         public let updatedAt: String?
+        public var formulaErrors: [String: String] = [:]
+        public var formulaColors: [String: String] = [:]
     }
 
     public struct SavedView: Identifiable, Sendable, Hashable {
@@ -92,6 +94,27 @@ public enum PagesDatabasesParity {
     }
 
     public enum SortDirection: String, Sendable, Hashable, Codable { case ascending, descending }
+
+    public static func visibleColumns(_ columns: [Column], config: [String: JSONValue]) -> [Column] {
+        let properties = (config["properties"]?.arrayValue ?? []).compactMap(\.objectValue)
+        var known: Set<String> = [], ordered: [(Int, Int, Column)] = []
+        for (index, property) in properties.enumerated() {
+            guard let id = property["columnId"]?.stringValue, known.insert(id).inserted,
+                  let column = columns.first(where: { $0.id == id }) else { continue }
+            if property["visible"] != .bool(false) { ordered.append((property["order"]?.intValue ?? index, index, column)) }
+        }
+        return ordered.sorted { ($0.0, $0.1) < ($1.0, $1.1) }.map { $0.2 } + columns.filter { !known.contains($0.id) }
+    }
+    public static func cardColumns(_ columns: [Column], config: [String: JSONValue]) -> [Column] {
+        if let ids = config["cardPropertyIds"]?.arrayValue, !ids.isEmpty {
+            return ids.compactMap(\.stringValue).compactMap { id in columns.first { $0.id == id } }
+        }
+        return visibleColumns(columns, config: config).filter { $0.type != "title" }
+    }
+    public static func layoutColumn(_ columns: [Column], config: [String: JSONValue], field: String, types: Set<String>, fallback: Bool = true) -> Column? {
+        if let id = config[field]?.stringValue, let column = columns.first(where: { $0.id == id && types.contains($0.type) }) { return column }
+        return fallback ? columns.first { types.contains($0.type) } : nil
+    }
 
     public static func pages(in tables: [String: [Row]], includeTrashed: Bool = false) -> [Page] {
         let favorites = Set((tables["page_favorites"] ?? []).compactMap { $0.string("page_id") })
@@ -188,16 +211,36 @@ public enum PagesDatabasesParity {
     public static func rows(databaseId: String, in tables: [String: [Row]]) -> [DataRow] {
         let rawRows = (tables["db_rows"] ?? []).filter { $0.string("database_id") == databaseId }
         var cellsByRow: [String: [String: String]] = [:]
-        for cell in tables["db_cells"] ?? [] where cell.string("database_id").map({ $0 == databaseId }) ?? true {
+        var errorsByRow: [String: [String: String]] = [:], colorsByRow: [String: [String: String]] = [:]
+        for cell in (tables["db_cells"] ?? []) + (tables["db_computed_cells"] ?? []) where cell.string("database_id").map({ $0 == databaseId }) ?? true {
             guard let rowId = cell.string("row_id"), let columnId = cell.string("column_id") else { continue }
             if let value = rawCell(cell) { cellsByRow[rowId, default: [:]][columnId] = value }
+            if let error = cell.string("error"), !error.isEmpty { errorsByRow[rowId, default: [:]][columnId] = error }
+            if let color = cell.string("color"), !color.isEmpty { colorsByRow[rowId, default: [:]][columnId] = color }
         }
         return rawRows.compactMap { row in
             guard let id = row.string("id") else { return nil }
+            var values = cellsByRow[id] ?? [:]
+            for column in columns(databaseId: databaseId, in: tables) {
+                switch column.type {
+                case "created_time": if let stamp = row.string("created_at") { values[column.id] = stamp }
+                case "last_edited_time": if let stamp = row.string("updated_at") { values[column.id] = stamp }
+                case "created_by", "last_edited_by":
+                    if let actor = row.string(column.type == "created_by" ? "created_by" : "updated_by"),
+                       let data = try? JSONEncoder.nodus.encode(JSONValue.array([.object(["id": .string(actor), "label": .string(actor), "kind": .string("person")])])) { values[column.id] = String(decoding: data, as: UTF8.self) }
+                case "unique_id":
+                    if let sequence = row.int("unique_sequence") {
+                        let prefix = String((column.config["uniqueIdPrefix"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(24))
+                        let padding = min(12, max(1, Int(column.config["uniqueIdPadding"]?.intValue ?? 4)))
+                        values[column.id] = prefix + String(format: "%0*d", padding, max(0, sequence))
+                    }
+                default: break
+                }
+            }
             return DataRow(
                 id: id, databaseId: databaseId, position: row.double("position") ?? 0,
-                cells: cellsByRow[id] ?? [:], revision: row.int("revision") ?? 1,
-                updatedAt: row.string("updated_at")
+                cells: values, revision: row.int("revision") ?? 1,
+                updatedAt: row.string("updated_at"), formulaErrors: errorsByRow[id] ?? [:], formulaColors: colorsByRow[id] ?? [:]
             )
         }.sorted { ($0.position, $0.id) < ($1.position, $1.id) }
     }
@@ -215,10 +258,10 @@ public enum PagesDatabasesParity {
     }
 
     public static func displayValue(column: Column, row: DataRow, allRows: [DataRow], columns: [Column]) -> String {
-        if column.type == "formula", let formula = column.config["formula"]?.objectValue {
-            return formulaValue(spec: formula, row: row, allRows: allRows, columns: columns) ?? ""
-        }
+        if let error = row.formulaErrors[column.id], !error.isEmpty { return error }
+        if ["formula", "rollup"].contains(column.type) { return row.cells[column.id] ?? "" }
         let raw = row.cells[column.id] ?? ""
+        if let display=DatabaseCardPresentation.structuredValue(type:column.type,raw:raw) { return display }
         switch column.type {
         case "checkbox": return ["1", "true", "yes"].contains(raw.lowercased()) ? "Yes" : "No"
         case "select", "status": return column.options.first(where: { $0.id == raw })?.label ?? raw

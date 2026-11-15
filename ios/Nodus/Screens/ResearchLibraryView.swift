@@ -61,7 +61,7 @@ struct ResearchLibraryView: View {
     /// What this reader has done with these reports. One store for both sections, because
     /// "which have I read" is a question about the list rather than about where a report
     /// was written.
-    private var marks: ReportMarks { ReportMarks.shared(for: session.connection.spaceId) }
+    private var marks: ReportMarks { ReportMarks.shared(for: session.connection.storageId) }
 
     private var matchingLocal: [LocalReportStore.Saved] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -90,7 +90,7 @@ struct ResearchLibraryView: View {
     }
 
     /// The run in flight, which belongs to the space and not to the screen that started it.
-    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
+    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.storageId) }
 
     var body: some View {
         List {
@@ -164,7 +164,7 @@ struct ResearchLibraryView: View {
                 }
             }
 
-            if matchingLocal.isEmpty, matchingPublished.isEmpty, !isLoading, !runner.isRunning {
+            if matchingLocal.isEmpty, matchingPublished.isEmpty, !isLoading, !runner.isRunning, error == nil {
                 ContentUnavailableView(
                     emptyTitle,
                     systemImage: "doc.text.magnifyingglass",
@@ -285,7 +285,10 @@ struct ResearchLibraryView: View {
         HStack(spacing: 13) {
             // The list endpoint carries the illustration's asset ref beside each report, which
             // is the only place a client can learn its hash.
-            if let hash = row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
+            if let id = row.string("id"), id.hasPrefix("mobile-dr-"), row.embeddedJSON("image")?.objectValue?["status"] == .string("ready") {
+                CompanionReportCoverImage(session: session, id: id)
+                    .frame(width: Self.thumbnail, height: Self.thumbnail).clipShape(NodusRadius.controlShape)
+            } else if let hash = row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
                 AssetImage(session: session, hash: hash)
                     .frame(width: Self.thumbnail, height: Self.thumbnail)
                     .clipShape(NodusRadius.controlShape)
@@ -367,11 +370,12 @@ struct ResearchLibraryView: View {
         defer { isLoading = false }
         local.reload()
         do {
-            published = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 100).items
+            published = try await session.client.allDeepResearchReports(in: session.connection.spaceId)
             reconcilePublishedReadState()
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             published = []
+            error = nil
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
@@ -451,6 +455,23 @@ struct LocalReportImage: View {
                 .resizable()
                 .scaledToFill()
                 .clipped()
+        }
+    }
+}
+
+/// The same 16:9 illustration and 26rem height cap as Desktop. A layout gives
+/// the image an actual frame; a suggested aspect ratio alone lets a large
+/// photograph keep its original height and fill most of an iPad screen.
+private struct ReportHeroLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: min(width * 9 / 16, 416))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for view in subviews {
+            view.place(at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center,
+                proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
         }
     }
 }
@@ -584,7 +605,7 @@ private struct LocalReportReadingTools: ViewModifier {
     let rows: [Row]
 
     func body(content: Content) -> some View {
-        if session.connection.role.canSendChanges, let remoteId {
+        if session.canAuthor, let remoteId {
             content.modifier(SyncedReportReadingTools(
                 session: session,
                 id: remoteId,
@@ -593,7 +614,7 @@ private struct LocalReportReadingTools: ViewModifier {
                 rows: rows
             ))
         } else {
-            content.nodusReadingMarks(spaceId: session.connection.spaceId, id: localId, accent: session.accent)
+            content.nodusReadingMarks(spaceId: session.connection.storageId, id: localId, accent: session.accent)
         }
     }
 }
@@ -609,7 +630,7 @@ struct OptionalReadingMarks: ViewModifier {
 
     func body(content: Content) -> some View {
         if let id {
-            content.nodusReadingMarks(spaceId: session.connection.spaceId, id: id, accent: session.accent)
+            content.nodusReadingMarks(spaceId: session.connection.storageId, id: id, accent: session.accent)
         } else {
             content
         }
@@ -650,7 +671,7 @@ struct SyncedReportReadingTools: ViewModifier {
         self.rows = rows
         self.scope = scope
         self.annotationPrefix = annotationPrefix
-        let store = ReportMarks.shared(for: session.connection.spaceId)
+        let store = ReportMarks.shared(for: session.connection.storageId)
         marks = store
         _legacyBookmark = State(initialValue: ReadingBookmarks(bookmark: store.bookmark(for: localMarkId ?? id)) { next in
             store.setBookmark(next, for: localMarkId ?? id)
@@ -658,7 +679,7 @@ struct SyncedReportReadingTools: ViewModifier {
         _annotations = State(initialValue: ReaderAnnotations(
             draftId: id,
             scope: scope,
-            isWritable: session.connection.role.canSendChanges,
+            isWritable: session.canAnnotateReports,
             idPrefix: annotationPrefix
         ))
     }
@@ -672,16 +693,35 @@ struct SyncedReportReadingTools: ViewModifier {
             .environment(legacyBookmark)
             .environment(annotations)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { readButton }
-                if annotations.isWritable {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        undoHighlightButton
-                        highlighterButton
-                        highlightColorMenu
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            readButton
+                            if annotations.isWritable {
+                                highlighterButton
+                                highlightColorMenu
+                                undoHighlightButton
+                            }
+                            if annotations.bookmark != nil || legacyBookmark.bookmark != nil { bookmarkMenu }
+                        } label: {
+                            Label("Reading tools", systemImage: "ellipsis.circle")
+                                .foregroundStyle(session.accent)
+                        }
+                        .tint(session.accent)
+                        .accessibilityIdentifier("report-reading-tools")
                     }
-                }
-                if annotations.bookmark != nil || legacyBookmark.bookmark != nil {
-                    ToolbarItem(placement: .topBarTrailing) { bookmarkMenu }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) { readButton }
+                    if annotations.isWritable {
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            undoHighlightButton
+                            highlighterButton
+                            highlightColorMenu
+                        }
+                    }
+                    if annotations.bookmark != nil || legacyBookmark.bookmark != nil {
+                        ToolbarItem(placement: .topBarTrailing) { bookmarkMenu }
+                    }
                 }
             }
             .sheet(
@@ -691,7 +731,7 @@ struct SyncedReportReadingTools: ViewModifier {
                 )
             ) { presentation in
                 ReaderAnnotationSheet(annotations: annotations, presentation: presentation)
-                    .presentationDetents([.height(230), .medium])
+                    .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
             .alert(
@@ -878,6 +918,8 @@ private struct ReaderCommentEditor: View {
                     .frame(minHeight: 82)
                     .padding(8)
                     .nodusFieldSurface(accent: .secondary)
+                    .accessibilityLabel("Comment")
+                    .accessibilityIdentifier("report-comment-editor")
             } else {
                 Text(annotation?.comment ?? "")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -892,13 +934,11 @@ private struct ReaderCommentEditor: View {
                         }
                         .accessibilityLabel("Delete")
                     }
-                    Button {
+                    Button("Save") {
                         if let annotation { annotations.updateComment(annotation, body: bodyText) }
                         else { annotations.saveNewComment(anchor, body: bodyText) }
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
                     }
-                    .accessibilityLabel("Save")
+                    .accessibilityIdentifier("report-comment-save")
                     .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -929,6 +969,9 @@ struct ReportBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let notice = report.materialNotice {
+                NodusNotice(tone: .info, title: "Alcance de la investigación", message: LocalizedStringKey(notice))
+            }
             ForEach(Array(report.sections.enumerated()), id: \.offset) { index, section in
                 VStack(alignment: .leading, spacing: 14) {
                     ReportSectionTitle(section.title, accent: session.accent)
@@ -999,12 +1042,12 @@ struct LocalReportReader: View {
     }
     private var liveMarkdown: String { publishedMarkdown ?? report.markdown }
     private var liveTitle: String { liveDetail?.report.text("title") ?? saved.title }
-    private var store: LocalReportStore { LocalReportStore.shared(for: session.connection.spaceId) }
+    private var store: LocalReportStore { LocalReportStore.shared(for: session.connection.storageId) }
     private var currentSaved: LocalReportStore.Saved { local.reports.first(where: { $0.id == saved.id }) ?? saved }
 
     /// What the send control needs, or nothing at all when this access cannot send.
     private var sendContext: ReportSendContext? {
-        guard session.connection.role.canSendChanges else { return nil }
+        guard session.canAuthor else { return nil }
         // Read back from the store rather than trusting the copy this view was handed: sending
         // rewrites the record, and the row that navigated here is a value from before that.
         let current = local.reports.first { $0.id == saved.id } ?? saved
@@ -1016,14 +1059,10 @@ struct LocalReportReader: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                 if let hash = liveDetail?.image?.text("hash") {
-                    AssetImage(session: session, hash: hash)
-                        .frame(height: 200)
-                        .frame(maxWidth: .infinity)
+                    ReportHeroLayout { AssetImage(session: session, hash: hash) }
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 } else if let url = store.imageURL(for: currentSaved) {
-                    LocalReportImage(url: url)
-                        .frame(height: 200)
-                        .frame(maxWidth: .infinity)
+                    ReportHeroLayout { LocalReportImage(url: url) }
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
 
@@ -1051,6 +1090,8 @@ struct LocalReportReader: View {
                     ReportActions(
                         markdown: liveMarkdown,
                         title: nil,
+                        pdf: (session, currentSaved.vaultRowId ?? currentSaved.id, liveTitle),
+                        localPDF: liveDetail == nil ? (currentSaved, local) : nil,
                         send: sendContext,
                         saveToNotes: (saved.id, liveTitle, liveMarkdown, session),
                         accent: session.accent
@@ -1147,6 +1188,7 @@ struct LocalReportReader: View {
                 DeepResearchTranslationSheet(
                     reportId: currentSaved.vaultRowId ?? saved.id,
                     sourceMarkdown: liveMarkdown,
+                    sourceTitle: currentSaved.title,
                     session: session,
                     remoteRows: liveDetail?.translations,
                     syncEnabled: currentSaved.vaultRowId != nil
@@ -1222,53 +1264,75 @@ struct PublishedReportReader: View {
     let row: Row
 
     @Environment(AppPreferences.self) private var preferences
+    @Environment(\.downloadedReaderOnly) private var downloadedOnly
+    @State private var visualEditorOpen = false
     @State private var detail: DeepResearchReportDetail?
     @State private var error: String?
     @State private var translationOpen = false
+    @State private var loading = false
+    @State private var metadataExpanded = false
+    @State private var authoredFigureContext: JSONValue?
+    @State private var figureIssue: String?
+    @State private var figureSourceIsAuthored = false
+    @State private var figureSourceIsDevice = false
+    private var phoneHeader: Bool { UIDevice.current.userInterfaceIdiom == .phone }
     private var currentRow: Row { detail?.report ?? row }
+    private var localCoverID: String? {
+        guard let id = currentRow.string("id"), id.hasPrefix("mobile-dr-"),
+              (detail?.image?.text("status") ?? row.embeddedJSON("image")?.objectValue?["status"]?.stringValue) == "ready" else { return nil }
+        return id
+    }
+    private var imageHash: String? {
+        if let detail { return detail.image?.text("hash") }
+        return row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let hash = detail?.image?.text("hash") ?? row.embeddedJSON("image")?.objectValue?["hash"]?.stringValue {
-                    AssetImage(session: session, hash: hash)
-                        .frame(height: 200)
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                if currentRow.string("id")?.hasPrefix("mobile-dr-") == true {
+                    Label("Informe escrito en este dispositivo · la publicación en el Mac se revisa en la cola", systemImage: "pencil.and.outline")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else if detail?.fromDevice == true {
+                    Label("Sin conexión · informe descargado en este dispositivo", systemImage: "wifi.slash")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                if session.connection.desktopPairingId != nil, let id = currentRow.string("id"), !id.hasPrefix("mobile-dr-") {
+                    LinkReportHero(session: session, id: id, height: phoneHeader ? 190 : 280)
+                } else {
+                    if let id = localCoverID {
+                        ReportHeroLayout { CompanionReportCoverImage(session: session, id: id) }
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    } else if let hash = imageHash {
+                        ReportHeroLayout { AssetImage(session: session, hash: hash) }
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
                     PageText(currentRow.text("title") ?? String(localized: "Report"), order: 0)
                         .font(.title3.weight(.semibold))
-                    if let objective = currentRow.text("objective") {
-                        PageText(objective, order: 1).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    if let document {
-                        ReportActions(
-                            markdown: document,
-                            title: currentRow.text("title"),
-                            // Beside the copy, because it is the other way to take the report
-                            // with you — and the only one that keeps its layout.
-                            pdf: currentRow.string("id").map {
-                                (session, $0, currentRow.text("title") ?? String(localized: "Report"))
-                            },
-                            saveToNotes: currentRow.string("id").map {
-                                ($0, currentRow.text("title") ?? String(localized: "Report"), document, session)
-                            },
-                            accent: session.accent
-                        )
-                        .padding(.top, 6)
-                    }
+                    if phoneHeader {
+                        DisclosureGroup("Detalles y opciones", isExpanded: $metadataExpanded) {
+                            reportMetadata
+                        }
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("report-native-details")
+                    } else { reportMetadata }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(NodusSpace.cardPadding)
-                .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                .padding(.vertical, 8)
                 .nodusSearchOrder(0)
 
                 if let error {
                     NodusNotice(tone: .blocked, title: "Could not open", message: LocalizedStringKey(error))
+                    Button("Reintentar") { Task { await load() } }.frame(minHeight: 44).disabled(loading).accessibilityIdentifier("report-native-load-retry")
                 }
 
+                if let figureIssue {
+                    NodusNotice(tone: .blocked, title: "Recursos visuales del informe", message: LocalizedStringKey(figureIssue))
+                    Button("Reintentar figuras") { Task { if let id = currentRow.string("id") { authoredFigureContext = await loadFigureContext(id) } } }.frame(minHeight: 44)
+                }
                 if let sections = prose {
                     ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
                         VStack(alignment: .leading, spacing: 14) {
@@ -1278,12 +1342,13 @@ struct PublishedReportReader: View {
                             // The desktop writes one Markdown document with its own headings
                             // and `nodus://` citations in it. Rendered as plain text, both
                             // arrived as punctuation.
-                            CorpusProse(section.body, accent: session.accent, session: session)
+                            CorpusProse(section.body, accent: session.accent, session: session, figureContext: authoredFigureContext)
+                                .environment(\.authoredResearchReaderID, currentRow.string("id").flatMap { $0.hasPrefix("mobile-dr-") ? $0 : nil })
                                 .nodusSearchOrder(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(ReportLayout.sectionPadding)
-                        .nodusGlass(NodusGlass(.regular, tint: session.accent))
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, phoneHeader ? 0 : ReportLayout.sectionPadding)
                         .nodusSearchOrder(index + 1)
                     }
                 } else if detail == nil, error == nil {
@@ -1295,6 +1360,7 @@ struct PublishedReportReader: View {
             .frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
+        .accessibilityIdentifier("report-native-reader")
         .nodusReadingStyle(ReadingStyle(scale: preferences.readingScale, document: true))
         .nodusPageFunctions(
             accent: session.accent,
@@ -1317,10 +1383,28 @@ struct PublishedReportReader: View {
             rows: detail?.annotations ?? []
         ))
         .toolbar {
+            if session.canAuthor {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { visualEditorOpen = true } label: { Image(systemName: "photo.badge.plus") }
+                        .accessibilityLabel("Recursos visuales del informe")
+                        .accessibilityIdentifier("report-tool-visuals")
+                        .disabled(document == nil)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { translationOpen = true } label: { Image(systemName: "character.book.closed") }
                     .accessibilityLabel("Translations")
+                    .accessibilityIdentifier("report-tool-translations")
                     .disabled(document == nil)
+            }
+        }
+        .sheet(isPresented: $visualEditorOpen, onDismiss: { Task { if let id = currentRow.string("id") { authoredFigureContext = await loadFigureContext(id) } } }) {
+            if let id = currentRow.string("id") {
+                NavigationStack {
+                    SharedDesktopSurface(session: session, surface: .deepResearch, initialResearchVisualReportId: id, downloadedOnly: downloadedOnly)
+                        .navigationTitle("Recursos visuales")
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { visualEditorOpen = false } } }
+                }.presentationDetents([.large])
             }
         }
         .sheet(isPresented: $translationOpen) {
@@ -1328,13 +1412,37 @@ struct PublishedReportReader: View {
                 DeepResearchTranslationSheet(
                     reportId: id,
                     sourceMarkdown: document,
+                    sourceTitle: currentRow.string("title") ?? "Deep Research",
                     session: session,
                     remoteRows: detail?.translations
                 )
                 .presentationDetents([.large])
             }
         }
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision)") { await load() }
+    }
+
+    @ViewBuilder private var reportMetadata: some View {
+                    if let objective = currentRow.text("objective") {
+                        PageText(objective, order: 1).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if let document {
+                        ReportActions(
+                            markdown: document,
+                            title: currentRow.text("title"),
+                            // Beside the copy, because it is the other way to take the report
+                            // with you — and the only one that keeps its layout.
+                            pdf: currentRow.string("id").map {
+                                (session, $0, currentRow.text("title") ?? String(localized: "Report"))
+                            },
+                            saveToNotes: currentRow.string("id").map {
+                                ($0, currentRow.text("title") ?? String(localized: "Report"), document, session)
+                            },
+                            accent: session.accent
+                        )
+                        .environment(\.downloadedReaderOnly, downloadedOnly || (figureSourceIsDevice && session.connection.desktopPairingId != nil))
+                        .padding(.top, 6)
+                    }
     }
 
     private struct Prose { let heading: String?; let body: String }
@@ -1388,12 +1496,38 @@ struct PublishedReportReader: View {
             .joined(separator: "\n\n")
     }
 
+    private func loadFigureContext(_ id: String, preferAuthored: Bool? = nil, expectedDraft:JSONValue? = nil) async -> JSONValue? {
+        do { let value = try await CompanionResearchFigures.context(session: session, reportID: id, downloadedOnly:(downloadedOnly || figureSourceIsDevice) && session.connection.desktopPairingId != nil && !session.isDemo, preferAuthored:preferAuthored ?? figureSourceIsAuthored, expectedDraft:expectedDraft ?? detail?.report.embeddedJSON("draft")); figureIssue = value?.objectValue?["unsupportedOriginals"]?.arrayValue?.isEmpty == false ? "La vista previa está disponible. Algunos originales de capacidades todavía no se pueden abrir en este lector." : nil; return value }
+        catch is CancellationError { return nil }
+        catch { figureIssue = error.localizedDescription; return nil }
+    }
     private func load() async {
         guard let id = row.string("id") else { return }
+        loading = true; error = nil
+        defer { loading = false }
         do {
-            let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
-            detail = loaded
-            error = nil
+            if (!downloadedOnly || id.hasPrefix("mobile-dr-")), let own = try await CompanionDeepResearchResult.detail(session: session, id: id) {
+                figureSourceIsAuthored = true; figureSourceIsDevice = false; authoredFigureContext = await loadFigureContext(id,preferAuthored:true); detail = own; error = nil; return
+            }
+            if downloadedOnly,session.connection.desktopPairingId != nil,!session.isDemo {
+                let source=try await CompanionDownloadedResearchFigures.source(session:session,reportID:id)
+                detail=source.detail;figureSourceIsAuthored=false;figureSourceIsDevice=true
+                authoredFigureContext=await loadFigureContext(id,expectedDraft:source.detail.report.embeddedJSON("draft"));error=nil;return
+            }
+            do {
+                let loaded = try await session.client.deepResearchReport(id, in: session.connection.spaceId)
+                figureSourceIsAuthored = false; figureSourceIsDevice = loaded.fromDevice
+                authoredFigureContext = await loadFigureContext(id,expectedDraft:loaded.report.embeddedJSON("draft"))
+                detail = loaded
+                error = nil
+            } catch {
+                guard !downloadedOnly, isPrivateBridgeOffline(error),
+                      let own = try await CompanionDeepResearchResult.detail(session: session, id: id, publishedReceipt: true) else { throw error }
+                figureSourceIsAuthored = true; figureSourceIsDevice = false
+                authoredFigureContext = await loadFigureContext(id,preferAuthored:true)
+                detail = own
+                self.error = nil
+            }
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
@@ -1436,6 +1570,7 @@ struct ReportSectionTitle: View {
     private let accent: Color
 
     @Environment(\.nodusReadingStyle) private var reading
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(_ title: String, accent: Color) {
         self.title = title
@@ -1446,7 +1581,7 @@ struct ReportSectionTitle: View {
         VStack(alignment: .leading, spacing: 7) {
             // Zero, so a section's own name is the first thing the find bar walks onto inside it.
             PageText(title.uppercased(), order: 0)
-                .font(reading.font(.title3, weight: .bold))
+                .font(reading.font(.title3, weight: .bold, dynamicTypeSize: dynamicTypeSize))
                 .tracking(0.8)
                 .fixedSize(horizontal: false, vertical: true)
             Rectangle()
@@ -1456,5 +1591,72 @@ struct ReportSectionTitle: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 2)
+    }
+}
+
+/// Authored image bytes remain with their checkpoint even after consulted packs
+/// are purged. This path never substitutes a live asset or a different report.
+private struct CompanionReportCoverImage: View {
+    let session: SpaceSession
+    let id: String
+    @State private var image: UIImage?
+    @State private var failure: String?
+    var body: some View {
+        Group {
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else if let failure { ContentUnavailableView("No se ha podido cargar la portada", systemImage: "photo.badge.exclamationmark", description: Text(failure)) }
+            else { ProgressView() }
+        }
+        .task(id: id) {
+            do {
+                guard let dataURL = try await CompanionDeepResearchResult.cover(session: session, id: id, dataURL: true).stringValue,
+                      let payload = dataURL.split(separator: ",", maxSplits: 1).last, let bytes = Data(base64Encoded: String(payload)),
+                      let decoded = UIImage(data: bytes) else { throw DesktopBridgeError.malformedResponse }
+                image = decoded
+            } catch { failure = error.localizedDescription }
+        }
+    }
+}
+
+/// Explicit access from the current gallery. Original IDs, images, send receipts
+/// and the original reader stay in their original store; nothing is migrated or
+/// reclassified as a new generation checkpoint.
+struct LegacyResearchReportsView: View {
+    let session: SpaceSession
+    @Bindable var local: LocalReportStore
+    var body: some View {
+        List {
+            if let checkpoint = DeepResearchCheckpointStore.load(spaceId: session.connection.storageId), !checkpoint.isComplete {
+                Section {
+                    if session.aiExecutionMode == .autonomous {
+                        NavigationLink("Continuar el informe anterior inacabado") {
+                            DeepResearchScreen(session: session, local: local)
+                        }
+                    } else {
+                        Text("Hay un informe anterior inacabado. Sus respuestas se conservan; la generación en este dispositivo está aplazada durante esta beta.")
+                    }
+                }
+            }
+
+            if local.reports.isEmpty {
+                ContentUnavailableView("No hay informes de versiones anteriores", systemImage: "doc.text")
+            } else {
+                Section {
+                    ForEach(local.reports) { saved in
+                        NavigationLink {
+                            LocalReportReader(session: session, local: local, saved: saved)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(saved.title)
+                                Text(saved.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                                if saved.wasSent { Label("Enviado al Mac", systemImage: "paperplane").font(.caption) }
+                            }
+                        }
+                    }
+                } header: { Text("Guardados en este dispositivo por versiones anteriores") }
+            }
+        }
+        .navigationTitle("Informes anteriores")
+        .nodusPageBackdrop(accent: session.accent)
     }
 }

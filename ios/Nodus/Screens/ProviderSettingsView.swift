@@ -12,6 +12,12 @@ struct ProviderSettingsView: View {
     @Environment(AISettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
 
+    @State private var webSearchEndpoint = ""
+    @State private var webSearchSaved = false
+    @State private var embeddingProvider: AIProvider = .openai
+    @State private var embeddingModel = ""
+    @State private var embeddingDimensions = "1536"
+    @State private var embeddingSaved = false
     let accent: Color
     /// The identity this space needs, so the provider that matters can be marked.
     var requiredEmbedding: EmbeddingIdentity?
@@ -26,7 +32,9 @@ struct ProviderSettingsView: View {
 
     var body: some View {
         Group {
-            if embedded { content } else { NavigationStack { content } }
+            if !BetaAIFeatures.autonomousGeneration {
+                ContentUnavailableView("IA en el Mac", systemImage: "desktopcomputer", description: Text(BetaAIFeatures.macRequiredMessage))
+            } else if embedded { content } else { NavigationStack { content } }
         }
         .nodusSheet(item: $editing) { provider in keySheet(provider) }
         .scrollContentBackground(.hidden)
@@ -77,10 +85,45 @@ struct ProviderSettingsView: View {
                     }
                 }
 
+                Section("Web search on this device") {
+                    TextField("SearXNG HTTPS search endpoint", text: $webSearchEndpoint)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    Button("Save web search endpoint") {
+                        do { try settings.setWebSearchEndpoint(webSearchEndpoint); webSearchSaved = true; error = nil }
+                        catch { self.error = error.localizedDescription }
+                    }
+                    if webSearchSaved { Text("Web search configuration saved").foregroundStyle(.secondary) }
+                    Text("Optional. Complete guides with web text use this public SearXNG endpoint directly from this device. No Mac service or provider fallback is used.").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Embeddings for local analysis") {
+                    Picker("Provider", selection: $embeddingProvider) {
+                        ForEach(AIProvider.embeddingCapable, id: \.self) { provider in Text(provider.label).tag(provider) }
+                    }
+                    TextField("Embedding model ID", text: $embeddingModel)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Dimensions", text: $embeddingDimensions).keyboardType(.numberPad)
+                    Button("Save embedding configuration") {
+                        do {
+                            guard let dimensions = Int(embeddingDimensions) else { throw DesktopBridgeError.malformedResponse }
+                            try settings.setEmbeddingConfiguration(EmbeddingIdentity(provider: embeddingProvider.rawValue,
+                                model: embeddingModel.trimmingCharacters(in: .whitespacesAndNewlines), dim: dimensions))
+                            embeddingSaved = true; error = nil
+                        } catch { self.error = error.localizedDescription }
+                    }.disabled(embeddingModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if embeddingSaved { Text("Embedding configuration saved").foregroundStyle(.secondary) }
+                    Text("Complete study guides use this model and this device’s provider key to compare extracted concepts. This does not change the vault’s index or use a model on the Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if let error {
                     Section { Text(error).font(.caption).foregroundStyle(Color.nodusDanger) }
                 }
             }
+        .onAppear {
+            webSearchEndpoint = settings.webSearchEndpoint ?? ""
+            if let value = settings.embeddingConfiguration, let provider = AIProvider(rawValue: value.provider) {
+                embeddingProvider = provider; embeddingModel = value.model; embeddingDimensions = String(value.dim)
+            }
+        }
         .navigationTitle("AI providers")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

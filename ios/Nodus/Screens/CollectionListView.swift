@@ -24,7 +24,9 @@ struct CollectionListView: View {
     @State private var query = ""
     @State private var isLoading = false
     @State private var error: String?
+    @State private var fromDevice = false
     @State private var loadTask: Task<Void, Never>?
+    @State private var requestGeneration = UUID()
 
     var body: some View {
         if let workspaceRoute {
@@ -51,6 +53,7 @@ struct CollectionListView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("workspace-\(workspaceRoute.rawValue)")
         } else {
             catalogue
@@ -62,6 +65,9 @@ struct CollectionListView: View {
             LazyVStack(alignment: .leading, spacing: 9) {
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load", message: LocalizedStringKey(error))
+                if !rows.isEmpty { Text("Last successfully loaded results").font(.caption).foregroundStyle(.secondary) }
+                Button("Retry catalogue") { Task { await reload() } }.frame(minHeight: 44)
+                    .accessibilityIdentifier("collection-catalogue-retry")
             }
 
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -69,13 +75,13 @@ struct CollectionListView: View {
             }
 
             if hasMore {
-                HStack {
-                    Spacer()
-                    ProgressView().tint(session.accent)
-                    Spacer()
-                }
-                .padding()
-                .task { await loadMore() }
+                Button { Task { await loadMore() } } label: {
+                    HStack {
+                        if isLoading { ProgressView().tint(session.accent) }
+                        else { Label("Load more", systemImage: "chevron.down") }
+                    }.frame(maxWidth: .infinity, minHeight: 44)
+                }.disabled(isLoading).buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .accessibilityIdentifier("collection-catalogue-load-more")
             }
 
             if rows.isEmpty, !isLoading, error == nil {
@@ -96,6 +102,13 @@ struct CollectionListView: View {
         }
         .nodusDismissesKeyboard()
         .nodusPageFunctions(accent: session.accent)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if fromDevice {
+                Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial)
+            }
+        }
         .navigationTitle(Text(LocalizedStringKey(collection.label)))
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
@@ -104,8 +117,8 @@ struct CollectionListView: View {
                 DesktopPageHeader(
                     title: LocalizedStringKey(collection.label),
                     subtitle: isLoading && rows.isEmpty
-                        ? "Loading publication…"
-                        : "\(total.formatted()) published records",
+                        ? "Loading library…"
+                        : "\(total.formatted()) records",
                     systemImage: collection.icon,
                     accent: session.accent
                 )
@@ -191,6 +204,7 @@ struct CollectionListView: View {
     /// list feels worse than one that waits a beat.
     private func scheduleReload() {
         loadTask?.cancel()
+        requestGeneration = UUID()
         loadTask = Task {
             try? await Task.sleep(for: .milliseconds(320))
             guard !Task.isCancelled else { return }
@@ -199,20 +213,25 @@ struct CollectionListView: View {
     }
 
     private func reload() async {
+        let generation = UUID(), requestedQuery = query
+        requestGeneration = generation
         isLoading = true
-        defer { isLoading = false }
+        defer { if requestGeneration == generation { isLoading = false } }
         do {
             let page = try await session.client.list(
                 collection,
                 in: session.connection.spaceId,
-                query: query.isEmpty ? nil : query,
+                query: requestedQuery.isEmpty ? nil : requestedQuery,
                 limit: 60,
                 offset: 0
             )
+            guard generation == requestGeneration, requestedQuery == query else { return }
+            try CataloguePageIntegrity.validateRows(page, idField: collection.idField, offset: 0)
             rows = page.items
             total = page.total
             hasMore = page.hasMore
             revision = page.revision
+            fromDevice = page.fromDevice
             error = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1",
@@ -222,41 +241,43 @@ struct CollectionListView: View {
             }
 #endif
         } catch let apiError as APIError where apiError.isNotPublished {
+            guard generation == requestGeneration else { return }
             rows = []; total = 0; hasMore = false; error = nil
         } catch is CancellationError {
             // Superseded by a newer keystroke.
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
+            guard generation == requestGeneration else { return }
             self.error = error.localizedDescription
         }
     }
 
     private func loadMore() async {
-        guard !isLoading, hasMore else { return }
+        guard !isLoading, hasMore, let revision else { return }
+        let generation = requestGeneration, requestedQuery = query
+        let previous = Page(items: rows, total: total, limit: max(1, rows.count), offset: 0, hasMore: hasMore,
+            revision: revision, fromDevice: fromDevice)
         isLoading = true
-        defer { isLoading = false }
+        defer { if requestGeneration == generation { isLoading = false } }
         do {
-            let page = try await session.client.list(
-                collection,
-                in: session.connection.spaceId,
-                query: query.isEmpty ? nil : query,
-                limit: 60,
-                offset: rows.count
-            )
-            // Two pages from different publications are two different corpora. Stitching them
-            // would show a state the vault was never in, so the list restarts instead.
-            guard page.revision == revision else {
-                await reload()
-                return
-            }
+            let page = try await session.client.list(collection, in: session.connection.spaceId,
+                query: requestedQuery.isEmpty ? nil : requestedQuery, limit: 60, offset: previous.items.count)
+            guard generation == requestGeneration, requestedQuery == query else { return }
+            try CataloguePageIntegrity.validateRows(page, idField: collection.idField, offset: previous.items.count, previous: previous)
             rows.append(contentsOf: page.items)
-            hasMore = page.hasMore
-        } catch {
+            hasMore = page.hasMore; error = nil
+        } catch PageTraversalError.changingRevision {
+            guard generation == requestGeneration else { return }
+            await reload()
+        } catch where error.isCancellation { }
+        catch {
+            guard generation == requestGeneration else { return }
             hasMore = false
             self.error = error.localizedDescription
         }
     }
+
 }
 
 struct RowCell: View {
@@ -310,10 +331,14 @@ struct SpecialListView: View {
     @State private var rows: [Row] = []
     @State private var folders: [Row] = []
     @State private var total = 0
-    @State private var hasMore = false
+    @State private var reader = SpecialCatalogueReader()
+    @State private var requestID = UUID()
     @State private var error: String?
     @State private var isLoading = false
     @State private var outbox: OutboxController?
+    @State private var outboxStorageID: String?
+    @State private var catalogueStorageID: String?
+    @State private var editorStorageID: String?
     @State private var composing = false
     @State private var editing: EditableNote?
     @State private var queued = false
@@ -338,6 +363,9 @@ struct SpecialListView: View {
             NodusTopAnchorRow()
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load", message: LocalizedStringKey(error))
+                    .listRowBackground(Color.clear)
+                Button("Retry") { Task { await reload() } }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                     .listRowBackground(Color.clear)
             }
             ForEach(Array(visible.enumerated()), id: \.offset) { _, row in
@@ -366,6 +394,7 @@ struct SpecialListView: View {
                             Label("Delete", systemImage: "trash")
                         }
                         Button {
+                            editorStorageID = session.connection.storageId
                             editing = EditableNote(row)
                         } label: {
                             Label("Edit", systemImage: "pencil")
@@ -408,27 +437,31 @@ struct SpecialListView: View {
         .toolbar {
             if canEditNotes {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { composing = true } label: { Image(systemName: "square.and.pencil") }
+                    Button { editorStorageID = session.connection.storageId; composing = true } label: { Image(systemName: "square.and.pencil") }
                         .tint(session.accent)
                 }
             }
         }
         .nodusSheet(isPresented: $composing) {
+            let storageID = editorStorageID
             NoteEditor(accent: session.accent, note: nil) { title, body in
-                await outbox?.queueNote(title: title, body: body, folderId: nil)
-                queued = true
+                guard let outbox, outboxStorageID == storageID, session.connection.storageId == storageID else { throw DesktopBridgeError.permissionDenied }
+                try await outbox.queueNote(title: title, body: body, folderId: nil)
+                if outboxStorageID == storageID { queued = true }
             }
         }
         .nodusSheet(item: $editing) { note in
+            let storageID = editorStorageID
             NoteEditor(accent: session.accent, note: note) { title, body in
-                await outbox?.queueNote(
+                guard let outbox, outboxStorageID == storageID, session.connection.storageId == storageID else { throw DesktopBridgeError.permissionDenied }
+                try await outbox.queueNote(
                     id: note.id,
                     title: title,
                     body: body,
                     folderId: note.folderId,
                     createdAt: note.createdAt
                 )
-                queued = true
+                if outboxStorageID == storageID { queued = true }
             }
         }
         // The one sentence this screen owes the user. A change here is not in the vault: it is
@@ -440,14 +473,21 @@ struct SpecialListView: View {
         } message: {
             Text("Send it from the send queue. It joins the vault when its owner next opens Nodus desktop and republishes — until then this list still shows what was published.")
         }
-        .task(id: session.publishedRevision) {
-            // The rows first, and the queue afterwards. The queue is a SQLite file being opened
-            // and migrated, and opening it before the fetch meant Debates, Deep Research and
-            // Immersion — none of which can write anything — all waited on a disk they were
-            // never going to use.
+        .task(id: [resource.rawValue, session.connection.storageId, session.publishedRevision ?? ""]) {
+            let storageID = session.connection.storageId
+            if catalogueStorageID != storageID {
+                catalogueStorageID = storageID
+                rows = []; folders = []; total = 0; error = nil
+                outbox = nil; outboxStorageID = nil
+                queued = false
+            }
             await reload()
-            if resource == .notes, outbox == nil {
-                outbox = await OutboxController.open(session: session)
+            guard !Task.isCancelled, catalogueStorageID == storageID else { return }
+            if resource == .notes, outboxStorageID != storageID {
+                let opened = await OutboxController.open(session: session)
+                guard !Task.isCancelled, catalogueStorageID == storageID else { return }
+                outbox = opened
+                outboxStorageID = opened == nil ? nil : storageID
             }
         }
         .refreshable { await reload() }
@@ -455,13 +495,19 @@ struct SpecialListView: View {
 
     /// Only notes are writable here, and only for a role the server would accept a change from.
     private var canEditNotes: Bool {
-        resource == .notes && session.connection.role.canSendChanges && outbox != nil
+        resource == .notes && session.canAuthor && outbox != nil && outboxStorageID == session.connection.storageId
     }
 
     private func deleteNote(_ row: Row) async {
         guard let id = row.string("id") else { return }
-        await outbox?.queueNoteDeletion(id: id, title: row.text("title") ?? String(localized: "Untitled"))
-        queued = true
+        let storageID = session.connection.storageId
+        do {
+            guard let outbox, outboxStorageID == storageID else { throw DesktopBridgeError.permissionDenied }
+            try await outbox.queueNoteDeletion(id: id, title: row.text("title") ?? String(localized: "Untitled"))
+            if outboxStorageID == storageID { queued = true }
+        } catch {
+            if catalogueStorageID == storageID { self.error = error.localizedDescription }
+        }
     }
 
     private var title: String {
@@ -545,29 +591,35 @@ struct SpecialListView: View {
     }
 
     private func reload() async {
+        let token = UUID(), client = session.client, spaceID = session.connection.spaceId
+        requestID = token
         isLoading = true
-        defer { isLoading = false }
+        defer { if requestID == token { isLoading = false } }
         do {
-            switch resource {
-            case .debates:
-                let page = try await session.client.debates(in: session.connection.spaceId, limit: 60)
-                rows = page.items; total = page.total; hasMore = page.hasMore
-            case .notes:
-                let page = try await session.client.notes(in: session.connection.spaceId, limit: 60)
-                rows = page.notes; folders = page.folders; total = page.total; hasMore = page.hasMore
-            case .deepResearch:
-                let page = try await session.client.deepResearchReports(in: session.connection.spaceId, limit: 60)
-                rows = page.items; total = page.total; hasMore = page.hasMore
-            case .immersion:
-                let page = try await session.client.immersionSessions(in: session.connection.spaceId, limit: 60)
-                rows = page.items; total = page.total; hasMore = page.hasMore
+            let loaded = try await reader.load(resource) { resource, limit, offset in
+                switch resource {
+                case .debates:
+                    return .init(page: try await client.debates(in: spaceID, limit: limit, offset: offset))
+                case .notes:
+                    let page = try await client.notes(in: spaceID, limit: limit, offset: offset)
+                    return .init(page: Page(items: page.notes, total: page.total, limit: page.limit, offset: page.offset,
+                        hasMore: page.hasMore, revision: page.revision), folders: page.folders)
+                case .deepResearch:
+                    return .init(page: try await client.deepResearchReports(in: spaceID, limit: limit, offset: offset))
+                case .immersion:
+                    return .init(page: try await client.immersionSessions(in: spaceID, limit: limit, offset: offset))
+                }
             }
+            guard requestID == token, let loaded, !Task.isCancelled else { return }
+            rows = loaded.page.items; total = loaded.page.total; folders = loaded.folders
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
-            rows = []; error = nil
+            guard requestID == token else { return }
+            rows = []; folders = []; total = 0; error = nil
         } catch where error.isCancellation {
-            // Superseded or let go of. Nothing failed, so nothing is reported.
+            // A replaced request never commits stale rows, errors or loading state.
         } catch {
+            guard requestID == token else { return }
             self.error = error.localizedDescription
         }
     }

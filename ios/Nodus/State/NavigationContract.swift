@@ -1,23 +1,25 @@
 import NodusKit
 import SwiftUI
 
+extension Notification.Name { static let nodusMobileNavigate = Notification.Name("nodus.mobile.navigate") }
+
 /// The route vocabulary of the current desktop app.
 ///
 /// Keeping every Desktop route here makes drift measurable. Visibility is a presentation
-/// decision expressed by `NodusRouteSupport`; every route remains executable from a deep link.
+/// decision expressed by `NodusRouteSupport`; Link release routes are explicitly limited, including restored deep links.
 /// Adding a route on Desktop without classifying it here fails the parity audit.
 enum NodusRoute: String, CaseIterable, Codable, Hashable, Identifiable {
     case home, search, testimonyInterviews, testimonyParticipants, testimonyContrasts
-    case library, argument, ideas, authors, persons
+    case library, graph, studyGraph, argument, ideas, dictionary, authors, persons
     case prosopSearch, prosopPopulation, prosopPersons, prosopSources, prosopAnalysis, prosopNetworks
     case encyclopedia, continuity, conflicts, arcs, rules, questions, worldChat, manuscript
     case characters, places, factions, cultures, dynasties, scenes, timeline, tree, relations, map, archive
-    case pages, databases, dbSearch, dbAnalysis, dbChat
+    case pages, databases, dbSearch, dbAnalysis, dbChat, dbDeepResearch
     case studyCourses, studySchedule, studyCalendar, studySearch, studyLibrary, studyRecordings
     case studyChat, studyIdeas, studyQuestions, studyReview, studyDeepResearch
     case teachingGroups, teachingGrades, teachingExams, teachingRubrics, teachingUnits
     case immersion, gaps, debate, research, hypothesis, reading, writing, deepResearch, projects, notes, workspace
-    case browser, radar, toolkit, settings
+    case podcast, researchChat, browser, radar, compass, studyFocus, toolkit, settings
 
     var id: String { rawValue }
 }
@@ -101,12 +103,16 @@ enum NodusNavigationContract {
         // independently of the active vault type.
         .init(.library, "Library", "book.closed", group: .explore, support: .collection(path: "works")),
         .init(.search, "Search", "magnifyingglass", group: .explore, support: .native),
+        .init(.graph, "Graph", "point.3.connected.trianglepath.dotted", group: .explore, support: .native),
         .init(.ideas, "Ideas", "lightbulb", group: .explore, support: .collection(path: "ideas")),
         .init(.authors, "Authors", "graduationcap", group: .explore, support: .collection(path: "authors")),
         .init(.argument, "Argument map", "square.3.layers.3d", group: .explore, support: .native),
         .init(.research, "State of the art", "safari", group: .analyze, support: .native),
         .init(.immersion, "Immersion", "scope", group: .analyze, support: .native),
         .init(.deepResearch, "Deep Research", "telescope", group: .analyze, support: .native),
+        .init(.dictionary, "Dictionary", "character.book.closed", group: .analyze, support: .native),
+        .init(.podcast, "Podcasts", "headphones", group: .explore, support: .native),
+        .init(.researchChat, "Research chat", "bubble.left.and.text.bubble.right", group: .analyze, support: .native),
         .init(.hypothesis, "Hypothesis", "flask", group: .analyze, support: .native),
         .init(.reading, "Reading path", "point.topleft.down.to.point.bottomright.curvepath", group: .analyze, support: .native),
         .init(.gaps, "Research gaps", "circle.dashed", support: .nested),
@@ -153,6 +159,7 @@ enum NodusNavigationContract {
         .init(.dbSearch, "Search", "magnifyingglass", group: .explore, vaultTypes: databases, support: .native),
         .init(.dbAnalysis, "Analysis", "chart.bar", group: .analyze, vaultTypes: databases, support: .native),
         .init(.dbChat, "Data chat", "bubble.left.and.text.bubble.right", group: .analyze, vaultTypes: databases, support: .native),
+        .init(.dbDeepResearch, "Deep Research", "telescope", group: .analyze, vaultTypes: databases, support: .native),
 
         .init(.studyCourses, "Courses and subjects", "graduationcap", group: .explore, vaultTypes: study.union(teaching), support: .native),
         .init(.studySchedule, "Schedule", "clock", group: .explore, vaultTypes: study.union(teaching), support: .native),
@@ -162,6 +169,7 @@ enum NodusNavigationContract {
         .init(.studyRecordings, "Recordings", "mic", group: .explore, vaultTypes: study.union(teaching), support: .native),
         .init(.studyChat, "Study chat", "bubble.left.and.text.bubble.right", group: .analyze, vaultTypes: study.union(teaching), support: .native),
         .init(.studyIdeas, "Study ideas", "lightbulb", group: .analyze, vaultTypes: study.union(teaching), support: .collection(path: "ideas")),
+        .init(.studyGraph, "Graph", "point.3.connected.trianglepath.dotted", group: .analyze, vaultTypes: study.union(teaching), support: .native),
         .init(.studyQuestions, "Question bank", "questionmark.circle", group: .analyze, vaultTypes: study.union(teaching), support: .native),
         .init(.studyReview, "Review", "rectangle.on.rectangle.angled", group: .analyze, vaultTypes: study.union(teaching), support: .native),
         .init(.studyDeepResearch, "Study research", "telescope", group: .analyze, vaultTypes: study.union(teaching), support: .native),
@@ -174,6 +182,8 @@ enum NodusNavigationContract {
         .init(.notes, "Notes", "note.text", group: .create, vaultTypes: Set(VaultType.allCases).subtracting(academic), support: .native),
         .init(.browser, "Nodus Browser", "globe", group: .tools, support: .native),
         .init(.radar, "Nodus Radar", "dot.radiowaves.left.and.right", group: .tools, support: .native),
+        .init(.compass, "Nodus Compass", "safari", group: .tools, support: .native),
+        .init(.studyFocus, "Nodus Focus", "scope", group: .tools, support: .native),
         .init(.toolkit, "Nodus Tools", "wrench.and.screwdriver", group: .tools, support: .native),
         .init(.settings, "Settings", "gearshape", support: .native),
     ]
@@ -206,18 +216,18 @@ enum NodusNavigationContract {
         case .estudio:
             dedicated = [
                 .studyCourses, .studySchedule, .studyCalendar, .studySearch, .studyLibrary,
-                .studyRecordings, .studyChat, .studyIdeas, .studyQuestions,
+                .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyQuestions,
                 .studyReview, .studyDeepResearch, .browser, .radar, .toolkit,
             ]
         case .docencia:
             dedicated = [
                 .studyCourses, .teachingGroups, .studySchedule, .studyCalendar, .studyLibrary,
-                .studyRecordings, .studyChat, .studyIdeas, .studyQuestions,
+                .studyRecordings, .studyChat, .studyIdeas, .studyGraph, .studyDeepResearch, .studyQuestions,
                 .teachingRubrics, .teachingExams, .teachingGrades, .teachingUnits,
                 .browser, .radar, .toolkit,
             ]
         case .databases:
-            dedicated = [.pages, .dbSearch, .dbAnalysis, .dbChat, .notes, .browser, .radar, .toolkit]
+            dedicated = [.pages, .databases, .dbSearch, .dbAnalysis, .dbChat, .dbDeepResearch, .notes, .browser, .radar, .toolkit]
         case .testimonios:
             dedicated = [
                 .search, .testimonyInterviews, .testimonyParticipants, .testimonyContrasts,
@@ -233,12 +243,18 @@ enum NodusNavigationContract {
         case .academic, .genealogy:
             dedicated = nil
         }
-        return dedicated?.union([.home, .library, .settings])
+        return dedicated?.union([.home, .library, .settings, .dictionary, .compass, .studyFocus])
     }
 
     static func scopedItems(for vaultType: VaultType?) -> [NodusNavigationItem] {
+        guard !NodusLinkPolicy.readOnly || NodusLinkPolicy.supports(vaultType) else { return [] }
         let type = vaultType ?? .academic
-        return items.filter { $0.vaultTypes.contains(type) }
+        let study = type == .estudio || type == .docencia
+        let replaced: Set<NodusRoute> = study ? [.ideas, .graph, .deepResearch] : [.studyIdeas, .studyGraph, .studyDeepResearch]
+        return items.filter {
+            $0.vaultTypes.contains(type) && (!NodusLinkPolicy.readOnly ||
+                (NodusLinkPolicy.routes.contains($0.route) && !replaced.contains($0.route)))
+        }
     }
 
     static func visibleItems(
@@ -246,8 +262,8 @@ enum NodusNavigationContract {
         order: [String] = [],
         hidden: Set<String>? = nil
     ) -> [NodusNavigationItem] {
-        let hidden = hidden ?? defaultHiddenRoutes(for: vaultType)
-        let allowed = sidebarAllowedRoutes(for: vaultType)
+        let hidden: Set<String> = NodusLinkPolicy.readOnly ? [] : (hidden ?? defaultHiddenRoutes(for: vaultType))
+        let allowed = NodusLinkPolicy.readOnly ? nil : sidebarAllowedRoutes(for: vaultType)
         let eligible = scopedItems(for: vaultType).filter {
             $0.support.isVisible
                 && !hidden.contains($0.route.rawValue)

@@ -2,14 +2,30 @@
 
 This document is the implementation contract for the shared iPhone/iPad application. There is
 one product and one navigation model: iPad renders the Desktop shell at tablet scale, while an
-iPhone keeps the same hierarchy and surfaces in a vertical, drawer-based presentation.
+iPhone keeps the same hierarchy and surfaces with drawer navigation and touch controls in
+both portrait and landscape.
 
-## Completed phases
+## Current acceptance status
+
+The 0.1.0 release is still under validation. `Parity/parity-manifest.json` is the current
+operation matrix; implementation and historical passing scenarios do not establish full
+parity. The executed results, source receipts, screenshots and remaining work are recorded
+under `artifacts/acceptance-0.1.0`. Internal TestFlight 0.1.0 (1003) is delivered as a working
+preview, not complete parity acceptance. The [current implementation checkpoint](../docs/mobile-0.1.0/IMPLEMENTATION-2026-10-15.md)
+distinguishes the delivered binary from new source changes and pending native verification.
+
+The primary connection is Desktop Settings → Mobile connection: a code or QR links the
+entire current workspace through direct HTTPS on LAN or VPN. Server and Cloud are advanced
+options. Code discovery is Bonjour on LAN; a QR/link supplies the VPN addresses. Actual VPN
+and camera scanning acceptance remains pending.
+
+## Historical implementation phases
 
 1. **Auditable contract baseline (phase 0)** — Desktop's 73 routes, 1,595 public actions and 49 mutable
    tables are captured in `Parity/parity-manifest.json`. The check rejects Desktop drift,
    unknown delivery channels and any `implemented` claim with no named test evidence. The
-   only explicit product exclusion is generated Deep Research audio.
+   phase-0 exclusion of generated Deep Research audio is historical; the current operation
+   matrix defines the release scope, including consultation of saved narration.
 2. **Deterministic visual baseline** — `NodusUITests` opens the bundled public-domain vault at a
    requested route on iPhone and iPad. The Electron and simulator capture tools produce the
    three comparable images under `artifacts/parity/<phase>/` without reading a real vault.
@@ -58,7 +74,9 @@ iPhone keeps the same hierarchy and surfaces in a vertical, drawer-based present
     with write permission. Desktop now checkpoints its queue atomically and parks other-vault jobs
     instead of deleting them. The merged local/published gallery supports persistent read/view/sort
     preferences, search, selection, bulk deletion and deterministic Markdown/PDF ZIP export. No
-    audio control, artifact or job is created on mobile.
+    speech synthesis job is created on mobile. Saved Desktop narration is listed in the shared
+    reader and downloaded through a scoped, hashed Bridge file before native playback; the
+    protected downloaded copy remains available when the Mac is unreachable.
 13. **Deep Research reader (phase 6)** — iPad uses the Desktop reader composition while iPhone keeps
     the same toolbar and workspaces in a vertical surface. Outline, current section, reading progress,
     anchor restoration, typography, interactive citations, support/audit matrix, gaps,
@@ -279,10 +297,11 @@ visibility and width. iPhone opens the same hierarchy as a vertical drawer.
 
 Dedicated vault modes are guarded by the same closed allow-lists as Desktop, so academic routes
 cannot leak into Prosopography, Primary Sources, Study, Teaching, Databases, Testimonies or
-Worldbuilding. Hidden routes remain executable through typed deep links and Commands. Graph and
-Study Graph are the deliberate exception: the product decision suspends them completely on mobile,
-so they have no menu item, enum case, deep link or placeholder screen. The versioned manifest keeps
-those Desktop routes as explicit exclusions alongside Deep Research audio. CI regenerates
+Worldbuilding. Hidden routes remain executable through typed deep links and Commands. The
+0.1.0 implementation restores Graph and Study Graph through shared Desktop components;
+their complete functional and visual acceptance remains pending in the operation matrix.
+Saved narration consultation is included; Desktop speech synthesis is an explicit exclusion.
+CI regenerates
 this manifest against a fresh Desktop checkout and rejects any unclassified route, action, table,
 fallback destination or missing evidence file.
 
@@ -303,9 +322,25 @@ swift test --package-path ios/Packages/NodusKit
 swift test --package-path ios/Packages/NodusAI
 swift test --package-path ios/Packages/NodusUI
 xcodebuild -project ios/Nodus.xcodeproj -scheme Nodus \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test CODE_SIGNING_ALLOWED=NO
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
 Debug simulator launches may set `NODUS_START_ROUTE` to open a route directly. Visual QA may also
 set `NODUS_VAULT_TYPE_OVERRIDE`; it changes navigation presentation only and never fabricates or
 mutates vault data.
+
+### Pages: documento completo y dependencias
+
+El editor compartido mantiene BlockNote, metadatos académicos y bloques anteriores. El borrador íntegro se cifra y sincroniza con dos revisiones, recibos idempotentes y resolución explícita de conflictos. Las descargas seleccionadas incluyen bloques sincronizados, páginas originales, vistas enlazadas paginadas y dossiers de sus bases de datos, dentro del presupuesto temporal. La lectura explícita de una descarga no consulta el Mac. Los archivos mantienen su permiso y verificación de integridad. Los contratos de Pages están preparados; compilación, ejecución y pruebas de iPhone/iPad pendientes de la campaña local final.
+
+### Bases de datos: escritura canónica y reapertura
+
+Las creaciones de base, propiedad y fila conservan sus identidades móviles y pasan por las funciones reales de Desktop. Las celdas comprueban revisión y valor anterior; los rechazos se conservan y se muestran. La proyección de la cola permite reabrir cambios pendientes y da paso a revisiones canónicas confirmadas. Contratos preparados; ejecución y aceptación visual pendientes.
+
+### Vistas guardadas y fuentes enlazadas
+
+El workspace nativo consulta el filtro y la ordenación reales de Desktop, con todos los cursores y fuentes enlazadas. Las filas ajenas conservan su base de datos original al abrirse. Las descargas incluyen las consultas completas y dossiers de las fuentes necesarias; un cambio de revisión cancela la copia, y las dependencias repetidas se combinan sin duplicar registros. La consulta paginada sin red evita repetir un timeout por cada página. Contratos preparados: `DatabaseContainerPresentationTests`, `CompanionDatabaseViewSourceTests` y filtros/ordenación en el contrato real de Pages. Ejecución y aceptación pendientes de la campaña local.
+
+### Campaña local y prueba física del usuario
+
+Por indicación expresa del usuario el 12 de octubre de 2026, la validación previa a TestFlight se ejecuta en Desktop, simulador de iPhone y simulador de iPad. El usuario probará el iPhone físico cuando reciba la beta. La matriz conserva `visual.physicalIphone` y el entorno físico como `pendingUserValidation`, con cero pruebas ejecutadas y responsable `user`; no se presentan como aprobados ni como pruebas omitidas satisfactorias. El resto de las operaciones mantiene el requisito de ejecución y evidencia actual. Los simuladores conservan su firma ad hoc para que las pruebas usen Keychain real.

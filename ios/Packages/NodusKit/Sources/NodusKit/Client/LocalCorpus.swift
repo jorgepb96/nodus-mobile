@@ -114,11 +114,7 @@ public struct LocalCorpus: Sendable {
             return try json(await notes(segments, request: request, revision: revision))
 
         case "deep-research":
-            // The corpus carries no saved drafts, and a report written on this device is kept
-            // by `LocalReportStore` rather than by a vault. An empty page is the honest answer
-            // and the one the Research screen is written for.
-            guard segments.count == 1 else { throw Self.notFound }
-            return try json(Self.page("reports", [], limit: 100, offset: 0, revision: revision))
+            return try json(await researchReports(segments, request: request, revision: revision))
 
         case "actions" where request.method == "POST" && segments.count == 1:
             // UI-test transport only: the bundled corpus has no Desktop to execute work, but
@@ -151,8 +147,7 @@ public struct LocalCorpus: Sendable {
             ])
 
         case "immersion":
-            guard segments.count == 1 else { throw Self.notFound }
-            return try json(Self.page("sessions", [], limit: 100, offset: 0, revision: revision))
+            return try json(await immersionSessions(segments, request: request, revision: revision))
 
         case let head? where Collections.byPath[head] != nil:
             return try json(await collection(Collections.byPath[head]!, segments, request: request, revision: revision))
@@ -313,6 +308,10 @@ public struct LocalCorpus: Sendable {
             return try await idea(row, id: wanted, revision: revision)
         case "works":
             return try await work(row, id: wanted, revision: revision)
+        case "themes":
+            let links = try await mirror.rows(table: "idea_theme_links", where: "theme_id", equals: wanted)
+            let ids = Array(Set(links.compactMap { $0.string("global_id") }))
+            return ["theme": .object(row.columns), "ideas": .array(try await mirror.rows(table: "ideas", ids: ids).map { .object($0.columns) }), "revision": .string(revision)]
         case "authors":
             if segments.count == 3, segments[2] == "dossier" {
                 guard let dossier = try await AcademicWorkspaceProjection.authorDossier(in: academicTables(), authorId: wanted) else {
@@ -439,6 +438,75 @@ public struct LocalCorpus: Sendable {
             "truncated": .bool(seen.count >= limit),
             "revision": .string(revision),
         ]
+    }
+
+    // MARK: - Saved research
+
+    private func researchReports(_ segments: [String], request: NodusClient.Request, revision: String) async throws -> [String: JSONValue] {
+        var drafts: [Row] = []
+        for row in try await mirror.allRows(table: "writing_saved_drafts") {
+            guard let brief = row.embeddedJSON("brief_json")?.objectValue else {
+                throw APIError(status: 422, code: "invalid_saved_reports", message: "Hay documentos guardados con un formato inválido. Se conserva su contenido; no se pudo cargar el catálogo completo.")
+            }
+            if brief["kind"]?.stringValue == "deep_research" {
+                guard row.embeddedJSON("draft_json")?.objectValue != nil else {
+                    throw APIError(status: 422, code: "invalid_saved_reports", message: "Hay documentos guardados con un formato inválido. Se conserva su contenido; no se pudo cargar el catálogo completo.")
+                }
+                drafts.append(row)
+            }
+        }
+        let readRows = try await mirror.allRows(table: "writing_draft_reads")
+        let readAt = Dictionary(readRows.compactMap { row -> (String, JSONValue)? in
+            guard let id = row.string("draft_id") else { return nil }
+            return (id, row["updated_at"] ?? .null)
+        }, uniquingKeysWith: { _, last in last })
+        func summary(_ row: Row) -> Row {
+            let brief = row.embeddedJSON("brief_json")?.objectValue ?? [:]
+            var values = row.columns.filter { ["id", "title", "created_at", "updated_at"].contains($0.key) }
+            values["kind"] = brief["kind"] ?? .string("draft")
+            values["objective"] = brief["objective"] ?? .null
+            values["language"] = brief["language"] ?? .null
+            values["read_at"] = readAt[row.string("id") ?? ""] ?? .null
+            return Row(values)
+        }
+        if segments.count == 1 {
+            var listed: [Row] = []
+            for row in drafts {
+                var item = summary(row)
+                item.columns["image"] = try await mirror.deepResearchImage(entityId: row.string("id") ?? "").map { try Self.encodedValue($0) } ?? .null
+                listed.append(item)
+            }
+            return Self.page("reports", listed, limit: PageBounds.clampedLimit(request.number(of: "limit")), offset: PageBounds.clampedOffset(request.number(of: "offset")), revision: revision)
+        }
+        guard segments.count == 2, let row = drafts.first(where: { $0.string("id") == segments[1] }) else { throw Self.notFound }
+        var report = summary(row)
+        report.columns["draft"] = row.embeddedJSON("draft_json") ?? .null
+        let image = try await mirror.deepResearchImage(entityId: segments[1]).map { try Self.encodedValue($0) } ?? .null
+        let translations = try await mirror.allRows(table: "content_translations").filter { $0.string("entity_kind") == "deep_research" && $0.string("entity_id") == segments[1] }
+        let annotations = try await mirror.allRows(table: "writing_draft_annotations").filter { $0.string("draft_id") == segments[1] }
+        return ["report": .object(report.columns), "image": image,
+                "translations": .array(translations.map { .object($0.columns) }),
+                "annotations": .array(annotations.map { .object($0.columns) }), "revision": .string(revision)]
+    }
+
+    private func immersionSessions(_ segments: [String], request: NodusClient.Request, revision: String) async throws -> [String: JSONValue] {
+        let sessions = try await mirror.allRows(table: "immersion_sessions")
+        func summary(_ row: Row, dates: Bool) -> Row {
+            let fields = ["id", "topic", "title", "language", "minutes"] + (dates ? ["created_at", "updated_at"] : [])
+            return Row(row.columns.filter { fields.contains($0.key) })
+        }
+        if segments.count == 1 {
+            let listed = sessions.map { row in
+                var item = summary(row, dates: true)
+                item.columns["stats"] = row.embeddedJSON("stats_json") ?? .null
+                return item
+            }
+            return Self.page("sessions", listed, limit: PageBounds.clampedLimit(request.number(of: "limit")), offset: PageBounds.clampedOffset(request.number(of: "offset")), revision: revision)
+        }
+        guard segments.count == 2, let row = sessions.first(where: { $0.string("id") == segments[1] }) else { throw Self.notFound }
+        var session = summary(row, dates: false)
+        session.columns["plan"] = row.embeddedJSON("plan_json") ?? .null
+        return ["session": .object(session.columns), "revision": .string(revision)]
     }
 
     // MARK: - Notes

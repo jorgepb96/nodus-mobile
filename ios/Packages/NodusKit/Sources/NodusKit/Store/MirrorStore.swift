@@ -30,6 +30,15 @@ public actor MirrorStore {
     public let spaceId: String
     public let fileURL: URL
 
+    /// Decrypted private downloads may be queried in memory, never written as a second,
+    /// unencrypted persistent mirror outside their encrypted read pack.
+    public init(inMemorySpaceId: String) throws {
+        spaceId = inMemorySpaceId
+        fileURL = URL(fileURLWithPath: "/dev/null")
+        dbQueue = try DatabaseQueue()
+        try migrate()
+    }
+
     /// Opens (or creates) the mirror for one space.
     ///
     /// One file per space rather than one shared database: spaces are independent
@@ -40,13 +49,7 @@ public actor MirrorStore {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         fileURL = folder.appendingPathComponent("mirror.sqlite")
 
-        var configuration = Configuration()
-        configuration.prepareDatabase { db in
-            // The corpus is read far more than it is written — once per import, then only
-            // read — so a generous page cache pays for itself on every list.
-            try db.execute(sql: "PRAGMA cache_size = -20000")
-        }
-        dbQueue = try DatabaseQueue(path: fileURL.path, configuration: configuration)
+        dbQueue = try DatabaseQueue(path: fileURL.path, configuration: Self.databaseConfiguration())
 #if os(iOS)
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUnlessOpen],
@@ -59,6 +62,30 @@ public actor MirrorStore {
         // tap re-downloads it, so restoring a phone should not spend an hour on it.
         BackupPolicy.apply(.excluded, to: fileURL)
         try migrate()
+        // WAL sidecars are equally reproducible corpus data. They are created by
+        // opening/migrating this handle, so mark them after that work completes.
+        for suffix in ["-wal", "-shm"] {
+            let companion = URL(fileURLWithPath: fileURL.path + suffix)
+            BackupPolicy.apply(.excluded, to: companion)
+#if os(iOS)
+            if FileManager.default.fileExists(atPath: companion.path) {
+                try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: companion.path)
+            }
+#endif
+        }
+    }
+
+    /// Multiple scene/session handles can share one mirror during snapshot refresh.
+    /// WAL keeps those readers on their committed revision while another handle imports;
+    /// a bounded busy timeout also permits short competing migration/write transactions.
+    nonisolated static func databaseConfiguration() -> Configuration {
+        var configuration = Configuration()
+        configuration.journalMode = .wal
+        configuration.busyMode = .timeout(5)
+        configuration.prepareDatabase { db in
+            try db.execute(sql: "PRAGMA cache_size = -20000")
+        }
+        return configuration
     }
 
     private nonisolated func migrate() throws {
@@ -108,6 +135,7 @@ public actor MirrorStore {
                     mime TEXT NOT NULL,
                     thumb_mime TEXT,
                     bytes INTEGER NOT NULL,
+                    thumb_bytes INTEGER,
                     kind TEXT NOT NULL,
                     tbl TEXT NOT NULL,
                     row_key TEXT NOT NULL,
@@ -116,6 +144,9 @@ public actor MirrorStore {
 
                 CREATE INDEX IF NOT EXISTS asset_refs_lookup ON asset_refs (tbl, row_key);
                 """)
+            if try !db.columns(in: "asset_refs").contains(where: { $0.name == "thumb_bytes" }) {
+                try db.execute(sql: "ALTER TABLE asset_refs ADD COLUMN thumb_bytes INTEGER")
+            }
 
             // FTS5 over the same text the server's own `?q=` scans, so a filter typed offline
             // and the same filter typed online agree about what matches.
@@ -159,11 +190,11 @@ public actor MirrorStore {
 
             for ref in snapshot.assetRefs {
                 try db.execute(sql: """
-                    INSERT OR REPLACE INTO asset_refs (hash, thumb_hash, mime, thumb_mime, bytes, kind, tbl, row_key)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO asset_refs (hash, thumb_hash, mime, thumb_mime, bytes, thumb_bytes, kind, tbl, row_key)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [
                         ref.hash, ref.thumbHash, ref.mime, ref.thumbMime,
-                        ref.bytes, ref.kind, ref.table, ref.key.joined(separator: "\u{1F}"),
+                        ref.bytes, ref.thumbBytes, ref.kind, ref.table, ref.key.joined(separator: "\u{1F}"),
                     ])
             }
 
@@ -408,7 +439,7 @@ public actor MirrorStore {
                 mime: row["mime"],
                 thumbMime: row["thumb_mime"],
                 bytes: row["bytes"],
-                thumbBytes: nil,
+                thumbBytes: row["thumb_bytes"],
                 kind: row["kind"],
                 table: row["tbl"],
                 key: key
@@ -429,25 +460,37 @@ public actor MirrorStore {
         try dbQueue.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM asset_refs") ?? 0 }
     }
 
+    public func assetRefs() throws -> [SnapshotAssetRef] {
+        try dbQueue.read { db in
+            try GRDB.Row.fetchAll(db, sql: "SELECT * FROM asset_refs ORDER BY tbl, row_key, hash").map { row in
+                let key: String = row["row_key"]
+                return SnapshotAssetRef(hash: row["hash"], thumbHash: row["thumb_hash"], mime: row["mime"],
+                    thumbMime: row["thumb_mime"], bytes: row["bytes"], thumbBytes: row["thumb_bytes"],
+                    kind: row["kind"], table: row["tbl"], key: key.components(separatedBy: "\u{1F}"))
+            }
+        }
+    }
+
     /// Rows of one table whose JSON body has `column` equal to `value`.
     ///
     /// This is how a link table gets traversed — `idea_theme_links` for the ideas under a
     /// theme, say. The API has no route for those tables and no way to filter by a column even
     /// where it does, so a relationship the desktop shows as a list is only reachable here.
-    public func rows(table: String, where column: String, equals value: String, limit: Int = 500) throws -> [Row] {
+    public func rows(table: String, where column: String, equals value: String, limit: Int? = nil) throws -> [Row] {
         try dbQueue.read { db in
             try GRDB.Row.fetchAll(db, sql: """
                 SELECT body FROM rows_json
                 WHERE tbl = ? AND json_extract(body, '$.' || ?) = ?
                 ORDER BY ordinal
                 LIMIT ?
-                """, arguments: [table, column, value, limit])
-                .compactMap { row in
+                """, arguments: [table, column, value, limit.map { max(0, $0) } ?? -1])
+                .map { row in
                     guard
                         let body: String = row["body"],
                         let data = body.data(using: .utf8),
-                        let columns = try? JSONDecoder().decode([String: JSONValue].self, from: data)
-                    else { return nil }
+                        !data.isEmpty
+                    else { throw TransportError.malformedResponse(expected: "a stored row in \(table)") }
+                    let columns = try JSONDecoder().decode([String: JSONValue].self, from: data)
                     return NodusKit.Row(columns)
                 }
         }
@@ -461,12 +504,13 @@ public actor MirrorStore {
     public func allRows(table: String) throws -> [Row] {
         try dbQueue.read { db in
             try GRDB.Row.fetchAll(db, sql: "SELECT body FROM rows_json WHERE tbl = ? ORDER BY ordinal", arguments: [table])
-                .compactMap { row in
+                .map { row in
                     guard
                         let body: String = row["body"],
                         let data = body.data(using: .utf8),
-                        let columns = try? JSONDecoder().decode([String: JSONValue].self, from: data)
-                    else { return nil }
+                        !data.isEmpty
+                    else { throw TransportError.malformedResponse(expected: "a stored row in \(table)") }
+                    let columns = try JSONDecoder().decode([String: JSONValue].self, from: data)
                     return NodusKit.Row(columns)
                 }
         }
@@ -476,18 +520,21 @@ public actor MirrorStore {
     public func rows(table: String, ids: [String]) throws -> [Row] {
         guard !ids.isEmpty else { return [] }
         return try dbQueue.read { db in
-            let placeholders = databaseQuestionMarks(count: ids.count)
+            // One bound JSON array avoids SQLite's variable limit without
+            // splitting the result into differently ordered batches.
+            let encodedIds = String(decoding: try JSONEncoder().encode(ids), as: UTF8.self)
             return try GRDB.Row.fetchAll(db, sql: """
                 SELECT body FROM rows_json
-                WHERE tbl = ? AND row_id IN (\(placeholders))
+                WHERE tbl = ? AND row_id IN (SELECT value FROM json_each(?))
                 ORDER BY ordinal
-                """, arguments: StatementArguments([table] + ids))
-                .compactMap { row in
+                """, arguments: [table, encodedIds])
+                .map { row in
                     guard
                         let body: String = row["body"],
                         let data = body.data(using: .utf8),
-                        let columns = try? JSONDecoder().decode([String: JSONValue].self, from: data)
-                    else { return nil }
+                        !data.isEmpty
+                    else { throw TransportError.malformedResponse(expected: "a stored row in \(table)") }
+                    let columns = try JSONDecoder().decode([String: JSONValue].self, from: data)
                     return NodusKit.Row(columns)
                 }
         }

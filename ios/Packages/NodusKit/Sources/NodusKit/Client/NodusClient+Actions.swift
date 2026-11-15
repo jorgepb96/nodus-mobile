@@ -56,6 +56,18 @@ public struct SpaceAction: Sendable, Hashable, Codable, Identifiable {
     public let updatedAt: Date
     public let claimedAt: Date?
     public let finishedAt: Date?
+
+    public var receiptMessage: String {
+        switch status {
+        case .queued, .claimed:
+            return sequence == 0 ? "Solicitud guardada en el móvil · pendiente de conectar con Nodus."
+                : "Solicitud aceptada por Nodus · pendiente de ejecución."
+        case .running: return "Nodus está ejecutando la solicitud. Puedes consultar su estado en Trabajos."
+        case .applied: return "Resultado guardado y disponible en Nodus."
+        case .cancelled: return "Solicitud cancelada."
+        case .failed, .refused: return "No se pudo completar la solicitud: \(errorCode ?? status.rawValue). Consulta Trabajos."
+        }
+    }
 }
 
 public struct SpaceActionPage: Sendable, Hashable, Decodable {
@@ -78,6 +90,7 @@ private struct SpaceActionCreateBody: Encodable {
     let payload: [String: JSONValue]
     let inputRevision: String?
     let inputFingerprint: String?
+    let executionMode:String?
 }
 
 public extension NodusClient {
@@ -90,6 +103,8 @@ public extension NodusClient {
         payload: [String: JSONValue],
         inputRevision: String? = nil,
         inputFingerprint: String? = nil,
+        executionMode:String? = nil,
+        deferCompanionSubmission:Bool = false,
         in spaceId: String
     ) async throws -> SpaceActionCreation {
         let body = SpaceActionCreateBody(
@@ -99,8 +114,13 @@ public extension NodusClient {
             schemaVersion: 1,
             payload: payload,
             inputRevision: inputRevision,
-            inputFingerprint: inputFingerprint
+            inputFingerprint: inputFingerprint,
+            executionMode:hasDesktopBridge ? executionMode:nil
         )
+        if let bridge = companionBridge {
+            return try await bridge.client.createCompanionAction(vaultId: bridge.vaultId,
+                body: JSONDecoder.nodus.decode(JSONValue.self, from: JSONEncoder.nodus.encode(body)), submitNow:!deferCompanionSubmission)
+        }
         let response = try await perform(.init(
             method: "POST",
             path: address.spacePath(spaceId, "/actions"),
@@ -111,6 +131,9 @@ public extension NodusClient {
     }
 
     func spaceActions(in spaceId: String, since: Int = 0, limit: Int = 50) async throws -> SpaceActionPage {
+        if let bridge = companionBridge {
+            return try await bridge.client.companionActions(vaultId: bridge.vaultId, since: since, limit: limit)
+        }
         let response = try await perform(.init(
             path: address.spacePath(spaceId, "/actions"),
             query: [
@@ -122,11 +145,17 @@ public extension NodusClient {
     }
 
     func spaceAction(id: String, in spaceId: String) async throws -> SpaceAction {
+        if let bridge = companionBridge {
+            return try await bridge.client.companionAction(vaultId: bridge.vaultId, id: id)
+        }
         let response = try await perform(.init(path: address.spacePath(spaceId, "/actions/\(escape(id))")))
         return try decode(SpaceActionEnvelope.self, from: response).action
     }
 
     func cancelSpaceAction(id: String, in spaceId: String) async throws -> SpaceAction {
+        if let bridge = companionBridge {
+            return try await bridge.client.cancelCompanionAction(vaultId: bridge.vaultId, id: id)
+        }
         let response = try await perform(.init(
             method: "POST",
             path: address.spacePath(spaceId, "/actions/\(escape(id))/cancel"),

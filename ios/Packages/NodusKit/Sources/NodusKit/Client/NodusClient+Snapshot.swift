@@ -20,15 +20,24 @@ public extension NodusClient {
     /// The body arrives as `application/vnd.nodus.snapshot+json` with `content-encoding: gzip`.
     /// URLSession usually inflates it in passing; when it has not, the bytes still carry the
     /// gzip magic and are unwrapped here.
-    func snapshot(in spaceId: String) async throws -> SnapshotDownload {
+    func snapshot(in spaceId: String, consultation: SnapshotConsultation? = nil) async throws -> SnapshotDownload {
         let response = try await perform(.init(
             method: "GET",
             path: address.spacePath(spaceId, "/snapshot"),
+            query: hasDesktopBridge ? consultation.map { [.init(name: "projection", value: $0.rawValue)] } ?? [] : [],
             extraHeaders: ["Accept": SnapshotFormat.contentType]
         ))
 
-        return try SnapshotDownload.read(response.data, revision: response.revision)
+        var snapshot = try SnapshotDownload.read(response.data, revision: response.revision)
+        snapshot.fromDevice = hasDesktopBridge && response.fromCache
+        return snapshot
     }
+}
+
+/// Live Mac consultations can avoid transferring the complete passage corpus.
+/// Older Macs ignore the projection query; callers still select the same tables locally.
+public enum SnapshotConsultation: String, Sendable {
+    case dictionary, sources
 }
 
 /// One image the publication carried, described by everything except its bytes.
@@ -49,6 +58,9 @@ public struct SnapshotAssetRef: Sendable, Hashable, Codable {
 }
 
 public struct SnapshotDownload: Sendable {
+    /// True only when this response came from an actual transport cache. Local
+    /// mirrors carry their own provenance at the reader, never inferred from rows.
+    public var fromDevice: Bool = false
     public let document: [String: JSONValue]
     public let formatVersion: Int
     public let revision: String?
@@ -146,6 +158,59 @@ public struct SnapshotDownload: Sendable {
             let array = tables[table]?.arrayValue
         else { return [] }
         return array.compactMap { $0.objectValue.map(Row.init) }
+    }
+
+    /// Keeps the shared Dictionary renderer from copying the whole research
+    /// corpus into WebKit. Its source checks need only the referenced ideas and
+    /// passages; catalogue and relationship rows remain complete.
+    public func dictionaryConsultationTables() -> [String: JSONValue] {
+        guard let tables = document["tables"]?.objectValue else { return [:] }
+        let names = ["dictionary_entries", "dictionary_evidence", "dictionary_versions", "dictionary_relations",
+            "works", "authors", "work_authors", "work_themes", "themes", "zotero_tags", "work_zotero_tags",
+            "collections", "work_collections", "idea_occurrences", "idea_theme_links", "author_relations", "author_dossier_synthesis"]
+        var result = tables.filter { names.contains($0.key) }
+        let evidence = tables["dictionary_evidence"]?.arrayValue ?? []
+        var citations: [String: Set<String>] = [:]
+        for row in evidence {
+            if let kind = row.objectValue?["kind"]?.stringValue, let id = row.objectValue?["ref_id"]?.stringValue {
+                citations[kind, default: []].insert(id)
+            }
+        }
+        let citationPattern = try? NSRegularExpression(pattern: #"nodus://(idea|passage|work|gap|contradiction)/([^\s\)\]<>\"\?#]+(?:#[^\s\)\]<>\"\?]+)?)"#)
+        for table in ["dictionary_entries", "dictionary_versions"] {
+            for row in tables[table]?.arrayValue ?? [] {
+                let text = row.objectValue?["content_markdown"]?.stringValue ?? ""
+                for match in citationPattern?.matches(in: text, range: NSRange(text.startIndex..., in: text)) ?? [] {
+                    guard let kindRange = Range(match.range(at: 1), in: text), let idRange = Range(match.range(at: 2), in: text) else { continue }
+                    citations[String(text[kindRange]), default: []].insert(String(text[idRange]).removingPercentEncoding ?? String(text[idRange]))
+                }
+            }
+        }
+        for edge in tables["edges"]?.arrayValue ?? [] {
+            guard let row = edge.objectValue, let id = row["id"]?.stringValue, citations["contradiction"]?.contains(id) == true else { continue }
+            for field in ["from_id", "to_id"] {
+                if let idea = row[field]?.stringValue { citations["idea", default: []].insert(idea) }
+            }
+        }
+        for (table, kind, field) in [("ideas", "idea", "global_id"), ("passages", "passage", "passage_id"), ("gaps", "gap", "id"), ("edges", "contradiction", "id")] {
+            let ids = citations[kind] ?? []
+            if let rows = tables[table]?.arrayValue {
+                result[table] = .array(rows.filter { row in row.objectValue?[field]?.stringValue.map(ids.contains) ?? false })
+            }
+        }
+        return result
+    }
+
+    /// Source dossiers need the complete ideas and evidence for each work and
+    /// author, including rows not cited by the current Dictionary version.
+    /// Keep large passage bodies and unrelated/private vault domains out of
+    /// this WebKit payload; their lookups use their own permission-aware route.
+    public func sourceConsultationTables() -> [String: JSONValue] {
+        guard let tables = document["tables"]?.objectValue else { return [:] }
+        let names: Set<String> = ["works", "authors", "work_authors", "work_themes", "themes", "zotero_tags", "work_zotero_tags",
+            "ideas", "idea_occurrences", "idea_theme_links", "evidence", "edges", "edge_feedback", "gaps",
+            "work_summaries", "work_idea_synthesis", "author_relations", "author_dossier_synthesis", "work_metadata", "edge_traces"]
+        return tables.filter { names.contains($0.key) }
     }
 
     public var tableNames: [String] {

@@ -27,7 +27,7 @@ struct WorldContinuityView: View {
                             if runningDesktop { ProgressView() } else { Label("Full audit", systemImage: "desktopcomputer") }
                         }
                         .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent))
-                        .disabled(runningDesktop || session.isDemo || !session.connection.role.canSendChanges)
+                        .disabled(runningDesktop || session.isDemo || !session.canAuthor)
                     }
                 )
                 if let message { NodusNotice(tone: .info, title: "Continuity audit", message: LocalizedStringKey(message)) }
@@ -114,11 +114,9 @@ struct WorldContinuityView: View {
             let creation = try await session.client.createSpaceAction(
                 idempotencyKey: "continuity:\(session.connection.spaceId):\(session.publishedRevision ?? "local")",
                 kind: .worldbuildingContinuity, payload: [:], inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
+                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            message = creation.duplicate
-                ? "This revision is already queued for the full Desktop audit."
-                : "Full audit queued. Its typed result will appear in the Sync Center when Desktop finishes."
+            message = creation.action.receiptMessage
         } catch { self.error = error.localizedDescription }
     }
 
@@ -134,20 +132,21 @@ struct WorldContinuityView: View {
             "headline": .string(finding.headline), "reason_code": .string("deliberate"),
             "created_at": .string(now), "updated_at": .string(now),
         ]
+        guard await outbox.syncMutation(kind: .upsert, table: .worldNoticeMutes, key: [finding.id], row: row, title: "Mute continuity finding") else { error = outbox.lastError; return }
         muted.insert(finding.id); findings.removeAll { $0.id == finding.id }
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldNoticeMutes, key: [finding.id], row: row, title: "Mute continuity finding")
     }
 
     private func unmute(_ fingerprint: String) async {
         guard let outbox else { return }
+        guard await outbox.syncMutation(kind: .delete, table: .worldNoticeMutes, key: [fingerprint], title: "Restore continuity finding") else { error = outbox.lastError; return }
         muted.remove(fingerprint)
-        _ = await outbox.syncMutation(kind: .delete, table: .worldNoticeMutes, key: [fingerprint], title: "Restore continuity finding")
         await load()
     }
 }
 
 struct WorldManuscriptView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: SpaceSession
 
     @State private var scenes: [WorldbuildingParity.ManuscriptScene] = []
@@ -158,6 +157,10 @@ struct WorldManuscriptView: View {
     @State private var supportTables: [String: [Row]] = [:]
     @State private var selectedId: String?
     @State private var draft = ""
+    @State private var draftSceneId: String?
+    @State private var manuscriptDrafts: [String: CompanionManuscriptDraftStore.Draft] = [:]
+    @State private var draftStore: CompanionManuscriptDraftStore?
+    @State private var comparingDraft = false
     @State private var loading = true
     @State private var saving = false
     @State private var message: String?
@@ -179,30 +182,52 @@ struct WorldManuscriptView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            if sizeClass == .regular {
-                HStack(spacing: 0) {
-                    sceneList.frame(width: 310)
-                    Divider()
-                    editor
-                    Divider()
-                    inspector.frame(width: 330)
-                }
-            } else {
-                VStack(spacing: 0) {
-                    compactSelector
-                    Divider()
-                    if compactPane == 0 { editor }
-                    else { inspector }
+        GeometryReader { geometry in
+            // An iPad retains a regular size class even when its sidebar or
+            // window leaves too little room for all three Desktop panes.
+            let showsThreePanes = geometry.size.width >= 1_100 && !dynamicTypeSize.isAccessibilitySize
+            VStack(spacing: 0) {
+                header
+                Divider()
+                if showsThreePanes {
+                    HStack(spacing: 0) {
+                        sceneList.frame(width: 310)
+                        Divider()
+                        editor
+                        Divider()
+                        inspector.frame(width: 330)
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        compactSelector
+                        Divider()
+                        if compactPane == 0 { editor }
+                        else { inspector }
+                    }
                 }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .nodusPageBackdrop(accent: session.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("world-manuscript")
         .task(id: session.publishedRevision) { await load() }
         .onChange(of: selectedId) { _, _ in selectDraft() }
+        .onChange(of: draft) { _, text in
+            guard let id = draftSceneId, id == selectedId else { return }
+            let baseline = manuscriptDrafts[id]?.baseline ?? textRows[id]?.string("text") ?? ""
+            retainDraft(.init(sceneId: id, baseline: baseline, text: text))
+        }
+        .nodusSheet(isPresented: $comparingDraft) {
+            if let selected {
+                NavigationStack {
+                    ManuscriptDraftComparison(title: selected.title, local: draft, remote: textRows[selected.id]?.string("text") ?? "", accent: session.accent,
+                        useRemote: { adoptRemoteDraft(); comparingDraft = false },
+                        keepLocal: { rebaseLocalDraft(); comparingDraft = false })
+                    .nodusModalClose(accent: session.accent)
+                }
+            }
+        }
         .nodusSheet(isPresented: $structureEditor) {
             if let selected {
                 NavigationStack {
@@ -221,6 +246,9 @@ struct WorldManuscriptView: View {
             systemImage: "square.and.pencil", accent: session.accent,
             trailing: {
                 HStack(spacing: 8) {
+                    Button { Task { await load() } } label: { manuscriptActionLabel("Actualizar", systemImage: "arrow.clockwise") }
+                        .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(loading || saving)
+                        .accessibilityLabel("Actualizar manuscrito y conservar borradores")
                     ShareLink(item: exportMarkdown) { manuscriptActionLabel("Export", systemImage: "square.and.arrow.up") }
                         .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                         .accessibilityLabel("Export manuscript")
@@ -277,6 +305,8 @@ struct WorldManuscriptView: View {
                 Label("Scene", systemImage: "sidebar.right").tag(1)
             }
             .pickerStyle(.segmented)
+            .accessibilityLabel("Manuscript pane")
+            .accessibilityIdentifier("world-manuscript-pane")
         }.padding(.horizontal, NodusSpace.page).padding(.vertical, 8)
     }
 
@@ -287,6 +317,8 @@ struct WorldManuscriptView: View {
                 session: session, scene: selected, draft: $draft, tables: $supportTables,
                 outbox: outbox, onTextChanged: { row in
                     textRows[selected.id] = row
+                    let saved = row.string("text") ?? ""
+                    retainDraft(.init(sceneId: selected.id, baseline: saved, text: draft))
                     rebuild()
                 }
             )
@@ -307,6 +339,12 @@ struct WorldManuscriptView: View {
                     }
                     if let message { Text(message).font(.caption).foregroundStyle(session.accent.nodusReadable) }
                     if let error { Text(error).font(.caption).foregroundStyle(.red) }
+                    if manuscriptDrafts[selected.id]?.conflicts(with: textRows[selected.id]?.string("text") ?? "") == true {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("La escena cambió en Nodus. Tu borrador está conservado en este dispositivo.").font(.callout)
+                            Button("Comparar versiones") { comparingDraft = true }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                        }.padding(12).background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                    }
                     TextEditor(text: $draft)
                         .font(.system(.body, design: .serif)).lineSpacing(5).scrollContentBackground(.hidden)
                         .padding(14).background(Color(uiColor: .secondarySystemBackground).opacity(0.62), in: RoundedRectangle(cornerRadius: 12))
@@ -332,6 +370,12 @@ struct WorldManuscriptView: View {
             textRows = keyed(tables["world_scene_text"] ?? [], "scene_id")
             chapterRows = keyed(tables["world_chapter_breaks"] ?? [], "scene_id")
             bookRows = keyed(tables["world_manuscript_starts"] ?? [], "scene_id")
+            if session.connection.desktopPairingId != nil, draftStore == nil {
+                let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+                let store = try await CompanionManuscriptDraftStores.shared.store(pairingId: pairing.id, vaultId: vault)
+                manuscriptDrafts.merge(await store.records()) { current, recovered in current.updatedAt >= recovered.updatedAt ? current : recovered }
+                draftStore = store
+            }
             rebuild()
             if selectedId == nil { selectedId = scenes.first?.id }
             selectDraft()
@@ -346,7 +390,28 @@ struct WorldManuscriptView: View {
             chapters: Array(chapterRows.values), books: Array(bookRows.values)
         )
     }
-    private func selectDraft() { draft = selected.map { textRows[$0.id]?.string("text") ?? $0.text } ?? "" }
+    private func selectDraft() {
+        draftSceneId = selected?.id
+        draft = selected.map { manuscriptDrafts[$0.id]?.text ?? textRows[$0.id]?.string("text") ?? $0.text } ?? ""
+    }
+    private func retainDraft(_ record: CompanionManuscriptDraftStore.Draft) {
+        manuscriptDrafts[record.sceneId] = record
+        guard let store = draftStore else { return }
+        Task {
+            do { try await store.set(record) }
+            catch { self.error = "No se pudo conservar el borrador: \(error.localizedDescription)" }
+        }
+    }
+    private func adoptRemoteDraft() {
+        guard let id = selectedId else { return }
+        let remote = textRows[id]?.string("text") ?? ""
+        retainDraft(.init(sceneId: id, baseline: remote, text: remote)); draft = remote
+    }
+    private func rebaseLocalDraft() {
+        guard let id = selectedId else { return }
+        retainDraft(.init(sceneId: id, baseline: textRows[id]?.string("text") ?? "", text: draft))
+        message = "Borrador conservado. Guarda para enviar esta versión; Nodus comprobará de nuevo si hubo cambios."
+    }
     private func keyed(_ rows: [Row], _ field: String) -> [String: Row] { Dictionary(uniqueKeysWithValues: rows.compactMap { row in row.string(field).map { ($0, row) } }) }
 
     private func save() async {
@@ -354,50 +419,56 @@ struct WorldManuscriptView: View {
         saving = true; defer { saving = false }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let old = textRows[scene.id]
-        let oldText = old?.string("text") ?? ""
+        let oldText = manuscriptDrafts[scene.id]?.baseline ?? old?.string("text") ?? ""
+        let submitted = draft
         let oldCount = WorldbuildingParity.wordCount(oldText)
-        let newCount = WorldbuildingParity.wordCount(draft)
-        if oldCount > 80 && newCount < Int(Double(oldCount) * 0.7) { await snapshot(scene: scene, text: oldText, reason: "shrink", outbox: outbox) }
+        let newCount = WorldbuildingParity.wordCount(submitted)
+        if oldCount >= 40 && newCount * 2 < oldCount {
+            guard await snapshot(scene: scene, text: oldText, reason: "shrink", outbox: outbox) else { error = outbox.lastError; return }
+        }
         let row: [String: JSONValue] = [
-            "scene_id": .string(scene.id), "text": .string(draft), "word_count": .int(Int64(newCount)),
+            "scene_id": .string(scene.id), "text": .string(submitted), "word_count": .int(Int64(newCount)),
             "created_at": old?["created_at"] ?? .string(now), "updated_at": .string(now),
+            "_mobileExpectedText": .string(oldText),
         ]
-        textRows[scene.id] = Row(row); rebuild()
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Save scene \(scene.title)")
-        message = outbox.lastError == nil ? String(localized: "Saved to the sync outbox.") : String(localized: "Saved locally; sync will retry.")
+        guard await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Save scene \(scene.title)") else { error = outbox.lastError; return }
+        error = nil; textRows[scene.id] = Row(row); rebuild()
+        let saved = row["text"]!.stringValue!
+        retainDraft(.init(sceneId: scene.id, baseline: saved, text: selectedId == scene.id ? draft : manuscriptDrafts[scene.id]?.text ?? saved))
+        message = outbox.lastSaveMessage
     }
 
-    private func snapshot(scene: WorldbuildingParity.ManuscriptScene, text: String, reason: String, outbox: OutboxController) async {
+    private func snapshot(scene: WorldbuildingParity.ManuscriptScene, text: String, reason: String, outbox: OutboxController) async -> Bool {
         let id = UUID().uuidString
         let row: [String: JSONValue] = [
             "snapshot_id": .string(id), "scene_id": .string(scene.id), "text": .string(text),
             "word_count": .int(Int64(WorldbuildingParity.wordCount(text))), "reason": .string(reason),
             "created_at": .string(ISO8601DateFormatter.nodusFractional.string(from: Date())),
         ]
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)")
+        return await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)")
     }
 
     private func saveStructure(chapter: String, book: String, targetWords: Int?) async {
         guard let scene = selected, let outbox else { return }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         if chapter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard await outbox.syncMutation(kind: .delete, table: .worldChapterBreaks, key: [scene.id], title: "Remove chapter break") else { error = outbox.lastError; return }
             chapterRows[scene.id] = nil
-            _ = await outbox.syncMutation(kind: .delete, table: .worldChapterBreaks, key: [scene.id], title: "Remove chapter break")
         } else {
             let old = chapterRows[scene.id]
             let row: [String: JSONValue] = ["scene_id": .string(scene.id), "title": .string(chapter), "created_at": old?["created_at"] ?? .string(now), "updated_at": .string(now)]
+            guard await outbox.syncMutation(kind: .upsert, table: .worldChapterBreaks, key: [scene.id], row: row, title: "Set chapter break") else { error = outbox.lastError; return }
             chapterRows[scene.id] = Row(row)
-            _ = await outbox.syncMutation(kind: .upsert, table: .worldChapterBreaks, key: [scene.id], row: row, title: "Set chapter break")
         }
         if book.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard await outbox.syncMutation(kind: .delete, table: .worldManuscriptStarts, key: [scene.id], title: "Remove book start") else { error = outbox.lastError; return }
             bookRows[scene.id] = nil
-            _ = await outbox.syncMutation(kind: .delete, table: .worldManuscriptStarts, key: [scene.id], title: "Remove book start")
         } else {
             let old = bookRows[scene.id]
             var row: [String: JSONValue] = ["scene_id": .string(scene.id), "title": .string(book), "created_at": old?["created_at"] ?? .string(now), "updated_at": .string(now)]
             if let targetWords { row["target_words"] = .int(Int64(targetWords)) }
+            guard await outbox.syncMutation(kind: .upsert, table: .worldManuscriptStarts, key: [scene.id], row: row, title: "Set manuscript start") else { error = outbox.lastError; return }
             bookRows[scene.id] = Row(row)
-            _ = await outbox.syncMutation(kind: .upsert, table: .worldManuscriptStarts, key: [scene.id], row: row, title: "Set manuscript start")
         }
         rebuild(); structureEditor = false
     }
@@ -407,6 +478,8 @@ struct WorldManuscriptView: View {
 /// continuity and recoverable prose operations. iPad keeps it beside the editor; iPhone
 /// reaches this exact view through the compact Write/Scene switch rather than losing it.
 private struct WorldManuscriptInspector: View {
+    @Environment(AISettings.self) private var ai
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: SpaceSession
     let scene: WorldbuildingParity.ManuscriptScene
     @Binding var draft: String
@@ -419,6 +492,19 @@ private struct WorldManuscriptInspector: View {
     @State private var reviewRows: [ReviewRow] = []
     @State private var reviewMessage: String?
     @State private var reviewing = false
+    @State private var reviewTask: Task<Void, Never>?
+    @State private var activeReviewKey: String?
+    private var proseBaseRequest: JSONValue { CompanionAcademicGeneration.sourceRequest(kind: "prose", scene: scene.id, language: CompanionAcademicGeneration.language) }
+    private var proseDraft: JSONValue {
+        .object(["sceneTitle": .string(scene.title), "text": .string(draft), "beats": .array(beats.map { beat in
+            let kind = beat.string("thread_kind") ?? "", id = beat.string("thread_id") ?? ""
+            let table = kind == "rule" ? "world_rules" : "world_threads", field = kind == "rule" ? "rule_id" : "thread_id"
+            let title = (tables[table] ?? []).first { $0.string(field) == id }?.text("title") ?? beat.text("thread_title") ?? id
+            return .object(["threadKind": .string(kind), "threadId": .string(id), "threadTitle": .string(title),
+                "mark": .string(beat.string("mark") ?? ""), "text": beat.text("text").map(JSONValue.string) ?? .null])
+        })])
+    }
+    private var proseRequest: JSONValue { CompanionAcademicGeneration.sourceRequest(kind: "prose", scene: scene.id, language: CompanionAcademicGeneration.language, draft: proseDraft) }
 
     private struct ReviewRow: Identifiable {
         let id: String
@@ -540,11 +626,11 @@ private struct WorldManuscriptInspector: View {
                 Spacer()
                 NodusChip(key: kind, tint: session.accent)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 62), spacing: 5)], spacing: 5) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 200 : 110), spacing: 5)], spacing: 5) {
                 ForEach(marks, id: \.self) { mark in
-                    Button(mark.capitalized) { Task { await setBeat(kind: kind, id: id, mark: current?.string("mark") == mark ? nil : mark) } }
+                    Button(LocalizedStringKey(mark.capitalized)) { Task { await setBeat(kind: kind, id: id, mark: current?.string("mark") == mark ? nil : mark) } }
                         .buttonStyle(.bordered).buttonBorderShape(.roundedRectangle).tint(session.accent)
-                        .font(.caption2).disabled(outbox == nil)
+                        .font(.caption2).lineLimit(1).frame(minHeight: 44).contentShape(Rectangle()).disabled(outbox == nil)
                 }
             }
             if let text = current?.text("text") { Text(text).font(.caption2).foregroundStyle(.secondary) }
@@ -567,11 +653,11 @@ private struct WorldManuscriptInspector: View {
                 Spacer()
                 Text((rule.string("hardness") ?? "rule").capitalized).font(.caption2).foregroundStyle(.secondary)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 5)], spacing: 5) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 200 : 110), spacing: 5)], spacing: 5) {
                 ForEach(["obeys", "bends", "breaks", "establishes"], id: \.self) { mark in
-                    Button(mark.capitalized) { Task { await setBeat(kind: "rule", id: id, mark: current?.string("mark") == mark ? nil : mark) } }
+                    Button(LocalizedStringKey(mark.capitalized)) { Task { await setBeat(kind: "rule", id: id, mark: current?.string("mark") == mark ? nil : mark) } }
                         .buttonStyle(.bordered).buttonBorderShape(.roundedRectangle).tint(session.accent)
-                        .font(.caption2).disabled(outbox == nil)
+                        .font(.caption2).lineLimit(1).frame(minHeight: 44).contentShape(Rectangle()).disabled(outbox == nil)
                 }
             }
             if current?.string("mark") == "breaks" {
@@ -595,12 +681,15 @@ private struct WorldManuscriptInspector: View {
             HStack(spacing: 7) {
                 Button { Task { await takeSnapshot(reason: "manual") } } label: { Label("Snapshot", systemImage: "camera") }
                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(outbox == nil)
-                Button { Task { await reviewProse() } } label: {
+                Button { reviewTask = Task { defer { reviewTask = nil }; await reviewProse() } } label: {
                     if reviewing { ProgressView() } else { Label("On the page?", systemImage: "sparkles") }
                 }
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                .disabled(reviewing || session.isDemo || !session.connection.role.canSendChanges)
+                .disabled(reviewing || session.isDemo || !session.canAuthor)
             }
+            if reviewing { Button("Cancelar revisión") { cancelReview() }.font(.caption) }
+            if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: proseBaseRequest) }
+            Text("La revisión consulta el texto y los latidos actuales de esta escena.").font(.caption2).foregroundStyle(.secondary)
             if let reviewMessage { Text(reviewMessage).font(.caption2).foregroundStyle(.secondary) }
             ForEach(reviewRows) { review in
                 VStack(alignment: .leading, spacing: 2) {
@@ -623,6 +712,17 @@ private struct WorldManuscriptInspector: View {
                     }
                 }
             }
+        }
+        .task(id: "\(scene.id):\(session.companionResultRevision):\(session.companionPublicationRevision)") {
+            guard session.connection.desktopPairingId != nil else { return }
+            do { if let saved = try await CompanionAcademicGeneration.saved(session: session, request: proseRequest)?.objectValue { applyReview(saved) } }
+            catch { reviewMessage = error.localizedDescription }
+        }
+        .onChange(of: draft) { _, _ in
+            if !reviewRows.isEmpty { reviewRows = []; reviewMessage = "El texto ha cambiado. Revisa de nuevo para consultar este borrador." }
+        }
+        .onChange(of: beats) { _, _ in
+            if !reviewRows.isEmpty { reviewRows = []; reviewMessage = "Los latidos han cambiado. Revisa de nuevo para consultar este borrador." }
         }
     }
 
@@ -647,10 +747,10 @@ private struct WorldManuscriptInspector: View {
         guard let outbox else { return }
         let key = [kind, id, scene.id]
         if mark == nil {
+            guard await outbox.syncMutation(kind: .delete, table: .worldBeats, key: key, title: "Remove scene beat") else { reviewMessage = outbox.lastError; return }
             tables["world_beats"]?.removeAll {
                 $0.string("thread_kind") == kind && $0.string("thread_id") == id && $0.string("scene_id") == scene.id
             }
-            _ = await outbox.syncMutation(kind: .delete, table: .worldBeats, key: key, title: "Remove scene beat")
             return
         }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
@@ -660,17 +760,17 @@ private struct WorldManuscriptInspector: View {
         ]
         columns["mark"] = .string(mark!); columns["updated_at"] = .string(now)
         if mark != "breaks" { columns["paid"] = .null }
+        guard await outbox.syncMutation(kind: .upsert, table: .worldBeats, key: key, row: columns, title: "Update scene beat") else { reviewMessage = outbox.lastError; return }
         upsertLocal(table: "world_beats", row: Row(columns), keyFields: ["thread_kind", "thread_id", "scene_id"])
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldBeats, key: key, row: columns, title: "Update scene beat")
     }
 
     private func setPaid(value: Bool?, row: Row) async {
         guard let outbox, let kind = row.string("thread_kind"), let id = row.string("thread_id") else { return }
         var columns = row.columns
-        columns["paid"] = value.map(JSONValue.bool) ?? .null
+        columns["paid"] = value.map { .int($0 ? 1 : 0) } ?? .null
         columns["updated_at"] = .string(ISO8601DateFormatter.nodusFractional.string(from: Date()))
+        guard await outbox.syncMutation(kind: .upsert, table: .worldBeats, key: [kind, id, scene.id], row: columns, title: "Judge rule cost") else { reviewMessage = outbox.lastError; return }
         upsertLocal(table: "world_beats", row: Row(columns), keyFields: ["thread_kind", "thread_id", "scene_id"])
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldBeats, key: [kind, id, scene.id], row: columns, title: "Judge rule cost")
     }
 
     private func createThread(kind: String) async {
@@ -685,56 +785,71 @@ private struct WorldManuscriptInspector: View {
             "scope": .string("external"), "status": .string("open"), "origin": .string("author"),
             "created_at": .string(now), "updated_at": .string(now),
         ]
-        tables["world_threads", default: []].append(Row(row))
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldThreads, key: [id], row: row, title: "Create \(title)")
+        guard await outbox.syncMutation(kind: .upsert, table: .worldThreads, key: [id], row: row, title: "Create \(title)") else { reviewMessage = outbox.lastError; return }
+        upsertLocal(table: "world_threads", row: Row(row), keyFields: ["thread_id"])
         for personId in castIds.sorted() {
             let party: [String: JSONValue] = [
                 "thread_id": .string(id), "party_kind": .string("character"), "party_id": .string(personId),
                 "side": .string(kind == "arc" ? "subject" : "wants"), "created_at": .string(now), "updated_at": .string(now),
             ]
-            tables["thread_parties", default: []].append(Row(party))
-            _ = await outbox.syncMutation(kind: .upsert, table: .threadParties, key: [id, "character", personId], row: party, title: "Add story-thread participant")
+            guard await outbox.syncMutation(kind: .upsert, table: .threadParties, key: [id, "character", personId], row: party, title: "Add story-thread participant") else { reviewMessage = outbox.lastError; return }
+            upsertLocal(table: "thread_parties", row: Row(party), keyFields: ["thread_id", "party_kind", "party_id"])
         }
         await setBeat(kind: kind, id: id, mark: kind == "arc" ? "step" : "raise")
         newThreadTitle = ""; creatingKind = nil
     }
 
-    private func takeSnapshot(reason: String) async {
-        guard let outbox else { return }
+    @discardableResult private func takeSnapshot(reason: String) async -> Bool {
+        guard let outbox else { return false }
         let id = "wss_\(UUID().uuidString)"
         let row: [String: JSONValue] = [
             "snapshot_id": .string(id), "scene_id": .string(scene.id), "text": .string(draft),
             "word_count": .int(Int64(WorldbuildingParity.wordCount(draft))), "reason": .string(reason),
             "created_at": .string(ISO8601DateFormatter.nodusFractional.string(from: Date())),
         ]
+        guard await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)") else { reviewMessage = outbox.lastError; return false }
         tables["world_scene_snapshots", default: []].insert(Row(row), at: 0)
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneSnapshots, key: [id], row: row, title: "Snapshot \(scene.title)")
+        return true
     }
 
     private func restore(_ snapshot: Row) async {
         guard let outbox, let text = snapshot.string("text") else { return }
-        await takeSnapshot(reason: "manual")
+        let previous = draft
+        guard await takeSnapshot(reason: "manual") else { return }
+        guard draft == previous else { reviewMessage = "El borrador cambió durante la restauración. Se ha conservado tu texto; vuelve a elegir la copia si quieres restaurarla."; return }
         draft = text
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let row: [String: JSONValue] = [
             "scene_id": .string(scene.id), "text": .string(text),
             "word_count": .int(Int64(WorldbuildingParity.wordCount(text))),
             "created_at": .string(now), "updated_at": .string(now),
+            "_mobileExpectedText": .string(tables["world_scene_text"]?.first(where: { $0.string("scene_id") == scene.id })?.string("text") ?? ""),
         ]
+        guard await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Restore \(scene.title)") else { reviewMessage = outbox.lastError; return }
         tables["world_scene_text"] = (tables["world_scene_text"] ?? []).filter { $0.string("scene_id") != scene.id } + [Row(row)]
         onTextChanged(Row(row))
-        _ = await outbox.syncMutation(kind: .upsert, table: .worldSceneText, key: [scene.id], row: row, title: "Restore \(scene.title)")
     }
 
     private func reviewProse() async {
         reviewing = true; defer { reviewing = false }
+        let request = proseRequest, currentDraft = proseDraft
+        let key = "prose-review:\(scene.id):\(UUID().uuidString)"
         do {
+            if session.aiExecutionMode == .autonomous, session.connection.desktopPairingId != nil {
+                let result = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: request) { reviewMessage = $0 }
+                guard let object = result.objectValue else { throw DesktopBridgeError.malformedResponse }
+                guard proseDraft == currentDraft else { reviewMessage = "Resultado conservado en Trabajos. El borrador ha cambiado durante la revisión."; return }
+                applyReview(object); return
+            }
+            activeReviewKey = key; defer { activeReviewKey = nil }
+            let ready = try await session.prepareCompanionContentSubmission()
             let creation = try await session.client.createSpaceAction(
-                idempotencyKey: "prose-review:\(scene.id):\(UUID().uuidString.prefix(8))",
-                kind: .worldbuildingProseReview, payload: ["sceneId": .string(scene.id)],
-                inputRevision: session.publishedRevision, in: session.connection.spaceId
+                idempotencyKey: key,
+                kind: .worldbuildingProseReview, payload: ["sceneId": .string(scene.id), "language": .string(CompanionAcademicGeneration.language), "draft": currentDraft],
+                inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, deferCompanionSubmission:!ready, in:session.connection.spaceId
             )
             var action = creation.action
+            try Task.checkCancellation()
             for _ in 0..<30 where !action.status.isTerminal {
                 try await Task.sleep(for: .seconds(2))
                 action = try await session.client.spaceAction(id: action.id, in: session.connection.spaceId)
@@ -745,6 +860,29 @@ private struct WorldManuscriptInspector: View {
                     : "Review is still running in Desktop; its result remains visible in Sync Center."
                 return
             }
+            guard proseDraft == currentDraft else { reviewMessage = "Resultado conservado en Trabajos. El borrador ha cambiado durante la revisión."; return }
+            applyReview(object)
+        } catch where error.isCancellation {
+            if session.connection.desktopPairingId != nil, session.aiExecutionMode == .live {
+                await Task {
+                    _ = try? await session.client.cancelSpaceAction(id: DesktopBridgeClient.companionActionIdentity(idempotencyKey: key), in: session.connection.spaceId)
+                }.value
+            }
+            reviewMessage = "Cancelación solicitada. Consulta su estado en Trabajos."
+        }
+        catch { reviewMessage = error.localizedDescription }
+    }
+    private func cancelReview() {
+        reviewTask?.cancel()
+        if let key = activeReviewKey, session.connection.desktopPairingId != nil {
+            Task {
+                do { _ = try await session.client.cancelSpaceAction(id: DesktopBridgeClient.companionActionIdentity(idempotencyKey: key), in: session.connection.spaceId) }
+                catch { reviewMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    private func applyReview(_ object: [String: JSONValue]) {
             if object["noMaterial"]?.boolValue == true {
                 reviewMessage = "The review needs both authored beats and written prose."
                 reviewRows = []
@@ -762,10 +900,7 @@ private struct WorldManuscriptInspector: View {
                     note: row["note"]?.isNull == true ? nil : row["note"]?.stringValue
                 )
             }
-            reviewMessage = reviewRows.isEmpty ? "Desktop returned no readable beat verdicts." : nil
-        } catch {
-            reviewMessage = "Could not queue the typed Desktop review: \(error.localizedDescription)"
-        }
+            reviewMessage = reviewRows.isEmpty ? "No hay veredictos legibles para esta escena." : nil
     }
 
     private func upsertLocal(table: String, row: Row, keyFields: [String]) {

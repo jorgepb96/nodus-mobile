@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The published Immersion catalogue uses the same gallery grammar as Deep Research: a clear
 /// workspace heading, one search-and-sort row, and equivalent list/grid cards. The sessions
-/// remain read-only because the publication intentionally omits device-local progress.
+/// keep private progress separate from the published plan.
 struct ImmersionLibraryView: View {
     let session: SpaceSession
 
@@ -158,10 +158,7 @@ struct ImmersionLibraryView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            rows = try await session.client.immersionSessions(
-                in: session.connection.spaceId,
-                limit: 100
-            ).items
+            rows = try await session.client.allImmersionSessions(in: session.connection.spaceId)
             error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
             rows = []
@@ -253,14 +250,17 @@ private struct ImmersionGalleryCard: View {
 /// enormous JSON column: technically the data, and unreadable.
 ///
 /// `progress_json` is deliberately never published (`server/lib/routes/corpus.mjs`), so this
-/// screen reads a route rather than resuming one. Answers tapped here stay on the phone.
+/// private progress synchronizes separately through the paired Mac's writing grant.
 struct ImmersionView: View {
     let session: SpaceSession
     let sessionId: String
     let title: String
+    var localPlan: ImmersionPlan? = nil
+    var publicationId: String? = nil
 
     @State private var plan: ImmersionPlan?
     @State private var error: String?
+    @State private var progressController: ImmersionProgressController?
 
     var body: some View {
         ScrollView {
@@ -271,16 +271,23 @@ struct ImmersionView: View {
                     // The numbers are the reading order the find bar walks: an itinerary is
                     // read from its overview down to its frontiers, whatever the layout does.
                     header(plan).nodusSearchOrder(1)
+                    if let progressController {
+                        ImmersionProgressStatus(controller: progressController, questions: plan.stations.flatMap(\.quiz) + plan.exam,
+                            totalSteps: plan.stations.count + 4, accent: session.accent)
+                    }
                     if !plan.overview.isEmpty {
                         card(title: "Overview", icon: "text.alignleft") {
                             CorpusProse(plan.overview, accent: session.accent, session: session)
                         }
                         .nodusSearchOrder(2)
+                        if let progressController { ImmersionStepControl(controller: progressController, index: 0, accent: session.accent) }
                     }
                     stations(plan).nodusSearchOrder(3)
                     if !plan.keyTerms.isEmpty { keyTerms(plan).nodusSearchOrder(4) }
                     if !plan.contrasts.isEmpty { contrasts(plan).nodusSearchOrder(5) }
+                    if let progressController { ImmersionStepControl(controller: progressController, index: plan.stations.count + 1, label: "Marcar contraste como leído", accent: session.accent) }
                     if !plan.frontiers.isEmpty { frontiers(plan).nodusSearchOrder(6) }
+                    if let progressController { ImmersionStepControl(controller: progressController, index: plan.stations.count + 2, label: "Marcar fronteras como leídas", accent: session.accent) }
                     if !plan.exam.isEmpty { examLink(plan) }
                 } else {
                     ProgressView().tint(session.accent).frame(maxWidth: .infinity).padding(.top, 40)
@@ -294,6 +301,7 @@ struct ImmersionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .task(id: session.publishedRevision) { await load() }
+        .onChange(of: session.companionImmersionProgressRevision) { _, _ in Task { await progressController?.reloadLocal() } }
     }
 
     // MARK: Pieces
@@ -322,10 +330,10 @@ struct ImmersionView: View {
             Text("Stations").font(.subheadline.weight(.semibold))
             ForEach(Array(plan.stations.enumerated()), id: \.element.id) { index, station in
                 NavigationLink {
-                    ImmersionStationView(session: session, station: station, number: index + 1)
+                    ImmersionStationView(session: session, station: station, number: index + 1, progressController: progressController)
                 } label: {
                     HStack(alignment: .top, spacing: 11) {
-                        Text("\(index + 1)")
+                            Text("\(index + 1)")
                             .font(.caption.weight(.bold).monospacedDigit())
                             .frame(width: 24, height: 24)
                             .background(session.accent.opacity(0.18), in: Circle())
@@ -421,7 +429,7 @@ struct ImmersionView: View {
                 title: String(localized: "Final exam"),
                 questions: plan.exam,
                 feynman: plan.feynman,
-                accent: session.accent
+                accent: session.accent, controller: progressController, stepIndex: plan.stations.count + 3, finalExam: true
             )
         } label: {
             HStack {
@@ -451,8 +459,15 @@ struct ImmersionView: View {
 
     private func load() async {
         do {
-            let detail = try await session.client.immersionSession(sessionId, in: session.connection.spaceId)
-            plan = ImmersionPlan(detail)
+            let loaded: ImmersionPlan
+            if let localPlan { loaded = localPlan }
+            else {
+                let detail = try await session.client.immersionSession(sessionId, in: session.connection.spaceId)
+                guard let parsed = ImmersionPlan(detail) else { throw DesktopBridgeError.malformedResponse }; loaded = parsed
+            }
+            try Task.checkCancellation(); plan = loaded; error = nil
+            let controller = try ImmersionProgressController(session: session, sessionId: sessionId, plan: loaded, publicationId: publicationId)
+            progressController = controller; await controller.load()
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
@@ -467,6 +482,7 @@ private struct ImmersionStationView: View {
     let session: SpaceSession
     let station: ImmersionPlan.Station
     let number: Int
+    var progressController: ImmersionProgressController?
 
     private var accent: Color { session.accent }
 
@@ -529,14 +545,17 @@ private struct ImmersionStationView: View {
                         VStack(alignment: .leading, spacing: 11) {
                             ForEach(Array(station.citations.enumerated()), id: \.offset) { index, citation in
                                 VStack(alignment: .leading, spacing: 3) {
-                                    PageText(citation.reference, order: 0)
-                                        .font(.caption2.weight(.medium)).foregroundStyle(accent)
+                                    if let url = citation.targetURL, let reference = CorpusReference(url) {
+                                        NavigationLink { CorpusReferenceView(session: session, reference: reference) } label: {
+                                            Label(citation.reference, systemImage: "text.quote").font(.caption.weight(.medium))
+                                                .fixedSize(horizontal: false, vertical: true).frame(minHeight: 44)
+                                        }.tint(accent)
+                                    } else { PageText(citation.reference, order: 0).font(.caption2.weight(.medium)).foregroundStyle(accent) }
                                     if !citation.text.isEmpty {
-                                        PageText("“\(citation.text)”", order: 1)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .textSelection(.enabled)
+                                        CorpusProse("“\(citation.text)”", accent: accent, session: session)
                                     }
+                                    if !citation.commentary.isEmpty { CorpusProse(citation.commentary, accent: accent, session: session) }
+                                    if !citation.whyItMatters.isEmpty { CorpusProse(citation.whyItMatters, accent: accent, session: session) }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .nodusSearchOrder(index)
@@ -547,7 +566,8 @@ private struct ImmersionStationView: View {
                 }
                 if !station.quiz.isEmpty {
                     NavigationLink {
-                        ImmersionQuizView(title: String(localized: "Check yourself"), questions: station.quiz, feynman: nil, accent: accent)
+                        ImmersionQuizView(title: String(localized: "Check yourself"), questions: station.quiz, feynman: nil, accent: accent,
+                            controller: progressController, stepIndex: number)
                     } label: {
                         HStack {
                             Label("Check yourself", systemImage: "checklist")
@@ -560,6 +580,7 @@ private struct ImmersionStationView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                if let progressController { ImmersionStepControl(controller: progressController, index: number, accent: accent) }
             }
             .padding(16)
             .nodusTopAnchor()
@@ -569,6 +590,7 @@ private struct ImmersionStationView: View {
         .navigationTitle(station.title)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: accent)
+        .task(id: progressController?.loading) { await progressController?.visit(index: number) }
     }
 
     @ViewBuilder
@@ -585,22 +607,24 @@ private struct ImmersionStationView: View {
 
 // MARK: - Quiz
 
-/// Questions, answered on the phone and nowhere else.
-///
-/// Nothing here is sent anywhere: `progress_json` is not published, so a session cannot be
-/// resumed from a phone and pretending otherwise would be the dishonest part.
+/// Private reflections and factual choice results persist before reconnection.
 private struct ImmersionQuizView: View {
     let title: String
     let questions: [ImmersionPlan.Question]
     let feynman: String?
     let accent: Color
+    var controller: ImmersionProgressController?
+    var stepIndex = 0
+    var finalExam = false
 
     @State private var chosen: [String: Int] = [:]
     @State private var revealed: Set<String> = []
+    @State private var responses: [String: String] = [:]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if let controller { ImmersionProgressStatus(controller: controller, questions: questions, totalSteps: controller.totalSteps, accent: accent) }
                 if let feynman, !feynman.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Label("Explain it out loud", systemImage: "quote.bubble")
@@ -616,7 +640,10 @@ private struct ImmersionQuizView: View {
                     questionCard(question, number: index + 1)
                 }
 
-                Text("Answers stay on this device. An immersion session's progress is never published, so nothing here travels back to the vault.")
+                if let controller {
+                    ImmersionStepControl(controller: controller, index: stepIndex, label: finalExam ? "Finalizar recorrido" : "Marcar cuestionario como completado", finished: finalExam, accent: accent)
+                }
+                Text("Las respuestas abiertas son reflexiones privadas. Se guardan literalmente y no se envían a un modelo ni se evalúan automáticamente.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -626,6 +653,9 @@ private struct ImmersionQuizView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: accent)
+        .task { restoreAnswers() }
+        .task(id: controller?.loading) { await controller?.visit(index: stepIndex) }
+        .onChange(of: controller?.progress) { _, _ in restoreAnswers() }
     }
 
     private func questionCard(_ question: ImmersionPlan.Question, number: Int) -> some View {
@@ -635,8 +665,7 @@ private struct ImmersionQuizView: View {
             if question.isChoice {
                 ForEach(Array(question.options.enumerated()), id: \.offset) { index, option in
                     Button {
-                        chosen[question.id] = index
-                        revealed.insert(question.id)
+                        Task { await controller?.answer(question, value: String(index)) }
                     } label: {
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: mark(question, index))
@@ -648,8 +677,14 @@ private struct ImmersionQuizView: View {
                                     in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .disabled(controller == nil || controller?.loading == true || controller?.saving == true)
                 }
             } else {
+                TextField("Escribe tu reflexión", text: Binding(get: { responses[question.id] ?? "" }, set: { responses[question.id] = $0 }), axis: .vertical)
+                    .lineLimit(4...12).textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("immersion-answer-\(question.id)")
+                Button("Guardar reflexión") { Task { await controller?.answer(question, value: responses[question.id] ?? "") } }
+                    .frame(minHeight: 44).disabled(controller == nil || controller?.loading == true || controller?.saving == true || (responses[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (responses[question.id] ?? "").utf16.count > 10_000)
                 Button {
                     if revealed.contains(question.id) { revealed.remove(question.id) } else { revealed.insert(question.id) }
                 } label: {
@@ -676,6 +711,15 @@ private struct ImmersionQuizView: View {
         .nodusGlass(NodusGlass(.thin, tint: accent))
     }
 
+    private func restoreAnswers() {
+        chosen = [:]
+        revealed.subtract(Set(questions.filter(\.isChoice).map(\.id)))
+        for record in controller?.progress.answers ?? [] {
+            if record.kind == "choice", let index = Int(record.answer) { chosen[record.questionId] = index; revealed.insert(record.questionId) }
+            else if responses[record.questionId] == nil { responses[record.questionId] = record.answer }
+        }
+    }
+
     private func mark(_ question: ImmersionPlan.Question, _ index: Int) -> String {
         guard revealed.contains(question.id) else { return "circle" }
         if index == question.correctIndex { return "checkmark.circle.fill" }
@@ -686,5 +730,84 @@ private struct ImmersionQuizView: View {
         guard revealed.contains(question.id) else { return .secondary }
         if index == question.correctIndex { return .green }
         return chosen[question.id] == index ? .red : .secondary
+    }
+}
+
+private struct ImmersionStepControl: View {
+    let controller: ImmersionProgressController
+    let index: Int
+    var label: LocalizedStringKey = "Marcar lectura como completada"
+    var finished = false
+    let accent: Color
+    private var completed: Bool { controller.progress.completedSteps.contains(index) }
+    var body: some View {
+        Button {
+            Task { await controller.visit(index: index, completed: true, finished: finished) }
+        } label: {
+            Label(completed ? "Lectura completada" : label, systemImage: completed ? "checkmark.circle.fill" : "checkmark.circle")
+                .fixedSize(horizontal: false, vertical: true).frame(minHeight: 44)
+        }
+        .buttonStyle(NodusGlassButtonStyle(accent: accent))
+        .disabled(controller.loading || controller.saving || completed)
+        .accessibilityIdentifier("immersion-complete-step-\(index)")
+    }
+}
+
+struct ImmersionProgressStatus: View {
+    let controller: ImmersionProgressController
+    let questions: [ImmersionPlan.Question]
+    let totalSteps: Int
+    let accent: Color
+    @State private var restarting = false
+    private var status: LocalizedStringKey {
+        if controller.loading { return "Cargando progreso privado…" }
+        if controller.state == .conflict { return "El progreso cambió en el Mac" }
+        if controller.state == .blocked { return "Progreso conservado · sincronización bloqueada" }
+        if controller.state == .pending { return controller.canSync ? "Guardado en este dispositivo · pendiente de sincronizar" : "Guardado en este dispositivo" }
+        return controller.canSync && controller.hasMacBaseline && !controller.offline ? "Progreso guardado" : "Guardado en este dispositivo"
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(status, systemImage: controller.state == .conflict ? "exclamationmark.arrow.triangle.2.circlepath" : "checkmark.circle")
+                .font(.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+            ProgressView(value: Double(controller.progress.completedSteps.count), total: Double(totalSteps)).tint(accent)
+            Text("\(controller.progress.completedSteps.count) de \(totalSteps) pasos completados · \(controller.progress.answers.count) respuestas guardadas")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let issue = controller.issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger).fixedSize(horizontal: false, vertical: true) }
+            if let remote = controller.remote, controller.state == .conflict {
+                DisclosureGroup("Comparar respuestas") {
+                    Text("Este dispositivo").font(.headline)
+                    Text("Pasos completados: \(controller.progress.completedSteps.map { String($0 + 1) }.joined(separator: ", "))").font(.caption)
+                    answerList(controller.progress.answers)
+                    Text("Mac · \(remote.progress.completedSteps.count) pasos completados").font(.headline)
+                    Text("Pasos completados: \(remote.progress.completedSteps.map { String($0 + 1) }.joined(separator: ", "))").font(.caption)
+                    answerList(remote.progress.answers)
+                }
+                Button("Conservar mi progreso del móvil") { Task { await controller.resolve(keepPhone: true) } }.frame(minHeight: 44)
+                Button("Usar el progreso del Mac") { Task { await controller.resolve(keepPhone: false) } }.frame(minHeight: 44)
+                Text("La elección se guarda antes de sincronizar. Un nuevo cambio simultáneo vuelve a requerir revisión.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                if controller.state == .blocked { Button("Reintentar sincronización") { Task { await controller.retry() } }.frame(minHeight: 44) }
+                Button("Volver a empezar") { restarting = true }.frame(minHeight: 44).disabled(controller.loading || controller.saving)
+            }
+        }
+        .disabled(controller.saving)
+        .padding(14).nodusGlass(NodusGlass(.thin, tint: accent))
+        .confirmationDialog("Se reiniciarán los pasos y respuestas de este recorrido", isPresented: $restarting, titleVisibility: .visible) {
+            Button("Reiniciar recorrido", role: .destructive) { Task { await controller.restart() } }
+        }
+        .accessibilityIdentifier("immersion-private-progress")
+    }
+    @ViewBuilder private func answerList(_ answers: [CompanionImmersionProgress.Answer]) -> some View {
+        if answers.isEmpty { Text("Sin respuestas guardadas").foregroundStyle(.secondary) }
+        ForEach(answers, id: \.questionId) { answer in
+            let question = questions.first { $0.id == answer.questionId }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(question?.question ?? answer.questionId).font(.caption.weight(.semibold))
+                if answer.kind == "choice", let index = Int(answer.answer), let question, question.options.indices.contains(index) {
+                    Text(question.options[index]).font(.caption)
+                } else { Text(answer.answer).font(.caption) }
+            }.fixedSize(horizontal: false, vertical: true).padding(.vertical, 6)
+        }
     }
 }

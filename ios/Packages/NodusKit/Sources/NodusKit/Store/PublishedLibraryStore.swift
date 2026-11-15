@@ -54,10 +54,10 @@ public actor PublishedLibraryStore {
         }
     }
 
-    public init(spaceId: String, root: URL = .applicationSupportDirectory) {
+    public init(spaceId: String, storageId: String? = nil, root: URL = .applicationSupportDirectory) {
         self.spaceId = spaceId
         self.root = root.appendingPathComponent("spaces", isDirectory: true)
-            .appendingPathComponent(spaceId, isDirectory: true)
+            .appendingPathComponent(storageId ?? spaceId, isDirectory: true)
             .appendingPathComponent("library", isDirectory: true)
         try? FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
         if let data = try? Data(contentsOf: self.root.appendingPathComponent("downloads.json")),
@@ -73,7 +73,7 @@ public actor PublishedLibraryStore {
     }
     public func saveCatalog(collections: [PublishedLibraryCollection], documents: [PublishedLibraryDocument]) {
         guard let data = try? JSONEncoder.nodus.encode(Catalog(collections: collections, documents: documents)) else { return }
-        try? data.write(to: root.appendingPathComponent("catalog.json"), options: [.atomic, .completeFileProtectionUnlessOpen])
+        try? PrivateBridgeProtectedFile.write(data, to: root.appendingPathComponent("catalog.json"), protection: .completeFileProtectionUnlessOpen)
     }
     public func isDownloaded(_ id: String, packageHash: String? = nil) -> Bool {
         guard let value = downloads[id], FileManager.default.fileExists(atPath: markdownURL(id).path) else { return false }
@@ -109,6 +109,11 @@ public actor PublishedLibraryStore {
     }
 
     public func prepare(_ document: PublishedLibraryDocument, using client: NodusClient) async throws -> PreparedContent {
+        // Live catalogues defer ZIP construction until a document is opened. Resolve
+        // its current signed-in descriptor before validating the content hash.
+        let document = document.packageHash == nil
+            ? try await client.publishedLibraryDocument(document.id, in: spaceId)
+            : document
         guard document.cleanAvailable || document.originalAvailable, let hash = document.packageHash else { throw StoreError.unavailable }
         if isDownloaded(document.id, packageHash: hash), let package = packageURL(document.id) {
             return PreparedContent(
@@ -252,7 +257,7 @@ public actor PublishedLibraryStore {
                 try? FileManager.default.removeItem(at: library.appendingPathComponent(Self.sha256(Data(id.utf8)), isDirectory: true))
             }
             if let empty = try? JSONEncoder.nodus.encode([String: Download]()) {
-                try? empty.write(to: index, options: [.atomic, .completeFileProtectionUnlessOpen])
+                try? PrivateBridgeProtectedFile.write(empty, to: index, protection: .completeFileProtectionUnlessOpen)
             }
         }
     }
@@ -261,7 +266,7 @@ public actor PublishedLibraryStore {
     private func markdownURL(_ id: String) -> URL { directory(id).appendingPathComponent("document.md") }
     private func persist() {
         guard let data = try? JSONEncoder.nodus.encode(downloads) else { return }
-        try? data.write(to: root.appendingPathComponent("downloads.json"), options: [.atomic, .completeFileProtectionUnlessOpen])
+        try? PrivateBridgeProtectedFile.write(data, to: root.appendingPathComponent("downloads.json"), protection: .completeFileProtectionUnlessOpen)
     }
     private static func sha256(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 }

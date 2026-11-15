@@ -5,7 +5,7 @@
     {"article_id":"article-glass","title":"Whisperglass","title_key":"whisperglass","category":"artifact","summary":"A mineral that stores the last sentence spoken near it.","body":"Mining is controlled by the Cartographers' Guild.","created_at":"2026-01-03T12:00:00.000Z","updated_at":"2026-08-03T12:00:00.000Z"}
   ],
   "persons": [
-    {"person_id":"char-lyra","display_name":"Lyra Veyra","sex":"unknown","birth_date":"18 Rain, 1201 TE","biography":"Archivist of forbidden memories and reluctant heir to House Veyra.","notes":"Keeps a shard of whisperglass hidden in her sleeve.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
+    {"person_id":"char-lyra","display_name":"Lyra Veyra","sex":"female","birth_date":"18 Rain, 1201 TE","biography":"Archivist of forbidden memories and reluctant heir to House Veyra.","notes":"Keeps a shard of whisperglass hidden in her sleeve.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
     {"person_id":"char-orren","display_name":"Orren Vale","sex":"unknown","birth_date":"3 Ember, 1197 TE","biography":"Cartographer commissioned to redraw a border that moves at night.","notes":"Distrusts dynastic magic.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"},
     {"person_id":"char-maelis","display_name":"Maelis Thorn","sex":"unknown","birth_date":"1209 TE","biography":"Young diplomat who can hear the memories stored in stone.","created_at":"2026-01-01T12:00:00.000Z","updated_at":"2026-08-01T12:00:00.000Z"}
   ],

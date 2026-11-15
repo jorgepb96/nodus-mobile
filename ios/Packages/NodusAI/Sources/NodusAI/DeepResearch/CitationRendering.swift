@@ -187,11 +187,11 @@ public struct CitationLabelling: Sendable {
     /// What a run with nothing but its own catalogue can say.
     ///
     /// Used by the tests and by any wiring that cannot reach the corpus: each token keeps the
-    /// name the catalogue gave it, and the bibliography is the works among the cited.
+    /// name the catalogue gave it; works and specialised records form the references.
     public static func plain(_ cited: [CitationCatalog.Entry]) -> CitationLabelling {
         CitationLabelling(
             inline: Dictionary(cited.map { ($0.token, $0.shortLabel) }, uniquingKeysWith: { first, _ in first }),
-            references: cited.filter { $0.kind == "work" }
+            references: cited.filter { !["idea", "passage", "gap", "theme"].contains($0.kind) }
         )
     }
 }

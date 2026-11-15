@@ -26,6 +26,9 @@ public extension JSONDecoder {
 public extension JSONEncoder {
     static let nodus: JSONEncoder = {
         let encoder = JSONEncoder()
+        // Stable request/cache identities must survive decoding and relaunching.
+        // Swift Dictionary iteration order is not a persistence contract.
+        encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
             try container.encode(ISO8601DateFormatter.nodusFractional.string(from: date))

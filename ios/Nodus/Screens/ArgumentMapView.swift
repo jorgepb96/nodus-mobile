@@ -12,6 +12,15 @@ struct ArgumentMapView: View {
     var seed: ArgumentSeed?
 
     var body: some View {
+        Group {
+            if session.connection.desktopPairingId != nil {
+                SharedDesktopSurface(session: session, surface: .argument, initialArgumentSeed: seed?.id)
+                    .id(seed?.id ?? "argument-catalogue")
+            } else { legacyWorkspace }
+        }
+    }
+
+    private var legacyWorkspace: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(
                 section: "argument",
@@ -39,6 +48,7 @@ struct ArgumentMapView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-argument")
         .task(id: seed?.id) {
             if let seed { open(seed) }
@@ -61,11 +71,8 @@ struct ArgumentMapView: View {
 
 /// The argument map: one idea, and the argument that grows out of it.
 ///
-/// The desktop offers two modes — an AI trace and a structural one built from the real edges.
-/// This is the structural one, because it needs no model, no key and no money: the server
-/// already serves the ego graph, and the tree is arithmetic over it
-/// (`ArgumentMapBuilder.structural`). What the model would add is a gloss, and a gloss is the
-/// part a phone can most easily do without.
+/// The legacy publication reader builds the structural tree without a provider.
+/// Paired companion routes use the shared Desktop renderer and both execution modes.
 private struct ArgumentMapDocumentView: View {
     let session: SpaceSession
     let seed: ArgumentSeed
@@ -223,7 +230,7 @@ private struct ArgumentMapDocumentView: View {
             }.reportActionSurface(accent: session.accent)
             Button { Task { await generateAI() } } label: { Label("AI trace", systemImage: "wand.and.stars") }
                 .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                .disabled(session.isDemo || !session.connection.role.canSendChanges)
+                .disabled(session.isDemo || !session.canAuthor)
             Spacer(minLength: 0)
         }
     }
@@ -275,9 +282,9 @@ private struct ArgumentMapDocumentView: View {
                 kind: .argumentMapGenerate,
                 payload: ["request": .object(["seedIdeaId": .string(seed.id), "mode": .string("ai")])],
                 inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
+                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            remoteState = result.duplicate ? String(localized: "The AI trace is already queued.") : String(localized: "AI trace queued for Desktop; its state is visible in Sync Center.")
+            remoteState = result.action.receiptMessage
         } catch { remoteState = error.localizedDescription }
     }
 }

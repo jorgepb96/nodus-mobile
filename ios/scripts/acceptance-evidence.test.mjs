@@ -1,0 +1,130 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {execFileSync} from 'node:child_process';
+import {acceptanceResultPaths, acceptanceReceiptPath, acceptanceSourceRevision, acceptanceRevisionIssues, nativeAcceptanceArtifacts, verifyNativeAcceptanceBuild, nativeAcceptanceRunIssues, requiredAcceptanceEnvironments, userPhysicalValidation, userValidationHandoffIssues, nativeAcceptanceDeviceIssues} from './acceptance-evidence.mjs';
+
+test('physical-device handoff is explicitly pending with the user and cannot be relabelled as a pass or omitted', () => {
+  assert.deepEqual(requiredAcceptanceEnvironments, ['desktop', 'iphoneSimulator', 'ipadSimulator']);
+  const pending = {owner: 'user', delivery: 'TestFlight', result: 'pendingUserValidation', executed: 0, skipped: 0, evidence: []};
+  const campaign = {operations: [{id: userPhysicalValidation.operation, ...pending}], environments: {physicalIphone: {...pending}}};
+  assert.deepEqual(userValidationHandoffIssues(campaign), []);
+  assert.equal(userValidationHandoffIssues({}).length, 2);
+  for (const patch of [{result: 'passed', executed: 1}, {skipped: 1}, {failed: 1}, {owner: 'agent'}, {artifact: 'old-phone.xcresult'}, {evidence: [{path: 'fake'}]}]) {
+    assert(userValidationHandoffIssues({...campaign, environments: {physicalIphone: {...pending, ...patch}}}).length > 0);
+    assert(userValidationHandoffIssues({...campaign, operations: [{id: userPhysicalValidation.operation, ...pending, ...patch}]}).length > 0);
+  }
+});
+test('simulator evidence must identify its actual platform and iPhone/iPad family', () => {
+  const phone = {devicesAndConfigurations: [{device: {platform: 'iOS Simulator', modelName: 'iPhone 16 Pro Max'}}]};
+  const pad = {devicesAndConfigurations: [{device: {platform: 'iOS Simulator', modelName: 'iPad Pro 13-inch (M5)'}}]};
+  assert.deepEqual(nativeAcceptanceDeviceIssues('iphoneSimulator', phone), []);
+  assert.deepEqual(nativeAcceptanceDeviceIssues('ipadSimulator', pad), []);
+  assert(nativeAcceptanceDeviceIssues('iphoneSimulator', pad).length > 0);
+  assert(nativeAcceptanceDeviceIssues('ipadSimulator', phone).length > 0);
+  assert(nativeAcceptanceDeviceIssues('iphoneSimulator', {devicesAndConfigurations: [{device: {platform: 'iOS', modelName: 'iPhone 16 Pro Max'}}]}).length > 0);
+  assert(nativeAcceptanceDeviceIssues('iphoneSimulator', {}).length > 0);
+});
+
+function laboratory(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-evidence-index-'));
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  return root;
+}
+
+test('retains distinct root and daily runs without scanning inside result bundles or captures', t => {
+  const root = laboratory(t);
+  for (const relative of ['same.xcresult/inside.xcresult', 'local-2026-10-12/same.xcresult',
+    'local-2026-10-11/phone.xcresult', 'local-2026-10-12/captures/fake.xcresult', 'unrelated/fake.xcresult']) {
+    fs.mkdirSync(path.join(root, relative), {recursive: true});
+  }
+  fs.symlinkSync(path.join(root, 'same.xcresult'), path.join(root, 'external.xcresult'));
+  assert.deepEqual(acceptanceResultPaths(root), ['local-2026-10-11/phone.xcresult', 'local-2026-10-12/same.xcresult', 'same.xcresult']);
+});
+
+test('finds immutable source receipts for legacy and daily app runs', t => {
+  const root = laboratory(t);
+  fs.mkdirSync(path.join(root, 'local-2026-10-12'));
+  fs.writeFileSync(path.join(root, 'legacy.source.json'), '{}');
+  fs.writeFileSync(path.join(root, 'phone-01.source.json'), '{}');
+  assert.equal(acceptanceReceiptPath(root, 'legacy.xcresult'), 'legacy.source.json');
+  assert.equal(acceptanceReceiptPath(root, 'local-2026-10-12/app-phone-01.xcresult'), 'phone-01.source.json');
+});
+
+test('missing, ambiguous, external and symlink receipts cannot be attributed to a run', t => {
+  const root = laboratory(t);
+  assert.throws(() => acceptanceReceiptPath(root, 'app-phone.xcresult'), /Missing/);
+  assert.throws(() => acceptanceReceiptPath(root, '../outside.xcresult'), /private evidence folder/);
+  fs.writeFileSync(path.join(root, 'phone.source.json'), '{}');
+  fs.writeFileSync(path.join(root, 'app-phone.source.json'), '{}');
+  assert.throws(() => acceptanceReceiptPath(root, 'app-phone.xcresult'), /ambiguous/);
+  fs.symlinkSync(path.join(root, 'phone.source.json'), path.join(root, 'linked.source.json'));
+  assert.throws(() => acceptanceReceiptPath(root, 'linked.xcresult'), /Missing/);
+});
+
+test('release evidence cannot approve a different current checkout, including uncommitted changes', t => {
+  const root=laboratory(t);
+  const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
+  git('init','-q');
+  fs.writeFileSync(path.join(root,'.gitignore'),'artifacts/\n');
+  fs.writeFileSync(path.join(root,'source.swift'),'let value = 1\n');
+  git('add','.');git('-c','user.name=Acceptance fixture','-c','user.email=acceptance@example.test','commit','-qm','Initial isolated source');
+  const tested=acceptanceSourceRevision(root),roots={mobile:root};
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),[]);
+  fs.mkdirSync(path.join(root,'artifacts'));fs.writeFileSync(path.join(root,'artifacts','results.json'),'{}');
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),[],'ignored evidence does not change the candidate');
+  fs.writeFileSync(path.join(root,'source.swift'),'let value = 2\n');
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),['Code changed since acceptance: mobile']);
+  fs.writeFileSync(path.join(root,'source.swift'),'let value = 1\n');
+  fs.writeFileSync(path.join(root,'new.swift'),'let added = true\n');
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),['Code changed since acceptance: mobile']);
+  fs.unlinkSync(path.join(root,'new.swift'));fs.unlinkSync(path.join(root,'source.swift'));
+  assert.deepEqual(acceptanceRevisionIssues({mobile:tested},roots),['Code changed since acceptance: mobile']);
+  assert.deepEqual(acceptanceRevisionIssues({mobile:'unverified-hash'},roots),['Missing exact tested code revision: mobile']);
+});
+
+test('native evidence rejects stale sources, changed binaries and another application receipt', t => {
+  const root = laboratory(t);
+  const git = (...args) => execFileSync('git', args, {cwd: root, stdio: 'pipe'});
+  git('init', '-q');
+  fs.writeFileSync(path.join(root, '.gitignore'), 'artifacts/\n');
+  const source = path.join(root, 'source.swift');
+  fs.writeFileSync(source, 'let value = 1\n');
+  git('add', '.'); git('-c', 'user.name=Acceptance fixture', '-c', 'user.email=acceptance@example.test', 'commit', '-qm', 'Isolated native source');
+  const app = path.join(root, 'artifacts/Nodus.app');
+  fs.mkdirSync(app, {recursive: true});
+  fs.writeFileSync(path.join(app, 'Nodus'), 'native artifact fixture');
+  fs.writeFileSync(path.join(app, 'Info.plist'), 'plist artifact fixture');
+  const uiTests = path.join(path.dirname(app), 'NodusUITests-Runner.app/PlugIns/NodusUITests.xctest/NodusUITests');
+  fs.mkdirSync(path.dirname(uiTests), {recursive: true}); fs.writeFileSync(uiTests, 'test artifact fixture');
+  const receipt = {version: 1, builtApp: fs.realpathSync(app), revision: acceptanceSourceRevision(root), artifacts: nativeAcceptanceArtifacts(app)};
+  const file = app + '.acceptance-build.json';
+  fs.writeFileSync(file, JSON.stringify(receipt));
+  assert.deepEqual(verifyNativeAcceptanceBuild(root, app), receipt);
+  fs.writeFileSync(source, 'let value = 2\n');
+  assert.throws(() => verifyNativeAcceptanceBuild(root, app), /Native sources changed/);
+  fs.writeFileSync(source, 'let value = 1\n');
+  fs.writeFileSync(uiTests, 'older or changed test runner');
+  assert.throws(() => verifyNativeAcceptanceBuild(root, app), /Native artifacts changed/);
+  fs.writeFileSync(uiTests, 'test artifact fixture');
+  fs.writeFileSync(file, JSON.stringify({...receipt, builtApp: path.join(root, 'another.app')}));
+  assert.throws(() => verifyNativeAcceptanceBuild(root, app), /Native sources changed/);
+  fs.unlinkSync(file);
+  assert.throws(() => verifyNativeAcceptanceBuild(root, app), /ENOENT/);
+});
+
+test('a passing native run cannot be relabelled with newer source, a different build or post-run evidence', () => {
+  const revisions = {mobile: {commit: 'a'.repeat(40), sourceDigest: 'b'.repeat(64)}, desktop: {commit: 'c'.repeat(40), sourceDigest: 'd'.repeat(64)}};
+  const artifacts = {Nodus: 'e'.repeat(64), 'Info.plist': 'f'.repeat(64), uiTests: '1'.repeat(64)};
+  const receipt = {revisions, nativeBuild: artifacts, bridgeBuild: revisions.desktop,
+    recordedBeforeExecutionAt: '2026-10-12T12:00:01Z', nativeBuildReceipt: {version: 1, revision: revisions.mobile,
+      completedAt: '2026-10-12T12:00:00Z', artifacts}};
+  const start = Date.parse('2026-10-12T12:00:02Z') / 1000;
+  assert.deepEqual(nativeAcceptanceRunIssues(receipt, revisions, start), []);
+  assert(nativeAcceptanceRunIssues({...receipt, nativeBuildReceipt: null}, revisions, start).length > 0);
+  assert(nativeAcceptanceRunIssues(receipt, {...revisions, mobile: {...revisions.mobile, sourceDigest: '2'.repeat(64)}}, start).length > 0);
+  assert(nativeAcceptanceRunIssues({...receipt, nativeBuild: {...artifacts, uiTests: '3'.repeat(64)}}, revisions, start).length > 0);
+  assert(nativeAcceptanceRunIssues({...receipt, recordedBeforeExecutionAt: '2026-10-12T12:00:03Z'}, revisions, start).length > 0);
+});

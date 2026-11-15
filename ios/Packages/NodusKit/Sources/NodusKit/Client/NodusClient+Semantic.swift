@@ -67,6 +67,19 @@ public struct SemanticHit: Sendable, Decodable, Identifiable {
 }
 
 public extension NodusClient {
+    /// Private Desktop transport only. The linked computer embeds the query with its own
+    /// active index configuration; iOS receives matching rows and no provider credentials.
+    func linkedSemanticSearch(_ query: String, in spaceId: String, limit: Int = 50) async throws -> (available: Bool, results: [Row]) {
+        let payload: [String: JSONValue] = ["query": .string(query), "limit": .int(Int64(min(50, max(1, limit))))]
+        let response = try await perform(.init(method: "POST", path: address.spacePath(spaceId, "/search/related"),
+            body: try JSONEncoder.nodus.encode(payload), contentType: "application/json"))
+        let value = try object(from: response)
+        guard let available = value["available"]?.boolValue, value["results"]?.arrayValue != nil else {
+            throw APIError(status: 502, code: "invalid_search_response", message: "Nodus returned an invalid search response.")
+        }
+        return (available, rows(value["results"]))
+    }
+
     /// `POST /api/v1/spaces/:id/search/semantic`
     ///
     /// The client embeds its own query with its own key and posts the vector; the server owns
@@ -197,10 +210,12 @@ public extension NodusClient {
 }
 
 public enum ContextSectionKind: String, Sendable, Codable, CaseIterable {
-    case ideas, passages, themes, gaps, works
+    case ideas, passages, themes, gaps, works, sources
 }
 
 public struct ContextPackage: Sendable, Decodable {
+    /// Explicit scope for selected on-device retrieval; older Mac replies omit it.
+    public let sourceScope: String?
     public struct Section: Sendable, Decodable {
         public let kind: String
         public let items: [Row]

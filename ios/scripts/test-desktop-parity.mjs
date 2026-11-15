@@ -77,7 +77,7 @@ if (!fs.existsSync(manifestPath)) {
     const unsupportedClaims = [...manifest.routes, ...manifest.apiActions]
       .filter((item) => item.mobileState === 'implemented' && (!item.evidence || item.evidence.length === 0));
     const implemented = [...manifest.routes, ...manifest.apiActions, ...manifest.mutableTables];
-    const incomplete = implemented.filter((item) => !['implemented', 'excluded'].includes(item.mobileState));
+    const incomplete = implemented.filter((item) => !['available', 'catalogued', 'comingSoon', 'excluded', 'planned'].includes(item.mobileState));
     const missingEvidence = implemented.flatMap((item) => item.evidence ?? [])
       .filter((entry, index, entries) => entries.indexOf(entry) === index)
       .filter((entry) => !evidenceExists(entry, desktop));
@@ -154,4 +154,4 @@ if (problems.length) {
 }
 
 const actionCount = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')).apiActions.length : 0;
-console.log(`Nodus parity contract is 100% current: ${desktopRoutes.length} routes, ${actionCount} actions and ${desktopTables.length} mutable tables are executable, classified and evidenced.`);
+console.log(`Nodus inventory is current: ${desktopRoutes.length} routes, ${actionCount} actions and ${desktopTables.length} mutable tables. Executed acceptance evidence is required separately.`);

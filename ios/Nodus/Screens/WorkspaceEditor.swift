@@ -218,6 +218,7 @@ struct WorkspaceEditorSurface: View {
         Task {
             defer { isWorking = false }
             do {
+                try BetaAIFeatures.requireAutonomousGeneration()
                 guard let model = ai.model(for: .chat) else { throw WorkspaceEditorFailure.missingModel }
                 let provider = ProviderClient(keyProvider: ai.keyProvider)
                 let output = try await provider.complete(ChatRequest(
@@ -401,7 +402,12 @@ private struct WorkspaceSelectionTextView: UIViewRepresentable {
             )
             headings.accessibilityLabel = String(localized: "Heading level")
 
-            let nodus = UIMenu(title: "", options: .displayInline, children: [formatting, improvements, colours, headings])
+            // These selection tools use the retained phone provider, unlike
+            // Scriptor's connected Mac assistance. Keep manual formatting here.
+            let groups = BetaAIFeatures.autonomousGeneration
+                ? [formatting, improvements, colours, headings]
+                : [formatting, colours, headings]
+            let nodus = UIMenu(title: "", options: .displayInline, children: groups)
             return UIMenu(children: [nodus] + suggestedActions)
         }
 

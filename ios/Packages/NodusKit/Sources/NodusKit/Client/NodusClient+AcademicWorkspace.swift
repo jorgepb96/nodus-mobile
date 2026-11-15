@@ -13,6 +13,7 @@ public struct IdeaWorkspaceItem: Sendable, Hashable, Codable, Identifiable {
     public let themes: [String]
     public let maxConfidence: Double
     public let connectionCount: Int
+    public var mobileSourceScope: String? = nil
 }
 
 public struct IdeaWorkspacePage: Sendable, Hashable, Codable {
@@ -22,17 +23,19 @@ public struct IdeaWorkspacePage: Sendable, Hashable, Codable {
     public let limit: Int
     public let hasMore: Bool
     public let revision: String?
+    public let fromDevice: Bool?
 
-    public init(items: [IdeaWorkspaceItem], total: Int, offset: Int, limit: Int, hasMore: Bool, revision: String?) {
+    public init(items: [IdeaWorkspaceItem], total: Int, offset: Int, limit: Int, hasMore: Bool, revision: String?, fromDevice: Bool? = nil) {
         self.items = items
         self.total = total
         self.offset = offset
         self.limit = limit
         self.hasMore = hasMore
         self.revision = revision
+        self.fromDevice = fromDevice
     }
 
-    private enum CodingKeys: String, CodingKey { case items = "ideas", total, offset, limit, hasMore, revision }
+    private enum CodingKeys: String, CodingKey { case items = "ideas", total, offset, limit, hasMore, revision, fromDevice }
 }
 
 public enum AuthorWorkspaceSort: String, Sendable, Hashable, Codable, CaseIterable {
@@ -248,7 +251,9 @@ public extension NodusClient {
             ],
             cacheable: true
         ))
-        return try decode(IdeaWorkspacePage.self, from: response)
+        let page = try decode(IdeaWorkspacePage.self, from: response)
+        return IdeaWorkspacePage(items: page.items, total: page.total, offset: page.offset, limit: page.limit,
+            hasMore: page.hasMore, revision: page.revision, fromDevice: response.fromCache)
     }
 
     func workspaceAuthors(
@@ -283,8 +288,12 @@ public extension NodusClient {
     }
 
     func synthesisMatrix(in spaceId: String) async throws -> SynthesisMatrix {
+        try await synthesisMatrixSnapshot(in: spaceId).matrix
+    }
+
+    func synthesisMatrixSnapshot(in spaceId: String) async throws -> (matrix: SynthesisMatrix, fromCache: Bool) {
         let response = try await perform(.init(path: address.spacePath(spaceId, "/authors/matrix"), cacheable: true))
-        return try decode(SynthesisMatrixEnvelope.self, from: response).matrix
+        return (try decode(SynthesisMatrixEnvelope.self, from: response).matrix, response.fromCache)
     }
 
     func argumentRoutes(in spaceId: String) async throws -> [ArgumentRouteSuggestion] {

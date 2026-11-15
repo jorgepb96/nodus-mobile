@@ -331,12 +331,29 @@ public struct CitationCatalog: Sendable {
     public func entry(for token: String) -> Entry? { byToken[token] }
     public var isEmpty: Bool { entries.isEmpty }
 
+    /// Budget complete source entries. An oversized literal quotation is
+    /// omitted, never rewritten as a prefix that could change its meaning.
+    public func bounded(to bytes: Int) throws -> (catalog: CitationCatalog, omitted: Int, bytes: Int) {
+        var kept: [Entry] = [], used = 0, omitted = 0
+        let limit = max(0, bytes)
+        for entry in entries {
+            let cost = try JSONEncoder.nodus.encode(entry).count
+            if cost > limit - used { omitted += 1; continue }
+            used += cost; kept.append(entry)
+        }
+        return (CitationCatalog(entries: kept), omitted, used)
+    }
+
     /// Built from a context package the server returned.
     public static func from(_ package: ContextPackage) -> CitationCatalog {
         var entries: [Entry] = []
         for section in package.sections {
             for row in section.items {
                 switch section.kind {
+                case "sources":
+                    guard let source = try? CorpusSourceMaterial(row: row) else { continue }
+                    entries.append(Entry(token: source.citation, kind: source.kind, id: source.id, label: source.label,
+                        detail: source.text, locator: row.text("locator")))
                 case "ideas":
                     guard let id = row.string("global_id") else { continue }
                     entries.append(Entry(
@@ -353,7 +370,7 @@ public struct CitationCatalog: Sendable {
                         kind: "passage",
                         id: id,
                         label: String((row.text("text") ?? "Passage").prefix(120)),
-                        detail: row.text("section"),
+                        detail: row.text("text") ?? row.text("section"),
                         workId: row.string("nodus_id"),
                         locator: row.text("page_label")
                     ))
@@ -368,6 +385,11 @@ public struct CitationCatalog: Sendable {
                         detail: nil,
                         workId: id
                     ))
+                case "gaps":
+                    guard let id = row.string("id") else { continue }
+                    entries.append(Entry(token: "nodus://gap/\(id)", kind: "gap", id: id,
+                        label: row.text("title") ?? row.text("label") ?? row.text("topic") ?? "Gap",
+                        detail: row.text("description") ?? row.text("rationale")))
                 default:
                     continue
                 }
@@ -455,7 +477,8 @@ public struct DeepResearchReport: Sendable, Codable, Hashable {
         citationsRejected: Int,
         stoppedReason: String?,
         supportMatrix: [DeepResearchSupportCell]? = nil,
-        audit: DeepResearchAudit? = nil
+        audit: DeepResearchAudit? = nil,
+        materialScopes: [String]? = nil
     ) {
         self.objective = objective
         self.sections = sections
@@ -465,6 +488,7 @@ public struct DeepResearchReport: Sendable, Codable, Hashable {
         self.citationsChecked = citationsChecked
         self.citationsRejected = citationsRejected
         self.stoppedReason = stoppedReason
+        self.materialScopes = materialScopes
         let labels = Dictionary(uniqueKeysWithValues: references.map { ($0.token, $0.label) })
         self.supportMatrix = supportMatrix ?? sections.flatMap { section in
             let preview = section.prose.split(separator: ".", maxSplits: 1).first.map(String.init) ?? section.prose
@@ -503,11 +527,27 @@ public struct DeepResearchReport: Sendable, Codable, Hashable {
     /// Verification facts and generation timestamp. Optional for reports created before the
     /// full contract was introduced.
     public let audit: DeepResearchAudit?
+    public let materialScopes: [String]?
+
+    public var materialNotice: String? {
+        guard materialScopes?.contains("device_downloads") == true else { return nil }
+        if materialScopes?.contains("linked_corpus") == true || materialScopes?.contains("unknown_recovered") == true {
+            return "La investigación combina material descargado en este dispositivo con material recuperado previamente. Las descargas no representan el vault completo."
+        }
+        return "Investigación basada en los dossiers descargados en este dispositivo. Su alcance se limita a ese material y no representa el vault completo."
+    }
+
+    public func withMaterialScopes(_ scopes: [String]) -> Self {
+        Self(objective: objective, sections: sections, references: references, words: words, pages: pages,
+            citationsChecked: citationsChecked, citationsRejected: citationsRejected, stoppedReason: stoppedReason,
+            supportMatrix: supportMatrix, audit: audit, materialScopes: scopes)
+    }
 
     public var resolvedSupportMatrix: [DeepResearchSupportCell] { supportMatrix ?? [] }
 
     public var markdown: String {
         var output = "# \(objective)\n\n"
+        if let materialNotice { output += "> \(materialNotice)\n\n" }
         for section in sections {
             output += "## \(section.title)\n\n\(section.prose)\n\n"
         }
@@ -584,6 +624,7 @@ public struct DeepResearchCheckpoint: Sendable, Codable, Hashable {
     public let citationsChecked: Int
     public let citationsRejected: Int
     public let startedAt: Date
+    public let materialScopes: [String]?
 
     public init(
         request: DeepResearchRequest,
@@ -592,7 +633,8 @@ public struct DeepResearchCheckpoint: Sendable, Codable, Hashable {
         sections: [DeepResearchSection],
         citationsChecked: Int,
         citationsRejected: Int,
-        startedAt: Date
+        startedAt: Date,
+        materialScopes: [String]? = nil
     ) {
         self.request = request
         self.titles = titles
@@ -601,6 +643,12 @@ public struct DeepResearchCheckpoint: Sendable, Codable, Hashable {
         self.citationsChecked = citationsChecked
         self.citationsRejected = citationsRejected
         self.startedAt = startedAt
+        self.materialScopes = materialScopes
+    }
+
+    public func withMaterialScopes(_ scopes: [String]) -> Self {
+        Self(request: request, titles: titles, wordTarget: wordTarget, sections: sections, citationsChecked: citationsChecked,
+            citationsRejected: citationsRejected, startedAt: startedAt, materialScopes: scopes)
     }
 
     /// The next section to write. Everything before it is already paid for.

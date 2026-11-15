@@ -126,7 +126,7 @@ public extension Color {
     /// near-black one is only just there.
     ///
     /// So the hue is kept and the lightness is not. Each colour is walked toward black for the
-    /// light scheme and toward white for the dark one until it clears 4:1 against that scheme's
+    /// light scheme and toward white for the dark one until it clears 4.5:1 against that scheme's
     /// card surface — which is the same operation `nodusInfo` and its three siblings had done by
     /// hand, done arithmetically so a palette that gains a colour cannot gain an illegible one.
     /// Cached, because it is asked for inside a view body: an argument map is a hundred and
@@ -178,10 +178,11 @@ public extension Color {
         return Color.nodusSemantic(hex)
     }
 
-    /// The two surfaces a semantic colour is ever drawn on: the light card and the dark one, as
-    /// `NodusGlassModifier.opaqueFill` mixes them.
-    private static let lightSurfaceLuminance = Color(hex: "#fbfaff").relativeLuminance
-    private static let darkSurfaceLuminance = Color(hex: "#16141f").relativeLuminance
+    /// Allow for selected rows and tinted cards, which are darker than the light canvas and
+    /// lighter than the dark canvas. Testing only the canvas leaves small accent labels below
+    /// the contrast required for ordinary text once their selection background is drawn.
+    private static let lightSurfaceLuminance = Color(hex: "#eeedf5").relativeLuminance
+    private static let darkSurfaceLuminance = Color(hex: "#2c2a36").relativeLuminance
 
     /// The nearest shade of this colour that reads against a background of the given luminance.
     ///
@@ -189,7 +190,7 @@ public extension Color {
     /// is not linear in sRGB, so there is no closed form worth the arithmetic. Twenty steps is
     /// finer than the eye resolves and stops at the endpoint, so a colour that cannot reach the
     /// ratio at all comes back as black or white rather than as a loop.
-    func legible(onLuminance background: Double, towardWhite: Bool, minimumRatio: Double = 4) -> Color {
+    func legible(onLuminance background: Double, towardWhite: Bool, minimumRatio: Double = 4.5) -> Color {
         func ratio(_ colour: Color) -> Double {
             let a = colour.relativeLuminance, b = background
             return (max(a, b) + 0.05) / (min(a, b) + 0.05)

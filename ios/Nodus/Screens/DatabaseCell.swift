@@ -38,6 +38,7 @@ enum DatabaseCell {
         let options: [String: Row]
         let attachments: [String: [Row]]
         let relations: [String: Int]
+        let relationRows: [String: [Row]]
 
         init(detail: DatabaseDetail, rowId: String) {
             cells = Dictionary(
@@ -53,11 +54,8 @@ enum DatabaseCell {
                 grouping: detail.attachments.filter { $0.string("row_id") == rowId },
                 by: { $0.string("column_id") ?? "" }
             )
-            relations = detail.relations
-                .filter { $0.string("row_id") == rowId }
-                .reduce(into: [:]) { counts, relation in
-                    counts[relation.string("column_id") ?? "", default: 0] += 1
-                }
+            relationRows = Dictionary(grouping: detail.relations.filter { $0.string("row_id") == rowId }, by: { $0.string("column_id") ?? "" })
+            relations = relationRows.mapValues(\.count)
         }
     }
 

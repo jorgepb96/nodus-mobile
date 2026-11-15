@@ -344,7 +344,7 @@ public struct NodusChip: View {
         .padding(.vertical, Self.verticalPadding)
         .background(tint.opacity(0.16), in: Capsule())
         // A tag is a label on something, so it never grows past the thing it labels.
-        .fixedSize(horizontal: true, vertical: false)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The first letter up and the rest left alone. `localizedCapitalized` would give "Comparte
@@ -373,12 +373,14 @@ public struct NodusNotice: View {
     /// entry and renders the text as it is.
     public var message: LocalizedStringKey?
     public var systemImage: String?
+    public var onDismiss: (() -> Void)?
 
-    public init(tone: Tone = .info, title: LocalizedStringKey, message: LocalizedStringKey? = nil, systemImage: String? = nil) {
+    public init(tone: Tone = .info, title: LocalizedStringKey, message: LocalizedStringKey? = nil, systemImage: String? = nil, onDismiss: (() -> Void)? = nil) {
         self.tone = tone
         self.title = title
         self.message = message
         self.systemImage = systemImage
+        self.onDismiss = onDismiss
     }
 
     public var body: some View {
@@ -389,10 +391,19 @@ public struct NodusNotice: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.footnote.weight(.medium))
                 if let message {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    Text(message).font(.caption).foregroundStyle(Color.nodusSecondaryText)
                 }
             }
             Spacer(minLength: 0)
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.nodusSecondaryText)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss notice")
+            }
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "desktopCommit": "629d8e05d7881374d906ff749e6682cedf9ea7c4",
+  "sourceDigest": "6142dad7f9cd1b4412e4ac756cec3b3cbc530e1be427f8f36d5e9dc19354c124",
+  "files": {
+    "chat-read.css": "1713f5d658b29a9af7b9167d9032e860d43f6745416c1d9129df654a9db6c269",
+    "chat-read.html": "f11bc0e21820903b7539c97d81a490ef1871ad6ddfadbd50c8032297b59b5118",
+    "chat-read.iife.js": "31df07e076aa435f9b197c95380812596ac69326054252d68ab4524ba9490a65",
+    "companion-chat.js": "e6cd754abf76768e9f7cdd382eebece27b40c3a43e7aa87b1cc515d654257314",
+    "database-query.html": "96dfd67373e6212d1698fb8f5799d4c2f6e77b1a28fbd34345879e379a422d2f",
+    "database-query.js": "4fdaacaa0dfbb65562deb8b72b45b7f2ea2737536129bd2360242a17ba54ba53",
+    "figure-snapshot.css": "43aa723c3422c4809da05c05f7e4d768f29c7e09145497734e4551ef47aea9a9",
+    "figure-snapshot.html": "0e8f2ea4eddfad46f1c84472e578ae7d35f4af8ccbc754357a31aac6cf865b8a",
+    "figure-snapshot.iife.js": "d76a969464dbffb6c8c51f2e041b04a89e06247c787d910770ca54d76b9569bf",
+    "index.html": "67a42d1126272372cef667c00edcda63985e9463a1ed679b561afbeae274c3b3",
+    "map-read.css": "b9dec7b38e7742788d6f9d97b854b798ff994accfebcdba71ca8568f89b177c9",
+    "map-read.html": "d775be14af882fe629320de04aa3df9d8f063c258c78e2a09a31436bff7f8cc9",
+    "map-read.iife.js": "7373193c2b83a22bbc0bb080f7c1ba5dbdc1a1f770b88ddaf9431dab709b692f",
+    "operations.json": "3ff1a62f17f40802c7c7e3215344b48048ffef8cb928e3abe6ef12ee71a957c4",
+    "prose-read.css": "6f07e7b354fbf2f3e82b25ec8b48269e87f75a5efa60b1443fd6c83a413bada6",
+    "prose-read.html": "54ec56e83b05cde7ace8b3ccce99f9cbb2917b9a8253eff4f6bc12cb38804327",
+    "prose-read.iife.js": "a0efc95fe9494a2bedf1899661ada632ac4ca3e938bf76761bac8aedd3864c1f",
+    "report-renderer.js": "212fdf10ac91c21a535f739e9c5e359eabb482e2b66e521a275e0354550fb082",
+    "surface.css": "99f0d3ba429657fdbc21b57a48c860f3861a6af94f853ad51f5391c4eebae128",
+    "surface.iife.js": "4f54ccd133e21d119cf303f697becc8b12c334886592c9dfc44cf948d8912bb3"
+  }
+}

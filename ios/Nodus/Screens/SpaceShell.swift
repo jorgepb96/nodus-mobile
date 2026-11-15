@@ -2,6 +2,19 @@ import NodusAI
 import NodusKit
 import NodusUI
 import SwiftUI
+import UIKit
+
+private struct ResidentRouteActiveKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// UIKit-backed content must hide its own accessibility tree when its route is resident.
+    var nodusResidentRouteActive: Bool {
+        get { self[ResidentRouteActiveKey.self] }
+        set { self[ResidentRouteActiveKey.self] = newValue }
+    }
+}
 
 /// Renders the original Nodus icon when SF Symbols has no semantic equivalent. The telescope
 /// path comes from the desktop icon set; all other names continue to use native SF Symbols.
@@ -24,6 +37,41 @@ struct NodusIcon: View {
     }
 }
 
+/// Native menus can discard SwiftUI symbol styling when they turn a Label into a
+/// UIKit action. Supply an original bitmap resolved for the presented color scheme
+/// so dark menus cannot inherit a black template icon from the underlying button.
+struct NodusMenuLabel: View {
+    let title: LocalizedStringKey
+    let image: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            if let rendered = renderedIcon {
+                Image(uiImage: rendered).renderingMode(.original)
+            }
+        }
+    }
+
+    private var renderedIcon: UIImage? {
+        let source = image == "telescope" ? UIImage(named: "NodusTelescope") : UIImage(systemName: image,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .regular))
+        guard let source, source.size.width > 0, source.size.height > 0 else { return nil }
+        let tinted = source.withTintColor(colorScheme == .dark ? .white : .black, renderingMode: .alwaysOriginal)
+        let side: CGFloat = 20
+        let scale = min(side / source.size.width, side / source.size.height)
+        let size = CGSize(width: source.size.width * scale, height: source.size.height * scale)
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            tinted.draw(in: CGRect(x: (side - size.width) / 2, y: (side - size.height) / 2,
+                width: size.width, height: size.height))
+        }.withRenderingMode(.alwaysOriginal)
+    }
+}
+
 /// One adaptive shell for iPhone and iPad. Width changes the sidebar presentation, never the
 /// hierarchy or the destination set.
 struct SpaceShell: View {
@@ -31,6 +79,10 @@ struct SpaceShell: View {
     @Environment(AppPreferences.self) private var preferences
     @Environment(OutboxTrayModel.self) private var tray
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
+    @ScaledMetric(relativeTo: .footnote) private var scaledSidebarWidth: CGFloat = 176
 
     let session: SpaceSession
 
@@ -44,10 +96,13 @@ struct SpaceShell: View {
     @State private var showingCommands = false
     @State private var chrome = NodusChrome()
     @State private var sidebarResizeOrigin: Double?
+    @State private var downloads: LinkDownloads
 
     init(session: SpaceSession) {
         self.session = session
-        var initial: NodusRoute = .home
+        _downloads = State(initialValue: LinkDownloads(session: session))
+        var initial = UserDefaults.standard.string(forKey: "nodus.navigation.lastRoute.\(session.connection.id)")
+            .flatMap(NodusRoute.init(rawValue:)) ?? .home
 #if DEBUG
         // Deterministic visual-QA entry point. `simctl` can set this without persisting a
         // different navigation state for real users, which lets every phase capture the exact
@@ -57,88 +112,96 @@ struct SpaceShell: View {
             initial = requested
         }
 #endif
+        if !NodusLinkPolicy.routes.contains(initial) { initial = .home }
         _route = State(initialValue: initial)
         _residentRoutes = State(initialValue: [initial])
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            let presentation = SidebarPresentation(
-                availableWidth: proxy.size.width,
-                isUserCollapsed: preferences.sidebarCollapsed,
-                expandedWidth: CGFloat(preferences.sidebarWidth)
-            )
-            // Resident routes sit below the top bar and, on a regular-width device, beside
-            // the persistent sidebar. Freezing an inactive route to the whole window made
-            // that hidden route dictate the ZStack's minimum size: one top bar too tall and
-            // one sidebar too wide. The visible workspace was consequently clipped at the
-            // bottom and trailing edge on iPad in both orientations.
-            let residentRouteSize = presentation.residentRouteSize(in: proxy.size)
+        // NavigationStack does not reliably forward a safe-area inset installed outside
+        // it to pushed pages. Give the footer real layout space instead: every route,
+        // scroll view and web canvas then receives the unobscured viewport height.
+        VStack(spacing: 0) {
+            GeometryReader { proxy in
+                let presentation = SidebarPresentation(
+                    availableWidth: proxy.size.width,
+                    isUserCollapsed: preferences.sidebarCollapsed,
+                    isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+                    expandedWidth: textSize.isAccessibilitySize
+                        ? max(CGFloat(preferences.sidebarWidth), scaledSidebarWidth)
+                        : CGFloat(preferences.sidebarWidth)
+                )
+                // Resident routes sit below the top bar and, on a regular-width device, beside
+                // the persistent sidebar. Freezing an inactive route to the whole window made
+                // that hidden route dictate the ZStack's minimum size: one top bar too tall and
+                // one sidebar too wide. The visible workspace was consequently clipped at the
+                // bottom and trailing edge on iPad in both orientations.
+                let residentRouteSize = session.isSurfaceFullscreen ? proxy.size : presentation.residentRouteSize(in: proxy.size)
 
-            ZStack(alignment: .leading) {
-                VStack(spacing: 0) {
-                    DesktopTopBar(
-                        session: session,
-                        presentation: presentation,
-                        queueCount: tray.outbox.pending,
-                        onToggleNavigation: { toggleNavigation(presentation) },
-                        onSwitchSpace: { model.closeSession() },
-                        onCommands: { showingCommands = true },
-                        onAssistant: { showingAssistant = true },
-                        onQueue: { tray.open() },
-                        onRefresh: { Task { await session.refreshPublishedContent() } },
-                        onTheme: { preferences.toggleInterfaceStyle(current: colorScheme) },
-                        onSettings: { select(.settings) }
-                    )
-
-                    HStack(spacing: 0) {
-                        if presentation.isPersistent {
-                            sidebar(collapsed: presentation.isCollapsed)
-                                .frame(width: presentation.sidebarWidth)
-                                .overlay(alignment: .trailing) {
-                                    if !presentation.isCollapsed {
-                                        sidebarResizeHandle
-                                    }
-                                }
-                        }
-                        routeContainer(frozenSize: residentRouteSize)
-                    }
-                }
-
-                if !presentation.isPersistent, showingDrawer {
-                    Color.black.opacity(0.28)
-                        .ignoresSafeArea()
-                        .onTapGesture { withAnimation(NodusMotion.standard) { showingDrawer = false } }
-                        .transition(.opacity)
-
-                    sidebar(collapsed: false)
-                        .frame(width: min(320, proxy.size.width * 0.86))
-                        .shadow(color: .black.opacity(0.28), radius: 24, x: 8)
-                        .transition(.move(edge: .leading))
-                }
-
-                // WKWebView and other UIKit-backed views can consume a drag before a SwiftUI
-                // ancestor sees it. Keep a narrow, dedicated edge band above route content so
-                // the standard drawer gesture works consistently without affecting horizontal
-                // scrolling elsewhere on the screen.
-                if !presentation.isPersistent, !showingDrawer {
+                ZStack(alignment: .leading) {
                     VStack(spacing: 0) {
-                        Color.clear.frame(height: 52).allowsHitTesting(false)
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .gesture(edgeOpenGesture(presentation: presentation, width: proxy.size.width))
+                        if !session.isSurfaceFullscreen { DesktopTopBar(
+                            session: session,
+                            presentation: presentation,
+                            pinRoute: route == .home ? nil : route,
+                            queueCount: tray.outbox.pending,
+                            onToggleNavigation: { toggleNavigation(presentation) },
+                            onSwitchSpace: { model.closeSession() },
+                            onCommands: { showingCommands = true },
+                            onAssistant: { showingAssistant = true },
+                            onQueue: { tray.open() },
+                            onRefresh: { Task { await session.refreshPublishedContent() } },
+                            onTheme: { preferences.toggleInterfaceStyle(current: colorScheme) },
+                            onSettings: { select(.settings) }
+                        ) }
+
+                        HStack(spacing: 0) {
+                            if presentation.isPersistent, !session.isSurfaceFullscreen {
+                                sidebar(collapsed: presentation.isCollapsed)
+                                    .frame(width: presentation.sidebarWidth)
+                                    .overlay(alignment: .trailing) {
+                                        if !presentation.isCollapsed {
+                                            sidebarResizeHandle
+                                        }
+                                    }
+                            }
+                            routeContainer(frozenSize: residentRouteSize)
+                        }
                     }
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
-                    .zIndex(20)
+
+                    if !presentation.isPersistent, showingDrawer, !session.isSurfaceFullscreen {
+                        Color.black.opacity(0.28)
+                            .ignoresSafeArea()
+                            .onTapGesture { withAnimation(NodusMotion.standard) { showingDrawer = false } }
+                            .accessibilityElement()
+                            .accessibilityLabel("Close navigation")
+                            .accessibilityIdentifier("nodus-navigation-dismiss")
+                            .accessibilityAddTraits(.isButton)
+                            .transition(.opacity)
+
+                        sidebar(collapsed: false)
+                            // The scrim paints outside the safe area. Its expanded size must not
+                            // become the drawer's layout proposal and move Home under the clock.
+                            .frame(width: min(320, proxy.size.width * 0.86), height: proxy.size.height)
+                            .shadow(color: .black.opacity(0.28), radius: 24, x: 8)
+                            .transition(.move(edge: .leading))
+                    }
+
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .background {
+                    ScreenEdgeNavigationInstaller(enabled: !presentation.isPersistent && !session.isSurfaceFullscreen && !showingDrawer) {
+                        withAnimation(NodusMotion.standard) { showingDrawer = true }
+                    }
+                }
+                .animation(NodusMotion.standard, value: showingDrawer)
+                .animation(NodusMotion.standard, value: presentation.sidebarWidth)
             }
-            .animation(NodusMotion.standard, value: showingDrawer)
-            .animation(NodusMotion.standard, value: presentation.sidebarWidth)
-            .simultaneousGesture(edgeOpenGesture(presentation: presentation, width: proxy.size.width))
+            bottomChrome
         }
         .environment(chrome)
         .environment(workspaceTabs)
+        .environment(downloads)
         .environment(\.nodusHasTabBar, false)
         .overlay(alignment: .topLeading) {
             Color.clear
@@ -148,12 +211,38 @@ struct SpaceShell: View {
                 .accessibilityIdentifier("nodus-space-shell")
                 .allowsHitTesting(false)
         }
+        .background {
+            if let view = session.podcastPlayback.opusWebView {
+                LinkPodcastAudioHost(view: view).frame(width: 1, height: 1).accessibilityHidden(true).allowsHitTesting(false)
+            }
+        }
+        .sheet(isPresented: Binding(get: { session.podcastPlayback.showingPlayer }, set: { session.podcastPlayback.showingPlayer = $0 })) {
+            LinkPodcastPlayer(playback: session.podcastPlayback, accent: session.accent)
+        }
         .task {
             await session.load()
             await session.loadMirror()
             await session.probeEmbedding()
         }
         .task { await session.monitorPublishedContent() }
+        .task(id: scenePhase) {
+            guard scenePhase == .active, !session.isDemo else { return }
+            while !Task.isCancelled {
+                await downloads.checkForChanges()
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
+        }
+        .onChange(of: session.publishedRevision) { _, _ in
+            if scenePhase == .active, !session.isDemo { Task { await downloads.checkForChanges() } }
+        }
+        .alert("Download unavailable", isPresented: Binding(get: { downloads.issue != nil }, set: { if !$0 { downloads.issue = nil } })) {
+            Button("OK") { downloads.issue = nil }
+        } message: { Text(downloads.issue ?? "") }
+        .onReceive(NotificationCenter.default.publisher(for:.nodusMobileNavigate)) { event in
+            guard event.userInfo?["connectionId"] as? String == session.connection.id,
+                  let value = event.userInfo?["route"] as? String, let target = NodusRoute(rawValue:value) else { return }
+            showingAssistant = false; select(target)
+        }
         .nodusSheet(isPresented: $showingAssistant) {
             NavigationStack { ChatTab(session: session, showsModalDone: true) }
         }
@@ -165,6 +254,100 @@ struct SpaceShell: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    /// Measured by the parent stack, including Dynamic Type, rotation and player visibility.
+    /// Keep the viewport flexible and the controls at their full intrinsic height.
+    private var bottomChrome: some View {
+        VStack(spacing: 0) {
+            LinkMiniPlayer(playback: session.podcastPlayback, accent: session.accent)
+            if UIDevice.current.userInterfaceIdiom == .phone, !session.isSurfaceFullscreen {
+                phoneNavigation
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .layoutPriority(1)
+    }
+
+    private var unpinnedPhoneSections: [NodusNavigationItem] {
+        AppPreferences.phonePinCandidates.filter { !preferences.phonePinnedRoutes.contains($0.route) }
+    }
+
+    private var morePhoneSections: [NodusNavigationItem] {
+        AppPreferences.phonePinCandidates.filter {
+            !preferences.phonePinnedRoutes.contains($0.route) || [.library, .settings].contains($0.route)
+        }
+    }
+
+    private var phoneNavigation: some View {
+        HStack(spacing: 0) {
+            phoneDestination(.home, title: "Home", image: "house")
+            ForEach(0..<3, id: \.self) { slot in
+                if slot < preferences.phonePinnedRoutes.count,
+                   let item = AppPreferences.phonePinCandidates.first(where: { $0.route == preferences.phonePinnedRoutes[slot] }) {
+                    phoneDestination(item.route, title: item.label, image: item.systemImage)
+                } else {
+                    Menu {
+                        ForEach(unpinnedPhoneSections) { item in
+                            Button { preferences.pinPhoneRoute(item.route) } label: { phoneMenuLabel(item) }
+                        }
+                    } label: { phoneNavigationLabel(title: "Pin", image: "pin", selected: false) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Choose a pinned section")
+                    .accessibilityIdentifier("nodus-bottom-pin-slot-\(slot)")
+                }
+            }
+            Menu {
+                ForEach(morePhoneSections) { item in
+                    Button { select(item.route) } label: { phoneMenuLabel(item) }
+                }
+            } label: {
+                phoneNavigationLabel(title: "More", image: "ellipsis", selected: route != .home && !preferences.phonePinnedRoutes.contains(route))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("More")
+            .accessibilityAddTraits(route != .home && !preferences.phonePinnedRoutes.contains(route) ? .isSelected : [])
+            .accessibilityIdentifier("nodus-bottom-more")
+        }
+        .padding(6)
+        .nodusGlass(.regular, in: Capsule())
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("nodus-bottom-navigation")
+    }
+
+    private func phoneMenuLabel(_ item: NodusNavigationItem) -> some View {
+        NodusMenuLabel(title: item.label, image: item.systemImage)
+    }
+
+    private func phoneNavigationLabel(title: LocalizedStringKey, image: String, selected: Bool) -> some View {
+        Group {
+            if verticalSizeClass == .compact {
+                HStack(spacing: 6) {
+                    NodusIcon(name: image, size: 20)
+                    Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.7)
+                }
+            } else {
+                VStack(spacing: 3) {
+                    NodusIcon(name: image, size: 20)
+                    Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.vertical, 3)
+        .background { if selected { Capsule().fill(session.accent.opacity(0.12)) } }
+        .foregroundStyle(selected ? session.accent.nodusReadable : Color.secondary)
+        .contentShape(Capsule())
+    }
+
+    private func phoneDestination(_ target: NodusRoute, title: LocalizedStringKey, image: String) -> some View {
+        Button { select(target) } label: { phoneNavigationLabel(title: title, image: image, selected: route == target) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(route == target ? .isSelected : [])
+            .accessibilityIdentifier("nodus-bottom-\(target.rawValue)")
     }
 
     private func sidebar(collapsed: Bool) -> some View {
@@ -210,8 +393,11 @@ struct SpaceShell: View {
         ZStack {
             ForEach(residentRoutes) { resident in
                 NavigationStack {
-                    routeView(resident).toolbar(.hidden, for: .navigationBar)
+                    routeView(resident)
+                        .modifier(CompanionCollectionAccess(session: session, route: resident))
+                        .toolbar(.hidden, for: .navigationBar)
                 }
+                .environment(\.nodusResidentRouteActive, resident == route)
                 .frame(
                     width: resident == route ? nil : frozenSize.width,
                     height: resident == route ? nil : frozenSize.height
@@ -236,6 +422,8 @@ struct SpaceShell: View {
     }
 
     private func select(_ selected: NodusRoute) {
+        guard NodusLinkPolicy.routes.contains(selected) else { return }
+        session.isSurfaceFullscreen = false
         guard selected != route else {
             showingDrawer = false
             return
@@ -244,6 +432,7 @@ struct SpaceShell: View {
         let previous = route
         if !residentRoutes.contains(selected) { residentRoutes.append(selected) }
         route = selected
+        UserDefaults.standard.set(selected.rawValue, forKey: "nodus.navigation.lastRoute.\(session.connection.id)")
         workspaceTabs.leave(previous.rawValue)
         if !retainsRouteState(previous) { residentRoutes.removeAll { $0 == previous } }
         chrome.setScrolled(false)
@@ -256,7 +445,7 @@ struct SpaceShell: View {
     /// an expensive operation that the user left behind.
     private func retainsRouteState(_ route: NodusRoute) -> Bool {
         switch route {
-        case .argument, .map, .tree:
+        case .argument, .map, .tree, .graph, .dictionary, .deepResearch:
             return false
         default:
             return true
@@ -267,19 +456,29 @@ struct SpaceShell: View {
     private func routeView(_ route: NodusRoute) -> some View {
         switch route {
         case .home:
-            HomeView(session: session, openResearch: { select(.deepResearch) })
+            LinkHomeView(session: session, onSelect: select)
+        case .podcast:
+            PodcastsView(session: session)
         case .search, .studySearch:
             SearchScreen(session: session)
         case .library:
             LibraryRouteView(session: session)
         case .argument:
-            ArgumentMapView(session: session)
+            if session.connection.desktopPairingId != nil { SharedDesktopSurface(session: session, surface: .argument) }
+            else { ArgumentMapView(session: session) }
+        case .graph, .studyGraph:
+            SharedDesktopSurface(session: session, surface: .graph)
+        case .dictionary:
+            DictionaryWorkspaceView(session: session)
         case .ideas:
             IdeasWorkspaceView(session: session, onOpenArgument: openArgument)
         case .authors:
             AuthorsWorkspaceView(session: session, onOpenIdea: openIdea, onOpenArgument: openArgument)
         case .deepResearch, .studyDeepResearch:
             DeepResearchRouteView(session: session)
+        case .dbDeepResearch:
+            if session.connection.desktopPairingId != nil { SharedDesktopSurface(session:session,surface:.databaseResearch) }
+            else { ContentUnavailableView("Informes de datos",systemImage:"chart.bar.doc.horizontal",description:Text("Vincula Nodus para consultar los informes de tus bases de datos.")) }
         case .research:
             ResearchStateView(session: session)
         case .gaps:
@@ -291,9 +490,12 @@ struct SpaceShell: View {
         case .reading:
             ReadingPathMobileView(session: session)
         case .immersion:
-            ImmersionLibraryView(session: session)
+            if session.connection.desktopPairingId != nil {
+                SharedDesktopSurface(session: session, surface: .immersion)
+            } else { ImmersionLibraryView(session: session) }
         case .workspace, .notes:
-            PublishedWorkspaceView(session: session)
+            if session.connection.desktopPairingId != nil { SharedDesktopSurface(session: session, surface: .workspace) }
+            else { PublishedWorkspaceView(session: session) }
         case .writing:
             WritingWorkshopMobileView(session: session)
         case .projects:
@@ -322,13 +524,13 @@ struct SpaceShell: View {
             SensitiveRecordsWorkspaceView(session: session, mode: .testimonyContrasts)
         case .timeline:
             if displayedVaultType(for: session) == .worldbuilding { WorldTimelineView(session: session) }
-            else { collection("events") }
+            else { GenealogyTimelineView(session: session) }
         case .relations:
             if displayedVaultType(for: session) == .worldbuilding { WorldRelationsView(session: session) }
             else { collection("relationships") }
         case .map:
             if displayedVaultType(for: session) == .worldbuilding { WorldMapView(session: session) }
-            else { collection("places") }
+            else { GenealogyMapView(session: session) }
         case .tree:
             if displayedVaultType(for: session) == .worldbuilding { WorldHierarchyView(session: session) }
             else { FamilyTreeView(session: session) }
@@ -352,7 +554,7 @@ struct SpaceShell: View {
         case .studyLibrary:
             StudyTeachingWorkspaceView(session: session, mode: .materials)
         case .studyIdeas:
-            collection("ideas", route: .studyIdeas)
+            SharedDesktopSurface(session: session, surface: .studyIdeas)
         case .studySchedule:
             StudyTeachingWorkspaceView(session: session, mode: .schedule)
         case .studyCalendar:
@@ -373,28 +575,13 @@ struct SpaceShell: View {
             StudyTeachingWorkspaceView(session: session, mode: .grades)
         case .teachingUnits:
             StudyTeachingWorkspaceView(session: session, mode: .units)
-        case .worldChat, .studyChat, .dbChat:
+        case .researchChat, .worldChat, .studyChat, .dbChat:
             ChatTab(session: session)
-        case .browser, .radar, .toolkit:
-            PlatformToolsWorkspaceView(session: session, route: route)
+        case .browser, .radar, .compass, .studyFocus, .toolkit:
+            ComingSoonToolView(route: route, accent: session.accent)
         case .settings:
             SpaceSettingsView(session: session)
         }
-    }
-
-    /// A drawer gesture begins only in the system-like edge band and commits only after a
-    /// decisive horizontal movement. Using a simultaneous gesture preserves carousels,
-    /// browser history swipes and horizontally scrolling workspaces away from the edge.
-    private func edgeOpenGesture(presentation: SidebarPresentation, width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .onEnded { value in
-                guard !presentation.isPersistent, !showingDrawer else { return }
-                let beganAtEdge = value.startLocation.x <= min(28, width * 0.08)
-                let horizontal = value.translation.width >= 64
-                    && abs(value.translation.width) > abs(value.translation.height) * 1.25
-                guard beganAtEdge, horizontal else { return }
-                withAnimation(NodusMotion.standard) { showingDrawer = true }
-            }
     }
 
     private func openIdea(_ row: Row) {
@@ -441,7 +628,7 @@ private struct DeepResearchRouteView: View {
             }
         }
         .task {
-            if store == nil { store = LocalReportStore.shared(for: session.connection.spaceId) }
+            if store == nil { store = LocalReportStore.shared(for: session.connection.storageId) }
         }
     }
 }
@@ -455,18 +642,36 @@ private struct DeepResearchRouteView: View {
 private struct LibraryRouteView: View {
     let session: SpaceSession
     @State private var supportsAccountSync: Bool?
+    @State private var showDocuments = false
+    @State private var liveLibraryIssue: String?
 
     var body: some View {
         Group {
             if session.isDemo {
-                AccountLibraryView(session: session)
+                if NodusLinkPolicy.readOnly, let works = Collections.byPath["works"] {
+                    CollectionListView(session: session, collection: works, workspaceRoute: .library)
+                } else { AccountLibraryView(session: session) }
+            } else if session.connection.desktopPairingId != nil {
+                VStack(spacing: 0) {
+                    Picker("Library", selection: $showDocuments) {
+                        Text("Works").tag(false)
+                        Text("Documents").tag(true)
+                    }.pickerStyle(.segmented).padding(.horizontal).padding(.vertical, 8)
+                    if let liveLibraryIssue { Text(liveLibraryIssue).font(.caption).foregroundStyle(.red).padding() }
+                    if showDocuments { PublishedLibraryView(session: session) }
+                    else if let works = Collections.byPath["works"] {
+                        CollectionListView(session: session, collection: works, workspaceRoute: .library)
+                    }
+                }
             } else if let supportsAccountSync {
                 switch LibraryRouteSource.resolve(
                     isDemo: false,
                     supportsAccountSync: supportsAccountSync
                 ) {
                 case .account:
-                    AccountLibraryView(session: session)
+                    if NodusLinkPolicy.readOnly, let works = Collections.byPath["works"] {
+                        CollectionListView(session: session, collection: works, workspaceRoute: .library)
+                    } else { AccountLibraryView(session: session) }
                 case .publishedWorks:
                     if let works = Collections.byPath["works"] {
                         CollectionListView(session: session, collection: works, workspaceRoute: .library)
@@ -480,6 +685,14 @@ private struct LibraryRouteView: View {
         }
         .task {
             guard !session.isDemo, supportsAccountSync == nil else { return }
+            if session.connection.desktopPairingId != nil {
+                do {
+                    showDocuments = try await session.client.publishedLibrarySummary(in: session.connection.spaceId).documents > 0
+                    liveLibraryIssue = nil
+                } catch { liveLibraryIssue = error.localizedDescription }
+                supportsAccountSync = false
+                return
+            }
             supportsAccountSync = (try? await session.client.capabilities().supportsAccountLibrarySync) ?? false
         }
     }
@@ -497,6 +710,7 @@ enum LibraryRouteSource: Equatable {
 struct SidebarPresentation: Equatable {
     let availableWidth: CGFloat
     let isUserCollapsed: Bool
+    var isPhone = false
     var expandedWidth: CGFloat = NodusChromeMetrics.expandedSidebar
 
     static let minimumExpandedWidth = 176.0
@@ -506,7 +720,7 @@ struct SidebarPresentation: Equatable {
         min(maximumExpandedWidth, max(minimumExpandedWidth, width))
     }
 
-    var isPersistent: Bool { availableWidth >= 600 }
+    var isPersistent: Bool { !isPhone && availableWidth >= 600 }
     var isCollapsed: Bool { availableWidth < 720 || isUserCollapsed }
     var sidebarWidth: CGFloat {
         isCollapsed
@@ -543,9 +757,12 @@ private func displayedVaultType(for session: SpaceSession) -> VaultType? {
 
 private struct DesktopTopBar: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(AppModel.self) private var model
+    @State private var showingVaults = false
 
     let session: SpaceSession
     let presentation: SidebarPresentation
+    let pinRoute: NodusRoute?
     let queueCount: Int
     let onToggleNavigation: () -> Void
     let onSwitchSpace: () -> Void
@@ -555,6 +772,18 @@ private struct DesktopTopBar: View {
     let onRefresh: () -> Void
     let onTheme: () -> Void
     let onSettings: () -> Void
+
+    private var expandedActions: Bool { !presentation.isPhone && presentation.availableWidth >= 620 }
+    private var chooserWidth: CGFloat {
+        let leading = presentation.isPersistent ? presentation.sidebarWidth + 8 : 48
+        let actions = expandedActions
+            ? (NodusLinkPolicy.readOnly ? 4 : (queueCount > 0 ? 6 : 5))
+            : (NodusLinkPolicy.readOnly ? 1 : 2)
+        let download = !session.isDemo && pinRoute.flatMap(LinkDownloadSection.init(route:)) != nil
+        let trailing = CGFloat(actions + (pinRoute == nil ? 0 : 1) + (download ? 1 : 0)) * 44 + 4
+        let safeWidth = presentation.availableWidth - 2 * (max(leading, trailing) + 8)
+        return max(44, min(presentation.availableWidth < 500 ? 156 : 260, safeWidth))
+    }
 
     var body: some View {
         ZStack {
@@ -567,7 +796,7 @@ private struct DesktopTopBar: View {
                     .accessibilityLabel("Navigation")
                     .accessibilityIdentifier("nodus-navigation-toggle")
 
-                    if presentation.availableWidth >= 720 {
+                    if !presentation.isPhone && presentation.availableWidth >= 720 {
                         NodusMark(style: .accent(session.accent)).frame(width: 24, height: 24)
                         Text(verbatim: "Nodus")
                             .font(.headline.weight(.semibold))
@@ -582,7 +811,7 @@ private struct DesktopTopBar: View {
                 actionRail
             }
 
-            Button(action: onSwitchSpace) {
+            Button { showingVaults.toggle() } label: {
                 HStack(spacing: 7) {
                     Circle().fill(session.accent).frame(width: 7, height: 7)
                     Text(session.connection.spaceName).font(.caption.weight(.semibold)).lineLimit(1)
@@ -595,8 +824,44 @@ private struct DesktopTopBar: View {
                 .overlay(Capsule().stroke(session.accent.opacity(0.38), lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .frame(maxWidth: presentation.availableWidth < 500 ? 156 : 260)
+            .frame(maxWidth: chooserWidth)
+            .frame(height: 44)
+            .contentShape(Rectangle())
             .accessibilityLabel("Switch space")
+            .accessibilityValue(Text(session.connection.spaceName))
+            .accessibilityIdentifier("nodus-workspace-switch")
+            .popover(isPresented: $showingVaults, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Your vaults").font(.headline).padding(.horizontal, 12)
+                    ScrollView {
+                        VStack(spacing: 4) {
+                            ForEach(model.linkConnections) { connection in
+                                Button {
+                                    showingVaults = false
+                                    guard connection.id != session.connection.id else { return }
+                                    if connection.isDemo { Task { await model.openDemo() } }
+                                    else { _ = model.open(connection) }
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Circle().fill(connection.accent).frame(width: 8, height: 8)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(connection.spaceName).font(.subheadline).foregroundStyle(.primary).lineLimit(2)
+                                            Text(connection.serverName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                        Spacer(minLength: 4)
+                                        if connection.id == session.connection.id { Image(systemName: "checkmark").foregroundStyle(connection.accent.nodusReadable) }
+                                    }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(10).contentShape(Rectangle())
+                                }.buttonStyle(.plain).accessibilityIdentifier("vault-popover-\(connection.vaultId ?? connection.spaceId)")
+                            }
+                        }
+                    }.frame(maxHeight: 300)
+                    Divider()
+                    Button("Manage connections", systemImage: "link") { showingVaults = false; onSwitchSpace() }
+                        .accessibilityIdentifier("nodus-manage-connections")
+                        .frame(minHeight: 44).padding(.horizontal, 12)
+                }.padding(12).frame(width: 300).presentationCompactAdaptation(.popover)
+                    .accessibilityElement(children: .contain).accessibilityIdentifier("vault-switcher-popover")
+            }
         }
         .frame(height: NodusChromeMetrics.topBar)
         // The desktop chrome has a fixed 44-point row. Keep its labels readable inside that
@@ -609,25 +874,31 @@ private struct DesktopTopBar: View {
 
     private var actionRail: some View {
         HStack(spacing: 0) {
-            if presentation.availableWidth >= 620 {
+            if !session.isDemo, let route = pinRoute, let section = LinkDownloadSection(route: route) {
+                LinkSectionDownloadButton(section: section)
+            }
+            if let pinRoute { LinkSectionPin(route: pinRoute, accent: session.accent) }
+            if expandedActions {
                 topButton("command", label: "Commands", action: onCommands)
-                topButton("sparkles", label: "Nodi", action: onAssistant)
+                if !NodusLinkPolicy.readOnly { topButton("sparkles", label: "Nodi", action: onAssistant) }
                 topButton("arrow.clockwise", label: "Refresh", action: onRefresh)
-                if queueCount > 0 { topButton("tray.and.arrow.up", label: "Send queue", badge: queueCount, action: onQueue) }
+                if !NodusLinkPolicy.readOnly && queueCount > 0 { topButton("tray.and.arrow.up", label: "Send queue", badge: queueCount, action: onQueue) }
                 topButton(colorScheme == .dark ? "sun.max" : "moon", label: "Theme", action: onTheme)
                 topButton("gearshape", label: "Settings", action: onSettings)
             } else {
-                topButton("sparkles", label: "Nodi", action: onAssistant)
+                if !NodusLinkPolicy.readOnly { topButton("sparkles", label: "Nodi", action: onAssistant) }
                 Menu {
-                    Button("Commands", systemImage: "command", action: onCommands)
-                    Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    if queueCount > 0 { Button("Send queue", systemImage: "tray.and.arrow.up", action: onQueue) }
-                    Button("Theme", systemImage: colorScheme == .dark ? "sun.max" : "moon", action: onTheme)
-                    Button("Settings", systemImage: "gearshape", action: onSettings)
+                    Button(action: onCommands) { NodusMenuLabel(title: "Commands", image: "command") }
+                    Button(action: onRefresh) { NodusMenuLabel(title: "Refresh", image: "arrow.clockwise") }
+                    if !NodusLinkPolicy.readOnly && queueCount > 0 {
+                        Button(action: onQueue) { NodusMenuLabel(title: "Send queue", image: "tray.and.arrow.up") }
+                    }
+                    Button(action: onTheme) { NodusMenuLabel(title: "Theme", image: colorScheme == .dark ? "sun.max" : "moon") }
+                    Button(action: onSettings) { NodusMenuLabel(title: "Settings", image: "gearshape") }
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 44, height: 44)
                 }
-                .accessibilityLabel("More actions")
+                .accessibilityLabel("More actions").accessibilityIdentifier("nodus-top-more")
             }
         }
         .padding(.trailing, 4)
@@ -643,6 +914,7 @@ private struct DesktopTopBar: View {
             Image(systemName: image)
                 .font(.system(size: 14, weight: .medium))
                 .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
                     if let badge {
                         Text(badge, format: .number)
@@ -656,7 +928,12 @@ private struct DesktopTopBar: View {
                 }
         }
         .buttonStyle(.plain)
+        .frame(width: 44, height: 44)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
         .accessibilityLabel(label)
+        .accessibilityValue(badge.map(String.init) ?? "")
+        .accessibilityIdentifier("nodus-top-\(image)")
     }
 }
 
@@ -704,17 +981,15 @@ private struct DesktopSidebar: View {
                                         .font(.system(size: 8, weight: .semibold))
                                         .rotationEffect(.degrees(collapsedGroups.contains(group) ? 0 : 90))
                                     Text(group.title)
-                                        .font(.system(size: 9, weight: .bold)).tracking(0.7)
+                                        .font(.caption2.weight(.bold)).tracking(0.7)
                                         .textCase(.uppercase)
                                     Spacer(minLength: 0)
                                 }
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Color.primary.opacity(0.7))
                                 .padding(.top, 14).padding(.horizontal, 10).padding(.bottom, 3)
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("nodus-nav-group-\(group.rawValue)")
-                        } else {
-                            Divider().padding(.vertical, 6).padding(.horizontal, 12)
                         }
                         if collapsed || !collapsedGroups.contains(group) {
                             ForEach(items) { item($0) }
@@ -724,13 +999,16 @@ private struct DesktopSidebar: View {
                 .padding(8)
             }
 
-            Divider()
             if let settings = visible.first(where: { $0.route == .settings }) {
                 item(settings).padding(8)
             }
         }
         .background(colorScheme == .dark ? Color(hex: "#111113") : Color(hex: "#f7f7f8"))
-        .overlay(alignment: .trailing) { Divider() }
+        .overlay(alignment: .trailing) {
+            // Divider has a horizontal default in an overlay, irrespective of its alignment.
+            Rectangle().fill(Color.secondary.opacity(0.22)).frame(width: 1)
+                .accessibilityHidden(true)
+        }
     }
 
     private func item(_ nav: NodusNavigationItem) -> some View {
@@ -743,11 +1021,12 @@ private struct DesktopSidebar: View {
                     size: 14,
                     weight: selection == nav.route ? .semibold : .regular
                 )
-                    .frame(width: 44, height: 44, alignment: .center)
+                    .frame(width: collapsed ? 44 : 20, height: 44, alignment: .center)
                 if !collapsed {
                     Text(nav.label)
-                        .font(.system(size: 12, weight: selection == nav.route ? .semibold : .regular))
-                        .lineLimit(1)
+                        .font(.footnote.weight(selection == nav.route ? .semibold : .regular))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
             }
@@ -803,5 +1082,60 @@ private struct CommandPalette: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }
+    }
+}
+
+/// Observe a system edge pan without placing an invisible hit-test view above the
+/// workspace. A stationary tap at the left of an HTML input must reach WebKit.
+private struct ScreenEdgeNavigationInstaller: UIViewRepresentable {
+    let enabled: Bool
+    let open: () -> Void
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> UIView {
+        let view = WindowWatcher()
+        view.isUserInteractionEnabled = false
+        view.onWindow = { [coordinator = context.coordinator] window in coordinator.install(in: window) }
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.open = open
+        context.coordinator.enabled = enabled
+        context.coordinator.install(in: view.window)
+    }
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) { coordinator.remove() }
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        weak var window: UIWindow?
+        var recognizer: UIPanGestureRecognizer?
+        var enabled = false { didSet { recognizer?.isEnabled = enabled } }
+        var open: (() -> Void)?
+        func install(in target: UIWindow?) {
+            guard let target, target !== window else { return }
+            remove(); window = target
+            let edge = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
+            edge.maximumNumberOfTouches = 1
+            edge.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+            edge.cancelsTouchesInView = false
+            edge.delaysTouchesBegan = false; edge.delaysTouchesEnded = false
+            edge.delegate = self; edge.isEnabled = enabled
+            target.addGestureRecognizer(edge); recognizer = edge
+        }
+        func remove() { if let recognizer { window?.removeGestureRecognizer(recognizer) }; recognizer = nil; window = nil }
+        @objc func pan(_ gesture: UIPanGestureRecognizer) {
+            let translation = gesture.translation(in: window)
+            if gesture.state == .changed || gesture.state == .ended, translation.x >= 64, translation.x > abs(translation.y) * 1.25 { open?() }
+        }
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let window else { return false }
+            let translation = pan.translation(in: window)
+            let startX = pan.location(in: window).x - translation.x
+            // Observe only a rightward stroke that started at the screen edge. Stationary
+            // taps, text selection and vertical scrolling keep their normal recognizers.
+            return startX <= 24 && translation.x > 0 && translation.x > abs(translation.y) * 1.25
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+    private final class WindowWatcher: UIView {
+        var onWindow: ((UIWindow?) -> Void)?
+        override func didMoveToWindow() { super.didMoveToWindow(); onWindow?(window) }
     }
 }

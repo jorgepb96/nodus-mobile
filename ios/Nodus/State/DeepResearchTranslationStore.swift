@@ -89,6 +89,13 @@ final class DeepResearchTranslationStore {
     private(set) var translations: [ContentTranslation] = []
     private let file: URL
     private let reportId: String
+    private var pendingLanguages = Set<String>()
+    private var deletedLanguages = Set<String>()
+    private struct State: Codable {
+        var translations: [ContentTranslation]
+        var pendingLanguages: Set<String>
+        var deletedLanguages: Set<String>
+    }
 
     init(spaceId: String, reportId: String, root: URL = .applicationSupportDirectory) {
         self.reportId = reportId
@@ -101,6 +108,8 @@ final class DeepResearchTranslationStore {
     }
 
     func translation(language: String) -> ContentTranslation? { translations.first { $0.language == language } }
+
+    func isPendingDeletion(language: String) -> Bool { deletedLanguages.contains(language) }
 
     @discardableResult
     func save(reportId: String, language: String, markdown: String, model: ModelRef) -> ContentTranslation {
@@ -115,6 +124,7 @@ final class DeepResearchTranslationStore {
             createdAt: existing?.createdAt ?? now,
             updatedAt: now
         )
+        pendingLanguages.insert(language); deletedLanguages.remove(language)
         translations.removeAll { $0.language == language }
         translations.append(value)
         translations.sort { $0.language < $1.language }
@@ -122,26 +132,62 @@ final class DeepResearchTranslationStore {
         return value
     }
 
+    /// A result generated and saved by the Mac is already acknowledged. Keep it
+    /// offline without scheduling a second write through the mobile outbox.
+    func acceptServer(_ value: ContentTranslation) {
+        guard value.reportId == reportId else { return }
+        pendingLanguages.remove(value.language); deletedLanguages.remove(value.language)
+        translations.removeAll { $0.language == value.language }
+        translations.append(value)
+        translations.sort { $0.language < $1.language }
+        persist()
+    }
+
     func delete(language: String) {
+        pendingLanguages.insert(language); deletedLanguages.insert(language)
         translations.removeAll { $0.language == language }
         persist()
     }
 
     func replaceFromServer(rows: [Row]) {
-        translations = rows.compactMap(ContentTranslation.init(row:))
-            .filter { $0.reportId == reportId }
-            .sorted { $0.language < $1.language }
+        var remote = rows.compactMap(ContentTranslation.init(row:)).filter { $0.reportId == reportId }
+        for language in pendingLanguages {
+            let latest = remote.first { $0.language == language }
+            if deletedLanguages.contains(language) {
+                if latest == nil { pendingLanguages.remove(language); deletedLanguages.remove(language) }
+                else { remote.removeAll { $0.language == language } }
+            } else if let local = translation(language: language) {
+                if latest?.markdown == local.markdown {
+                    pendingLanguages.remove(language)
+                } else {
+                    remote.removeAll { $0.language == language }; remote.append(local)
+                }
+            }
+        }
+        translations = remote.sorted { $0.language < $1.language }
         persist()
     }
 
+    /// Used only for an explicitly confirmed delivery; a queued mutation alone
+    /// is not an acknowledgement from the Mac.
+    func markSynchronized(language: String) {
+        pendingLanguages.remove(language); deletedLanguages.remove(language); persist()
+    }
+
     private func reload() {
-        guard let data = try? Data(contentsOf: file),
-              let saved = try? JSONDecoder.nodusTranslations.decode([ContentTranslation].self, from: data) else { return }
-        translations = saved
+        guard let data = try? Data(contentsOf: file) else { return }
+        if let state = try? JSONDecoder.nodusTranslations.decode(State.self, from: data) {
+            translations = state.translations; pendingLanguages = state.pendingLanguages; deletedLanguages = state.deletedLanguages
+        } else if let saved = try? JSONDecoder.nodusTranslations.decode([ContentTranslation].self, from: data) {
+            // Older files contain no delivery state. Preserve their content as
+            // pending until a matching Mac row actually confirms it.
+            translations = saved; pendingLanguages = Set(saved.map(\.language))
+        }
     }
 
     private func persist() {
-        guard let data = try? JSONEncoder.nodusTranslations.encode(translations) else { return }
+        let state = State(translations: translations, pendingLanguages: pendingLanguages, deletedLanguages: deletedLanguages)
+        guard let data = try? JSONEncoder.nodusTranslations.encode(state) else { return }
         try? data.write(to: file, options: [.atomic, .completeFileProtection])
     }
 }

@@ -87,7 +87,7 @@ struct HypothesisLabMobileView: View {
                 Spacer()
                 Button { Task { await saveToNotes(candidate) } } label: { Label("Save to Notes", systemImage: "note.text.badge.plus") }
                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
-                    .disabled(session.isDemo || !session.connection.role.canSendChanges)
+                    .disabled(session.isDemo || !session.canAuthor)
             }
             Text(candidate.hypothesis).font(.headline)
             Text(candidate.rationale).font(.subheadline).foregroundStyle(.secondary)
@@ -162,12 +162,12 @@ struct HypothesisLabMobileView: View {
         """
         do {
             let key = "hypothesis-note:\(candidate.id):\(session.publishedRevision ?? "local")"
-            _ = try await session.client.createSpaceAction(
+            let result = try await session.client.createSpaceAction(
                 idempotencyKey: key, kind: .hypothesisSaveToNotes,
                 payload: ["title": .string(candidate.title), "markdown": .string(markdown), "hypothesisId": .string(candidate.id)],
-                inputRevision: session.publishedRevision, in: session.connection.spaceId
+                inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            actionStatus = "Queued once. The owner Desktop will add this grounded dossier to Notes."
+            actionStatus = result.action.receiptMessage
         } catch { self.error = error.localizedDescription }
     }
 }

@@ -1,6 +1,8 @@
 import NodusKit
 import NodusUI
 import SwiftUI
+import QuickLook
+import UIKit
 
 struct SpaceSettingsView: View {
     @Environment(AppModel.self) private var model
@@ -15,6 +17,15 @@ struct SpaceSettingsView: View {
     @State private var diagnosticFailure: ConnectionFailure?
     @State private var libraryDeletion: LibraryDeletion?
     @State private var showingLibraryDeletion = false
+    @State private var liveSettings: JSONValue?
+    @State private var liveSettingsError: String?
+    @State private var changingMacConnection = false
+    @State private var confirmingMacRevocation = false
+    @State private var macConnectionResult: String?
+    @State private var showingLegacyRecovery = false
+    @State private var legacyRecoveryResult: String?
+    @State private var showingCompanionDownload = false
+    @State private var retryingEmbedding = false
 
     private enum LibraryDeletion: Equatable { case space, everySpace }
 
@@ -32,62 +43,55 @@ struct SpaceSettingsView: View {
                 .padding(.bottom, 10)
 
                 List {
+                if session.connection.desktopPairingId != nil {
+                    macConnectionSection
+                    if !NodusLinkPolicy.readOnly { RecoveredAuthoringSettings(session: session) }
+                }
+
                 Section("Space") {
                     labelled("Name", session.connection.spaceName)
                     labelled("Vault", session.connection.vaultName ?? "—")
-                    labelled("Type", session.vaultType?.rawValue ?? "—")
+                    labelled("Type", session.vaultType?.localizedName ?? "—")
                     labelled("Access", roleLabel)
-                    if let revision = session.overview?.space.revision {
-                        labelled("Revision", String(revision.prefix(12)))
-                    }
-                    if let schema = session.overview?.schemaVersion {
-                        labelled("Schema", "v\(schema)")
+                }
+
+                if let legacy = ConnectionStorage.legacyData(for: session.connection) {
+                    Section("Documentos de la copia anterior") {
+                        Text("Se conservan \(legacy.reports) informes y \(legacy.chats) conversaciones sin una conexión identificada.")
+                        Button("Recuperar documentos locales aquí") { showingLegacyRecovery = true }
+                            .accessibilityIdentifier("recover-legacy-local-documents")
+                        if let legacyRecoveryResult { Text(legacyRecoveryResult).font(.caption) }
                     }
                 }
 
-                Section {
-                    labelled("Server", session.connection.serverName)
-                    labelled("Address", session.connection.origin)
-                    if let health {
-                        labelled("Status", health.ok ? "Online · v\(health.version ?? "?")" : "No answer")
+                if !NodusLinkPolicy.readOnly { Section {
+                    if BetaAIFeatures.autonomousGeneration { Picker("Execution mode", selection: Binding(get: { session.aiExecutionMode }, set: { session.aiExecutionMode = $0 })) {
+                        Text("Live · Mac models").tag(AIExecutionMode.live)
+                            .disabled(session.connection.desktopPairingId == nil)
+                        Text("Autonomous · this device").tag(AIExecutionMode.autonomous)
                     }
-                    if let capabilities {
-                        labelled("Largest image", ByteCountFormatter.string(fromByteCount: Int64(capabilities.maxAssetBytes), countStyle: .file))
-                        labelled("Change batch", "\(capabilities.maxMutationBatch)")
-                        // A report is one change carrying its whole text, so this is the number
-                        // that decides whether a long one can be sent at all. Shown rather than
-                        // left to be discovered by a rejection.
-                        if let maxMutationBytes = capabilities.maxMutationBytes {
-                            labelled("Largest change", ByteCountFormatter.string(fromByteCount: Int64(maxMutationBytes), countStyle: .file))
+                    .accessibilityIdentifier("ai-execution-mode")
+                    } else { Text("Live · modelos del Mac").accessibilityIdentifier("ai-execution-mode").accessibilityValue("Live · modelos del Mac") }
+                    if session.connection.desktopPairingId != nil {
+                        NavigationLink("Trabajos y resultados") { LiveJobsView(session: session) }
+                            .accessibilityIdentifier("companion-jobs-results")
+                    }
+                    if session.aiExecutionMode == .live {
+                        labelled("Ordenador", session.connection.serverName)
+                        if let liveSettings {
+                            ForEach(["chatModel", "deepResearchModel", "dictionaryModel", "immersionModel", "writingModel"], id: \.self) { key in
+                                let choice = liveSettings.objectValue?[key]?.objectValue
+                                labelled(macModelLabel(key), choice?["model"]?.stringValue ?? "—")
+                            }
                         }
+                        if let liveSettingsError { Text(liveSettingsError).foregroundStyle(Color.nodusDanger).accessibilityIdentifier("mac-live-settings-error") }
                     }
-                    if let diagnosticFailure {
-                        // One line, and a way to find out more. The whole of what this screen
-                        // could say about a failure used to be `error.localizedDescription`.
-                        Text(LocalizedStringKey(diagnosticFailure.sentence))
-                            .font(.caption)
-                            .foregroundStyle(diagnosticFailure.tone == .caution ? Color.nodusCaution : Color.nodusDanger)
-                    }
-                } header: {
-                    Text("Server")
-                } footer: {
-                    if ServerAddress(trusted: session.connection.origin).isInsecure {
-                        Text("This connection is not encrypted. That should only ever be a local test.")
-                            .foregroundStyle(Color.nodusCaution)
-                    }
+                } header: { Text("Execution mode") } footer: {
+                    Text(session.aiExecutionMode == .live
+                        ? "Requests run on the linked Mac using its providers and subscription sessions. Credentials stay on the Mac. Disconnection never switches to autonomous mode."
+                        : "Requests use the providers configured on this device. The execution mode changes only when you choose it.")
                 }
 
-                Section {
-                    NavigationLink {
-                        ConnectionDiagnosticsView(connection: session.connection)
-                            .environment(model)
-                    } label: {
-                        Label("Diagnostics", systemImage: "stethoscope")
-                    }
-                } header: {
-                    Text("Connection")
-                } footer: {
-                    Text("Runs the checks in order — this device's network, then the address, then whether a Nodus Server is behind it — and says where it stops.")
                 }
 
                 Section {
@@ -95,15 +99,6 @@ struct SpaceSettingsView: View {
                     labelled("This server", serverVersion ?? "—")
                 } header: {
                     Text("Version")
-                } footer: {
-                    // The whole reason the three parts share one number: a mismatch is a
-                    // sentence a person can read out, instead of a bug they have to reproduce.
-                    if let serverVersion, serverVersion != NodusVersion.current {
-                        Text("The app and the server are on different releases. Anything that behaves oddly should be suspected here first.")
-                            .foregroundStyle(Color.nodusCaution)
-                    } else {
-                        Text("Nodus desktop, Nodus Server and this app ship as one release and carry one number.")
-                    }
                 }
 
                 Section {
@@ -112,15 +107,35 @@ struct SpaceSettingsView: View {
                         labelled("Provider", identity.provider)
                         labelled("Model", identity.model)
                         labelled("Dimensions", "\(identity.dim)")
+                            .accessibilityIdentifier("mac-embedding-published")
                         if !session.embedding.isReachableFromPhone {
                             Text("This provider runs on the computer where Nodus desktop lives. iOS cannot produce a matching vector, so search is lexical.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     case .noVectors:
                         Text("This space has no published vectors.")
+                            .accessibilityIdentifier("mac-embedding-no-vectors")
                             .font(.caption).foregroundStyle(.secondary)
                     case .unavailable(let message):
-                        Text(message).font(.caption).foregroundStyle(Color.nodusCaution)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Semantic search configuration is unavailable.")
+                                .font(.subheadline.weight(.medium))
+                                .accessibilityIdentifier("mac-embedding-error")
+                            Text("Text search and saved content remain available. Check the connection to Nodus Research and try again.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button("Try again") {
+                                guard !retryingEmbedding else { return }
+                                retryingEmbedding = true
+                                Task {
+                                    await session.probeEmbedding(retryUnavailable: true)
+                                    retryingEmbedding = false
+                                }
+                            }.disabled(retryingEmbedding)
+                            DisclosureGroup("Technical details") {
+                                Text(message).font(.caption).foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
                     case .unknown:
                         ProgressView()
                     }
@@ -130,7 +145,7 @@ struct SpaceSettingsView: View {
                     Text("The vault fixes the model, not this app: retrieval only works when provider, model and dimension all match exactly.")
                 }
 
-                Section {
+                if session.aiExecutionMode == .autonomous { Section {
                     NavigationLink {
                         ProviderSettingsView(accent: session.accent, requiredEmbedding: requiredEmbedding, embedded: true)
                             .environment(ai)
@@ -162,7 +177,7 @@ struct SpaceSettingsView: View {
                     Text("Artificial intelligence")
                 } footer: {
                     Text("Your keys stay in this device's keychain. The Nodus Server never receives one — it hands over the material, and this app calls your provider itself.")
-                }
+                } }
 
                 Section {
                     Toggle(isOn: Binding(
@@ -188,11 +203,11 @@ struct SpaceSettingsView: View {
                     }
                     .tint(session.accent)
 
-                    NavigationLink {
+                    if !NodusLinkPolicy.readOnly { NavigationLink {
                         SidebarSettingsView(vaultType: session.vaultType, accent: session.accent)
                     } label: {
                         Label("Sidebar", systemImage: "sidebar.left")
-                    }
+                    } }
                 } header: {
                     Text("This device")
                 } footer: {
@@ -203,39 +218,10 @@ struct SpaceSettingsView: View {
                     }
                 }
 
-                Section {
-                    Toggle(isOn: Binding(
-                        get: { cloud.isEnabled },
-                        // Turning it on fetches before it sends, so a second device joins the
-                        // copy rather than replacing it — see `CloudBackup`.
-                        set: { wanted in Task { await cloud.setEnabled(wanted) } }
-                    )) {
-                        Label("Chats and reports in iCloud", systemImage: "icloud")
-                    }
-                    .tint(session.accent)
 
-                    switch cloud.status {
-                    case .off:
-                        EmptyView()
-                    case .working:
-                        Label("Updating…", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.caption).foregroundStyle(.secondary)
-                    case .ready(let when):
-                        if let when {
-                            labelled("Last updated", when.formatted(date: .abbreviated, time: .shortened))
-                        }
-                    case .failed(let message):
-                        Text(message).font(.caption).foregroundStyle(Color.nodusCaution)
-                    }
-                } header: {
-                    Text("iCloud")
-                } footer: {
-                    // The one sentence somebody reads before deciding. It has to say what leaves
-                    // the device and where it lands, and it has to be as true of the code as of
-                    // the promise two sections above about the keys.
-                    Text("Your conversations and the reports written here are copied to your own private iCloud, so a new phone finds them. They never reach a Nodus server, and your provider keys and the offline copy never leave this device.")
-                }
-
+                if let pairingId = session.connection.desktopPairingId {
+                    CompanionCopySettings(session: session, pairingId: pairingId, showingDownload: $showingCompanionDownload)
+                } else {
                 Section {
                     switch session.mirrorProgress {
                     case .absent:
@@ -250,6 +236,10 @@ struct SpaceSettingsView: View {
                     case .importing:
                         Label("Indexing…", systemImage: "gearshape.2")
                             .foregroundStyle(.secondary)
+                    case .downloadingAssets(let done, let total):
+                        ProgressView(value: Double(done), total: Double(max(1, total))) {
+                            Text("Downloading images: \(done) of \(total)")
+                        }
                     case .current(let rows, let tables):
                         labelled("Rows", rows.formatted())
                         labelled("Tables", "\(tables)")
@@ -283,6 +273,8 @@ struct SpaceSettingsView: View {
                     // twenty tables out of the dozens a publication can carry — a worldbuilding
                     // vault's scenes and articles have no route at all.
                     Text("Keeps the whole publication on the device: works with no network, sorts instantly, and reaches the tables the API does not expose.")
+                }
+
                 }
 
                 Section {
@@ -335,7 +327,15 @@ struct SpaceSettingsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .nodusPageBackdrop(accent: session.accent)
             .tint(session.accent)
-            .task { await diagnose() }
+            .task(id: session.connection.origin) {
+                while !Task.isCancelled {
+                    await diagnose()
+                    guard !Task.isCancelled else { return }
+                    await session.probeEmbedding(retryUnavailable: true)
+                    do { try await Task.sleep(for: .seconds(30)) }
+                    catch { return }
+                }
+            }
             .confirmationDialog("Delete downloaded copies?", isPresented: $showingLibraryDeletion, titleVisibility: .visible) {
                 Button(libraryDeletion == .space ? "Delete in this space" : "Delete in every space", role: .destructive) {
                     confirmLibraryDeletion()
@@ -346,6 +346,139 @@ struct SpaceSettingsView: View {
             }
         }
         .accessibilityIdentifier("settings-workspace")
+        .sheet(isPresented: $showingCompanionDownload) { CompanionDownloadsView(session: session) }
+        .alert("Revocar conexión?", isPresented: $confirmingMacRevocation) {
+            Button("Revocar conexión", role: .destructive) {
+                changingMacConnection = true; macConnectionResult = nil
+                Task {
+                    defer { changingMacConnection = false }
+                    do { try await model.revokeDesktop(session.connection) }
+                    catch { macConnectionResult = error.localizedDescription }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This device will lose access to every vault linked through this connection. Downloaded reading copies will be deleted. Your local drafts and generated work will stay encrypted. You can recover them through a verified link to the same Mac, or export them from settings.")
+        }
+        .confirmationDialog("Recuperar en \(session.connection.spaceName)", isPresented: $showingLegacyRecovery, titleVisibility: .visible) {
+            Button("Recuperar documentos locales") {
+                do {
+                    let count = try ConnectionStorage.recoverLocalDocuments(for: session.connection)
+                    legacyRecoveryResult = "Se han recuperado \(count) documentos nuevos. Las copias originales se conservan."
+                } catch { legacyRecoveryResult = error.localizedDescription }
+            }
+            Button("Cancelar", role: .cancel) { }
+        } message: {
+            Text("Confirma que estos documentos son tuyos y corresponden a esta conexión. Los informes y conversaciones se copiarán como documentos locales; revisa sus fuentes antes de enviarlos. Las copias descargadas y los envíos anteriores se conservarán aparte.")
+        }
+    }
+
+    private var macConnectionSection: some View {
+        Section {
+            labelled("Ordenador", session.connection.serverName)
+            if let id = session.connection.desktopPairingId,
+               let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == id }) {
+                Text("\(pairing.vaultIds.count) linked vaults")
+                DisclosureGroup("Workspace details") {
+                    ForEach(model.linkConnections.filter { $0.desktopPairingId == id }) { connection in
+                        Text(connection.vaultName ?? connection.spaceName)
+                    }
+                    Text("Permissions").font(.subheadline.weight(.medium))
+                    ForEach(pairing.domains.sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { domain in
+                        Text(macPermissionLabel(domain)).font(.caption)
+                    }
+                }
+                .accessibilityIdentifier("mac-workspace-details")
+            }
+            Button {
+                changingMacConnection = true; macConnectionResult = nil
+                Task {
+                    defer { changingMacConnection = false }
+                    do { try await model.renewDesktop(session.connection); macConnectionResult = String(localized: "Connection renewed. Copies, drafts and requests are preserved.") }
+                    catch { macConnectionResult = error.localizedDescription }
+                }
+            } label: { Label("Renovar conexión", systemImage: "arrow.clockwise") }
+                .disabled(changingMacConnection).accessibilityIdentifier("renew-mac-connection")
+            Button(role: .destructive) {
+                confirmingMacRevocation = true
+            } label: { Label("Revocar conexión", systemImage: "link") }
+                .disabled(changingMacConnection).accessibilityIdentifier("revoke-mac-connection")
+            if changingMacConnection { ProgressView() }
+            if let macConnectionResult { Text(macConnectionResult).font(.caption).accessibilityIdentifier("mac-connection-result") }
+        } header: { Text("Conexión con Nodus Desktop") } footer: {
+            Text("La renovación conserva todos los vaults vinculados. Para revocar el acceso, Nodus Desktop debe estar conectado.")
+        }
+    }
+
+    private var serverConnectionRows: some View {
+        Group {
+            labelled("Server", session.connection.serverName)
+            labelled("Address", session.connection.origin)
+            if let health {
+                labelled("Status", health.ok ? "Online · v\(health.version ?? "?")" : "No answer")
+            }
+            if let capabilities {
+                labelled("Largest image", ByteCountFormatter.string(fromByteCount: Int64(capabilities.maxAssetBytes), countStyle: .file))
+                labelled("Change batch", "\(capabilities.maxMutationBatch)")
+                if let maxMutationBytes = capabilities.maxMutationBytes {
+                    labelled("Largest change", ByteCountFormatter.string(fromByteCount: Int64(maxMutationBytes), countStyle: .file))
+                }
+            }
+            if let diagnosticFailure {
+                Text(LocalizedStringKey(diagnosticFailure.sentence))
+                    .font(.caption)
+                    .foregroundStyle(diagnosticFailure.tone == .caution ? Color.nodusCaution : Color.nodusDanger)
+            }
+        }
+    }
+
+    private var connectionDiagnosticsLink: some View {
+        NavigationLink {
+            ConnectionDiagnosticsView(connection: session.connection).environment(model)
+        } label: {
+            Label("Diagnostics", systemImage: "stethoscope")
+        }
+    }
+
+    @ViewBuilder private var workspaceProtocolRows: some View {
+        if let revision = session.overview?.space.revision {
+            labelled("Revision", String(revision.prefix(12)))
+        }
+        if let schema = session.overview?.schemaVersion {
+            labelled("Schema", "v\(schema)")
+        }
+    }
+
+    @ViewBuilder private var insecureConnectionFooter: some View {
+        if ServerAddress(trusted: session.connection.origin).isInsecure {
+            Text("This connection is not encrypted. That should only ever be a local test.")
+                .foregroundStyle(Color.nodusCaution)
+        }
+    }
+
+    private func macModelLabel(_ key: String) -> LocalizedStringKey {
+        switch key {
+        case "chatModel": "Chat"
+        case "deepResearchModel": "Deep Research"
+        case "dictionaryModel": "Dictionary"
+        case "immersionModel": "Immersion"
+        case "writingModel": "Writing"
+        default: "Model"
+        }
+    }
+
+    private func macPermissionLabel(_ domain: DesktopBridgeDomain) -> String {
+        switch domain {
+        case .corpus: String(localized: "Corpus consultation")
+        case .writing: String(localized: "Writing and ideas")
+        case .researchGeneration: String(localized: "Research generation")
+        case .testimonies: String(localized: "Interviews and participants")
+        case .teachingRoster: String(localized: "Students")
+        case .teachingGrades: String(localized: "Grades")
+        case .studyRecordings: String(localized: "Recordings")
+        case .primarySourceFiles: String(localized: "Primary source files")
+        case .prosopographyPrivate: String(localized: "Private prosopography data")
+        }
     }
 
     private func requestLibraryDeletion(_ deletion: LibraryDeletion) {
@@ -357,7 +490,7 @@ struct SpaceSettingsView: View {
         switch libraryDeletion {
         case .space:
             Task {
-                let library = PublishedLibraryStore(spaceId: session.connection.spaceId)
+                let library = PublishedLibraryStore(spaceId: session.connection.spaceId, storageId: session.connection.storageId)
                 await library.removeAll()
             }
         case .everySpace:
@@ -383,6 +516,7 @@ struct SpaceSettingsView: View {
     /// data — but unlike a model name or a revision hash it is a word this app chose, and a
     /// word this app chose is a word it should translate.
     private var roleLabel: String {
+        if NodusLinkPolicy.readOnly { return String(localized: "Read-only access") }
         switch session.connection.role {
         case .reader: return String(localized: "Read only")
         case .writer: return String(localized: "Can send changes")
@@ -400,7 +534,7 @@ struct SpaceSettingsView: View {
         HStack {
             Text(title)
             Spacer()
-            Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+            Text(value).foregroundStyle(Color.nodusSecondaryText).multilineTextAlignment(.trailing)
         }
         .font(.callout)
     }
@@ -411,23 +545,42 @@ struct SpaceSettingsView: View {
     /// needs the ceilings and the version, not a verdict. What it does share is the wording —
     /// when the two calls fail, the sentence comes from the same classifier.
     private func diagnose() async {
+        let origin = session.connection.origin
+        if let pairing = DesktopBridgePairingStore().pairings().first(where: { $0.id == session.connection.desktopPairingId }),
+           let token = DesktopBridgePairingStore().credential(for: pairing), let vault = session.vaultId {
+            do {
+                let settings = try await DesktopBridgeClient(pairing: pairing, token: token).operation(vaultId: vault, method: "getSettings", args: [])
+                guard !Task.isCancelled, session.connection.origin == origin else { return }
+                liveSettings = settings
+                liveSettingsError = nil
+            } catch {
+                guard !Task.isCancelled, !error.isCancellation, session.connection.origin == origin else { return }
+                liveSettingsError = error.localizedDescription
+            }
+            return
+        }
         do {
             async let health = session.client.health()
             async let capabilities = session.client.capabilities()
-            self.health = try await health
-            self.capabilities = try await capabilities
+            let values = try await (health, capabilities)
+            guard !Task.isCancelled, session.connection.origin == origin else { return }
+            self.health = values.0
+            self.capabilities = values.1
             diagnosticFailure = nil
         } catch {
+            guard !Task.isCancelled, !error.isCancellation, session.connection.origin == origin else { return }
             let network = await NetworkReachability.current()
+            guard !Task.isCancelled, session.connection.origin == origin else { return }
             diagnosticFailure = ConnectionFailure.classify(
                 error: error,
-                origin: session.connection.origin,
+                origin: origin,
                 network: network,
                 knock: .unauthenticated,
                 appVersion: NodusVersion.current
             )
         }
     }
+
 }
 
 /// Desktop-compatible navigation customisation. Hidden destinations remain available through
@@ -555,4 +708,252 @@ struct PublishedTablesView: View {
         .searchable(text: $query, prompt: Text("Filter tables"))
         .nodusDismissesKeyboard()
     }
+}
+
+/// A linked workspace retains opened content rather than downloading a complete
+/// publication. This control never removes drafts or authorised pending work.
+private struct CompanionCopySettings: View {
+    let session: SpaceSession
+    let pairingId: String
+    @State private var usage: PrivateBridgeCache.Usage?
+    @State private var issue: String?
+    @State private var clearing = false
+    @State private var confirmClear = false
+    @Binding var showingDownload: Bool
+    @State private var packs: [PrivateBridgeCache.ReadPack] = []
+    @State private var preview: URL?
+    @State private var previewCopy: PrivateBridgeFileCopy?
+    @State private var openingFile = false
+    var body: some View {
+        Section {
+            if let usage {
+                LabeledContent("Consulted content", value: ByteCountFormatter.string(fromByteCount: Int64(usage.reusableBytes), countStyle: .file))
+                LabeledContent("Downloaded content", value: ByteCountFormatter.string(fromByteCount: Int64(usage.downloadedBytes), countStyle: .file))
+                LabeledContent("Maximum for this Mac", value: ByteCountFormatter.string(fromByteCount: Int64(usage.readLimitBytes), countStyle: .file))
+                LabeledContent("Drafts and pending work", value: ByteCountFormatter.string(fromByteCount: Int64(usage.protectedBytes), countStyle: .file))
+                Button("Descargar para llevar") { showingDownload = true }
+                    .accessibilityIdentifier("companion-download-select")
+                ForEach(packs) { pack in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(pack.title)
+                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(pack.bytes), countStyle: .file)) · caduca \(pack.expiresAt.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let file = pack.primaryFile {
+                            Button("Abrir archivo descargado") {
+                                openingFile = true
+                                Task {
+                                    defer { openingFile = false }
+                                    do {
+                                        let copy = try await loadPrivateBridgeFile(session, kind: file.kind, id: file.id, downloadedOnly: true, selectedFile: file)
+                                        previewCopy = copy; preview = copy.url
+                                    }
+                                    catch { issue = error.localizedDescription }
+                                }
+                            }.disabled(openingFile)
+                                .accessibilityIdentifier("companion-download-open-\(pack.id)")
+                        }
+                        Button("Eliminar copia descargada", role: .destructive) {
+                            Task {
+                                do {
+                                    try await PrivateBridgeCache(pairingId: pairingId).removeReadPack(id: pack.id, vaultId: pack.vaultId)
+                                    session.didChangeCompanionDownloads()
+                                    await refresh()
+                                }
+                                catch { issue = error.localizedDescription }
+                            }
+                        }.accessibilityIdentifier("companion-download-remove-\(pack.id)")
+                    }
+                }
+                Button("Free space used by consulted content", role: .destructive) { confirmClear = true }
+                    .disabled(clearing)
+                    .accessibilityIdentifier("companion-clear-read-copies")
+            } else { ProgressView() }
+            if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
+        } header: { Text("On this device") } footer: {
+            Text("Opened content is kept encrypted for offline reading. Older consulted copies are removed when the limit is reached. Drafts and pending work are always preserved.")
+        }
+        .task { await refresh() }
+        .quickLookPreview($preview)
+        .onChange(of: preview) { _, value in if value == nil { previewCopy = nil } }
+        .onChange(of: showingDownload) { _, shown in if !shown { Task { await refresh() } } }
+        .confirmationDialog("Free space used by consulted content?", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Free space", role: .destructive) {
+                clearing = true
+                Task {
+                    defer { clearing = false }
+                    do { try await PrivateBridgeCache(pairingId: pairingId).removeReusableCopies(); await refresh() }
+                    catch { issue = error.localizedDescription }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { Text("Drafts and pending work remain on this device. Open the consulted content again while connected to keep another copy.") }
+    }
+    private func refresh() async {
+        do {
+            let cache = try PrivateBridgeCache(pairingId: pairingId)
+            usage = try await cache.usage()
+            packs = try await cache.readPacks(vaultId: session.vaultId ?? "")
+            issue = nil
+        }
+        catch { issue = error.localizedDescription }
+    }
+}
+
+
+private struct RecoveredAuthoringSettings: View {
+    let session: SpaceSession
+    @State private var archives: [PrivateBridgeAuthoringRecovery.ArchiveInfo] = []
+    @State private var requests: [DesktopJobLedger.Request] = []
+    @State private var issue: String?
+    @State private var reviewing: String?
+    @State private var selected: DesktopJobLedger.Request?
+    var body: some View {
+        Group {
+            if !archives.isEmpty || !requests.isEmpty || session.connection.authoringRecoveryNotice != nil {
+                Section {
+                    if let notice = session.connection.authoringRecoveryNotice { Text(notice).font(.footnote) }
+                    ForEach(requests) { request in
+                        Button { selected = request } label: { Label(CompanionResultCatalogue.title(request), systemImage: "doc.text") }
+                            .frame(minHeight: 44).accessibilityIdentifier("recovered-work-review")
+                    }
+                    ForEach(archives) { archive in RecoveredAuthoringArchiveRow(archive: archive, onChanged: { await refresh() }) }
+                    if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
+                } header: { Text("Trabajo local conservado") } footer: {
+                    Text("Los cambios de un enlace anterior necesitan revisión. Publicar un resultado ya creado no vuelve a ejecutar el modelo.")
+                }
+            }
+        }
+        .task { await refresh() }
+        .nodusSheet(item: $selected) { request in
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(CompanionResultCatalogue.title(request)).font(.title2.bold())
+                        Text("Revisa el resultado antes de guardarlo en el Mac. Los cambios del origen se comprobarán al enviarlo.").font(.footnote).foregroundStyle(.secondary)
+                        if ["saveMobileDatabaseGeneratedCell", "saveMobileDatabaseButtonResult", "localDatabaseAction"].contains(request.method), let checkpoint = request.checkpoint {
+                            NavigationLink("Consultar resultado y recibos") { DatabaseActionResultView(session: session, request: request, checkpoint: checkpoint) }.frame(minHeight: 44)
+                        }
+                        if let text = resultText(request) { CorpusProse(text, accent: session.accent, session: session) }
+                        if let encoded = request.checkpoint?.objectValue?["bytes"]?.stringValue, let data = Data(base64Encoded: encoded), let image = UIImage(data: data) {
+                            Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
+                                .accessibilityIdentifier("recovered-work-image")
+                        }
+                        if let result = request.result { DossierValueView(session: session, value: result, field: "", linkedCollection: nil, onOpenRelated: nil) }
+                        if PrivateBridgeAuthoringRecovery.canReviewResult(request) {
+                            Button("Guardar este resultado en el Mac") { Task { await approve(request) } }
+                                .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(reviewing != nil)
+                                .accessibilityIdentifier("recovered-work-publish")
+                        } else { Text("El resultado se conserva para consulta. No se repetirá la generación automáticamente.").font(.footnote) }
+                        if let issue { Text(issue).foregroundStyle(Color.nodusDanger) }
+                    }.padding(NodusSpace.page)
+                }
+                .navigationTitle("Revisar trabajo")
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { selected = nil } } }
+            }
+        }
+    }
+    private func refresh() async {
+        guard let pairing = session.connection.desktopPairingId else { return }
+        do {
+            archives = try await PrivateBridgeAuthoringRecovery.shared.summaries(macDeviceId: session.connection.macDeviceId, pairingId: pairing)
+            if let vault = session.vaultId { requests = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault).all().filter { $0.state == "recoveryReview" } }
+        } catch { issue = error.localizedDescription }
+    }
+    private func approve(_ original: DesktopJobLedger.Request) async {
+        guard let pairing = session.connection.desktopPairingId, let vault = session.vaultId else { return }
+        reviewing = original.id; issue = nil
+        defer { reviewing = nil }
+        do {
+            let bridge = try ConnectionClient.companionChat(for: session.connection)
+            let ledger = try await DesktopJobLedgers.shared.ledger(pairingId: pairing, vaultId: vault)
+            let approved: DesktopJobLedger.Request
+            if ["saveMobileDatabaseGeneratedCell", "saveMobileDatabaseButtonResult", "localDatabaseAction"].contains(original.method), let checkpoint = original.checkpoint {
+                approved = try await DatabasePropertyActions.preparePublication(session: session, checkpoint: CompanionDatabaseActionCheckpoint(checkpoint), approveRecovered: true)
+            } else if let publication = try PrivateBridgeAuthoringRecovery.publicationForReview(original) { approved = try await ledger.approveRecoveredPublication(publication) }
+            else { approved = try await ledger.approveRecoveredSavedResult(id: original.id) }
+            do {
+                let job = try await bridge.submitJob(vaultId: vault, method: approved.method, args: approved.args, idempotencyKey: approved.id)
+                try await ledger.update(id: approved.id, job: job)
+                selected = nil; await refresh()
+            } catch {
+                if let api = error as? APIError, [400,403,404,409,422].contains(api.status) { try await ledger.rejectUnsubmitted(id: approved.id, issue: api.localizedDescription) }
+                else { try await ledger.disconnected(id: approved.id, issue: error.localizedDescription) }
+                throw error
+            }
+        } catch { issue = error.localizedDescription }
+    }
+    private func resultText(_ request: DesktopJobLedger.Request) -> String? {
+        let row = request.checkpoint?.objectValue ?? [:], preview = row["preview"]?.objectValue ?? [:]
+        let candidates = [preview["draftMarkdown"], preview["text"], row["text"], row["markdown"], row["definition"]?.objectValue?["contentMarkdown"], row["detail"]?.objectValue?["report"]?.objectValue?["markdown"], row["raw"]]
+        return candidates.compactMap { $0?.stringValue }.first { !$0.isEmpty }
+    }
+}
+struct RecoveredAuthoringArchiveRow: View {
+    let archive: PrivateBridgeAuthoringRecovery.ArchiveInfo
+    var onChanged: () async -> Void = {}
+    @State private var confirmingDeletion = false
+    @State private var archiveUse: UUID?
+    @State private var lease: PrivateBridgeFileLease?
+    @State private var issue: String?
+    @State private var exporting = false
+    @State private var exportProgress: Progress?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(archive.createdAt, format: .dateTime.day().month().year())
+            Text(ByteCountFormatter.string(fromByteCount: archive.byteCount, countStyle: .file)).font(.caption).foregroundStyle(.secondary)
+            Text("El archivo original permanece cifrado y puede exportarse.").font(.caption).foregroundStyle(.secondary)
+            if !archive.macIdentityKnown { Text("El trabajo se conserva sin incorporarlo automáticamente a otro espacio.").font(.caption) }
+            Button {
+                Task {
+                    exporting = true; issue = nil
+                    let progress = Progress(totalUnitCount: 0); exportProgress = progress
+                    defer { exporting = false; exportProgress = nil }
+                    do {
+                        archiveUse = try await PrivateBridgeAuthoringRecovery.shared.beginArchiveUse(id: archive.id)
+                        lease = try await PrivateBridgeAuthoringRecovery.shared.exportFile(id: archive.id, progress: progress)
+                        if progress.isCancelled { await releaseArchiveUse(); lease = nil }
+                    }
+                    catch is CancellationError { await releaseArchiveUse(); issue = "Exportación cancelada. El trabajo original se conserva." }
+                    catch { await releaseArchiveUse(); issue = error.localizedDescription }
+                }
+            } label: {
+                Text("Exportar trabajo conservado")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }.disabled(exporting || archive.isBusy || archiveUse != nil).accessibilityIdentifier("recovered-work-export")
+            Button("Eliminar archivo conservado", role: .destructive) { confirmingDeletion = true }
+                .frame(minHeight: 44).disabled(exporting || archive.isBusy || archiveUse != nil)
+                .accessibilityIdentifier("recovered-work-delete")
+            if exporting {
+                HStack { ProgressView("Preparando exportación…"); Button("Cancelar") { exportProgress?.cancel() } }
+            }
+            if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger) }
+        }
+        .accessibilityIdentifier("recovered-work-archive-" + archive.id.uuidString)
+        .confirmationDialog("Eliminar archivo del \(archive.createdAt.formatted(date: .abbreviated, time: .omitted))", isPresented: $confirmingDeletion, titleVisibility: .visible) {
+            Button("Eliminar archivo conservado", role: .destructive) {
+                Task {
+                    do { try await PrivateBridgeAuthoringRecovery.shared.delete(id: archive.id); await onChanged() }
+                    catch { issue = error.localizedDescription }
+                }
+            }
+            Button("Cancelar", role: .cancel) { }
+        } message: { Text("Se eliminará únicamente este archivo cifrado del dispositivo. Esta acción no se puede deshacer.") }
+        .onDisappear { exportProgress?.cancel(); lease = nil; if !exporting { Task { await releaseArchiveUse() } } }
+        .sheet(isPresented: Binding(get: { lease != nil }, set: { if !$0 { lease = nil; Task { await releaseArchiveUse() } } })) {
+            if let lease { RecoveredAuthoringShare(lease: lease) }
+        }
+    }
+    private func releaseArchiveUse() async {
+        guard let token = archiveUse else { return }
+        archiveUse = nil
+        await PrivateBridgeAuthoringRecovery.shared.endArchiveUse(token)
+        await onChanged()
+    }
+}
+
+private struct RecoveredAuthoringShare: UIViewControllerRepresentable {
+    let lease: PrivateBridgeFileLease
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: [lease.url], applicationActivities: nil) }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) { }
 }

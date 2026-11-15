@@ -144,7 +144,7 @@ struct OutboxTraySheet: View {
 
     private var failures: [(spaceId: String, spaceName: String, reason: String)] {
         outbox.failures.compactMap { spaceId, reason in
-            guard let name = outbox.entries.first(where: { $0.connection.spaceId == spaceId })?.connection.spaceName
+            guard let name = outbox.entries.first(where: { $0.connection.id == spaceId })?.connection.spaceName
             else { return nil }
             return (spaceId: spaceId, spaceName: name, reason: reason)
         }
@@ -153,7 +153,7 @@ struct OutboxTraySheet: View {
 
     private var credentialNotices: [(spaceId: String, spaceName: String, credential: MutationDelivery.Credential)] {
         outbox.credentials.compactMap { spaceId, credential in
-            guard let name = outbox.entries.first(where: { $0.connection.spaceId == spaceId })?.connection.spaceName
+            guard let name = outbox.entries.first(where: { $0.connection.id == spaceId })?.connection.spaceName
             else { return nil }
             return (spaceId: spaceId, spaceName: name, credential: credential)
         }

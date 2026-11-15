@@ -24,12 +24,12 @@ struct ResearchView: View {
             if let store { content(store) } else { ProgressView().tint(session.accent) }
         }
         .task(id: session.publishedRevision) {
-            if store == nil { store = LocalReportStore.shared(for: session.connection.spaceId) }
+            if store == nil { store = LocalReportStore.shared(for: session.connection.storageId) }
             publishedReports = (try? await session.client.deepResearchReports(
                 in: session.connection.spaceId,
                 limit: 1
             ).total) ?? 0
-            let libraryStore = PublishedLibraryStore(spaceId: session.connection.spaceId)
+            let libraryStore = PublishedLibraryStore(spaceId: session.connection.spaceId, storageId: session.connection.storageId)
             let cachedLibrary = await libraryStore.catalog()
             do {
                 let summary = try await session.client.publishedLibrarySummary(in: session.connection.spaceId)
@@ -59,8 +59,12 @@ struct ResearchView: View {
                 VStack(alignment: .leading, spacing: 9) {
                     NodusSectionLabel("Deep Research")
                     NavigationLink {
-                        DeepResearchScreen(session: session, local: local)
-                            .environment(ai)
+                        if session.connection.desktopPairingId != nil {
+                            SharedDesktopSurface(session: session, surface: .deepResearch)
+                        } else {
+                            DeepResearchScreen(session: session, local: local)
+                                .environment(ai)
+                        }
                     } label: {
                         row(
                             icon: "sparkles",
@@ -77,7 +81,9 @@ struct ResearchView: View {
                         )
                     }
                     .buttonStyle(NodusCardButtonStyle())
-                    Text("One model call per section, with citations checked against the corpus. Your key never passes through the server.")
+                    Text(session.aiExecutionMode == .live
+                         ? "El informe se genera en el Mac con sus modelos y proveedores."
+                         : "El informe se genera en este dispositivo con el proveedor configurado en el móvil.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 2)
@@ -137,8 +143,10 @@ struct ResearchView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingProviders = true } label: { Image(systemName: "key") }
-                    .tint(session.accent)
+                if session.aiExecutionMode == .autonomous {
+                    Button { showingProviders = true } label: { Image(systemName: "key") }
+                        .tint(session.accent)
+                }
             }
         }
         .nodusSheet(isPresented: $showingProviders) {
@@ -150,7 +158,7 @@ struct ResearchView: View {
 
     /// The run this space has going, if any. Held outside every view, so this screen can be
     /// opened and closed without the report noticing.
-    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.spaceId) }
+    private var runner: DeepResearchRunner { DeepResearchRunner.shared(for: session.connection.storageId) }
 
     /// The same row Home uses, in the same surface, at the same height.
     private func row(
@@ -212,23 +220,20 @@ struct ChatTab: View {
 
     var body: some View {
         Group {
-            if ai.configuredProviders.isEmpty {
-                setupPrompt
-            } else {
-                // The chat's model menu offers the pinned models; everything else — the full
-                // catalogue, the keys — is behind this sheet, which the tab owns.
-                ChatScreen(session: session, openProviders: { showingProviders = true })
-            }
+            ChatScreen(session: session, openProviders: { showingProviders = true })
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingProviders = true } label: { Image(systemName: "key") }
-                    .tint(session.accent)
+                if session.aiExecutionMode == .autonomous {
+                    Button { showingProviders = true } label: { Image(systemName: "key") }
+                        .tint(session.accent)
+                }
             }
             if showsModalDone {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .tint(session.accent.nodusReadable)
+                        .accessibilityIdentifier("nodus-chat-dismiss")
                 }
             }
         }

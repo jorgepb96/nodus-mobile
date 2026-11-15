@@ -80,12 +80,14 @@ enum DemoSpace {
     /// case after the first launch. Two things make it stale, and the revision catches both
     /// without either being special-cased: a newer build carrying a newer corpus, and the phone
     /// being switched to a language whose corpus is a different document.
-    static func prepare() async throws -> (connection: AppModel.Connection, corpus: LocalCorpus) {
+    @MainActor static func prepare() async throws -> (connection: AppModel.Connection, corpus: LocalCorpus) {
         let archive = try archive()
         let snapshot = try SnapshotDownload.read(archive)
         let revision = snapshot.revision ?? ""
 
-        let mirror = try await MirrorStore.open(spaceId: spaceId, directory: ConnectionClient.spacesDirectory)
+        let connection = connection(from: snapshot)
+        try ConnectionStorage.prepare(for: connection)
+        let mirror = try await MirrorStore.open(spaceId: connection.storageId, directory: ConnectionClient.spacesDirectory)
         if try await !mirror.isCurrent(with: revision) {
             try await mirror.replace(with: snapshot, revision: revision)
         }
@@ -99,7 +101,7 @@ enum DemoSpace {
             mirror: mirror,
             archive: archive
         )
-        return (connection(from: snapshot), corpus)
+        return (connection, corpus)
     }
 
     /// A connection like any other, except that it holds no credential and names no server.

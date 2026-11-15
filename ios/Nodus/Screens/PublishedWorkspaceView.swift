@@ -16,6 +16,7 @@ struct PublishedWorkspaceView: View {
     @State private var kind: KindFilter = .all
     @State private var loading = true
     @State private var error: String?
+    @State private var loadID = UUID()
 
     private enum KindFilter: String, CaseIterable, Identifiable {
         case all, notes, ideas
@@ -55,6 +56,8 @@ struct PublishedWorkspaceView: View {
             LazyVStack(alignment: .leading, spacing: 9) {
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load Workspace", message: LocalizedStringKey(error))
+                Button("Retry") { Task { await load() } }
+                    .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
             }
             ForEach(Array(visible.enumerated()), id: \.offset) { _, item in
                 NavigationLink { PublishedWorkspaceItemView(session: session, summary: item, folderName: folderName(item.string("folder_id"))) } label: {
@@ -147,18 +150,30 @@ struct PublishedWorkspaceView: View {
     }
 
     private func load() async {
-        loading = true; defer { loading = false }
+        let token = UUID(), client = session.client, spaceID = session.connection.spaceId
+        loadID = token
+        loading = true
+        defer { if loadID == token { loading = false } }
         do {
-            var loaded: [Row] = [], offset = 0, loadedFolders: [Row] = []
-            while true {
-                let page = try await session.client.notes(in: session.connection.spaceId, limit: 200, offset: offset)
-                loaded.append(contentsOf: page.notes); if loadedFolders.isEmpty { loadedFolders = page.folders }
-                if !page.hasMore { break }; offset += page.notes.count
+            let loaded = try await PageTraversal.complete(identity: { $0.string("id") }) { offset in
+                let page = try await client.notes(in: spaceID, limit: PageBounds.maxLimit, offset: offset)
+                return Page(items: page.notes, total: page.total, limit: page.limit, offset: page.offset,
+                    hasMore: page.hasMore, revision: page.revision)
             }
-            items = loaded; folders = loadedFolders; error = nil
+            // Folder navigation must describe the same publication as the complete catalogue.
+            let tree = try await client.notes(in: spaceID, limit: 1, offset: 0)
+            guard tree.revision == loaded.revision else { throw PageTraversalError.changingRevision }
+            guard loadID == token else { return }
+            items = loaded.items; folders = tree.folders; error = nil
         } catch let apiError as APIError where apiError.isNotPublished {
+            guard loadID == token else { return }
             items = []; folders = []; error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch where error.isCancellation {
+            // A replaced load must not turn cancellation into a catalogue error.
+        } catch {
+            guard loadID == token else { return }
+            self.error = error.localizedDescription
+        }
     }
 }
 
@@ -228,10 +243,16 @@ private struct PublishedWorkspaceItemView: View {
     @State private var error: String?
     @State private var queued = false
     @State private var saving = false
+    @State private var saveError: String?
     @State private var draftTitle = ""
     @State private var draftContent = ""
+    @State private var loadedStorageID: String?
+    @State private var loadRequestID = UUID()
 
-    private var canEdit: Bool { session.connection.role.canSendChanges && item != nil }
+    private var canEdit: Bool {
+        session.canAuthor && item != nil && loadedStorageID == session.connection.storageId
+            && item?.string("id") == summary.string("id")
+    }
     private var hasChanges: Bool {
         guard let item else { return false }
         return draftTitle != (item.text("title") ?? "") || draftContent != (item.text("content") ?? "")
@@ -290,38 +311,64 @@ private struct PublishedWorkspaceItemView: View {
                 }
             }
         }
-        .alert("Queued on this device", isPresented: $queued) { Button("OK", role: .cancel) {} }
-        .task { await load() }
+        .alert(saveError == nil ? Text("Queued on this device") : Text("Could not save"),
+            isPresented: Binding(get: { queued || saveError != nil }, set: {
+                if !$0 { queued = false; saveError = nil }
+            })) { Button("OK", role: .cancel) {} } message: {
+                if let saveError { Text(saveError) }
+            }
+        .task(id: [session.connection.storageId, summary.string("id") ?? ""]) { await load() }
     }
 
     private func load() async {
         guard let id = summary.string("id") else { return }
+        let storageID = session.connection.storageId, client = session.client, spaceID = session.connection.spaceId
+        let token = UUID(); loadRequestID = token
+        if loadedStorageID != storageID || item?.string("id") != id {
+            item = nil; queued = false; saveError = nil
+        }
         do {
-            let loaded = try await session.client.note(id, in: session.connection.spaceId)
+            let loaded = try await client.note(id, in: spaceID)
+            guard loadRequestID == token, session.connection.storageId == storageID, !Task.isCancelled else { return }
             item = loaded
+            loadedStorageID = storageID
             draftTitle = loaded.text("title") ?? ""
             draftContent = loaded.text("content") ?? ""
             error = nil
         }
-        catch { self.error = error.localizedDescription }
+        catch {
+            guard loadRequestID == token, session.connection.storageId == storageID, !Task.isCancelled else { return }
+            self.error = error.localizedDescription
+        }
     }
 
     private func save() async {
-        guard let item, let note = EditableNote(item), hasChanges else { return }
+        guard canEdit, let item, let note = EditableNote(item), hasChanges else { return }
         saving = true; defer { saving = false }
-        guard let outbox = await OutboxController.open(session: session) else { return }
-        await outbox.queueNote(
-            id: note.id,
-            title: draftTitle,
-            body: draftContent,
-            folderId: note.folderId,
-            createdAt: note.createdAt
-        )
-        queued = true
-        // Keep the queued draft as the new local baseline. The published server copy changes
-        // only when the owner's desktop accepts the mutation, but the editor must not keep
-        // presenting a change it has already safely written to this device as unsaved.
-        self.item = rowReplacing(item, title: draftTitle, content: draftContent)
+        let titleToSave = draftTitle, contentToSave = draftContent
+        let storageID = session.connection.storageId
+        let token = loadRequestID
+        do {
+            guard let outbox = await OutboxController.open(session: session) else { throw DesktopBridgeError.permissionDenied }
+            guard session.connection.storageId == storageID, loadRequestID == token else { throw DesktopBridgeError.permissionDenied }
+            try await outbox.queueNote(
+                id: note.id,
+                title: titleToSave,
+                body: contentToSave,
+                folderId: note.folderId,
+                createdAt: note.createdAt
+            )
+            guard session.connection.storageId == storageID, loadRequestID == token else { return }
+            queued = true
+            // Keep the queued draft as the new local baseline. The published server copy changes
+            // only when the owner's desktop accepts the mutation, but the editor must not keep
+            // presenting a change it has already safely written to this device as unsaved.
+            self.item = rowReplacing(item, title: titleToSave, content: contentToSave)
+            saveError = nil
+        } catch {
+            guard session.connection.storageId == storageID, loadRequestID == token else { return }
+            self.saveError = error.localizedDescription
+        }
     }
 
     private func rowReplacing(_ row: Row, title: String, content: String) -> Row {

@@ -30,6 +30,12 @@ struct MirrorTableView: View {
     @State private var error: String?
     @State private var searchTask: Task<Void, Never>?
     @State private var isDownloading = false
+    @State private var loading = false
+    @State private var requestID = UUID()
+    @State private var loadedQuery = ""
+    @State private var loadedSort: MirrorStore.SortOrder = .published
+    @State private var lastPage: Page<Row>?
+    @State private var committedGeneration = UUID()
 
     private var presenter: RowPresenter { RowPresenter.forTable(table) }
 
@@ -67,6 +73,8 @@ struct MirrorTableView: View {
                 } else {
                     if let error {
                         NodusNotice(tone: .blocked, title: "Could not read the mirror", message: LocalizedStringKey(error))
+                        Button("Retry") { Task { await reload() } }
+                            .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                     }
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                         NavigationLink {
@@ -77,12 +85,13 @@ struct MirrorTableView: View {
                         }
                         .buttonStyle(NodusCardButtonStyle())
                     }
-                    if rows.count < total, filter == nil {
+                    if rows.count < total, filter == nil, error == nil {
                         HStack { Spacer(); ProgressView().tint(session.accent); Spacer() }
                             .padding()
-                            .task { await loadMore() }
+                            .task(id: "\(committedGeneration):\(rows.count)") { await loadMore() }
                     }
-                    if rows.isEmpty, error == nil {
+                    if loading, rows.isEmpty { ProgressView().tint(session.accent).padding() }
+                    if rows.isEmpty, error == nil, !loading {
                         ContentUnavailableView(
                             query.isEmpty ? "Nothing here" : "No matches",
                             systemImage: presenter.icon
@@ -142,11 +151,16 @@ struct MirrorTableView: View {
         } label: {
             Image(systemName: "arrow.up.arrow.down")
         }
-        .onChange(of: sort) { _, _ in Task { await reload() } }
+        .onChange(of: sort) { _, _ in
+            requestID = UUID()
+            Task { await reload() }
+        }
     }
 
     private func schedule() {
         searchTask?.cancel()
+        // Invalidate an in-flight page immediately, including during the debounce.
+        requestID = UUID()
         searchTask = Task {
             // No round trip here — this is a local index — so the debounce only exists to keep
             // a fast typist from re-querying on every keystroke.
@@ -158,57 +172,80 @@ struct MirrorTableView: View {
 
     private func reload() async {
         guard let mirror = session.mirror else { return }
+        let token = UUID(), requestedQuery = query, requestedSort = sort, requestedTable = table
+        requestID = token
+        loading = true
+        defer { if requestID == token { loading = false } }
         do {
+            let page: Page<Row>
             if let filter {
-                var matching: [Row] = []
-                var offset = 0
-                while true {
-                    let page = try await mirror.page(
-                        table: table,
-                        query: query.isEmpty ? nil : query,
-                        sort: sort,
+                let complete = try await PageTraversal.complete { offset in
+                    try await mirror.page(
+                        table: requestedTable,
+                        query: requestedQuery.isEmpty ? nil : requestedQuery,
+                        sort: requestedSort,
                         limit: 500,
                         offset: offset
                     )
-                    matching.append(contentsOf: page.items.filter(filter.includes))
-                    offset += page.items.count
-                    if !page.hasMore || offset >= 10_000 { break }
                 }
-                rows = matching
-                total = matching.count
+                let matching = complete.items.filter(filter.includes)
+                page = Page(items: matching, total: matching.count, limit: max(1, matching.count),
+                    offset: 0, hasMore: false, revision: complete.revision, fromDevice: complete.fromDevice)
             } else {
-                let page = try await mirror.page(
+                page = try await mirror.page(
                     table: table,
-                    query: query.isEmpty ? nil : query,
-                    sort: sort,
+                    query: requestedQuery.isEmpty ? nil : requestedQuery,
+                    sort: requestedSort,
                     limit: 80,
                     offset: 0
                 )
-                rows = page.items
-                total = page.total
+                try CataloguePageIntegrity.validate(page)
             }
+            guard requestID == token, query == requestedQuery, sort == requestedSort else { return }
+            rows = page.items
+            total = page.total
+            lastPage = page
+            loadedQuery = requestedQuery
+            loadedSort = requestedSort
             error = nil
+            // Two searches may both return 80 initial rows. Their visible continuation
+            // still belongs to a new committed catalogue, even when its count is equal.
+            committedGeneration = UUID()
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
+            guard requestID == token else { return }
             self.error = error.localizedDescription
         }
     }
 
     private func loadMore() async {
-        guard filter == nil, let mirror = session.mirror, rows.count < total else { return }
+        guard filter == nil, let mirror = session.mirror, rows.count < total, !loading,
+              loadedQuery == query, loadedSort == sort, let previous = lastPage else { return }
+        let token = requestID, offset = rows.count, requestedQuery = query, requestedSort = sort
+        loading = true
+        defer { if requestID == token { loading = false } }
         do {
             let page = try await mirror.page(
                 table: table,
-                query: query.isEmpty ? nil : query,
-                sort: sort,
+                query: requestedQuery.isEmpty ? nil : requestedQuery,
+                sort: requestedSort,
                 limit: 80,
-                offset: rows.count
+                offset: offset
             )
+            guard requestID == token, query == requestedQuery, sort == requestedSort else { return }
+            try CataloguePageIntegrity.validate(page)
+            guard page.revision == previous.revision else { throw PageTraversalError.changingRevision }
+            guard page.offset == offset, page.total == previous.total else { throw PageTraversalError.invalidProgress }
             rows.append(contentsOf: page.items)
+            lastPage = page
+        } catch PageTraversalError.changingRevision {
+            guard requestID == token else { return }
+            await reload()
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.
         } catch {
+            guard requestID == token else { return }
             self.error = error.localizedDescription
         }
     }

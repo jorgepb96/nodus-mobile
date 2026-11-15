@@ -17,12 +17,11 @@ public actor MutationOutbox {
         case accepted
         /// The server refused it. `detail` carries the reason it gave.
         case rejected
-        /// The owner's desktop has drained it out of the ledger and applied it.
+        /// The owner's desktop has applied it, confirmed by its ledger cursor or live receipt.
         ///
         /// One step further than `accepted` and one step short of readable: applying a change
-        /// writes it into the desktop's own SQLite, and nobody — the author included — reads it
-        /// back until that desktop republishes. Which is why this is a fourth state and not a
-        /// renaming of the third.
+        /// writes it into the desktop's own SQLite. Live consultation can read it immediately;
+        /// a published corpus needs a later republication. This state proves the write only.
         case delivered
     }
 
@@ -167,18 +166,77 @@ public actor MutationOutbox {
         )
     }
 
+    public func companionContentProjection(_ source:[String:[Row]]) throws -> [String:[Row]] {
+        let states=Dictionary(uniqueKeysWithValues:try items().map{($0.id,$0.state)})
+        var retained:[Mutation]=[]
+        for name in CompanionContentProjection.keys.keys.sorted() where source[name] != nil {
+            if let table=MutableTable(rawValue:name){retained.append(contentsOf:try retainedMutations(table:table))}
+        }
+        return CompanionContentProjection.apply(source,mutations:retained,states:states)
+    }
+
     /// Pending changes the user has already asked to send.
     ///
     /// The background flush reads this and never `pending(limit:)`, which is the whole
     /// difference between finishing a journey the user started and starting one for them. A
     /// note written on a plane and never sent stays on the device until they press the button,
     /// exactly as the Writing screen promises.
-    public func authorisedPending(limit: Int) throws -> [Mutation] {
-        try mutations(sql: """
+    public func authorisedPending(limit: Int, table: String? = nil) throws -> [Mutation] {
+        if let table {
+            return try mutations(sql: """
+                SELECT payload FROM outbox
+                WHERE state = ? AND authorised = 1 AND tbl = ?
+                ORDER BY created_at, rowid LIMIT ?
+                """, arguments: [State.pending.rawValue, table, limit])
+        }
+        return try mutations(sql: """
             SELECT payload FROM outbox
             WHERE state = ? AND authorised = 1
-            ORDER BY created_at LIMIT ?
+            ORDER BY created_at, rowid LIMIT ?
             """, arguments: [State.pending.rawValue, limit])
+    }
+    /// A dependent document/job must wait for proof that every preceding
+    /// authorised content save reached the owner, including an unconfirmed ACK.
+    public func companionParentsReady() throws -> Bool {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM outbox WHERE authorised = 1 AND state IN (?, ?)",
+                arguments: [State.pending.rawValue, State.accepted.rawValue]) == 0
+        }
+    }
+
+    /// Complete authored rows for encrypted recovery/export, including frozen payloads,
+    /// receipt cursors and local send decisions. Never imports or authorises a new grant.
+    public func authoringRecoveryData(vaultId: String) throws -> Data? {
+        guard !vaultId.isEmpty else { throw DesktopBridgeError.permissionDenied }
+        return try dbQueue.read { db in
+            let rows = try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox ORDER BY created_at, rowid")
+            guard !rows.isEmpty else { return nil }
+            let items: [JSONValue] = try rows.map { row in
+                let id: String = row["id"], table: String = row["tbl"], payload: String = row["payload"], state: String = row["state"]
+                guard let bytes = payload.data(using: .utf8), let decoded = try? JSONDecoder.nodus.decode(Mutation.self, from: bytes),
+                      decoded.id == id, decoded.table == table, State(rawValue: state) != nil else { throw DesktopBridgeError.malformedResponse }
+                var fields: [String: JSONValue] = ["id": .string(id), "table": .string(table), "payload": .string(payload), "state": .string(state)]
+                for column in ["title", "detail", "created_at", "sent_at", "delivered_at", "entity_kind"] {
+                    let value: String? = row[column]; fields[column] = value.map(JSONValue.string) ?? .null
+                }
+                let authorised: Int = row["authorised"], cursor: Int? = row["cursor"]
+                fields["authorised"] = .bool(authorised == 1)
+                fields["cursor"] = cursor.map { .int(Int64($0)) } ?? .null
+                return .object(fields)
+            }
+            return try JSONEncoder.nodus.encode(JSONValue.object(["version": .int(1), "vaultId": .string(vaultId),
+                "spaceId": .string(spaceId), "items": .array(items)]))
+        }
+    }
+
+    /// A replacement grant needs a new explicit send decision. Payloads and receipts survive.
+    @discardableResult
+    public func suspendAuthorisedForRelink() throws -> Int {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE outbox SET authorised = 0 WHERE authorised = 1 AND state IN (?, ?)",
+                arguments: [State.pending.rawValue, State.accepted.rawValue])
+            return db.changesCount
+        }
     }
 
     /// Record that the user pressed send. Returns how many changes that covered.
@@ -274,6 +332,57 @@ public actor MutationOutbox {
                 )
             }
         }
+    }
+
+    /// Commit all receipt outcomes atomically. A confirmed canonical write is delivered;
+    /// a legacy or relay acceptance still waits for a ledger acknowledgement.
+    /// Returns newly delivered items, so repeated receipts cannot announce a write twice.
+    @discardableResult
+    public func recordReceipt(_ receipt: MutationReceipt, for submitted: [Mutation]) throws -> [Item] {
+        let ids = receipt.accepted + receipt.duplicate + receipt.rejected.map(\.id)
+        try receipt.validate(submittedIDs: submitted.map(\.id))
+        let sent = Dictionary(uniqueKeysWithValues: submitted.map { ($0.id, $0) })
+        let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
+        return try dbQueue.write { db in
+            // Do not let a receipt release another locally queued, unauthorised change.
+            for id in ids {
+                guard let row = try GRDB.Row.fetchOne(db, sql: "SELECT authorised, state, payload FROM outbox WHERE id = ?", arguments: [id]),
+                      let authorised: Int = row["authorised"], authorised == 1,
+                      let state: String = row["state"],
+                      [State.pending.rawValue, State.accepted.rawValue, State.delivered.rawValue].contains(state),
+                      let payload: String = row["payload"], let bytes = payload.data(using: .utf8),
+                      let expected = sent[id],
+                      try JSONEncoder.nodus.encode(JSONDecoder.nodus.decode(Mutation.self, from: bytes)) == JSONEncoder.nodus.encode(expected) else {
+                    throw TransportError.malformedResponse(expected: "a receipt for authorised outbox items")
+                }
+            }
+            for id in receipt.accepted + receipt.duplicate {
+                try db.execute(sql: """
+                    UPDATE outbox SET state = ?, sent_at = COALESCE(sent_at, ?), detail = NULL, cursor = ?
+                    WHERE id = ? AND state != ?
+                    """, arguments: [State.accepted.rawValue, now, receipt.cursor, id, State.delivered.rawValue])
+            }
+            for rejection in receipt.rejected {
+                let sentence = rejection.errorDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+                try db.execute(sql: "UPDATE outbox SET state = ?, detail = ? WHERE id = ? AND state != ?",
+                               arguments: [State.rejected.rawValue, sentence?.isEmpty == false ? sentence : Self.explain(rejection.reason), rejection.id, State.delivered.rawValue])
+            }
+            var landed: [Item] = []
+            for id in receipt.applied ?? [] {
+                try db.execute(sql: "UPDATE outbox SET state = ?, delivered_at = ? WHERE id = ? AND state = ?",
+                               arguments: [State.delivered.rawValue, now, id, State.accepted.rawValue])
+                if db.changesCount > 0, let row = try GRDB.Row.fetchOne(db, sql: "SELECT * FROM outbox WHERE id = ?", arguments: [id]),
+                   let item = Self.item(from: row) { landed.append(item) }
+            }
+            return landed
+        }
+    }
+
+    /// Re-send an older cursorless Bridge acceptance with its original idempotency key.
+    /// Only previously authorised submissions qualify; pending drafts never do.
+    public func acceptedWithoutCursor(limit: Int = 100) throws -> [Mutation] {
+        try mutations(sql: "SELECT payload FROM outbox WHERE state = ? AND cursor IS NULL AND authorised = 1 ORDER BY created_at LIMIT ?",
+                      arguments: [State.accepted.rawValue, max(1, min(100, limit))])
     }
 
     /// Move to `delivered` everything the owner's cursor has now passed.

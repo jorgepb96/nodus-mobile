@@ -1,5 +1,6 @@
 import Foundation
 import NodusAI
+import NodusKit
 import Testing
 @testable import Nodus
 
@@ -7,6 +8,92 @@ import Testing
 /// exists. The model is asked for that in the prompt; these are what make it true.
 @Suite("Report chat")
 struct PageChatTests {
+    @Test("Mac payload keeps eight turns and page instructions without mobile model selection")
+    @MainActor func macPayload() throws {
+        let history=(0..<10).map { JSONValue.object(["role":.string("user"),"content":.string("turn-\($0)")]) }
+        let prompt=PageChatPrompt.system(language:"es")+"\n[1] Texto del informe"
+        let value=PageChatLiveWire.payload(history:history,prompt:prompt,selection:NativeLiveChatOptions.defaultSelection)
+        let object=try #require(value.objectValue),messages=try #require(object["messages"]?.arrayValue)
+        #expect(messages.count == 9)
+        #expect(messages.first?.objectValue?["content"] == .string("turn-2"))
+        #expect(messages.last?.objectValue?["content"] == .string(prompt))
+        #expect(messages.allSatisfy{$0.objectValue?["role"] != .string("system")})
+        #expect(object["model"] == nil && object["systemPromptId"] == nil)
+        #expect(object["webSearch"] == .string("off"))
+        #expect(object["selection"]?.objectValue?["documents"] == .bool(true))
+    }
+    @Test("Mac cursor replays do not append duplicate text and replace is authoritative")
+    @MainActor func macEventReplay() throws {
+        let id=UUID().uuidString
+        func event(_ sequence:Int,_ channel:String,_ request:String,_ text:String)throws->DesktopBridgeJob.Event {
+            try JSONDecoder.nodus.decode(DesktopBridgeJob.Event.self,from:JSONEncoder.nodus.encode(JSONValue.object(["sequence":.int(Int64(sequence)),"channel":.string(channel),"args":.array([.string(request),.string(text)])])))
+        }
+        var stream=PageChatLiveWire.Stream()
+        let first=try event(1,"research:chatStream:delta",id,"Texto ")
+        stream.apply(first,requestId:id);stream.apply(first,requestId:id)
+        stream.apply(try event(2,"research:chatStream:delta",id,"parcial"),requestId:id)
+        #expect(stream.text == "Texto parcial")
+        stream.apply(try event(3,"research:chatStream:replace",id,"Texto validado [1]"),requestId:id)
+        stream.apply(try event(4,"research:chatStream:delta",UUID().uuidString,"ajeno"),requestId:id)
+        #expect(stream.text == "Texto validado [1]")
+        #expect(stream.sequence == 4)
+    }
+
+    @Test("cancel reuses the complete stream request identity before any late submission")
+    @MainActor func macCancelWire() async throws {
+        let id=UUID().uuidString,args:[JSONValue]=[.string(id),PageChatLiveWire.payload(history:[],prompt:"[1] source",selection:NativeLiveChatOptions.defaultSelection)]
+        let cancelled=try JSONDecoder.nodus.decode(DesktopBridgeJob.self,from:JSONEncoder.nodus.encode(JSONValue.object(["id":.string(UUID().uuidString),"vaultId":.string("fixture"),"method":.string("researchChatStream"),"state":.string("cancelled"),"nextSequence":.int(0),"events":.array([]),"result":.null])))
+        var sent:[[JSONValue]]=[]
+        for _ in 0..<2 {
+            _=try await PageChatLiveWire.cancelRequest(vaultId:"fixture",args:args,id:id) { vault,method,actual,key in
+                #expect(vault == "fixture" && method == "researchChatStream" && key == id)
+                sent.append(actual);return cancelled
+            }
+        }
+        #expect(sent == [args,args], "Lost acknowledgement retries retain the same body and tombstone identity")
+        do {
+            _=try await PageChatLiveWire.cancelRequest(vaultId:"fixture",args:args,id:UUID().uuidString) { _,_,_,_ in
+                Issue.record("A different request must never be canceled");return cancelled
+            }
+            Issue.record("Expected the mismatched identity to reject")
+        } catch {}
+    }
+    @Test("missing Mac preflight leaves the page question and quotation untouched")
+    @MainActor func macPreflightKeepsDraft() throws {
+        let root=URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {try? FileManager.default.removeItem(at:root)}
+        let connection=AppModel.Connection(origin:"https://page-chat-preflight.test",spaceId:UUID().uuidString,spaceName:"Fixture",serverName:"Mac",role:.owner)
+        let session=SpaceSession(connection:connection,client:NodusClient(address:ServerAddress(trusted:connection.origin),token:"fixture",cache:ResponseCache(directory:root)),mirrorDirectory:root)
+        defer {UserDefaults.standard.removeObject(forKey:"ai-execution-mode:\(connection.id)")}
+        let id=UUID().uuidString,subject=PageChatSubject(id:id,title:"Fixture",session:session)
+        let store=PageChatStore.shared(for:subject.storeKey)
+        defer {PageChatStore.forget(subject.storeKey)}
+        store.draft="Pregunta conservada";store.quote("Cita conservada")
+        store.ask(store.draft,passages:[],subject:subject,ai:AISettings())
+        #expect(store.draft == "Pregunta conservada" && store.quoted == "Cita conservada")
+        #expect(store.turns.isEmpty && !store.isThinking && !store.canResumeMac)
+        #expect(store.failure == BetaAIFeatures.macRequiredMessage)
+    }
+    @Test("Mac corpus citations survive without a matching local catalog while invalid page anchors are removed")
+    func macCitationsRemainAuthoritative() {
+        let text = "Mac evidence (nodus://idea/mac-only-source), page [1] and [999]."
+        let local = CitationCatalog(entries: [])
+        #expect(!CitationValidator.validate(prose: text, against: local).rejected.isEmpty)
+        let answer = PageChatLiveWire.validatedMacAnswer(text, passageCount: 2)
+        #expect(answer.contains("nodus://idea/mac-only-source"))
+        #expect(answer.contains("[1]"))
+        #expect(!answer.contains("[999]"))
+    }
+
+    @Test("conversation keys separate owning storage and report identities without delimiter collisions")
+    func conversationScopeKeys() {
+        let a = PageChatSubject.storeKey(storageId: "vault-a", reportId: "same-report")
+        #expect(a != PageChatSubject.storeKey(storageId: "vault-b", reportId: "same-report"))
+        #expect(a != PageChatSubject.storeKey(storageId: "vault-a", reportId: "other-report"))
+        #expect(PageChatSubject.storeKey(storageId: "a:b", reportId: "c") != PageChatSubject.storeKey(storageId: "a", reportId: "b:c"))
+        #expect(a == PageChatSubject.storeKey(storageId: "vault-a", reportId: "same-report"))
+    }
+
     @Test("the passages an answer cites come back in the order they were used")
     func referencedInOrder() {
         let prose = "It says so in [3], and again in [1]. Also [3] once more."

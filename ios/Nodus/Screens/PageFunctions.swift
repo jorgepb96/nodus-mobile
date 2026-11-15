@@ -128,15 +128,18 @@ private struct PageFunctionsModifier: ViewModifier {
         // would depend on `isOpen` and neither the wheel's chat seat nor a selection in the
         // prose would open the modal. `@State` never showed this because SwiftUI's own storage
         // invalidates the view whether or not anybody read it.
-        let isChatOpen = invite.isOpen
+        let isChatOpen = !NodusLinkPolicy.readOnly && invite.isOpen
 
         return ScrollViewReader { proxy in
             measured(content)
                 .environment(search)
                 // Only where there is a conversation to invite anybody into. Absent, the prose
                 // shows no "ask about this" in its selection menu rather than an inert one.
-                .environment(chat == nil ? nil : invite)
-                .onChange(of: chat?.id, initial: true) { _, id in invite.reportId = id }
+                .environment(NodusLinkPolicy.readOnly || chat == nil ? nil : invite)
+                .onChange(of: chat?.storeKey, initial: true) { previous, key in
+                    if previous != nil, previous != key { invite.isOpen = false }
+                    invite.reportId = key
+                }
                 // An inset rather than an overlay: the bar has to move with the keyboard, and
                 // the last paragraph of a report has to stay readable while it is on screen.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -188,7 +191,7 @@ private struct PageFunctionsModifier: ViewModifier {
                     scroll(proxy, to: PageSearchAnchor(path: target.path), anchor: .center)
                 }
                 .nodusSheet(isPresented: Binding(get: { isChatOpen }, set: { invite.isOpen = $0 })) {
-                    if let chat {
+                    if !NodusLinkPolicy.readOnly, let chat {
                         PageChatSheet(
                             subject: chat,
                             passages: chatPassages,
@@ -197,6 +200,7 @@ private struct PageFunctionsModifier: ViewModifier {
                             // tapping a reference is to see the paragraph it names.
                             onReveal: { passage in search.reveal(passage.path) }
                         )
+                        .id(chat.storeKey)
                     }
                 }
                 // Every scrollable in the shell reports its position, including the ones on
@@ -241,7 +245,7 @@ private struct PageFunctionsModifier: ViewModifier {
         var functions: [PageFunction] = []
         if preferences.showsScrollToTop { functions.append(.top) }
         if search.hasContent, !search.isOpen { functions.append(.find) }
-        functions.append(.chat)
+        if !NodusLinkPolicy.readOnly { functions.append(.chat) }
         return functions
     }
 

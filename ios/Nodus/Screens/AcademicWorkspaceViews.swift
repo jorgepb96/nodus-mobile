@@ -1,6 +1,7 @@
 import NodusKit
 import NodusUI
 import SwiftUI
+import UIKit
 
 // MARK: - Ideas
 
@@ -21,6 +22,8 @@ struct IdeasWorkspaceView: View {
     @State private var isLoading = false
     @State private var error: String?
     @State private var loadTask: Task<Void, Never>?
+    @State private var requestID = UUID()
+    @State private var loadedQueryID: String?
 
     private var section: String { NodusRoute.ideas.rawValue }
     private var loadID: String { "\(query)|\(type)|\(sort.rawValue)|\(session.publishedRevision ?? "local")" }
@@ -50,19 +53,21 @@ struct IdeasWorkspaceView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-ideas")
     }
 
     private var catalogue: some View {
         ScrollView {
-            LazyVStack(spacing: sizeClass == .regular ? 1 : 9) {
-                if sizeClass == .regular, !(page?.items.isEmpty ?? true) { ideaTableHeader }
+            LazyVStack(spacing: (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular) ? 1 : 9) {
+                if (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular), !(page?.items.isEmpty ?? true) { ideaTableHeader }
                 if let error {
                     NodusNotice(tone: .blocked, title: "Could not load Ideas", message: LocalizedStringKey(error))
+                    Button("Retry") { Task { await reload() } }.buttonStyle(.bordered).disabled(isLoading)
                 }
                 ForEach(page?.items ?? []) { item in
                     Button { open(row(for: item)) } label: {
-                        IdeaWorkspaceRow(item: item, dense: sizeClass == .regular, accent: session.accent)
+                        IdeaWorkspaceRow(item: item, dense: (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular), accent: session.accent)
                     }
                     .buttonStyle(NodusCardButtonStyle())
                     .accessibilityIdentifier("workspace-open-ideas-\(safeIdentifier(item.id))")
@@ -73,6 +78,7 @@ struct IdeasWorkspaceView: View {
                         else { Label("Load more", systemImage: "arrow.down.circle") }
                     }
                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
+                    .disabled(isLoading || loadedQueryID != loadID)
                     .padding(.vertical, 12)
                 }
                 if page?.items.isEmpty == true, !isLoading, error == nil {
@@ -89,6 +95,13 @@ struct IdeasWorkspaceView: View {
         .nodusPageFunctions(accent: session.accent)
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) { catalogueControls }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if page?.fromDevice == true {
+                Label("Sin conexión · contenido de este dispositivo", systemImage: "iphone")
+                    .font(.caption).foregroundStyle(.secondary).padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial)
+            }
+        }
         .task(id: loadID) { await reload() }
         .refreshable { await reload() }
     }
@@ -169,21 +182,42 @@ struct IdeasWorkspaceView: View {
         }
     }
 
-    private func loadMore() async { await fetch(offset: page?.items.count ?? 0, replacing: false) }
+    private func loadMore() async {
+        guard !isLoading, loadedQueryID == loadID, page?.hasMore == true else { return }
+        await fetch(offset: page?.items.count ?? 0, replacing: false)
+    }
 
     private func fetch(offset: Int, replacing: Bool) async {
+        let currentQueryID = loadID
+        let currentRequest = UUID()
+        requestID = currentRequest
         isLoading = true
-        defer { isLoading = false }
+        if replacing, loadedQueryID != currentQueryID { page = nil }
+        defer { if requestID == currentRequest { isLoading = false } }
         do {
             let loaded = try await session.client.workspaceIdeas(
                 in: session.connection.spaceId, query: query, type: type, sort: sort, limit: 80, offset: offset
             )
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, loadID == currentQueryID, requestID == currentRequest else { return }
+            guard loaded.offset == offset else { throw PageTraversalError.invalidProgress }
+            try CataloguePageIntegrity.validate(Page(
+                items: loaded.items, total: loaded.total, limit: loaded.limit, offset: loaded.offset,
+                hasMore: loaded.hasMore, revision: loaded.revision ?? "unversioned"
+            ))
+            guard loaded.items.allSatisfy({ !$0.id.isEmpty }), Set(loaded.items.map(\.id)).count == loaded.items.count else {
+                throw PageTraversalError.invalidProgress
+            }
             if replacing || page == nil {
                 page = loaded
             } else if let prior = page {
-                page = IdeaWorkspacePage.combining(prior, loaded)
+                do {
+                    page = try IdeaWorkspacePage.combining(prior, loaded)
+                } catch PageTraversalError.changingRevision {
+                    await fetch(offset: 0, replacing: true)
+                    return
+                }
             }
+            loadedQueryID = currentQueryID
             error = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", workspaceTabs.tabs(in: section).isEmpty {
@@ -193,6 +227,7 @@ struct IdeasWorkspaceView: View {
         } catch where error.isCancellation {
             // A newer filter superseded this page.
         } catch {
+            guard loadID == currentQueryID, requestID == currentRequest else { return }
             self.error = error.localizedDescription
         }
     }
@@ -211,6 +246,7 @@ struct IdeasWorkspaceView: View {
             "statement": .string(item.statement), "work_count": .int(Int64(item.workCount)),
             "connection_count": .int(Int64(item.connectionCount)), "max_confidence": .double(item.maxConfidence),
             "themes": .array(item.themes.map(JSONValue.string)),
+            "mobileSourceScope": item.mobileSourceScope.map(JSONValue.string) ?? .null,
         ])
     }
 }
@@ -229,9 +265,13 @@ private struct IdeaWorkspaceRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 NodusChip(key: item.type, tint: SemanticTone.ideaType(item.type, fallback: accent)).frame(width: 90, alignment: .leading)
-                Text(item.workCount.formatted()).frame(width: 58, alignment: .trailing)
-                Text(item.connectionCount.formatted()).frame(width: 58, alignment: .trailing)
-                Text(item.maxConfidence, format: .percent.precision(.fractionLength(0))).frame(width: 64, alignment: .trailing)
+                if item.mobileSourceScope == "authoredText" {
+                    Text("Texto propio").foregroundStyle(.secondary).frame(width: 204, alignment: .trailing)
+                } else {
+                    Text(item.workCount.formatted()).frame(width: 58, alignment: .trailing)
+                    Text(item.connectionCount.formatted()).frame(width: 58, alignment: .trailing)
+                    Text(item.maxConfidence, format: .percent.precision(.fractionLength(0))).frame(width: 64, alignment: .trailing)
+                }
             }
             .font(.caption.monospacedDigit())
             .padding(.horizontal, 14).padding(.vertical, 10)
@@ -241,9 +281,12 @@ private struct IdeaWorkspaceRow: View {
                 HStack { Text(item.label).font(.subheadline.weight(.semibold)).lineLimit(2); Spacer(); NodusChip(key: item.type, tint: SemanticTone.ideaType(item.type, fallback: accent)) }
                 Text(item.statement).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                 HStack(spacing: 12) {
-                    Label("\(item.workCount)", systemImage: "books.vertical")
-                    Label("\(item.connectionCount)", systemImage: "link")
-                    Text(item.maxConfidence, format: .percent.precision(.fractionLength(0)))
+                    if item.mobileSourceScope == "authoredText" { Label("Texto propio", systemImage: "iphone") }
+                    else {
+                        Label("\(item.workCount)", systemImage: "books.vertical")
+                        Label("\(item.connectionCount)", systemImage: "link")
+                        Text(item.maxConfidence, format: .percent.precision(.fractionLength(0)))
+                    }
                 }.font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             }.desktopContentRow(accent: accent)
         }
@@ -260,13 +303,14 @@ private struct IdeaWorkspaceDocument: View {
     let onOpenArgument: (ArgumentSeed) -> Void
 
     @State private var showingAssistant = false
+    @State private var relatedRecord: AcademicRelatedRecord?
     @State private var confirmingDelete = false
     @State private var actionState: String?
     @State private var isActing = false
 
     private var id: String { row.string("global_id") ?? "" }
     private var label: String { row.text("label") ?? id }
-    private var canAct: Bool { !session.isDemo && session.connection.role.canSendChanges }
+    private var canAct: Bool { !session.isDemo && session.canAuthor }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -275,8 +319,14 @@ private struct IdeaWorkspaceDocument: View {
                 session: session, collection: Collections["ideas"], row: row,
                 onOpenRelated: { collection, related in
                     if collection.path == "ideas" { onOpenRelated(related) }
+                    else { relatedRecord = AcademicRelatedRecord(collection: collection, row: related) }
                 }
             )
+        }
+        .navigationDestination(item: $relatedRecord) { target in
+            RowDetailView(session: session, collection: target.collection, row: target.row)
+                .toolbar(.visible, for: .navigationBar)
+                .navigationBarTitleDisplayMode(.inline)
         }
         .nodusSheet(isPresented: $showingAssistant) { NavigationStack { ChatTab(session: session, showsModalDone: true) } }
         .confirmationDialog("Delete this idea in Desktop?", isPresented: $confirmingDelete, titleVisibility: .visible) {
@@ -289,14 +339,14 @@ private struct IdeaWorkspaceDocument: View {
         VStack(spacing: 5) {
             HStack(spacing: 8) {
                 actionButton("Argument map", image: "arrow.triangle.branch") { onOpenArgument(ArgumentSeed(id: id, label: label)) }
-                actionButton("Assistant", image: "sparkles") { showingAssistant = true }
-                actionButton("Save to Notes", image: "note.text.badge.plus", disabled: !canAct || isActing) { Task { await run(.ideaSaveToNotes) } }
-                actionButton("Delete", image: "trash", tint: .red, disabled: !canAct || isActing) { confirmingDelete = true }
+                if !NodusLinkPolicy.readOnly { actionButton("Assistant", image: "sparkles") { showingAssistant = true } }
+                if !NodusLinkPolicy.readOnly { actionButton("Save to Notes", image: "note.text.badge.plus", disabled: !canAct || isActing) { Task { await run(.ideaSaveToNotes) } }
+                actionButton("Delete", image: "trash", tint: .red, disabled: !canAct || isActing) { confirmingDelete = true } }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, NodusSpace.page).padding(.vertical, 8)
             if let actionState { Text(actionState).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).frame(maxWidth: .infinity, alignment: .leading) }
-            else if !canAct { Text("Vault-changing actions require a writable space connected to Desktop.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).frame(maxWidth: .infinity, alignment: .leading) }
+            else if !canAct && !NodusLinkPolicy.readOnly { Text("Vault-changing actions require a writable space connected to Desktop.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).frame(maxWidth: .infinity, alignment: .leading) }
         }
         .background(Color(uiColor: .systemBackground).opacity(0.96))
         .overlay(alignment: .bottom) { Divider() }
@@ -319,10 +369,10 @@ private struct IdeaWorkspaceDocument: View {
             let result = try await session.client.createSpaceAction(
                 idempotencyKey: "ios:\(kind.rawValue):\(session.connection.spaceId):\(id):\(session.publishedRevision ?? "local")",
                 kind: kind, payload: ["ideaId": .string(id)], inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
+                executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            actionState = result.duplicate ? String(localized: "This action was already queued.") : String(localized: "Queued for Desktop · \(result.action.status.rawValue)")
-            if kind == .ideaDelete { workspaceTabs.close(tabId, in: NodusRoute.ideas.rawValue) }
+            actionState = result.action.receiptMessage
+            if kind == .ideaDelete, ![.failed, .refused, .cancelled].contains(result.action.status) { workspaceTabs.close(tabId, in: NodusRoute.ideas.rawValue) }
         } catch { actionState = error.localizedDescription }
     }
 }
@@ -337,7 +387,7 @@ struct AuthorsWorkspaceView: View {
     let onOpenIdea: (Row) -> Void
     let onOpenArgument: (ArgumentSeed) -> Void
 
-    @State private var page: AuthorWorkspacePage?
+    @State private var page: AuthorWorkspaceCatalogue?
     @State private var query = ""
     @State private var sort: AuthorWorkspaceSort = .surname
     @State private var synthesis: AuthorSynthesisFilter = .all
@@ -347,6 +397,8 @@ struct AuthorsWorkspaceView: View {
     @State private var isLoading = false
     @State private var error: String?
     @State private var loadTask: Task<Void, Never>?
+    @State private var requestID = UUID()
+    @State private var loadedQueryID: String?
 
     private var section: String { NodusRoute.authors.rawValue }
     private var loadID: String { "\(query)|\(sort.rawValue)|\(synthesis.rawValue)|\(session.publishedRevision ?? "local")" }
@@ -368,7 +420,7 @@ struct AuthorsWorkspaceView: View {
                                 session: session, row: row,
                                 isSaved: savedIds.contains(row.string("author_id") ?? ""),
                                 onToggleSaved: { toggleSaved(row.string("author_id") ?? "") },
-                                onOpenIdea: onOpenIdea, onOpenArgument: onOpenArgument
+                                onOpenIdea: onOpenIdea, onOpenAuthor: openAuthor, onOpenArgument: onOpenArgument
                             )
                         }
                     }
@@ -378,24 +430,42 @@ struct AuthorsWorkspaceView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-authors")
         .task { loadSaved() }
     }
 
     private var catalogue: some View {
         ScrollView {
-            LazyVStack(spacing: sizeClass == .regular ? 1 : 9) {
-                if sizeClass == .regular, !visible.isEmpty { authorTableHeader }
-                if let error { NodusNotice(tone: .blocked, title: "Could not load Authors", message: LocalizedStringKey(error)) }
+            LazyVStack(spacing: (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular) ? 1 : 9) {
+                if (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular), !visible.isEmpty { authorTableHeader }
+                if let error {
+                    NodusNotice(tone: .blocked, title: "Could not load Authors", message: LocalizedStringKey(error))
+                    Button("Retry") { Task { await fetch(replacing: true) } }
+                        .buttonStyle(.bordered).disabled(isLoading)
+                }
                 ForEach(visible) { item in
                     AuthorWorkspaceRow(
-                        item: item, dense: sizeClass == .regular, accent: session.accent,
+                        item: item, dense: (UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular), accent: session.accent,
                         saved: savedIds.contains(item.authorId), selected: selected.contains(item.authorId),
                         onSelect: { toggleSelection(item.authorId) }, onSave: { toggleSaved(item.authorId) },
                         onOpen: { open(item) }
                     )
                 }
-                if visible.isEmpty, !isLoading, error == nil {
+                if page?.hasMore == true {
+                    Button {
+                        Task { await fetch(replacing: false) }
+                    } label: {
+                        HStack {
+                            if isLoading { ProgressView() }
+                            Text("Load more authors")
+                        }.frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading || loadedQueryID != loadID)
+                    .accessibilityIdentifier("authors-load-more")
+                }
+                if visible.isEmpty, page?.hasMore != true, !isLoading, error == nil {
                     ContentUnavailableView(savedOnly ? "No saved authors" : (query.isEmpty ? "No authors" : "No matches"), systemImage: "person.2")
                         .padding(.vertical, 48)
                 }
@@ -405,7 +475,7 @@ struct AuthorsWorkspaceView: View {
         .nodusDismissesKeyboard().nodusPageFunctions(accent: session.accent).nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) { authorControls }
         .task(id: loadID) { await reload() }
-        .refreshable { await fetch() }
+        .refreshable { await fetch(replacing: true) }
     }
 
     private var authorControls: some View {
@@ -414,24 +484,15 @@ struct AuthorsWorkspaceView: View {
                 title: "Authors", subtitle: "\((page?.total ?? 0).formatted()) authors · saved state remains local to this device",
                 systemImage: "person.2", accent: session.accent
             )
-            HStack(spacing: 8) {
-                NodusSearchField(text: $query, prompt: "Search authors", accent: session.accent, isBusy: isLoading)
-                Menu {
-                    Picker("Synthesis", selection: $synthesis) {
-                        Text("All").tag(AuthorSynthesisFilter.all); Text("With synthesis").tag(AuthorSynthesisFilter.with); Text("Without synthesis").tag(AuthorSynthesisFilter.without)
-                    }
-                    Picker("Sort", selection: $sort) {
-                        Text("Surname").tag(AuthorWorkspaceSort.surname); Text("Name").tag(AuthorWorkspaceSort.name); Text("Works").tag(AuthorWorkspaceSort.works); Text("Ideas").tag(AuthorWorkspaceSort.ideas); Text("Connections").tag(AuthorWorkspaceSort.connections)
-                    }
-                } label: { Image(systemName: "line.3.horizontal.decrease") }
-                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
-                Button { savedOnly.toggle() } label: { Image(systemName: savedOnly ? "bookmark.fill" : "bookmark") }
-                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Saved authors only")
-                Button { openMatrix() } label: { Image(systemName: "square.grid.3x3") }
-                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Synthesis matrix")
-                if !selected.isEmpty {
-                    ShareLink(item: selectedMarkdown) { Image(systemName: "square.and.arrow.up") }
-                        .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Export selected authors")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    NodusSearchField(text: $query, prompt: "Search authors", accent: session.accent, isBusy: isLoading)
+                        .frame(minWidth: 140)
+                    authorActions
+                }
+                VStack(spacing: 8) {
+                    NodusSearchField(text: $query, prompt: "Search authors", accent: session.accent, isBusy: isLoading)
+                    HStack { Spacer(minLength: 0); authorActions }
                 }
             }
         }
@@ -439,12 +500,44 @@ struct AuthorsWorkspaceView: View {
         .background(Color(uiColor: .systemBackground).opacity(0.97))
     }
 
+    private var authorActions: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Picker("Synthesis", selection: $synthesis) {
+                    Text("All").tag(AuthorSynthesisFilter.all); Text("With synthesis").tag(AuthorSynthesisFilter.with); Text("Without synthesis").tag(AuthorSynthesisFilter.without)
+                }
+                Picker("Sort", selection: $sort) {
+                    Text("Surname").tag(AuthorWorkspaceSort.surname); Text("Name").tag(AuthorWorkspaceSort.name); Text("Works").tag(AuthorWorkspaceSort.works); Text("Ideas").tag(AuthorWorkspaceSort.ideas); Text("Connections").tag(AuthorWorkspaceSort.connections)
+                }
+            } label: { Image(systemName: "line.3.horizontal.decrease") }
+                .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
+                .accessibilityLabel("Filter and sort authors").accessibilityIdentifier("authors-filter-sort")
+            Button { savedOnly.toggle() } label: { Image(systemName: savedOnly ? "bookmark.fill" : "bookmark") }
+                .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Saved authors only").accessibilityIdentifier("authors-saved-only")
+            Button { openMatrix() } label: { Image(systemName: "square.grid.3x3") }
+                .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Synthesis matrix").accessibilityIdentifier("authors-synthesis-matrix")
+            if !selected.isEmpty {
+                ShareLink(item: selectedMarkdown) { Image(systemName: "square.and.arrow.up") }
+                    .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Export selected authors").accessibilityIdentifier("authors-export-selection")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+
     private var authorTableHeader: some View {
-        HStack(spacing: 12) {
-            Color.clear.frame(width: 34); Text("AUTHOR").frame(maxWidth: .infinity, alignment: .leading)
-            Text("WORKS").frame(width: 58, alignment: .trailing); Text("IDEAS").frame(width: 58, alignment: .trailing)
-            Text("LINKS").frame(width: 58, alignment: .trailing); Color.clear.frame(width: 34)
-        }.font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 8)
+        HStack(spacing: 10) {
+            Color.clear.frame(width: 44)
+            HStack(spacing: 12) {
+                Text("AUTHOR").frame(maxWidth: .infinity, alignment: .leading)
+                Text("WORKS").frame(width: 58, alignment: .trailing)
+                Text("IDEAS").frame(width: 58, alignment: .trailing)
+                Text("LINKS").frame(width: 58, alignment: .trailing)
+            }
+            Color.clear.frame(width: 44)
+        }
+        .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+        .padding(.horizontal, 10).padding(.vertical, 8)
     }
 
     private func reload() async {
@@ -452,29 +545,60 @@ struct AuthorsWorkspaceView: View {
         loadTask = Task {
             if !query.isEmpty { try? await Task.sleep(for: .milliseconds(260)) }
             guard !Task.isCancelled else { return }
-            await fetch()
+            await fetch(replacing: true)
         }
         await loadTask?.value
     }
 
-    private func fetch() async {
-        isLoading = true; defer { isLoading = false }
+    private func fetch(replacing: Bool) async {
+        guard replacing || (!isLoading && loadedQueryID == loadID && page?.hasMore == true) else { return }
+        let currentQueryID = loadID
+        let currentRequest = UUID()
+        let offset = replacing ? 0 : (page?.nextOffset ?? 0)
+        requestID = currentRequest
+        isLoading = true
+        if replacing, loadedQueryID != currentQueryID { page = nil }
+        defer { if requestID == currentRequest { isLoading = false } }
         do {
-            page = try await session.client.workspaceAuthors(
-                in: session.connection.spaceId, query: query, sort: sort, synthesis: synthesis, limit: 100
+            let loaded = try await session.client.workspaceAuthors(
+                in: session.connection.spaceId, query: query, sort: sort, synthesis: synthesis,
+                limit: 100, offset: offset
             )
+            guard !Task.isCancelled, loadID == currentQueryID, requestID == currentRequest else { return }
+            if replacing || page == nil {
+                page = try AuthorWorkspaceCatalogue(firstPage: loaded)
+            } else {
+                do {
+                    try page?.append(loaded)
+                } catch AuthorWorkspaceCatalogue.PagingError.snapshotChanged {
+                    // Refresh atomically rather than displaying rows from two revisions.
+                    await fetch(replacing: true)
+                    return
+                }
+            }
+            loadedQueryID = currentQueryID
             error = nil
 #if DEBUG
             if ProcessInfo.processInfo.environment["NODUS_SHOW_TAB_DEMO"] == "1", workspaceTabs.tabs(in: section).isEmpty {
                 for item in (page?.items ?? []).prefix(2) { open(item) }
             }
 #endif
-        } catch where error.isCancellation {} catch { self.error = error.localizedDescription }
+        } catch where error.isCancellation {} catch {
+            guard loadID == currentQueryID, requestID == currentRequest else { return }
+            self.error = error.localizedDescription
+        }
     }
 
     private func open(_ item: AuthorWorkspaceItem) {
-        let row = Row(["author_id": .string(item.authorId), "name": .string(item.name), "display_name": .string(item.fullName), "affiliation": item.affiliation.map(JSONValue.string) ?? .null])
-        workspaceTabs.open(WorkspaceTab(id: "authors:\(item.authorId)", title: item.fullName, systemImage: "person.crop.circle", kind: .author, payload: .row(row)), in: section)
+        openAuthor(Row(["author_id": .string(item.authorId), "name": .string(item.name), "display_name": .string(item.fullName), "affiliation": item.affiliation.map(JSONValue.string) ?? .null]))
+    }
+
+    private func openAuthor(_ row: Row) {
+        guard let id = row.string("author_id") else { return }
+        workspaceTabs.open(WorkspaceTab(
+            id: "authors:\(id)", title: row.string("display_name") ?? row.string("name") ?? id,
+            systemImage: "person.crop.circle", kind: .author, payload: .row(row)
+        ), in: section)
     }
 
     private func openMatrix() {
@@ -519,8 +643,10 @@ private struct AuthorWorkspaceRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Button(action: onSelect) { Image(systemName: selected ? "checkmark.circle.fill" : "circle").frame(width: 24, height: 44) }
+            Button(action: onSelect) { Image(systemName: selected ? "checkmark.circle.fill" : "circle").frame(width: 44, height: 44) }
                 .buttonStyle(.plain).foregroundStyle(selected ? accent : Color.secondary).accessibilityLabel("Select \(item.fullName)")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("workspace-author-select-\(safeIdentifier(item.authorId))")
             Button(action: onOpen) {
                 Group {
                     if dense {
@@ -547,7 +673,7 @@ private struct AuthorWorkspaceRow: View {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier("workspace-open-author-row-\(safeIdentifier(item.authorId))")
-            Button(action: onSave) { Image(systemName: saved ? "bookmark.fill" : "bookmark").frame(width: 34, height: 44) }
+            Button(action: onSave) { Image(systemName: saved ? "bookmark.fill" : "bookmark").frame(width: 44, height: 44) }
                 .buttonStyle(.plain).foregroundStyle(saved ? accent : Color.secondary).accessibilityLabel(saved ? "Remove saved author" : "Save author")
                 .accessibilityIdentifier("workspace-author-save-\(saved ? "saved" : "unsaved")-\(safeIdentifier(item.authorId))")
         }
@@ -557,11 +683,13 @@ private struct AuthorWorkspaceRow: View {
 }
 
 private struct AuthorWorkspaceDocument: View {
+    @Environment(AISettings.self) private var ai
     let session: SpaceSession
     let row: Row
     let isSaved: Bool
     let onToggleSaved: () -> Void
     let onOpenIdea: (Row) -> Void
+    let onOpenAuthor: (Row) -> Void
     let onOpenArgument: (ArgumentSeed) -> Void
 
     @State private var dossier: AuthorWorkspaceDossier?
@@ -569,13 +697,16 @@ private struct AuthorWorkspaceDocument: View {
     @State private var error: String?
     @State private var actionState: String?
     @State private var showingAssistant = false
+    @State private var localSynthesis: AuthorDossierSynthesis?
+    @State private var generationTask: Task<Void, Never>?
+    private var sourceRequest: JSONValue { CompanionAcademicGeneration.sourceRequest(kind: "author", author: id, language: CompanionAcademicGeneration.language) }
 
     private var id: String { row.string("author_id") ?? "" }
     private var canAct: Bool {
 #if DEBUG
         if ProcessInfo.processInfo.environment["NODUS_UI_TEST_ACTIONS"] == "1" { return true }
 #endif
-        return !session.isDemo && session.connection.role.canSendChanges
+        return !session.isDemo && session.canAuthor
     }
 
     var body: some View {
@@ -601,13 +732,17 @@ private struct AuthorWorkspaceDocument: View {
 
                 FlowLayout(spacing: 8) {
                     Button(action: onToggleSaved) { Label(isSaved ? "Saved" : "Save", systemImage: isSaved ? "bookmark.fill" : "bookmark") }
-                    Button { showingAssistant = true } label: { Label("Assistant", systemImage: "sparkles") }
+                    if session.canAuthor { Button { showingAssistant = true } label: { Label("Assistant", systemImage: "sparkles") } }
                     if let idea = dossier.ideas.first { Button { onOpenArgument(ArgumentSeed(id: idea.globalId, label: idea.label)) } label: { Label("Argument map", systemImage: "point.3.connected.trianglepath.dotted") } }
-                    Button { Task { await generateSynthesis() } } label: { Label(dossier.synthesis == nil ? "Generate synthesis" : "Regenerate synthesis", systemImage: "wand.and.stars") }.disabled(!canAct)
+                    if session.canAuthor {
+                    Button { generationTask = Task { defer { generationTask = nil }; await generateSynthesis() } } label: { Label(dossier.synthesis == nil && localSynthesis == nil ? "Generate synthesis" : "Regenerate synthesis", systemImage: "wand.and.stars") }.disabled(!canAct || generationTask != nil)
+                    if generationTask != nil { Button("Cancelar") { generationTask?.cancel() } }
+                    if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: sourceRequest) }
+                    }
                 }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                 if let actionState { Text(actionState).font(.caption).foregroundStyle(.secondary) }
 
-                if let synthesis = dossier.synthesis { synthesisPanel(synthesis) }
+                if let synthesis = freshestSynthesis(dossier.synthesis) { synthesisPanel(synthesis) }
                 authorWorks("Works", dossier.works)
                 authorWorks("Edited works", dossier.editedWorks)
                 authorIdeas(dossier.ideas)
@@ -629,7 +764,50 @@ private struct AuthorWorkspaceDocument: View {
     }
 
     private func authorWorks(_ title: LocalizedStringKey, _ works: [AuthorDossierWork]) -> some View {
-        Group { if !works.isEmpty { VStack(alignment: .leading, spacing: 8) { NodusSectionLabel(title, count: works.count); VStack(spacing: 0) { ForEach(works) { work in VStack(alignment: .leading, spacing: 3) { Text(work.title).font(.subheadline.weight(.medium)); HStack { if let year = work.year { Text(String(year)) }; NodusChip(work.role, tint: session.accent.nodusReadable); if !work.attributed { NodusChip("Not attributed", tint: .nodusCaution) } }.font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8); Divider().opacity(0.3) } }.padding(.horizontal, NodusSpace.cardPadding).nodusGlass(NodusGlass(.thin, tint: session.accent)) } } }
+        Group {
+            if !works.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    NodusSectionLabel(title, count: works.count)
+                    VStack(spacing: 0) {
+                        ForEach(works) { work in
+                            NavigationLink {
+                                WorkByIdView(session: session, nodusId: work.nodusId)
+                                    .toolbar(.visible, for: .navigationBar)
+                                    .navigationBarTitleDisplayMode(.inline)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(work.title).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading)
+                                        FlowLayout(spacing: 6) {
+                                            if let year = work.year { Text(String(year)) }
+                                            NodusChip(authorRoleLabel(work.role), tint: session.accent.nodusReadable)
+                                            if !work.attributed { NodusChip(key: "Not attributed", tint: .nodusCaution) }
+                                        }.font(.caption).foregroundStyle(.secondary)
+                                    }.frame(maxWidth: .infinity, alignment: .leading)
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                                }
+                                .frame(minHeight: 44).padding(.vertical, 8).contentShape(Rectangle())
+                            }
+                            .buttonStyle(NodusCardButtonStyle())
+                            .accessibilityIdentifier("author-open-work-\(safeIdentifier(work.nodusId))")
+                            Divider().opacity(0.3)
+                        }
+                    }
+                    .padding(.horizontal, NodusSpace.cardPadding)
+                    .nodusGlass(NodusGlass(.thin, tint: session.accent))
+                }
+            }
+        }
+    }
+
+    /// Roles are schema identifiers, not display strings. Translate only that vocabulary;
+    /// names, work titles and any unfamiliar role from a newer Desktop stay intact.
+    private func authorRoleLabel(_ role: String) -> String {
+        switch role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "author": String(localized: "Author")
+        case "editor": String(localized: "Editor")
+        default: role
+        }
     }
 
     private func authorIdeas(_ ideas: [AuthorDossierIdea]) -> some View {
@@ -637,30 +815,82 @@ private struct AuthorWorkspaceDocument: View {
     }
 
     private func authorRelations(_ relations: [AuthorDossierRelation]) -> some View {
-        Group { if !relations.isEmpty { VStack(alignment: .leading, spacing: 8) { NodusSectionLabel("Relationships", count: relations.count); VStack(spacing: 0) { ForEach(relations) { relation in HStack { VStack(alignment: .leading) { Text(relation.name).font(.subheadline.weight(.medium)); Text(relation.sharedThemes.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }; Spacer(); NodusChip(RowDetailView.relationLabel(relation.type), tint: session.accent.nodusReadable); Text(relation.weight, format: .number.precision(.fractionLength(1))).font(.caption.monospacedDigit()) }.padding(.vertical, 8); Divider().opacity(0.3) } }.padding(.horizontal, NodusSpace.cardPadding).nodusGlass(NodusGlass(.thin, tint: session.accent)) } } }
+        Group {
+            if !relations.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    NodusSectionLabel("Relationships", count: relations.count)
+                    VStack(spacing: 0) {
+                        ForEach(relations) { relation in
+                            Button {
+                                onOpenAuthor(Row(["author_id": .string(relation.authorId), "name": .string(relation.name)]))
+                            } label: {
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(relation.name).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading)
+                                        if !relation.sharedThemes.isEmpty {
+                                            Text(relation.sharedThemes.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        FlowLayout(spacing: 6) {
+                                            NodusChip(RowDetailView.relationLabel(relation.type), tint: session.accent.nodusReadable)
+                                            Text(relation.weight, format: .number.precision(.fractionLength(1))).font(.caption.monospacedDigit())
+                                        }
+                                    }.frame(maxWidth: .infinity, alignment: .leading)
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                                }
+                                .frame(minHeight: 44).padding(.vertical, 8).contentShape(Rectangle())
+                            }
+                            .buttonStyle(NodusCardButtonStyle())
+                            .accessibilityIdentifier("author-open-related-\(safeIdentifier(relation.authorId))")
+                            Divider().opacity(0.3)
+                        }
+                    }
+                    .padding(.horizontal, NodusSpace.cardPadding)
+                    .nodusGlass(NodusGlass(.thin, tint: session.accent))
+                }
+            }
+        }
     }
 
     private func load() async {
         guard !id.isEmpty else { return }
         isLoading = true; defer { isLoading = false }
-        do { dossier = try await session.client.authorWorkspaceDossier(id, in: session.connection.spaceId); error = nil }
+        do {
+            dossier = try await session.client.authorWorkspaceDossier(id, in: session.connection.spaceId)
+            if session.connection.desktopPairingId != nil, let value = try await CompanionAcademicGeneration.saved(session: session, request: sourceRequest) {
+                localSynthesis = try JSONDecoder.nodus.decode(AuthorDossierSynthesis.self, from: JSONEncoder.nodus.encode(value))
+            }
+            error = nil
+        }
         catch where error.isCancellation {} catch { self.error = error.localizedDescription }
     }
 
     private func generateSynthesis() async {
         guard canAct else { return }
         do {
-            let result = try await session.client.createSpaceAction(
-                idempotencyKey: "ios:author-synthesis:\(session.connection.spaceId):\(id):\(session.publishedRevision ?? "local")",
-                kind: .authorSynthesisGenerate, payload: ["authorId": .string(id)], inputRevision: session.publishedRevision,
-                in: session.connection.spaceId
-            )
-            actionState = result.duplicate ? String(localized: "This synthesis is already queued.") : String(localized: "Synthesis queued for Desktop.")
+            if session.aiExecutionMode == .autonomous {
+                guard session.connection.desktopPairingId != nil else { throw APIError(status: 409, code: "autonomous_synthesis_pairing_required", message: "Vincula este workspace para conservar sus fuentes de síntesis en el móvil, o selecciona expresamente el modo Live.") }
+                let value = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: sourceRequest) { actionState = $0 }
+                localSynthesis = try JSONDecoder.nodus.decode(AuthorDossierSynthesis.self, from: JSONEncoder.nodus.encode(value))
+                return
+            }
+            let action = try await CompanionLiveGenerationAction.run(session: session, kind: .authorSynthesisGenerate,
+                payload: ["authorId": .string(id)]) { actionState = $0 }
+            actionState = action.receiptMessage
+            if action.status == .applied {
+                guard let value = action.result else { throw DesktopBridgeError.malformedResponse }
+                localSynthesis = try JSONDecoder.nodus.decode(AuthorDossierSynthesis.self, from: JSONEncoder.nodus.encode(value))
+            }
         } catch { actionState = error.localizedDescription }
+    }
+    private func freshestSynthesis(_ remote: AuthorDossierSynthesis?) -> AuthorDossierSynthesis? {
+        guard let localSynthesis else { return remote }; guard let remote else { return localSynthesis }
+        return remote.generatedAt > localSynthesis.generatedAt ? remote : localSynthesis
     }
 }
 
 private struct AuthorSynthesisMatrixView: View {
+    @Environment(AISettings.self) private var ai
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let session: SpaceSession
     let onOpenIdea: (Row) -> Void
 
@@ -668,6 +898,10 @@ private struct AuthorSynthesisMatrixView: View {
     @State private var isLoading = false
     @State private var error: String?
     @State private var generated: [String: String] = [:]
+    @State private var localCells: [String: SynthesisMatrixCell] = [:]
+    @State private var generating: Set<String> = []
+    @State private var selectedTheme = ""
+    private var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     var body: some View {
         Group {
@@ -677,18 +911,34 @@ private struct AuthorSynthesisMatrixView: View {
             else { ProgressView().tint(session.accent) }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: "\(session.publishedRevision ?? ""):\(session.companionResultRevision):\(session.companionPublicationRevision)") { await load() }
     }
 
     private func matrixBody(_ matrix: SynthesisMatrix) -> some View {
         VStack(spacing: 0) {
             DesktopPageHeader(title: "Authors × themes", subtitle: "\(matrix.authors.count) authors · \(matrix.themes.count) themes · grounded cells only", systemImage: "square.grid.3x3", accent: session.accent)
                 .padding(NodusSpace.page).background(Color(uiColor: .systemBackground).opacity(0.97))
-            ScrollView([.horizontal, .vertical]) {
+            if phone {
+                Picker("Tema", selection: $selectedTheme) { ForEach(matrix.themes) { Text($0.label).tag($0.themeId) } }
+                    .pickerStyle(.menu).padding(.horizontal, 16).frame(minHeight: 44)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        if let theme = matrix.themes.first(where: { $0.themeId == selectedTheme }) ?? matrix.themes.first {
+                            ForEach(matrix.authors) { author in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(author.name).font(.headline).fixedSize(horizontal: false, vertical: true)
+                                    Text(theme.label).font(.subheadline).foregroundStyle(.secondary)
+                                    matrixCell(author: author, theme: theme, matrix: matrix)
+                                }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                    }.padding(16)
+                }
+            } else { ScrollView([.horizontal, .vertical]) {
                 Grid(alignment: .topLeading, horizontalSpacing: 1, verticalSpacing: 1) {
                     GridRow {
                         Text("AUTHOR").matrixHeader(width: 190)
-                        ForEach(matrix.themes) { Text($0.label).matrixHeader(width: 210) }
+                        ForEach(matrix.themes) { Text($0.label).matrixHeader(width: 260) }
                     }
                     ForEach(matrix.authors) { author in
                         GridRow {
@@ -698,41 +948,67 @@ private struct AuthorSynthesisMatrixView: View {
                         }
                     }
                 }.padding(NodusSpace.page)
-            }
+            } }
         }
     }
 
     private func matrixCell(author: SynthesisMatrixAuthor, theme: SynthesisMatrixTheme, matrix: SynthesisMatrix) -> some View {
-        let cell = matrix.cells.first { $0.authorId == author.authorId && $0.themeId == theme.themeId }
         let key = "\(author.authorId):\(theme.themeId)"
+        let cell = localCells[key] ?? matrix.cells.first { $0.authorId == author.authorId && $0.themeId == theme.themeId }
         return VStack(alignment: .leading, spacing: 6) {
             if let cell {
                 HStack { NodusChip("\(cell.ideaCount) ideas", tint: session.accent.nodusReadable, capitalises: false); Spacer() }
-                if let stance = cell.stance { Text(stance).font(.caption).lineLimit(4) }
-                else { Button("Generate stance") { Task { await generate(author.authorId, theme.themeId, key: key) } }.font(.caption.weight(.semibold)).disabled(session.isDemo || !session.connection.role.canSendChanges) }
-                if let first = cell.ideas.first { Button(first.label) { onOpenIdea(Row(["global_id": .string(first.globalId), "label": .string(first.label), "type": .string(first.type)])) }.font(.caption2).lineLimit(1) }
+                if let stance = cell.stance { Text(stance).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                Button(cell.stance == nil ? "Generate stance" : "Regenerate synthesis") { Task { await generate(author.authorId, theme.themeId, key: key) } }.font(.caption.weight(.semibold)).disabled(session.isDemo || !session.canAuthor || generating.contains(key))
+                ForEach(cell.ideas) { idea in Button(idea.label) { onOpenIdea(Row(["global_id": .string(idea.globalId), "label": .string(idea.label), "type": .string(idea.type)])) }.font(.caption).fixedSize(horizontal: false, vertical: true).frame(minHeight: 44, alignment: .leading) }
+                if session.connection.desktopPairingId != nil { CompanionAcademicDownloadButton(session: session, request: sourceRequest(author.authorId, theme.themeId)) }
             } else { Text("—").foregroundStyle(.tertiary) }
-            if let status = generated[key] { Text(status).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+            if let status = generated[key] { Text(status).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
-        .padding(10).frame(width: 210, height: 120, alignment: .topLeading)
+        .padding(10).frame(width: phone ? nil : 260, alignment: .topLeading).frame(maxWidth: phone ? .infinity : nil, alignment: .leading)
         .background(Color(uiColor: .systemBackground))
     }
 
     private func load() async {
         isLoading = true; defer { isLoading = false }
-        do { matrix = try await session.client.synthesisMatrix(in: session.connection.spaceId); error = nil }
+        do {
+            let snapshot = try await session.client.synthesisMatrixSnapshot(in: session.connection.spaceId)
+            let value = snapshot.matrix; matrix = value
+            localCells = [:]
+            if selectedTheme.isEmpty { selectedTheme = value.themes.first?.themeId ?? "" }
+            if session.connection.desktopPairingId != nil {
+                for cell in value.cells {
+                    // A fresh canonical Mac cell wins over an acknowledged
+                    // local preview, including later edits on another device.
+                    if let saved = try await CompanionAcademicGeneration.saved(session: session, request: sourceRequest(cell.authorId, cell.themeId), onlyUnpublished: !snapshot.fromCache) {
+                        localCells[cell.id] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(saved))
+                    }
+                }
+            }
+            error = nil
+        }
         catch where error.isCancellation {} catch { self.error = error.localizedDescription }
     }
 
     private func generate(_ authorId: String, _ themeId: String, key: String) async {
+        guard !generating.contains(key) else { return }; generating.insert(key); defer { generating.remove(key) }
         do {
-            _ = try await session.client.createSpaceAction(
-                idempotencyKey: "ios:matrix:\(session.connection.spaceId):\(authorId):\(themeId):\(session.publishedRevision ?? "local")",
-                kind: .authorsMatrixGenerate, payload: ["authorId": .string(authorId), "themeId": .string(themeId)],
-                inputRevision: session.publishedRevision, in: session.connection.spaceId
-            )
-            generated[key] = "Queued"
+            if session.aiExecutionMode == .autonomous {
+                guard session.connection.desktopPairingId != nil else { throw APIError(status: 409, code: "autonomous_synthesis_pairing_required", message: "Vincula este workspace para conservar sus fuentes de síntesis en el móvil, o selecciona expresamente el modo Live.") }
+                let value = try await CompanionAcademicGeneration(settings: ai).run(session: session, request: sourceRequest(authorId, themeId)) { generated[key] = $0 }
+                localCells[key] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(value)); return
+            }
+            let action = try await CompanionLiveGenerationAction.run(session: session, kind: .authorsMatrixGenerate,
+                payload: ["authorId": .string(authorId), "themeId": .string(themeId)]) { generated[key] = $0 }
+            generated[key] = action.receiptMessage
+            if action.status == .applied {
+                guard let value = action.result else { throw DesktopBridgeError.malformedResponse }
+                localCells[key] = try JSONDecoder.nodus.decode(SynthesisMatrixCell.self, from: JSONEncoder.nodus.encode(value))
+            }
         } catch { generated[key] = error.localizedDescription }
+    }
+    private func sourceRequest(_ authorId: String, _ themeId: String) -> JSONValue {
+        CompanionAcademicGeneration.sourceRequest(kind: "matrix", author: authorId, theme: themeId, language: CompanionAcademicGeneration.language)
     }
 }
 
@@ -744,16 +1020,28 @@ private extension View {
 }
 
 private extension IdeaWorkspacePage {
-    static func combining(_ left: Self, _ right: Self) -> Self {
-        let existing = Set(left.items.map(\.id))
-        let appended = left.items + right.items.filter { !existing.contains($0.id) }
+    static func combining(_ left: Self, _ right: Self) throws -> Self {
+        guard left.revision == right.revision, left.fromDevice == right.fromDevice,
+              left.total == right.total else { throw PageTraversalError.changingRevision }
+        guard right.offset == left.items.count else { throw PageTraversalError.invalidProgress }
+        var existing = Set(left.items.map(\.id))
+        for item in right.items {
+            guard !item.id.isEmpty, existing.insert(item.id).inserted else { throw PageTraversalError.invalidProgress }
+        }
+        let appended = left.items + right.items
         return Self(
             items: appended, total: right.total, offset: 0, limit: appended.count,
-            hasMore: right.hasMore, revision: right.revision
+            hasMore: right.hasMore, revision: right.revision, fromDevice: right.fromDevice
         )
     }
 }
 
 private func safeIdentifier(_ value: String) -> String {
     value.replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "-", options: .regularExpression)
+}
+
+private struct AcademicRelatedRecord: Hashable, Identifiable {
+    let collection: CollectionDescriptor
+    let row: Row
+    var id: String { "\(collection.path):\(row.string(collection.idField) ?? "")" }
 }

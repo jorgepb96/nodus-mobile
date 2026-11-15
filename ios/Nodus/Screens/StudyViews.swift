@@ -149,9 +149,9 @@ struct ScheduleView: View {
         }
         needsMirror = false
         do {
-            periods = try await mirror.page(table: "study_schedule_periods", limit: 60).items
-            cells = try await mirror.page(table: "study_schedule_cells", limit: 500).items
-            let subjectRows = try await mirror.page(table: "study_subjects", limit: 200).items
+            periods = try await mirror.allRows(table: "study_schedule_periods")
+            cells = try await mirror.allRows(table: "study_schedule_cells")
+            let subjectRows = try await mirror.allRows(table: "study_subjects")
         // `id`, not `subject_id`. Every study and teaching table names its primary key `id`
         // (migrations.ts:1573 onwards) — the same mistake that once made nine collections
         // unopenable, still alive here: the dictionary was always empty, so every cell in
@@ -294,7 +294,7 @@ struct FlashcardsView: View {
         defer { isLoading = false }
         guard let collection = Collections["study-flashcards"] else { return }
         do {
-            cards = try await session.client.list(collection, in: session.connection.spaceId, limit: 200).items
+            cards = try await session.client.allItems(collection, in: session.connection.spaceId)
         } catch let apiError as APIError where apiError.isNotPublished {
             cards = []
         } catch where error.isCancellation {
@@ -305,109 +305,99 @@ struct FlashcardsView: View {
     }
 }
 
-/// The question bank, with the answer folded away until asked for.
+/// A complete question catalogue with stable identities, native filters and original dossiers.
 struct QuestionBankView: View {
     let session: SpaceSession
-
     @State private var questions: [Row] = []
     @State private var query = ""
-    @State private var revealed: Set<Int> = []
+    @State private var revealed = Set<String>()
+    @State private var status = ""
+    @State private var difficulty = ""
+    @State private var questionType = ""
+    @State private var favoritesOnly = false
     @State private var isLoading = true
     @State private var error: String?
-
-    private var filtered: [(offset: Int, row: Row)] {
+    private struct Entry: Identifiable { let id: String; let row: Row }
+    private var filtered: [Entry] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return Array(questions.enumerated())
-            .filter { needle.isEmpty || $0.element.searchableText.lowercased().contains(needle) }
-            .map { (offset: $0.offset, row: $0.element) }
+        return questions.compactMap { row in
+            guard let id = row.string("id"), needle.isEmpty || row.searchableText.lowercased().contains(needle),
+                  status.isEmpty || row.string("status") == status,
+                  difficulty.isEmpty || row.string("difficulty") == difficulty,
+                  questionType.isEmpty || (row.string("question_type") ?? row.string("type")) == questionType,
+                  !favoritesOnly || row["favorite"]?.boolValue == true else { return nil }
+            return Entry(id: id, row: row)
+        }
     }
-
     var body: some View {
         List {
-            ForEach(filtered, id: \.offset) { entry in
-                VStack(alignment: .leading, spacing: 8) {
+            ForEach(filtered) { entry in
+                VStack(alignment: .leading, spacing: 12) {
                     Text(entry.row.text("prompt") ?? entry.row.text("title") ?? String(localized: "Question"))
-                        .font(.callout.weight(.medium))
-
-                    HStack(spacing: 8) {
-                        if let kind = entry.row.text("kind") {
-                            Text(kind).font(.caption2)
-                                .padding(.horizontal, 7).padding(.vertical, 2)
-                                .background(session.accent.opacity(0.15), in: Capsule())
+                        .font(.callout.weight(.medium)).lineLimit(5).fixedSize(horizontal: false, vertical: true)
+                    FlowLayout(spacing: 8) {
+                        ForEach(["question_type", "difficulty", "cognitive_level", "status"], id: \.self) { key in
+                            if let text = entry.row.text(key) { NodusChip(StudyOriginalMetadata.label(text), tint: session.accent, capitalises: false) }
                         }
-                        if let difficulty = entry.row.text("difficulty") {
-                            Text(difficulty).font(.caption2).foregroundStyle(.secondary)
-                        }
+                        if entry.row["favorite"]?.boolValue == true { Image(systemName: "star.fill").foregroundStyle(session.accent).accessibilityLabel("Favorita") }
                     }
-
-                    if revealed.contains(entry.offset) {
-                        if let answer = entry.row.text("answer") ?? entry.row.text("solution") {
-                            Text(answer).font(.footnote).textSelection(.enabled)
-                        }
-                        if let explanation = entry.row.text("explanation") {
-                            Text(explanation).font(.caption).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Button("Show answer") {
-                            withAnimation { _ = revealed.insert(entry.offset) }
-                        }
-                        .font(.caption)
-                        .tint(session.accent)
+                    if revealed.contains(entry.id) {
+                        if let answer = (entry.row.embeddedJSON("answer_json") ?? entry.row.embeddedJSON("answer"))?.objectValue {
+                            CorpusProse(StudyChatQuestionContent.answerText(answer), accent: session.accent, session: session)
+                        } else if let text = entry.row.text("answer") ?? entry.row.text("solution") { CorpusProse(text, accent: session.accent, session: session) }
+                        if let explanation = entry.row.text("explanation") { CorpusProse(explanation, accent: session.accent, session: session) }
                     }
-                }
-                .padding(.vertical, 5)
-                .listRowBackground(Color.clear)
+                    HStack(spacing: 20) {
+                        Button(revealed.contains(entry.id) ? "Ocultar respuesta" : "Mostrar respuesta") {
+                            if revealed.contains(entry.id) { revealed.remove(entry.id) } else { revealed.insert(entry.id) }
+                        }.frame(minHeight: 44).buttonStyle(.borderless)
+                        NavigationLink {
+                            if session.connection.desktopPairingId != nil {
+                                StudyChatOriginalView(kind: "question", id: entry.id, session: session)
+                            } else { RowDetailView(session: session, collection: Collections["study-questions"], row: entry.row) }
+                        } label: { Label("Abrir", systemImage: "arrow.up.right.square").frame(minHeight: 44) }
+                        .buttonStyle(.borderless)
+                    }.font(.subheadline)
+                }.padding(.vertical, 8).listRowBackground(Color.clear)
             }
-
-            if isLoading {
-                HStack { Spacer(); ProgressView("Loading questions…"); Spacer() }
-                    .listRowBackground(Color.clear)
-            }
-
+            if isLoading { ProgressView("Loading questions…").frame(maxWidth: .infinity).listRowBackground(Color.clear) }
             if let error {
-                NodusNotice(tone: .blocked, title: "Could not load questions", message: LocalizedStringKey(error))
-                    .listRowBackground(Color.clear)
+                NodusNotice(tone: .blocked, title: "Could not load questions", message: LocalizedStringKey(error)).listRowBackground(Color.clear)
+                Button("Retry") { Task { await load() } }.frame(minHeight: 44).listRowBackground(Color.clear)
             }
-
-            if questions.isEmpty, !isLoading, error == nil {
-                ContentUnavailableView("No questions", systemImage: "checklist")
-                    .listRowBackground(Color.clear)
+            if filtered.isEmpty, !isLoading, error == nil {
+                ContentUnavailableView(questions.isEmpty ? "No questions" : "Sin coincidencias", systemImage: "checklist").listRowBackground(Color.clear)
             }
         }
-        .scrollContentBackground(.hidden)
-        .nodusDismissesKeyboard()
-        .listStyle(.plain)
+        .scrollContentBackground(.hidden).nodusDismissesKeyboard().listStyle(.plain)
         .listRowSeparatorTint(Color.nodusTertiaryText.opacity(0.45))
-        .navigationTitle("Question bank")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Question bank").navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
         .safeAreaInset(edge: .top) {
             VStack(spacing: 9) {
-                DesktopPageHeader(
-                    title: "Question bank",
-                    subtitle: "Published questions, answers and explanations",
-                    systemImage: "checklist",
-                    accent: session.accent
-                )
                 NodusSearchField(text: $query, prompt: "Filter questions", accent: session.accent)
-            }
-            .padding(.horizontal, NodusSpace.page)
-            .padding(.vertical, 9)
-            .background(Color(uiColor: .systemBackground).opacity(0.97))
+                HStack {
+                    Text("\(filtered.count) de \(questions.count)").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Menu {
+                        Picker("Estado", selection: $status) { Text("Todos").tag(""); ForEach(values("status"), id: \.self) { Text(StudyOriginalMetadata.label($0)).tag($0) } }
+                        Picker("Dificultad", selection: $difficulty) { Text("Todas").tag(""); ForEach(values("difficulty"), id: \.self) { Text(StudyOriginalMetadata.label($0)).tag($0) } }
+                        Picker("Tipo", selection: $questionType) { Text("Todos").tag(""); ForEach(values("question_type"), id: \.self) { Text(StudyOriginalMetadata.label($0)).tag($0) } }
+                        Toggle("Solo favoritas", isOn: $favoritesOnly)
+                        Button("Restablecer filtros") { status = ""; difficulty = ""; questionType = ""; favoritesOnly = false }
+                    } label: { Label("Filtros", systemImage: "line.3.horizontal.decrease").frame(minHeight: 44) }
+                }
+            }.padding(.horizontal, NodusSpace.page).padding(.vertical, 6)
+                .background(Color(uiColor: .systemBackground).opacity(0.97))
         }
         .task(id: session.publishedRevision) { await load() }
     }
-
+    private func values(_ key: String) -> [String] { Set(questions.compactMap { $0.text(key) }).sorted() }
     private func load() async {
-        isLoading = true
-        defer { isLoading = false }
-        guard let collection = Collections["study-questions"] else { return }
-        do {
-            questions = try await session.client.list(collection, in: session.connection.spaceId, limit: 200).items
-            error = nil
-        } catch {
-            questions = []
-            self.error = error.localizedDescription
-        }
+        isLoading = true; defer { isLoading = false }
+        guard let collection = Collections["study-questions"] else { error = "El catálogo de preguntas no está disponible."; return }
+        do { questions = try await session.client.allItems(collection, in: session.connection.spaceId); error = nil }
+        catch where error.isCancellation {}
+        catch { self.error = error.localizedDescription }
     }
 }

@@ -2,11 +2,11 @@ import Foundation
 
 /// One change on its way back to the owner's desktop.
 ///
-/// Nothing here takes effect when the server accepts it. The server is a relay with a ledger:
+/// A Cloud/Server relay stores the change in its ledger:
 /// it stores the change, the owner's machine applies it to the canonical SQLite, and the
 /// republication that follows is what everybody — including the author of the change — finally
-/// reads. If the owner does not open Nodus, nothing moves. Every screen that sends one of
-/// these has to say so.
+/// reads. A live Desktop Bridge instead applies the change to the vault and returns an
+/// explicit `applied` receipt. Acceptance alone never proves application.
 public struct Mutation: Sendable, Hashable, Codable {
     public enum Kind: String, Sendable, Codable {
         case upsert
@@ -26,6 +26,8 @@ public struct Mutation: Sendable, Hashable, Codable {
     public let assets: [AssetReference]
     public let schemaVersion: Int
     public let createdAt: Date
+    /// Local authoring provenance; the Mac independently confirms actual creation.
+    public let companionCreation: Bool?
 
     public init(
         id: String = UUID().uuidString,
@@ -36,7 +38,8 @@ public struct Mutation: Sendable, Hashable, Codable {
         row: [String: JSONValue]? = nil,
         assets: [AssetReference] = [],
         schemaVersion: Int,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        companionCreation: Bool = false
     ) {
         self.id = id
         self.clientId = clientId
@@ -47,6 +50,7 @@ public struct Mutation: Sendable, Hashable, Codable {
         self.assets = assets
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
+        self.companionCreation = companionCreation ? true : nil
     }
 
     public struct AssetReference: Sendable, Hashable, Codable {
@@ -77,6 +81,24 @@ public struct MutationReceipt: Sendable, Decodable {
     public let duplicate: [String]
     public let rejected: [Rejection]
     public let cursor: Int?
+    /// Canonical vault writes confirmed by Desktop Bridge. Absent from older bridges and
+    /// relays; never inferred from `accepted`, `duplicate`, or a successful HTTP status.
+    public let applied: [String]?
+
+    /// A receipt may change only the submitted batch, and each ID has exactly one outcome.
+    /// Validate before any local queue state changes, including legacy receipts.
+    public func validate(submittedIDs: [String]) throws {
+        let submitted = Set(submittedIDs)
+        let outcomes = accepted + duplicate + rejected.map(\.id)
+        let confirmed = applied ?? []
+        guard submitted.count == submittedIDs.count,
+              Set(outcomes).count == outcomes.count, Set(outcomes) == submitted,
+              Set(confirmed).count == confirmed.count,
+              Set(confirmed).isSubset(of: Set(accepted + duplicate)),
+              cursor == nil || cursor! >= 0 else {
+            throw TransportError.malformedResponse(expected: "a mutation receipt scoped to the submitted batch")
+        }
+    }
 }
 
 /// What the space at the other end will take in one change and in one request.
@@ -141,6 +163,9 @@ public extension Mutation {
 }
 
 public extension NodusClient {
+    /// Bridge applies at most 100 edits per atomic request. Relay defaults predate it.
+    var maximumMutationBatch: Int { hasDesktopBridge ? 100 : MutationLimits.unstated.maxBatch }
+
     /// `POST /api/v1/spaces/:id/mutations` — needs `write`.
     ///
     /// At most `capabilities.maxMutationBatch` per request (200 by default). Idempotent by
@@ -153,7 +178,9 @@ public extension NodusClient {
             body: body,
             contentType: "application/json"
         ))
-        return try decode(MutationReceipt.self, from: response)
+        let receipt = try decode(MutationReceipt.self, from: response)
+        try receipt.validate(submittedIDs: mutations.map(\.id))
+        return receipt
     }
 
     /// `GET /api/v1/spaces/:id/mutations?since=&limit=` — needs `own`.

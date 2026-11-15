@@ -80,6 +80,7 @@ public actor EmbeddingService {
         guard vector.count == identity.dim else {
             throw EmbeddingError.dimensionMismatch(expected: identity.dim, received: vector.count)
         }
+        guard vector.allSatisfy(\.isFinite) else { throw EmbeddingError.malformed("non-finite vector") }
         guard vector.contains(where: { $0 != 0 }) else {
             throw EmbeddingError.degenerateVector
         }
@@ -92,7 +93,8 @@ public actor EmbeddingService {
         provider: AIProvider,
         key: String
     ) async throws -> [Float] {
-        guard let base = provider.openAICompatibleBase else {
+        let model = identity.model.replacingOccurrences(of: "models/", with: "")
+        guard let base = provider == .gemini ? URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? model):batchEmbedContents") : provider.openAICompatibleBase?.appendingPathComponent("embeddings") else {
             throw EmbeddingError.unavailable(.unknownProvider(provider.rawValue))
         }
         var body: [String: JSONBody] = [
@@ -103,12 +105,14 @@ public actor EmbeddingService {
         // truncatable model into an exact match instead of a mismatch.
         if provider == .openai { body["dimensions"] = .int(identity.dim) }
 
-        var urlRequest = URLRequest(url: base.appendingPathComponent("embeddings"))
+        if provider == .gemini {
+            body = ["requests": .array([.object(["model": .string("models/\(model)"), "content": .object(["parts": .array([.object(["text": .string(input)])])])])])]
+        }
+        var urlRequest = URLRequest(url: base)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        for (name, value) in provider.authHeaders(key: key) {
-            urlRequest.setValue(value, forHTTPHeaderField: name)
-        }
+        if provider == .gemini { urlRequest.setValue(key, forHTTPHeaderField: "x-goog-api-key") }
+        else { for (name, value) in provider.authHeaders(key: key) { urlRequest.setValue(value, forHTTPHeaderField: name) } }
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await session.data(for: urlRequest)
@@ -120,14 +124,11 @@ public actor EmbeddingService {
             throw EmbeddingError.http(status: http.statusCode, message: message)
         }
 
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let entries = object["data"] as? [[String: Any]],
-            let first = entries.first,
-            let raw = first["embedding"] as? [Double]
-        else {
-            throw EmbeddingError.malformed("no embedding in the response")
-        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw EmbeddingError.malformed("no embedding response") }
+        let raw: [Double]?
+        if provider == .gemini { raw = (object["embeddings"] as? [[String: Any]])?.first?["values"] as? [Double] }
+        else { raw = (object["data"] as? [[String: Any]])?.first?["embedding"] as? [Double] }
+        guard let raw else { throw EmbeddingError.malformed("no embedding in the response") }
         return raw.map(Float.init)
     }
 }

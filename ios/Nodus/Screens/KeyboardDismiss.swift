@@ -1,6 +1,7 @@
 import SwiftUI
 #if os(iOS)
 import UIKit
+import WebKit
 #endif
 
 /// Putting the keyboard away, on every screen that can raise one.
@@ -144,6 +145,16 @@ private struct KeyboardDismissInstaller: UIViewRepresentable {
             shouldReceive touch: UITouch
         ) -> Bool {
             guard let touched = touch.view else { return true }
+            // WKContentView owns HTML inputs and rich editor selection. Treating it as
+            // empty background resigns its responder immediately after the input focuses.
+            var ancestor: UIView? = touched
+            while let candidate = ancestor {
+                // Native editing-menu actions sit outside the input row. Resigning on
+                // their taps closes the keyboard before Select All can finish editing.
+                if candidate is WKWebView || candidate is UIControl || candidate.accessibilityTraits.contains(.button) { return false }
+                ancestor = candidate.superview
+            }
+            if let window = installed, window.containsWebContent(at: touch.location(in: window), in: window) { return false }
             if touched.isInsideTextInput { return false }
             guard let window = installed, let responder = window.currentTextInput else { return true }
             // Sideways far enough to take in a trailing button and a leading glyph, and barely
@@ -165,6 +176,11 @@ private final class WindowWatcher: UIView {
 }
 
 private extension UIView {
+    func containsWebContent(at point: CGPoint, in window: UIWindow) -> Bool {
+        guard !isHidden, alpha > 0.01 else { return false }
+        if self is WKWebView, bounds.contains(convert(point, from: window)) { return true }
+        return subviews.contains { $0.containsWebContent(at: point, in: window) }
+    }
     /// The tap landed on a text field, or on something drawn inside one — SwiftUI's `TextField`
     /// is a `UITextField` with its own subviews, and a tap on the text lands on one of those.
     var isInsideTextInput: Bool {

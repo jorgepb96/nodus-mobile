@@ -337,7 +337,7 @@ struct GoalsView: View {
         defer { isLoading = false }
         guard let collection = Collections["study-goals"] else { return }
         do {
-            goals = try await session.client.list(collection, in: session.connection.spaceId, limit: PageBounds.maxLimit).items
+            goals = try await session.client.allItems(collection, in: session.connection.spaceId)
             error = nil
         } catch where error.isCancellation {
             // Superseded or let go of. Nothing failed, so nothing is reported.

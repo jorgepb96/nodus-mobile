@@ -3,27 +3,23 @@ import NodusKit
 import NodusUI
 import SwiftUI
 
-/// Search, with the search's own honesty attached.
-///
-/// Lexical search always works. Semantic search only works when this device can produce a query
-/// vector with the exact provider, model and dimension the vault was indexed with — and when it
-/// cannot, the server hands back lexical results plus a warning. That warning is shown. An empty
-/// semantic result is never presented as "the corpus does not discuss this", because a search
-/// that did not run tested nothing.
+/// A single query combines text matches and related records. Partial failures preserve
+/// the other result source; linked query embeddings run on Desktop, never on the phone.
 struct SearchScreen: View {
     @Environment(AISettings.self) private var ai
+    @Environment(\.nodusResidentRouteActive) private var routeActive
     let session: SpaceSession
 
     @State private var query = ""
     @State private var hits: [CorpusSearch.Hit] = []
     @State private var mode: CorpusSearch.Mode = .lexical
-    @State private var requestedMode: CorpusSearch.Mode = .lexical
     @State private var selectedKinds: Set<String> = []
     @State private var semanticWarning: String?
-    @State private var unavailability: EmbeddingService.Unavailability?
     @State private var isSearching = false
     @State private var error: String?
     @State private var searchTask: Task<Void, Never>?
+    @State private var searchGeneration = 0
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         ScrollView {
@@ -31,22 +27,13 @@ struct SearchScreen: View {
                 if let error {
                     NodusNotice(tone: .blocked, title: "Search failed", message: LocalizedStringKey(error))
                 }
-
-                if let message = warningMessage {
-                    NodusNotice(
-                        tone: .caution,
-                        title: "Lexical results",
-                        message: LocalizedStringKey(message),
-                        systemImage: "magnifyingglass"
-                    )
+                if let semanticWarning {
+                    NodusNotice(tone: .caution, title: "Search", message: LocalizedStringKey(semanticWarning), systemImage: "magnifyingglass")
                 }
-
                 if mode == .semantic, !hits.isEmpty {
-                    Label("Ranked by meaning", systemImage: "sparkle.magnifyingglass")
-                        .font(.caption)
-                        .foregroundStyle(session.accent)
+                    Label("Text and related results", systemImage: "sparkle.magnifyingglass")
+                        .font(.caption).foregroundStyle(session.accent.nodusReadable)
                 }
-
                 if availableKinds.count > 1 {
                     ScrollView(.horizontal) {
                         HStack(spacing: 7) {
@@ -55,245 +42,131 @@ struct SearchScreen: View {
                                 kindFilterButton(kind, title: Bundle.main.localizedString(forKey: kind, value: kind, table: nil).localizedCapitalized)
                             }
                         }
-                    }
-                    .scrollIndicators(.hidden)
+                    }.scrollIndicators(.hidden)
                 }
-
-                if query.isEmpty {
-                    idleState
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 54)
+                if trimmedQuery.count < 2 {
+                    idleState.frame(maxWidth: .infinity).padding(.vertical, 42)
                 } else {
-                    ForEach(Array(visibleHits.enumerated()), id: \.offset) { _, hit in
+                    ForEach(visibleHits) { hit in
                         if let reference = CorpusReference(hitId: hit.id) {
                             NavigationLink {
                                 CorpusReferenceView(session: session, reference: reference)
                             } label: {
                                 HitCell(hit: hit, source: source(of: hit), accent: session.accent)
                                     .desktopContentRow(accent: session.accent)
-                            }
-                            .buttonStyle(NodusCardButtonStyle())
+                            }.buttonStyle(NodusCardButtonStyle())
                         } else {
                             HitCell(hit: hit, source: source(of: hit), accent: session.accent)
                                 .desktopContentRow(accent: session.accent)
                         }
                     }
-
-                    if hits.isEmpty, !isSearching, error == nil {
-                        ContentUnavailableView(
-                            "No results",
-                            systemImage: "magnifyingglass",
-                            description: Text(emptyDescription)
-                        )
-                        .padding(.vertical, 42)
+                    if visibleHits.isEmpty, !isSearching, error == nil {
+                        ContentUnavailableView("No results", systemImage: "magnifyingglass",
+                            description: Text("Try different words or a shorter query."))
+                            .padding(.vertical, 42)
                     }
                 }
             }
             .padding(NodusSpace.page)
-            .frame(maxWidth: 980)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: 980).frame(maxWidth: .infinity)
             .nodusTopAnchor()
         }
         .nodusDismissesKeyboard()
         .nodusPageFunctions(accent: session.accent)
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
-        // The field is drawn here rather than with `.searchable`. This is a *root* screen of
-        // the tab bar, and the shell hides the navigation bar on those so the custom header can
-        // own the top — which took the search drawer with it and left the Search tab with
-        // nowhere to type.
         .safeAreaInset(edge: .top) {
             VStack(spacing: 8) {
-                DesktopPageHeader(
-                    title: "Search",
-                    subtitle: hits.isEmpty ? "Search every published surface" : "\(visibleHits.count) results",
-                    systemImage: "magnifyingglass",
-                    accent: session.accent
-                )
-                .padding(.horizontal, NodusSpace.page)
-                Picker("Search mode", selection: $requestedMode) {
-                    Text("Text").tag(CorpusSearch.Mode.lexical)
-                    Text("Semantic").tag(CorpusSearch.Mode.semantic)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, NodusSpace.page)
-                NodusSearchField(text: $query, prompt: prompt, accent: session.accent, isBusy: isSearching)
+                DesktopPageHeader(title: "Search", subtitle: hits.isEmpty ? "Find ideas, works and concepts" : "\(visibleHits.count) results",
+                    systemImage: "magnifyingglass", accent: session.accent)
                     .padding(.horizontal, NodusSpace.page)
+                NodusSearchField(text: $query, prompt: "Search ideas, works or concepts", accent: session.accent, isBusy: isSearching)
+                    .padding(.horizontal, NodusSpace.page)
+                    .accessibilityIdentifier("corpus-unified-search")
             }
-            // Match the fixed catalogue headers used by Ideas and Authors. Without a top
-            // inset the Search glyph and title touched the shell chrome while every other
-            // root workspace began on the shared page grid.
             .padding(.vertical, 9)
-            .frame(maxWidth: 980)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: 980).frame(maxWidth: .infinity)
             .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
         .onChange(of: query) { _, _ in schedule() }
-        .onChange(of: requestedMode) { _, _ in schedule(immediately: true) }
-        .task(id: session.publishedRevision) {
-            let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard current.count >= 2 else { return }
-            await run(current)
+        .task(id: session.publishedRevision) { if trimmedQuery.count >= 2 { schedule(immediately: true) } }
+        .onChange(of: routeActive) { _, active in
+            if active, trimmedQuery.count >= 2 { schedule(immediately: true) }
+            else if !active { stopSearch() }
         }
-        // A passage names its work by id and by nothing else, so without this every quotation
-        // in the list is a paragraph from nowhere. One round of requests covers the page.
+        .onDisappear { stopSearch() }
         .task(id: hits.map(\.id)) {
             let works = hits.compactMap(\.workId)
-            guard !works.isEmpty else { return }
-            await session.names.resolve(workIds: works)
+            if !works.isEmpty { await session.names.resolve(workIds: works) }
         }
     }
 
-    /// The work a hit was cut from, once its title is known.
-    private func source(of hit: CorpusSearch.Hit) -> String? {
-        hit.workId.flatMap { session.names.work($0) }
-    }
-
-    /// Why the search was lexical, in the phone's language.
-    ///
-    /// The sentence NodusAI builds is English: the package ships no string catalogue, and the
-    /// app is where the translations live. The three cases that have a Spanish form are said
-    /// here; anything else falls back to the package's own words rather than to silence.
-    private var warningMessage: String? {
-        switch unavailability {
-        case .missingKey(let provider):
-            return String(localized: "The \(provider.label) key is missing, and that is the provider this vault was indexed with.")
-        case .providerRunsOnDesktop(let name):
-            return String(localized: "This vault was indexed with \(name), which runs on the computer where Nodus desktop lives. A phone cannot produce a matching vector.")
-        case .unknownProvider(let name):
-            return String(localized: "This vault was indexed with “\(name)”, a provider this version does not know.")
-        case .none:
-            return semanticWarning
-        }
-    }
-
-    /// What the field promises, decided by what this device can actually do — the vault having
-    /// vectors is not enough if the key for them is not on this phone.
-    private var prompt: LocalizedStringKey {
-        canSearchByMeaning ? "Search the corpus" : "Search (lexical)"
-    }
-
-    /// When the search really was lexical, "no results" means "no row contains this string" —
-    /// not "the corpus lacks this topic". Those are different claims and the empty state makes
-    /// which one it is explicit. It reports the search that *ran*, not the one that was hoped
-    /// for, which is why it reads `mode` rather than the vault's identity.
-    private var emptyDescription: String {
-        mode == .semantic
-            ? String(localized: "Nothing in this corpus is close to “\(query)”.")
-            : String(localized: "No row contains the string “\(query)”. This search is literal, not semantic: a synonym will not satisfy it.")
-    }
-
-    /// Whether a query vector can be produced here at all.
-    private var canSearchByMeaning: Bool {
-        guard case .published(let identity) = session.embedding else { return false }
-        if case .success = EmbeddingService(keyProvider: ai.keyProvider).availability(for: identity) { return true }
-        return false
-    }
+    private func source(of hit: CorpusSearch.Hit) -> String? { hit.workId.flatMap { session.names.work($0) } }
 
     private var idleState: some View {
         VStack(spacing: 14) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 42))
-                .foregroundStyle(session.accent.opacity(0.65))
-            Text("Search \(session.connection.spaceName)")
-                .font(.headline)
-            switch session.embedding {
-            case .published(let identity) where canSearchByMeaning:
-                Text("Indexed with \(identity.model) · \(identity.dim) dimensions")
-                    .font(.caption).foregroundStyle(.secondary)
-            case .published(let identity) where session.embedding.isReachableFromPhone:
-                // The one case the app could previously do nothing about: the vault's provider
-                // is reachable from a phone, and this phone simply has no key for it.
-                Text("Indexed with \(identity.provider). Add that key under Providers to search by meaning.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center).padding(.horizontal, 40)
-            case .published(let identity):
-                Text("Indexed with \(identity.provider), which a phone cannot reach. Search will be lexical.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center).padding(.horizontal, 40)
-            case .noVectors:
-                Text("No published vectors. Search will be lexical.")
-                    .font(.caption).foregroundStyle(.secondary)
-            default:
-                EmptyView()
-            }
-        }
-        .padding(30)
+            Image(systemName: "magnifyingglass").font(.system(size: 42)).foregroundStyle(session.accent.opacity(0.65))
+            Text("Search \(session.connection.spaceName)").font(.headline)
+            Text("Find text matches and related ideas with one search.")
+                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }.padding(30)
     }
 
     private var visibleHits: [CorpusSearch.Hit] {
-        guard !selectedKinds.isEmpty else { return hits }
-        return hits.filter { selectedKinds.contains($0.type) }
+        selectedKinds.isEmpty ? hits : hits.filter { selectedKinds.contains($0.type) }
     }
-
     private var availableKinds: [String] {
         Array(Set(hits.map(\.type))).sorted { CorpusSearch.rank($0) < CorpusSearch.rank($1) }
     }
-
     private func kindFilterButton(_ kind: String?, title: String) -> some View {
         let isSelected = kind.map { selectedKinds == Set([$0]) } ?? selectedKinds.isEmpty
-        return Button {
-            selectedKinds = kind.map { Set([$0]) } ?? []
-        } label: {
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
+        return Button { selectedKinds = kind.map { Set([$0]) } ?? [] } label: {
+            Text(title).font(.caption.weight(.medium))
+                .foregroundStyle(isSelected ? (session.accent.relativeLuminance > 0.179 ? Color.black : Color.white) : Color.primary)
+                .padding(.horizontal, 11).frame(minHeight: 44)
                 .background(isSelected ? session.accent : Color.secondary.opacity(0.09), in: Capsule())
-        }
-        .buttonStyle(.plain)
+        }.buttonStyle(.plain)
     }
 
+    private func stopSearch() {
+        searchTask?.cancel(); searchGeneration += 1; isSearching = false
+    }
     private func schedule(immediately: Bool = false) {
-        searchTask?.cancel()
-        let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard current.count >= 2 else {
-            hits = []; semanticWarning = nil
-            return
-        }
-        searchTask = Task {
-            // The semantic endpoint allows 30 requests a minute per IP; a search field
-            // without a debounce finds that out within a few seconds of typing.
-            if !immediately { try? await Task.sleep(for: .milliseconds(380)) }
-            guard !Task.isCancelled else { return }
-            await run(current)
-        }
-    }
-
-    private func run(_ text: String) async {
+        stopSearch()
+        let current = trimmedQuery, generation = searchGeneration
+        hits = []; semanticWarning = nil; error = nil; mode = .lexical
+        guard current.count >= 2, routeActive else { return }
         isSearching = true
-        defer { isSearching = false }
-        do {
-            let outcome = try await search.run(text, limit: 50, preference: requestedMode)
+        searchTask = Task {
+            if !immediately { try? await Task.sleep(for: .milliseconds(500)) }
             guard !Task.isCancelled else { return }
-            hits = outcome.hits
-            mode = outcome.mode
-            semanticWarning = outcome.warning
-            unavailability = outcome.unavailability
-            error = nil
-        } catch let apiError as APIError where apiError.isNotPublished {
-            hits = []; error = nil
-        } catch let apiError as APIError where apiError.isRateLimited {
-            // Two requests per semantic search, against a 30-a-minute limit. The debounce keeps
-            // an ordinary typist well under it; a held-down key does not.
-            error = String(localized: "Too many searches in a row. Wait \(Int(apiError.retryAfter ?? 30)) s.")
-        } catch is CancellationError {
-            // Superseded.
-        } catch {
-            self.error = error.localizedDescription
+            await run(current, generation: generation)
         }
     }
-
-    private var search: CorpusSearch {
-        CorpusSearch.live(
-            client: session.client,
-            spaceId: session.connection.spaceId,
-            embeddings: EmbeddingService(keyProvider: ai.keyProvider),
-            identity: publishedIdentity
-        )
+    private func run(_ text: String, generation: Int) async {
+        defer { if generation == searchGeneration { isSearching = false } }
+        do {
+            let outcome = try await search.runUnified(text, limit: 50) { literal in
+                guard generation == searchGeneration, trimmedQuery == text else { return }
+                hits = literal
+            }
+            guard !Task.isCancelled, generation == searchGeneration, trimmedQuery == text else { return }
+            hits = outcome.hits; mode = outcome.mode; semanticWarning = outcome.warning; error = nil
+            selectedKinds.formIntersection(Set(hits.map(\.type)))
+        } catch is CancellationError {
+        } catch {
+            guard generation == searchGeneration, trimmedQuery == text else { return }
+            if let apiError = error as? APIError, apiError.isNotPublished { hits = []; self.error = nil }
+            else if let apiError = error as? APIError, apiError.isRateLimited {
+                self.error = String(localized: "Too many searches in a row. Wait \(Int(apiError.retryAfter ?? 30)) s.")
+            } else { self.error = error.localizedDescription }
+        }
     }
-
+    private var search: CorpusSearch {
+        CorpusSearch.live(client: session.client, spaceId: session.connection.spaceId,
+            embeddings: EmbeddingService(keyProvider: ai.keyProvider), identity: publishedIdentity,
+            linked: session.connection.desktopPairingId != nil)
+    }
     private var publishedIdentity: EmbeddingIdentity? {
         guard case .published(let identity) = session.embedding else { return nil }
         return identity

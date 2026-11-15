@@ -1,0 +1,9 @@
+# Offline saved database views — source stage
+
+Native saved table/list/gallery/board views now consult the portable Desktop query engine over every selected database source, including each source's pending row/cell/column edits. Physical properties map through the same shared container filter translation as Desktop SQL. Source order, canonical identities, filters and saved sorts are retained. The local query consumes all rows; it does not reuse a downloaded first page or append local creations outside the saved filter.
+
+Live reads use actual Mac query pages and reject changed epochs. Only a genuine unavailable transport enters the complete selected-copy path. Permission, format and configuration errors stay visible. Missing/expired linked downloads require refreshing the selected view; an incomplete copy never appears as a valid empty database. Query refresh also follows native edits.
+
+The isolated `database-query.html`/`database-query.js` resources are produced by the shared source bundler. They have no native operation handlers and no network access. Payloads enter WKWebView as data arguments, never interpolated source. Loading, execution, process termination, cancellation and timeout finish one continuation. This is an internal data renderer, not the Browser tool.
+
+Prepared coverage compares real migrated SQLite container queries with complete portable queries across 562 rows, three physical sources, absent mapped properties, AND/OR filters, source selection, canonical sort order and local edits/creations. App-hosted coverage exercises the actual packaged WK engine and a script-like literal as data. **These checks have not been executed for this source revision.** The new resource bundle has not been compiled yet. Full Apple runtime, offline reconnection, formula/rollup dependencies, linked inspector presentation and iPhone/iPad acceptance remain required.

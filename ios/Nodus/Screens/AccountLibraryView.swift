@@ -185,9 +185,10 @@ struct AccountLibraryView: View {
                         Button { creatingItem = true } label: { Label("New reference", systemImage: "plus") }
                         Button { showingImporter = true } label: { Label("Import files", systemImage: "square.and.arrow.down") }
                         Button { newCollectionName = ""; showingCollectionEditor = true } label: { Label("New collection", systemImage: "folder.badge.plus") }
-                        Divider()
-                        Button { enqueueCommand(.zoteroSync, title: "Zotero sync", payload: [:]) } label: { Label("Sync Zotero on Mac", systemImage: "desktopcomputer") }
-                        Button { enqueueCommand(.extract, title: "Prepare selected files", payload: ["itemIds": .array(selection.map(JSONValue.string))]) } label: { Label("Prepare on Mac", systemImage: "text.viewfinder") }
+                        Section("Only on Desktop") {
+                            Label("Sync Zotero on Mac", systemImage: "desktopcomputer")
+                            Label("Prepare on Mac", systemImage: "text.viewfinder")
+                        }
                     } label: { libraryControlIcon("plus") }
                     .buttonStyle(.plain)
                     .disabled(session.isDemo)
@@ -202,78 +203,10 @@ struct AccountLibraryView: View {
     private var libraryControls: some View {
         VStack(spacing: 8) {
             NodusSearchField(text: $query, prompt: "Search title, creator, tag or citation key", accent: session.accent, isBusy: syncing)
-            HStack(spacing: 8) {
-                Menu {
-                    Section("Collection") {
-                        Button("All collections") { collectionId = nil }
-                        ForEach(collections) { collection in Button(collection.name) { collectionId = collection.id } }
-                    }
-                    Section("Type") {
-                        Button("All types") { itemType = nil }
-                        ForEach(Set(items.map(\.metadata.itemType)).sorted(), id: \.self) { type in Button(type) { itemType = type } }
-                    }
-                } label: {
-                    libraryControlIcon(collectionId != nil || itemType != nil ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
-                }
-                .accessibilityLabel("Filter Library")
-
-                Menu {
-                    ForEach(LibrarySort.allCases) { value in
-                        Button { sort = value } label: { Text(LocalizedStringKey(value.title)) }
-                    }
-                } label: { libraryControlIcon("arrow.up.arrow.down", active: sort != .updated) }
-                .accessibilityLabel("Sort Library")
-
-                Button { duplicatesOnly.toggle() } label: {
-                    libraryControlIcon(duplicatesOnly ? "square.on.square.fill" : "square.on.square", active: duplicatesOnly)
-                }
-                .accessibilityLabel("Duplicates \(duplicateGroups.count)")
-
-                Button { showingTrash.toggle(); selection.removeAll() } label: {
-                    libraryControlIcon(showingTrash ? "books.vertical" : "trash", active: showingTrash)
-                }
-                .accessibilityLabel(showingTrash ? "Library" : "Trash")
-
-                Menu {
-                    ForEach(savedSearches) { search in Button(search.name) { apply(search) } }
-                } label: { libraryControlIcon("bookmark.fill") }
-                .disabled(savedSearches.isEmpty)
-                .accessibilityLabel("Saved searches")
-
-                Button { selecting.toggle(); if !selecting { selection.removeAll() } } label: {
-                    libraryControlIcon(selecting ? "checkmark.circle.fill" : "checkmark.circle", active: selecting)
-                }
-                .accessibilityLabel(selecting ? "Done" : "Select")
-
-                Menu {
-                    if !query.isEmpty || collectionId != nil || itemType != nil {
-                        Button { savedSearchName = query.isEmpty ? "Filtered Library" : query; showingSavedSearchEditor = true } label: { Label("Save search", systemImage: "bookmark") }
-                    }
-                    if selecting, !selection.isEmpty {
-                        Button(showingTrash ? "Recover" : "Trash") { setSelectionDeleted(!showingTrash) }
-                        Button("Export") { export(items.filter { selection.contains($0.id) }) }
-                        if selection.count > 1 { Button("Merge") { enqueueMerge() } }
-                    }
-                    if !conflicts.isEmpty {
-                        Section("Conflicts") {
-                            ForEach(conflicts.prefix(20)) { conflict in Label(conflict.recordId, systemImage: conflict.winnerVersionId == conflict.versionId ? "checkmark.seal" : "arrow.triangle.branch") }
-                        }
-                    }
-                    if !commands.isEmpty {
-                        Section("Mac jobs") {
-                            ForEach(commands.suffix(20).reversed()) { command in
-                                Button {
-                                    if !command.status.isTerminal { cancel(command) }
-                                } label: {
-                                    Label("\(command.kind.rawValue) · \(command.status.rawValue)", systemImage: command.status.isTerminal ? "checkmark.circle" : "desktopcomputer")
-                                }
-                                .disabled(command.status.isTerminal)
-                            }
-                        }
-                    }
-                } label: { libraryControlIcon("ellipsis") }
-                .accessibilityLabel("More Library actions")
-                .accessibilityIdentifier("library-more-actions")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { libraryControlButtons }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 44, maximum: 44), spacing: 8)],
+                          alignment: .leading, spacing: 8) { libraryControlButtons }
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -292,6 +225,81 @@ struct AccountLibraryView: View {
         .padding(.bottom, 10)
     }
 
+    @ViewBuilder
+    private var libraryControlButtons: some View {
+        Menu {
+            Section("Collection") {
+                Button("All collections") { collectionId = nil }
+                ForEach(collections) { collection in Button(collection.name) { collectionId = collection.id } }
+            }
+            Section("Type") {
+                Button("All types") { itemType = nil }
+                ForEach(Set(items.map(\.metadata.itemType)).sorted(), id: \.self) { type in Button(type) { itemType = type } }
+            }
+        } label: {
+            libraryControlIcon(collectionId != nil || itemType != nil ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
+        }
+        .accessibilityLabel("Filter Library")
+
+        Menu {
+            ForEach(LibrarySort.allCases) { value in
+                Button { sort = value } label: { Text(LocalizedStringKey(value.title)) }
+            }
+        } label: { libraryControlIcon("arrow.up.arrow.down", active: sort != .updated) }
+        .accessibilityLabel("Sort Library")
+
+        Button { duplicatesOnly.toggle() } label: {
+            libraryControlIcon(duplicatesOnly ? "square.on.square.fill" : "square.on.square", active: duplicatesOnly)
+        }
+        .accessibilityLabel("Duplicates \(duplicateGroups.count)")
+
+        Button { showingTrash.toggle(); selection.removeAll() } label: {
+            libraryControlIcon(showingTrash ? "books.vertical" : "trash", active: showingTrash)
+        }
+        .accessibilityLabel(showingTrash ? "Library" : "Trash")
+
+        Menu {
+            ForEach(savedSearches) { search in Button(search.name) { apply(search) } }
+        } label: { libraryControlIcon("bookmark.fill") }
+        .disabled(savedSearches.isEmpty)
+        .accessibilityLabel("Saved searches")
+
+        Button { selecting.toggle(); if !selecting { selection.removeAll() } } label: {
+            libraryControlIcon(selecting ? "checkmark.circle.fill" : "checkmark.circle", active: selecting)
+        }
+        .accessibilityLabel(selecting ? "Done" : "Select")
+
+        Menu {
+            if !query.isEmpty || collectionId != nil || itemType != nil {
+                Button { savedSearchName = query.isEmpty ? "Filtered Library" : query; showingSavedSearchEditor = true } label: { Label("Save search", systemImage: "bookmark") }
+            }
+            if selecting, !selection.isEmpty {
+                Button(showingTrash ? "Recover" : "Trash") { setSelectionDeleted(!showingTrash) }
+                Button("Export") { export(items.filter { selection.contains($0.id) }) }
+                if selection.count > 1 { Button("Merge") { enqueueMerge() } }
+            }
+            if !conflicts.isEmpty {
+                Section("Conflicts") {
+                    ForEach(conflicts.prefix(20)) { conflict in Label(conflict.recordId, systemImage: conflict.winnerVersionId == conflict.versionId ? "checkmark.seal" : "arrow.triangle.branch") }
+                }
+            }
+            if !commands.isEmpty {
+                Section("Mac jobs") {
+                    ForEach(commands.suffix(20).reversed()) { command in
+                        Button {
+                            if !command.status.isTerminal { cancel(command) }
+                        } label: {
+                            Label("\(command.kind.rawValue) · \(command.status.rawValue)", systemImage: command.status.isTerminal ? "checkmark.circle" : "desktopcomputer")
+                        }
+                        .disabled(command.status.isTerminal)
+                    }
+                }
+            }
+        } label: { libraryControlIcon("ellipsis") }
+        .accessibilityLabel("More Library actions")
+        .accessibilityIdentifier("library-more-actions")
+    }
+
     private func libraryControlIcon(_ systemImage: String, active: Bool = false) -> some View {
         Image(systemName: systemImage)
             .font(.system(size: 16, weight: .semibold))
@@ -302,25 +310,41 @@ struct AccountLibraryView: View {
     }
 
     private var libraryTable: some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(filtered) { item in tableRow(item) }
-                } header: {
-                    HStack(spacing: 12) {
-                        Text("").frame(width: 24)
-                        Text("Title").frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Creator").frame(width: 220, alignment: .leading)
-                        Text("Year").frame(width: 60, alignment: .leading)
-                        Text("Type").frame(width: 150, alignment: .leading)
-                        Text("Status").frame(width: 100, alignment: .leading)
+        GeometryReader { geometry in
+            // Size class describes the window, not the room left beside its sidebar.
+            // Keep a readable title column and pan only this table when that room is narrow.
+            let tableWidth = max(geometry.size.width, libraryTableMinimumWidth)
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(filtered) { item in tableRow(item) }
+                    } header: {
+                        HStack(spacing: 12) {
+                            Text("").frame(width: 24)
+                            Text("Title").frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+                            Text("Creator").frame(width: 220, alignment: .leading)
+                            Text("Year").frame(width: 60, alignment: .leading)
+                            Text("Type").frame(width: 150, alignment: .leading)
+                            Text("Status").frame(width: 100, alignment: .leading)
+                        }
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .padding(.horizontal, NodusSpace.page).frame(height: 36)
+                        .background(.bar)
                     }
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    .padding(.horizontal, NodusSpace.page).frame(height: 36)
-                    .background(.bar)
                 }
+                .frame(width: tableWidth, alignment: .leading)
+                .frame(minHeight: geometry.size.height, alignment: .topLeading)
             }
+            .accessibilityIdentifier("library-reference-table")
         }
+    }
+
+    // Both header and rows share five fixed columns, five gaps and page padding.
+    // The remaining flexible title column receives at least 220 points.
+    private var libraryTableMinimumWidth: CGFloat {
+        let fixedColumns: CGFloat = 554 // 24 + 220 + 60 + 150 + 100
+        let titleAndGaps: CGFloat = 280 // 220 + five 12-point gaps
+        return fixedColumns + titleAndGaps + 2 * NodusSpace.page
     }
 
     private func tableRow(_ item: AccountLibraryItem) -> some View {
@@ -331,7 +355,7 @@ struct AccountLibraryView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.metadata.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                     Text(item.metadata.tags.prefix(3).map { "#\($0)" }.joined(separator: "  ")).font(.caption2).foregroundStyle(session.accent.nodusReadable).lineLimit(1)
-                }.frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
                 Text(item.metadata.creators.first?.label ?? "—").frame(width: 220, alignment: .leading).lineLimit(1)
                 Text(item.metadata.year.map(String.init) ?? "—").frame(width: 60, alignment: .leading)
                 Text(item.metadata.itemType).frame(width: 150, alignment: .leading).lineLimit(1)
@@ -563,7 +587,9 @@ struct AccountLibraryView: View {
     }
 
     private func enqueueCommand(_ kind: LibraryCommandKind, title: String, payload: [String: JSONValue]) {
-        guard let outbox else { return }
+        // File preparation and Zotero are started from Desktop. The companion may
+        // observe existing jobs, but does not initiate extraction or indexing.
+        guard kind != .extract, kind != .zoteroSync, let outbox else { return }
         Task {
             let command = AccountLibraryOutbox.QueuedCommand(idempotencyKey: "\(kind.rawValue):\(UUID().uuidString)", kind: kind, payload: payload)
             _ = try await outbox.enqueue(.command(command), title: title)
@@ -725,7 +751,7 @@ private struct AccountLibraryReader: View {
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
-            case .read: "Read"
+            case .read: "Reading"
             case .metadata: "Metadata"
             case .notes: "Notes"
             case .relations: "Relations"

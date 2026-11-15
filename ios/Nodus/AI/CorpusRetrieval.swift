@@ -20,10 +20,12 @@ struct CorpusRetrieval: Sendable {
     let embeddings: EmbeddingService
     /// Nil when the vault has no vectors, or when this device cannot match them.
     let identity: EmbeddingIdentity?
+    var scopeTracker: ResearchMaterialScope? = nil
 
     enum Mode: String, Sendable {
         case semantic
         case lexical
+        case hybrid
     }
 
     struct Result: Sendable {
@@ -51,6 +53,7 @@ struct CorpusRetrieval: Sendable {
             case .gaps: return String(localized: "Gaps")
             case .works: return String(localized: "Works")
             case .passages: return String(localized: "Passages")
+            case .sources: return String(localized: "Fuentes del vault")
             }
         }
 
@@ -61,6 +64,7 @@ struct CorpusRetrieval: Sendable {
             case .gaps: return "questionmark.diamond"
             case .works: return "book.closed"
             case .passages: return "text.quote"
+            case .sources: return "doc.text.magnifyingglass"
             }
         }
     }
@@ -76,14 +80,14 @@ struct CorpusRetrieval: Sendable {
         include: [ContextSectionKind] = ContextSectionKind.allCases
     ) async throws -> Result {
         if let identity,
-           let semantic = try? await semanticMaterial(query: query, identity: identity, include: include),
+           let semantic = try? await semanticMaterial(query: query, identity: identity, budget: budget, include: include),
            !semantic.catalog.isEmpty {
             return semantic
         }
         return try await lexicalMaterial(query: query, budget: budget, include: include)
     }
 
-    private func semanticMaterial(query: String, identity: EmbeddingIdentity, include: [ContextSectionKind]) async throws -> Result {
+    private func semanticMaterial(query: String, identity: EmbeddingIdentity, budget: Int, include: [ContextSectionKind]) async throws -> Result {
         let vector = try await embeddings.embed(query, as: identity)
 
         // Ideas carry the argument; passages carry the evidence. A report needs both, and the
@@ -108,32 +112,55 @@ struct CorpusRetrieval: Sendable {
             }
         }
 
-        guard !entries.isEmpty else {
-            return try await lexicalMaterial(query: query, budget: 60_000, include: include)
-        }
+        let supplementary = include.filter { $0 != .ideas && $0 != .passages }
+        let limit = min(120_000, max(1000, budget))
+        let bounded = try CitationCatalog(entries: entries).bounded(to: supplementary.isEmpty ? limit : max(1000, limit / 2))
+        entries = bounded.catalog.entries
+        guard !entries.isEmpty else { return try await lexicalMaterial(query: query, budget: limit, include: include) }
+        scopeTracker?.observe("linked_corpus")
         // The semantic path ranks ideas and passages; themes, gaps and works come from the
         // lexical package, so both are merged rather than one replacing the other.
-        let lexical = try? await lexicalMaterial(query: query, budget: 30_000, include: include)
+        let lexical: Result?
+        if supplementary.isEmpty { lexical = nil }
+        else if supplementary.contains(.sources) {
+            // A malformed or denied specialised source must remain an error;
+            // accepting only the vector hits would silently omit that material.
+            lexical = try await lexicalMaterial(query: query, budget: max(1000, limit - bounded.bytes), include: supplementary)
+        } else { lexical = try? await lexicalMaterial(query: query, budget: max(1000, limit - bounded.bytes), include: supplementary) }
+        let hasSources = lexical?.sections.contains { $0.kind == .sources } == true
+        let warnings = [warning, lexical?.warning,
+            bounded.omitted > 0 ? String(localized: "Se han omitido fuentes completas para respetar el límite de contexto; las citas literales conservan su texto íntegro.") : nil,
+            hasSources ? String(localized: "Las fuentes especializadas se recuperan mediante búsqueda textual.") : nil].compactMap { $0 }
         return Result(
             catalog: CitationCatalog(entries: entries).merging(lexical?.catalog ?? CitationCatalog(entries: [])),
-            mode: .semantic,
-            truncated: lexical?.truncated ?? false,
-            warning: warning,
+            mode: hasSources ? .hybrid : .semantic,
+            truncated: bounded.omitted > 0 || lexical?.truncated == true,
+            warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             sections: semanticSections(entries) + (lexical?.sections.filter { $0.kind != .ideas && $0.kind != .passages } ?? [])
         )
     }
 
     private func lexicalMaterial(query: String, budget: Int, include: [ContextSectionKind]) async throws -> Result {
         let package = try await client.context(query: query, in: spaceId, budget: budget, include: include)
+        for section in package.sections where section.kind == "sources" {
+            for row in section.items { _ = try CorpusSourceMaterial(row: row) }
+        }
+        scopeTracker?.observe(package.sourceScope == "device_downloads" ? "device_downloads" : "linked_corpus")
         let sections = package.sections.compactMap { section -> MaterialSection? in
             guard let kind = ContextSectionKind(rawValue: section.kind), !section.items.isEmpty else { return nil }
             return MaterialSection(kind: kind, rows: section.items)
+        }
+        var warnings: [String] = []
+        if package.sourceScope == "device_downloads" { warnings.append("Búsqueda en los dossiers descargados en este dispositivo; su alcance no incluye el vault completo.") }
+        if package.stats.truncated { warnings.append("El contexto ha alcanzado su límite. Las fuentes que no caben se omiten completas; sus citas literales no se recortan.") }
+        if package.sections.contains(where: { $0.kind == "sources" && $0.items.contains { $0.string("contentScope") == "metadata" } }) {
+            warnings.append("Algunas fichas aportan solo metadatos. Sus documentos originales no forman parte del contexto consultado.")
         }
         return Result(
             catalog: CitationCatalog.from(package),
             mode: .lexical,
             truncated: package.stats.truncated,
-            warning: nil,
+            warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             sections: sections
         )
     }
@@ -173,7 +200,7 @@ struct CorpusRetrieval: Sendable {
                 kind: "passage",
                 id: id,
                 label: String((row.text("text") ?? "Passage").prefix(160)),
-                detail: row.text("section"),
+                detail: row.text("text") ?? row.text("section"),
                 workId: row.string("nodus_id"),
                 locator: row.text("page_label")
             )
@@ -190,6 +217,16 @@ struct CorpusRetrieval: Sendable {
         }
         return nil
     }
+}
+
+/// The background section callbacks and checkpoint writer share a tiny scope
+/// receipt. Its lock protects metadata only and never encloses IO or model calls.
+nonisolated final class ResearchMaterialScope: @unchecked Sendable {
+    private let lock = NSLock()
+    private var scopes: Set<String>
+    init(_ scopes: [String] = []) { self.scopes = Set(scopes) }
+    func observe(_ scope: String) { lock.withLock { _ = scopes.insert(scope) } }
+    var current: [String] { lock.withLock { scopes.sorted() } }
 }
 
 /// The real `DeepResearchDeps`, wired to a space and a provider.

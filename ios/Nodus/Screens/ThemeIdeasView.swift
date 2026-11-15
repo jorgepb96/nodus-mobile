@@ -4,10 +4,8 @@ import SwiftUI
 
 /// The ideas gathered under one theme.
 ///
-/// This relationship lives in `idea_theme_links`, a table with no REST collection and — even
-/// if it had one — no way to filter by a column, because the API's only filter is a substring
-/// scan across whole rows. So a theme's ideas are resolvable from the offline copy and not
-/// otherwise, and the screen says so plainly rather than showing an empty list.
+/// The theme's enriched public dossier carries its actual linked ideas. Opening
+/// it does not require downloading the whole vault or its image collection.
 struct ThemeIdeasView: View {
     let session: SpaceSession
     let theme: Row
@@ -15,7 +13,8 @@ struct ThemeIdeasView: View {
     @State private var ideas: [Row] = []
     @State private var query = ""
     @State private var isLoading = true
-    @State private var needsMirror = false
+    @State private var fromDevice = false
+    @State private var visibleLimit = 80
     @State private var error: String?
 
     private var themeId: String? { theme.string("theme_id") }
@@ -29,25 +28,9 @@ struct ThemeIdeasView: View {
 
     var body: some View {
         List {
-            if needsMirror {
-                Section {
-                    NodusNotice(
-                        tone: .info,
-                        title: "The offline copy is needed",
-                        message: "The link between themes and ideas travels in the publication but the API does not expose it. Download it and this list works instantly.",
-                        systemImage: "internaldrive"
-                    )
-                    .listRowBackground(Color.clear)
-
-                    Button {
-                        Task {
-                            await session.downloadMirror()
-                            await load()
-                        }
-                    } label: {
-                        Label("Download for offline use", systemImage: "arrow.down.circle")
-                    }
-                }
+            if fromDevice {
+                Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
+                    .font(.caption).foregroundStyle(.secondary).listRowBackground(Color.clear)
             }
 
             if isLoading {
@@ -58,9 +41,10 @@ struct ThemeIdeasView: View {
             if let error {
                 NodusNotice(tone: .blocked, title: "Could not load theme ideas", message: LocalizedStringKey(error))
                     .listRowBackground(Color.clear)
+                Button("Reintentar") { Task { await load() } }.frame(minHeight: 44).disabled(isLoading)
             }
 
-            ForEach(Array(filtered.enumerated()), id: \.offset) { _, idea in
+            ForEach(Array(filtered.prefix(visibleLimit).enumerated()), id: \.offset) { _, idea in
                 NavigationLink {
                     RowDetailView(session: session, collection: Collections["ideas"], row: idea)
                 } label: {
@@ -68,8 +52,12 @@ struct ThemeIdeasView: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            if filtered.count > visibleLimit {
+                Button("Mostrar más ideas (\(filtered.count - visibleLimit))") { visibleLimit += 80 }.frame(minHeight: 44)
+                    .accessibilityIdentifier("theme-ideas-show-more")
+            }
 
-            if !isLoading, ideas.isEmpty, !needsMirror, error == nil {
+            if !isLoading, ideas.isEmpty, error == nil {
                 ContentUnavailableView(
                     "No ideas",
                     systemImage: "lightbulb",
@@ -98,25 +86,24 @@ struct ThemeIdeasView: View {
                 }
             }
         }
-        .task(id: session.mirrorSummary?.revision) { await load() }
+        .onChange(of: query) { _, _ in visibleLimit = 80 }
+        .task(id: session.publishedRevision) { await load() }
+        .refreshable { await load() }
     }
 
     private func load() async {
         isLoading = true
         defer { isLoading = false }
-        guard let themeId else { return }
-        guard let mirror = session.mirror else {
-            needsMirror = true
-            return
-        }
-        needsMirror = false
         do {
-            let links = try await mirror.rows(table: "idea_theme_links", where: "theme_id", equals: themeId)
-            let ids = links.compactMap { $0.string("global_id") }
-            ideas = try await mirror.rows(table: "ideas", ids: Array(Set(ids)))
+            guard let themeId, let collection = Collections["themes"] else { throw DesktopBridgeError.malformedResponse }
+            let dossier = try await session.client.dossier(collection, id: themeId, in: session.connection.spaceId)
+            guard let rows = dossier.sections["ideas"]?.arrayValue, rows.allSatisfy({ $0.objectValue != nil && $0.objectValue?["global_id"]?.stringValue != nil }) else { throw DesktopBridgeError.malformedResponse }
+            try Task.checkCancellation()
+            ideas = rows.map { Row($0.objectValue!) }; fromDevice = dossier.fromDevice; visibleLimit = 80
             error = nil
+        } catch where error.isCancellation {
+            // A hidden route or a newer publication supersedes this read.
         } catch {
-            ideas = []
             self.error = error.localizedDescription
         }
     }

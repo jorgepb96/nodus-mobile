@@ -4,10 +4,8 @@ import SwiftUI
 
 /// One row, opened.
 ///
-/// Five collections have an enriched handler on the server — ideas, works, persons, authors and
-/// databases — and for those the detail request brings back the relations that make the screen
-/// worth opening. Everything else is the row itself, rendered field by field: a generic view
-/// that never claims more structure than the table has.
+/// Domain readers preserve the whole public dossier, including versions and
+/// nested sections added by Desktop. Large relation lists grow on demand.
 struct RowDetailView: View {
     let session: SpaceSession
     let collection: CollectionDescriptor?
@@ -20,6 +18,11 @@ struct RowDetailView: View {
     @State private var enriched: Enriched?
     @State private var isLoading = false
     @State private var error: String?
+    @State private var relationLimits: [String: Int] = [:]
+    @State private var evidenceLimit = 40
+    @State private var supplement: CollectionDossier?
+    @State private var resourceDossier: CollectionDossier?
+    @State private var fromDevice = false
 
     init(
         session: SpaceSession,
@@ -43,6 +46,7 @@ struct RowDetailView: View {
         case database(DatabaseDetail)
         case exam(ExamDetail)
         case plan(StudyPlanDetail)
+        case dossier(CollectionDossier)
     }
 
     private var presenter: RowPresenter {
@@ -71,7 +75,11 @@ struct RowDetailView: View {
     var body: some View {
         // An exam is a document, not a dossier: it gets the whole screen rather than a
         // "Questions" section under a field list nobody reads.
-        if case .exam(let detail) = enriched {
+        if session.connection.desktopPairingId != nil, let collection,
+           let id = row.string(collection.idField),
+           let reference = try? PrivateCorpusReference.collectionReference(path: collection.path, id: id) {
+            PrivateCorpusSourceView(session: session, reference: reference)
+        } else if case .exam(let detail) = enriched {
             ExamView(session: session, detail: detail)
         } else {
             dossier
@@ -86,6 +94,15 @@ struct RowDetailView: View {
             // occasional bold words in it. The distance is what says where one ends.
             VStack(alignment: .leading, spacing: NodusSpace.block) {
                 heading
+                if fromDevice {
+                    Label("Sin conexión · contenido de este dispositivo", systemImage: "wifi.slash")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                if let state = row.string("mobileSyncState") {
+                    Label(state == "pending" ? "Guardado en este dispositivo · pendiente de sincronizar" : "Guardado en este dispositivo · revisa la sincronización en Scriptor", systemImage: "iphone")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 // Under the title, because following a work back to the library it came from is
                 // something a reader does *instead* of reading this screen rather than after it.
@@ -95,7 +112,9 @@ struct RowDetailView: View {
 
                 if let error {
                     NodusNotice(tone: .caution, title: "Could not expand", message: LocalizedStringKey(error))
+                    Button("Reintentar") { Task { await enrich() } }.frame(minHeight: 44).disabled(isLoading)
                 }
+                if isLoading { ProgressView("Cargando dossier…").tint(session.accent) }
 
                 if collection?.path == "themes", theme != nil {
                     NavigationLink {
@@ -120,6 +139,9 @@ struct RowDetailView: View {
                 case .author(let detail): authorBody(detail)
                 case .database(let detail): databaseBody(detail)
                 case .plan(let detail): planBody(detail)
+                case .dossier(let detail):
+                    if collection?.path == "passages" { passageBody(detail.primary) }
+                    else { CollectionDossierBody(session: session, dossier: detail, showConnectionState: false, onOpenRelated: onOpenRelated) }
                 // Handled above: an exam replaces the dossier rather than sitting inside it.
                 case .exam: EmptyView()
                 case nil:
@@ -132,6 +154,10 @@ struct RowDetailView: View {
                     } else {
                         fields(of: row)
                     }
+                }
+                if let resourceDossier { DossierOriginalResourcesView(session: session, dossier: resourceDossier) }
+                if let supplement {
+                    CollectionDossierBody(session: session, dossier: supplement, displayPrimary: false, showConnectionState: false, onOpenRelated: onOpenRelated)
                 }
             }
             .padding(NodusSpace.page)
@@ -190,8 +216,10 @@ struct RowDetailView: View {
             if let subtitle = presenter.subtitle(row) {
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }
-            if let detail = presenter.detail(row) {
-                NodusChip(detail, tint: session.accent.nodusReadable)
+            if collection?.path == "ideas", let type = row.text("type") {
+                NodusChip(key: type, tint: SemanticTone.ideaType(type, fallback: session.accent))
+            } else if let detail = presenter.detail(row) {
+                NodusChip(key: detail, tint: session.accent.nodusReadable)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -206,7 +234,9 @@ struct RowDetailView: View {
             // Start with provenance: before classifying an idea by theme, show the works where
             // the reader can actually find it. This also puts the most useful navigation out
             // of an idea above its longer evidence and record sections.
-            occurrencesSection(detail)
+            if detail.idea.string("mobileSourceScope") == "authoredText" {
+                NodusNotice(tone: .info, title: "Texto escrito en este móvil", message: "Las evidencias y conexiones necesitan su propia descarga para consultarlas sin el Mac.")
+            } else { occurrencesSection(detail) }
             if !detail.themes.isEmpty {
                 chips(detail.themes, label: "Themes")
             }
@@ -215,7 +245,7 @@ struct RowDetailView: View {
             if !detail.evidence.isEmpty {
                 section("Passages that support it", count: detail.evidence.count) {
                     VStack(alignment: .leading, spacing: 16) {
-                        ForEach(Array(detail.evidence.prefix(40).enumerated()), id: \.offset) { index, item in
+                        ForEach(Array(detail.evidence.prefix(evidenceLimit).enumerated()), id: \.offset) { index, item in
                             VStack(alignment: .leading, spacing: 8) {
                                 if let quote = item.text("quote") {
                                     Text(quote)
@@ -247,23 +277,32 @@ struct RowDetailView: View {
                                     }
                                 }
                             }
-                            if index < min(detail.evidence.count, 40) - 1 { Divider().opacity(0.3) }
+                            if index < min(detail.evidence.count, evidenceLimit) - 1 { Divider().opacity(0.3) }
+                        }
+                        if detail.evidence.count > evidenceLimit {
+                            Button("Mostrar más evidencias") { evidenceLimit += 40 }.frame(minHeight: 44)
                         }
                     }
                 }
             }
             fields(of: detail.idea)
-            relationsSection(detail)
+            if detail.idea.string("mobileSourceScope") != "authoredText" { relationsSection(detail) }
         }
     }
 
     private func workBody(_ detail: WorkDetail) -> some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
+            if session.connection.desktopPairingId != nil, let workId = detail.work.string("nodus_id") {
+                NavigationLink {
+                    SourceDocumentReader(session: session, target: SourceDocumentTarget(itemId: workId, scope: .vault, page: nil, attachmentId: nil))
+                } label: { Label("Abrir documento", systemImage: "doc.text").frame(minHeight: 44) }
+                    .accessibilityIdentifier("work-open-source-document")
+            }
             if detail.passages > 0 {
                 NodusNotice(
                     tone: .info,
                     title: detail.passages == 1 ? "1 passage extracted" : "\(detail.passages) passages extracted",
-                    message: "They are read from each idea that rests on them. The original document never leaves the desktop.",
+                    message: "Consulta los pasajes desde las ideas que sustentan o abre el documento para seguir leyendo.",
                     systemImage: "text.quote"
                 )
             }
@@ -358,7 +397,11 @@ struct RowDetailView: View {
             }
             fields(of: detail.person)
             group("Names", detail.names, table: "person_names")
-            group("Relationships", detail.relationships, table: "relationships")
+            if session.vaultType == .genealogy, let resourceDossier {
+                GenealogyDossierContextView(session: session, dossier: resourceDossier, onOpenRelated: onOpenRelated)
+            } else {
+                group("Relationships", detail.relationships, table: "relationships")
+            }
             group("Events", detail.events, table: "events", linksTo: Collections["events"])
             group("Places", detail.places, table: "places", linksTo: Collections["places"])
         }
@@ -468,6 +511,8 @@ struct RowDetailView: View {
 
     private func databaseBody(_ detail: DatabaseDetail) -> some View {
         VStack(alignment: .leading, spacing: NodusSpace.block) {
+            NavigationLink { DatabaseGridView(session: session, database: detail.database) }
+                label: { Label("Abrir tabla", systemImage: "tablecells").frame(minHeight: 44) }
             Text("\(detail.total.formatted()) rows · \(detail.columns.count) columns")
                 .font(.caption).foregroundStyle(.secondary)
             group("Columns", detail.columns, table: "db_columns")
@@ -654,14 +699,16 @@ struct RowDetailView: View {
         table: String,
         linksTo collection: CollectionDescriptor? = nil
     ) -> some View {
-        Group {
+        let groupId = "\(title):\(table)"
+        let limit = relationLimits[groupId] ?? 60
+        return Group {
             if !rows.isEmpty {
                 // The heading is the key and the count is data beside it. Interpolating the
                 // two — `"\(title) · \(rows.count)"` — made the *whole line* the key, so the
                 // catalogue never matched and every group on a dossier read in English.
                 section(title, count: rows.count) {
                     VStack(spacing: 0) {
-                        ForEach(Array(rows.prefix(60).enumerated()), id: \.offset) { index, row in
+                        ForEach(Array(rows.prefix(limit).enumerated()), id: \.offset) { index, row in
                             if let collection, row.string(collection.idField) != nil {
                                 if let onOpenRelated {
                                     Button { onOpenRelated(collection, row) } label: {
@@ -694,13 +741,11 @@ struct RowDetailView: View {
                                 RowCell(row: row, presenter: RowPresenter.forTable(table), accent: session.accent)
                                     .padding(.vertical, 4)
                             }
-                            if index < min(rows.count, 60) - 1 { Divider().opacity(0.35) }
+                            if index < min(rows.count, limit) - 1 { Divider().opacity(0.35) }
                         }
-                        if rows.count > 60 {
-                            Text("and \(rows.count - 60) more")
-                                .font(.caption2).foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.top, 8)
+                        if rows.count > limit {
+                            Button("Mostrar más (\(rows.count - limit))") { relationLimits[groupId] = limit + 60 }
+                                .frame(minHeight: 44).accessibilityIdentifier("dossier-related-show-more-\(table)")
                         }
                     }
                 }
@@ -750,6 +795,7 @@ struct RowDetailView: View {
             "light_at", "light_status", "deep_at", "deep_status", "deep_trigger", "manual_deep",
             "summary_at", "summary_status", "source_type", "zotero_version", "order_idx",
             "created_at", "updated_at",
+            "mobileSourceScope", "mobileSyncState", "mobileSyncIssue",
             // Shown as the control at the top of the dossier, which carries the key itself as
             // its subtitle. Listing it here as well would put the same eight characters on the
             // screen twice, once as something you can press and once as something you cannot.
@@ -821,37 +867,52 @@ struct RowDetailView: View {
         isLoading = true
         defer { isLoading = false }
         do {
+            let query = collection.path == "databases" ? [URLQueryItem(name: "limit", value: "50"), URLQueryItem(name: "offset", value: "0")] : []
+            let dossier = try await session.client.dossier(collection, id: id, in: session.connection.spaceId, query: query)
+            try Task.checkCancellation()
+            fromDevice = dossier.fromDevice
+            resourceDossier = dossier
+            supplement = nil
             switch collection.path {
             case "ideas":
-                let detail = try await session.client.idea(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(IdeaDetail.self)
                 row = detail.idea
                 enriched = .idea(detail)
+                supplement = try dossier.supplement(excluding: ["relations", "occurrences", "evidence", "themes"])
             case "works":
-                let detail = try await session.client.work(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(WorkDetail.self)
                 row = detail.work
                 enriched = .work(detail)
+                supplement = try dossier.supplement(excluding: ["ideas", "summary", "passages"])
             case "persons":
-                let detail = try await session.client.person(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(PersonDetail.self)
                 row = detail.person
                 enriched = .person(detail)
+                supplement = try dossier.supplement(excluding: session.vaultType == .genealogy
+                    ? ["names", "places", "relationships", "events", "portrait", "placeLinks", "evidenceAccess"]
+                    : ["names", "places", "relationships", "events", "portrait"])
             case "authors":
-                let detail = try await session.client.author(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(AuthorDetail.self)
                 row = detail.author
                 enriched = .author(detail)
+                supplement = try dossier.supplement(excluding: ["works", "relations", "synthesis"])
             case "databases":
-                let detail = try await session.client.database(id, in: session.connection.spaceId, limit: 50)
+                let detail = try dossier.decode(DatabaseDetail.self)
                 row = detail.database
                 enriched = .database(detail)
+                supplement = try dossier.supplement(excluding: ["columns", "views", "options", "rows", "cells", "relations", "attachments", "total", "offset", "limit", "hasMore"])
             case "teaching-exams":
-                let detail = try await session.client.exam(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(ExamDetail.self)
                 row = detail.exam
                 enriched = .exam(detail)
             case "study-plans":
-                let detail = try await session.client.studyPlan(id, in: session.connection.spaceId)
+                let detail = try dossier.decode(StudyPlanDetail.self)
                 row = detail.plan
                 enriched = .plan(detail)
+                supplement = try dossier.supplement(excluding: ["blocks"])
             default:
-                row = try await session.client.item(collection, id: id, in: session.connection.spaceId)
+                row = dossier.primary
+                enriched = .dossier(dossier)
             }
             error = nil
         } catch where error.isCancellation {
@@ -869,14 +930,24 @@ struct AssetImage: View {
     let hash: String
 
     @State private var data: Data?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let data, let image = PlatformImage(data: data) {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
-            } else if failed {
-                Image(systemName: "photo").font(.largeTitle).foregroundStyle(.tertiary)
+                    .accessibilityLabel("Published image")
+                    .accessibilityIdentifier("published-image-\(hash)")
+            } else if let failure {
+                VStack(spacing: 8) {
+                    Image(systemName: "photo").font(.largeTitle).foregroundStyle(.tertiary)
+                    Text("Image unavailable").font(.caption)
+                    Text(failure).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
+                    Button("Retry") { attempt += 1 }
+                }
+                .padding()
+                .accessibilityIdentifier("published-image-error")
             } else {
                 ProgressView().tint(session.accent)
             }
@@ -887,12 +958,18 @@ struct AssetImage: View {
         // photograph on its way — the same reasoning `nodusFieldSurface` is written from.
         .background(session.accent.opacity(0.12))
         .clipped()
-        .task {
-            guard data == nil, !failed else { return }
+        .task(id: attempt) {
+            guard data == nil else { return }
+            failure = nil
             do {
-                data = try await session.client.asset(hash: hash, in: session.connection.spaceId)
+                let bytes = try await session.client.asset(hash: hash, in: session.connection.spaceId)
+                guard PlatformImage(data: bytes) != nil else {
+                    failure = String(localized: "The downloaded file could not be opened as an image.")
+                    return
+                }
+                data = bytes
             } catch {
-                failed = true
+                failure = error.localizedDescription
             }
         }
     }
@@ -906,12 +983,17 @@ typealias PlatformImage = UIImage
 /// Wrapping chips. `Layout` rather than a stack of rows so it reflows with Dynamic Type.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
+    private func measuredSize(_ subview: LayoutSubview, within width: CGFloat) -> CGSize {
+        let ideal = subview.sizeThatFits(.unspecified)
+        guard width.isFinite, ideal.width > max(0, width) else { return ideal }
+        return subview.sizeThatFits(ProposedViewSize(width: max(0, width), height: nil))
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = measuredSize(subview, within: width)
             if x + size.width > width, x > 0 {
                 x = 0; y += rowHeight + spacing; rowHeight = 0
             }
@@ -924,7 +1006,7 @@ struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = measuredSize(subview, within: bounds.width)
             if x + size.width > bounds.maxX, x > bounds.minX {
                 x = bounds.minX; y += rowHeight + spacing; rowHeight = 0
             }
@@ -942,22 +1024,27 @@ struct IdeaByIdView: View {
     let globalId: String
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: Collections["ideas"], row: row)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.idea(globalId, in: session.connection.spaceId).idea }
-            catch { failed = true }
+        .task(id: "\(globalId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.idea(globalId, in: session.connection.spaceId).idea
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }
@@ -968,22 +1055,27 @@ struct AuthorByIdView: View {
     let authorId: String
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: Collections["authors"], row: row)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.author(authorId, in: session.connection.spaceId).author }
-            catch { failed = true }
+        .task(id: "\(authorId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.author(authorId, in: session.connection.spaceId).author
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }
@@ -994,22 +1086,27 @@ struct WorkByIdView: View {
     let nodusId: String
 
     @State private var row: Row?
-    @State private var failed = false
+    @State private var failure: String?
+    @State private var attempt = 0
 
     var body: some View {
         Group {
             if let row {
                 RowDetailView(session: session, collection: Collections["works"], row: row)
-            } else if failed {
-                ContentUnavailableView("Could not open", systemImage: "questionmark.circle")
+            } else if let failure {
+                CorpusOpenFailure(message: failure) { attempt += 1 }
             } else {
                 ProgressView().tint(session.accent)
             }
         }
-        .task {
-            guard row == nil, !failed else { return }
-            do { row = try await session.client.work(nodusId, in: session.connection.spaceId).work }
-            catch { failed = true }
+        .task(id: "\(nodusId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+            guard row == nil else { return }
+            failure = nil
+            do {
+                let loaded = try await session.client.work(nodusId, in: session.connection.spaceId).work
+                try Task.checkCancellation(); row = loaded
+            } catch where error.isCancellation {
+            } catch { failure = error.localizedDescription }
         }
     }
 }

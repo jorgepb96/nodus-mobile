@@ -8,7 +8,7 @@ private let pagesDatabaseTables = [
     "page_revisions", "page_comments", "page_comment_reactions", "page_comment_mentions",
     "workspace_actors", "workspace_groups", "workspace_group_members", "acl_entries",
     "db_databases", "db_data_sources", "db_columns", "db_rows", "db_cells", "db_views",
-    "db_view_sources", "db_view_revisions", "db_select_options", "db_relations",
+    "db_view_sources", "db_view_revisions", "db_select_options", "db_relations", "db_computed_cells",
     "db_attachments", "db_row_templates", "db_template_runs", "db_row_hierarchy",
     "db_row_dependencies", "db_task_configs", "db_sprints", "db_sprint_rows",
     "automation_rules", "automation_runs", "automation_notifications", "database_forms",
@@ -28,6 +28,7 @@ struct PagesWorkspaceView: View {
     @State private var showTrash = false
 
     private let section = "pages"
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
     private var activeId: String? { workspaceTabs.activeTabId(in: section) }
     private var activePage: PagesDatabasesParity.Page? { pages.first { $0.id == activeId } }
     private var visiblePages: [PagesDatabasesParity.Page] {
@@ -38,7 +39,7 @@ struct PagesWorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Pages", catalogueImage: "note.text", accent: session.accent)
-            if sizeClass == .regular {
+            if !compactPresentation {
                 HStack(spacing: 0) {
                     pageTree.frame(width: 285)
                     Divider()
@@ -52,6 +53,7 @@ struct PagesWorkspaceView: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pages-workspace")
         .task(id: session.publishedRevision) { await load() }
         .onChange(of: showTrash) { _, _ in rebuild() }
@@ -111,9 +113,9 @@ struct PagesWorkspaceView: View {
                     Button { Task { await createPage(parentId: nil) } } label: { Label("New page", systemImage: "plus") }
                         .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil)
                 })
-                if sizeClass == .compact { NodusSearchField(text: $query, prompt: "Search pages", accent: session.accent) }
+                if compactPresentation { NodusSearchField(text: $query, prompt: "Search pages", accent: session.accent) }
                 if let error { NodusNotice(tone: .blocked, title: "Pages could not load", message: LocalizedStringKey(error)) }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: sizeClass == .compact ? 280 : 320), spacing: 10)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: compactPresentation ? 280 : 320), spacing: 10)], spacing: 10) {
                     ForEach(visiblePages) { page in
                         Button { open(page) } label: {
                             VStack(alignment: .leading, spacing: 8) {
@@ -160,14 +162,21 @@ struct PagesWorkspaceView: View {
         let id = "page_\(UUID().uuidString)"
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         var row: [String: JSONValue] = [
-            "id": .string(id), "origin": .string("standalone"), "title": .string("Untitled page"),
+            "id": .string(id), "origin": .string("standalone"), "title": .string(String(localized: "Untitled page")),
             "state": .string("active"), "locked": .int(0), "full_width": .int(0), "revision": .int(1),
             "created_by": .string("mobile"), "updated_by": .string("mobile"),
             "created_at": .string(now), "updated_at": .string(now),
         ]
         row["parent_page_id"] = parentId.map(JSONValue.string) ?? .null
-        tables["pages", default: []].append(Row(row)); rebuild()
-        _ = await outbox.syncMutation(kind: .upsert, table: .pages, key: [id], row: row, title: "Create page")
+        guard await outbox.syncMutation(kind:.upsert,table:.pages,key:[id],row:row,title:"Crear página") else {error=outbox.lastError;return}
+        tables["pages",default:[]].append(Row(row));rebuild()
+        if session.connection.desktopPairingId != nil {
+            do {
+                let (vault, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+                let documents = try await CompanionPageDocumentStores.shared.store(pairingId: pairing.id, vaultId: vault)
+                _ = try await documents.createLocal(page: Row(row))
+            } catch { self.error = error.localizedDescription; return }
+        }
         if let page = pages.first(where: { $0.id == id }) { open(page) }
     }
 
@@ -210,6 +219,8 @@ private struct PageDocumentWorkspace: View {
     @State private var saving = false
     @State private var compactInspector = false
     @State private var actionError: String?
+    @State private var actionMessage: String?
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var blocks: [PagesDatabasesParity.Block] { PagesDatabasesParity.blocks(pageId: page.id, in: tables) }
     private var backlinks: [PagesDatabasesParity.Backlink] { PagesDatabasesParity.backlinks(pageId: page.id, in: tables) }
@@ -222,25 +233,30 @@ private struct PageDocumentWorkspace: View {
             documentHeader.padding(NodusSpace.page)
             Divider()
             if let actionError { NodusNotice(tone: .blocked, title: "Page action failed", message: LocalizedStringKey(actionError)).padding(.horizontal, NodusSpace.page).padding(.top, 8) }
-            if sizeClass == .regular {
+            if let actionMessage { Text(actionMessage).font(.caption).foregroundStyle(.secondary).padding(.horizontal, NodusSpace.page).padding(.top, 8) }
+            if !compactPresentation {
                 HStack(spacing: 0) { editor; Divider(); inspectorRail.frame(width: 320) }
             } else {
-                if compactInspector { inspectorRail } else { editor }
+                editor
             }
         }
         .onAppear { seedDrafts() }
         .onChange(of: page.id) { _, _ in seedDrafts() }
+        .nodusSheet(isPresented: $compactInspector) {
+            NavigationStack { inspectorRail.navigationTitle("Detalles de la página").nodusModalClose(accent: session.accent) }
+        }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("page-document-\(page.id)")
     }
 
     private var documentHeader: some View {
         DesktopPageHeader(title: LocalizedStringKey(page.title), subtitle: "Revision \(page.revision) · \(blocks.count) blocks", systemImage: "doc.text", accent: session.accent, trailing: {
             HStack(spacing: 7) {
-                if sizeClass == .compact {
-                    Button { compactInspector.toggle() } label: { Image(systemName: compactInspector ? "doc.text" : "sidebar.right") }
-                        .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel(compactInspector ? "Show document" : "Show page details")
+                if compactPresentation {
+                    Button { compactInspector = true } label: { Image(systemName: "info.circle") }
+                        .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Detalles de la página")
                 }
-                Menu {
+                if session.connection.desktopPairingId == nil { Menu {
                     Button { Task { await addBlock(type: "paragraph") } } label: { Label("Paragraph", systemImage: "text.alignleft") }
                     Button { Task { await addBlock(type: "heading_2") } } label: { Label("Heading", systemImage: "textformat.size") }
                     Button { Task { await addBlock(type: "task") } } label: { Label("Task", systemImage: "checkmark.square") }
@@ -249,12 +265,16 @@ private struct PageDocumentWorkspace: View {
                 } label: { Label("Block", systemImage: "plus") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(outbox == nil)
                 Button { Task { await save() } } label: { if saving { ProgressView() } else { Label("Save", systemImage: "checkmark") } }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving)
+                }
             }
         })
     }
 
     private var editor: some View {
-        ScrollView {
+        Group {
+        if session.connection.desktopPairingId != nil {
+            SharedDesktopSurface(session: session, surface: .page, initialPageId: page.id).id(page.id)
+        } else { ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Page title", text: $title, axis: .vertical).font(.largeTitle.bold()).textFieldStyle(.plain)
                 ForEach(blocks) { block in blockEditor(block) }
@@ -262,6 +282,8 @@ private struct PageDocumentWorkspace: View {
                     .buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(outbox == nil)
             }.padding(NodusSpace.page).frame(maxWidth: page.fullWidth ? .infinity : 850).frame(maxWidth: .infinity, alignment: .top).nodusTopAnchor()
         }.background(Color(uiColor: .systemBackground).opacity(0.34))
+        }
+        }
     }
 
     private func blockEditor(_ block: PagesDatabasesParity.Block) -> some View {
@@ -411,9 +433,10 @@ private struct PageDocumentWorkspace: View {
     private func restoreRevision(_ row: Row) async {
         guard let revision = row.int("revision") else { return }
         do {
-            _ = try await session.client.createSpaceAction(idempotencyKey: "page-restore:\(page.id):\(revision)", kind: .pageRestoreRevision, payload: ["pageId": .string(page.id), "revision": .int(Int64(revision))], inputRevision: session.publishedRevision, in: session.connection.spaceId)
+            let result = try await session.client.createSpaceAction(idempotencyKey: "page-restore:\(page.id):\(revision)", kind: .pageRestoreRevision, payload: ["pageId": .string(page.id), "revision": .int(Int64(revision))], inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId)
             actionError = nil
-        } catch { actionError = error.localizedDescription }
+            actionMessage = result.action.receiptMessage
+        } catch { actionMessage = nil; actionError = error.localizedDescription }
     }
 }
 
@@ -432,6 +455,7 @@ struct DatabasesWorkspaceView: View {
     @State private var error: String?
 
     private let section = "databases"
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
     private var activeId: String? { workspaceTabs.activeTabId(in: section) }
     private var activeDatabase: PagesDatabasesParity.Database? { databases.first { $0.id == activeId } }
 
@@ -444,13 +468,14 @@ struct DatabasesWorkspaceView: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: "\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(session.companionResultRevision)") { await load() }
     }
 
     private var workspace: some View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Databases", catalogueImage: "tablecells", accent: session.accent)
-            if sizeClass == .regular {
+            PagesDatabaseSyncNotice(outbox:outbox)
+            if !compactPresentation {
                 HStack(spacing: 0) {
                     databaseSidebar.frame(width: 250)
                     Divider()
@@ -460,7 +485,8 @@ struct DatabasesWorkspaceView: View {
             } else if let activeDatabase {
                 DatabaseDetailWorkspace(session: session, database: activeDatabase, tables: $tables, outbox: outbox)
             } else { catalogue }
-        }.accessibilityIdentifier("databases-workspace")
+        }.accessibilityElement(children: .contain)
+        .accessibilityIdentifier("databases-workspace")
     }
 
     private var databaseSidebar: some View {
@@ -493,7 +519,7 @@ struct DatabasesWorkspaceView: View {
                 DesktopPageHeader(title: "Databases", subtitle: "Typed properties, linked views and automations", systemImage: "tablecells", accent: session.accent, trailing: {
                     Button { Task { await createDatabase() } } label: { Label("New database", systemImage: "plus") }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil)
                 })
-                if sizeClass == .compact { NodusSearchField(text: $query, prompt: "Find a database", accent: session.accent) }
+                if compactPresentation { NodusSearchField(text: $query, prompt: "Find a database", accent: session.accent) }
                 if let error { NodusNotice(tone: .blocked, title: "Databases could not load", message: LocalizedStringKey(error)) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 10)], spacing: 10) {
                     ForEach(filteredDatabases) { database in
@@ -538,37 +564,86 @@ struct DatabasesWorkspaceView: View {
         tables["db_databases", default: []].append(Row(row))
         let columnId = "dcol_\(UUID().uuidString)", column: [String: JSONValue] = ["id": .string(columnId), "database_id": .string(id), "name": .string("Name"), "type": .string("title"), "position": .int(0), "config_json": .string("{}"), "revision": .int(1), "created_at": .string(now), "updated_at": .string(now)]
         tables["db_columns", default: []].append(Row(column)); databases = PagesDatabasesParity.databases(in: tables)
-        _ = await outbox.syncMutation(kind: .upsert, table: .databases, key: [id], row: row, title: "Create database")
-        _ = await outbox.syncMutation(kind: .upsert, table: .databaseColumns, key: [columnId], row: column, title: "Create title property")
+        guard await outbox.syncMutation(kind:.upsert,table:.databases,key:[id],row:row,title:"Crear base de datos") else {tables["db_databases"]?.removeAll{$0.string("id") == id};tables["db_columns"]?.removeAll{$0.string("id") == columnId};databases=PagesDatabasesParity.databases(in:tables);return}
+        if !((await outbox.syncMutation(kind:.upsert,table:.databaseColumns,key:[columnId],row:column,title:"Crear propiedad de título"))) {tables["db_columns"]?.removeAll{$0.string("id") == columnId}}
         if let database = databases.first(where: { $0.id == id }) { open(database) }
     }
 }
 
-private struct DatabaseDetailWorkspace: View {
+struct DatabaseDetailWorkspace: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let session: SpaceSession
     let database: PagesDatabasesParity.Database
     @Binding var tables: [String: [Row]]
     let outbox: OutboxController?
+    var downloadedOnly=false
 
     @State private var query = ""
+    @State private var selectedBoardGroup = ""
     @State private var activeViewId: String?
     @State private var adHocLayout = "table"
     @State private var selectedRowId: String?
-    @State private var showInspector = false
+    /// The presentation owns its row, including on the first tap when the compact
+    /// list has not read selectedRowId. Refreshing a saved view cannot empty the sheet.
+    @State private var presented: Presented?
+    private enum Presented: Identifiable {
+        case inspector(PagesDatabasesParity.DataRow)
+        case newColumn
+        case editColumn(PagesDatabasesParity.Column)
+        case foreignRow(DatabaseForeignRow)
+        var id: String {
+            switch self {
+            case .inspector(let row): return "inspector-" + row.id
+            case .newColumn: return "new-column"
+            case .editColumn(let column): return "edit-" + column.id
+            case .foreignRow(let row): return "foreign-row-" + row.id
+            }
+        }
+    }
     @State private var sortColumnId: String?
     @State private var sortDirection: PagesDatabasesParity.SortDirection = .ascending
-    @State private var creatingColumn = false
+
     @State private var importingCSV = false
     @State private var importMessage: String?
+    @State private var phoneTable = false
+    @State private var canonicalRows:[PagesDatabasesParity.DataRow]?
+    @State private var usingDownloadedView = false
+    @State private var viewIssue:String?
+    @State private var loadingView=false
+    @State private var viewAttempt=0
+    @State private var presentationRevision = 0
+
+    private var compactPresentation: Bool { UIDevice.current.userInterfaceIdiom == .phone || sizeClass != .regular }
 
     private var columns: [PagesDatabasesParity.Column] { PagesDatabasesParity.columns(databaseId: database.id, in: tables) }
     private var allRows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.rows(databaseId: database.id, in: tables) }
-    private var rows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.filteredRows(allRows, columns: columns, query: query, sortColumnId: sortColumnId, direction: sortDirection) }
+    private var viewRows:[PagesDatabasesParity.DataRow] {
+        guard session.connection.desktopPairingId != nil,activeViewId != nil else {return allRows}
+        guard let canonicalRows else {return []}
+        // The local engine has already applied pending edits, filters and sorts.
+        if usingDownloadedView { return canonicalRows }
+        let pending=Set((tables["db_cells"] ?? []).filter{$0.string("mobileSyncState") == "pending"}.compactMap{$0.string("row_id")})
+        var result=canonicalRows.map{row in
+            guard row.databaseId == database.id,pending.contains(row.id),let local=allRows.first(where:{$0.id == row.id}) else {return row}
+            var edited=row;edited.cells=local.cells;edited.formulaErrors=local.formulaErrors;edited.formulaColors=local.formulaColors;return edited
+        }
+        let known=Set(result.map(\.id))
+        result.append(contentsOf:allRows.filter{row in !known.contains(row.id) && tables["db_rows"]?.first(where:{$0.string("id") == row.id})?.string("mobileSyncState") != nil})
+        return result
+    }
+    private var rows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.filteredRows(viewRows, columns: columns, query: query, sortColumnId: sortColumnId, direction: sortDirection) }
     private var views: [PagesDatabasesParity.SavedView] { PagesDatabasesParity.views(databaseId: database.id, in: tables) }
     private var activeView: PagesDatabasesParity.SavedView? { views.first { $0.id == activeViewId } }
     private var layout: String { activeView?.layout ?? adHocLayout }
-    private var selectedRow: PagesDatabasesParity.DataRow? { allRows.first { $0.id == selectedRowId } }
+    private var sharedPresentation: Bool { session.connection.desktopPairingId != nil && ["chart", "map", "feed", "dashboard", "calendar", "timeline"].contains(layout) }
+    private var viewConfig: [String: JSONValue] { activeView?.config ?? [:] }
+    private var visibleColumns: [PagesDatabasesParity.Column] { PagesDatabasesParity.visibleColumns(columns, config: viewConfig) }
+    private var cardColumns: [PagesDatabasesParity.Column] { PagesDatabasesParity.cardColumns(columns, config: viewConfig) }
+    private var galleryCardColumns: [PagesDatabasesParity.Column] {
+        let selected = !(viewConfig["cardPropertyIds"]?.arrayValue ?? []).isEmpty
+        return Array(cardColumns.filter { selected || ["select", "status", "multi_select"].contains($0.type) }.prefix(4))
+    }
+    private var selectedRow: PagesDatabasesParity.DataRow? { viewRows.first { $0.id == selectedRowId && $0.databaseId == database.id } }
     private var csv: String {
         ([columns.map(\.name)] + rows.map { row in columns.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } })
             .map { $0.map(csvCell).joined(separator: ",") }.joined(separator: "\n")
@@ -577,30 +652,51 @@ private struct DatabaseDetailWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             header.padding(NodusSpace.page)
+            PagesDatabaseSyncNotice(outbox:outbox)
             Divider()
             viewStrip
             Divider()
             HStack(spacing: 0) {
                 content
-                if sizeClass == .regular, let selectedRow { Divider(); DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).frame(width: 330) }
+                if !compactPresentation, let selectedRow { Divider(); DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly || usingDownloadedView).frame(width: 330) }
             }
         }
         .onAppear { if activeViewId == nil { activeViewId = views.first?.id; adHocLayout = views.first?.layout ?? "table" } }
         .onChange(of: database.id) { _, _ in activeViewId = views.first?.id; selectedRowId = nil }
-        .nodusSheet(isPresented: $showInspector) { if let selectedRow { NavigationStack { DatabaseRowInspector(session: session, database: database, row: selectedRow, tables: $tables, outbox: outbox).navigationTitle("Row details") }.nodusModalClose(accent: session.accent) } }
-        .nodusSheet(isPresented: $creatingColumn) { NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox) }
+        .onChange(of: activeViewId) { _, _ in
+            canonicalRows = nil
+            selectedRowId = nil
+            if case .inspector = presented { presented = nil }
+        }
+        .onChange(of: tables) { _, _ in presentationRevision += 1 }
+        .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(presentationRevision)|\(viewAttempt)") {await loadSavedView()}
+        .nodusSheet(item: $presented) { target in
+            switch target {
+            case .inspector(let openingRow):
+                let row = viewRows.first { $0.id == openingRow.id } ?? allRows.first { $0.id == openingRow.id } ?? openingRow
+                NavigationStack { DatabaseRowInspector(session: session, database: database, row: row, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly || usingDownloadedView).navigationTitle("Detalle de la fila").nodusModalClose(accent: session.accent) }
+            case .newColumn:
+                NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox)
+            case .editColumn(let column):
+                NewDatabaseColumnSheet(session: session, databaseId: database.id, tables: $tables, outbox: outbox, existingColumn: column)
+            case .foreignRow(let row):
+                NavigationStack { DatabaseLinkedRowReader(session: session, id: row.id, downloadedOnly: downloadedOnly || usingDownloadedView).nodusModalClose(accent: session.accent) }
+            }
+        }
         .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             guard case .success(let url) = result else { return }
             Task { await requestDesktopImport(url) }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("database-detail-\(database.id)")
     }
 
     private var header: some View {
-        DesktopPageHeader(title: LocalizedStringKey(database.name), subtitle: "\(database.shortId) · \(rows.count) of \(allRows.count) rows", systemImage: database.icon ?? "tablecells", accent: session.accent, trailing: {
+        DesktopPageHeader(title: LocalizedStringKey(database.name), subtitle: loadingView ? "Cargando vista…":"\(database.shortId) · \(rows.count) filas", systemImage: database.icon ?? "tablecells", accent: session.accent, trailing: {
             HStack(spacing: 7) {
                 Menu {
-                    Button { creatingColumn = true } label: { Label("New property", systemImage: "rectangle.split.1x2") }
+                    Button { presented = .newColumn } label: { Label("New property", systemImage: "rectangle.split.1x2") }
+                    Menu("Configurar propiedades") { ForEach(columns) { column in Button(column.name) { presented = .editColumn(column) } } }
                     Button { importingCSV = true } label: { Label("Import CSV", systemImage: "tablecells.badge.ellipsis") }.disabled(session.isDemo)
                     ShareLink(item: csv) { Label("Export CSV", systemImage: "square.and.arrow.up") }
                 } label: { Label("Manage", systemImage: "ellipsis.circle") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
@@ -618,8 +714,9 @@ private struct DatabaseDetailWorkspace: View {
                             .buttonStyle(.bordered).tint(activeViewId == view.id ? session.accent : .secondary)
                     }
                     Menu {
-                        ForEach(["table", "gallery", "board", "calendar", "timeline"], id: \.self) { candidate in Button { activeViewId = nil; adHocLayout = candidate } label: { Label(candidate.capitalized, systemImage: layoutIcon(candidate)) } }
-                    } label: { Label("View", systemImage: "plus") }.buttonStyle(.bordered)
+                        if compactPresentation { Toggle("Tabla completa", isOn: $phoneTable).accessibilityIdentifier("database-full-table") }
+                        ForEach(["table", "list", "gallery", "board", "calendar", "timeline", "chart", "map", "feed", "dashboard"], id: \.self) { candidate in Button { activeViewId = nil; adHocLayout = candidate } label: { Label(candidate.capitalized, systemImage: layoutIcon(candidate)) } }
+                    } label: { Label("View", systemImage: "plus") }.buttonStyle(.bordered).accessibilityIdentifier("database-view-menu")
                 }
             }.scrollIndicators(.hidden)
             Spacer(minLength: 0)
@@ -632,16 +729,29 @@ private struct DatabaseDetailWorkspace: View {
 
     private var content: some View {
         VStack(spacing: 0) {
-            NodusSearchField(text: $query, prompt: "Filter rows and properties", accent: session.accent).padding(10)
+            if !sharedPresentation { NodusSearchField(text: $query, prompt: "Filter rows and properties", accent: session.accent).padding(10) }
+            if loadingView {ProgressView("Cargando la vista guardada de Nodus…").padding(12)}
+            if let viewIssue {NodusNotice(tone:.caution,title:"No se pudo consultar esta vista",message:LocalizedStringKey(viewIssue)).padding(.horizontal,12);Button("Reintentar"){viewAttempt += 1}.frame(minHeight:44)}
             if let importMessage { Text(importMessage).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 12).frame(maxWidth: .infinity, alignment: .leading) }
             Group {
-                switch layout {
+                if sharedPresentation {
+                    SharedDesktopSurface(session: session, surface: .databasePresentation,
+                        initialDatabasePresentation: .object(["databaseId": .string(database.id), "viewId": activeViewId.map(JSONValue.string) ?? .null, "layout": .string(layout)]),
+                        onOpenDatabaseRow: { id in
+                            if let row = (viewRows + allRows).first(where: { $0.id == id }) { select(row) }
+                            else { presented = .foreignRow(DatabaseForeignRow(id: id)) }
+                        }, downloadedOnly: downloadedOnly)
+                        .id("\(database.id):\(activeViewId ?? layout):\(session.companionPublicationRevision):\(presentationRevision)")
+                }
+                else if session.connection.desktopPairingId != nil,activeViewId != nil,canonicalRows == nil {Color.clear}
+                else {switch layout {
                 case "gallery": gallery
+                case "list": phoneRows
                 case "board", "kanban": board
                 case "calendar": calendar
                 case "timeline": timeline
-                default: table
-                }
+                default: if compactPresentation && !phoneTable { phoneRows } else { table }
+                }}
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
@@ -659,13 +769,45 @@ private struct DatabaseDetailWorkspace: View {
                 .frame(minHeight: proxy.size.height, alignment: .top)
             }
             .scrollIndicators(.visible)
+            .accessibilityIdentifier("database-table")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    private var phoneRows: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                if rows.isEmpty { ContentUnavailableView("No hay filas", systemImage: "tablecells", description: Text(query.isEmpty ? "Añade una fila para empezar." : "Prueba otro término de búsqueda.")) }
+                ForEach(rows) { row in
+                    Button { select(row) } label: {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(rowTitle(row)).font(.headline).multilineTextAlignment(.leading)
+                                Spacer(minLength: 6)
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                            }
+                            ForEach(columns.filter { $0.type != "title" }.prefix(3)) { column in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Label(column.name, systemImage: propertyIcon(column.type)).font(.caption).foregroundStyle(.secondary)
+                                    if column.isReadOnly {
+                                        DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id])
+                                            .font(.subheadline).lineLimit(3).multilineTextAlignment(.leading)
+                                    } else {
+                                        Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor")
+                                            .font(.subheadline).lineLimit(3).multilineTextAlignment(.leading)
+                                    }
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading).desktopContentRow(accent: session.accent)
+                    }.buttonStyle(NodusCardButtonStyle()).accessibilityIdentifier("database-row-\(row.id)")
+                }
+            }.padding(NodusSpace.page)
+        }.scrollDismissesKeyboard(.interactively)
+    }
+
     private var databaseTableHeader: some View {
         HStack(spacing: 0) {
-            ForEach(columns) { column in
+            ForEach(visibleColumns) { column in
                 HStack {
                     Image(systemName: propertyIcon(column.type))
                     Text(column.name).lineLimit(1)
@@ -675,7 +817,7 @@ private struct DatabaseDetailWorkspace: View {
                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 .frame(width: columnWidth(column), height: 38).padding(.horizontal, 9)
                 .background(Color(uiColor: .secondarySystemBackground))
-                .overlay(alignment: .trailing) { Divider() }
+                .overlay(alignment: .trailing) { Rectangle().fill(Color.secondary.opacity(0.22)).frame(width: 1).allowsHitTesting(false).accessibilityHidden(true) }
             }
         }
     }
@@ -683,7 +825,7 @@ private struct DatabaseDetailWorkspace: View {
     private func databaseTableRow(_ row: PagesDatabasesParity.DataRow) -> some View {
         Button { select(row) } label: {
             HStack(spacing: 0) {
-                ForEach(columns) { column in databaseTableCell(column, row: row) }
+                ForEach(visibleColumns) { column in databaseTableCell(column, row: row) }
             }
             .background(selectedRowId == row.id ? session.accent.opacity(0.11) : Color(uiColor: .systemBackground).opacity(0.35))
             .overlay(alignment: .bottom) { Divider() }
@@ -693,26 +835,149 @@ private struct DatabaseDetailWorkspace: View {
     }
 
     private func databaseTableCell(_ column: PagesDatabasesParity.Column, row: PagesDatabasesParity.DataRow) -> some View {
-        Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns))
+        Group {
+            if column.isReadOnly { DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns), error: row.formulaErrors[column.id], color: row.formulaColors[column.id]) }
+            else { Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)) }
+        }
             .font(.caption).lineLimit(2)
             .frame(width: columnWidth(column), alignment: .leading)
             .frame(minHeight: 42)
             .padding(.horizontal, 9)
-            .overlay(alignment: .trailing) { Divider() }
+            .overlay(alignment: .trailing) { Rectangle().fill(Color.secondary.opacity(0.22)).frame(width: 1).allowsHitTesting(false).accessibilityHidden(true) }
     }
 
     private var gallery: some View {
-        ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) { ForEach(rows) { row in Button { select(row) } label: { VStack(alignment: .leading, spacing: 8) { RoundedRectangle(cornerRadius: 9).fill(session.accent.opacity(0.12)).frame(height: 92).overlay { Image(systemName: "doc.richtext").font(.largeTitle).foregroundStyle(session.accent) }; Text(rowTitle(row)).font(.headline).lineLimit(2); ForEach(columns.dropFirst().prefix(3)) { column in HStack { Text(column.name); Spacer(); Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)).lineLimit(1) }.font(.caption2).foregroundStyle(.secondary) } }.desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary) }.buttonStyle(NodusCardButtonStyle()) } }.padding(10) }
+        let size = viewConfig["cardSize"]?.stringValue ?? "medium"
+        let minimum:CGFloat = compactPresentation ? (size == "large" ? 280:150) : (size == "small" ? 160:size == "large" ? 340:240)
+        return ScrollView {
+            LazyVGrid(columns:[GridItem(.adaptive(minimum:minimum),spacing:10)],spacing:10) {
+                ForEach(rows) { row in
+                    Button { select(row) } label: {
+                        VStack(alignment:.leading,spacing:8) {
+                            galleryCover(row).frame(height:size == "small" ? 100:size == "large" ? 210:150).clipShape(RoundedRectangle(cornerRadius:9))
+                            Text(rowTitle(row)).font(.headline).fixedSize(horizontal:false,vertical:true)
+                            ForEach(galleryCardColumns) { column in
+                                VStack(alignment:.leading,spacing:2) {
+                                    Text(column.name).font(.caption2).foregroundStyle(.secondary)
+                                    Text(PagesDatabasesParity.displayValue(column:column,row:row,allRows:allRows,columns:columns)).font(.caption).fixedSize(horizontal:false,vertical:true)
+                                }.frame(maxWidth:.infinity,alignment:.leading)
+                            }
+                        }.frame(maxWidth:.infinity,alignment:.leading).desktopContentRow(accent:selectedRowId == row.id ? session.accent:.secondary)
+                    }.buttonStyle(NodusCardButtonStyle())
+                }
+            }.padding(10)
+        }
+    }
+
+    @ViewBuilder private func galleryCover(_ row:PagesDatabasesParity.DataRow) -> some View {
+        let cover=viewConfig["cover"]?.objectValue ?? [:],kind=cover["kind"]?.stringValue ?? "page_content"
+        let preferred=kind == "property" ? cover["columnId"]?.stringValue:nil
+        let files=(tables["db_attachments"] ?? []).filter{$0.string("row_id")==row.id && ($0.string("mime_type") ?? "").hasPrefix("image/")}
+            .sorted { a,b in
+                let left=a.string("column_id")==preferred,right=b.string("column_id")==preferred
+                return left != right ? left:(a.double("position") ?? 0) < (b.double("position") ?? 0)
+            }
+        let page=(tables["pages"] ?? []).first{$0.string("row_id")==row.id && $0.string("state") != "trashed"}
+        if kind != "none",kind == "page_cover",let hash=page?.string("cover_blob_hash") {
+            DatabaseGalleryCover(session:session,kind:.pageAsset,id:hash,fit:cover["fit"]?.stringValue ?? "cover",downloadedOnly:downloadedOnly)
+        } else if kind != "none",kind != "page_cover",let id=files.first?.string("id") {
+            DatabaseGalleryCover(session:session,kind:.databaseAttachment,id:id,fit:cover["fit"]?.stringValue ?? "cover",downloadedOnly:downloadedOnly)
+        } else if kind != "none" {
+            RoundedRectangle(cornerRadius:9).fill(session.accent.opacity(0.08)).overlay{Image(systemName:"doc.richtext").font(.title).foregroundStyle(session.accent)}
+        }
     }
 
     private var board: some View {
-        let groupColumn = columns.first { ["status", "select"].contains($0.type) }
-        let groups = Dictionary(grouping: rows) { row in groupColumn.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } ?? "Uncategorized" }
-        return ScrollView(.horizontal) { HStack(alignment: .top, spacing: 10) { ForEach(groups.keys.sorted(), id: \.self) { group in VStack(alignment: .leading, spacing: 8) { HStack { Text(group.isEmpty ? "No value" : group).font(.caption.weight(.semibold)); Spacer(); CountBadge(count: groups[group]?.count ?? 0, accent: session.accent) }; ForEach(groups[group] ?? []) { row in Button { select(row) } label: { VStack(alignment: .leading, spacing: 5) { Text(rowTitle(row)).font(.caption.weight(.semibold)); ForEach(columns.filter { $0.id != groupColumn?.id }.dropFirst().prefix(2)) { column in Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)).font(.caption2).foregroundStyle(.secondary).lineLimit(1) } }.desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary) }.buttonStyle(NodusCardButtonStyle()) } }.frame(width: 245).padding(9).background(Color(uiColor: .secondarySystemBackground).opacity(0.45), in: RoundedRectangle(cornerRadius: 12)) } }.padding(10) }
+        let configured = viewConfig["groupBy"]?.objectValue?["columnId"]?.stringValue
+        let groupColumn = configured.flatMap { id in columns.first { $0.id == id && ["status", "select", "person"].contains($0.type) } } ?? columns.first { ["status", "select", "person"].contains($0.type) }
+        let lanes = DatabaseCardPresentation.lanes(column:groupColumn,rows:rows,config:viewConfig)
+        let selected = lanes.first{$0.id == selectedBoardGroup} ?? lanes.first
+        return Group {
+            if groupColumn == nil {
+                ContentUnavailableView("Configura el tablero",systemImage:"rectangle.split.3x1",description:Text("Añade una propiedad de estado, selección o personas para agrupar las filas."))
+            } else if compactPresentation {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker(groupColumn?.name ?? "Grupo", selection: Binding(get: { selected?.id ?? "" }, set: { selectedBoardGroup = $0 })) {
+                            ForEach(lanes) { lane in Text("\(lane.label) · \(lane.rows.count)").tag(lane.id) }
+                        }.pickerStyle(.menu).frame(minHeight: 44).accessibilityIdentifier("database-board-lane-picker")
+                        if let selected { boardLaneHeader(selected);boardLaneRows(selected,groupColumn:groupColumn) }
+                        else { ContentUnavailableView("Sin filas", systemImage: "rectangle.split.3x1") }
+                    }.padding(12)
+                }
+            } else {
+                ScrollView([.horizontal, .vertical]) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(lanes) { lane in
+                            VStack(alignment: .leading, spacing: 8) {
+                                boardLaneHeader(lane)
+                                boardLaneRows(lane,groupColumn:groupColumn)
+                            }.frame(width: 260).padding(9).background(Color(uiColor: .secondarySystemBackground).opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }.padding(10)
+                }
+            }
+        }
+    }
+    private func boardLaneHeader(_ lane:DatabaseCardPresentation.Lane) -> some View {
+        HStack(spacing:8) {
+            Circle().fill(databaseOptionColor(lane.color)).frame(width:9,height:9).accessibilityHidden(true)
+            Text(lane.label).font(.subheadline.weight(.semibold)).fixedSize(horizontal:false,vertical:true)
+            Spacer(minLength:8)
+            Text(lane.limit.map{"\(lane.rows.count)/\($0)"} ?? String(lane.rows.count)).font(.caption.monospacedDigit())
+                .foregroundStyle(lane.atCapacity ? Color.red:.secondary)
+        }.accessibilityLabel("\(lane.label), \(lane.rows.count) filas\(lane.limit.map{", límite \($0)"} ?? "")")
+    }
+    private func databaseOptionColor(_ value:String?) -> Color {
+        guard let value else { return session.accent }
+        if value.range(of:"^#[0-9a-fA-F]{6}$",options:.regularExpression) != nil { return Color(hex:value) }
+        return ["red":.red,"orange":.orange,"yellow":.yellow,"green":.green,"blue":.blue,"purple":.purple,"pink":.pink,"gray":.gray,"grey":.gray,"teal":.teal,"cyan":.cyan,"indigo":.indigo][value] ?? session.accent
+    }
+    @ViewBuilder private func boardLaneRows(_ lane:DatabaseCardPresentation.Lane,groupColumn:PagesDatabasesParity.Column?) -> some View {
+        let subgroupId=viewConfig["subgroupBy"]?.objectValue?["columnId"]?.stringValue
+        let subgroup=subgroupId.flatMap{id in columns.first{$0.id==id && id != groupColumn?.id}}
+        if let subgroup, ["status", "select", "person"].contains(subgroup.type) {
+            let config: [String: JSONValue] = ["groupBy": viewConfig["subgroupBy"] ?? .null, "hideEmptyGroups": .bool(true)]
+            ForEach(DatabaseCardPresentation.lanes(column: subgroup, rows: lane.rows, config: config)) { group in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(group.label) · \(group.rows.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    LazyVStack(spacing: 10) { ForEach(group.rows) { row in boardCard(row, groupColumn: groupColumn) } }
+                }
+            }
+        } else if let subgroup {
+            let groups=Dictionary(grouping:lane.rows){$0.cells[subgroup.id] ?? ""}
+            let descending=viewConfig["subgroupBy"]?.objectValue?["dir"] == .string("desc")
+            let keys=groups.keys.sorted{descending ? $0 > $1:$0 < $1}
+            ForEach(keys,id:\.self) { key in
+                VStack(alignment:.leading,spacing:8) {
+                    if let row=groups[key]?.first {
+                        let label=PagesDatabasesParity.displayValue(column:subgroup,row:row,allRows:allRows,columns:columns)
+                        Text("\(label.isEmpty ? "Sin valor":label) · \(groups[key]?.count ?? 0)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                    LazyVStack(spacing:10){ForEach(groups[key] ?? []){row in boardCard(row,groupColumn:groupColumn)}}
+                }
+            }
+        } else { LazyVStack(spacing:10){ForEach(lane.rows){row in boardCard(row,groupColumn:groupColumn)}} }
+        if lane.rows.isEmpty { Text("Sin filas en este grupo").font(.caption).foregroundStyle(.secondary).padding(.vertical,16) }
+    }
+    private func boardCard(_ row: PagesDatabasesParity.DataRow, groupColumn: PagesDatabasesParity.Column?) -> some View {
+        let size = viewConfig["cardSize"]?.stringValue ?? "medium"
+        let minimum: CGFloat = size == "small" ? 70 : size == "large" ? 126 : 94
+        return Button { select(row) } label: {
+            VStack(alignment: .leading, spacing: size == "small" ? 5 : 8) {
+                Text(rowTitle(row)).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                ForEach(Array(cardColumns.filter { $0.id != groupColumn?.id }.prefix(4))) { column in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(column.name).font(.caption2).foregroundStyle(.secondary)
+                        Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }.frame(maxWidth: .infinity, minHeight: minimum, alignment: .topLeading).desktopContentRow(accent: selectedRowId == row.id ? session.accent : .secondary)
+        }.buttonStyle(NodusCardButtonStyle()).frame(minHeight: 44).accessibilityIdentifier("database-row-\(row.id)")
     }
 
     private var calendar: some View {
-        let dateColumn = columns.first { $0.type == "date" }
+        let dateColumn = PagesDatabasesParity.layoutColumn(columns, config: viewConfig, field: "dateColumnId", types: ["date"])
         return ScrollView {
             VStack(alignment: .leading, spacing: 9) {
                 ForEach(rows.sorted { value(dateColumn, $0) < value(dateColumn, $1) }) { row in
@@ -733,7 +998,7 @@ private struct DatabaseDetailWorkspace: View {
     }
 
     private var timeline: some View {
-        let dateColumn = columns.first { $0.type == "date" }
+        let dateColumn = PagesDatabasesParity.layoutColumn(columns, config: viewConfig, field: "startColumnId", types: ["date"])
         return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(rows.sorted { value(dateColumn, $0) < value(dateColumn, $1) }.enumerated()), id: \.element.id) { index, row in
@@ -754,16 +1019,53 @@ private struct DatabaseDetailWorkspace: View {
         }
     }
 
-    private func select(_ row: PagesDatabasesParity.DataRow) { selectedRowId = row.id; if sizeClass == .compact { showInspector = true } }
+    private func select(_ row: PagesDatabasesParity.DataRow) {
+        if row.databaseId != database.id {presented = .foreignRow(DatabaseForeignRow(id:row.id));return}
+        selectedRowId=row.id;if compactPresentation {presented = .inspector(row)}
+    }
+    private func loadSavedView() async {
+        viewIssue=nil
+        if sharedPresentation { loadingView = false; return }
+        guard session.connection.desktopPairingId != nil,let view=activeViewId else {loadingView=false;return}
+        loadingView=true;defer{loadingView=false}
+        do {
+            let (vault,pairing,token)=try privateBridgeConnection(session,domain:.corpus)
+            let source: CompanionDatabaseViewSource
+            var local = downloadedOnly
+            if downloadedOnly { source = try await CompanionDatabaseViewSource.loadDownloaded(session: session, viewId: view) }
+            else {
+                do {
+                    let client = DesktopBridgeClient(pairing: pairing, token: token)
+                    source = try await CompanionDatabaseViewSource.load(vault: vault, viewId: view) { method, args in
+                        try await client.operation(vaultId: vault, method: method, args: args)
+                    }
+                } catch {
+                    guard isPrivateBridgeOffline(error) else { throw error }
+                    source = try await CompanionDatabaseViewSource.loadDownloaded(session: session, viewId: view); local = true
+                }
+            }
+            let loaded=try DatabaseContainerPresentation.rows(definition:source.definition,rows:source.rows,databaseId:database.id)
+            try Task.checkCancellation();usingDownloadedView=local;canonicalRows=loaded
+        }catch where error.isCancellation {}
+        catch{viewIssue=error.localizedDescription}
+    }
     private func rowTitle(_ row: PagesDatabasesParity.DataRow) -> String { columns.first(where: { $0.type == "title" }).map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) }?.nonEmpty ?? "Untitled row" }
     private func value(_ column: PagesDatabasesParity.Column?, _ row: PagesDatabasesParity.DataRow) -> String { column.map { PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns) } ?? "" }
-    private func columnWidth(_ column: PagesDatabasesParity.Column) -> CGFloat { column.type == "title" ? 250 : column.type == "formula" ? 125 : 160 }
+    private func columnWidth(_ column: PagesDatabasesParity.Column) -> CGFloat {
+        if let property = viewConfig["properties"]?.arrayValue?.first(where: { $0.objectValue?["columnId"] == .string(column.id) }),
+           let width = property.objectValue?["width"]?.doubleValue, width.isFinite, width > 0 {
+            return CGFloat(min(2_000, max(80, width)))
+        }
+        return column.type == "title" ? 250 : column.type == "formula" ? 125 : 160
+    }
 
     private func addRow() async {
         guard let outbox else { return }; let id = "drow_\(UUID().uuidString)", now = ISO8601DateFormatter.nodusFractional.string(from: Date())
         let row: [String: JSONValue] = ["id": .string(id), "database_id": .string(database.id), "position": .double((allRows.last?.position ?? -1) + 1), "unique_sequence": .int(Int64(allRows.count + 1)), "revision": .int(1), "created_by": .string("mobile"), "updated_by": .string("mobile"), "created_at": .string(now), "updated_at": .string(now)]
-        tables["db_rows", default: []].append(Row(row)); _ = await outbox.syncMutation(kind: .upsert, table: .databaseRows, key: [id], row: row, title: "Add database row"); selectedRowId = id
-        if sizeClass == .compact { showInspector = true }
+        guard await outbox.syncMutation(kind:.upsert,table:.databaseRows,key:[id],row:row,title:"Crear fila") else {return}
+        var staged=row;staged["mobileSyncState"] = .string(outbox.pending > 0 ? "pending":"available")
+        tables["db_rows",default:[]].append(Row(staged));selectedRowId=id
+        if compactPresentation, let row = allRows.first(where: { $0.id == id }) { presented = .inspector(row) }
     }
 
     private func requestDesktopImport(_ url: URL) async {
@@ -786,9 +1088,9 @@ private struct DatabaseDetailWorkspace: View {
             ]
             let result = try await session.client.createSpaceAction(
                 idempotencyKey: "database-import:\(UUID().uuidString)", kind: .databaseImportCSV,
-                payload: payload, inputRevision: session.publishedRevision, in: session.connection.spaceId
+                payload: payload, inputRevision: session.publishedRevision, executionMode:session.aiExecutionMode.rawValue, in:session.connection.spaceId
             )
-            importMessage = "CSV queued for Desktop as \(result.action.id). It will appear after the vault republishes."
+            importMessage = result.action.receiptMessage
         } catch {
             importMessage = "CSV import could not be queued: \(error.localizedDescription)"
         }
@@ -801,9 +1103,15 @@ private struct DatabaseRowInspector: View {
     let row: PagesDatabasesParity.DataRow
     @Binding var tables: [String: [Row]]
     let outbox: OutboxController?
+    var downloadedOnly = false
     @State private var drafts: [String: String] = [:]
+    private struct CellBaseline { let revision: Int; let value: String }
+    @State private var editedColumns: Set<String> = []
+    @State private var cellBaselines: [String: CellBaseline] = [:]
     @State private var tab = "Properties"
     @State private var saving = false
+    @State private var saveError: String?
+    @State private var rowPageOpen = false
 
     private var columns: [PagesDatabasesParity.Column] { PagesDatabasesParity.columns(databaseId: database.id, in: tables) }
     private var allRows: [PagesDatabasesParity.DataRow] { PagesDatabasesParity.rows(databaseId: database.id, in: tables) }
@@ -812,57 +1120,133 @@ private struct DatabaseRowInspector: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack { VStack(alignment: .leading) { Text(rowTitle).font(.headline).lineLimit(2); Text("Row \(row.id)").font(.caption2.monospaced()).foregroundStyle(.secondary) }; Spacer(); Button { Task { await save() } } label: { if saving { ProgressView() } else { Image(systemName: "checkmark") } }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving) }.padding(12)
-            Picker("Row panel", selection: $tab) { Text("Properties").tag("Properties"); Text("Relations").tag("Relations"); Text("Page").tag("Page") }.pickerStyle(.segmented).padding(.horizontal, 10).padding(.bottom, 10)
+            HStack(alignment: .top) { VStack(alignment: .leading, spacing: 4) { Text(rowTitle).font(.headline).fixedSize(horizontal: false, vertical: true); Text(database.name).font(.caption).foregroundStyle(.secondary) }; Spacer(minLength: 8); Button { Task { await save() } } label: { if saving { ProgressView() } else { Label("Guardar", systemImage: "checkmark") } }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving).accessibilityIdentifier("database-row-save") }.padding(12)
+            Picker("Detalle de la fila", selection: $tab) { Text("Propiedades").tag("Properties"); Text("Enlaces").tag("Relations"); Text("Página").tag("Page") }.pickerStyle(.segmented).padding(.horizontal, 10).padding(.bottom, 10)
+            if let saveError { Text(saveError).font(.caption).foregroundStyle(.red).padding(.horizontal, 12) }
+            PagesDatabaseSyncNotice(outbox:outbox)
             Divider()
-            ScrollView { VStack(alignment: .leading, spacing: 10) { if tab == "Relations" { relationsPanel } else if tab == "Page" { pagePanel } else { propertiesPanel } }.padding(11) }
-        }.background(Color(uiColor: .secondarySystemBackground).opacity(0.42)).onAppear { seed() }.onChange(of: row.id) { _, _ in seed() }.accessibilityIdentifier("database-row-inspector")
+            ScrollView { VStack(alignment: .leading, spacing: 16) { if tab == "Relations" { relationsPanel } else if tab == "Page" { pagePanel } else { propertiesPanel } }.padding(NodusSpace.page) }.scrollDismissesKeyboard(.interactively)
+        }.background(Color(uiColor: .secondarySystemBackground).opacity(0.42)).onAppear { seed() }.onChange(of: row.id) { _, _ in seed() }.onChange(of: row.revision) { _, _ in refreshUntouchedCells() }.accessibilityIdentifier("database-row-inspector")
+        .nodusSheet(isPresented: $rowPageOpen) {
+            if let page = linkedPage {
+                NavigationStack { PageDocumentWorkspace(session: session, page: page, tables: $tables, outbox: outbox).navigationTitle(page.title).navigationBarTitleDisplayMode(.inline).nodusModalClose(accent: session.accent) }
+            }
+        }
     }
 
     private var propertiesPanel: some View {
-        ForEach(columns) { column in
-            VStack(alignment: .leading, spacing: 5) {
-                Label(column.name, systemImage: propertyIcon(column.type)).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                if column.isReadOnly { Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "No computed value").font(.callout).frame(maxWidth: .infinity, alignment: .leading).padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7)) }
-                else if ["select", "status"].contains(column.type) {
-                    Picker(column.name, selection: Binding(get: { drafts[column.id] ?? "" }, set: { drafts[column.id] = $0 })) { Text("No value").tag(""); ForEach(column.options) { Text($0.label).tag($0.id) } }.pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
-                } else if column.type == "checkbox" { Toggle("Checked", isOn: Binding(get: { ["1", "true"].contains((drafts[column.id] ?? "").lowercased()) }, set: { drafts[column.id] = $0 ? "1" : "0" })) }
-                else { TextField(column.name, text: Binding(get: { drafts[column.id] ?? "" }, set: { drafts[column.id] = $0 }), axis: .vertical).textFieldStyle(.roundedBorder).keyboardType(column.type == "number" ? .decimalPad : column.type == "email" ? .emailAddress : column.type == "url" ? .URL : .default) }
-            }
+        ForEach(columns) { column in propertyRow(column) }
+    }
+
+    private func propertyRow(_ column: PagesDatabasesParity.Column) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Label(column.name, systemImage: propertyIcon(column.type))
+                .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            propertyValue(column)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("database-property-value-\(column.id)")
+    }
+
+    @ViewBuilder private func propertyValue(_ column: PagesDatabasesParity.Column) -> some View {
+        if column.isReadOnly {
+            DatabaseComputedValue(value: databaseComputedDisplay(column: column, row: row, allRows: allRows, columns: columns),
+                error: row.formulaErrors[column.id], color: row.formulaColors[column.id])
+                .font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(9).background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+        } else if column.type == "relation" {
+            DatabaseRelationEditor(session: session, rowId: row.id, column: column, tables: $tables, outbox: outbox, downloadedOnly: downloadedOnly)
+        } else if ["files", "attachment", "ai_image"].contains(column.type) {
+            DatabaseAttachmentControls(session: session, rowId: row.id, column: column, tables: $tables, outbox: outbox)
+            if column.type == "ai_image" { actionControls(column) }
+        } else if column.type == "button" {
+            Text(PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns).nonEmpty ?? "Sin valor")
+                .font(.callout).textSelection(.enabled)
+            if ["button", "ai_image"].contains(column.type) { actionControls(column) }
+        } else {
+            DatabasePropertyCellEditor(column: column, value: cellDraft(column))
+            if column.type == "ai" { actionControls(column) }
+        }
+    }
+
+    private func actionControls(_ column: PagesDatabasesParity.Column) -> some View {
+        DatabasePropertyActionControls(session: session, rowId: row.id, column: column).id(row.id + ":" + column.id)
+    }
+
+    private func cellDraft(_ column: PagesDatabasesParity.Column) -> Binding<String> {
+        Binding(get: { drafts[column.id] ?? "" }, set: { value in
+            if !editedColumns.contains(column.id) {
+                let stored = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
+                cellBaselines[column.id] = CellBaseline(revision: stored?.columns["revision"]?.intValue ?? 0, value: row.cells[column.id] ?? "")
+                editedColumns.insert(column.id)
+            }
+            drafts[column.id] = value
+        })
     }
 
     private var relationsPanel: some View {
         Group {
             Label("Relations", systemImage: "link").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             if relations.isEmpty { Text("No linked rows, pages or Nodus entities.").font(.caption).foregroundStyle(.secondary) }
-            ForEach(relations, id: \.columns) { relation in HStack { Image(systemName: "link"); VStack(alignment: .leading) { Text(relation.text("last_known_label") ?? relation.string("target_id") ?? "Linked item").font(.caption.weight(.semibold)); Text(relation.string("target_kind") ?? "entity").font(.caption2).foregroundStyle(.secondary) }; Spacer() }.desktopContentRow(accent: session.accent) }
+            ForEach(relations, id: \.columns) { relation in DatabaseRelationLink(session: session, relation: relation).desktopContentRow(accent: session.accent) }
             Label("Files", systemImage: "paperclip").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 6)
-            if attachments.isEmpty { Text("Files use the secure object channel and download on demand.").font(.caption).foregroundStyle(.secondary) }
-            ForEach(attachments, id: \.columns) { file in Label(file.text("file_name") ?? "Attachment", systemImage: "doc").desktopContentRow(accent: session.accent) }
+            if attachments.isEmpty { Text("Sin archivos adjuntos").font(.caption).foregroundStyle(.secondary) }
+            ForEach(attachments, id: \.columns) { file in
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(file.text("file_name") ?? "Attachment", systemImage: "doc")
+                    if let bytes = file.int("bytes") { Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)).font(.caption).foregroundStyle(.secondary) }
+                    if session.connection.desktopPairingId != nil, let id = file.string("id") { PrivateFileButton(session: session, kind: .databaseAttachment, id: id) }
+                    else { Text("El original se consulta al vincular este dispositivo con Nodus.").font(.caption).foregroundStyle(.secondary) }
+                    if let description = file.text("description") { CorpusProse(description, accent: session.accent, session: session) }
+                    if let text = file.text("extracted_text") { DisclosureGroup("Texto del archivo") { CorpusProse(text, accent: session.accent, session: session) } }
+                }.desktopContentRow(accent: session.accent)
+            }
         }
     }
 
+    private var linkedPage: PagesDatabasesParity.Page? {
+        guard let id = (tables["pages"] ?? []).first(where: { $0.string("row_id") == row.id })?.string("id") else { return nil }
+        return PagesDatabasesParity.pages(in: tables).first { $0.id == id }
+    }
+
     private var pagePanel: some View {
-        let page = (tables["pages"] ?? []).first { $0.string("row_id") == row.id }
-        return Group {
-            Label("Universal row page", systemImage: "doc.text").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            if let page { Text(page.text("title") ?? rowTitle).font(.headline); Text("The row page keeps blocks, comments, backlinks and ACLs under stable ID \(page.string("id") ?? "").").font(.caption).foregroundStyle(.secondary) }
-            else { Text("Desktop will materialize the universal page when this queued row is applied.").font(.caption).foregroundStyle(.secondary) }
+        Group {
+            if let page = linkedPage {
+                Button { rowPageOpen = true } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "doc.text").foregroundStyle(session.accent)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(page.title).font(.headline).multilineTextAlignment(.leading)
+                            Text("Contenido, comentarios, enlaces e historial").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                        }
+                        Spacer(minLength: 6); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }.frame(minHeight: 44)
+                }.buttonStyle(.plain).accessibilityIdentifier("database-row-page-open")
+            } else { ContentUnavailableView("Página no disponible", systemImage: "doc.text", description: Text("Todavía no hay una página guardada para esta fila. Vuelve a consultarla cuando se sincronice con Nodus.")) }
         }
     }
 
     private var rowTitle: String { columns.first(where: { $0.type == "title" }).flatMap { drafts[$0.id]?.nonEmpty ?? PagesDatabasesParity.displayValue(column: $0, row: row, allRows: allRows, columns: columns).nonEmpty } ?? "Untitled row" }
-    private func seed() { drafts = row.cells }
+    private func seed() { drafts = row.cells; editedColumns = []; cellBaselines = [:] }
+    private func refreshUntouchedCells() { for column in columns where !editedColumns.contains(column.id) { drafts[column.id] = row.cells[column.id] ?? "" } }
     private func save() async {
-        guard let outbox else { return }; saving = true; defer { saving = false }
+        guard let outbox else { return }
+        let authoring: PrivateBridgeCache?
+        do { authoring = try databaseBeginAuthoring(session); saveError = nil }
+        catch { saveError = error.localizedDescription; return }
+        defer { authoring?.endAuthoringActivity() }
+        saving = true; defer { saving = false }
         let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
-        for column in columns where !column.isReadOnly && drafts[column.id] != row.cells[column.id] {
+        for column in columns where editedColumns.contains(column.id) && !column.isReadOnly && (drafts[column.id] ?? "") != (cellBaselines[column.id]?.value ?? row.cells[column.id] ?? "") {
             let value = drafts[column.id] ?? "", existing = tables["db_cells"]?.first { $0.string("row_id") == row.id && $0.string("column_id") == column.id }
             var cell = existing?.columns ?? ["database_id": .string(database.id), "row_id": .string(row.id), "column_id": .string(column.id), "created_by": .string("mobile"), "created_at": .string(now), "revision": .int(1)]
             cell["value_type"] = .string(databaseCellType(column.type)); cell["value_text"] = .string(value); cell["value_reference"] = ["select", "status"].contains(column.type) ? .string(value) : .null; cell["value_number"] = column.type == "number" ? Double(value).map(JSONValue.double) ?? .null : .null; cell["updated_by"] = .string("mobile"); cell["updated_at"] = .string(now)
-            tables["db_cells"]?.removeAll { $0.string("row_id") == row.id && $0.string("column_id") == column.id }; tables["db_cells", default: []].append(Row(cell))
-            _ = await outbox.syncMutation(kind: value.isEmpty ? .delete : .upsert, table: .databaseCells, key: [row.id, column.id], row: value.isEmpty ? nil : cell, title: "Update \(column.name)")
+            let paired=session.connection.desktopPairingId != nil
+            if paired {let expected=cellBaselines[column.id]?.revision ?? existing?.columns["revision"]?.intValue ?? 0;cell["_mobileExpectedRevision"] = .int(Int64(expected));cell["_mobileExpectedValue"] = .string(cellBaselines[column.id]?.value ?? row.cells[column.id] ?? "");cell["_mobileBaseRowRevision"] = .int(Int64(row.revision));cell["revision"] = .int(Int64(expected+1))}
+            guard await outbox.syncMutation(kind:paired ? .upsert:value.isEmpty ? .delete:.upsert,table:.databaseCells,key:[row.id,column.id],row:paired || !value.isEmpty ? cell:nil,title:"Actualizar \(column.name)") else {continue}
+            tables["db_cells"]?.removeAll{$0.string("row_id") == row.id && $0.string("column_id") == column.id}
+            if !value.isEmpty {tables["db_cells",default:[]].append(Row(cell))}
+            editedColumns.remove(column.id); cellBaselines[column.id] = nil
         }
     }
 }
@@ -873,23 +1257,87 @@ private struct NewDatabaseColumnSheet: View {
     let databaseId: String
     @Binding var tables: [String: [Row]]
     let outbox: OutboxController?
-    @State private var name = ""
-    @State private var type = "text"
-
+    let existingColumn: PagesDatabasesParity.Column?
+    @State private var name: String
+    @State private var type: String
+    @State private var config: [String: JSONValue]
+    @State private var options: [Row]
+    @State private var removedOptions: [Row] = []
+    @State private var saving = false
+    @State private var saveError: String?
+    init(session: SpaceSession, databaseId: String, tables: Binding<[String: [Row]]>, outbox: OutboxController?, existingColumn: PagesDatabasesParity.Column? = nil) {
+        self.session = session; self.databaseId = databaseId; self._tables = tables; self.outbox = outbox; self.existingColumn = existingColumn
+        _name = State(initialValue: existingColumn?.name ?? ""); _type = State(initialValue: existingColumn?.type ?? "rich_text")
+        _config = State(initialValue: existingColumn?.config ?? [:])
+        _options = State(initialValue: (tables.wrappedValue["db_select_options"] ?? []).filter { $0.string("column_id") == existingColumn?.id }.sorted { ($0.columns["position"]?.intValue ?? 0) < ($1.columns["position"]?.intValue ?? 0) })
+    }
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Property name", text: $name)
-                Picker("Type", selection: $type) { ForEach(["text", "number", "date", "status", "multi_select", "checkbox", "person", "url", "email", "files", "relation", "rollup", "formula"], id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ").capitalized).tag($0) } }
-                Text(["formula", "rollup"].contains(type) ? "Computed properties are configured safely on Desktop and their materialized values remain queryable here." : "The property is written through the same typed mutation ledger as Desktop.").font(.caption).foregroundStyle(.secondary)
-            }.navigationTitle("New property").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Create") { Task { await create() } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || outbox == nil) } }
+                Section("Propiedad") {
+                    TextField("Nombre", text: $name).accessibilityIdentifier("database-property-name")
+                    Picker("Tipo", selection: $type) { ForEach(CompanionDatabaseProperty.allCases) { property in Text(property.label).tag(property.rawValue) } }.accessibilityIdentifier("database-property-type")
+                }
+                Section("Configuración") {
+                    DatabasePropertyConfigurationFields(type: type, databaseId: databaseId, columnId: existingColumn?.id, tables: tables, config: $config)
+                    Toggle("Ajustar al contenido", isOn: Binding(get: { config["fitContent"]?.boolValue ?? false }, set: { config["fitContent"] = .bool($0) }))
+                    TextField("Ancho", value: Binding(get: { Int(config["width"]?.intValue ?? 160) }, set: { config["width"] = .int(Int64(max(60, $0))) }), format: .number).keyboardType(.numberPad)
+                }
+                if ["select","status","multi_select"].contains(type) { optionFields }
+                if ["ai","ai_image"].contains(type) { DatabasePropertyModelFields(session: session, image: type == "ai_image", config: $config) }
+                if CompanionDatabaseProperty(rawValue: type)?.computed == true { Text("Los valores los calcula Nodus al sincronizar. Aquí puedes configurar la propiedad y consultar su resultado.").font(.caption).foregroundStyle(.secondary) }
+                if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
+                PagesDatabaseSyncNotice(outbox:outbox)
+            }.navigationTitle(existingColumn == nil ? "Nueva propiedad" : "Configurar propiedad").toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button { Task { await save() } } label: { if saving { ProgressView() } else { Text(existingColumn == nil ? "Crear" : "Guardar") } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || outbox == nil || saving).accessibilityIdentifier("database-property-save") }
+            }
         }.nodusModalClose(accent: session.accent)
     }
-
-    private func create() async {
-        guard let outbox else { return }; let id = "dcol_\(UUID().uuidString)", now = ISO8601DateFormatter.nodusFractional.string(from: Date()), position = (tables["db_columns"] ?? []).filter { $0.string("database_id") == databaseId }.count
-        let row: [String: JSONValue] = ["id": .string(id), "database_id": .string(databaseId), "name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)), "type": .string(type), "position": .int(Int64(position)), "config_json": .string("{}"), "revision": .int(1), "created_by": .string("mobile"), "updated_by": .string("mobile"), "created_at": .string(now), "updated_at": .string(now)]
-        tables["db_columns", default: []].append(Row(row)); _ = await outbox.syncMutation(kind: .upsert, table: .databaseColumns, key: [id], row: row, title: "Create \(name)"); dismiss()
+    private var optionFields: some View {
+        Section("Opciones") {
+            ForEach(options.indices, id: \.self) { index in
+                TextField("Etiqueta", text: optionText(index, "label"))
+                TextField("Color", text: optionText(index, "color"))
+                if type == "status" { Picker("Grupo", selection: optionText(index, "group_key")) { Text("Pendiente").tag("pending"); Text("En curso").tag("in_progress"); Text("Completado").tag("complete") } }
+                Button("Eliminar opción", role: .destructive) { removedOptions.append(options.remove(at: index)) }
+            }
+            Button("Añadir opción") { options.append(Row(["id": .string("dopt_" + UUID().uuidString), "label": .string("Nueva opción"), "color": .string("#6366f1"), "group_key": type == "status" ? .string("pending") : .null])) }
+        }
+    }
+    private func optionText(_ index: Int, _ key: String) -> Binding<String> { Binding(get: { options[index].string(key) ?? (key == "group_key" ? "pending" : "") }, set: { text in var fields = options[index].columns; fields[key] = text.isEmpty ? .null : .string(text); options[index] = Row(fields) }) }
+    private func save() async {
+        guard let outbox else { return }
+        let authoring: PrivateBridgeCache?
+        do { authoring = try databaseBeginAuthoring(session); saveError = nil }
+        catch { saveError = error.localizedDescription; return }
+        defer { authoring?.endAuthoringActivity() }
+        saving = true; defer { saving = false }
+        let id = existingColumn?.id ?? "dcol_" + UUID().uuidString
+        let now = ISO8601DateFormatter.nodusFractional.string(from: Date())
+        let existing = tables["db_columns"]?.first { $0.string("id") == id }
+        var fields = existing?.columns ?? ["id": .string(id), "database_id": .string(databaseId), "position": .int(Int64((tables["db_columns"] ?? []).filter { $0.string("database_id") == databaseId }.count)), "created_by": .string("mobile"), "created_at": .string(now)]
+        guard let encoded = try? CompanionDatabaseProperty.configuration(config, patch: [:]) else { return }
+        fields["name"] = .string(name.trimmingCharacters(in: .whitespacesAndNewlines)); fields["type"] = .string(type); fields["config_json"] = .string(encoded)
+        let revision = existing?.columns["revision"]?.intValue ?? 0
+        fields["revision"] = .int(Int64(existing == nil ? (config.isEmpty ? 1 : 2) : revision + 1)); fields["updated_by"] = .string("mobile"); fields["updated_at"] = .string(now)
+        if existing != nil { fields["_mobileExpectedRevision"] = .int(Int64(revision)); fields["_mobileExpectedConfigJSON"] = .string(existing?.string("config_json") ?? "{}") }
+        guard await outbox.syncMutation(kind: .upsert, table: .databaseColumns, key: [id], row: fields, title: "Guardar propiedad \(name)") else { return }
+        tables["db_columns"]?.removeAll { $0.string("id") == id }; tables["db_columns", default: []].append(Row(fields))
+        if ["select","status","multi_select"].contains(type) {
+            for (index, option) in options.enumerated() {
+                guard let optionId = option.string("id") else { continue }
+                let baseline = tables["db_select_options"]?.first { $0.string("id") == optionId }
+                let oldRevision = baseline?.columns["revision"]?.intValue ?? 0
+                var value = option.columns; value["database_id"] = .string(databaseId); value["column_id"] = .string(id); value["position"] = .int(Int64(index)); value["revision"] = .int(Int64(oldRevision + 1)); value["_mobileExpectedRevision"] = .int(Int64(oldRevision)); value["created_at"] = baseline?.columns["created_at"] ?? .string(now); value["updated_at"] = .string(now)
+                if await outbox.syncMutation(kind: .upsert, table: .databaseSelectOptions, key: [optionId], row: value, title: "Guardar opción") { tables["db_select_options"]?.removeAll { $0.string("id") == optionId }; tables["db_select_options", default: []].append(Row(value)) }
+            }
+            for option in removedOptions {
+                guard let optionId = option.string("id"), let baseline = tables["db_select_options"]?.first(where: { $0.string("id") == optionId }) else { continue }
+                var value = baseline.columns; value["_mobileExpectedRevision"] = baseline.columns["revision"] ?? .int(0)
+                if await outbox.syncMutation(kind: .delete, table: .databaseSelectOptions, key: [optionId], row: value, title: "Eliminar opción") { tables["db_select_options"]?.removeAll { $0.string("id") == optionId } }
+            }
+        }
+        dismiss()
     }
 }
 
@@ -975,15 +1423,32 @@ private struct DatabaseAnalysisSurface: View {
 
 @MainActor
 func databaseParityTables(_ session: SpaceSession, _ names: [String]) async throws -> [String: [Row]] {
-    let fixture = debugDatabasesFixture()
-    if let mirror = session.mirror {
-        var result: [String: [Row]] = [:]
-        for name in names { result[name] = try await mirror.allRows(table: name) }
-        for name in names where fixture[name] != nil { result[name] = fixture[name] }
-        return result
+    let fixture = session.connection.desktopPairingId == nil ? debugDatabasesFixture() : [:]
+    var result:[String:[Row]]
+    if let mirror=session.mirror {
+        result=[:];for name in names {result[name]=try await mirror.allRows(table:name)}
+        for name in names where fixture[name] != nil {result[name]=fixture[name]}
+    } else {
+        let snapshot=try await session.client.snapshot(in:session.connection.spaceId)
+        result=Dictionary(uniqueKeysWithValues:names.map{($0,fixture[$0] ?? snapshot.tables[$0] ?? [])})
     }
-    let snapshot = try await session.client.snapshot(in: session.connection.spaceId)
-    return Dictionary(uniqueKeysWithValues: names.map { ($0, fixture[$0] ?? snapshot.tables[$0] ?? []) })
+    if session.connection.desktopPairingId != nil {
+        try ConnectionStorage.prepare(for:session.connection)
+        let queue=try await MutationOutbox.open(spaceId:session.connection.storageId,directory:URL.applicationSupportDirectory.appendingPathComponent("spaces",isDirectory:true))
+        result=try await queue.companionContentProjection(result)
+        if names.contains("pages") {
+            let (vault, pairing, _) = try privateBridgeConnection(session, domain: .corpus)
+            let documents = try await CompanionPageDocumentStores.shared.store(pairingId: pairing.id, vaultId: vault)
+            for owned in await documents.authoredPageRows() {
+                if let index = result["pages"]?.firstIndex(where: { $0.string("id") == owned.string("id") }) {
+                    let remote = result["pages"]![index]
+                    if owned.string("mobileSyncState") != "available" || (owned.int("revision") ?? 0) > (remote.int("revision") ?? 0) { result["pages"]![index] = owned }
+                } else { result["pages", default: []].append(owned) }
+            }
+        }
+    }
+    if session.connection.desktopPairingId != nil { result = try await DatabasePropertyActions.overlayTables(result, session: session) }
+    return result
 }
 
 private func debugDatabasesFixture() -> [String: [Row]] {
@@ -1001,7 +1466,11 @@ private func debugDatabasesFixture() -> [String: [Row]] {
 
 private func layoutIcon(_ layout: String) -> String { ["table": "tablecells", "gallery": "square.grid.2x2", "board": "rectangle.3.group", "kanban": "rectangle.3.group", "calendar": "calendar", "timeline": "timeline.selection", "chart": "chart.bar", "map": "map", "feed": "list.bullet.rectangle" ][layout] ?? "tablecells" }
 private func propertyIcon(_ type: String) -> String { ["title": "textformat", "rich_text": "text.alignleft", "text": "text.alignleft", "number": "number", "date": "calendar", "time": "clock", "select": "tag", "status": "circle.dashed", "multi_select": "tag.fill", "checkbox": "checkmark.square", "person": "person", "url": "link", "email": "envelope", "phone": "phone", "location": "mappin", "files": "paperclip", "attachment": "paperclip", "relation": "link", "rollup": "square.stack.3d.up", "formula": "function", "ai": "sparkles", "ai_image": "photo.badge.plus" ][type] ?? "textformat" }
-private func databaseCellType(_ type: String) -> String { type == "number" ? "number" : type == "date" ? "date" : ["select", "status", "relation"].contains(type) ? "reference" : type == "multi_select" ? "json" : "text" }
+private func databaseComputedDisplay(column: PagesDatabasesParity.Column, row: PagesDatabasesParity.DataRow, allRows: [PagesDatabasesParity.DataRow], columns: [PagesDatabasesParity.Column]) -> String {
+    let value = PagesDatabasesParity.displayValue(column: column, row: row, allRows: allRows, columns: columns)
+    return value.isEmpty ? (["formula","rollup","comparison"].contains(column.type) ? "Sin resultado guardado en Nodus" : "Dato no disponible") : value
+}
+private func databaseCellType(_ type: String) -> String { CompanionDatabaseProperty(rawValue: type)?.cellStorage ?? "text" }
 private func jsonObjectString(_ object: [String: JSONValue]) -> String { (try? JSONEncoder().encode(JSONValue.object(object))).flatMap { String(data: $0, encoding: .utf8) } ?? "{}" }
 private func csvCell(_ value: String) -> String { "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\"" }
 
@@ -1053,4 +1522,28 @@ private func inferredDatabaseTypes(headers: [String], rows: [[String]]) -> [Stri
 
 private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+private struct PagesDatabaseSyncNotice:View {
+    let outbox:OutboxController?
+    var body:some View {
+        if let issue=outbox?.lastError {
+            NodusNotice(tone:.caution,title:"Sincronización pendiente de revisión",message:LocalizedStringKey(issue)).padding(.horizontal,NodusSpace.page)
+        } else if let pending=outbox?.pending,pending > 0 {
+            Label("Guardado en este dispositivo · pendiente de sincronizar",systemImage:"iphone").font(.caption).foregroundStyle(.secondary).padding(.horizontal,NodusSpace.page).fixedSize(horizontal:false,vertical:true)
+        }
+    }
+}
+
+private struct DatabaseForeignRow:Identifiable {let id:String}
+
+/// Hold the existing grant's authoring lease until every queued payload is durable.
+/// A closing link denies new edits but lets an edit already underway finish safely.
+@MainActor
+private func databaseBeginAuthoring(_ session: SpaceSession) throws -> PrivateBridgeCache? {
+    guard session.connection.desktopPairingId != nil else { return nil }
+    let (_, pairing, _) = try privateBridgeConnection(session, domain: .writing)
+    let cache = try PrivateBridgeCache(pairingId: pairing.id)
+    try cache.beginAuthoringActivity()
+    return cache
 }

@@ -37,10 +37,10 @@ struct MirrorStoreTests {
                     .object(["nodus_id": .string("w2"), "title": .string("Alfa primera"), "year": .int(2020)]),
                     .object(["nodus_id": .string("w3"), "title": .string("Media posguerra"), "year": .int(2010)]),
                 ]),
-                // No REST collection exists for this table. Reaching it at all is the point.
+                // World scenes now have a route; use their canonical primary key.
                 "world_scenes": .array([
-                    .object(["id": .string("s1"), "title": .string("La caída de la torre")]),
-                    .object(["id": .string("s2"), "title": .string("El regreso")]),
+                    .object(["scene_id": .string("s1"), "title": .string("La caída de la torre")]),
+                    .object(["scene_id": .string("s2"), "title": .string("El regreso")]),
                 ]),
                 "person_portraits": .array([
                     .object(["person_id": .string("per_1"), "mime": .string("image/jpeg"), "scale": .double(1.2)]),
@@ -59,10 +59,10 @@ struct MirrorStoreTests {
         #expect(summary.revision == "rev-1")
         #expect(summary.vaultType == .genealogy)
         #expect(summary.counts["works"] == 3)
-        // `world_scenes` has no CollectionDescriptor, so the API cannot list it and the mirror
-        // is the only way the app ever sees it.
+        // Import both routed scenes and portraits with no standalone REST collection.
         #expect(summary.counts["world_scenes"] == 2)
-        #expect(Collections.byTable["world_scenes"] == nil, "if this gains a route, revisit the mirror's reason to exist")
+        #expect(summary.counts["person_portraits"] == 1)
+        #expect(Collections.byTable["person_portraits"] == nil)
 
         let counts = try await store.tableCounts()
         #expect(counts["world_scenes"] == 2)
