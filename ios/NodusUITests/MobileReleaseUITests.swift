@@ -79,7 +79,7 @@ final class MobileReleaseUITests: XCTestCase {
         let navigation = app.buttons["nodus-navigation-toggle"]
         XCTAssertTrue(navigation.waitForExistence(timeout: 45), app.debugDescription)
         app.buttons["Cambiar de espacio"].tap()
-        let principal = app.buttons["space-" + vaultId]
+        let principal = app.buttons["vault-popover-" + vaultId]
         XCTAssertTrue(principal.waitForExistence(timeout: 20), "The previously linked workspace must be available.")
         for _ in 0..<16 {
             if principal.isHittable { break }

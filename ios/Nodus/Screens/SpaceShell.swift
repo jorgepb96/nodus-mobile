@@ -860,7 +860,7 @@ private struct DesktopTopBar: View {
                         .accessibilityIdentifier("nodus-manage-connections")
                         .frame(minHeight: 44).padding(.horizontal, 12)
                 }.padding(12).frame(width: 300).presentationCompactAdaptation(.popover)
-                    .accessibilityIdentifier("vault-switcher-popover")
+                    .accessibilityElement(children: .contain).accessibilityIdentifier("vault-switcher-popover")
             }
         }
         .frame(height: NodusChromeMetrics.topBar)
