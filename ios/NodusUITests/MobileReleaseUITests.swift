@@ -626,6 +626,40 @@ final class MobileReleaseUITests: XCTestCase {
         capture(app, "phone-native-reader-unified-selection-ribbon")
     }
     @MainActor
+    func testExistingMacPhoneReaderShowsSixPastelHighlightColours() throws {
+        let app = try openExistingPrincipal(destination: "deepResearch")
+        defer { app.terminate() }
+        let report = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Informe profundo")).firstMatch
+        XCTAssertTrue(report.waitForExistence(timeout: 50), app.debugDescription)
+        for _ in 0..<6 { if report.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(report.isHittable, app.debugDescription); report.tap()
+        let reader = app.scrollViews["report-native-reader"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 30), app.debugDescription)
+        let body = reader.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "El corpus respalda")).firstMatch
+        for _ in 0..<12 { if body.exists && body.isHittable { break }; reader.swipeUp() }
+        XCTAssertTrue(body.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(body.isHittable, app.debugDescription)
+        body.press(forDuration: 1.2)
+        let copy = app.descendants(matching: .any)["nodus-selection-copy"].firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 10), app.debugDescription)
+        Thread.sleep(forTimeInterval: 1.0)
+        let palette = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@ OR label == %@", "nodus-selection-palette", "Colores pastel")).firstMatch
+        let comment = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@ OR label == %@", "nodus-selection-comment", "Añadir comentario")).firstMatch
+        capture(app, "phone-selection-pastel-and-comment")
+        XCTAssertTrue(palette.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(comment.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(palette.frame.midY, comment.frame.midY, accuracy: 3,
+            "The six pastel swatches and Add comment must share one page of the ribbon")
+        palette.tap()
+        for colour in ["yellow", "rose", "blue", "mint", "lavender", "peach"] {
+            let swatch = app.descendants(matching: .any)["nodus-selection-color-\(colour)"].firstMatch
+            XCTAssertTrue(swatch.waitForExistence(timeout: 5), "Missing \(colour) pastel swatch: \(app.debugDescription)")
+        }
+        capture(app, "phone-selection-six-pastel-colours")
+    }
+    @MainActor
     func testExistingMacPhoneGraphDetailReturnsToTheSameCanvas() throws {
         try verifyExistingMacGraph(phone: true)
     }
