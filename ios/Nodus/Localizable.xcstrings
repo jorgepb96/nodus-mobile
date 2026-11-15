@@ -27977,6 +27977,50 @@
           }
         }
       }
+    },
+    "Saved reports from Nodus Research will appear here.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aquí aparecerán los informes guardados en Nodus Research."
+          }
+        }
+      }
+    },
+    "Semantic search configuration is unavailable.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo consultar la configuración de búsqueda semántica."
+          }
+        }
+      }
+    },
+    "Text search and saved content remain available. Check the connection to Nodus Research and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puedes seguir buscando por texto y consultando el contenido guardado. Comprueba la conexión con Nodus Research y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "Technical details": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detalles técnicos"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

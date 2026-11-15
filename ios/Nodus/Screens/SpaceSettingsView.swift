@@ -25,6 +25,7 @@ struct SpaceSettingsView: View {
     @State private var showingLegacyRecovery = false
     @State private var legacyRecoveryResult: String?
     @State private var showingCompanionDownload = false
+    @State private var retryingEmbedding = false
 
     private enum LibraryDeletion: Equatable { case space, everySpace }
 
@@ -116,8 +117,25 @@ struct SpaceSettingsView: View {
                             .accessibilityIdentifier("mac-embedding-no-vectors")
                             .font(.caption).foregroundStyle(.secondary)
                     case .unavailable(let message):
-                        Text(message).font(.caption).foregroundStyle(Color.nodusCaution)
-                            .accessibilityIdentifier("mac-embedding-error")
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Semantic search configuration is unavailable.")
+                                .font(.subheadline.weight(.medium))
+                                .accessibilityIdentifier("mac-embedding-error")
+                            Text("Text search and saved content remain available. Check the connection to Nodus Research and try again.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button("Try again") {
+                                guard !retryingEmbedding else { return }
+                                retryingEmbedding = true
+                                Task {
+                                    await session.probeEmbedding(retryUnavailable: true)
+                                    retryingEmbedding = false
+                                }
+                            }.disabled(retryingEmbedding)
+                            DisclosureGroup("Technical details") {
+                                Text(message).font(.caption).foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
                     case .unknown:
                         ProgressView()
                     }

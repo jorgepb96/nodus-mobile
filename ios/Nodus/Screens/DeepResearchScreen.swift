@@ -79,6 +79,7 @@ struct DeepResearchScreen: View {
         .nodusDismissesKeyboard()
         .navigationTitle("Deep Research")
         .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await loadPublished() }
         .nodusPageBackdrop(accent: session.accent)
         .task {
             if !NodusLinkPolicy.readOnly { runner.attachPending(session: session, ai: ai) }
@@ -262,9 +263,11 @@ struct DeepResearchScreen: View {
             EmptyView()
         } else if entries.isEmpty {
             ContentUnavailableView(
-                query.isEmpty ? "No reports" : "No matches",
+                query.isEmpty && galleryRead == "all" ? "No reports" : "No matches",
                 systemImage: "doc.text.magnifyingglass",
-                description: Text(query.isEmpty ? "Start a research job to create the first report." : "Change the search or reading filter.")
+                description: Text(query.isEmpty && galleryRead == "all"
+                    ? (NodusLinkPolicy.readOnly ? "Saved reports from Nodus Research will appear here." : "Start a research job to create the first report.")
+                    : "Change the search or reading filter.")
             )
             .frame(maxWidth: .infinity, minHeight: 300)
             .accessibilityIdentifier("deep-research-catalog-empty")
