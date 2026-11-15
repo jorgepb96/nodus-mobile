@@ -209,7 +209,15 @@ struct SpaceShell: View {
             Menu {
                 ForEach(NodusNavigationContract.visibleItems(for: .academic).filter {
                     [.library, .authors, .graph, .argument, .dictionary, .deepResearch, .podcast].contains($0.route)
-                }) { item in Button { select(item.route) } label: { Label(item.label, systemImage: item.systemImage) } }
+                }) { item in
+                    Button { select(item.route) } label: {
+                        if item.systemImage == "telescope" {
+                            Label(item.label, image: "NodusTelescope")
+                        } else {
+                            Label(item.label, systemImage: item.systemImage)
+                        }
+                    }
+                }
             } label: {
                 VStack(spacing: 3) { Image(systemName: "square.grid.2x2").font(.system(size: 20)); Text("Explorar").font(.caption2) }
                     .frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
