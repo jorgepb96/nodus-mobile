@@ -983,7 +983,6 @@ final class NodusParityUITests: XCTestCase {
         var ribbonItems = [
             app.descendants(matching: .any)["nodus-selection-copy"],
             app.descendants(matching: .any)["nodus-selection-bookmark"],
-            app.descendants(matching: .any)["nodus-selection-ask"],
         ]
         if supportsPointer { ribbonItems.append(app.descendants(matching: .any)["nodus-selection-more"]) }
         for item in ribbonItems {
@@ -993,16 +992,9 @@ final class NodusParityUITests: XCTestCase {
         for item in ribbonItems.dropFirst() {
             XCTAssertEqual(item.frame.midY, ribbonMidY, accuracy: 3, "Pointer actions must stay in one row")
         }
-        guard supportsPointer else { return }
-        let expandedSystemAction = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@ OR label == %@", "Look Up", "Consultar")
-        ).firstMatch
-        XCTAssertFalse(expandedSystemAction.isHittable, "System actions must remain collapsed under More actions")
+        XCTAssertFalse(app.descendants(matching: .any)["nodus-selection-highlight"].exists,
+            "The palette replaces the separate highlighter action")
         attachScreenshot(named: "report-selection-pointer-nodus-ribbon")
-
-        ribbonItems.last?.tap()
-        XCTAssertTrue(expandedSystemAction.waitForExistence(timeout: 5))
-        XCTAssertTrue(expandedSystemAction.isHittable, "More actions must expose the system menu on demand")
     }
 
     @MainActor
@@ -1028,10 +1020,12 @@ final class NodusParityUITests: XCTestCase {
         hierarchy.name = "report-touch-selection-hierarchy"
         hierarchy.lifetime = .keepAlways
         add(hierarchy)
-        for action in ["nodus-selection-copy", "nodus-selection-bookmark", "nodus-selection-ask"] {
+        for action in ["nodus-selection-copy", "nodus-selection-bookmark"] {
             XCTAssertTrue(app.descendants(matching: .any)[action].waitForExistence(timeout: 5),
                 "Touch selection must expose the Nodus reader action \(action)")
         }
+        XCTAssertFalse(app.descendants(matching: .any)["nodus-selection-highlight"].exists,
+            "The palette replaces the separate highlighter action")
     }
 
     @MainActor

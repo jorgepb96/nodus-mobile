@@ -613,9 +613,13 @@ final class MobileReleaseUITests: XCTestCase {
         XCTAssertTrue(body.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(body.isHittable)
         body.press(forDuration: 1.2)
-        for identifier in ["nodus-selection-copy", "nodus-selection-highlight", "nodus-selection-comment", "nodus-selection-bookmark", "nodus-selection-ask"] {
-            let action = app.descendants(matching: .any)[identifier].firstMatch
-            XCTAssertTrue(action.waitForExistence(timeout: 10), "Selecting text must present the single Nodus ribbon: " + identifier + "\n" + app.debugDescription)
+        let palette = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@ OR label == %@", "nodus-selection-palette", "Colores pastel")).firstMatch
+        for action in [app.descendants(matching: .any)["nodus-selection-copy"].firstMatch,
+                       app.descendants(matching: .any)["nodus-selection-bookmark"].firstMatch,
+                       app.descendants(matching: .any)["nodus-selection-comment"].firstMatch,
+                       palette] {
+            XCTAssertTrue(action.waitForExistence(timeout: 10), "Selecting text must present the single Nodus ribbon: " + action.debugDescription + "\n" + app.debugDescription)
             XCTAssertTrue(action.isHittable)
             XCTAssertGreaterThanOrEqual(action.frame.minX, reader.frame.minX - 1)
             XCTAssertLessThanOrEqual(action.frame.maxX, reader.frame.maxX + 1)
@@ -647,11 +651,20 @@ final class MobileReleaseUITests: XCTestCase {
             NSPredicate(format: "identifier == %@ OR label == %@", "nodus-selection-palette", "Colores pastel")).firstMatch
         let comment = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier == %@ OR label == %@", "nodus-selection-comment", "Añadir comentario")).firstMatch
+        let bookmark = app.descendants(matching: .any)["nodus-selection-bookmark"].firstMatch
         capture(app, "phone-selection-pastel-and-comment")
         XCTAssertTrue(palette.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(comment.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(palette.frame.midY, comment.frame.midY, accuracy: 3,
-            "The six pastel swatches and Add comment must share one page of the ribbon")
+        XCTAssertTrue(bookmark.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertLessThan(copy.frame.minX, bookmark.frame.minX, "Copy must precede the bookmark")
+        XCTAssertLessThan(bookmark.frame.minX, comment.frame.minX, "The bookmark must precede Add comment")
+        XCTAssertLessThan(comment.frame.minX, palette.frame.minX, "The six pastel swatches must come last")
+        XCTAssertEqual(palette.frame.midY, bookmark.frame.midY, accuracy: 3,
+            "The four selection actions must share one row of the ribbon")
+        XCTAssertFalse(app.descendants(matching: .any)["nodus-selection-highlight"].exists,
+            "The separate highlighter action must not sit beside the palette")
+        XCTAssertFalse(app.descendants(matching: .any)["nodus-selection-ask"].exists,
+            "The selection ribbon keeps the four requested actions")
         palette.tap()
         for colour in ["yellow", "rose", "blue", "mint", "lavender", "peach"] {
             let swatch = app.descendants(matching: .any)["nodus-selection-color-\(colour)"].firstMatch

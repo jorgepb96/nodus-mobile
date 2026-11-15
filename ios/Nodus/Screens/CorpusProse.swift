@@ -8,10 +8,11 @@ import SwiftUI
 enum ReaderHighlightMenuSwatch {
     static func palette(selected: ReaderAnnotationColor?, onSelect: @escaping @MainActor (ReaderAnnotationColor) -> Void) -> UIMenu {
         let colors = ReaderAnnotationColor.allCases.map { color in
-            let item = UIAction(title: color.localizedLabel, image: image(for: color, selected: selected == color),
+            let item = UIAction(title: "", image: image(for: color, selected: selected == color),
                 state: selected == color ? .on : .off) { _ in
                 MainActor.assumeIsolated { onSelect(color) }
             }
+            item.accessibilityLabel = color.localizedLabel
             item.accessibilityIdentifier = "nodus-selection-color-\(color.rawValue)"
             return item
         }
@@ -1695,20 +1696,19 @@ private struct DocumentProse: UIViewRepresentable {
             self.linksLive = linksLive
         }
 
-        /// What a reader can do with the words they have selected: keep this passage, or ask
-        /// about it.
+        /// What a reader can do with the words they have selected: copy them, keep the reading
+        /// mark, comment on them, or paint one of the six pastel highlights.
+        ///
+        /// The ribbon is entirely glyphs, in that order, and the palette comes last. Text labels
+        /// are what made "Pastel colors" and "Añadir comentario" compete for one row: the old
+        /// labelled palette pushed Add comment onto another page, so neither the palette nor the
+        /// other actions show a title. Every action keeps its full spoken name for VoiceOver.
         ///
         /// Added to the system's own items rather than replacing them: copy, look up, share and
         /// translate are what a reader expects of selected text, and a report is a document
-        /// people quote from as much as they navigate.
-        ///
-        /// Second, straight after Copy, and as glyphs alone. Both of those are about the one row
-        /// the reader actually sees: the edit menu opens collapsed, with room for three or four
-        /// items and a chevron for the rest, and appending these to the end put them behind that
-        /// chevron — two taps for the actions this screen adds, which is exactly the navigation
-        /// they exist to remove. A `.small` palette renders each action as its icon, so two of
-        /// them cost less width than one labelled item and Look Up and Translate stay where a
-        /// reader expects to find them.
+        /// people quote from as much as they navigate. A `.small` palette renders each action as
+        /// its icon, so the four actions this screen adds fit on the one visible row instead of
+        /// hiding behind the edit menu's chevron.
         ///
         /// Each appears only where the page can honestly do it, so prose outside a report — a
         /// chat bubble, an immersion station — keeps the plain menu it always had. Returning
@@ -1756,53 +1756,13 @@ private struct DocumentProse: UIViewRepresentable {
                 in: range,
                 excludingReferencesIn: textView.attributedText
             )
-            if let onHighlight, let colour = selectedHighlightColor, !highlightable.isEmpty {
-                // Pastel ink is right on the page and almost invisible as a tiny glyph over the
-                // light edit-menu material. Keep the pen itself in the dynamic label colour and
-                // retain the chosen pastel as the symbol's secondary layer where SF Symbols
-                // provides one.
-                let symbol = UIImage.SymbolConfiguration(paletteColors: [
-                    UIColor.label,
-                    UIColor(colour.color),
-                ])
-                let image = UIImage(systemName: "highlighter", withConfiguration: symbol)?
-                    .withRenderingMode(.alwaysOriginal)
-                let highlight = UIAction(title: "", image: image) { _ in
-                    MainActor.assumeIsolated {
-                        onHighlight(highlightable, colour)
-                        textView.clearSelection()
-                    }
-                }
-                highlight.accessibilityLabel = String(localized: "Highlight")
-                    + ": " + colour.localizedLabel
-                highlight.accessibilityIdentifier = "nodus-selection-highlight"
-                ours.append(highlight)
-                ours.append(ReaderHighlightMenuSwatch.palette(selected: colour) { [weak self] color in
-                    self?.selectedHighlightColor = color
-                    onHighlight(highlightable, color)
-                    textView.clearSelection()
-                })
-            }
-
-            if let onComment {
-                let comment = UIAction(title: String(localized: "Add comment"), image: UIImage(systemName: "text.bubble")) { _ in
-                    MainActor.assumeIsolated {
-                        onComment(range)
-                        textView.clearSelection()
-                    }
-                }
-                comment.accessibilityLabel = String(localized: "Add comment")
-                comment.accessibilityIdentifier = "nodus-selection-comment"
-                ours.append(comment)
-            }
 
             if let onMark {
                 // "Move" rather than "Add" when there is already one, because there is only ever
                 // one bookmark and a reader who is not told that will look for the old one. Asked
                 // of the report and not of this paragraph: the mark being moved is usually in a
-                // different section from the words being selected. The title is still set even
-                // though the palette hides it: it is what VoiceOver reads, and what the item
-                // falls back to if the system ever lays this menu out fully.
+                // different section from the words being selected. The title stays empty in the
+                // ribbon; the spoken label carries the whole meaning.
                 let title = reportHasBookmark
                     ? String(localized: "Move the bookmark here")
                     : String(localized: "Reading bookmark")
@@ -1817,42 +1777,29 @@ private struct DocumentProse: UIViewRepresentable {
                         textView.clearSelection()
                     }
                 }
-                // Spoken rather than shown. The title is empty on purpose — see above — and this
-                // is the only thing left for VoiceOver to read, so it carries the whole meaning.
                 mark.accessibilityLabel = title
                 mark.accessibilityIdentifier = "nodus-selection-bookmark"
                 ours.append(mark)
             }
 
-            if let onAsk {
-                // The passage goes into the report's conversation as a quotation, so the question
-                // the reader then types is already about something. Asking about a paragraph used
-                // to mean opening the chat from the wheel and describing the paragraph — from a
-                // document that was right there.
-                let ask = UIAction(title: "", image: UIImage(systemName: "bubble.left.and.bubble.right")) { _ in
+            if let onComment {
+                let comment = UIAction(title: "", image: UIImage(systemName: "text.bubble")) { _ in
                     MainActor.assumeIsolated {
-                        onAsk(text)
+                        onComment(range)
                         textView.clearSelection()
                     }
                 }
-                ask.accessibilityLabel = String(localized: "Ask about this")
-                ask.accessibilityIdentifier = "nodus-selection-ask"
-                ours.append(ask)
+                comment.accessibilityLabel = String(localized: "Add comment")
+                comment.accessibilityIdentifier = "nodus-selection-comment"
+                ours.append(comment)
+            }
 
-                // Keep the system dictionary one tap away too. It follows the report-chat icon
-                // in the visible palette, matching the order in which a reader decides whether
-                // to ask the corpus or simply look up the selected words.
-                let lookUp = UIAction(title: "", image: UIImage(systemName: "book.pages")) { _ in
-                    MainActor.assumeIsolated {
-                        let term = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !term.isEmpty, let presenter = textView.enclosingViewController else { return }
-                        textView.clearSelection()
-                        presenter.present(UIReferenceLibraryViewController(term: term), animated: true)
-                    }
-                }
-                lookUp.accessibilityLabel = String(localized: "Look Up")
-                lookUp.accessibilityIdentifier = "nodus-selection-lookup"
-                ours.append(lookUp)
+            if let onHighlight, let colour = selectedHighlightColor, !highlightable.isEmpty {
+                ours.append(ReaderHighlightMenuSwatch.palette(selected: colour) { [weak self] color in
+                    self?.selectedHighlightColor = color
+                    onHighlight(highlightable, color)
+                    textView.clearSelection()
+                })
             }
 
             let palette = UIMenu(title: "", options: .displayInline, preferredElementSize: .small, children: ours)
