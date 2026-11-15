@@ -198,9 +198,17 @@ public actor LinkSectionCopies {
         if method == "getEdgeDetail", let id = args.first?.stringValue,
            let edge = rows("edges").first(where: { $0.objectValue?["id"] == .string(id) }) {
             let from = edge.objectValue?["from_id"]?.stringValue ?? "", to = edge.objectValue?["to_id"]?.stringValue ?? ""
-            return .object(["edge": edge, "fromLabel": idea(from)?.objectValue?["label"] ?? .string(from),
-                "toLabel": idea(to)?.objectValue?["label"] ?? .string(to), "evidence": .array(rows("evidence").filter { $0.objectValue?["edge_id"] == .string(id) }),
-                "trace": rows("edge_traces").first { $0.objectValue?["edge_id"] == .string(id) } ?? .null])
+            let fromLabel = idea(from)?.objectValue?["label"] ?? .string(from)
+            let toLabel = idea(to)?.objectValue?["label"] ?? .string(to)
+            let evidence = rows("evidence").filter { $0.objectValue?["edge_id"] == .string(id) }
+            let trace = rows("edge_traces").first { $0.objectValue?["edge_id"] == .string(id) } ?? .null
+            return .object([
+                "edge": edge,
+                "fromLabel": fromLabel,
+                "toLabel": toLabel,
+                "evidence": .array(evidence),
+                "trace": trace,
+            ])
         }
         if method == "stellarPage", let request = args.first?.objectValue, let kind = request["kind"]?.stringValue {
             let offset = max(0, request["cursor"]?.intValue ?? 0), limit = min(200, max(1, request["limit"]?.intValue ?? 200))
