@@ -371,7 +371,7 @@ private struct RichProseWebView: UIViewRepresentable {
                         self?.clearSelection()
                     })
                 }
-                actions.append(action(String(localized: "Add comment"), symbol: "text.bubble", identifier: "nodus-selection-comment", showTitle: true) { annotations.beginComment(anchor) })
+                actions.append(action(String(localized: "Add comment"), symbol: "text.bubble", identifier: "nodus-selection-comment", showTitle: false) { annotations.beginComment(anchor) })
                 actions.append(action(String(localized: "Reading bookmark"), symbol: annotations.bookmark == nil ? "bookmark" : "bookmark.fill", identifier: "nodus-selection-bookmark") { annotations.setBookmark(anchor) })
             } else if let bookmarks = parent.bookmarks {
                 actions.append(action(String(localized: "Reading bookmark"), symbol: "bookmark", identifier: "nodus-selection-bookmark") { [parent] in bookmarks.set(path: parent.path, range: NSRange(location: anchor.startOffset, length: anchor.endOffset - anchor.startOffset), snippet: anchor.selectedText) })

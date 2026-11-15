@@ -15,8 +15,11 @@ enum ReaderHighlightMenuSwatch {
             item.accessibilityIdentifier = "nodus-selection-color-\(color.rawValue)"
             return item
         }
-        return UIMenu(title: String(localized: "Pastel colors"), image: UIImage(systemName: "paintpalette"),
+        let menu = UIMenu(title: "", image: UIImage(systemName: "paintpalette"),
             preferredElementSize: .small, children: colors)
+        menu.accessibilityLabel = String(localized: "Pastel colors")
+        menu.accessibilityIdentifier = "nodus-selection-palette"
+        return menu
     }
 
     static func image(for colour: ReaderAnnotationColor, selected: Bool) -> UIImage? {
