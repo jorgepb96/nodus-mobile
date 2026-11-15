@@ -49,9 +49,12 @@ jobs:
         run: |
           export NODUS_TEST_DATABASE_ROOT="$PWD/.test-databases"
           mkdir -p "$NODUS_TEST_DATABASE_ROOT"
-          swift test --package-path ios/Packages/NodusKit
-          swift test --package-path ios/Packages/NodusAI
-          swift test --package-path ios/Packages/NodusUI
+          # Swift Testing parallelises by default. The reachability check measures the
+          # latency of a 0.3 s bound and is starved by 583 concurrent tests, so the
+          # package suites run serially; a real regression still fails the same check.
+          swift test --package-path ios/Packages/NodusKit --no-parallel
+          swift test --package-path ios/Packages/NodusAI --no-parallel
+          swift test --package-path ios/Packages/NodusUI --no-parallel
 
       - name: Generate the Xcode project
         working-directory: nodus-mobile
