@@ -39,7 +39,7 @@ struct ReportCopyButtons: View {
             Button {
                 copy(.withReferences, text: markdown)
             } label: {
-                Label("Copy with references", systemImage: "doc.text")
+                NodusMenuLabel("Copy with references", systemImage: "doc.text")
             }
             Button {
                 // Built on the tap rather than on every render: the listening copy is two
@@ -47,7 +47,7 @@ struct ReportCopyButtons: View {
                 // report that is merely on screen has no reason to pay for it.
                 copy(.withoutReferences, text: ReadingCopy.text(from: markdown, title: title))
             } label: {
-                Label("Copy without references", systemImage: "text.alignleft")
+                NodusMenuLabel("Copy without references", systemImage: "text.alignleft")
             }
         } label: {
             // Laid out for both words rather than for the one showing: "Copied" is the wider of

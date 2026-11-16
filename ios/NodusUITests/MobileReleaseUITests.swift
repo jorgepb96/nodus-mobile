@@ -1888,13 +1888,13 @@ final class MobileReleaseUITests: XCTestCase {
         // Pause before opening the menu: XCTest waits for idleness while the
         // playback clock updates, which can outlast a short narration fixture.
         try verifyNarrationPause(app, play: play, elapsed: elapsed)
-        let speed = app.buttons["saved-audio-speed"]
-        XCTAssertTrue(speed.exists); speed.tap()
-        let faster = app.buttons["2×"].firstMatch
+        // Speed is an inline control now: steppers, a slider and milestone chips.
+        let speed = app.descendants(matching: .any)["saved-audio-speed"]
+        XCTAssertTrue(speed.exists)
+        let faster = speed.buttons["2×"].firstMatch
         XCTAssertTrue(faster.waitForExistence(timeout: 10), app.debugDescription); faster.tap()
-        let menuClosed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: faster)
-        XCTAssertEqual(XCTWaiter.wait(for: [menuClosed], timeout: 5), .completed)
-        XCTAssertTrue(speed.label.contains("2"), speed.label)
+        let applied = expectation(for: NSPredicate(format: "value == %@", "2×"), evaluatedWith: speed.sliders.firstMatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [applied], timeout: 5), .completed, app.debugDescription)
         XCTAssertTrue(play.label.contains("Reproducir"), "Changing speed must preserve paused playback.")
         let seek = app.sliders["saved-audio-seek"]
         XCTAssertTrue(seek.exists); seek.adjust(toNormalizedSliderPosition: 0.5)

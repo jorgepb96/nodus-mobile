@@ -177,7 +177,7 @@ struct ModelPickerView: View {
             Button {
                 settings.togglePinned(option.ref)
             } label: {
-                Label(
+                NodusMenuLabel(
                     settings.isPinned(option.ref) ? "Unpin" : "Pin",
                     systemImage: settings.isPinned(option.ref) ? "star.slash" : "star"
                 )

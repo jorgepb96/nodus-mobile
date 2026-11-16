@@ -48,11 +48,6 @@ struct LinkPodcastPlayer: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Close") { playback.showingPlayer = false } }
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
-                        Section("Playback speed") {
-                            ForEach([Float(0.75), 1, 1.25, 1.5, 2], id: \.self) { rate in
-                                Button("\(rate.formatted())×") { Task { await playback.changeRate(rate) } }
-                            }
-                        }
                         if let target = playback.target {
                             ShareLink(item: target.copy.url) { NodusMenuLabel(title: "Export audio", image: "square.and.arrow.up") }
                                 .accessibilityIdentifier("saved-audio-export")
@@ -66,7 +61,7 @@ struct LinkPodcastPlayer: View {
                     }
                         .tint(.primary)
                         .accessibilityLabel("Playback options")
-                        .accessibilityIdentifier("saved-audio-speed")
+                        .accessibilityIdentifier("saved-audio-options")
                 }
             }
         }.tint(accent.nodusReadable)
@@ -124,6 +119,8 @@ struct LinkPodcastPlayer: View {
                     Image(systemName: "goforward.15").font(.system(size: 23)).frame(width: 56, height: 56).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("Forward 15 seconds").accessibilityIdentifier("saved-audio-forward")
             }
+            PlaybackSpeedControl(rate: playback.rate, accent: accent) { rate in Task { await playback.changeRate(rate) } }
+                .padding(.top, compact ? 4 : 8)
         }.frame(maxWidth: 600).frame(maxWidth: .infinity)
             .accessibilityElement(children: .contain).accessibilityIdentifier("saved-audio-player-controls")
     }
@@ -132,30 +129,99 @@ struct LinkPodcastPlayer: View {
     }
 }
 
+/// The same capsule Nodus Reader uses: square cover, title over a quiet detail line, a filled
+/// accent play button and a separate stop button. On iOS 26.1 the tab-bar accessory supplies
+/// the glass around it (`showsBackground: false`); elsewhere it draws its own capsule.
 struct LinkMiniPlayer: View {
+    @Environment(\.colorScheme) private var colorScheme
     let playback: LinkPodcastPlayback
     let accent: Color
+    var showsBackground = true
+
     var body: some View {
         if let target = playback.target {
-            HStack(spacing: 12) {
+            HStack(spacing: 11) {
                 Button { playback.showingPlayer = true } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 11) {
                         Group {
                             if let image = SavedAudioNowPlayingInfo.image(target.artworkData) { Image(uiImage: image).resizable().scaledToFill() }
-                            else { Image(systemName: "headphones").foregroundStyle(accent.nodusReadable) }
-                        }.frame(width: 42, height: 42).clipped().background(accent.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 8))
-                        Text(target.label).font(.subheadline.weight(.medium)).lineLimit(1).foregroundStyle(.primary)
-                    }.frame(maxWidth: .infinity, minHeight: 52, alignment: .leading).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("podcast-mini-open")
-                Button { Task { await playback.toggle() } } label: { Image(systemName: playback.playing ? "pause.fill" : "play.fill").frame(width: 44, height: 52) }
-                    .accessibilityLabel(playback.playing ? "Pause" : "Play")
-                    .accessibilityValue(Text(LocalizedStringKey(playback.playing ? "Playing" : "Paused")))
-                    .accessibilityAddTraits(playback.playing ? .isSelected : []).accessibilityIdentifier("podcast-mini-play")
-                Button { playback.stop() } label: { Image(systemName: "xmark").font(.caption).frame(width: 44, height: 52) }
-                    .accessibilityLabel("Detener podcast").accessibilityIdentifier("podcast-mini-stop")
-            }.padding(.leading, 16).padding(.trailing, 4).background(.regularMaterial)
-                .overlay(alignment: .top) { Divider() }.accessibilityElement(children: .contain).accessibilityIdentifier("podcast-mini-player")
+                            else { Image(systemName: "headphones").font(.system(size: 16, weight: .medium)).foregroundStyle(accent.nodusReadable) }
+                        }
+                        .frame(width: 40, height: 40)
+                        .background(accent.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 0.5))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(target.label).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
+                            Text(verbatim: detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).monospacedDigit()
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("podcast-mini-open")
+
+                Button { Task { await playback.toggle() } } label: {
+                    Image(systemName: playback.playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .offset(x: playback.playing ? 0 : 1)
+                        .foregroundStyle(.white)
+                        .frame(width: 42, height: 42)
+                        .background(accent, in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(playback.playing ? "Pause" : "Play")
+                .accessibilityValue(Text(LocalizedStringKey(playback.playing ? "Playing" : "Paused")))
+                .accessibilityAddTraits(playback.playing ? .isSelected : [])
+                .accessibilityIdentifier("podcast-mini-play")
+
+                Button { playback.stop() } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 42, height: 42)
+                        .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                        .overlay(Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Detener podcast")
+                .accessibilityIdentifier("podcast-mini-stop")
+            }
+            .padding(.leading, 9)
+            .padding(.trailing, 8)
+            .frame(height: 58)
+            .background {
+                if showsBackground {
+                    Capsule().fill(colorScheme == .dark ? Color(uiColor: .secondarySystemBackground) : Color.white)
+                }
+            }
+            .overlay {
+                if showsBackground { Capsule().stroke(accent.opacity(0.14), lineWidth: 1) }
+            }
+            .shadow(color: showsBackground ? .black.opacity(colorScheme == .dark ? 0.35 : 0.12) : .clear, radius: 16, y: 8)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("podcast-mini-player")
         }
+    }
+
+    /// Elapsed and total time, then the rate when it is not 1×: "12:03 / 45:10 · 1.5×".
+    private var detail: String {
+        var text = Self.clock(playback.position)
+        if playback.duration > 0 { text += " / " + Self.clock(playback.duration) }
+        if playback.rate != 1 { text += " · " + playback.rate.formatted(.number.precision(.fractionLength(0...2))) + "×" }
+        return text
+    }
+
+    private static func clock(_ seconds: Double) -> String {
+        let value = Int(max(0, seconds))
+        return value >= 3600
+            ? String(format: "%d:%02d:%02d", value / 3600, value / 60 % 60, value % 60)
+            : String(format: "%d:%02d", value / 60, value % 60)
     }
 }
 

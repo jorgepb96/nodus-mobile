@@ -119,7 +119,7 @@ struct WorkspaceTabStrip: View {
             Section("Open tabs") {
                 ForEach(tabs) { tab in
                     Button { workspaceTabs.activate(tab.id, in: section) } label: {
-                        Label(tab.title, systemImage: activeId == tab.id ? "checkmark" : tab.systemImage)
+                        NodusMenuLabel(tab.title, systemImage: activeId == tab.id ? "checkmark" : tab.systemImage)
                     }
                     .accessibilityIdentifier("workspace-switch-tab-\(section)-\(safeIdentifier(tab.id))")
                 }
@@ -212,7 +212,7 @@ struct WorkspaceTabStrip: View {
         .hoverEffect(.highlight)
         .contextMenu {
             Button(role: .destructive) { workspaceTabs.close(tab.id, in: section) } label: {
-                Label("Close tab", systemImage: "xmark")
+                NodusMenuLabel("Close tab", systemImage: "xmark")
             }
         }
     }

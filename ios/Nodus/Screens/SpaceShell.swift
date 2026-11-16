@@ -37,17 +37,56 @@ struct NodusIcon: View {
     }
 }
 
+extension NodusIcon {
+    /// An SF Symbol at the tab bar's size as a template image the bar tints itself.
+    @MainActor static func tabBarSymbol(_ name: String) -> UIImage? {
+        UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium))?
+            .withRenderingMode(.alwaysTemplate)
+    }
+
+    /// The tab bar takes an image at its final size and tints it itself. The telescope asset
+    /// is drawn at the tab bar's 25-point symbol size as a template so selection colours it.
+    @MainActor static func tabBarImage(named name: String, side: CGFloat = 25) -> UIImage? {
+        guard let source = UIImage(named: name), source.size.width > 0, source.size.height > 0 else { return nil }
+        let scale = min(side / source.size.width, side / source.size.height)
+        let size = CGSize(width: source.size.width * scale, height: source.size.height * scale)
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            source.draw(in: CGRect(x: (side - size.width) / 2, y: (side - size.height) / 2, width: size.width, height: size.height))
+        }.withRenderingMode(.alwaysTemplate)
+    }
+}
+
 /// Native menus can discard SwiftUI symbol styling when they turn a Label into a
 /// UIKit action. Supply an original bitmap resolved for the presented color scheme
 /// so dark menus cannot inherit a black template icon from the underlying button.
+///
+/// Use it for every icon row inside a `Menu`, including a menu `Picker`'s options. The two
+/// `systemImage:` initialisers mirror `Label`'s, so a menu row swaps one name for the other.
 struct NodusMenuLabel: View {
-    let title: LocalizedStringKey
+    private let title: Text
     let image: String
     @Environment(\.colorScheme) private var colorScheme
 
+    init(title: LocalizedStringKey, image: String) {
+        self.title = Text(title)
+        self.image = image
+    }
+
+    init(_ titleKey: LocalizedStringKey, systemImage: String) {
+        self.init(title: titleKey, image: systemImage)
+    }
+
+    @_disfavoredOverload
+    init<S: StringProtocol>(_ title: S, systemImage: String) {
+        self.title = Text(title)
+        self.image = systemImage
+    }
+
     var body: some View {
         Label {
-            Text(title)
+            title
         } icon: {
             if let rendered = renderedIcon {
                 Image(uiImage: rendered).renderingMode(.original)
@@ -80,7 +119,6 @@ struct SpaceShell: View {
     @Environment(OutboxTrayModel.self) private var tray
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var textSize
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo: .footnote) private var scaledSidebarWidth: CGFloat = 176
 
@@ -97,6 +135,11 @@ struct SpaceShell: View {
     @State private var chrome = NodusChrome()
     @State private var sidebarResizeOrigin: Double?
     @State private var downloads: LinkDownloads
+    @State private var phoneTab: PhoneTab = .home
+    @State private var phoneSheet: PhoneSectionSheet?
+    /// Tab bar, player and home indicator, measured from the native tab page. Seeded with the
+    /// usual iPhone value so the first frame does not draw content under the bar.
+    @State private var phoneBarInset: CGFloat = 83
 
     init(session: SpaceSession) {
         self.session = session
@@ -118,87 +161,7 @@ struct SpaceShell: View {
     }
 
     var body: some View {
-        // NavigationStack does not reliably forward a safe-area inset installed outside
-        // it to pushed pages. Give the footer real layout space instead: every route,
-        // scroll view and web canvas then receives the unobscured viewport height.
-        VStack(spacing: 0) {
-            GeometryReader { proxy in
-                let presentation = SidebarPresentation(
-                    availableWidth: proxy.size.width,
-                    isUserCollapsed: preferences.sidebarCollapsed,
-                    isPhone: UIDevice.current.userInterfaceIdiom == .phone,
-                    expandedWidth: textSize.isAccessibilitySize
-                        ? max(CGFloat(preferences.sidebarWidth), scaledSidebarWidth)
-                        : CGFloat(preferences.sidebarWidth)
-                )
-                // Resident routes sit below the top bar and, on a regular-width device, beside
-                // the persistent sidebar. Freezing an inactive route to the whole window made
-                // that hidden route dictate the ZStack's minimum size: one top bar too tall and
-                // one sidebar too wide. The visible workspace was consequently clipped at the
-                // bottom and trailing edge on iPad in both orientations.
-                let residentRouteSize = session.isSurfaceFullscreen ? proxy.size : presentation.residentRouteSize(in: proxy.size)
-
-                ZStack(alignment: .leading) {
-                    VStack(spacing: 0) {
-                        if !session.isSurfaceFullscreen { DesktopTopBar(
-                            session: session,
-                            presentation: presentation,
-                            pinRoute: route == .home ? nil : route,
-                            queueCount: tray.outbox.pending,
-                            onToggleNavigation: { toggleNavigation(presentation) },
-                            onSwitchSpace: { model.closeSession() },
-                            onCommands: { showingCommands = true },
-                            onAssistant: { showingAssistant = true },
-                            onQueue: { tray.open() },
-                            onRefresh: { Task { await session.refreshPublishedContent() } },
-                            onTheme: { preferences.toggleInterfaceStyle(current: colorScheme) },
-                            onSettings: { select(.settings) }
-                        ) }
-
-                        HStack(spacing: 0) {
-                            if presentation.isPersistent, !session.isSurfaceFullscreen {
-                                sidebar(collapsed: presentation.isCollapsed)
-                                    .frame(width: presentation.sidebarWidth)
-                                    .overlay(alignment: .trailing) {
-                                        if !presentation.isCollapsed {
-                                            sidebarResizeHandle
-                                        }
-                                    }
-                            }
-                            routeContainer(frozenSize: residentRouteSize)
-                        }
-                    }
-
-                    if !presentation.isPersistent, showingDrawer, !session.isSurfaceFullscreen {
-                        Color.black.opacity(0.28)
-                            .ignoresSafeArea()
-                            .onTapGesture { withAnimation(NodusMotion.standard) { showingDrawer = false } }
-                            .accessibilityElement()
-                            .accessibilityLabel("Close navigation")
-                            .accessibilityIdentifier("nodus-navigation-dismiss")
-                            .accessibilityAddTraits(.isButton)
-                            .transition(.opacity)
-
-                        sidebar(collapsed: false)
-                            // The scrim paints outside the safe area. Its expanded size must not
-                            // become the drawer's layout proposal and move Home under the clock.
-                            .frame(width: min(320, proxy.size.width * 0.86), height: proxy.size.height)
-                            .shadow(color: .black.opacity(0.28), radius: 24, x: 8)
-                            .transition(.move(edge: .leading))
-                    }
-
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .background {
-                    ScreenEdgeNavigationInstaller(enabled: !presentation.isPersistent && !session.isSurfaceFullscreen && !showingDrawer) {
-                        withAnimation(NodusMotion.standard) { showingDrawer = true }
-                    }
-                }
-                .animation(NodusMotion.standard, value: showingDrawer)
-                .animation(NodusMotion.standard, value: presentation.sidebarWidth)
-            }
-            bottomChrome
-        }
+        shellLayout
         .environment(chrome)
         .environment(workspaceTabs)
         .environment(downloads)
@@ -256,17 +219,236 @@ struct SpaceShell: View {
         }
     }
 
-    /// Measured by the parent stack, including Dynamic Type, rotation and player visibility.
-    /// Keep the viewport flexible and the controls at their full intrinsic height.
-    private var bottomChrome: some View {
-        VStack(spacing: 0) {
-            LinkMiniPlayer(playback: session.podcastPlayback, accent: session.accent)
-            if UIDevice.current.userInterfaceIdiom == .phone, !session.isSurfaceFullscreen {
-                phoneNavigation
+    /// The top bar, sidebar or drawer, and the resident routes. One instance for the whole
+    /// session: the phone tab bar only reserves space beneath it, so switching tabs never
+    /// rebuilds a route and loses its scroll position, filters or document tabs.
+    private var workspace: some View {
+        GeometryReader { proxy in
+            let presentation = SidebarPresentation(
+                availableWidth: proxy.size.width,
+                isUserCollapsed: preferences.sidebarCollapsed,
+                isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+                expandedWidth: textSize.isAccessibilitySize
+                    ? max(CGFloat(preferences.sidebarWidth), scaledSidebarWidth)
+                    : CGFloat(preferences.sidebarWidth)
+            )
+            // Resident routes sit below the top bar and, on a regular-width device, beside
+            // the persistent sidebar. Freezing an inactive route to the whole window made
+            // that hidden route dictate the ZStack's minimum size: one top bar too tall and
+            // one sidebar too wide. The visible workspace was consequently clipped at the
+            // bottom and trailing edge on iPad in both orientations.
+            let residentRouteSize = session.isSurfaceFullscreen ? proxy.size : presentation.residentRouteSize(in: proxy.size)
+
+            ZStack(alignment: .leading) {
+                VStack(spacing: 0) {
+                    if !session.isSurfaceFullscreen { DesktopTopBar(
+                        session: session,
+                        presentation: presentation,
+                        pinRoute: route == .home ? nil : route,
+                        queueCount: tray.outbox.pending,
+                        onToggleNavigation: { toggleNavigation(presentation) },
+                        onSwitchSpace: { model.closeSession() },
+                        onCommands: { showingCommands = true },
+                        onAssistant: { showingAssistant = true },
+                        onQueue: { tray.open() },
+                        onRefresh: { Task { await session.refreshPublishedContent() } },
+                        onTheme: { preferences.toggleInterfaceStyle(current: colorScheme) },
+                        onSettings: { select(.settings) }
+                    ) }
+
+                    HStack(spacing: 0) {
+                        if presentation.isPersistent, !session.isSurfaceFullscreen {
+                            sidebar(collapsed: presentation.isCollapsed)
+                                .frame(width: presentation.sidebarWidth)
+                                .overlay(alignment: .trailing) {
+                                    if !presentation.isCollapsed {
+                                        sidebarResizeHandle
+                                    }
+                                }
+                        }
+                        routeContainer(frozenSize: residentRouteSize)
+                    }
+                }
+
+                if !presentation.isPersistent, showingDrawer, !session.isSurfaceFullscreen {
+                    Color.black.opacity(0.28)
+                        .ignoresSafeArea()
+                        .onTapGesture { withAnimation(NodusMotion.standard) { showingDrawer = false } }
+                        .accessibilityElement()
+                        .accessibilityLabel("Close navigation")
+                        .accessibilityIdentifier("nodus-navigation-dismiss")
+                        .accessibilityAddTraits(.isButton)
+                        .transition(.opacity)
+
+                    sidebar(collapsed: false)
+                        // The scrim paints outside the safe area. Its expanded size must not
+                        // become the drawer's layout proposal and move Home under the clock.
+                        .frame(width: min(320, proxy.size.width * 0.86), height: proxy.size.height)
+                        .shadow(color: .black.opacity(0.28), radius: 24, x: 8)
+                        .transition(.move(edge: .leading))
+                }
+
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .background {
+                ScreenEdgeNavigationInstaller(enabled: !presentation.isPersistent && !session.isSurfaceFullscreen && !showingDrawer) {
+                    withAnimation(NodusMotion.standard) { showingDrawer = true }
+                }
+            }
+            .animation(NodusMotion.standard, value: showingDrawer)
+            .animation(NodusMotion.standard, value: presentation.sidebarWidth)
+        }
+    }
+
+    /// iPhone keeps a native tab bar, the only control that gets the system's Liquid Glass
+    /// selection lens and drag-between-tabs behaviour on iOS 26. The tab bar sits behind the
+    /// single shared workspace and only reserves the space measured under it; its tabs carry no
+    /// content of their own. iPad has no tab bar: the player sits under the workspace instead.
+    @ViewBuilder private var shellLayout: some View {
+        if isPhone {
+            ZStack {
+                phoneTabHost
+                workspace
+                    .padding(.bottom, phoneBarInset)
+                    .ignoresSafeArea(.container, edges: .bottom)
+            }
+            .sheet(item: $phoneSheet, onDismiss: { phoneTab = routeTab }) { sheet in
+                switch sheet {
+                case .more:
+                    PhoneSectionPicker(title: "More", items: morePhoneSections, selection: route, accent: session.accent) { picked in
+                        phoneSheet = nil
+                        select(picked)
+                    }
+                case .pin:
+                    PhoneSectionPicker(title: "Choose a pinned section", items: unpinnedPhoneSections, selection: nil, accent: session.accent) { picked in
+                        phoneSheet = nil
+                        preferences.pinPhoneRoute(picked)
+                        select(picked)
+                    }
+                }
+            }
+            .onChange(of: routeTab, initial: true) { _, tab in
+                if phoneSheet == nil { phoneTab = tab }
+            }
+        } else {
+            // NavigationStack does not reliably forward a safe-area inset installed outside
+            // it to pushed pages. Give the footer real layout space instead: every route,
+            // scroll view and web canvas then receives the unobscured viewport height.
+            VStack(spacing: 0) {
+                workspace
+                padMiniPlayer
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .layoutPriority(1)
+    }
+
+    private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+
+    private var padMiniPlayer: some View {
+        LinkMiniPlayer(playback: session.podcastPlayback, accent: session.accent)
+            .frame(maxWidth: 520)
+            .padding(.horizontal, 16)
+            .padding(.vertical, session.podcastPlayback.target == nil ? 0 : 8)
+            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
+            .animation(.easeInOut(duration: 0.22), value: session.podcastPlayback.target == nil)
+    }
+
+    @ViewBuilder private var phoneTabHost: some View {
+        let tabs = TabView(selection: phoneTabSelection) {
+            Tab(value: PhoneTab.home) { phoneTabContent } label: { phoneTabLabel("Home", image: "house") }
+            ForEach(0..<3, id: \.self) { slot in
+                Tab(value: PhoneTab.slot(slot)) { phoneTabContent } label: { phoneSlotLabel(slot) }
+            }
+            Tab(value: PhoneTab.more) { phoneTabContent } label: { phoneTabLabel("More", image: "ellipsis") }
+        }
+        .tint(session.accent.nodusReadable)
+
+        if #available(iOS 26.1, *) {
+            tabs
+                .tabBarMinimizeBehavior(.never)
+                .tabViewBottomAccessory(isEnabled: session.podcastPlayback.target != nil) {
+                    // The accessory draws its own glass capsule; a second one inside it would
+                    // show as an empty rim at both ends.
+                    LinkMiniPlayer(playback: session.podcastPlayback, accent: session.accent, showsBackground: false)
+                        .frame(maxWidth: .infinity)
+                }
+                .animation(.easeInOut(duration: 0.22), value: session.podcastPlayback.target == nil)
+        } else {
+            tabs
+        }
+    }
+
+    /// Every tab shows the same transparent page: the real content is the shared workspace in
+    /// front of it. What the page contributes is its bottom safe area — tab bar, player and
+    /// home indicator — which becomes the workspace's bottom margin.
+    private var phoneTabContent: some View {
+        Color.clear
+            .ignoresSafeArea(.keyboard)
+            .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { phoneBarInset = $0 }
+            .safeAreaInset(edge: .bottom, spacing: 0) { legacyPhoneMiniPlayer }
+            .toolbar(session.isSurfaceFullscreen ? .hidden : .visible, for: .tabBar)
+    }
+
+    /// Before iOS 26.1 there is no tab-bar accessory: the same capsule floats above the bar.
+    @ViewBuilder private var legacyPhoneMiniPlayer: some View {
+        if #available(iOS 26.1, *) {
+            EmptyView()
+        } else if session.podcastPlayback.target != nil, !session.isSurfaceFullscreen {
+            LinkMiniPlayer(playback: session.podcastPlayback, accent: session.accent)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+        }
+    }
+
+    /// Home and More are fixed; the three slots between them are the person's pinned sections,
+    /// or a "Pin" placeholder that offers one. More and an empty slot open a section list
+    /// rather than a page, so the setter acts on every tap, including a tap on the tab that
+    /// is already selected.
+    private var phoneTabSelection: Binding<PhoneTab> {
+        Binding(get: { phoneTab }, set: { tapped in
+            phoneTab = tapped
+            switch tapped {
+            case .home:
+                select(.home)
+            case .slot(let slot):
+                if slot < preferences.phonePinnedRoutes.count { select(preferences.phonePinnedRoutes[slot]) }
+                else { phoneSheet = .pin }
+            case .more:
+                phoneSheet = .more
+            }
+        })
+    }
+
+    /// The tab that represents the visible route.
+    private var routeTab: PhoneTab {
+        if route == .home { return .home }
+        if let slot = preferences.phonePinnedRoutes.firstIndex(of: route) { return .slot(slot) }
+        return .more
+    }
+
+    @ViewBuilder private func phoneSlotLabel(_ slot: Int) -> some View {
+        if slot < preferences.phonePinnedRoutes.count,
+           let item = AppPreferences.phonePinCandidates.first(where: { $0.route == preferences.phonePinnedRoutes[slot] }) {
+            phoneTabLabel(item.tabLabel, image: item.systemImage)
+        } else {
+            phoneTabLabel("Pin", image: "pin")
+        }
+    }
+
+    private func phoneTabLabel(_ title: LocalizedStringKey, image: String) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            // A UIKit template image, not `Image(systemName:)`: under the app's own dark/light
+            // override the tab bar resolved SwiftUI symbols in the system appearance and drew
+            // them almost black on dark glass. A template is tinted by the bar itself.
+            if let icon = image == "telescope" ? NodusIcon.tabBarImage(named: "NodusTelescope") : NodusIcon.tabBarSymbol(image) {
+                Image(uiImage: icon)
+            } else {
+                Image(systemName: image)
+            }
+        }
     }
 
     private var unpinnedPhoneSections: [NodusNavigationItem] {
@@ -277,77 +459,6 @@ struct SpaceShell: View {
         AppPreferences.phonePinCandidates.filter {
             !preferences.phonePinnedRoutes.contains($0.route) || [.library, .settings].contains($0.route)
         }
-    }
-
-    private var phoneNavigation: some View {
-        HStack(spacing: 0) {
-            phoneDestination(.home, title: "Home", image: "house")
-            ForEach(0..<3, id: \.self) { slot in
-                if slot < preferences.phonePinnedRoutes.count,
-                   let item = AppPreferences.phonePinCandidates.first(where: { $0.route == preferences.phonePinnedRoutes[slot] }) {
-                    phoneDestination(item.route, title: item.label, image: item.systemImage)
-                } else {
-                    Menu {
-                        ForEach(unpinnedPhoneSections) { item in
-                            Button { preferences.pinPhoneRoute(item.route) } label: { phoneMenuLabel(item) }
-                        }
-                    } label: { phoneNavigationLabel(title: "Pin", image: "pin", selected: false) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Choose a pinned section")
-                    .accessibilityIdentifier("nodus-bottom-pin-slot-\(slot)")
-                }
-            }
-            Menu {
-                ForEach(morePhoneSections) { item in
-                    Button { select(item.route) } label: { phoneMenuLabel(item) }
-                }
-            } label: {
-                phoneNavigationLabel(title: "More", image: "ellipsis", selected: route != .home && !preferences.phonePinnedRoutes.contains(route))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("More")
-            .accessibilityAddTraits(route != .home && !preferences.phonePinnedRoutes.contains(route) ? .isSelected : [])
-            .accessibilityIdentifier("nodus-bottom-more")
-        }
-        .padding(6)
-        .nodusGlass(.regular, in: Capsule())
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("nodus-bottom-navigation")
-    }
-
-    private func phoneMenuLabel(_ item: NodusNavigationItem) -> some View {
-        NodusMenuLabel(title: item.label, image: item.systemImage)
-    }
-
-    private func phoneNavigationLabel(title: LocalizedStringKey, image: String, selected: Bool) -> some View {
-        Group {
-            if verticalSizeClass == .compact {
-                HStack(spacing: 6) {
-                    NodusIcon(name: image, size: 20)
-                    Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.7)
-                }
-            } else {
-                VStack(spacing: 3) {
-                    NodusIcon(name: image, size: 20)
-                    Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.7)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .padding(.vertical, 3)
-        .background { if selected { Capsule().fill(session.accent.opacity(0.12)) } }
-        .foregroundStyle(selected ? session.accent.nodusReadable : Color.secondary)
-        .contentShape(Capsule())
-    }
-
-    private func phoneDestination(_ target: NodusRoute, title: LocalizedStringKey, image: String) -> some View {
-        Button { select(target) } label: { phoneNavigationLabel(title: title, image: image, selected: route == target) }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title)
-            .accessibilityAddTraits(route == target ? .isSelected : [])
-            .accessibilityIdentifier("nodus-bottom-\(target.rawValue)")
     }
 
     private func sidebar(collapsed: Bool) -> some View {
@@ -704,6 +815,57 @@ enum LibraryRouteSource: Equatable {
 
     static func resolve(isDemo: Bool, supportsAccountSync: Bool) -> Self {
         isDemo || supportsAccountSync ? .account : .publishedWorks
+    }
+}
+
+private enum PhoneTab: Hashable {
+    case home
+    case slot(Int)
+    case more
+}
+
+private enum PhoneSectionSheet: String, Identifiable {
+    case more
+    case pin
+    var id: String { rawValue }
+}
+
+/// What More and an empty pinned slot open on iPhone. A native tab cannot be a menu, so the
+/// list that used to be a pop-up menu is a short sheet with the same sections.
+private struct PhoneSectionPicker: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: LocalizedStringKey
+    let items: [NodusNavigationItem]
+    let selection: NodusRoute?
+    let accent: Color
+    let onPick: (NodusRoute) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List(items) { nav in
+                Button { onPick(nav.route) } label: {
+                    Label {
+                        HStack {
+                            Text(nav.label).foregroundStyle(.primary)
+                            Spacer()
+                            if nav.route == selection { Image(systemName: "checkmark").foregroundStyle(accent.nodusReadable) }
+                        }
+                    } icon: {
+                        NodusIcon(name: nav.systemImage, size: 16).foregroundStyle(accent.nodusReadable)
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(nav.route == selection ? .isSelected : [])
+                .accessibilityIdentifier("nodus-phone-section-\(nav.route.rawValue)")
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 

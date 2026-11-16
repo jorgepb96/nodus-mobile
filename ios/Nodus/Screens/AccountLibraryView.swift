@@ -182,12 +182,12 @@ struct AccountLibraryView: View {
                     .disabled(syncing || session.isDemo)
                     .accessibilityLabel("Sync")
                     Menu {
-                        Button { creatingItem = true } label: { Label("New reference", systemImage: "plus") }
-                        Button { showingImporter = true } label: { Label("Import files", systemImage: "square.and.arrow.down") }
-                        Button { newCollectionName = ""; showingCollectionEditor = true } label: { Label("New collection", systemImage: "folder.badge.plus") }
+                        Button { creatingItem = true } label: { NodusMenuLabel("New reference", systemImage: "plus") }
+                        Button { showingImporter = true } label: { NodusMenuLabel("Import files", systemImage: "square.and.arrow.down") }
+                        Button { newCollectionName = ""; showingCollectionEditor = true } label: { NodusMenuLabel("New collection", systemImage: "folder.badge.plus") }
                         Section("Only on Desktop") {
-                            Label("Sync Zotero on Mac", systemImage: "desktopcomputer")
-                            Label("Prepare on Mac", systemImage: "text.viewfinder")
+                            NodusMenuLabel("Sync Zotero on Mac", systemImage: "desktopcomputer")
+                            NodusMenuLabel("Prepare on Mac", systemImage: "text.viewfinder")
                         }
                     } label: { libraryControlIcon("plus") }
                     .buttonStyle(.plain)
@@ -212,12 +212,10 @@ struct AccountLibraryView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if horizontalSizeClass == .regular {
-                Picker("View", selection: $viewMode) {
-                    Image(systemName: "list.bullet.rectangle").tag(LibraryViewMode.table)
-                    Image(systemName: "square.grid.2x2").tag(LibraryViewMode.grid)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 92)
+                NodusIconSegmentedPicker(selection: $viewMode, options: [
+                    .init(value: LibraryViewMode.table, systemImage: "list.bullet.rectangle", label: "Table"),
+                    .init(value: LibraryViewMode.grid, systemImage: "square.grid.2x2", label: "Grid"),
+                ], accent: session.accent)
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
@@ -271,7 +269,7 @@ struct AccountLibraryView: View {
 
         Menu {
             if !query.isEmpty || collectionId != nil || itemType != nil {
-                Button { savedSearchName = query.isEmpty ? "Filtered Library" : query; showingSavedSearchEditor = true } label: { Label("Save search", systemImage: "bookmark") }
+                Button { savedSearchName = query.isEmpty ? "Filtered Library" : query; showingSavedSearchEditor = true } label: { NodusMenuLabel("Save search", systemImage: "bookmark") }
             }
             if selecting, !selection.isEmpty {
                 Button(showingTrash ? "Recover" : "Trash") { setSelectionDeleted(!showingTrash) }
@@ -280,7 +278,7 @@ struct AccountLibraryView: View {
             }
             if !conflicts.isEmpty {
                 Section("Conflicts") {
-                    ForEach(conflicts.prefix(20)) { conflict in Label(conflict.recordId, systemImage: conflict.winnerVersionId == conflict.versionId ? "checkmark.seal" : "arrow.triangle.branch") }
+                    ForEach(conflicts.prefix(20)) { conflict in NodusMenuLabel(conflict.recordId, systemImage: conflict.winnerVersionId == conflict.versionId ? "checkmark.seal" : "arrow.triangle.branch") }
                 }
             }
             if !commands.isEmpty {
@@ -289,7 +287,7 @@ struct AccountLibraryView: View {
                         Button {
                             if !command.status.isTerminal { cancel(command) }
                         } label: {
-                            Label("\(command.kind.rawValue) · \(command.status.rawValue)", systemImage: command.status.isTerminal ? "checkmark.circle" : "desktopcomputer")
+                            NodusMenuLabel("\(command.kind.rawValue) · \(command.status.rawValue)", systemImage: command.status.isTerminal ? "checkmark.circle" : "desktopcomputer")
                         }
                         .disabled(command.status.isTerminal)
                     }

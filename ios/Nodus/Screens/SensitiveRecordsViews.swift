@@ -218,7 +218,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
                     Menu {
                         ForEach(detailSections, id: \.self) { value in
                             Button { detailSection = value } label: {
-                                if detailSection == value { Label(LocalizedStringKey(value), systemImage: "checkmark") }
+                                if detailSection == value { NodusMenuLabel(LocalizedStringKey(value), systemImage: "checkmark") }
                                 else { Text(LocalizedStringKey(value)) }
                             }.accessibilityIdentifier("archive-detail-option-\(value)")
                         }

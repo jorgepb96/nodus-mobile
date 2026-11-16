@@ -92,7 +92,7 @@ struct PublishedWorkspaceView: View {
                 HStack {
                     Menu {
                         Button { folderId = nil } label: {
-                            if folderId == nil { Label("All collections", systemImage: "checkmark") }
+                            if folderId == nil { NodusMenuLabel("All collections", systemImage: "checkmark") }
                             else { Text("All collections") }
                         }
                         WorkspaceFolderMenuItems(folders: folders, parentId: nil, selection: $folderId)
@@ -125,7 +125,7 @@ struct PublishedWorkspaceView: View {
             ToolbarItem(placement: .principal) {
                 Menu {
                     Button { folderId = nil } label: {
-                        if folderId == nil { Label("All collections", systemImage: "checkmark") } else { Text("All collections") }
+                        if folderId == nil { NodusMenuLabel("All collections", systemImage: "checkmark") } else { Text("All collections") }
                     }
                     WorkspaceFolderMenuItems(folders: folders, parentId: nil, selection: $folderId)
                 } label: {

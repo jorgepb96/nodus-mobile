@@ -1,5 +1,6 @@
 import NodusUI
 import SwiftUI
+import UIKit
 
 /// Everything you can do to a report, said in words.
 ///
@@ -51,6 +52,7 @@ struct ReportActions: View {
                     local: localPDF
                 )
             }
+            ReportReaderHandoffButton(markdown: markdown, title: title, accent: accent)
             if !NodusLinkPolicy.readOnly, let saveToNotes {
                 DeepResearchSaveToNotesButton(
                     reportId: saveToNotes.reportId,
@@ -109,5 +111,77 @@ extension View {
             states().hidden()
             self
         }
+    }
+}
+
+/// Hands the report to Nodus Reader, the companion app for reading and listening.
+///
+/// iOS has no way to give a file to one named app, so this asks the system whether Reader is
+/// installed (its `nodusreader` scheme) and then offers the report through Open In, where
+/// Reader is listed because it declares Markdown. Without Reader the same tap opens its public
+/// TestFlight beta, which is how it is installed today.
+struct ReportReaderHandoffButton: View {
+    let markdown: String
+    var title: String?
+    let accent: Color
+    @State private var issue: String?
+
+    static let probe = URL(string: "nodusreader://")!
+    static let testFlight = URL(string: "https://testflight.apple.com/join/SjCk8AZ1")!
+
+    var body: some View {
+        Button(action: open) {
+            Label {
+                Text(verbatim: "Nodus Reader")
+            } icon: {
+                Image(systemName: "book")
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(accent.nodusReadable)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .reportActionSurface(accent: accent)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open in Nodus Reader")
+        .accessibilityIdentifier("report-open-in-reader")
+        .alert("Could not open Nodus Reader", isPresented: Binding(get: { issue != nil }, set: { if !$0 { issue = nil } })) {
+            Button("OK", role: .cancel) { issue = nil }
+        } message: {
+            Text(issue ?? "")
+        }
+    }
+
+    private func open() {
+        guard UIApplication.shared.canOpenURL(Self.probe) else {
+            UIApplication.shared.open(Self.testFlight)
+            return
+        }
+        do {
+            let url = try Self.file(markdown: markdown, title: title)
+            if !SystemPresenter.openIn(url, uti: "net.daringfireball.markdown") {
+                issue = String(localized: "No installed app can open this report.")
+            }
+        } catch {
+            issue = error.localizedDescription
+        }
+    }
+
+    /// The report as a Markdown file Reader imports as a book: the title as its first heading,
+    /// and the `nodus://` citation links reduced to their text, since they lead nowhere outside
+    /// this app.
+    static func file(markdown: String, title: String?) throws -> URL {
+        var text = markdown.replacingOccurrences(
+            of: #"\[([^\]]+)\]\(nodus://[^)]*\)"#, with: "$1", options: .regularExpression)
+        let heading = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !heading.isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#") {
+            text = "# \(heading)\n\n" + text
+        }
+        let safe = heading.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        let folder = URL.temporaryDirectory.appendingPathComponent("reader-handoff", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("\(safe.isEmpty ? "Informe" : String(safe.prefix(80))).md")
+        try Data(text.utf8).write(to: url, options: .atomic)
+        return url
     }
 }

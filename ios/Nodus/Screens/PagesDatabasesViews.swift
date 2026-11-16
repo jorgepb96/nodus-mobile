@@ -98,10 +98,10 @@ struct PagesWorkspaceView: View {
         .buttonStyle(.plain).hoverEffect(.highlight)
         .accessibilityIdentifier("page-open-\(page.id)")
         .contextMenu {
-            Button { Task { await toggleFavorite(page) } } label: { Label(page.favorite ? "Remove favorite" : "Favorite", systemImage: "star") }
-            Button { Task { await createPage(parentId: page.id) } } label: { Label("New subpage", systemImage: "plus") }
+            Button { Task { await toggleFavorite(page) } } label: { NodusMenuLabel(page.favorite ? "Remove favorite" : "Favorite", systemImage: "star") }
+            Button { Task { await createPage(parentId: page.id) } } label: { NodusMenuLabel("New subpage", systemImage: "plus") }
             Button(role: .destructive) { Task { await setTrashed(page, trashed: page.state != "trashed") } } label: {
-                Label(page.state == "trashed" ? "Restore" : "Move to Trash", systemImage: page.state == "trashed" ? "arrow.uturn.backward" : "trash")
+                NodusMenuLabel(page.state == "trashed" ? "Restore" : "Move to Trash", systemImage: page.state == "trashed" ? "arrow.uturn.backward" : "trash")
             }
         }
     }
@@ -257,11 +257,11 @@ private struct PageDocumentWorkspace: View {
                         .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent)).accessibilityLabel("Detalles de la página")
                 }
                 if session.connection.desktopPairingId == nil { Menu {
-                    Button { Task { await addBlock(type: "paragraph") } } label: { Label("Paragraph", systemImage: "text.alignleft") }
-                    Button { Task { await addBlock(type: "heading_2") } } label: { Label("Heading", systemImage: "textformat.size") }
-                    Button { Task { await addBlock(type: "task") } } label: { Label("Task", systemImage: "checkmark.square") }
-                    Button { Task { await addBlock(type: "quote") } } label: { Label("Quote", systemImage: "quote.opening") }
-                    Button { Task { await addBlock(type: "callout") } } label: { Label("Callout", systemImage: "lightbulb") }
+                    Button { Task { await addBlock(type: "paragraph") } } label: { NodusMenuLabel("Paragraph", systemImage: "text.alignleft") }
+                    Button { Task { await addBlock(type: "heading_2") } } label: { NodusMenuLabel("Heading", systemImage: "textformat.size") }
+                    Button { Task { await addBlock(type: "task") } } label: { NodusMenuLabel("Task", systemImage: "checkmark.square") }
+                    Button { Task { await addBlock(type: "quote") } } label: { NodusMenuLabel("Quote", systemImage: "quote.opening") }
+                    Button { Task { await addBlock(type: "callout") } } label: { NodusMenuLabel("Callout", systemImage: "lightbulb") }
                 } label: { Label("Block", systemImage: "plus") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent)).disabled(outbox == nil)
                 Button { Task { await save() } } label: { if saving { ProgressView() } else { Label("Save", systemImage: "checkmark") } }
                     .buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil || saving)
@@ -301,7 +301,7 @@ private struct PageDocumentWorkspace: View {
                     Button(type.replacingOccurrences(of: "_", with: " ").capitalized) { Task { await changeBlock(block, type: type) } }
                 }
                 Divider()
-                Button(role: .destructive) { Task { await deleteBlock(block) } } label: { Label("Delete block", systemImage: "trash") }
+                Button(role: .destructive) { Task { await deleteBlock(block) } } label: { NodusMenuLabel("Delete block", systemImage: "trash") }
             } label: { Image(systemName: "ellipsis").frame(width: 34, height: 34) }.buttonStyle(.plain)
         }
         .padding(.horizontal, 9).padding(.vertical, 3)
@@ -695,10 +695,10 @@ struct DatabaseDetailWorkspace: View {
         DesktopPageHeader(title: LocalizedStringKey(database.name), subtitle: loadingView ? "Cargando vista…":"\(database.shortId) · \(rows.count) filas", systemImage: database.icon ?? "tablecells", accent: session.accent, trailing: {
             HStack(spacing: 7) {
                 Menu {
-                    Button { presented = .newColumn } label: { Label("New property", systemImage: "rectangle.split.1x2") }
+                    Button { presented = .newColumn } label: { NodusMenuLabel("New property", systemImage: "rectangle.split.1x2") }
                     Menu("Configurar propiedades") { ForEach(columns) { column in Button(column.name) { presented = .editColumn(column) } } }
-                    Button { importingCSV = true } label: { Label("Import CSV", systemImage: "tablecells.badge.ellipsis") }.disabled(session.isDemo)
-                    ShareLink(item: csv) { Label("Export CSV", systemImage: "square.and.arrow.up") }
+                    Button { importingCSV = true } label: { NodusMenuLabel("Import CSV", systemImage: "tablecells.badge.ellipsis") }.disabled(session.isDemo)
+                    ShareLink(item: csv) { NodusMenuLabel("Export CSV", systemImage: "square.and.arrow.up") }
                 } label: { Label("Manage", systemImage: "ellipsis.circle") }.buttonStyle(NodusGlassButtonStyle(accent: session.accent))
                 Button { Task { await addRow() } } label: { Label("New", systemImage: "plus") }.buttonStyle(NodusPrimaryButtonStyle(accent: session.accent)).disabled(outbox == nil)
             }
@@ -715,7 +715,7 @@ struct DatabaseDetailWorkspace: View {
                     }
                     Menu {
                         if compactPresentation { Toggle("Tabla completa", isOn: $phoneTable).accessibilityIdentifier("database-full-table") }
-                        ForEach(["table", "list", "gallery", "board", "calendar", "timeline", "chart", "map", "feed", "dashboard"], id: \.self) { candidate in Button { activeViewId = nil; adHocLayout = candidate } label: { Label(candidate.capitalized, systemImage: layoutIcon(candidate)) } }
+                        ForEach(["table", "list", "gallery", "board", "calendar", "timeline", "chart", "map", "feed", "dashboard"], id: \.self) { candidate in Button { activeViewId = nil; adHocLayout = candidate } label: { NodusMenuLabel(candidate.capitalized, systemImage: layoutIcon(candidate)) } }
                     } label: { Label("View", systemImage: "plus") }.buttonStyle(.bordered).accessibilityIdentifier("database-view-menu")
                 }
             }.scrollIndicators(.hidden)
