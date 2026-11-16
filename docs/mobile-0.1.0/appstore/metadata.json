@@ -14,14 +14,14 @@
     "es-ES": {
       "subtitle": "Consulta tu investigación",
       "keywords": "investigación,tesis,ideas,grafo,argumentos,informes,diccionario,podcast,académico,estudio,zotero",
-      "promotionalText": "Lleva contigo las ideas, los mapas de argumentos, los informes, el diccionario y los podcasts de tu espacio de Nodus Research, directamente desde tu ordenador y sin pasar por la nube.",
+      "promotionalText": "Lleva contigo las ideas, mapas de argumentos, informes, diccionario y podcasts de Nodus Research, directamente desde tu ordenador y sin pasar por la nube.",
       "whatsNew": "Primera versión de Nodus Link: consulta tu espacio de trabajo de Nodus Research desde el iPhone y el iPad."
     },
     "en-US": {
       "name": "Nodus Link: Research and Study",
       "subtitle": "Your research, on the go",
       "keywords": "research,thesis,ideas,graph,arguments,reports,dictionary,podcast,academic,study,zotero,notes",
-      "promotionalText": "Take the ideas, argument maps, reports, dictionary and podcasts of your Nodus Research workspace with you, straight from your own computer and without the cloud.",
+      "promotionalText": "Take the ideas, argument maps, reports, dictionary and podcasts of your Nodus Research workspace with you, straight from your own computer, without the cloud.",
       "whatsNew": "First release of Nodus Link: consult your Nodus Research workspace from iPhone and iPad.",
       "description": "Nodus Link lets you consult, on your iPhone or iPad, the research you keep in Nodus Research for desktop.\n\nBEFORE YOU START\nFirst download and install Nodus Research on a Windows, macOS or Linux computer from https://nodusresearch.com. You need a version that includes the mobile connection. Nodus Link needs that application to reach your workspace.\n\nHOW TO CONNECT YOUR DEVICES\n1. Open Nodus Research on the computer and go to Settings > Mobile connection.\n2. Open Nodus Link on the iPhone or iPad.\n3. Scan the QR code, open the pairing link or enter the code the computer shows.\n\nPairing links your workspace. To see up-to-date content, the computer must be on, Nodus Research open, and both devices able to reach each other on the same local network or through a VPN such as Tailscale. If the connection drops, Nodus Link tries to restore it when the computer is available again, without asking for another code.\n\nWHAT YOU CAN DO\n• Consult your ideas and the sources that support them.\n• Explore the graph of ideas and their relationships.\n• Browse argument maps and open each idea.\n• Read the Deep Research reports saved on your computer, or open them in Nodus Reader.\n• Look up concepts in the dictionary with their definitions, versions, evidence and relations.\n• Listen to the podcasts created in Nodus Research, with transcripts, sources, chapters and fine speed control.\n\nTRY IT WITHOUT A COMPUTER\nOpen the example vault from the first screen to explore a small public-domain corpus that ships with the app. No account and no connection needed.\n\nThis first version focuses on consultation. Creating, editing and generating content happen in Nodus Research for desktop. Pairing your devices does not publish your research on the internet."
     }
