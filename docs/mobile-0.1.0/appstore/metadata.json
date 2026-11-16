@@ -1,0 +1,42 @@
+{
+  "app": "6820425852",
+  "urls": {
+    "marketing": "https://nodusresearch.com/",
+    "support": "https://github.com/jorgepb96/nodus/issues",
+    "privacy": "https://nodusresearch.com/link/privacy/"
+  },
+  "feedbackEmail": "contact@nodusresearch.com",
+  "categories": {
+    "primary": "EDUCATION",
+    "secondary": "PRODUCTIVITY"
+  },
+  "store": {
+    "es-ES": {
+      "subtitle": "Consulta tu investigación",
+      "keywords": "investigación,tesis,ideas,grafo,argumentos,informes,diccionario,podcast,académico,estudio,zotero",
+      "promotionalText": "Lleva contigo las ideas, los mapas de argumentos, los informes, el diccionario y los podcasts de tu espacio de Nodus Research, directamente desde tu ordenador y sin pasar por la nube.",
+      "whatsNew": "Primera versión de Nodus Link: consulta tu espacio de trabajo de Nodus Research desde el iPhone y el iPad."
+    },
+    "en-US": {
+      "name": "Nodus Link: Research and Study",
+      "subtitle": "Your research, on the go",
+      "keywords": "research,thesis,ideas,graph,arguments,reports,dictionary,podcast,academic,study,zotero,notes",
+      "promotionalText": "Take the ideas, argument maps, reports, dictionary and podcasts of your Nodus Research workspace with you, straight from your own computer and without the cloud.",
+      "whatsNew": "First release of Nodus Link: consult your Nodus Research workspace from iPhone and iPad.",
+      "description": "Nodus Link lets you consult, on your iPhone or iPad, the research you keep in Nodus Research for desktop.\n\nBEFORE YOU START\nFirst download and install Nodus Research on a Windows, macOS or Linux computer from https://nodusresearch.com. You need a version that includes the mobile connection. Nodus Link needs that application to reach your workspace.\n\nHOW TO CONNECT YOUR DEVICES\n1. Open Nodus Research on the computer and go to Settings > Mobile connection.\n2. Open Nodus Link on the iPhone or iPad.\n3. Scan the QR code, open the pairing link or enter the code the computer shows.\n\nPairing links your workspace. To see up-to-date content, the computer must be on, Nodus Research open, and both devices able to reach each other on the same local network or through a VPN such as Tailscale. If the connection drops, Nodus Link tries to restore it when the computer is available again, without asking for another code.\n\nWHAT YOU CAN DO\n• Consult your ideas and the sources that support them.\n• Explore the graph of ideas and their relationships.\n• Browse argument maps and open each idea.\n• Read the Deep Research reports saved on your computer, or open them in Nodus Reader.\n• Look up concepts in the dictionary with their definitions, versions, evidence and relations.\n• Listen to the podcasts created in Nodus Research, with transcripts, sources, chapters and fine speed control.\n\nTRY IT WITHOUT A COMPUTER\nOpen the example vault from the first screen to explore a small public-domain corpus that ships with the app. No account and no connection needed.\n\nThis first version focuses on consultation. Creating, editing and generating content happen in Nodus Research for desktop. Pairing your devices does not publish your research on the internet."
+    }
+  },
+  "beta": {
+    "es-ES": {
+      "description": "Nodus Link es el compañero de iPhone y iPad de Nodus Research. Vincúlalo con el ordenador mediante código, QR o enlace y consulta ideas y fuentes, grafo, mapas de argumentos, informes de Deep Research, diccionario y podcasts. Sin ordenador, abre el vault de ejemplo desde la primera pantalla."
+    },
+    "en-US": {
+      "description": "Nodus Link is the iPhone and iPad companion to Nodus Research. Pair it with your computer by code, QR or link and consult ideas and sources, the graph, argument maps, Deep Research reports, the dictionary and podcasts. Without a computer, open the example vault from the first screen."
+    }
+  },
+  "whatToTest": {
+    "es-ES": "Novedades de esta build:\n• Nueva barra inferior nativa con efecto Liquid Glass y reproductor integrado al estilo de Nodus Reader.\n• Etiquetas más cortas en la barra y nueva hoja de secciones en «Más».\n• Diccionario: acciones como iconos, filtros en un globo e índice alfabético lateral.\n• Deep Research: botón PDF que abre directamente la hoja de compartir y nuevo botón «Nodus Reader».\n• Control de velocidad de los podcasts de 0,75× a 2× en pasos de 0,05×.\n• Iconos de los menús legibles en modo oscuro y etiquetas de búsqueda traducidas.\n\nQué probar: navegación por la barra inferior y «Más», reproducción y velocidad de un podcast, exportar un informe a PDF y abrirlo en Nodus Reader.",
+    "en-US": "New in this build:\n• Native bottom tab bar with Liquid Glass and a mini player in the Nodus Reader style.\n• Shorter tab labels and a new section sheet under More.\n• Dictionary: icon actions, filters in a popover and an A–Z side index.\n• Deep Research: the PDF button opens the share sheet directly, plus a new Nodus Reader button.\n• Podcast speed from 0.75× to 2× in 0.05× steps.\n• Menu icons legible in dark mode and translated search tags.\n\nWhat to test: tab bar and More navigation, podcast playback and speed, exporting a report to PDF and opening it in Nodus Reader."
+  },
+  "reviewNotes": "Nodus Link 0.1.0 beta review notes\n\nNo account or demo account is needed. Nodus Link is a read-only companion that connects directly to the Nodus Research desktop application on the user's own computer (local network or the user's VPN); there is no Nodus server.\n\nTo review without a computer: on the first screen tap \"See an example vault\" (\"Ver un vault de ejemplo\"). It opens a small public-domain corpus bundled in the app and works offline: ideas and their sources, the graph, the argument map, the dictionary and search. Deep Research reports and podcasts are created in the desktop app, so they appear only once a computer is paired.\n\nPermissions: the camera is used only to scan the pairing QR code shown by the desktop app; local network access reaches the paired computer; Face ID is an optional app lock. The app has no analytics, advertising or tracking SDK and sends no content to third parties. \"Nodus Reader\" on a report opens the iOS Open In menu for Nodus Reader when installed, or its public TestFlight page otherwise.\n\nThis delivery is TestFlight only. No production App Store review is requested."
+}
