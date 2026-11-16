@@ -202,7 +202,7 @@ struct ResearchLibraryView: View {
                 sortMenu
             }
         }
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .refreshable { await load() }
     }
 
@@ -1212,7 +1212,7 @@ struct LocalReportReader: View {
             )
             await nameTheSources()
         }
-        .task(id: session.publishedRevision) { await refreshPublishedCopy() }
+        .task(id: session.contentEpoch) { await refreshPublishedCopy() }
         .task(id: currentSaved.vaultRowId) { await refreshPublishedCopy() }
     }
 
@@ -1425,7 +1425,7 @@ struct PublishedReportReader: View {
                 .presentationDetents([.large])
             }
         }
-        .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision)") { await load() }
+        .task(id: "\(session.contentEpoch):\(session.companionDownloadRevision)") { await load() }
     }
 
     @ViewBuilder private var reportMetadata: some View {

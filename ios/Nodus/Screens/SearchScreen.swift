@@ -89,7 +89,7 @@ struct SearchScreen: View {
             .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
         .onChange(of: query) { _, _ in schedule() }
-        .task(id: session.publishedRevision) { if trimmedQuery.count >= 2 { schedule(immediately: true) } }
+        .task(id: session.contentEpoch) { if trimmedQuery.count >= 2 { schedule(immediately: true) } }
         .onChange(of: routeActive) { _, active in
             if active, trimmedQuery.count >= 2 { schedule(immediately: true) }
             else if !active { stopSearch() }

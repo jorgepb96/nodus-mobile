@@ -372,7 +372,7 @@ struct NoteByIdView: View {
                 ProgressView().tint(session.accent)
             }
         }
-        .task(id: "\(noteId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+        .task(id: "\(noteId)|\(session.contentEpoch)|\(attempt)") {
             guard row == nil else { return }
             failure = nil
             do {
@@ -419,7 +419,7 @@ struct RowByIdView: View {
                 ProgressView().tint(session.accent)
             }
         }
-        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(session.companionDownloadRevision)|\(downloadedOnly)|\(attempt)") {
+        .task(id: "\(id)|\(session.contentEpoch)|\(session.companionDownloadRevision)|\(downloadedOnly)|\(attempt)") {
             guard privateReference == nil, !downloadedOnly else { return }
             failure = nil
             do {
@@ -464,7 +464,7 @@ struct PassageByIdView: View {
                 ProgressView().tint(session.accent)
             }
         }
-        .task(id: "\(id)|\(session.publishedRevision ?? "local")|\(attempt)") {
+        .task(id: "\(id)|\(session.contentEpoch)|\(attempt)") {
             guard row == nil, asWork == nil else { return }
             failure = nil
             guard let passages = Collections["passages"] else {

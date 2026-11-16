@@ -39,7 +39,7 @@ struct FamilyTreeView: View {
     /// REST rows become available as soon as the publication changes; portrait assets become
     /// available after the optional mirror has finished importing that same revision.
     private var loadID: String {
-        "\(session.connection.id):\(session.publishedRevision ?? "unpublished"):\(session.mirrorSummary?.revision ?? "no-mirror")"
+        "\(session.connection.id):\(session.contentEpoch):\(session.mirrorSummary?.revision ?? "no-mirror")"
     }
 
     var body: some View {

@@ -78,7 +78,7 @@ struct WorldContinuityView: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("world-continuity")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
     }
 
     private func metric(_ label: String, _ value: Int, _ color: Color) -> some View {
@@ -211,7 +211,7 @@ struct WorldManuscriptView: View {
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("world-manuscript")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .onChange(of: selectedId) { _, _ in selectDraft() }
         .onChange(of: draft) { _, text in
             guard let id = draftSceneId, id == selectedId else { return }

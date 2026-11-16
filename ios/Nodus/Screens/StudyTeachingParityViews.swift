@@ -86,7 +86,7 @@ private struct StudyCoursesWorkspace: View {
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("study-courses-workspace")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .onChange(of: documentTarget?.id) { _, id in if id == nil { Task { await load() } } }
         .sheet(isPresented: $newDocumentPresented, onDismiss: {
             if let id = newlyCreatedDocument {
@@ -302,7 +302,7 @@ private struct StudyMaterialsWorkspace: View {
         VStack(spacing: 0) {
             WorkspaceTabStrip(section: section, catalogueTitle: "Materials", catalogueImage: "books.vertical", accent: session.accent)
             if let active { materialReader(active) } else { catalogue }
-        }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }.accessibilityElement(children: .contain)
+        }.nodusPageBackdrop(accent: session.accent).task(id: session.contentEpoch) { await load() }.accessibilityElement(children: .contain)
         .accessibilityIdentifier("study-materials-workspace")
     }
     private var catalogue: some View { ScrollView { VStack(alignment: .leading, spacing: 12) { DesktopPageHeader(title: "Study materials", subtitle: "Documents, reading state and grounded search", systemImage: "books.vertical", accent: session.accent); NodusSearchField(text: $query, prompt: "Search materials", accent: session.accent); if loading { ProgressView("Loading materials…").frame(maxWidth: .infinity).padding(.vertical, 32) }; if let issue { NodusNotice(tone: .blocked, title: "Could not load materials", message: LocalizedStringKey(issue)) }; ForEach(materials, id: \.columns) { row in Button { open(row) } label: { HStack { Image(systemName: previewIcon(row.text("preview_kind"))).font(.title2).foregroundStyle(session.accent); VStack(alignment: .leading) { Text(row.text("title") ?? "Material").font(.headline); Text("\(row.text("read_state") ?? "pending") · \(row.text("index_status") ?? "pending")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) }.buttonStyle(NodusCardButtonStyle()) }; if materials.isEmpty, !loading, issue == nil { ContentUnavailableView("No materials", systemImage: "books.vertical", description: Text("Published study materials will appear here.")) } }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor() } }
@@ -318,7 +318,7 @@ private struct StudyPlannerWorkspace: View {
     @State private var tables: [String: [Row]] = [:]
     @State private var loading = true
     @State private var issue: String?
-    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: calendarOnly ? "Calendar" : "Study plan", subtitle: calendarOnly ? "Assignments, exams and focused sessions" : "Weekly timetable, goals and plan blocks", systemImage: calendarOnly ? "calendar" : "clock", accent: session.accent); if loading { ProgressView("Loading study plan…").frame(maxWidth: .infinity).padding(.vertical, 32) }; if let issue { NodusNotice(tone: .blocked, title: "Could not load the study plan", message: LocalizedStringKey(issue)) }; if !calendarOnly { timetable; goals }; events; if tables.values.allSatisfy(\.isEmpty), !loading, issue == nil { ContentUnavailableView("No scheduled study", systemImage: "calendar", description: Text("Plans, goals and calendar events will appear here.")) } }.padding(NodusSpace.page).frame(maxWidth: 1080).frame(maxWidth: .infinity).nodusTopAnchor() }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }.accessibilityIdentifier(calendarOnly ? "study-calendar-workspace" : "study-schedule-workspace") }
+    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { DesktopPageHeader(title: calendarOnly ? "Calendar" : "Study plan", subtitle: calendarOnly ? "Assignments, exams and focused sessions" : "Weekly timetable, goals and plan blocks", systemImage: calendarOnly ? "calendar" : "clock", accent: session.accent); if loading { ProgressView("Loading study plan…").frame(maxWidth: .infinity).padding(.vertical, 32) }; if let issue { NodusNotice(tone: .blocked, title: "Could not load the study plan", message: LocalizedStringKey(issue)) }; if !calendarOnly { timetable; goals }; events; if tables.values.allSatisfy(\.isEmpty), !loading, issue == nil { ContentUnavailableView("No scheduled study", systemImage: "calendar", description: Text("Plans, goals and calendar events will appear here.")) } }.padding(NodusSpace.page).frame(maxWidth: 1080).frame(maxWidth: .infinity).nodusTopAnchor() }.nodusPageBackdrop(accent: session.accent).task(id: session.contentEpoch) { await load() }.accessibilityIdentifier(calendarOnly ? "study-calendar-workspace" : "study-schedule-workspace") }
     private var timetable: some View { VStack(alignment: .leading, spacing: 8) { DesktopSectionHeader(title: "Week", subtitle: "Same period grid as Desktop", systemImage: "calendar.day.timeline.left", accent: session.accent); ForEach(tables["study_schedule_cells"] ?? [], id: \.columns) { cell in HStack { Text(weekday(cell.int("weekday") ?? 0)).font(.caption.weight(.semibold)).frame(width: 75, alignment: .leading); Text(period(cell)); Divider(); Text(subject(cell.string("subject_id"))).font(.callout.weight(.medium)); Spacer(); Text(cell.text("room") ?? "").font(.caption).foregroundStyle(.secondary) }.desktopContentRow(accent: session.accent) } } }
     private var goals: some View { VStack(alignment: .leading, spacing: 8) { DesktopSectionHeader(title: "Goals", subtitle: "Progress without silent rescheduling", systemImage: "target", accent: session.accent); ForEach(tables["study_goals"] ?? [], id: \.columns) { goal in VStack(alignment: .leading, spacing: 6) { HStack { Text(goal.text("title") ?? "Goal").font(.callout.weight(.medium)); Spacer(); Text("\(goal.int("current_value") ?? 0)/\(goal.int("target_value") ?? 0) \(goal.text("unit") ?? "")").font(.caption.monospacedDigit()) }; ProgressView(value: Double(goal.int("current_value") ?? 0), total: Double(max(1, goal.int("target_value") ?? 1))).tint(session.accent) }.desktopContentRow(accent: session.accent) } } }
     private var events: some View { VStack(alignment: .leading, spacing: 8) { DesktopSectionHeader(title: "Upcoming", subtitle: "Plans and calendar events", systemImage: "calendar.badge.clock", accent: session.accent); ForEach((tables["study_calendar_events"] ?? []).sorted { ($0.text("starts_at") ?? "") < ($1.text("starts_at") ?? "") }, id: \.columns) { event in HStack { VStack(alignment: .leading) { Text(event.text("title") ?? "Event").font(.callout.weight(.medium)); Text(event.text("notes") ?? event.text("type") ?? "").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(shortDate(event.text("starts_at"))).font(.caption.monospacedDigit()).foregroundStyle(session.accent) }.desktopContentRow(accent: session.accent) } } }
@@ -443,7 +443,7 @@ private struct TeachingExamsWorkspace: View {
             if let active { exam(active) } else { catalogue }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("teaching-exams-workspace")
     }
@@ -524,7 +524,7 @@ private struct TeachingRubricsWorkspace: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .accessibilityIdentifier("teaching-rubrics-workspace")
     }
 
@@ -632,7 +632,7 @@ private struct TeachingUnitsWorkspace: View {
             }.padding(NodusSpace.page).frame(maxWidth: 940).frame(maxWidth: .infinity).nodusTopAnchor()
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .accessibilityIdentifier("teaching-units-workspace")
     }
     private func load() async { loading = true; defer { loading = false }; do { tables = try await loadStudyTeachingTables(session, studyPublicTables); issue = nil } catch { tables = [:]; issue = error.localizedDescription } }

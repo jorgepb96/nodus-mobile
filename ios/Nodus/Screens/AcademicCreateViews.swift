@@ -60,7 +60,7 @@ struct ProjectsMobileView: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("academic-projects")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .nodusSheet(isPresented: $showingCreate) {
             NavigationStack { ProjectCreateForm(session: session) { message = $0; showingCreate = false } }
                 .nodusModalClose(accent: session.accent)

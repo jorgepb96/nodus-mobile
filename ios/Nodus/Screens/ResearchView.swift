@@ -23,7 +23,7 @@ struct ResearchView: View {
         Group {
             if let store { content(store) } else { ProgressView().tint(session.accent) }
         }
-        .task(id: session.publishedRevision) {
+        .task(id: session.contentEpoch) {
             if store == nil { store = LocalReportStore.shared(for: session.connection.storageId) }
             publishedReports = (try? await session.client.deepResearchReports(
                 in: session.connection.spaceId,

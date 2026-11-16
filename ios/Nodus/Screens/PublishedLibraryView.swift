@@ -169,7 +169,7 @@ struct PublishedLibraryView: View {
             Text("Only files stored on this device will be removed. The catalogue, annotations and server publication are preserved.")
         }
         .refreshable { await load(remoteOnly: true) }
-        .task(id: session.publishedRevision) { await load(remoteOnly: false) }
+        .task(id: session.contentEpoch) { await load(remoteOnly: false) }
     }
 
     private var filterBar: some View {

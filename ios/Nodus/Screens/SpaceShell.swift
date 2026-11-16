@@ -195,7 +195,7 @@ struct SpaceShell: View {
                 do { try await Task.sleep(for: .seconds(30)) } catch { return }
             }
         }
-        .onChange(of: session.publishedRevision) { _, _ in
+        .onChange(of: session.contentEpoch) { _, _ in
             if scenePhase == .active, !session.isDemo { Task { await downloads.checkForChanges() } }
         }
         .alert("Download unavailable", isPresented: Binding(get: { downloads.issue != nil }, set: { if !$0 { downloads.issue = nil } })) {
@@ -251,7 +251,7 @@ struct SpaceShell: View {
                         onCommands: { showingCommands = true },
                         onAssistant: { showingAssistant = true },
                         onQueue: { tray.open() },
-                        onRefresh: { Task { await session.refreshPublishedContent() } },
+                        onRefresh: { Task { await session.refreshAll() } },
                         onTheme: { preferences.toggleInterfaceStyle(current: colorScheme) },
                         onSettings: { select(.settings) }
                     ) }

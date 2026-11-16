@@ -86,7 +86,7 @@ struct DeepResearchScreen: View {
             readCheckpoint()
             seedVisualFixtureIfNeeded()
         }
-        .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision)") { await loadPublished() }
+        .task(id: "\(session.contentEpoch):\(session.companionDownloadRevision)") { await loadPublished() }
         .onChange(of: runner.isRunning) { _, running in
             if !running, runner.finished == nil { readCheckpoint() }
         }

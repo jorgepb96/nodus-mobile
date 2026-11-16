@@ -59,7 +59,7 @@ struct ImmersionLibraryView: View {
         .navigationTitle("Immersion")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .refreshable { await load() }
     }
 
@@ -298,7 +298,7 @@ struct ImmersionView: View {
         .navigationTitle("Immersion")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .onChange(of: session.companionImmersionProgressRevision) { _, _ in Task { await progressController?.reloadLocal() } }
     }
 

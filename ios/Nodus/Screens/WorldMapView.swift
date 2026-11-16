@@ -100,8 +100,8 @@ struct WorldMapView: View {
             }
         }
         .padding(.bottom, 8).nodusPageBackdrop(accent: session.accent).nodusHidesBottomBar()
-        .task(id: session.publishedRevision) { await loadCatalogue() }
-        .task(id: "\(selectedId)|\(attempt)|\(session.publishedRevision)|\(session.companionDownloadRevision)") { await loadMap() }
+        .task(id: session.contentEpoch) { await loadCatalogue() }
+        .task(id: "\(selectedId)|\(attempt)|\(session.contentEpoch)|\(session.companionDownloadRevision)") { await loadMap() }
         .nodusSheet(item: $panel) { item in panelBody(item) }
         .onChange(of: panel?.id) { _, value in if value == nil { marker = nil } }
     }

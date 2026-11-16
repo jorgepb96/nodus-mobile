@@ -119,7 +119,7 @@ struct GenealogyMapView: View {
             }
             if let issue { Text(issue).font(.caption).foregroundStyle(Color.nodusDanger); Button("Retry") { retry += 1 } }
         }.padding(NodusSpace.page).navigationTitle("Map").nodusPageBackdrop(accent: session.accent).nodusHidesBottomBar()
-            .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision):\(downloadedOnly):\(retry)") { await load() }
+            .task(id: "\(session.contentEpoch):\(session.companionDownloadRevision):\(downloadedOnly):\(retry)") { await load() }
             .task(id: playing) {
                 guard playing, let range else { return }
                 while playing && !Task.isCancelled {
@@ -281,7 +281,7 @@ struct GenealogyTimelineView: View {
                 }
             }.padding(NodusSpace.page).frame(maxWidth: 960).frame(maxWidth: .infinity)
         }.navigationTitle("Timeline").nodusPageBackdrop(accent: session.accent).nodusHidesBottomBar()
-            .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision):\(downloadedOnly):\(retry)") { await load() }
+            .task(id: "\(session.contentEpoch):\(session.companionDownloadRevision):\(downloadedOnly):\(retry)") { await load() }
             .sheet(item: $sheet) { presented in
                 switch presented {
                 case .filter(let selected):

@@ -108,7 +108,7 @@ private struct PrimarySourcesArchiveWorkspace: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .nodusSheet(isPresented: $pairing) {
             DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } }
         }
@@ -370,7 +370,7 @@ private struct ProsopographyWorkspace: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
         .nodusSheet(isPresented: Binding(
             get: { personSource != nil },
@@ -570,7 +570,7 @@ private struct TestimoniesWorkspace: View {
             default: EmptyView()
             }
         }
-        .nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
+        .nodusPageBackdrop(accent: session.accent).task(id: session.contentEpoch) { await load() }
         .nodusSheet(isPresented: $pairing) { DesktopBridgePairingSheet(accent: session.accent) { Task { await load() } } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("testimonies-\(mode.rawValue)-workspace")

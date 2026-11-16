@@ -139,7 +139,7 @@ struct PublishedWorkspaceView: View {
                 Text("\(visible.count)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             }
         }
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .refreshable { await load() }
     }
 

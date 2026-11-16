@@ -103,7 +103,7 @@ struct WritingWorkshopMobileView: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("academic-writing")
-        .task(id: "\(query):\(kind):\(sort):\(session.publishedRevision ?? ""): \(session.companionPublicationRevision):\(session.companionDownloadRevision)") {
+        .task(id: "\(query):\(kind):\(sort):\(session.contentEpoch): \(session.companionPublicationRevision):\(session.companionDownloadRevision)") {
             if !query.isEmpty { do { try await Task.sleep(for: .milliseconds(250)) } catch { return } }
             await load(reset: true)
         }
@@ -211,7 +211,7 @@ private struct WritingDraftReader: View {
                 WorkshopDraftSections(draft: draft, session: session)
             }
         }.frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
-        .task(id: "\(summary.id):\(session.publishedRevision ?? ""): \(session.companionDownloadRevision)") { await load() }
+        .task(id: "\(summary.id):\(session.contentEpoch): \(session.companionDownloadRevision)") { await load() }
     }
     private func load() async {
         loading = true; defer { loading = false }
@@ -367,7 +367,7 @@ private struct WritingComposer: View {
         .navigationTitle("Nuevo borrador").navigationBarTitleDisplayMode(.inline)
         .onChange(of: query) { _, _ in limits = [:] }
         .onDisappear { generationTask?.cancel(); sourceDownloadTask?.cancel() }
-        .task(id: "\(query):\(session.companionDownloadRevision):\(session.publishedRevision ?? "")") {
+        .task(id: "\(query):\(session.companionDownloadRevision):\(session.contentEpoch)") {
             if !query.isEmpty {
                 do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
             }

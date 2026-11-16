@@ -859,6 +859,11 @@ final class AppModel {
                 // captured before awaiting the authenticated capability response.
                 var refreshed = try store.updateWorkspaceMetadata(capabilities, expectedPairing: pairing, trustedMacDeviceId: trustedMac)
                 desktopConnectionRecovered(pairingId: pairing.id)
+                // The Mac answered at its usual address. An open space that had failed to read
+                // must not wait for a new publication or a manual refresh to try again.
+                if let session, session.connection.desktopPairingId == pairing.id, session.loadFailure != nil {
+                    Task { await session.refreshPublishedContent() }
+                }
                 let removed = (refreshed.retainedAuthoringVaultIds ?? []).subtracting(refreshed.vaultIds)
                 if !removed.isEmpty {
                     let cache = try PrivateBridgeCache(pairingId: pairing.id)

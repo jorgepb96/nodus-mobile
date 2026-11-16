@@ -133,7 +133,7 @@ struct CollectionListView: View {
             .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
         .onChange(of: query) { _, _ in scheduleReload() }
-        .task(id: session.publishedRevision) { await reload() }
+        .task(id: session.contentEpoch) { await reload() }
         .refreshable { await reload() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -473,7 +473,7 @@ struct SpecialListView: View {
         } message: {
             Text("Send it from the send queue. It joins the vault when its owner next opens Nodus desktop and republishes — until then this list still shows what was published.")
         }
-        .task(id: [resource.rawValue, session.connection.storageId, session.publishedRevision ?? ""]) {
+        .task(id: [resource.rawValue, session.connection.storageId, session.contentEpoch]) {
             let storageID = session.connection.storageId
             if catalogueStorageID != storageID {
                 catalogueStorageID = storageID

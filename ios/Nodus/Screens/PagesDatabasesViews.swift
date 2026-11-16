@@ -55,7 +55,7 @@ struct PagesWorkspaceView: View {
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pages-workspace")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .onChange(of: showTrash) { _, _ in rebuild() }
     }
 
@@ -468,7 +468,7 @@ struct DatabasesWorkspaceView: View {
             }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: "\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(session.companionResultRevision)") { await load() }
+        .task(id: "\(session.contentEpoch)|\(session.companionPublicationRevision)|\(session.companionResultRevision)") { await load() }
     }
 
     private var workspace: some View {
@@ -669,7 +669,7 @@ struct DatabaseDetailWorkspace: View {
             if case .inspector = presented { presented = nil }
         }
         .onChange(of: tables) { _, _ in presentationRevision += 1 }
-        .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.publishedRevision ?? "")|\(session.companionPublicationRevision)|\(presentationRevision)|\(viewAttempt)") {await loadSavedView()}
+        .task(id:"\(database.id)|\(activeViewId ?? "")|\(session.contentEpoch)|\(session.companionPublicationRevision)|\(presentationRevision)|\(viewAttempt)") {await loadSavedView()}
         .nodusSheet(item: $presented) { target in
             switch target {
             case .inspector(let openingRow):
