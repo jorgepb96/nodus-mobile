@@ -1,0 +1,13 @@
+{
+  "version": "0.1.0",
+  "build": "1009",
+  "buildId": "ab52ffb8-9ca8-4888-828f-3338a1618beb",
+  "sourceCommit": "fa75b0e",
+  "internalBuildState": "IN_BETA_TESTING",
+  "internalGroups": ["Nodus interno", "Nodus Link automático"],
+  "externalGroup": "Public Beta",
+  "externalBuildState": "READY_FOR_BETA_SUBMISSION",
+  "externalNote": "Apple refused a second beta review while 1008 is WAITING_FOR_REVIEW (ANOTHER_BUILD_IN_REVIEW). Submit 1009 once 1008 is approved.",
+  "productionReviewSubmitted": false,
+  "tests": { "unit": "322/322 passed", "uiDemo": "3/3 passed" }
+}
