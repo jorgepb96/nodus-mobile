@@ -42,7 +42,7 @@ struct AgendaView: View {
         }
     }
 
-    private var loadID: String { "\(window.rawValue):\(session.publishedRevision ?? "unpublished")" }
+    private var loadID: String { "\(window.rawValue):\(session.contentEpoch)" }
 
     var body: some View {
         ScrollView {
@@ -269,7 +269,7 @@ struct GoalsView: View {
         .navigationTitle("Goals")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .refreshable { await load() }
     }
 

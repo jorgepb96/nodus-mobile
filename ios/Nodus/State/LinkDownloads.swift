@@ -121,7 +121,7 @@ final class LinkDownloads {
         // A cached overview is readable offline, but cannot prove a live connection.
         // Probe an authenticated HEAD before painting any unselected section green.
         do {
-            _ = try await context.bridge.corpus(vaultId: context.vault, path: "snapshot", method: "HEAD", timeout: 4)
+            _ = try await context.bridge.corpus(vaultId: context.vault, path: "snapshot", method: "HEAD", timeout: 10)
             online = true
         } catch where error.isCancellation { return }
         catch { online = false; return }

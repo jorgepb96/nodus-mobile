@@ -120,7 +120,7 @@ private struct ArgumentMapDocumentView: View {
                 }
             }
         }
-        .task(id: session.publishedRevision) {
+        .task(id: session.contentEpoch) {
             await build(seed)
         }
     }
@@ -451,7 +451,7 @@ private struct ArgumentSeedPicker: View {
             .padding(.vertical, 9)
             .background(Color(uiColor: .systemBackground).opacity(0.97))
         }
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
     }
 
     private var connectionFloor: some View {

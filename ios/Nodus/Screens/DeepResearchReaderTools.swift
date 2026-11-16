@@ -569,7 +569,7 @@ struct DeepResearchTranslationSheet: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .nodusPageBackdrop(accent: session.accent)
         }
-        .task(id: "\(session.publishedRevision ?? "")|\(language)|\(session.aiExecutionMode.rawValue)") {
+        .task(id: "\(session.contentEpoch)|\(language)|\(session.aiExecutionMode.rawValue)") {
             if syncEnabled, let remoteRows { store.replaceFromServer(rows: remoteRows) }
             if session.aiExecutionMode == .live, syncEnabled, !translating {
                 recovering = true

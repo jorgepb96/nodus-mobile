@@ -131,7 +131,7 @@ struct PublishedLibraryView: View {
             ToolbarItem(placement: .principal) {
                 Menu {
                     Button { collectionId = nil } label: {
-                        if collectionId == nil { Label("All collections", systemImage: "checkmark") }
+                        if collectionId == nil { NodusMenuLabel("All collections", systemImage: "checkmark") }
                         else { Text("All collections") }
                     }
                     LibraryCollectionMenuItems(collections: collections, parentId: nil, selection: $collectionId)
@@ -152,8 +152,8 @@ struct PublishedLibraryView: View {
                     selecting.toggle(); if !selecting { selection.removeAll() }
                 }
                 Menu {
-                    Button(role: .destructive) { requestDeletion(.space) } label: { Label("Delete all downloads in this space", systemImage: "trash") }
-                    Button(role: .destructive) { requestDeletion(.everySpace) } label: { Label("Delete all library downloads", systemImage: "trash.slash") }
+                    Button(role: .destructive) { requestDeletion(.space) } label: { NodusMenuLabel("Delete all downloads in this space", systemImage: "trash") }
+                    Button(role: .destructive) { requestDeletion(.everySpace) } label: { NodusMenuLabel("Delete all library downloads", systemImage: "trash.slash") }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
         }
@@ -169,7 +169,7 @@ struct PublishedLibraryView: View {
             Text("Only files stored on this device will be removed. The catalogue, annotations and server publication are preserved.")
         }
         .refreshable { await load(remoteOnly: true) }
-        .task(id: session.publishedRevision) { await load(remoteOnly: false) }
+        .task(id: session.contentEpoch) { await load(remoteOnly: false) }
     }
 
     private var filterBar: some View {
@@ -185,7 +185,7 @@ struct PublishedLibraryView: View {
         HStack(spacing: 10) {
             Menu {
                 Button { collectionId = nil } label: {
-                    if collectionId == nil { Label("All collections", systemImage: "checkmark") }
+                    if collectionId == nil { NodusMenuLabel("All collections", systemImage: "checkmark") }
                     else { Text("All collections") }
                 }
                 LibraryCollectionMenuItems(collections: collections, parentId: nil, selection: $collectionId)
@@ -209,8 +209,8 @@ struct PublishedLibraryView: View {
             .buttonStyle(NodusGlassButtonStyle(accent: session.accent))
 
             Menu {
-                Button(role: .destructive) { requestDeletion(.space) } label: { Label("Delete all downloads in this space", systemImage: "trash") }
-                Button(role: .destructive) { requestDeletion(.everySpace) } label: { Label("Delete all library downloads", systemImage: "trash.slash") }
+                Button(role: .destructive) { requestDeletion(.space) } label: { NodusMenuLabel("Delete all downloads in this space", systemImage: "trash") }
+                Button(role: .destructive) { requestDeletion(.everySpace) } label: { NodusMenuLabel("Delete all library downloads", systemImage: "trash.slash") }
             } label: {
                 Image(systemName: "ellipsis")
             }
@@ -263,10 +263,10 @@ struct PublishedLibraryView: View {
                 .buttonStyle(NodusCardButtonStyle())
                 .accessibilityIdentifier("workspace-open-library-\(safeIdentifier(document.id))")
                 .contextMenu {
-                    Button { metadataDocument = document } label: { Label("View metadata", systemImage: "info.circle") }
-                    Button { copyReference(document) } label: { Label("Copy reference", systemImage: "doc.on.doc") }
+                    Button { metadataDocument = document } label: { NodusMenuLabel("View metadata", systemImage: "info.circle") }
+                    Button { copyReference(document) } label: { NodusMenuLabel("Copy reference", systemImage: "doc.on.doc") }
                     if downloaded.contains(document.id) {
-                        Button(role: .destructive) { requestDeletion(.documents(Set([document.id]))) } label: { Label("Delete download", systemImage: "trash") }
+                        Button(role: .destructive) { requestDeletion(.documents(Set([document.id]))) } label: { NodusMenuLabel("Delete download", systemImage: "trash") }
                     }
                 }
         }

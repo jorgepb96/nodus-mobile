@@ -176,7 +176,7 @@ struct RowDetailView: View {
         .nodusPageBackdrop(accent: session.accent)
         // Keep an already-open dossier on the same publication as its parent list. The
         // revision task preserves navigation and scroll position while replacing the record.
-        .task(id: session.publishedRevision) { await enrich() }
+        .task(id: session.contentEpoch) { await enrich() }
     }
 
     @ViewBuilder
@@ -1037,7 +1037,7 @@ struct IdeaByIdView: View {
                 ProgressView().tint(session.accent)
             }
         }
-        .task(id: "\(globalId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+        .task(id: "\(globalId)|\(session.contentEpoch)|\(attempt)") {
             guard row == nil else { return }
             failure = nil
             do {
@@ -1068,7 +1068,7 @@ struct AuthorByIdView: View {
                 ProgressView().tint(session.accent)
             }
         }
-        .task(id: "\(authorId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+        .task(id: "\(authorId)|\(session.contentEpoch)|\(attempt)") {
             guard row == nil else { return }
             failure = nil
             do {
@@ -1099,7 +1099,7 @@ struct WorkByIdView: View {
                 ProgressView().tint(session.accent)
             }
         }
-        .task(id: "\(nodusId)|\(session.publishedRevision ?? "local")|\(attempt)") {
+        .task(id: "\(nodusId)|\(session.contentEpoch)|\(attempt)") {
             guard row == nil else { return }
             failure = nil
             do {

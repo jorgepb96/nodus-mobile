@@ -27,7 +27,7 @@ struct PrivateSourceCatalogueView: View {
     @State private var issue: String?
     @State private var selected: PrivateSourceReaderTarget?
     @State private var retry = 0
-    private var loadKey: String { "\(query):\(state):\(session.publishedRevision):\(session.companionDownloadRevision):\(retry)" }
+    private var loadKey: String { "\(query):\(state):\(session.contentEpoch):\(session.companionDownloadRevision):\(retry)" }
 
     var body: some View {
         ScrollView {

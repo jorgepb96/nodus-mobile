@@ -222,7 +222,7 @@ struct WorldEntityWorkspaceView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("world-workspace-\(route.rawValue)")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .nodusSheet(isPresented: Binding(
             get: { editorRow != nil || isCreating },
             set: { if !$0 { editorRow = nil; isCreating = false } }
@@ -1072,7 +1072,7 @@ struct WorldTimelineView: View {
                 }
             }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor()
         }.nodusPageBackdrop(accent: session.accent)
-        .task(id: "\(session.publishedRevision ?? "")|\(chronological)") { await load() }
+        .task(id: "\(session.contentEpoch)|\(chronological)") { await load() }
     }
 
     private func load() async {
@@ -1116,7 +1116,7 @@ struct WorldHierarchyView: View {
                 }
                 if nodes.isEmpty, !loading, error == nil { ContentUnavailableView("No hierarchy", systemImage: "arrow.triangle.branch", description: Text("World groups and nested places will appear here.")) }
             }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor()
-        }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
+        }.nodusPageBackdrop(accent: session.accent).task(id: session.contentEpoch) { await load() }
     }
 
     private var roots: [WorldbuildingParity.HierarchyNode] { nodes.filter { $0.parentId == nil || !Set(nodes.map(\.id)).contains($0.parentId!) } }
@@ -1165,7 +1165,7 @@ struct WorldRelationsView: View {
                 }
                 if relations.isEmpty, affiliations.isEmpty, !loading, error == nil { ContentUnavailableView("No relations", systemImage: "link", description: Text("Relationships and affiliations will appear here.")) }
             }.padding(NodusSpace.page).frame(maxWidth: 980).frame(maxWidth: .infinity).nodusTopAnchor()
-        }.nodusPageBackdrop(accent: session.accent).task(id: session.publishedRevision) { await load() }
+        }.nodusPageBackdrop(accent: session.accent).task(id: session.contentEpoch) { await load() }
     }
     private func relationCard(from: String, to: String, label: String) -> some View {
         HStack { Text(from).font(.headline); Spacer(); VStack { Text(label.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary); Image(systemName: "arrow.right").foregroundStyle(session.accent) }; Spacer(); Text(to).font(.headline) }.desktopContentRow(accent: session.accent)

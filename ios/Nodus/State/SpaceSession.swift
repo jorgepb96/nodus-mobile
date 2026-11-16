@@ -62,6 +62,21 @@ final class SpaceSession {
     /// open list or document asks for the same route again and its ETag supplies the new body.
     private(set) var publishedRevision: String?
 
+    /// Bumped each time the computer answers again after the session could not reach it.
+    ///
+    /// A reconnection does not change the publication, so `publishedRevision` alone left every
+    /// screen that had failed while the Mac was out of reach showing its error until the reader
+    /// switched vault or pressed Refresh. Screens key their loading task to `contentEpoch`,
+    /// which changes on either event.
+    private(set) var reconnectionGeneration = 0
+    var contentEpoch: String { "\(publishedRevision ?? "")#\(reconnectionGeneration)" }
+    /// The last live probe failed, so the next successful one is a reconnection.
+    @ObservationIgnored private var lastProbeFailed = false
+    @ObservationIgnored private var lastRecoveryAttempt = Date.distantPast
+    /// The computer has answered at least once in this session, so a slow first read is a slow
+    /// network rather than a sleeping computer, and deserves the ordinary timeout.
+    @ObservationIgnored private var hasReachedComputer = false
+
     /// Serialises the cheap HEAD probes from the foreground loop and the scene activation
     /// hook. Returning to the app commonly fires both at once; asking twice adds no freshness.
     private var isCheckingPublishedContent = false
@@ -316,8 +331,12 @@ final class SpaceSession {
             // a read: it is where a computer that has gone to sleep since last time gets
             // discovered, and the session's own 30 s is half a minute of spinner to say so.
             // Later refreshes are against a server that has already answered, and keep it.
-            let isFirstKnock = overview == nil
-            let loaded = try await client.space(connection.spaceId, timeout: isFirstKnock ? 4 : nil)
+            // Ten seconds, not four: a computer announced as `name.local` on a large or mesh
+            // network can take several seconds to resolve and complete TLS from the far end of
+            // the house, and four failed there although nothing was asleep.
+            let isFirstKnock = overview == nil && !hasReachedComputer
+            let loaded = try await client.space(connection.spaceId, timeout: isFirstKnock ? 10 : nil)
+            hasReachedComputer = true
             overview = loaded
             publishedRevision = loaded.space.revision
             isPublished = overview?.hasBeenPublished ?? false
@@ -362,9 +381,23 @@ final class SpaceSession {
 
         do {
             let revision = try await client.snapshotRevision(in: connection.spaceId)
+            hasReachedComputer = true
             // Pending local work does not change the Mac's publication revision.
             // Flush after a real successful probe, before the unchanged-revision exit.
             await synchronizeCompanionChanges()
+            // The computer answered after a failed probe or a failed read: reload the overview
+            // and tell every open screen to read again, even though the publication is the same.
+            // A read that keeps failing for another reason is retried at most every 10 s, not on
+            // every 2 s tick of the monitor.
+            if lastProbeFailed || (loadFailure != nil && Date().timeIntervalSince(lastRecoveryAttempt) >= 10) {
+                lastProbeFailed = false
+                lastRecoveryAttempt = Date()
+                if revision != publishedRevision { publishedRevision = revision }
+                await load()
+                if loadFailure == nil { reconnectionGeneration += 1 }
+                if mirror != nil, mirrorSummary?.revision != revision { await downloadMirror() }
+                return
+            }
             let publicationChanged = revision != publishedRevision
             let mirrorNeedsRefresh = mirror != nil && mirrorSummary?.revision != revision
             guard publicationChanged || mirrorNeedsRefresh else { return }
@@ -391,7 +424,18 @@ final class SpaceSession {
         } catch {
             // Live refresh is opportunistic. The last coherent publication remains readable,
             // and the ordinary screen loaders still surface actionable connection failures.
+            // Remember it, so the next probe that succeeds is treated as a reconnection.
+            lastProbeFailed = true
         }
+    }
+
+    /// The reader pressed Refresh: read the overview and every open screen again, even when
+    /// the Mac's publication has not changed. A screen whose own request failed recovers here
+    /// instead of waiting for the next publication.
+    func refreshAll() async {
+        await refreshPublishedContent()
+        if loadFailure != nil || overview == nil { await load() }
+        reconnectionGeneration += 1
     }
 
     /// A successful direct probe is the reconnection signal. Finish only work

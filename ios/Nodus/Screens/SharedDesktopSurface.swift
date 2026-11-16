@@ -98,7 +98,7 @@ struct SharedDesktopSurface: View {
     @State private var showStudyIdeaAssistant = false
 
     var body: some View {
-        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.publishedRevision, databaseReadingRevision:session.companionDatabaseReadingRevision, initialResearchVisualLocalOnly:initialResearchVisualLocalOnly, initialResearchVisualReportId:initialResearchVisualReportId, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true; issue = nil }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
+        DesktopWebView(session: session, ai: ai, surface: surface, dark: theme == .dark, textScale: ReadingStyle.sharedSurfaceScale(for: textSize), publicationRevision: session.companionPublicationRevision, corpusRevision: session.contentEpoch, databaseReadingRevision:session.companionDatabaseReadingRevision, initialResearchVisualLocalOnly:initialResearchVisualLocalOnly, initialResearchVisualReportId:initialResearchVisualReportId, initialDatabaseReportId:initialDatabaseReportId, initialPageId:initialPageId, initialStudyDocumentId:initialStudyDocumentId, onEditorFlushReady:onEditorFlushReady, initialArgumentMap:initialArgumentMap, initialArgumentSeed:initialArgumentSeed, initialDatabasePresentation:initialDatabasePresentation, downloadedOnly:downloadedOnly, onReady: { surfaceMounted = true; issue = nil }, onError: { surfaceMounted = true; issue = $0 }, onExport: { exportedLease = $0;exportedURL = $0.url }, onAutonomousStatus: { autonomousStatus = $0 }, onOfflineCopy: { offlineCopy = $0 }, onOpenSource: { sourceDocument = $0 }, onOpenAudio: { savedAudio = $0 }, onOpenWritingResult: { writingResult = $0 }, onImmersionSource: { id, source in
             do {
                 guard let plan = ImmersionPlan(Row(["plan": source])) else { throw DesktopBridgeError.malformedResponse }
                 let controller = try ImmersionProgressController(session: session, sessionId: id, plan: plan)
@@ -913,8 +913,8 @@ private struct DesktopWebView: UIViewRepresentable {
         private var corpusRevision: String?
         func sendCorpusUpdate() {
             guard surfaceReady, routeActive, session.connection.desktopPairingId != nil,
-                  corpusRevision != session.publishedRevision else { return }
-            corpusRevision = session.publishedRevision
+                  corpusRevision != session.contentEpoch else { return }
+            corpusRevision = session.contentEpoch
             try? MobileJavaScriptDelivery.events(webView, payload: [["channel": "mobile:corpus:changed", "args": []]], optional: true)
         }
         func sendPublicationUpdates() {

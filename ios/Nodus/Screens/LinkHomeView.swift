@@ -76,14 +76,14 @@ struct LinkHomeView: View {
     }
     private var connectionStatus: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(session.isDemo ? "Demostración local" : session.connection.serverName,
+            Label(session.isDemo ? String(localized: "Local demo") : session.connection.serverName,
                   systemImage: session.isDemo ? "iphone" : session.loadFailure == nil ? "desktopcomputer" : "wifi.slash")
                 .font(.subheadline.weight(.medium))
             if let failure = session.loadFailure, !session.isDemo {
                 Text(failure.sentence).font(.caption).foregroundStyle(.secondary)
                 Button("Reintentar conexión") { Task { await session.refreshPublishedContent() } }.frame(minHeight: 44)
             } else if session.isDemo {
-                Text("Explora los contenidos de ejemplo. No necesitas conectar un ordenador.")
+                Text("Explore the example content. No computer connection needed.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(16)

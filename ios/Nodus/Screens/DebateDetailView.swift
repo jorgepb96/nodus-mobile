@@ -126,7 +126,7 @@ struct DebateByIdView: View {
         .navigationTitle("Cited source")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) {
+        .task(id: session.contentEpoch) {
             do {
                 row = try await session.client.debate(edgeId, in: session.connection.spaceId)
                 problem = nil

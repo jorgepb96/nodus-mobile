@@ -86,7 +86,7 @@ struct DeepResearchScreen: View {
             readCheckpoint()
             seedVisualFixtureIfNeeded()
         }
-        .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision)") { await loadPublished() }
+        .task(id: "\(session.contentEpoch):\(session.companionDownloadRevision)") { await loadPublished() }
         .onChange(of: runner.isRunning) { _, running in
             if !running, runner.finished == nil { readCheckpoint() }
         }
@@ -186,9 +186,9 @@ struct DeepResearchScreen: View {
             HStack(spacing: 8) {
                 Menu {
                     Picker("Reading state", selection: $galleryRead) {
-                        Label("All", systemImage: "doc.text").tag("all")
-                        Label("Unread", systemImage: "circle").tag("unread")
-                        Label("Read", systemImage: "checkmark.circle.fill").tag("read")
+                        NodusMenuLabel("All", systemImage: "doc.text").tag("all")
+                        NodusMenuLabel("Unread", systemImage: "circle").tag("unread")
+                        NodusMenuLabel("Read", systemImage: "checkmark.circle.fill").tag("read")
                     }
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease.circle")
@@ -208,13 +208,6 @@ struct DeepResearchScreen: View {
                 .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
                 .accessibilityLabel(sortLabel)
 
-                Picker("View", selection: $galleryView) {
-                    Image(systemName: "square.grid.2x2").tag("grid")
-                    Image(systemName: "list.bullet").tag("list")
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 92, height: 44)
-
                 Button {
                     selecting.toggle()
                     if !selecting { selection.removeAll() }
@@ -223,6 +216,12 @@ struct DeepResearchScreen: View {
                 }
                 .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
                 .accessibilityLabel(selecting ? "Done" : "Select")
+
+                // Last, as on Desktop: a layout choice, not an action on the reports.
+                NodusIconSegmentedPicker(selection: $galleryView, options: [
+                    .init(value: "grid", systemImage: "square.grid.2x2", label: "Grid"),
+                    .init(value: "list", systemImage: "list.bullet", label: "List"),
+                ], accent: session.accent)
                 Spacer(minLength: 0)
             }
 
@@ -232,9 +231,9 @@ struct DeepResearchScreen: View {
                         .font(.caption.weight(.semibold))
                     Spacer()
                     Menu {
-                        Button { export(.markdown) } label: { Label("Markdown ZIP", systemImage: "doc.text") }
-                        Button { export(.pdf) } label: { Label("PDF ZIP", systemImage: "doc.richtext") }
-                        Button { export(.both) } label: { Label("Markdown + PDF ZIP", systemImage: "archivebox") }
+                        Button { export(.markdown) } label: { NodusMenuLabel("Markdown ZIP", systemImage: "doc.text") }
+                        Button { export(.pdf) } label: { NodusMenuLabel("PDF ZIP", systemImage: "doc.richtext") }
+                        Button { export(.both) } label: { NodusMenuLabel("Markdown + PDF ZIP", systemImage: "archivebox") }
                     } label: {
                         if isExporting { ProgressView().controlSize(.small) }
                         else { Label("Export", systemImage: "square.and.arrow.up") }
@@ -1084,12 +1083,12 @@ private struct DeepResearchQueueCard: View {
                 Spacer()
                 Menu {
                     if !job.status.isFinished {
-                        Button(role: .destructive, action: cancel) { Label("Cancel", systemImage: "xmark") }
+                        Button(role: .destructive, action: cancel) { NodusMenuLabel("Cancel", systemImage: "xmark") }
                     } else if job.status != .completed {
-                        Button(action: retry) { Label("Retry", systemImage: "arrow.clockwise") }
+                        Button(action: retry) { NodusMenuLabel("Retry", systemImage: "arrow.clockwise") }
                     }
                     if job.status.isFinished {
-                        Button(role: .destructive, action: remove) { Label("Remove", systemImage: "trash") }
+                        Button(role: .destructive, action: remove) { NodusMenuLabel("Remove", systemImage: "trash") }
                     }
                 } label: { Image(systemName: "ellipsis") }
                     .buttonStyle(.plain)

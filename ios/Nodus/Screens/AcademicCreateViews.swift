@@ -60,7 +60,7 @@ struct ProjectsMobileView: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("academic-projects")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .nodusSheet(isPresented: $showingCreate) {
             NavigationStack { ProjectCreateForm(session: session) { message = $0; showingCreate = false } }
                 .nodusModalClose(accent: session.accent)
@@ -79,8 +79,8 @@ struct ProjectsMobileView: View {
                 }
                 Spacer()
                 Menu {
-                    Button { importing = true } label: { Label("Import Markdown or text", systemImage: "doc.badge.plus") }
-                    ShareLink(item: projectMarkdown(project)) { Label("Export Markdown", systemImage: "square.and.arrow.up") }
+                    Button { importing = true } label: { NodusMenuLabel("Import Markdown or text", systemImage: "doc.badge.plus") }
+                    ShareLink(item: projectMarkdown(project)) { NodusMenuLabel("Export Markdown", systemImage: "square.and.arrow.up") }
                 } label: { Image(systemName: "ellipsis.circle") }
                     .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
             }
@@ -91,7 +91,7 @@ struct ProjectsMobileView: View {
                     Menu {
                         ForEach(["empty", "in_progress", "review", "ready", "discarded"], id: \.self) { status in
                             Button { Task { await update(section: section, status: status) } } label: {
-                                if section.status == status { Label(status.replacingOccurrences(of: "_", with: " "), systemImage: "checkmark") }
+                                if section.status == status { NodusMenuLabel(status.replacingOccurrences(of: "_", with: " "), systemImage: "checkmark") }
                                 else { Text(status.replacingOccurrences(of: "_", with: " ")) }
                             }
                         }

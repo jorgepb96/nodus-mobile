@@ -105,11 +105,11 @@ struct ChatHistoryView: View {
                     // them and it is also invisible: nothing on the row says it is there, and
                     // a list you only ever scroll never reveals it.
                     .contextMenu {
-                        Button { organizing = conversation } label: { Label("Organizar y renombrar",systemImage:"folder") }
+                        Button { organizing = conversation } label: { NodusMenuLabel("Organizar y renombrar",systemImage:"folder") }
                         Button {
                             var placement = conversation.placement ?? CompanionChatPlacement();placement.pinned.toggle()
                             mutate { try store.organize(conversation.id,placement:placement) }
-                        } label: { Label(conversation.placement?.pinned == true ? "Desfijar":"Fijar",systemImage:conversation.placement?.pinned == true ? "pin.slash":"pin") }.disabled(conversation.isArchived)
+                        } label: { NodusMenuLabel(conversation.placement?.pinned == true ? "Desfijar":"Fijar",systemImage:conversation.placement?.pinned == true ? "pin.slash":"pin") }.disabled(conversation.isArchived)
                         if conversation.desktop?.state == .blocked {
                             Button("Retry synchronization") { mutate { try store.retrySynchronization(id:conversation.id) } }
                         }
@@ -123,7 +123,7 @@ struct ChatHistoryView: View {
                         Button {
                             mutate { try store.setArchived(!conversation.isArchived,for:conversation.id) }
                         } label: {
-                            Label(
+                            NodusMenuLabel(
                                 conversation.isArchived ? "Unarchive" : "Archive",
                                 systemImage: conversation.isArchived ? "tray.and.arrow.up" : "archivebox"
                             )
@@ -131,7 +131,7 @@ struct ChatHistoryView: View {
                         Button(role: .destructive) {
                             pendingDeletion = conversation
                         } label: {
-                            Label("Delete", systemImage: "trash")
+                            NodusMenuLabel("Delete", systemImage: "trash")
                         }
                     }
                 }
@@ -175,7 +175,7 @@ struct ChatHistoryView: View {
                             Button(role: .destructive) {
                                 pendingBulkDeletion = showsArchived ? .archived : .active
                             } label: {
-                                Label(
+                                NodusMenuLabel(
                                     showsArchived ? "Delete everything archived" : "Delete all conversations",
                                     systemImage: "trash"
                                 )
@@ -184,7 +184,7 @@ struct ChatHistoryView: View {
                                 Button(role: .destructive) {
                                     pendingBulkDeletion = .everything
                                 } label: {
-                                    Label("Delete every conversation, archived included", systemImage: "trash.slash")
+                                    NodusMenuLabel("Delete every conversation, archived included", systemImage: "trash.slash")
                                 }
                             }
                         } label: {

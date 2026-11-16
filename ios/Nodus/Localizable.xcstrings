@@ -1,6 +1,94 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Could not open Nodus Reader": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir Nodus Reader"
+          }
+        }
+      }
+    },
+    "Explore the example content. No computer connection needed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explora los contenidos de ejemplo. No necesitas conectar un ordenador."
+          }
+        }
+      }
+    },
+    "Faster": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más rápido"
+          }
+        }
+      }
+    },
+    "Grid": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuadrícula"
+          }
+        }
+      }
+    },
+    "List": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lista"
+          }
+        }
+      }
+    },
+    "Local demo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demostración local"
+          }
+        }
+      }
+    },
+    "No installed app can open this report.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguna app instalada puede abrir este informe."
+          }
+        }
+      }
+    },
+    "Open in Nodus Reader": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir en Nodus Reader"
+          }
+        }
+      }
+    },
     "Reading tools": {
       "extractionState": "manual",
       "localizations": {
@@ -106,6 +194,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sube"
+          }
+        }
+      }
+    },
+    "Slower": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más lento"
+          }
+        }
+      }
+    },
+    "Table": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabla"
           }
         }
       }
@@ -305,6 +415,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ordenar sesiones"
+          }
+        }
+      }
+    },
+    "hypothesis": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hipótesis"
           }
         }
       }
@@ -2916,6 +3037,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mapa de argumentos"
+          }
+        }
+      }
+    },
+    "Arguments": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Argumentos"
           }
         }
       }

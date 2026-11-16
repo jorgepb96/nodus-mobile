@@ -35,12 +35,7 @@ struct OpusSavedAudioPlayer: View {
                     Button { Task { await playback.seek(playback.position + 15) } } label: { Image(systemName: "goforward.15").frame(width: 44, height: 44) }
                         .accessibilityLabel("Forward 15 seconds").accessibilityIdentifier("saved-audio-forward")
                 }.disabled(!playback.prepared)
-                Menu {
-                    ForEach([Float(0.75), 1, 1.25, 1.5, 2], id: \.self) { rate in
-                        Button("\(rate.formatted())×") { Task { await playback.changeRate(rate) } }
-                    }
-                } label: { Label("\(String(localized: "Playback speed")) · \(playback.rate.formatted())×", systemImage: "speedometer").frame(minHeight: 44) }
-                    .accessibilityIdentifier("saved-audio-speed")
+                PlaybackSpeedControl(rate: playback.rate, accent: accent) { rate in Task { await playback.changeRate(rate) } }
                 ShareLink(item: target.copy.url) { Label("Export audio", systemImage: "square.and.arrow.up").frame(minHeight: 44) }.accessibilityIdentifier("saved-audio-export")
             }.padding(24).frame(maxWidth: 650)
         }.safeAreaPadding(.bottom, 76).tint(accent.nodusReadable)

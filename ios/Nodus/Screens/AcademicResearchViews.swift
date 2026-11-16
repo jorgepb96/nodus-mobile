@@ -74,7 +74,7 @@ struct HypothesisLabMobileView: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("academic-hypothesis")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
     }
 
     @ViewBuilder private func hypothesisDossier(_ candidate: AcademicHypothesisCandidate) -> some View {
@@ -223,7 +223,7 @@ struct ReadingPathMobileView: View {
         }
         .nodusPageBackdrop(accent: session.accent)
         .accessibilityIdentifier("academic-reading-path")
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .task(id: projectionID) { rebuild() }
     }
 

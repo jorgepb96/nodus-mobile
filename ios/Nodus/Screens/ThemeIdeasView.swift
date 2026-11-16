@@ -87,7 +87,7 @@ struct ThemeIdeasView: View {
             }
         }
         .onChange(of: query) { _, _ in visibleLimit = 80 }
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .refreshable { await load() }
     }
 

@@ -86,6 +86,24 @@ struct NodusNavigationItem: Identifiable {
     }
 }
 
+extension NodusNavigationItem {
+    /// The name a phone tab can hold. A native tab title is truncated, not shrunk, so the
+    /// sections whose sidebar name runs past one short word get a shorter one here — in both
+    /// languages — while the sidebar, commands and lists keep the full name.
+    var tabLabel: LocalizedStringKey {
+        switch route {
+        case .argument: return "Arguments"
+        case .research: return "Overview"
+        case .deepResearch, .dbDeepResearch, .studyDeepResearch: return "Research"
+        case .researchChat, .worldChat, .studyChat, .dbChat: return "Chat"
+        case .reading: return "Reading"
+        case .gaps: return "Gaps"
+        case .workspace: return "Notes"
+        default: return label
+        }
+    }
+}
+
 @MainActor
 enum NodusNavigationContract {
     private static let academic: Set<VaultType> = [.academic]

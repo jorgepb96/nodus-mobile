@@ -527,37 +527,29 @@ struct ReportPDFButton: View {
     @State private var error: String?
 
     var body: some View {
-        Group {
-            if let file {
-                // Once it exists it is a share sheet, not a button that builds it again.
-                ShareLink(item: file) {
-                    label("arrow.up.doc", title: "PDF")
+        // One button in both states. It used to become a `ShareLink` once the file existed,
+        // which from inside a resident route stack could present nothing at all; and the first
+        // tap only built the file, so the reader had to find out a second tap was needed.
+        Button {
+            if let file { SystemPresenter.share([file]) } else { build() }
+        } label: {
+            if isBuilding {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small).tint(accent)
+                    Text("PDF").font(.subheadline.weight(.semibold))
                 }
-                .accessibilityLabel("Save the PDF")
-                .accessibilityIdentifier("report-pdf-ready")
+                .foregroundStyle(accent.nodusReadable)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .reportActionSurface(accent: accent)
             } else {
-                Button {
-                    build()
-                } label: {
-                    if isBuilding {
-                        HStack(spacing: 7) {
-                            ProgressView().controlSize(.small).tint(accent)
-                            Text("PDF").font(.subheadline.weight(.semibold))
-                        }
-                        .foregroundStyle(accent.nodusReadable)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 44)
-                        .reportActionSurface(accent: accent)
-                    } else {
-                        label("arrow.down.doc", title: "PDF")
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(isBuilding)
-                .accessibilityLabel("Download as a PDF")
-                .accessibilityIdentifier("report-pdf-build")
+                label(file == nil ? "arrow.down.doc" : "arrow.up.doc", title: "PDF")
             }
         }
+        .buttonStyle(.plain)
+        .disabled(isBuilding)
+        .accessibilityLabel(file == nil ? "Download as a PDF" : "Save the PDF")
+        .accessibilityIdentifier(file == nil ? "report-pdf-build" : "report-pdf-ready")
         .alert(
             "Could not build the PDF",
             isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })
@@ -592,7 +584,11 @@ struct ReportPDFButton: View {
                 if let local { source=(try ReportDocument.html(saved:local.saved,store:local.store),nil) }
                 else { source=try await ReportDocument.exportSource(session:session,reportId:reportId,downloadedOnly:downloadedOnly) }
                 let bytes = try await ReportDocument.pdf(from:source.html,session:session,figureContext:source.figures)
-                file = try ReportDocument.file(named: title, bytes: bytes)
+                let built = try ReportDocument.file(named: title, bytes: bytes)
+                file = built
+                // Straight on to the share sheet: the tap asked for the PDF, not for a file
+                // to be prepared and then asked for again.
+                SystemPresenter.share([built])
             } catch {
                 self.error = error.localizedDescription
             }

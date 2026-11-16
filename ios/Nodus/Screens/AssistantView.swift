@@ -747,7 +747,7 @@ struct ChatModelMenu: View {
             Button {
                 openProviders?()
             } label: {
-                Label(featured.isEmpty ? "Choose a model" : "All models", systemImage: "slider.horizontal.3")
+                NodusMenuLabel(featured.isEmpty ? "Choose a model" : "All models", systemImage: "slider.horizontal.3")
             }
         } label: {
             HStack(spacing: 5) {
@@ -944,12 +944,12 @@ private struct AnswerCopyButton: View {
             Button {
                 copy(ReadingCopy.text(from: markdown))
             } label: {
-                Label("Copy the answer", systemImage: "doc.on.doc")
+                NodusMenuLabel("Copy the answer", systemImage: "doc.on.doc")
             }
             Button {
                 copy(markdown)
             } label: {
-                Label("Copy with citation links", systemImage: "link")
+                NodusMenuLabel("Copy with citation links", systemImage: "link")
             }
         }
         .animation(NodusMotion.quick, value: copied)

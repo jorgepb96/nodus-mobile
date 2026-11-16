@@ -480,7 +480,7 @@ struct SpacePickerView: View {
             Button(role: .destructive) {
                 model.forget(connection)
             } label: {
-                Label("Forget", systemImage: "trash")
+                NodusMenuLabel("Forget", systemImage: "trash")
             }
         }
     }
@@ -546,7 +546,7 @@ struct SpacePickerView: View {
                         set: { preferences.spaceOrder = $0 }
                     )) {
                         ForEach(AppPreferences.SpaceOrder.allCases) { order in
-                            Label(order.label, systemImage: order.systemImage).tag(order)
+                            NodusMenuLabel(order.label, systemImage: order.systemImage).tag(order)
                         }
                     }
                 } label: {
@@ -556,11 +556,11 @@ struct SpacePickerView: View {
                 if availableTypes.count > 1 {
                     Menu {
                         Button { vaultFilter = nil } label: {
-                            Label("Every kind", systemImage: vaultFilter == nil ? "checkmark" : "square.stack.3d.up")
+                            NodusMenuLabel("Every kind", systemImage: vaultFilter == nil ? "checkmark" : "square.stack.3d.up")
                         }
                         ForEach(availableTypes, id: \.self) { type in
                             Button { vaultFilter = type } label: {
-                                Label(type.localizedName, systemImage: vaultFilter == type ? "checkmark" : "circle")
+                                NodusMenuLabel(type.localizedName, systemImage: vaultFilter == type ? "checkmark" : "circle")
                             }
                         }
                     } label: {

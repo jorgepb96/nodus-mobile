@@ -1,0 +1,20 @@
+{
+  "version": "0.1.0",
+  "build": "1008",
+  "buildId": "30878e90-1038-42dd-9539-ab6423ed9b4d",
+  "sourceCommit": "be6f38da025eb80f2df8f979960687ce354c2612",
+  "sharedDesktopCommit": "c1d23a60e994f3c3025f3003c18adfa57cd2acff",
+  "uploadedAt": "2026-11-16",
+  "internalBuildState": "IN_BETA_TESTING",
+  "internalGroups": ["Nodus interno", "Nodus Link automático"],
+  "externalGroup": "Public Beta",
+  "externalBuildState": "WAITING_FOR_BETA_REVIEW",
+  "publicLink": "https://testflight.apple.com/join/Nry4QCzG",
+  "privacyPolicy": "https://nodusresearch.com/link/privacy/",
+  "productionReviewSubmitted": false,
+  "tests": {
+    "unit": "320/321 passed; 1 pre-existing failure (SmokeTests reconnectWithoutPublicationChange expects note delivery that Link's read-only policy disables)",
+    "uiDemo": "3/3 NodusLinkUITests demo tests passed",
+    "uiLinked": "11 NodusLinkUITests require a paired acceptance Desktop and were not run against one"
+  }
+}

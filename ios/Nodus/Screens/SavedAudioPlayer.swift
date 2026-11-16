@@ -59,17 +59,7 @@ struct SavedAudioPlayer: View {
                         .accessibilityLabel("Forward 15 seconds").disabled(player == nil)
                         .accessibilityIdentifier("saved-audio-forward")
                 }
-                Menu {
-                    Picker("Playback speed", selection: $rate) {
-                        ForEach([Float(0.75), 1, 1.25, 1.5, 2], id: \.self) { value in Text("\(value.formatted())×").tag(value) }
-                    }
-                } label: {
-                    HStack {
-                        Label("Playback speed", systemImage: "speedometer")
-                        Spacer()
-                        Text("\(rate.formatted())×").monospacedDigit()
-                    }.frame(minHeight: 44)
-                }.accessibilityIdentifier("saved-audio-speed")
+                PlaybackSpeedControl(rate: rate, accent: accent) { rate = $0 }
                 ShareLink(item: target.copy.url) { Label("Export audio", systemImage: "square.and.arrow.up") }
                     .frame(minHeight: 44).accessibilityIdentifier("saved-audio-export")
             }.padding(24).frame(maxWidth: 650)

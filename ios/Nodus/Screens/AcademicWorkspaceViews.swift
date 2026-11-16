@@ -26,7 +26,7 @@ struct IdeasWorkspaceView: View {
     @State private var loadedQueryID: String?
 
     private var section: String { NodusRoute.ideas.rawValue }
-    private var loadID: String { "\(query)|\(type)|\(sort.rawValue)|\(session.publishedRevision ?? "local")" }
+    private var loadID: String { "\(query)|\(type)|\(sort.rawValue)|\(session.contentEpoch)" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -401,7 +401,7 @@ struct AuthorsWorkspaceView: View {
     @State private var loadedQueryID: String?
 
     private var section: String { NodusRoute.authors.rawValue }
-    private var loadID: String { "\(query)|\(sort.rawValue)|\(synthesis.rawValue)|\(session.publishedRevision ?? "local")" }
+    private var loadID: String { "\(query)|\(sort.rawValue)|\(synthesis.rawValue)|\(session.contentEpoch)" }
     private var visible: [AuthorWorkspaceItem] { (page?.items ?? []).filter { !savedOnly || savedIds.contains($0.authorId) } }
 
     var body: some View {
@@ -717,7 +717,7 @@ private struct AuthorWorkspaceDocument: View {
             else { ProgressView().tint(session.accent) }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .nodusSheet(isPresented: $showingAssistant) { NavigationStack { ChatTab(session: session, showsModalDone: true) } }
     }
 
@@ -911,7 +911,7 @@ private struct AuthorSynthesisMatrixView: View {
             else { ProgressView().tint(session.accent) }
         }
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: "\(session.publishedRevision ?? ""):\(session.companionResultRevision):\(session.companionPublicationRevision)") { await load() }
+        .task(id: "\(session.contentEpoch):\(session.companionResultRevision):\(session.companionPublicationRevision)") { await load() }
     }
 
     private func matrixBody(_ matrix: SynthesisMatrix) -> some View {

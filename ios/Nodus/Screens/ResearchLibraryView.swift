@@ -202,7 +202,7 @@ struct ResearchLibraryView: View {
                 sortMenu
             }
         }
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .refreshable { await load() }
     }
 
@@ -221,9 +221,9 @@ struct ResearchLibraryView: View {
     private var filterMenu: some View {
         Menu {
             Picker("Filter reports", selection: $readFilter) {
-                Label("All", systemImage: "doc.text").tag(ReportLibraryReadFilter.all)
-                Label("Read", systemImage: "checkmark.circle.fill").tag(ReportLibraryReadFilter.read)
-                Label("Unread", systemImage: "circle").tag(ReportLibraryReadFilter.unread)
+                NodusMenuLabel("All", systemImage: "doc.text").tag(ReportLibraryReadFilter.all)
+                NodusMenuLabel("Read", systemImage: "checkmark.circle.fill").tag(ReportLibraryReadFilter.read)
+                NodusMenuLabel("Unread", systemImage: "circle").tag(ReportLibraryReadFilter.unread)
             }
         } label: {
             Image(systemName: "line.3.horizontal.decrease.circle")
@@ -234,8 +234,8 @@ struct ResearchLibraryView: View {
     private var sortMenu: some View {
         Menu {
             Picker("Sort", selection: $sortOrder) {
-                Label("Newest", systemImage: "arrow.down").tag(ReportLibrarySortOrder.newest)
-                Label("Oldest", systemImage: "arrow.up").tag(ReportLibrarySortOrder.oldest)
+                NodusMenuLabel("Newest", systemImage: "arrow.down").tag(ReportLibrarySortOrder.newest)
+                NodusMenuLabel("Oldest", systemImage: "arrow.up").tag(ReportLibrarySortOrder.oldest)
             }
         } label: {
             Image(systemName: sortOrder == .newest ? "arrow.down" : "arrow.up")
@@ -552,12 +552,12 @@ struct ReportReadingMarks: ViewModifier {
                 Button {
                     bookmarks.aimAtBookmark()
                 } label: {
-                    Label("Go to the bookmark", systemImage: "arrow.down.to.line")
+                    NodusMenuLabel("Go to the bookmark", systemImage: "arrow.down.to.line")
                 }
                 Button(role: .destructive) {
                     removing = true
                 } label: {
-                    Label("Remove the bookmark", systemImage: "bookmark.slash")
+                    NodusMenuLabel("Remove the bookmark", systemImage: "bookmark.slash")
                 }
             } header: {
                 // The reader's own words, so it is obvious which passage this is about. Not a
@@ -782,7 +782,9 @@ struct SyncedReportReadingTools: ViewModifier {
         Button {
             annotations.toggleHighlighter()
         } label: {
-            Image(systemName: "highlighter")
+            // A Label, not a bare symbol: the toolbar draws only the icon, but on a phone these
+            // controls collapse into the reading-tools menu, where a row needs its words.
+            Label(annotations.highlighterEnabled ? "Turn highlighter off" : "Turn highlighter on", systemImage: "highlighter")
         }
         .tint(annotations.highlighterEnabled ? annotations.selectedColor.color : session.accent)
         .accessibilityLabel(annotations.highlighterEnabled ? "Turn highlighter off" : "Turn highlighter on")
@@ -793,7 +795,7 @@ struct SyncedReportReadingTools: ViewModifier {
         Button {
             annotations.undoLastHighlight()
         } label: {
-            Image(systemName: "arrow.uturn.backward")
+            Label("Undo last highlight", systemImage: "arrow.uturn.backward")
         }
         .disabled(!annotations.canUndoLastHighlight)
         .tint(session.accent)
@@ -814,8 +816,12 @@ struct SyncedReportReadingTools: ViewModifier {
                 }
             }
         } label: {
-            Image(systemName: "circle.fill")
-                .foregroundStyle(annotations.selectedColor.color)
+            Label {
+                Text("Highlight color")
+            } icon: {
+                Image(systemName: "circle.fill")
+                    .foregroundStyle(annotations.selectedColor.color)
+            }
         }
         .accessibilityLabel("Highlight color")
         .accessibilityValue(Text(annotations.selectedColor.label))
@@ -827,13 +833,13 @@ struct SyncedReportReadingTools: ViewModifier {
                 if annotations.bookmark != nil { annotations.aimAtBookmark() }
                 else { legacyBookmark.aimAtBookmark() }
             } label: {
-                Label("Go to the bookmark", systemImage: "arrow.down.to.line")
+                NodusMenuLabel("Go to the bookmark", systemImage: "arrow.down.to.line")
             }
             Button(role: .destructive) {
                 if let bookmark = annotations.bookmark { annotations.delete(bookmark) }
                 else { legacyBookmark.clear() }
             } label: {
-                Label("Remove the bookmark", systemImage: "bookmark.slash")
+                NodusMenuLabel("Remove the bookmark", systemImage: "bookmark.slash")
             }
         } label: {
             Image(systemName: "bookmark.fill")
@@ -1206,7 +1212,7 @@ struct LocalReportReader: View {
             )
             await nameTheSources()
         }
-        .task(id: session.publishedRevision) { await refreshPublishedCopy() }
+        .task(id: session.contentEpoch) { await refreshPublishedCopy() }
         .task(id: currentSaved.vaultRowId) { await refreshPublishedCopy() }
     }
 
@@ -1419,7 +1425,7 @@ struct PublishedReportReader: View {
                 .presentationDetents([.large])
             }
         }
-        .task(id: "\(session.publishedRevision ?? ""):\(session.companionDownloadRevision)") { await load() }
+        .task(id: "\(session.contentEpoch):\(session.companionDownloadRevision)") { await load() }
     }
 
     @ViewBuilder private var reportMetadata: some View {

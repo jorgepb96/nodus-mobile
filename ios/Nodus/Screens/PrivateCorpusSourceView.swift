@@ -46,7 +46,7 @@ struct PrivateCorpusSourceView: View {
     @State private var saving = false
     @State private var saved = false
 
-    private var loadKey: String { "\(reference.recordKey):\(reference.timestamp ?? 0):\(reference.transcriptId ?? ""):\(reference.sessionId ?? ""):\(reference.annotationId ?? ""):\(session.publishedRevision):\(session.companionDownloadRevision):\(retry)" }
+    private var loadKey: String { "\(reference.recordKey):\(reference.timestamp ?? 0):\(reference.transcriptId ?? ""):\(reference.sessionId ?? ""):\(reference.annotationId ?? ""):\(session.contentEpoch):\(session.companionDownloadRevision):\(retry)" }
     private var transcripts: [Row] {
         (reference.kind == .testimonyTranscript ? copy.map { [$0.source.root] } ?? [] : copy?.rows["transcripts"] ?? []).sorted {
             if $0.int("version_no") != $1.int("version_no") { return ($0.int("version_no") ?? 0) > ($1.int("version_no") ?? 0) }

@@ -93,7 +93,7 @@ struct MobileSurfaceStorageTests {
         #expect(session.embedding == .published(EmbeddingIdentity(provider: "fixture", model: "recovered", dim: 384)))
         #expect(session.aiExecutionMode == .live)
     }
-    @Test("an unchanged Mac revision flushes authorized work without a downloaded mirror")
+    @Test("an unchanged Mac revision handles authorized work by the companion policy, without a downloaded mirror")
     func reconnectWithoutPublicationChange() async throws {
         let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -117,9 +117,16 @@ struct MobileSurfaceStorageTests {
         _ = try await queue.authorise(ids: [authorized.id])
         await session.refreshPublishedContent() // The same successful HEAD must trigger delivery.
         let items = try await queue.items()
-        #expect(items.first(where: { $0.id == authorized.id })?.state == .delivered)
+        if NodusLinkPolicy.readOnly {
+            // Nodus Link is a consultation companion: retained authoring queues are kept on the
+            // device but never forwarded (docs/mobile-0.1.0/nodus-link-2026-11-13.md).
+            #expect(items.first(where: { $0.id == authorized.id })?.state != .delivered)
+            #expect(try await queue.authorisedCount() == 1)
+        } else {
+            #expect(items.first(where: { $0.id == authorized.id })?.state == .delivered)
+            #expect(try await queue.authorisedCount() == 0)
+        }
         #expect(items.first(where: { $0.id == unsent.id })?.state == .pending)
-        #expect(try await queue.authorisedCount() == 0)
         #expect(session.aiExecutionMode == .live)
     }
     @Test("a stored live connection uses the Bridge and rejects generic authenticated Server routes before transport")

@@ -39,7 +39,7 @@ struct SearchScreen: View {
                         HStack(spacing: 7) {
                             kindFilterButton(nil, title: String(localized: "All"))
                             ForEach(availableKinds, id: \.self) { kind in
-                                kindFilterButton(kind, title: Bundle.main.localizedString(forKey: kind, value: kind, table: nil).localizedCapitalized)
+                                kindFilterButton(kind, title: SearchKind.label(for: kind))
                             }
                         }
                     }.scrollIndicators(.hidden)
@@ -89,7 +89,7 @@ struct SearchScreen: View {
             .background(Color(uiColor: .systemBackground).opacity(0.98))
         }
         .onChange(of: query) { _, _ in schedule() }
-        .task(id: session.publishedRevision) { if trimmedQuery.count >= 2 { schedule(immediately: true) } }
+        .task(id: session.contentEpoch) { if trimmedQuery.count >= 2 { schedule(immediately: true) } }
         .onChange(of: routeActive) { _, active in
             if active, trimmedQuery.count >= 2 { schedule(immediately: true) }
             else if !active { stopSearch() }
@@ -242,24 +242,7 @@ private struct HitCell: View {
         return excerpt
     }
 
-    /// Both spellings on purpose. The record kind is what reaches here now, but a server that
-    /// answers with its table name — which is what the lexical endpoint does
-    /// (`server/lib/core/search.mjs:41`) — must not fall through to a capitalised table name
-    /// that no catalogue can translate.
-    private var typeLabel: String {
-        switch hit.type {
-        case "work", "works": return String(localized: "Work")
-        case "idea", "ideas": return String(localized: "Idea")
-        case "theme", "themes": return String(localized: "Theme")
-        case "gap", "gaps": return String(localized: "Gap")
-        case "note", "notes": return String(localized: "Note")
-        case "passage", "passages": return String(localized: "Passage")
-        case "person", "persons": return String(localized: "Person")
-        case "place", "places": return String(localized: "Place")
-        case "event", "events": return String(localized: "Event")
-        default: return hit.type.capitalized
-        }
-    }
+    private var typeLabel: String { SearchKind.label(for: hit.type) }
 
     private var icon: String {
         switch hit.type {
@@ -272,7 +255,39 @@ private struct HitCell: View {
         case "person", "persons": return "person"
         case "place", "places": return "mappin.and.ellipse"
         case "event", "events": return "calendar"
+        case let type where SearchKind.ideaTypes.contains(type): return "lightbulb"
         default: return "doc"
+        }
+    }
+}
+
+/// The one name a search result kind is shown under, shared by the filter chips and the tag
+/// on each result so the two never disagree.
+enum SearchKind {
+    /// Idea subtypes the server returns as the hit type instead of "idea".
+    static let ideaTypes: Set<String> = ["claim", "finding", "construct", "method", "framework", "hypothesis"]
+
+    /// Both spellings on purpose. The record kind is what reaches here now, but a server that
+    /// answers with its table name — which is what the lexical endpoint does
+    /// (`server/lib/core/search.mjs:41`) — must not fall through to a capitalised table name
+    /// that no catalogue can translate. Anything else is looked up in lower case, the form the
+    /// catalogue stores idea types in, and only shown raw when no translation exists.
+    static func label(for type: String) -> String {
+        switch type {
+        case "work", "works": return String(localized: "Work")
+        case "idea", "ideas": return String(localized: "Idea")
+        case "theme", "themes": return String(localized: "Theme")
+        case "gap", "gaps": return String(localized: "Gap")
+        case "note", "notes": return String(localized: "Note")
+        case "passage", "passages": return String(localized: "Passage")
+        case "person", "persons": return String(localized: "Person")
+        case "place", "places": return String(localized: "Place")
+        case "event", "events": return String(localized: "Event")
+        default:
+            let key = type.lowercased()
+            let translated = Bundle.main.localizedString(forKey: key, value: type, table: nil)
+            guard let first = translated.first else { return type }
+            return first.uppercased() + translated.dropFirst()
         }
     }
 }

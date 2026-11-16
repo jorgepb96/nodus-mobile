@@ -291,7 +291,7 @@ private struct NodusBrowserMobileView: View {
             Button("History", systemImage: "clock") { showingHistory = true }
             Button("Downloads", systemImage: "arrow.down.circle") { showingDownloads = true }
             Button("Capture to Library", systemImage: "books.vertical") { captureCurrentPage() }
-            if let url = store.active?.url { ShareLink(item: url) { Label("Share", systemImage: "square.and.arrow.up") } }
+            if let url = store.active?.url { ShareLink(item: url) { NodusMenuLabel("Share", systemImage: "square.and.arrow.up") } }
         } label: {
             Image(systemName: "ellipsis.circle").font(.system(size: 18, weight: .medium)).frame(width: 44, height: 44)
         }

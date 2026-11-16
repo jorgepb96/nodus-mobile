@@ -59,7 +59,7 @@ struct ImmersionLibraryView: View {
         .navigationTitle("Immersion")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .refreshable { await load() }
     }
 
@@ -88,12 +88,10 @@ struct ImmersionLibraryView: View {
                 .buttonStyle(NodusGlassIconButtonStyle(accent: session.accent))
                 .accessibilityLabel(sortLabel)
 
-                Picker("View", selection: $galleryView) {
-                    Image(systemName: "square.grid.2x2").tag("grid")
-                    Image(systemName: "list.bullet").tag("list")
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 92, height: 44)
+                NodusIconSegmentedPicker(selection: $galleryView, options: [
+                    .init(value: "grid", systemImage: "square.grid.2x2", label: "Grid"),
+                    .init(value: "list", systemImage: "list.bullet", label: "List"),
+                ], accent: session.accent)
 
                 Spacer(minLength: 0)
             }
@@ -300,7 +298,7 @@ struct ImmersionView: View {
         .navigationTitle("Immersion")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
         .onChange(of: session.companionImmersionProgressRevision) { _, _ in Task { await progressController?.reloadLocal() } }
     }
 

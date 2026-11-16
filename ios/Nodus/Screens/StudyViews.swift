@@ -246,7 +246,7 @@ struct FlashcardsView: View {
         .navigationTitle("Flashcards")
         .navigationBarTitleDisplayMode(.inline)
         .nodusPageBackdrop(accent: session.accent)
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
     }
 
     private func card(_ row: Row) -> some View {
@@ -390,7 +390,7 @@ struct QuestionBankView: View {
             }.padding(.horizontal, NodusSpace.page).padding(.vertical, 6)
                 .background(Color(uiColor: .systemBackground).opacity(0.97))
         }
-        .task(id: session.publishedRevision) { await load() }
+        .task(id: session.contentEpoch) { await load() }
     }
     private func values(_ key: String) -> [String] { Set(questions.compactMap { $0.text(key) }).sorted() }
     private func load() async {

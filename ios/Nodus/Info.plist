@@ -31,6 +31,13 @@
 	     ASK whether another one is installed, and this app has no reason to know: it opens the
 	     link and reports what happened. Asking first would also make the control decide, once,
 	     that Zotero is absent — and then go on saying so to a reader who has since installed it. -->
+	<!-- `nodusreader` is the exception: "Open in Nodus Reader" must choose between offering the
+	     report and sending the reader to TestFlight, and only this question can tell them apart.
+	     It is asked on every tap, so installing Reader later is noticed at once. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>nodusreader</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

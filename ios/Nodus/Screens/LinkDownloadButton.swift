@@ -32,7 +32,26 @@ struct LinkSectionDownloadButton: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("section-download-\(section.rawValue)")
             .accessibilityValue(Text(downloads.status(section).label))
-            .popover(isPresented: $showingOptions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+            // No fixed arrow edge: a card near the bottom of the screen opens its options upwards.
+            // Pinned to `.top` the popover always opened downwards and was cut off by the tab bar.
+            .popover(isPresented: $showingOptions, attachmentAnchor: .rect(.bounds)) {
+                ViewThatFits(in: .vertical) {
+                    options(downloads)
+                    ScrollView { options(downloads) }
+                }
+                .frame(width: 290)
+                .presentationCompactAdaptation(.popover)
+            }
+            .contextMenu {
+                Button("Download changes", systemImage: "arrow.down.circle") { downloads.download(section) }
+                if downloads.copies[section] != nil {
+                    Button("Remove local download", role: .destructive) { Task { await downloads.remove(section) } }
+                }
+            }
+        }
+    }
+
+    private func options(_ downloads: LinkDownloads) -> some View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(section.title).font(.headline)
                     Label { Text(downloads.status(section).label) } icon: { Image(systemName: downloads.status(section).symbol) }
@@ -60,16 +79,8 @@ struct LinkSectionDownloadButton: View {
                     Text("Removing a download only affects this device. Your data in Nodus stays intact.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(20).frame(width: 290)
-                .presentationCompactAdaptation(.popover)
-            }
-            .contextMenu {
-                Button("Download changes", systemImage: "arrow.down.circle") { downloads.download(section) }
-                if downloads.copies[section] != nil {
-                    Button("Remove local download", role: .destructive) { Task { await downloads.remove(section) } }
-                }
-            }
-        }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

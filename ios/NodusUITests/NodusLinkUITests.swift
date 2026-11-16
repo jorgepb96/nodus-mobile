@@ -309,17 +309,22 @@ final class NodusLinkUITests: XCTestCase {
         app.launchEnvironment["NODUS_START_ROUTE"] = "home"
         app.launch()
         defer { app.terminate() }
-        let ideas = app.buttons["nodus-bottom-ideas"]
+        // The phone bar is the native tab bar now; its items are found by their titles.
+        let tabs = app.tabBars.firstMatch
+        let ideas = tabs.buttons["Ideas"]
         XCTAssertTrue(ideas.waitForExistence(timeout: 30) && ideas.isHittable)
         ideas.tap()
-        let more = app.buttons["nodus-bottom-more"]
+        let more = tabs.buttons["Más"]
         XCTAssertTrue(more.isHittable); more.tap()
-        XCTAssertTrue(app.buttons["Biblioteca"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Ajustes"].exists)
-        let search = app.buttons["Buscar"].firstMatch
+        // More opens a section sheet rather than a pop-up menu.
+        // List rows are exposed as cells rather than buttons, so match any element type.
+        let section = { (route: String) in app.descendants(matching: .any)["nodus-phone-section-\(route)"].firstMatch }
+        XCTAssertTrue(section("library").waitForExistence(timeout: 10))
+        // Settings is the last row and sits below the sheet's medium detent, outside the lazy list.
+        let search = section("search")
         XCTAssertTrue(search.isHittable); search.tap()
         XCTAssertTrue(app.textFields["nodus-search-field"].waitForExistence(timeout: 10))
-        let home = app.buttons["nodus-bottom-home"]
+        let home = tabs.buttons["Inicio"]
         XCTAssertTrue(home.isHittable); home.tap()
         XCTAssertTrue(app.buttons["link-home-ideas"].waitForExistence(timeout: 10))
         capture(app, "phone-native-bottom-navigation")
@@ -370,7 +375,7 @@ final class NodusLinkUITests: XCTestCase {
         defer { app.terminate() }
         app.buttons["nodus-workspace-switch"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["vault-switcher-popover"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["nodus-bottom-home"].exists || app.buttons["nodus-nav-home"].exists)
+        XCTAssertTrue(app.tabBars.firstMatch.exists || app.buttons["nodus-nav-home"].exists)
         XCTAssertFalse(app.buttons["nodus-add-server"].exists)
         capture(app, "workspace-popover-keeps-navigation")
     }
