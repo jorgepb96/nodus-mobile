@@ -448,8 +448,10 @@ draft PRs: the privileged CLA workflow also runs on PR updates and ignores `[ski
 
 ## Licence
 
-Proprietary. All rights reserved — see [LICENSE](LICENSE), including its note on the revisions that
-were published under MIT before the code moved here.
+Nodus Link is licensed under the [GNU Affero General Public License v3.0](LICENSE), SPDX
+`AGPL-3.0-only`. The revisions this repository inherited from the Nodus desktop repository were
+first published there under MIT before the code moved here on 3 August 2026, and that grant still
+applies to those revisions. Third-party components keep their own licences.
 
 Native live chat now uses the native iPhone/iPad composer, conversation history and options
 sheet in both execution modes. A closed Mac job acknowledges the frozen question before
