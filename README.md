@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/screenshots/readme-banner.png" alt="Nodus Link: an iPhone showing Deep Research, ideas and notes, dictionary and podcasts in front of a laptop, and the Nodus Link N. Your research, wherever you go. Connect, explore, read, listen. Deep Research, ideas and notes, dictionary, podcasts, private connection. Free and open source, on iPhone and iPad.">
+</p>
+
 > **Nodus Link 0.1.0:** the first iOS/iPadOS release now focuses on reading your
 > linked academic Desktop research and listening to saved podcasts. Other vault types
 > are retained in code but hidden in this version. Creation, editing and
